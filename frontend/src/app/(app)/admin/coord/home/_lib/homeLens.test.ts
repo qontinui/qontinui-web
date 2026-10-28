@@ -12,11 +12,16 @@ import {
   type NeedsMeItem,
   type RepoGroup,
 } from "@/components/admin/coord/coordHomeStatus";
-import { WITHHELD } from "@/components/presentation";
+import { WITHHELD, describeRedacted } from "@/components/presentation";
 import {
+  BLOCKED_UNIT_DESCRIPTOR,
+  INITIATIVE_ITEM_DESCRIPTOR,
+  INITIATIVE_KEYS_DESCRIPTOR,
   PROJECT_STATE_KEPT_SOURCE,
   PROJECT_STATE_SOURCE,
+  REPOSITORY_DESCRIPTOR,
   RowKeyAliases,
+  TENANT_DESCRIPTOR,
   UNNAMED_DECISION_KIND,
   UNNAMED_DECISION_KINDS,
   degradationDescriptor,
@@ -183,10 +188,34 @@ describe("descriptors — built from fixed fields, never from the text", () => {
     expect(namedUnitDescriptor(u, "waitingOnGate").status).toBe("waiting");
     expect(reasonDescriptor("excluded", AT)).toEqual({
       kind: "Reason",
-      area: null,
       status: "excluded",
       at: AT,
+      notApplicable: ["area"],
     });
+  });
+
+  it("describes each referent by its own fields, and leaves out the ones it does not have", () => {
+    const ready = {
+      status: "ready",
+      scope: { firstPartyOwners: ["qontinui"], confidentialTerms: [] },
+    } as const;
+    const now = Date.parse("2026-10-20T09:00:00Z");
+    const line = (d: Parameters<typeof describeRedacted>[0]) =>
+      describeRedacted(d, ready, { now });
+    expect(line(TENANT_DESCRIPTOR)).toBe("Project");
+    expect(line(REPOSITORY_DESCRIPTOR)).toBe("Repository");
+    expect(line(INITIATIVE_ITEM_DESCRIPTOR)).toBe("Initiative item · in scope");
+    expect(line(INITIATIVE_KEYS_DESCRIPTOR)).toBe("Item keys · not listed");
+    expect(line(reasonDescriptor("excluded", AT))).toBe(
+      "Reason · excluded · 1h ago"
+    );
+    // The unit a decision blocks: its own fact, never the question's status
+    // word or asked-at age.
+    expect(line(BLOCKED_UNIT_DESCRIPTOR)).toBe(
+      "Work unit · area unknown · blocked · age unknown"
+    );
+    const asked = needsDescriptor(item({ recommendation: "Hold" }));
+    expect(line(BLOCKED_UNIT_DESCRIPTOR)).not.toContain(asked.status!);
   });
 });
 

@@ -195,6 +195,47 @@ describe("describeRedacted", () => {
     );
   });
 
+  it("leaves out a field the item's kind does not have, rather than calling it unknown", () => {
+    expect(
+      describeRedacted(
+        { kind: "Repository", notApplicable: ["area", "status", "at"] },
+        READY,
+        { now }
+      )
+    ).toBe("Repository");
+    expect(
+      describeRedacted(
+        { kind: "Reason", status: "excluded", at, notApplicable: ["area"] },
+        READY,
+        { now }
+      )
+    ).toBe("Reason · excluded · 3d ago");
+    // A field the kind has but nobody served is still unknown.
+    expect(
+      describeRedacted(
+        { kind: "Initiative item", notApplicable: ["area", "at"] },
+        READY,
+        { now }
+      )
+    ).toBe("Initiative item · status unknown");
+  });
+
+  it("leaves a not-applicable field out whatever it holds, and still checks the kind", () => {
+    expect(
+      describeRedacted(
+        {
+          kind: "Acme Corp project",
+          area: "acme-corp-integration",
+          status: "Partner A review",
+          at,
+          notApplicable: ["area", "status", "at"],
+        },
+        READY,
+        { now }
+      )
+    ).toBe(WITHHELD);
+  });
+
   it("withholds the area while the scope cannot check it", () => {
     expect(
       describeRedacted(

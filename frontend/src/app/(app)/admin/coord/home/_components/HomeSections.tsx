@@ -58,6 +58,7 @@ import {
   presentedFailureReason,
 } from "@/components/operations/presentedFailure";
 import {
+  BLOCKED_UNIT_DESCRIPTOR,
   INITIATIVE_ITEM_DESCRIPTOR,
   INITIATIVE_KEYS_DESCRIPTOR,
   REPOSITORY_DESCRIPTOR,
@@ -424,7 +425,7 @@ function NeedsYouRow({
                   <RedactedText
                     text={blocking.workUnitSlug}
                     repo={null}
-                    descriptor={needsDescriptor(item, "Work unit")}
+                    descriptor={BLOCKED_UNIT_DESCRIPTOR}
                   />
                 ) : (
                   <LensLink

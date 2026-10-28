@@ -70,12 +70,25 @@ export function regionSources(reading: HomeReading): readonly SectionSource[] {
 // Descriptors — the structured fields that stand in for withheld text
 // ---------------------------------------------------------------------------
 
-/** The current tenant's name, which no repository can vouch for. */
-export const TENANT_DESCRIPTOR: RedactionDescriptor = { kind: "Project" };
+/**
+ * The current tenant's name, which no repository can vouch for. A tenant has
+ * no area, status or age on this page, so its line is its kind alone — never
+ * three unknowns about fields it does not have.
+ */
+export const TENANT_DESCRIPTOR: RedactionDescriptor = {
+  kind: "Project",
+  notApplicable: ["area", "status", "at"],
+};
 
-/** A repository named by coord's grouping or a degradation's subject. */
+/**
+ * A repository named by coord's grouping. Its row's own badge and summary
+ * already carry what the page knows of it (its units, by class), so the
+ * identity chip is the kind alone — short enough for the row at
+ * screen-share size.
+ */
 export const REPOSITORY_DESCRIPTOR: RedactionDescriptor = {
   kind: "Repository",
+  notApplicable: ["area", "status", "at"],
 };
 
 /** A needs-you item's own status word — the badge the row shows. */
@@ -87,16 +100,13 @@ export function needsStatusWord(
 }
 
 /** What a part of a needs-you item is, for its descriptor. */
-export type NeedsPart =
-  | "item"
-  | "Recommendation"
-  | "Consequence"
-  | "Options"
-  | "Work unit";
+export type NeedsPart = "item" | "Recommendation" | "Consequence" | "Options";
 
 /**
  * A needs-you item's descriptor: the item (a question, or an approval an
- * agent waits for) or one of its parts, its status word, and its age.
+ * agent waits for) or one of its parts, its status word, and its age — a
+ * part is the item's own text, so it shares the item's status and age. The
+ * work unit a decision blocks is another referent: {@link blockedUnitDescriptor}.
  */
 export function needsDescriptor(
   item: NeedsMeItem,
@@ -114,6 +124,19 @@ export function needsDescriptor(
     at: item.askedAt,
   };
 }
+
+/**
+ * The work unit a decision blocks. The one fact its row knows about the UNIT
+ * is that it is blocked: the decision's status word and asked-at time are
+ * the question's, not the unit's, and coord serves the unit's own area and
+ * age nowhere on this view, so those read as unknown.
+ */
+export const BLOCKED_UNIT_DESCRIPTOR: RedactionDescriptor = {
+  kind: "Work unit",
+  area: null,
+  status: "blocked",
+  at: null,
+};
 
 /** The three ways a degradation row is shown. */
 export type DegradationRowKind = "degrading" | "declared" | "cleared";
@@ -191,28 +214,37 @@ export function namedUnitDescriptor(
   };
 }
 
-/** An in-scope item of the current initiative. */
+/**
+ * An in-scope item of the current initiative: a line of the initiative's
+ * document, which has no area or age of its own.
+ */
 export const INITIATIVE_ITEM_DESCRIPTOR: RedactionDescriptor = {
   kind: "Initiative item",
   status: "in scope",
+  notApplicable: ["area", "at"],
 };
 
-/** The keys of initiative items a unit links to that the initiative does not list. */
+/**
+ * The keys of initiative items a unit links to that the initiative does not
+ * list — keys, with no area or age of their own.
+ */
 export const INITIATIVE_KEYS_DESCRIPTOR: RedactionDescriptor = {
   kind: "Item keys",
   status: "not listed",
+  notApplicable: ["area", "at"],
 };
 
 /**
  * Coord's own sentence about why something is the way it is — an exclusion
  * reason, an initiative's parse error. It is written for agents and can quote
  * raw ids, and it belongs to no repository: always withheld while presenting.
+ * A reason has no area; it is dated by the reading it explains.
  */
 export function reasonDescriptor(
   status: string,
   at: string | null
 ): RedactionDescriptor {
-  return { kind: "Reason", area: null, status, at };
+  return { kind: "Reason", status, at, notApplicable: ["area"] };
 }
 
 // ---------------------------------------------------------------------------

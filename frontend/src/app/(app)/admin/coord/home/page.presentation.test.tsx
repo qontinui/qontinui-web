@@ -330,7 +330,7 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
     const view = await renderPresenting(noLiveInitiativeBody());
     const initiative = screen.getByTestId("coord-home.on-track.initiative");
     expect(initiative).toHaveTextContent(
-      /No live initiative — Reason · area unknown · no live initiative · /
+      /No live initiative — Reason · no live initiative · /
     );
     expectPresentationSafe(view, {
       captions: HOME_CAPTIONS,
@@ -431,7 +431,8 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     const view = await renderPresenting(fullBody());
     const tenant = screen.getByTestId("coord-home.strip.tenant");
     expect(tenant).not.toHaveAttribute("title");
-    expect(tenant).toHaveTextContent(/^Tenant: Project · /);
+    // Its kind alone: a tenant has no area, status or age on this page.
+    expect(tenant).toHaveTextContent(/^Tenant: Project$/);
     expect(tenant.querySelector('[data-redacted="true"]')).not.toBeNull();
     expect(tenant.textContent).not.toContain(TENANT_NAME);
     expectPresentationSafe(view, { forbidden: [TENANT_NAME, TENANT_ID] });
@@ -461,7 +462,11 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     expect(detail).toHaveTextContent(/Options: Options · /);
     // The blocked unit is a descriptor, and not a link (its URL is its slug);
     // a phase that is not a number is withheld.
-    expect(detail).toHaveTextContent(/Blocks: Work unit · .*, phase withheld/);
+    // The unit's own fact — it is blocked — not the question's status or
+    // age, which are another referent's.
+    expect(detail).toHaveTextContent(
+      /Blocks: Work unit · area unknown · blocked · age unknown, phase withheld/
+    );
     expect(within(detail).queryByRole("link")).toBeNull();
     expect(detail.querySelector("[data-lens-link]")).toBeNull();
     // Answering is the operator's: no link, no sentence about it.
@@ -555,9 +560,8 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     // The first-party repository is named; the foreign one and the bare one
     // (no owner to vouch for) are descriptors.
     expect(identities).toContain(FIRST_PARTY_REPO);
-    expect(
-      identities.filter((i) => i.startsWith("Repository · "))
-    ).toHaveLength(2);
+    // ...and the descriptor is the kind alone, short enough for the chip.
+    expect(identities.filter((i) => i === "Repository")).toHaveLength(2);
     expect(identities).toContain("no repo named");
     // Its detail names it; the foreign group's says "this repository".
     const own = expandRow(region, FIRST_PARTY_REPO);
@@ -585,7 +589,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
       FIRST_PARTY_UNIT_TITLE,
     ]);
     expect(unitNames("false")[0]!.closest("[data-lens-link]")).not.toBeNull();
-    const foreign = expandRow(region, /^Repository · /);
+    const foreign = expandRow(region, /^Repository/);
     expect(foreign).toHaveTextContent("Work units that name this repository.");
     // The initiative: items and keys are descriptors, the end date (not a
     // date) is withheld, the start date (an ISO date) shows.
@@ -595,10 +599,10 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     );
     expect(
       within(initiative).getByTestId("coord-home.on-track.initiative.in-scope")
-    ).toHaveTextContent(/Initiative item · area unknown · in scope · /);
+    ).toHaveTextContent(/Initiative item · in scope/);
     expect(
       screen.getByTestId("coord-home.on-track.initiative.unknown-key")
-    ).toHaveTextContent(/\(Item keys · area unknown · not listed · /);
+    ).toHaveTextContent(/\(Item keys · not listed\)/);
     expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
   });
 
@@ -651,7 +655,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     expect(region).toHaveTextContent("Watcher feeding runner");
     const detail = expandRow(region, "Work units");
     expect(detail).toHaveTextContent(
-      /Why excluded: Reason · area unknown · excluded · /
+      /Why excluded: Reason · excluded · /
     );
     expect(detail.querySelector("[data-console-raw]")).toBeNull();
     // A source coord reported an error for says so — and that it is withheld,
