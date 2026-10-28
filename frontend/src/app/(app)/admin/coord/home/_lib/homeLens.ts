@@ -9,7 +9,12 @@
  * degradation's headline and subject, a repository, a unit's title, an
  * initiative item, coord's own reasons — is rendered through `RedactedText`
  * with a structured descriptor built here, from the item's own fixed fields
- * (`kind · area · status · age`), never from its text.
+ * (`kind · area · status · age`, leaving out a field its kind does not have),
+ * never from its text. A value the page reads against one of its own tables
+ * — a decision kind coord parsed out of question text, a does-not-know
+ * source — shows only when the table names it, and in fixed words otherwise;
+ * a failed read is explained in the page's fixed words where its arm has
+ * some, and withheld otherwise; and a row's key is an alias of the operator's.
  *
  * Nothing here decides a colour or a word the operator sees: every function
  * describes what the PRESENTATION shows, and operator mode renders the page's

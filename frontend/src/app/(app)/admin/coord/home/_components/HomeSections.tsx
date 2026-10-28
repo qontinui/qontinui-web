@@ -23,10 +23,15 @@
  * (style guide §3.13): each region opens with its caption and the provenance
  * of its figures (`RegionCaption`); every free-text carrier renders through
  * `RedactedText` / `useRedactor` with a structured descriptor
- * (`_lib/homeLens.ts`); a machine is its alias (`useMachineAliaser`); R8's raw
- * last line and coord's quoted error chains are not rendered; a link goes
- * through `LensLink`; and answering a decision is `OperatorOnly`. In operator
- * mode every one of those renders the original, so #1999's page is unchanged.
+ * (`_lib/homeLens.ts`), and every value read against one of the page's
+ * tables — a decision kind, a does-not-know source — shows only when the
+ * table names it, in fixed words otherwise; a machine is its alias
+ * (`useMachineAliaser`); R8's raw last line and coord's quoted error chains
+ * are not rendered; a row is keyed by an alias of its operator key
+ * (`useRowKey`); a link goes through `LensLink`, and a drill or an
+ * instruction whose page cannot be presented is left out (`useLinkOpens`);
+ * and answering a decision is `OperatorOnly`. In operator mode every one of
+ * those renders the original, so #1999's page is unchanged.
  */
 
 import { useMemo, type ReactNode } from "react";
