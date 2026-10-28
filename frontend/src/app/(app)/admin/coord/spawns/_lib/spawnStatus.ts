@@ -411,12 +411,14 @@ export function spawnIssueText(issue: SpawnReadIssue, subject: string): string {
 }
 
 /**
- * {@link spawnIssueText} for the mode on screen. While presenting, the two
- * arms that QUOTE are said in fixed words: `error` carries the client's
- * failure text (`GET <url> failed …`, coord's body), and `ledger_not_deployed`
- * coord's own reason token — neither was written for an outsider (plan
- * `2026-10-23-console-presentation-spaces` D3.3). Every other arm is fixed
- * words already, and reads the same in both modes.
+ * {@link spawnIssueText} for the mode on screen. While presenting, every arm
+ * is said in fixed words written for an outsider: `error` carries the
+ * client's failure text (`GET <url> failed …`, coord's body) and
+ * `ledger_not_deployed` coord's own reason token, neither written for an
+ * outsider (plan `2026-10-23-console-presentation-spaces` D3.3); and the
+ * other arms name the service the way every presented sentence does ("the
+ * coordination service"), never by its operator name. Each still says the
+ * figure is unknown, never empty.
  */
 export function spawnIssueTextFor(
   issue: SpawnReadIssue,
@@ -427,10 +429,24 @@ export function spawnIssueTextFor(
   switch (issue.kind) {
     case "ledger_not_deployed":
       return `The record of spawn requests is not deployed yet, so ${subject} is unknown, not empty.`;
+    case "route_unavailable":
+      return `The coordination service does not offer the record of spawn requests yet, so ${subject} is unknown, not empty.`;
+    case "route_disabled":
+      return `The record of spawn requests is switched off by the operator, so ${subject} is unknown, not empty.`;
+    case "forbidden":
+      return `This account may not read the record of spawn requests, so ${subject} is unknown.`;
+    case "tenant_not_resolved":
+      return `No project is selected, so ${subject} is unknown.`;
+    case "not_found":
+      return "The coordination service holds no such spawn request in this project.";
+    case "deadline":
+      return `The coordination service did not answer in time, so ${subject} is unknown.`;
+    case "window_mismatch":
+      return `The coordination service answered for a different window, so ${subject} is unknown.`;
+    case "malformed":
+      return `The coordination service answered with a record this page cannot read, so ${subject} is unknown.`;
     case "error":
       return `The record of spawn requests could not be read, so ${subject} is unknown.`;
-    default:
-      return spawnIssueText(issue, subject);
   }
 }
 

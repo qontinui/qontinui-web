@@ -36,13 +36,13 @@
  *
  * Every value a read could not supply renders UNKNOWN with the read named and
  * why; a stale value (the latest refresh failed, the last answer kept) says
- * it is stale. In presentation mode the reason is fixed words
- * (`presentedFailureReason`): a failure text can quote a URL or coord's words.
+ * it is stale. In presentation mode each gate says it in its own fixed words
+ * (every sentence has a presenting arm): a failure text can quote a URL or
+ * coord's words, and a presented sentence names "the coordination service".
  */
 
 import type { AutonomyLevel } from "@/lib/api/operations/coordSettings";
 import type { EffectiveProfile } from "@/lib/api/operations/prMerge";
-import { presentedFailureReason } from "@/components/operations/presentedFailure";
 import type {
   AutoFixPrChoice,
   AutoFixPrState,
@@ -203,11 +203,6 @@ export interface MatrixGate {
 // ---------------------------------------------------------------------------
 // Shared words
 // ---------------------------------------------------------------------------
-
-/** A read's failure text for the operator; fixed words while presenting. */
-export function failure(reason: string, presenting: boolean): string {
-  return presentedFailureReason(reason, presenting);
-}
 
 export function unknownCell(text: string, title?: string): GateCell {
   return { state: "unknown", text, title, tone: "unknown", stale: false };
