@@ -20,11 +20,12 @@
  * (`presentationReadiness.ts`, proven by `page.test.tsx`), and the redirect
  * keeps the URL's query, so a `?present=1` arrival lands presenting.
  *
- * The target's own readiness is separate: until `/admin/coord/home` is
- * registered presentation-ready with its proof, a presenting arrival lands on
- * its withheld placeholder, which carries the coordination-overview surface
- * caption (it is lens surface 2, `lensSurfaces.ts`). `/admin/coord/pipeline`
- * was withheld too, and with no surface caption to stand in.
+ * The target's own readiness is separate, and it holds: `/admin/coord/home`
+ * is registered presentation-ready on the strength of its own proof
+ * (`home/page.presentation.test.tsx`; plan Phase 2), so a presenting arrival
+ * lands on the coordination overview in presentation mode — lens surface 2,
+ * `lensSurfaces.ts`. `/admin/coord/pipeline`, where the console used to land,
+ * is withheld, with no surface caption to stand in.
  */
 
 import { useEffect } from "react";

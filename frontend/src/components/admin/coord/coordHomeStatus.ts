@@ -713,6 +713,13 @@ export function needsYouReason(item: NeedsMeItem): string {
 export interface DegradationView {
   id: string;
   plane: string | null;
+  /**
+   * What the subject IS — coord's `subject.kind`: `device`, `repo`, `service`
+   * or `key` (`project_state.rs` `DegradationRow`). The presentation lens
+   * names a device by its alias and binds a repository's text to it; null
+   * when coord did not say.
+   */
+  subjectKind: string | null;
   subjectName: string | null;
   subjectId: string | null;
   headline: string | null;
@@ -742,6 +749,7 @@ function parseDegradation(raw: unknown, index: number): DegradationView | null {
   return {
     id: str(o.id) ?? `degradation-${index}`,
     plane: str(o.plane),
+    subjectKind: subject ? str(subject.kind) : null,
     subjectName: subject ? idString(subject.name) : null,
     subjectId: subject ? idString(subject.id) : null,
     headline: str(o.headline),
@@ -1184,7 +1192,8 @@ const SOURCE_LABEL: Readonly<Record<string, string>> = {
  */
 const WATCHER_SOURCE_PREFIX = "watcher:";
 
-function isWatcherSource(source: string): boolean {
+/** Whether a `does_not_know` row is a watcher's (`watcher:<name>`). */
+export function isWatcherSource(source: string): boolean {
   return source.startsWith(WATCHER_SOURCE_PREFIX);
 }
 

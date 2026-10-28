@@ -90,6 +90,13 @@ export const LENS_TREES: readonly string[] = ["/admin/coord", "/digital-twin"];
  */
 export const PRESENTATION_READY_ROUTES: readonly PresentationReadyRoute[] = [
   { route: "/admin/coord", provenBy: "app/(app)/admin/coord/page.test.tsx" },
+  // The coordination overview (plan Phase 2): the one-screen page's
+  // presentation-mode render, over fixtures feeding every free-text carrier
+  // it can show, in every state its regions render.
+  {
+    route: "/admin/coord/home",
+    provenBy: "app/(app)/admin/coord/home/page.presentation.test.tsx",
+  },
   {
     route: "/admin/coord/ui-bridge",
     provenBy: "app/(app)/admin/coord/ui-bridge/page.presentation.test.tsx",

@@ -16,17 +16,26 @@
  * primitive. Every derivation — the strip, the labels, the "may we say nothing
  * needs you" predicate — lives in `coordHomeStatus.ts`, which is unit-tested;
  * nothing below decides a colour or a word on its own (R8).
+ *
+ * ## Presentation mode (plan `2026-10-23-console-presentation-spaces` Phase 2)
+ *
+ * The same regions over the same read, rendered for an external evaluator
+ * (style guide §3.13): each region opens with its caption and the provenance
+ * of its figures (`RegionCaption`); every free-text carrier renders through
+ * `RedactedText` / `useRedactor` with a structured descriptor
+ * (`_lib/homeLens.ts`); a machine is its alias (`useMachineAliaser`); R8's raw
+ * last line and coord's quoted error chains are not rendered; a link goes
+ * through `LensLink`; and answering a decision is `OperatorOnly`. In operator
+ * mode every one of those renders the original, so #1999's page is unchanged.
  */
 
-import Link from "next/link";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import {
   CollapsiblePanel,
   HealthStrip,
   RecordDetail,
   RecordList,
   RecordRow,
-  RefreshButton,
   RowTime,
   StatCluster,
   StatusBadge,
@@ -36,6 +45,39 @@ import {
   type Stat,
 } from "@/components/console";
 import {
+  LensLink,
+  OperatorOnly,
+  RedactedText,
+  redactionVerdict,
+  usePresentationMode,
+  usePresentationScopeState,
+  useRedactor,
+} from "@/components/presentation";
+import {
+  FAILURE_SENTENCE_WITHHELD,
+  presentedFailureReason,
+} from "@/components/operations/presentedFailure";
+import {
+  INITIATIVE_ITEM_DESCRIPTOR,
+  INITIATIVE_KEYS_DESCRIPTOR,
+  REPOSITORY_DESCRIPTOR,
+  TENANT_DESCRIPTOR,
+  degradationDescriptor,
+  degradationRepo,
+  namedUnitDescriptor,
+  namedUnitRepos,
+  needsDescriptor,
+  needsStatusWord,
+  presentedInitiativeDate,
+  presentedInitiativeStatus,
+  presentedPlanPhase,
+  presentedRowKey,
+  reasonDescriptor,
+  type DegradationRowKind,
+  type NamedListKind,
+} from "../_lib/homeLens";
+import { HomeRefreshButton, RegionCaption, useSubjectText } from "./HomeLens";
+import {
   BLOCK_STATE_PHRASE,
   HOME_ATTENTION_BY_KIND,
   HOME_STATUS_PALETTE,
@@ -43,7 +85,6 @@ import {
   boundText,
   correctnessHasNoSource,
   degradationRawLine,
-  degradationSubjectText,
   degradationsGapPhrase,
   degradationsGapTitle,
   durationText,
@@ -70,6 +111,7 @@ import {
   unitClassLabel,
   unservedDecisionsSentence,
   internalHref,
+  isWatcherSource,
   windowLabel,
   type BlockState,
   type CorrectnessView,
@@ -78,6 +120,7 @@ import {
   type HomeRowKind,
   type HomeStrip,
   type NamedList,
+  type NamedUnit,
   type NeedsMeItem,
   type NeedsMeView,
   type OnTrackView,
@@ -137,6 +180,8 @@ function NotRead({
   error?: string | null;
   children?: ReactNode;
 }) {
+  const { presenting } = usePresentationMode();
+  const reported = error !== null && error.trim() !== "";
   return (
     <div
       className="text-sm text-muted-foreground space-y-1"
@@ -145,7 +190,15 @@ function NotRead({
     >
       <p className="m-0">{notReadSentence(what, state)}</p>
       {children}
-      {error !== null && error.trim() !== "" && (
+      {reported && presenting && (
+        // The block still says it was not read, and that coord said why; the
+        // chain itself can name a table, a host or a repository, so while
+        // presenting it is not quoted (D3.3, `presentedFailure.ts`).
+        <p className="m-0 text-xs" data-testid={`${testId}.error-withheld`}>
+          Coord reported an error. {FAILURE_SENTENCE_WITHHELD}
+        </p>
+      )}
+      {reported && !presenting && (
         // R8, as the does-not-know row words the same chain: an `anyhow`
         // context ("SELECT coord.work_units (…): …") is internal vocabulary,
         // so the block says coord reported an error and quotes the chain one
@@ -185,16 +238,35 @@ export function HomeStripSection({
   lastError: string | null;
   onRefresh: () => Promise<void>;
 }) {
-  // R8: the tenant's UUID is a raw id, so it is the title, never the text.
-  const tenant = tenantId
-    ? `Tenant: ${tenantName ?? "not in your project list"}`
-    : "Tenant: not stated by coord";
+  const { presenting } = usePresentationMode();
+  // R8: the tenant's UUID is a raw id, so it is the title, never the text —
+  // and while presenting it is not even the title (D3.3: no raw id). The name
+  // belongs to no repository a scope can vouch for, so it is withheld then.
+  const tenant = tenantId ? (
+    <>
+      Tenant:{" "}
+      {tenantName === null ? (
+        "not in your project list"
+      ) : (
+        <RedactedText
+          text={tenantName}
+          repo={null}
+          descriptor={TENANT_DESCRIPTOR}
+        />
+      )}
+    </>
+  ) : (
+    "Tenant: not stated by coord"
+  );
   const age = generatedAt
     ? `Showing coord's answer from ${relativeTime(generatedAt)} (${absoluteTime(generatedAt)}).`
     : "";
+  // The failure's own text can quote a URL or coord's body: fixed words
+  // while presenting.
+  const failure = presentedFailureReason(lastError, presenting);
   const lead = [
     stale ? staleDetail(age) : null,
-    stale && lastError ? `Last failure: ${lastError}.` : null,
+    stale && failure ? `Last failure: ${failure}.` : null,
     strip.detail,
   ]
     .filter(Boolean)
@@ -202,38 +274,39 @@ export function HomeStripSection({
   const detail = (
     <>
       {lead ? `${lead} ` : ""}
-      <span title={tenantId ?? undefined} data-testid="coord-home.strip.tenant">
+      <span
+        title={presenting ? undefined : (tenantId ?? undefined)}
+        data-testid="coord-home.strip.tenant"
+      >
         {tenant}
       </span>
     </>
   );
   return (
-    <section
-      className="flex items-center gap-2"
-      data-ui-bridge-id="coord-home.strip"
-      data-testid="coord-home.strip"
-      data-stale={stale ? "true" : undefined}
-    >
-      <HealthStrip
-        className="flex-1 min-w-0"
-        level={strip.level}
-        headline={strip.headline}
-        detail={detail}
-        badges={strip.badges.map((b) => ({
-          key: b.key,
-          label: b.label,
-          tone: b.tone,
-          "data-testid": b.testId,
-        }))}
-        data-testid="coord-home.strip.health"
-      />
-      <RefreshButton
-        onRefresh={onRefresh}
-        label="Refresh project state"
-        title="Re-read coord's project state now instead of waiting for the next minute"
-        data-testid="coord-home.refresh"
-      />
-    </section>
+    <>
+      <RegionCaption region="strip" reading={{ generatedAt, kept: stale }} />
+      <section
+        className="flex items-center gap-2"
+        data-ui-bridge-id="coord-home.strip"
+        data-testid="coord-home.strip"
+        data-stale={stale ? "true" : undefined}
+      >
+        <HealthStrip
+          className="flex-1 min-w-0"
+          level={strip.level}
+          headline={strip.headline}
+          detail={detail}
+          badges={strip.badges.map((b) => ({
+            key: b.key,
+            label: b.label,
+            tone: b.tone,
+            "data-testid": b.testId,
+          }))}
+          data-testid="coord-home.strip.health"
+        />
+        <HomeRefreshButton onRefresh={onRefresh} />
+      </section>
+    </>
   );
 }
 
@@ -250,29 +323,40 @@ function NeedsYouRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const hasRecommendation = item.recommendation !== null;
+  const { presenting } = usePresentationMode();
+  const redact = useRedactor();
   const answerHref = internalHref(item.answerAt);
+  // Every text of the item is the asking agent's own, and belongs to no
+  // repository a scope can vouch for: verbatim for the operator, its
+  // descriptor while presenting (D3.3).
+  const descriptor = needsDescriptor(item);
+  const blocking = item.blocking;
   return (
     <RecordRow
       identity={item.source === "operator_gate" ? "gate" : "question"}
       label={
-        <span title={item.fork ?? undefined}>
-          {item.fork ?? "(no question text)"}
-        </span>
+        item.fork === null ? (
+          <span>(no question text)</span>
+        ) : (
+          <span title={redact({ text: item.fork, repo: null, descriptor })}>
+            <RedactedText
+              text={item.fork}
+              repo={null}
+              descriptor={descriptor}
+            />
+          </span>
+        )
       }
-      status={
-        <HomeBadge
-          kind="needs_you"
-          label={
-            item.source === "operator_gate"
-              ? "approval"
-              : hasRecommendation
-                ? "decide"
-                : "open question"
-          }
-        />
+      status={<HomeBadge kind="needs_you" label={needsStatusWord(item)} />}
+      reason={
+        item.recommendation === null
+          ? needsYouReason(item)
+          : redact({
+              text: item.recommendation,
+              repo: null,
+              descriptor: needsDescriptor(item, "Recommendation"),
+            })
       }
-      reason={needsYouReason(item)}
       time={<RowTime at={item.askedAt} verb="Asked" />}
       attention={HOME_ATTENTION_BY_KIND.needs_you}
       expanded={expanded}
@@ -286,63 +370,99 @@ function NeedsYouRow({
               <span className="text-muted-foreground">Recommended: </span>
               {/* The detail states the recommendation plainly; the row's
                   collapsed reason (needsYouReason) carries the label. */}
-              {item.recommendation ?? "none given"}
+              {item.recommendation === null ? (
+                "none given"
+              ) : (
+                <RedactedText
+                  text={item.recommendation}
+                  repo={null}
+                  descriptor={needsDescriptor(item, "Recommendation")}
+                />
+              )}
             </p>
             <p className="m-0">
               <span className="text-muted-foreground">
                 If you overturn it:{" "}
               </span>
-              {item.ifOverturned ?? "not stated"}
+              {item.ifOverturned === null ? (
+                "not stated"
+              ) : (
+                <RedactedText
+                  text={item.ifOverturned}
+                  repo={null}
+                  descriptor={needsDescriptor(item, "Consequence")}
+                />
+              )}
             </p>
             {item.options === null ? (
               <p className="m-0 text-muted-foreground">Options: not readable</p>
             ) : (
               item.options.length > 0 && (
                 <p className="m-0 text-muted-foreground">
-                  Options: {item.options.join(" · ")}
+                  Options:{" "}
+                  <RedactedText
+                    text={item.options.join(" · ")}
+                    repo={null}
+                    descriptor={needsDescriptor(item, "Options")}
+                  />
                 </p>
               )
             )}
-            {item.blocking &&
-              (item.blocking.workUnitSlug || item.blocking.planPhase) && (
-                <p className="m-0 text-muted-foreground">
-                  Blocks:{" "}
-                  {item.blocking.workUnitSlug ? (
-                    <Link
-                      href={`/admin/coord/work-units/${encodeURIComponent(item.blocking.workUnitSlug)}`}
-                      className="underline underline-offset-2"
-                    >
-                      {item.blocking.workUnitSlug}
-                    </Link>
-                  ) : (
-                    "a piece of work"
-                  )}
-                  {item.blocking.planPhase
-                    ? `, phase ${item.blocking.planPhase}`
-                    : ""}
-                </p>
-              )}
+            {blocking && (blocking.workUnitSlug || blocking.planPhase) && (
+              <p className="m-0 text-muted-foreground">
+                Blocks:{" "}
+                {blocking.workUnitSlug === null ? (
+                  "a piece of work"
+                ) : presenting ? (
+                  // Its URL would carry the slug the descriptor withholds,
+                  // so a withheld unit is never linked.
+                  <RedactedText
+                    text={blocking.workUnitSlug}
+                    repo={null}
+                    descriptor={needsDescriptor(item, "Work unit")}
+                  />
+                ) : (
+                  <LensLink
+                    href={`/admin/coord/work-units/${encodeURIComponent(blocking.workUnitSlug)}`}
+                    className="underline underline-offset-2"
+                  >
+                    {blocking.workUnitSlug}
+                  </LensLink>
+                )}
+                {blocking.planPhase
+                  ? `, phase ${presenting ? presentedPlanPhase(blocking.planPhase) : blocking.planPhase}`
+                  : ""}
+              </p>
+            )}
           </div>
         }
         actions={
-          answerHref ? (
-            <Link
-              href={answerHref}
-              className="text-sm underline underline-offset-2"
-              data-testid="coord-home.needs-you.answer"
-            >
-              Answer it ↗
-            </Link>
-          ) : (
-            <p className="m-0 text-muted-foreground">
-              Coord served no page to answer this on.
-            </p>
-          )
+          // Answering is the operator's write, on another page: an evaluator
+          // does not act (D3.2), so neither the link nor its absence shows.
+          <OperatorOnly>
+            {answerHref ? (
+              <LensLink
+                href={answerHref}
+                className="text-sm underline underline-offset-2"
+                data-testid="coord-home.needs-you.answer"
+              >
+                Answer it ↗
+              </LensLink>
+            ) : (
+              <p className="m-0 text-muted-foreground">
+                Coord served no page to answer this on.
+              </p>
+            )}
+          </OperatorOnly>
         }
         raw={
-          <span className="font-mono text-[10px] text-muted-foreground/60 break-all">
-            {item.source ?? "source unknown"} · {item.id}
-          </span>
+          // R8's raw last line — the gate or question id — is the operator's:
+          // not rendered at all while presenting (D3.3: no raw id).
+          presenting ? undefined : (
+            <span className="font-mono text-[10px] text-muted-foreground/60 break-all">
+              {item.source ?? "source unknown"} · {item.id}
+            </span>
+          )
         }
       />
     </RecordRow>
@@ -359,6 +479,7 @@ export function NeedsYouSection({
   stale?: boolean;
   generatedAt?: string | null;
 }) {
+  const { presenting } = usePresentationMode();
   const read = needs.state === "read";
   const served = needs.items?.length ?? 0;
   // One displayable count, shared with the strip: never "1 shown of 0".
@@ -377,6 +498,10 @@ export function NeedsYouSection({
       data-testid="coord-home.needs-you"
       data-block-state={needs.state}
     >
+      <RegionCaption
+        region="needs-you"
+        reading={{ generatedAt, kept: stale }}
+      />
       <div className="flex items-baseline gap-2">
         <h2 className={HEADING}>Needs you</h2>
         <span
@@ -430,15 +555,19 @@ export function NeedsYouSection({
             data-testid="coord-home.needs-you.unserved"
           >
             {unservedDecisionsSentence(count)}; open{" "}
-            <Link href="/admin/coord/questions" className="underline">
+            <LensLink href="/admin/coord/questions" className="underline">
               Questions
-            </Link>
+            </LensLink>
             .
           </p>
         ) : (
           <RecordList
             items={needs.items ?? []}
-            itemKey={(i, idx) => `${i.source ?? "item"}:${i.id}:${idx}`}
+            itemKey={(i, idx) =>
+              presenting
+                ? presentedRowKey("needs", idx)
+                : `${i.source ?? "item"}:${i.id}:${idx}`
+            }
             renderRow={(item, ctx) => (
               <NeedsYouRow
                 item={item}
@@ -456,13 +585,13 @@ export function NeedsYouSection({
         >
           <p className="m-0">
             Pending decisions are listed at{" "}
-            <Link href="/admin/coord/questions" className="underline">
+            <LensLink href="/admin/coord/questions" className="underline">
               Questions
-            </Link>{" "}
+            </LensLink>{" "}
             and{" "}
-            <Link href="/admin/coord/gates" className="underline">
+            <LensLink href="/admin/coord/gates" className="underline">
               Gates
-            </Link>
+            </LensLink>
             .
           </p>
         </NotRead>
@@ -482,10 +611,13 @@ function DegradationRow({
   onToggle,
 }: {
   d: DegradationView;
-  kind: "degrading" | "declared" | "cleared";
+  kind: DegradationRowKind;
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { presenting } = usePresentationMode();
+  const redact = useRedactor();
+  const subjectText = useSubjectText();
   const drillHref = internalHref(d.drill);
   const label =
     kind === "cleared"
@@ -493,6 +625,11 @@ function DegradationRow({
       : kind === "declared"
         ? "declared"
         : "degrading";
+  // The headline is coord's sentence, attributed to the repository its
+  // subject names, if any (D3.3): a machine's or a service's is withheld
+  // while presenting, a first-party repository's shows.
+  const headlineRepo = degradationRepo(d);
+  const descriptor = degradationDescriptor(d, kind);
   const time =
     kind === "cleared" ? (
       <RowTime at={d.resolvedAt} verb="Cleared" />
@@ -507,12 +644,22 @@ function DegradationRow({
     <RecordRow
       identity={planeLabel(d.plane)}
       label={
-        <span title={d.headline ?? undefined}>
-          {d.headline ?? "(no headline)"}
-        </span>
+        d.headline === null ? (
+          <span>(no headline)</span>
+        ) : (
+          <span
+            title={redact({ text: d.headline, repo: headlineRepo, descriptor })}
+          >
+            <RedactedText
+              text={d.headline}
+              repo={headlineRepo}
+              descriptor={descriptor}
+            />
+          </span>
+        )
       }
       status={<HomeBadge kind={kind} label={label} />}
-      reason={degradationSubjectText(d)}
+      reason={subjectText(d, kind)}
       time={time}
       attention={HOME_ATTENTION_BY_KIND[kind]}
       expanded={expanded}
@@ -534,21 +681,27 @@ function DegradationRow({
         }
         actions={
           drillHref ? (
-            <Link
+            // Evidence one click down: while presenting it carries the
+            // presentation, or is plain text where its page cannot be shown.
+            <LensLink
               href={drillHref}
               className="text-sm underline underline-offset-2"
             >
               Open {drillHref.replace("/admin/coord/", "")} ↗
-            </Link>
+            </LensLink>
           ) : undefined
         }
         raw={
-          <span
-            className="font-mono text-[10px] text-muted-foreground/60 break-all"
-            data-testid="coord-home.degrading.raw"
-          >
-            {degradationRawLine(d)}
-          </span>
+          // R8's raw last line — the row id, the subject's device id — is
+          // the operator's: not rendered at all while presenting (D3.3).
+          presenting ? undefined : (
+            <span
+              className="font-mono text-[10px] text-muted-foreground/60 break-all"
+              data-testid="coord-home.degrading.raw"
+            >
+              {degradationRawLine(d)}
+            </span>
+          )
         }
       />
     </RecordRow>
@@ -571,6 +724,7 @@ export function DegradingSection({
   stale?: boolean;
   generatedAt?: string | null;
 }) {
+  const { presenting } = usePresentationMode();
   const open = openDegradations(deg);
   const declared = [
     ...(deg.open ?? []).filter((r) => r.declared),
@@ -589,6 +743,10 @@ export function DegradingSection({
       data-testid="coord-home.degrading"
       data-block-state={deg.state}
     >
+      <RegionCaption
+        region="degrading"
+        reading={{ generatedAt, kept: stale }}
+      />
       <div className="flex items-baseline gap-2">
         <h2 className={HEADING}>Degrading</h2>
         <span className="text-xs text-muted-foreground tabular-nums">
@@ -615,8 +773,12 @@ export function DegradingSection({
               // R8: coord's own reason names raw source ids, so it is kept
               // for the title only, and only on the `unknown` headline, the
               // one whose reason explains the gap; the sentence is built from
-              // structure.
-              title={degradationsGapTitle(deg) ?? undefined}
+              // structure. While presenting not even the title carries it.
+              title={
+                presenting
+                  ? undefined
+                  : (degradationsGapTitle(deg) ?? undefined)
+              }
             >
               Incomplete view — {degradationsGapPhrase(deg, sources)}. The rows
               below are real; there may be others.
@@ -650,7 +812,11 @@ export function DegradingSection({
           ) : (
             <RecordList
               items={rows}
-              itemKey={(r, i) => `${r.kind}:${r.d.id}:${i}`}
+              itemKey={(r, i) =>
+                presenting
+                  ? presentedRowKey(r.kind, i)
+                  : `${r.kind}:${r.d.id}:${i}`
+              }
               renderRow={(r, ctx) => (
                 <DegradationRow
                   d={r.d}
@@ -699,7 +865,11 @@ export function DegradingSection({
             ) : (
               <RecordList
                 items={cleared}
-                itemKey={(d, i) => `cleared:${d.id}:${i}`}
+                itemKey={(d, i) =>
+                  presenting
+                    ? presentedRowKey("cleared", i)
+                    : `cleared:${d.id}:${i}`
+                }
                 renderRow={(d, ctx) => (
                   <DegradationRow
                     d={d}
@@ -737,7 +907,11 @@ export function DegradingSection({
                 <li
                   key={p.plane}
                   data-plane={p.plane}
-                  title={planeWatcherNames(p) || undefined}
+                  // Watcher names are coord's internal vocabulary: a title
+                  // for the operator only.
+                  title={
+                    presenting ? undefined : planeWatcherNames(p) || undefined
+                  }
                 >
                   {planeLabel(p.plane)}: {planeFreshnessPhrase(p)}
                 </li>
@@ -769,15 +943,79 @@ function groupSummary(g: RepoGroup, windowSecs: number | null): string {
   ].join(" · ");
 }
 
+/** The repositories a named unit may belong to, per named list (`namedUnitRepos`). */
+type UnitRepos = Readonly<
+  Record<NamedListKind, (slug: string) => readonly string[] | null>
+>;
+
+/**
+ * One named unit. Its title — or its slug when it has none — is free text
+ * attributed to every repository it may belong to (`namedUnitRepos`), so
+ * while presenting it shows only when all of them are first-party. Its link's
+ * URL carries the slug, so a unit whose title is withheld is not linked.
+ */
+function NamedUnitItem({
+  u,
+  kind,
+  list,
+  repos,
+}: {
+  u: NamedUnit;
+  kind: "no_recorded_change" | "waiting_on_condition";
+  list: NamedListKind;
+  repos: readonly string[] | null;
+}) {
+  const { presenting } = usePresentationMode();
+  const scope = usePresentationScopeState();
+  const redact = useRedactor();
+  const text = u.title ?? u.slug;
+  const descriptor = namedUnitDescriptor(u, list);
+  const linkable =
+    !presenting || redactionVerdict({ text, repo: repos }, scope).show;
+  const title = redact({ text, repo: repos, descriptor });
+  const name = (
+    <RedactedText text={text} repo={repos} descriptor={descriptor} />
+  );
+  return (
+    <li className="flex items-center gap-2 min-w-0">
+      <HomeBadge
+        kind={kind}
+        label={kind === "no_recorded_change" ? "no recorded change" : "waiting"}
+      />
+      {linkable ? (
+        <LensLink
+          href={`/admin/coord/work-units/${encodeURIComponent(u.slug)}`}
+          className="truncate underline underline-offset-2"
+          textClassName="truncate"
+          title={title}
+        >
+          {name}
+        </LensLink>
+      ) : (
+        <span className="truncate" title={title}>
+          {name}
+        </span>
+      )}
+      <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+        {namedUnitAgePhrase(u)}
+      </span>
+    </li>
+  );
+}
+
 function NamedUnits({
   title,
   list,
   kind,
+  reposOf,
 }: {
   title: string;
   list: NamedList | null;
   kind: "no_recorded_change" | "waiting_on_condition";
+  reposOf: (slug: string) => readonly string[] | null;
 }) {
+  const listKind: NamedListKind =
+    kind === "no_recorded_change" ? "stalled" : "waitingOnGate";
   if (list === null) {
     return (
       <p className="m-0 text-muted-foreground">
@@ -796,24 +1034,13 @@ function NamedUnits({
         data-testid={`coord-home.on-track.named.${kind}`}
       >
         {list.units.map((u) => (
-          <li key={u.slug} className="flex items-center gap-2 min-w-0">
-            <HomeBadge
-              kind={kind}
-              label={
-                kind === "no_recorded_change" ? "no recorded change" : "waiting"
-              }
-            />
-            <Link
-              href={`/admin/coord/work-units/${encodeURIComponent(u.slug)}`}
-              className="truncate underline underline-offset-2"
-              title={u.title ?? u.slug}
-            >
-              {u.title ?? u.slug}
-            </Link>
-            <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
-              {namedUnitAgePhrase(u)}
-            </span>
-          </li>
+          <NamedUnitItem
+            key={u.slug}
+            u={u}
+            kind={kind}
+            list={listKind}
+            repos={reposOf(u.slug)}
+          />
         ))}
       </ul>
       {list.omitted !== null && list.omitted > 0 && (
@@ -835,16 +1062,39 @@ function RepoGroupRow({
   windowSecs,
   expanded,
   onToggle,
+  unitRepos,
 }: {
   g: RepoGroup;
   windowSecs: number | null;
   expanded: boolean;
   onToggle: () => void;
+  unitRepos: UnitRepos;
 }) {
+  const { presenting } = usePresentationMode();
+  const scope = usePresentationScopeState();
   const days = stallWindowDays(windowSecs);
+  // A repository's name can be a client's (D3.3): it shows while presenting
+  // only when the scope clears it, and the sentence below says "this
+  // repository" rather than repeat a descriptor.
+  const key = g.key;
+  const keyShown =
+    key !== null &&
+    (!presenting || redactionVerdict({ text: key, repo: key }, scope).show);
   return (
     <RecordRow
-      identity={g.kind === "repo" ? (g.key ?? "repo") : "no repo named"}
+      identity={
+        g.kind !== "repo" ? (
+          "no repo named"
+        ) : key === null ? (
+          "repo"
+        ) : (
+          <RedactedText
+            text={key}
+            repo={key}
+            descriptor={REPOSITORY_DESCRIPTOR}
+          />
+        )
+      }
       label={groupSummary(g, windowSecs)}
       status={
         <HomeBadge kind="repo_group" label={`${g.rowCount ?? "–"} units`} />
@@ -859,7 +1109,7 @@ function RepoGroupRow({
           <p className="m-0">
             {g.kind === "unattributed_repo"
               ? "Work units that name no repository. They are counted here rather than dropped."
-              : `Work units that name ${g.key ?? "this repository"}. A unit naming several repositories is counted under each.`}
+              : `Work units that name ${keyShown ? key : "this repository"}. A unit naming several repositories is counted under each.`}
           </p>
         }
         problems={
@@ -868,11 +1118,13 @@ function RepoGroupRow({
               title={`No recorded change in ${days} days`}
               list={g.named.stalled}
               kind="no_recorded_change"
+              reposOf={unitRepos.stalled}
             />
             <NamedUnits
               title="Waiting on a condition"
               list={g.named.waitingOnGate}
               kind="waiting_on_condition"
+              reposOf={unitRepos.waitingOnGate}
             />
           </div>
         }
@@ -881,7 +1133,21 @@ function RepoGroupRow({
   );
 }
 
-function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
+/**
+ * The current initiative. Its document is the tenant's own writing, and
+ * coord's reasons about it are written for agents, so while presenting each
+ * in-scope item and each reason renders through `RedactedText` (no repository
+ * vouches for them: always a descriptor), and the frontmatter's status and
+ * dates show only in a shape that cannot name anyone (`homeLens.ts`).
+ */
+function InitiativeBlock({
+  onTrack,
+  generatedAt,
+}: {
+  onTrack: OnTrackView;
+  generatedAt: string | null;
+}) {
+  const { presenting } = usePresentationMode();
   const i = onTrack.initiative;
   let body: ReactNode;
   if (i === null) {
@@ -894,7 +1160,16 @@ function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
     body = (
       <p className="m-0 text-muted-foreground">
         The current initiative document could not be parsed:{" "}
-        {i.error ? withoutVerdictWords(i.error) : "no reason given"}.
+        {i.error ? (
+          <RedactedText
+            text={withoutVerdictWords(i.error)}
+            repo={null}
+            descriptor={reasonDescriptor("could not be parsed", generatedAt)}
+          />
+        ) : (
+          "no reason given"
+        )}
+        .
       </p>
     );
   } else if (i.state !== "read") {
@@ -907,15 +1182,34 @@ function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
     body = (
       <p className="m-0 text-muted-foreground">
         No live initiative
-        {i.reason ? ` — ${withoutVerdictWords(i.reason)}` : ""}.
+        {i.reason ? (
+          <>
+            {" — "}
+            <RedactedText
+              text={withoutVerdictWords(i.reason)}
+              repo={null}
+              descriptor={reasonDescriptor("no live initiative", generatedAt)}
+            />
+          </>
+        ) : (
+          ""
+        )}
+        .
       </p>
     );
   } else {
+    const status = presenting
+      ? presentedInitiativeStatus(i.status)
+      : (i.status ?? "unknown");
+    const starts = presenting ? presentedInitiativeDate(i.starts) : i.starts;
+    const ends =
+      (presenting ? presentedInitiativeDate(i.ends) : i.ends) ?? "unknown";
+    const unknownKeys = i.unknownKey?.keys.join(", ") ?? "";
     body = (
       <div className="space-y-1">
         <p className="m-0">
-          Status {i.status ?? "unknown"}
-          {i.starts ? ` · from ${i.starts}` : ""} · ends {i.ends ?? "unknown"} ·{" "}
+          Status {status}
+          {starts ? ` · from ${starts}` : ""} · ends {ends} ·{" "}
           <span data-testid="coord-home.on-track.initiative.alignment">
             {initiativeAttributionPhrase(i)}
           </span>
@@ -931,7 +1225,11 @@ function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
           >
             {i.inScope.map((item, idx) => (
               <li key={item.key ?? idx}>
-                {item.text}
+                <RedactedText
+                  text={item.text}
+                  repo={null}
+                  descriptor={INITIATIVE_ITEM_DESCRIPTOR}
+                />
                 {item.units && (
                   <span className="text-muted-foreground">
                     {" "}
@@ -959,8 +1257,16 @@ function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
               data-testid="coord-home.on-track.initiative.unknown-key"
             >
               Linked to an item this initiative does not list (
-              {i.unknownKey.keys.join(", ") || "keys not served"}):{" "}
-              {attributedText(i.unknownKey)}.
+              {unknownKeys ? (
+                <RedactedText
+                  text={unknownKeys}
+                  repo={null}
+                  descriptor={INITIATIVE_KEYS_DESCRIPTOR}
+                />
+              ) : (
+                "keys not served"
+              )}
+              ): {attributedText(i.unknownKey)}.
             </p>
           )}
       </div>
@@ -978,9 +1284,28 @@ function InitiativeBlock({ onTrack }: { onTrack: OnTrackView }) {
   );
 }
 
-export function OnTrackSection({ onTrack }: { onTrack: OnTrackView }) {
+export function OnTrackSection({
+  onTrack,
+  stale = false,
+  generatedAt = null,
+}: {
+  onTrack: OnTrackView;
+  /** The latest poll failed; this is the last good read (style guide R6). */
+  stale?: boolean;
+  generatedAt?: string | null;
+}) {
+  const { presenting } = usePresentationMode();
   const read = onTrack.state === "read";
   const stallWindow = onTrack.stallWindowSecs;
+  // Which repositories each named unit may belong to — read once from every
+  // group, since a unit is named under each of its repositories.
+  const unitRepos = useMemo<UnitRepos>(
+    () => ({
+      stalled: namedUnitRepos(onTrack.groups, "stalled"),
+      waitingOnGate: namedUnitRepos(onTrack.groups, "waitingOnGate"),
+    }),
+    [onTrack.groups]
+  );
   const stats: Stat[] = UNIT_CLASSES.map((cls) => ({
     key: cls,
     label: `${unitClassLabel(cls, stallWindow)} `,
@@ -995,6 +1320,7 @@ export function OnTrackSection({ onTrack }: { onTrack: OnTrackView }) {
       data-testid="coord-home.on-track"
       data-block-state={onTrack.state}
     >
+      <RegionCaption region="on-track" reading={{ generatedAt, kept: stale }} />
       <div className="flex items-baseline gap-2">
         <h2 className={HEADING}>On track</h2>
         <span className="text-xs text-muted-foreground tabular-nums">
@@ -1029,7 +1355,11 @@ export function OnTrackSection({ onTrack }: { onTrack: OnTrackView }) {
             items={(onTrack.groups ?? []).filter(
               (g) => !(g.kind === "unattributed_repo" && g.rowCount === 0)
             )}
-            itemKey={(g, i) => `${g.kind}:${g.key ?? "none"}:${i}`}
+            itemKey={(g, i) =>
+              presenting
+                ? presentedRowKey("group", i)
+                : `${g.kind}:${g.key ?? "none"}:${i}`
+            }
             empty={
               <p className="m-0 text-sm text-muted-foreground">
                 {onTrack.groups === null
@@ -1043,12 +1373,13 @@ export function OnTrackSection({ onTrack }: { onTrack: OnTrackView }) {
                 windowSecs={stallWindow}
                 expanded={ctx.expanded}
                 onToggle={ctx.onToggle}
+                unitRepos={unitRepos}
               />
             )}
           />
         </>
       )}
-      <InitiativeBlock onTrack={onTrack} />
+      <InitiativeBlock onTrack={onTrack} generatedAt={generatedAt} />
     </section>
   );
 }
@@ -1057,15 +1388,27 @@ export function OnTrackSection({ onTrack }: { onTrack: OnTrackView }) {
 // 5. Correct?
 // ---------------------------------------------------------------------------
 
+/**
+ * Correct? — one read-only row, present from day one so its absence is
+ * visible. It carries no write control in either mode; the row's toggle is a
+ * disclosure, and coord's reason token on its raw last line is the
+ * operator's, not rendered while presenting (D3.3).
+ */
 export function CorrectSection({
   correctness,
   expanded,
   onToggle,
+  stale = false,
+  generatedAt = null,
 }: {
   correctness: CorrectnessView;
   expanded: boolean;
   onToggle: () => void;
+  /** The latest poll failed; this is the last good read (style guide R6). */
+  stale?: boolean;
+  generatedAt?: string | null;
 }) {
+  const { presenting } = usePresentationMode();
   const measured = correctness.state === "read";
   // "No source" only when coord SAYS no source exists. Any other unread state
   // (could not read, stale, absent from the body) says nothing about a source.
@@ -1087,6 +1430,7 @@ export function CorrectSection({
       data-testid="coord-home.correct"
       data-block-state={correctness.state}
     >
+      <RegionCaption region="correct" reading={{ generatedAt, kept: stale }} />
       <h2 className={HEADING}>Correct?</h2>
       <RecordRow
         identity="verified work"
@@ -1112,7 +1456,7 @@ export function CorrectSection({
             </p>
           }
           raw={
-            correctness.reason ? (
+            correctness.reason && !presenting ? (
               <span className="font-mono text-[10px] text-muted-foreground/60 break-all">
                 {withoutVerdictWords(correctness.reason)}
               </span>
@@ -1131,11 +1475,17 @@ export function CorrectSection({
 export function DoesNotKnowSection({
   sources,
   planes = null,
+  stale = false,
+  generatedAt = null,
 }: {
   sources: SourceCoverageView[] | null;
   /** The degradations planes, which name the area a watcher row feeds. */
   planes?: PlaneView[] | null;
+  /** The latest poll failed; this is the last good read (style guide R6). */
+  stale?: boolean;
+  generatedAt?: string | null;
 }) {
+  const { presenting } = usePresentationMode();
   const count =
     sources === null
       ? "unknown"
@@ -1146,6 +1496,10 @@ export function DoesNotKnowSection({
       data-ui-bridge-id="coord-home.does-not-know"
       data-testid="coord-home.does-not-know"
     >
+      <RegionCaption
+        region="does-not-know"
+        reading={{ generatedAt, kept: stale }}
+      />
       <div className="flex items-baseline gap-2">
         <h2 className={HEADING}>What this view does not know</h2>
         <span className="text-xs text-muted-foreground tabular-nums">
@@ -1160,7 +1514,9 @@ export function DoesNotKnowSection({
       ) : (
         <RecordList
           items={sources}
-          itemKey={(s, i) => `${s.source}:${i}`}
+          itemKey={(s, i) =>
+            presenting ? presentedRowKey("source", i) : `${s.source}:${i}`
+          }
           empty={
             <p className="m-0 text-sm text-muted-foreground">
               Coord listed no sources — unknown.
@@ -1170,9 +1526,11 @@ export function DoesNotKnowSection({
             <RecordRow
               identity={s.state === "read" ? "read" : "not read"}
               // R8: words on the row; coord's raw id only in the title and
-              // the detail's last line.
+              // the detail's last line — both the operator's alone.
               label={
-                <span title={s.source}>{sourceLabel(s.source, planes)}</span>
+                <span title={presenting ? undefined : s.source}>
+                  {sourceLabel(s.source, planes)}
+                </span>
               }
               status={
                 <HomeBadge
@@ -1210,7 +1568,15 @@ export function DoesNotKnowSection({
                       {s.state === "read"
                         ? `Read ${relativeTime(s.asOf, { absent: "at an unknown time" })}.`
                         : `This source is ${BLOCK_STATE_PHRASE[s.state]}.`}
-                      {s.error ? ` ${sourceErrorSentence(s)}` : ""}
+                      {s.error
+                        ? // Coord's own error chain is quoted on the raw
+                          // line, which is not rendered while presenting.
+                          ` ${
+                            presenting && !isWatcherSource(s.source)
+                              ? `Coord reported an error. ${FAILURE_SENTENCE_WITHHELD}`
+                              : sourceErrorSentence(s)
+                          }`
+                        : ""}
                     </p>
                     <p className="m-0 text-muted-foreground">
                       Freshness bound:{" "}
@@ -1222,18 +1588,27 @@ export function DoesNotKnowSection({
                     </p>
                     {s.exclusionReason && (
                       <p className="m-0 text-muted-foreground">
-                        Why excluded: {withoutVerdictWords(s.exclusionReason)}
+                        Why excluded:{" "}
+                        <RedactedText
+                          text={withoutVerdictWords(s.exclusionReason)}
+                          repo={null}
+                          descriptor={reasonDescriptor("excluded", s.asOf)}
+                        />
                       </p>
                     )}
                   </div>
                 }
                 raw={
-                  <span
-                    className="font-mono text-[10px] text-muted-foreground/60 break-all"
-                    data-testid="coord-home.does-not-know.raw"
-                  >
-                    {sourceRawLine(s)}
-                  </span>
+                  // R8's raw last line — coord's source id and error chain —
+                  // is the operator's: not rendered while presenting.
+                  presenting ? undefined : (
+                    <span
+                      className="font-mono text-[10px] text-muted-foreground/60 break-all"
+                      data-testid="coord-home.does-not-know.raw"
+                    >
+                      {sourceRawLine(s)}
+                    </span>
+                  )
                 }
               />
             </RecordRow>

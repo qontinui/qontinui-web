@@ -1,0 +1,292 @@
+/**
+ * homeLens — the pure half of `/admin/coord/home`'s presentation lens (plan
+ * `2026-10-23-console-presentation-spaces` Phase 2). The rendered half is
+ * pinned in `../page.presentation.test.tsx`.
+ */
+
+import { describe, expect, it } from "vitest";
+import {
+  parseProjectState,
+  type DegradationView,
+  type NamedList,
+  type NeedsMeItem,
+  type RepoGroup,
+} from "@/components/admin/coord/coordHomeStatus";
+import { WITHHELD } from "@/components/presentation";
+import {
+  PROJECT_STATE_KEPT_SOURCE,
+  PROJECT_STATE_SOURCE,
+  degradationDescriptor,
+  degradationRepo,
+  isMachineSubject,
+  namedUnitDescriptor,
+  namedUnitRepos,
+  needsDescriptor,
+  needsStatusWord,
+  presentedInitiativeDate,
+  presentedInitiativeStatus,
+  presentedPlanPhase,
+  presentedRowKey,
+  reasonDescriptor,
+  regionSources,
+  subjectDescriptor,
+} from "./homeLens";
+
+const AT = "2026-10-20T08:00:00Z";
+
+function item(over: Partial<NeedsMeItem> = {}): NeedsMeItem {
+  return {
+    source: "agent_question",
+    id: "q-1",
+    askedAt: AT,
+    ageSecs: 60,
+    fork: "Ship it?",
+    options: [],
+    recommendation: null,
+    ifOverturned: null,
+    shape: null,
+    answerAt: null,
+    blocking: null,
+    ...over,
+  };
+}
+
+/** One degradation row, as the page parses coord's body. */
+function degradation(raw: Record<string, unknown>): DegradationView {
+  const view = parseProjectState({
+    degradations: { state: "read", open: [raw] },
+  });
+  const row = view?.degradations.open?.[0];
+  if (!row) throw new Error("fixture row did not parse");
+  return row;
+}
+
+function list(slugs: string[], omitted: number | null = 0): NamedList {
+  return {
+    units: slugs.map((slug) => ({
+      slug,
+      title: null,
+      firstInProgressAt: null,
+      lastRecordedChangeAt: null,
+      ageSecs: null,
+      ageBasis: null,
+    })),
+    omitted,
+  };
+}
+
+function group(
+  key: string | null,
+  stalled: NamedList | null,
+  waitingOnGate: NamedList | null = list([]),
+  kind: RepoGroup["kind"] = key === null ? "unattributed_repo" : "repo"
+): RepoGroup {
+  const classes = {} as RepoGroup["classes"];
+  return {
+    key,
+    kind,
+    rowCount: null,
+    classes,
+    named: { stalled, waitingOnGate },
+  };
+}
+
+describe("regionSources — one read, dated by coord's answer", () => {
+  it("names coord's project state and dates it by generated_at", () => {
+    expect(regionSources({ generatedAt: AT, kept: false })).toEqual([
+      { source: PROJECT_STATE_SOURCE, asOf: AT },
+    ]);
+  });
+
+  it("names a kept reading as the last read, still dated by its own answer", () => {
+    expect(regionSources({ generatedAt: AT, kept: true })).toEqual([
+      { source: PROJECT_STATE_KEPT_SOURCE, asOf: AT },
+    ]);
+    expect(PROJECT_STATE_KEPT_SOURCE).toMatch(/last read/);
+  });
+
+  it("leaves the time unknown when nothing was read — never now", () => {
+    expect(regionSources({ generatedAt: null, kept: false })[0]!.asOf).toBe(
+      null
+    );
+  });
+});
+
+describe("descriptors — built from fixed fields, never from the text", () => {
+  it("words a needs-you item by its own badge, and its parts by what they are", () => {
+    const question = item({ recommendation: "Hold" });
+    expect(needsStatusWord(question)).toBe("decide");
+    expect(needsStatusWord(item())).toBe("open question");
+    const gate = item({ source: "operator_gate", recommendation: "x" });
+    expect(needsStatusWord(gate)).toBe("approval");
+    expect(needsDescriptor(question)).toEqual({
+      kind: "Question",
+      area: null,
+      status: "decide",
+      at: AT,
+    });
+    expect(needsDescriptor(gate).kind).toBe("Approval");
+    expect(needsDescriptor(question, "Recommendation").kind).toBe(
+      "Recommendation"
+    );
+    for (const d of [needsDescriptor(question), needsDescriptor(gate)]) {
+      expect(JSON.stringify(d)).not.toMatch(/Ship it|Hold/);
+    }
+  });
+
+  it("dates an open degradation by its observed onset and a cleared one by when it cleared", () => {
+    const d = degradation({
+      id: "alert:1",
+      plane: "merge_train",
+      subject: { kind: "repo", name: "acme/secret", id: "acme/secret" },
+      headline: "A repo's merge train is wedged",
+      onset_observed_at: AT,
+      resolved_at: "2026-10-20T09:00:00Z",
+    });
+    expect(degradationDescriptor(d, "degrading")).toEqual({
+      kind: "Degradation",
+      area: "merge train",
+      status: "degrading",
+      at: AT,
+    });
+    expect(degradationDescriptor(d, "cleared").at).toBe("2026-10-20T09:00:00Z");
+    expect(subjectDescriptor(d, "degrading").kind).toBe("Repository");
+  });
+
+  it("attributes a headline only to a repository coord names as the subject", () => {
+    const repo = degradation({
+      subject: { kind: "repo", name: "qontinui/web", id: "qontinui/web" },
+    });
+    const device = degradation({
+      subject: { kind: "device", name: "box-1", id: "dev-1" },
+    });
+    const service = degradation({
+      subject: { kind: "service", name: "rds:db", id: "rds:db" },
+    });
+    expect(degradationRepo(repo)).toBe("qontinui/web");
+    expect(degradationRepo(device)).toBeNull();
+    expect(degradationRepo(service)).toBeNull();
+    expect(isMachineSubject(device)).toBe(true);
+    expect(isMachineSubject(repo)).toBe(false);
+    expect(subjectDescriptor(service, "degrading").kind).toBe("Service");
+    expect(
+      subjectDescriptor(degradation({ subject: { name: "x" } }), "cleared").kind
+    ).toBe("Subject");
+  });
+
+  it("words a named unit by its list, and a reason by its status", () => {
+    const u = list(["s"]).units[0]!;
+    expect(namedUnitDescriptor(u, "stalled").status).toBe("no recorded change");
+    expect(namedUnitDescriptor(u, "waitingOnGate").status).toBe("waiting");
+    expect(reasonDescriptor("excluded", AT)).toEqual({
+      kind: "Reason",
+      area: null,
+      status: "excluded",
+      at: AT,
+    });
+  });
+});
+
+describe("namedUnitRepos — a unit's repositories are bounded, or withheld", () => {
+  it("is the groups that name the unit when every list is complete", () => {
+    const reposOf = namedUnitRepos(
+      [
+        group("qontinui/web", list(["only-web", "both"])),
+        group("acme/secret", list(["both"])),
+      ],
+      "stalled"
+    );
+    expect(reposOf("only-web")).toEqual(["qontinui/web"]);
+    expect(reposOf("both")).toEqual(["qontinui/web", "acme/secret"]);
+  });
+
+  it("adds every repository whose list of the SAME kind may hide the unit", () => {
+    const groups = [
+      group("qontinui/web", list(["u"]), list(["w"])),
+      // Cut short: its stalled list could hold `u` too.
+      group("acme/secret", list([], 3), list([])),
+    ];
+    expect(namedUnitRepos(groups, "stalled")("u")).toEqual([
+      "qontinui/web",
+      "acme/secret",
+    ]);
+    // A truncated list of the OTHER kind hides nothing of this one.
+    expect(namedUnitRepos(groups, "waitingOnGate")("w")).toEqual([
+      "qontinui/web",
+    ]);
+  });
+
+  it("treats an unknown omitted count, or a list not served, as one that may hide", () => {
+    for (const hiding of [list([], null), null]) {
+      const reposOf = namedUnitRepos(
+        [group("qontinui/web", list(["u"])), group("acme/secret", hiding)],
+        "stalled"
+      );
+      expect(reposOf("u")).toEqual(["qontinui/web", "acme/secret"]);
+    }
+  });
+
+  it("withholds a unit that names no repository, and lets that group's truncation hide nothing", () => {
+    const reposOf = namedUnitRepos(
+      [group("qontinui/web", list(["u"])), group(null, list(["orphan"], 9))],
+      "stalled"
+    );
+    expect(reposOf("orphan")).toBeNull();
+    expect(reposOf("u")).toEqual(["qontinui/web"]);
+  });
+
+  it("cannot bound a group whose repository is unknown", () => {
+    const named = namedUnitRepos(
+      [
+        group("qontinui/web", list(["u"])),
+        group("x", list(["v"]), list([]), "unknown"),
+      ],
+      "stalled"
+    );
+    expect(named("v")).toBeNull();
+    expect(named("u")).toEqual(["qontinui/web"]);
+    // ...and when such a group's list may hide units, no unit is bounded.
+    const hidden = namedUnitRepos(
+      [
+        group("qontinui/web", list(["u"])),
+        group("x", list([], 1), list([]), "unknown"),
+      ],
+      "stalled"
+    );
+    expect(hidden("u")).toBeNull();
+  });
+
+  it("withholds everything when coord served no groups, and a slug no group names", () => {
+    expect(namedUnitRepos(null, "stalled")("u")).toBeNull();
+    expect(
+      namedUnitRepos([group("qontinui/web", list(["u"]))], "stalled")("z")
+    ).toBeNull();
+  });
+});
+
+describe("values shown verbatim only in a shape that names no one", () => {
+  it("keeps a phase number and withholds any other phase text", () => {
+    expect(presentedPlanPhase("3")).toBe("3");
+    expect(presentedPlanPhase(" 12b ")).toBe("12b");
+    expect(presentedPlanPhase("the Acme phase")).toBe(WITHHELD);
+  });
+
+  it("says live or not live, never the frontmatter's own word", () => {
+    expect(presentedInitiativeStatus("live")).toBe("live");
+    expect(presentedInitiativeStatus("draft for Acme")).toBe("not live");
+    expect(presentedInitiativeStatus(null)).toBe("unknown");
+  });
+
+  it("shows an ISO date and withholds any other date text", () => {
+    expect(presentedInitiativeDate("2026-10-31")).toBe("2026-10-31");
+    expect(presentedInitiativeDate("2026-10-31T09:00:00Z")).toBe(
+      "2026-10-31T09:00:00Z"
+    );
+    expect(presentedInitiativeDate("when Acme signs")).toBe(WITHHELD);
+    expect(presentedInitiativeDate(null)).toBeNull();
+  });
+
+  it("keys a presented row by its list and position only", () => {
+    expect(presentedRowKey("needs", 2)).toBe("needs:2");
+  });
+});
