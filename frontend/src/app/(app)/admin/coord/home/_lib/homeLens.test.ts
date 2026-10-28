@@ -27,6 +27,7 @@ import {
   REPOSITORY_DESCRIPTOR,
   RowKeyAliases,
   TENANT_DESCRIPTOR,
+  UNLABELLED_SOURCE,
   UNNAMED_DECISION_KIND,
   UNNAMED_DECISION_KINDS,
   degradationDescriptor,
@@ -42,6 +43,7 @@ import {
   presentedInitiativeDate,
   presentedInitiativeStatus,
   presentedPlanPhase,
+  presentedSourceLabel,
   reasonDescriptor,
   regionSources,
   subjectDescriptor,
@@ -343,6 +345,38 @@ describe("presentedDecisionDomains — the table's words, or fixed words", () =>
 
   it("is empty for no kinds", () => {
     expect(presentedDecisionDomains({})).toEqual([]);
+  });
+});
+
+describe("presentedSourceLabel — the table's words, or fixed words", () => {
+  it("labels a source the table knows, and a watcher by the area it feeds", () => {
+    expect(presentedSourceLabel("work_units", null)).toBe("Work units");
+    const planes = parseProjectState({
+      degradations: {
+        state: "read",
+        planes: {
+          runner: { fresh: false, watchers: [{ name: "w1", state: "stale" }] },
+        },
+      },
+    })!.degradations.planes;
+    expect(presentedSourceLabel("watcher:w1", planes)).toBe(
+      "Watcher feeding runner"
+    );
+  });
+
+  it("words any other source in fixed words, never as coord's identifier", () => {
+    for (const source of [
+      "coord.alerts visibility (operator-plane kinds this caller can be served)",
+      "fleet_health resource headroom (live machines)",
+      "acme_partner_feed",
+      // Keys Object.prototype carries are not the table's.
+      "constructor",
+      "toString",
+    ]) {
+      expect(presentedSourceLabel(source, null), source).toBe(
+        UNLABELLED_SOURCE
+      );
+    }
   });
 });
 

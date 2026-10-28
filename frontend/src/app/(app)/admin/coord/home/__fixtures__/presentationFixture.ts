@@ -14,7 +14,9 @@
  * alert key, a drained machine); watcher names; coord's
  * reasons and error chains; repository names; unit titles and slugs; the
  * initiative's items, keys, status, dates and reasons; and a failed read's
- * own text. Every such identifier carries a client name (`Acme`, `Globex` —
+ * own text, and `does_not_know` sources the page's table does not label (whose
+ * operator label is coord's identifier). Every such identifier carries a
+ * client name (`Acme`, `Globex` —
  * both confidential terms in {@link SCOPE}), is a UUID, or is listed in
  * {@link MUST_NOT_APPEAR} by itself.
  *
@@ -92,6 +94,12 @@ export const ROUTE_UNAVAILABLE_BODY =
 export const PROXY_TIMEOUT_REFUSAL_BODY =
   '{"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"},"timestamp":1793118476.83,"path":"https://api.globex.internal/api/v1/operations/project-state"}';
 
+/** `does_not_know` sources the page's table does not label (coord's successor). */
+export const UNLABELLED_ALERTS_SOURCE =
+  "coord.alerts visibility (operator-plane kinds this caller can be served)";
+export const UNLABELLED_HEADROOM_SOURCE =
+  "fleet_health resource headroom (live machines)";
+
 /** The redaction scope: our owner is first-party; two clients are confidential. */
 export const SCOPE: PresentationScopeState = {
   status: "ready",
@@ -136,6 +144,10 @@ export const MUST_NOT_APPEAR: readonly string[] = [
   "quarterly board pack",
   // A service named like a first-party repository: still not a repository.
   FIRST_PARTY_SHAPED_SERVICE,
+  // Sources the page's table does not label: coord's identifiers, humanised
+  // for the operator, never shown while presenting.
+  "coord.alerts",
+  "resource headroom",
   // Coord's own tokens: row ids, source ids, reason and response tokens.
   "alert:",
   "train_health",
@@ -539,6 +551,27 @@ export function fullBody(overrides: Record<string, unknown> = {}) {
         source: "verification_metrics",
         state: "not_implemented",
         exclusion_reason: "the door is not built for globex yet",
+      },
+      // Two sources coord's successor serves that the page's table does not
+      // label (qontinui-coord project_state.rs ALERT_VISIBILITY_SOURCE and
+      // HEADROOM_SOURCE): for the operator they read as coord's identifiers;
+      // presenting, in fixed words. Their reasons name a kind and a machine.
+      {
+        source: UNLABELLED_ALERTS_SOURCE,
+        state: "read",
+        as_of: ago(2),
+        rows_considered: 9,
+        rows_excluded: 1,
+        exclusion_reason:
+          "an operator-plane kind is served only when its rows can reach this caller; hidden: globex_vault_expiry (repo)",
+      },
+      {
+        source: UNLABELLED_HEADROOM_SOURCE,
+        state: "read",
+        as_of: ago(2),
+        rows_considered: 3,
+        rows_excluded: 1,
+        exclusion_reason: `a live machine with no resource sample inside the lookback is not measured; not measured: ${HOST_DRAINED}`,
       },
     ],
     ...overrides,

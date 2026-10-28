@@ -84,6 +84,7 @@ import {
   SHARED_UNIT_TITLE,
   TENANT_ID,
   TENANT_NAME,
+  UNLABELLED_ALERTS_SOURCE,
   firstDecisionAnsweredBody,
   fullBody,
   noLiveInitiativeBody,
@@ -94,6 +95,7 @@ import {
   COORD_TIMEOUT_TEXT,
   PROJECT_STATE_KEPT_SOURCE,
   PROJECT_STATE_SOURCE,
+  UNLABELLED_SOURCE,
 } from "./_lib/homeLens";
 import {
   NOT_A_PROJECT_STATE_TEXT,
@@ -269,7 +271,7 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
     );
     expect(screen.getAllByTestId("coord-home.on-track.group")).toHaveLength(4);
     expect(screen.getAllByTestId("coord-home.does-not-know.row")).toHaveLength(
-      4
+      6
     );
     expect(
       document.querySelectorAll('[data-redacted="true"]').length
@@ -716,6 +718,10 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
       );
     }
     expect(region).toHaveTextContent("Watcher feeding runner");
+    // A source the page's table does not label reads in fixed words, not as
+    // coord's identifier; its row, state and figures are kept.
+    expect(within(region).getAllByText(UNLABELLED_SOURCE)).toHaveLength(2);
+    expect(region.textContent).not.toMatch(/coord\.alerts|resource headroom/i);
     const detail = expandRow(region, "Work units");
     expect(detail).toHaveTextContent(
       /Why excluded: Reason · excluded · /
@@ -1056,6 +1062,17 @@ describe("/admin/coord/home for the operator — the console is unchanged", () =
     ).toHaveTextContent(
       "Status live · from 2026-10-01 · ends when Acme Corp signs"
     );
+    // A source the page's table does not label reads as coord's identifier
+    // for the operator, exactly as #1999 renders it.
+    expect(screen.getByTestId("coord-home.does-not-know")).toHaveTextContent(
+      "Coord.alerts visibility (operator-plane kinds this caller can be served)"
+    );
+    expect(
+      screen.getByTestId("coord-home.does-not-know").textContent
+    ).not.toContain(UNLABELLED_SOURCE);
+    expect(
+      document.querySelector(`[title="${UNLABELLED_ALERTS_SOURCE}"]`)
+    ).not.toBeNull();
     // The operator's row keys are the page's own.
     expect(
       document.querySelector(`[data-row-key*="${QUESTION_ID}"]`)

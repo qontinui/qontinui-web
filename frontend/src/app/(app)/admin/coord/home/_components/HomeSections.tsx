@@ -70,6 +70,7 @@ import {
   presentedInitiativeDate,
   presentedInitiativeStatus,
   presentedPlanPhase,
+  presentedSourceLabel,
   reasonDescriptor,
   type DegradationRowKind,
   type NamedListKind,
@@ -1550,7 +1551,11 @@ export function DoesNotKnowSection({
               // the detail's last line — both the operator's alone.
               label={
                 <span title={presenting ? undefined : s.source}>
-                  {sourceLabel(s.source, planes)}
+                  {presenting
+                    ? // A source the table does not label would read as
+                      // coord's identifier: fixed words while presenting.
+                      presentedSourceLabel(s.source, planes)
+                    : sourceLabel(s.source, planes)}
                 </span>
               }
               status={

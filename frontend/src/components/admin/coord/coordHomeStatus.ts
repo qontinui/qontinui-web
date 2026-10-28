@@ -1208,6 +1208,16 @@ export function isWatcherSource(source: string): boolean {
   return source.startsWith(WATCHER_SOURCE_PREFIX);
 }
 
+/**
+ * Whether the page's table labels `source` — its own key, never one inherited
+ * from `Object.prototype`. A source it does not label reads as coord's own
+ * identifier, {@link humanised}; the presentation lens words such a row in
+ * fixed words instead (`_lib/homeLens.ts` `presentedSourceLabel`).
+ */
+export function isLabelledSource(source: string): boolean {
+  return Object.prototype.hasOwnProperty.call(SOURCE_LABEL, source);
+}
+
 /** Underscores spaced and the first letter capitalised. */
 function humanised(text: string): string {
   const spaced = text.replace(/_/g, " ");
