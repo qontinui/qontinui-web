@@ -600,13 +600,14 @@ export const GROUPS: NavGroup[] = [
         // guards no data, and the page guards its reads itself. Its runner
         // reads go over the relay, which serves only a runner the viewer owns
         // (it refuses any other device). Its web app registry read, `GET
-        // /api/v1/fleet/apps`, is the one to watch: `list_apps`
-        // (`fleet_targets.py`) answers any signed-in user with every row of
-        // `project.apps`, which is not partitioned by project. Until that
-        // read is scoped to the acting organisation, the page makes it only
-        // for staff (`is_superuser`, the gate Test Targets — the route's
-        // other reader — has here) and never while presenting; every other
-        // viewer sees that half as a labelled UNKNOWN
+        // /api/v1/fleet/apps`, is not partitioned by project: `list_apps`
+        // (`fleet_targets.py`) answers an active platform admin with every
+        // row of `project.apps` and refuses anyone else 403
+        // (`require_admin`). So the page makes that read only for staff
+        // (`is_superuser`, the population the route admits, and the gate
+        // Test Targets — the route's other reader — has here) and never
+        // while presenting; every other viewer's half is a labelled UNKNOWN
+        // that says why it was not read, instead of showing a refusal
         // (`useUiBridgeDashboard.ts` `webRegistryAccessOf`).
         href: "/admin/coord/ui-bridge",
         label: "UI Bridge",

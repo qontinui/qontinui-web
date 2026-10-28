@@ -25,18 +25,20 @@
  * **Neither registry is kept per project, so neither is read while
  * presenting** (plan `2026-10-23-console-presentation-spaces` D3.4: a lens page
  * fetches only the acting organisation's data). The web's `list_apps` returns
- * every row of `project.apps` to any signed-in user, and the runner's own
- * `GET /apps` lists every row of its database's apps table (qontinui-runner
- * `spec_api/apps.rs` `handle_list_apps`), which on a runner bound to the
- * shared database is that same table. Each half is then a {@link RegistryRead}
- * of `not-read`, and the panel renders its reason as a labelled UNKNOWN.
+ * every row of `project.apps` to an active platform admin (anyone else gets a
+ * 403), and the runner's own `GET /apps` lists every row of its database's
+ * apps table (qontinui-runner `spec_api/apps.rs` `handle_list_apps`), which
+ * on a runner bound to the shared database is that same table. Each half is
+ * then a {@link RegistryRead} of `not-read`, and the panel renders its reason
+ * as a labelled UNKNOWN.
  *
  * **Nor is the web registry read for anyone but staff**, in operator mode
  * either. The menu is not what stands between a viewer and that read: any
- * signed-in member can open the page's URL, and the route answers any of them
- * with every row. So until `list_apps` is scoped to the acting organisation
- * the page makes the read only for staff (`is_superuser`), and every other
- * viewer reads that half as `not-read` with {@link WEB_REGISTRY_STAFF_ONLY}.
+ * signed-in member can open the page's URL, and `list_apps` refuses every one
+ * of them who is not an active platform admin (403, `require_admin`). So the
+ * page makes the read only for staff (`is_superuser`), and every other viewer
+ * reads that half as `not-read` with {@link WEB_REGISTRY_STAFF_ONLY}: the
+ * panel says why, where the read would only have been refused.
  * The page still asks for the runner's own list in operator mode, whoever is
  * viewing: the relay reaches only a runner the viewer owns, so that list is
  * what the viewer's own runner can already read.
@@ -65,9 +67,10 @@ export const WEB_REGISTRY_NOT_IN_LENS =
 
 /**
  * Why the page does not read the web registry for a viewer who is not staff,
- * in operator mode: the route answers any signed-in user with every row, so
- * the page makes the read only for staff until it is scoped to the acting
- * organisation.
+ * in operator mode. The route refuses anyone but an active platform admin
+ * (403): the registry is not kept per project, so it can list other projects'
+ * applications. The page makes the read only for staff and says this to
+ * everyone else, in place of the refusal.
  */
 export const WEB_REGISTRY_STAFF_ONLY =
   "The web app registry is read only for staff: it is not kept per project, so it can list other projects' applications.";

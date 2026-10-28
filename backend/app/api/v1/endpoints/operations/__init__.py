@@ -20,7 +20,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, NoReturn
+from typing import Annotated, Any, Literal, NoReturn
 from urllib.parse import quote
 from uuid import UUID
 
@@ -858,10 +858,38 @@ async def _caller_owns_runner_host(
     return any((r.hostname or "").lower() == host for r in runners)
 
 
+#: A runner task-run id, as the two per-runner proxies below take it.
+#:
+#: The id is spliced into the path those proxies GET from the runner
+#: (``/task-runs/{id}/output``), and httpx resolves ``.`` and ``..`` segments
+#: and honours a ``?`` or ``#`` it finds in that path. A free string therefore
+#: let the caller choose ANY runner GET: ``../../apps#`` sent ``GET /apps`` (the
+#: app registry, every build and start command included) to whatever address
+#: the unauthenticated beacon registry holds for a host the caller owns a
+#: device on. The runner mints its ids as UUIDs or as ``-``-joined composites
+#: of words, UUIDs, timestamps, numbers and workflow ids, and it gives every
+#: saved workflow a UUID (``trigger-<workflow>-<ms>-<u8>``,
+#: ``<id>-replay-<uuid>``), so letters, digits, ``-`` and ``_`` are the
+#: characters a minted id carries. Anything else is a 422 naming this rule,
+#: before the runner is contacted. The length bound is a bound, not a format.
+#: The longest bases the runner mints are 67 characters
+#: (``trigger-<uuid>-<ms>-<u8>`` and ``unified-workflow-<uuid>-<ms>``), and a
+#: replay appends ``-replay-<uuid>`` (44 more), so a replay of a replay of one
+#: is 155 characters. Four levels (243) fit; five (287) do not.
+_TaskRunIdQuery = Annotated[
+    str,
+    Query(
+        max_length=256,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="A runner task-run id: letters, digits, '-' and '_' only.",
+    ),
+]
+
+
 @router.get("/fleet/runners/{runner_id}/output")
 async def get_runner_task_output(
     runner_id: str,
-    task_run_id: str = Query(...),
+    task_run_id: _TaskRunIdQuery,
     tail_chars: int = Query(default=5000),
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
@@ -888,7 +916,7 @@ async def get_runner_task_output(
 @router.get("/fleet/runners/{runner_id}/workflow-state")
 async def get_runner_workflow_state(
     runner_id: str,
-    task_run_id: str = Query(...),
+    task_run_id: _TaskRunIdQuery,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict:

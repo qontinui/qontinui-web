@@ -9,7 +9,10 @@
  * two disclosures deep inside the pipeline page). It ties together the three
  * P5 surfaces:
  *  - App config editor: update_strategy (pull_only | pull_build) + build/start
- *    commands (PATCH /api/v1/fleet/apps/{app_id}).
+ *    commands (PATCH /api/v1/fleet/apps/{app_id}). The registry read and this
+ *    write are for platform admins only; anyone else is refused, and the
+ *    panel shows `AppConfigAdminOnly` in place of the registry — no app card,
+ *    so no edit control, and never an empty list or a generic error.
  *  - Per-device/per-app freshness badges (fresh | building | failed | unknown),
  *    joined server-side from project.app_deploy_state.
  *  - Designate-test-host + auto_fresh toggle (PUT/DELETE
@@ -25,7 +28,12 @@ import { Rocket, Server, Trash2, Save, RefreshCw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { designationErrorText } from "./fleetTestTargets";
+import {
+  designationErrorText,
+  isAppConfigAdminRefusal,
+} from "./fleetTestTargets";
+import { AppConfigAdminOnly } from "./AppConfigAdminOnly";
+import { APP_CONFIG_ADMIN_ONLY } from "@/lib/api/fleet";
 import { CollapsiblePanel } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -177,7 +185,15 @@ function AppCard({
       toast.success(`Saved config for ${app.display_name}`);
       onChanged();
     } catch (e) {
-      toast.error(`Save failed: ${errMsg(e)}`);
+      if (isAppConfigAdminRefusal(e)) {
+        // The viewer is no longer a platform admin (the card was rendered from
+        // an earlier read). Say so, and re-read: the refused read replaces the
+        // registry with the labelled state, which takes this editor away.
+        toast.error(`Save failed: ${APP_CONFIG_ADMIN_ONLY}`);
+        onChanged();
+      } else {
+        toast.error(`Save failed: ${errMsg(e)}`);
+      }
     } finally {
       setSaving(false);
     }
@@ -443,6 +459,11 @@ export function FleetTestTargetsPanel() {
   const [devices, setDevices] = useState<DeviceWire[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // A batch has been read whole at least once, so `apps` is an answer — an
+  // empty one included — rather than the initial `[]`.
+  const [loaded, setLoaded] = useState(false);
+  // The registry read was REFUSED: the viewer is not a platform admin.
+  const [adminOnly, setAdminOnly] = useState(false);
 
   // Single-flight (plan
   // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
@@ -450,27 +471,55 @@ export function FleetTestTargetsPanel() {
   // reads coord (`coord_device.list_devices_for_user`), so only it drops
   // `httpClient`'s retries; `/fleet/apps` and `/fleet/test-targets` are
   // web-local reads and keep the default.
+  //
+  // `allSettled`, not `all`: the registry's platform-admin refusal must be
+  // read from the registry's OWN outcome. With `all`, whichever read failed
+  // first would decide what the panel says, so a slow 403 behind a fast
+  // `/devices` failure would render a generic error to a viewer who is simply
+  // not a platform admin.
   const poll = useCallback(async (isCurrent: () => boolean) => {
-    try {
-      const [appList, targetList, deviceList] = await Promise.all([
-        httpClient.get<AppConfig[]>(`${API}/fleet/apps`),
-        httpClient.get<TestTargetRow[]>(`${API}/fleet/test-targets`),
-        httpClient.get<DeviceWire[]>(
-          `${API}/devices`,
-          COORD_DASHBOARD_POLL_OPTIONS
-        ),
-      ]);
-      if (!isCurrent()) return;
-      setApps(appList);
-      setTargets(targetList);
-      setDevices(deviceList);
+    const [appRead, targetRead, deviceRead] = await Promise.allSettled([
+      httpClient.get<AppConfig[]>(`${API}/fleet/apps`),
+      httpClient.get<TestTargetRow[]>(`${API}/fleet/test-targets`),
+      httpClient.get<DeviceWire[]>(
+        `${API}/devices`,
+        COORD_DASHBOARD_POLL_OPTIONS
+      ),
+    ]);
+    if (!isCurrent()) return;
+    setLoading(false);
+    if (
+      appRead.status === "rejected" &&
+      isAppConfigAdminRefusal(appRead.reason)
+    ) {
+      // An answer, not a failure: nothing else on this panel is shown to a
+      // viewer who may not see the registry, and nothing an earlier read left
+      // (before a role change) stays on screen. That includes `loaded`: the
+      // emptied `apps` is not a registry anyone read, so a later failed read
+      // must not render it as "No registered apps" or count it as 0.
+      setAdminOnly(true);
+      setApps([]);
+      setLoaded(false);
       setError(null);
-    } catch (e) {
-      if (!isCurrent()) return;
-      setError(errMsg(e));
-    } finally {
-      if (isCurrent()) setLoading(false);
+      return;
     }
+    setAdminOnly(false);
+    if (
+      appRead.status === "fulfilled" &&
+      targetRead.status === "fulfilled" &&
+      deviceRead.status === "fulfilled"
+    ) {
+      setApps(appRead.value);
+      setTargets(targetRead.value);
+      setDevices(deviceRead.value);
+      setLoaded(true);
+      setError(null);
+      return;
+    }
+    const failed = [appRead, targetRead, deviceRead].find(
+      (read): read is PromiseRejectedResult => read.status === "rejected"
+    );
+    setError(errMsg(failed?.reason));
   }, []);
 
   const { refresh: fetchData } = useSingleFlightPoll(poll, POLL_INTERVAL_MS);
@@ -486,8 +535,14 @@ export function FleetTestTargetsPanel() {
       title="Fresh test hosts"
       contentClassName="space-y-3"
       summary={
-        <Badge variant="outline" className="ml-2">
-          {apps.length}
+        // R6: a count nobody read — refused, failed, or not yet back — is a
+        // dash, never `0`.
+        <Badge
+          variant="outline"
+          className="ml-2"
+          data-testid="fleet-test-targets-count"
+        >
+          {loaded && !adminOnly ? apps.length : "–"}
         </Badge>
       }
       headerActions={
@@ -506,9 +561,13 @@ export function FleetTestTargetsPanel() {
           Failed to load fleet targets: {error}
         </p>
       )}
-      {loading && apps.length === 0 ? (
+      {adminOnly ? (
+        <AppConfigAdminOnly />
+      ) : loading && apps.length === 0 ? (
         <Skeleton className="h-24 w-full" />
-      ) : apps.length === 0 ? (
+      ) : !loaded ? null : apps.length === 0 ? (
+        // Only a registry that was READ may say it is empty; a failed first
+        // read has only the error line above.
         <p className="text-sm text-muted-foreground italic">
           No registered apps. Register an app on a runner to configure
           fleet-fresh routing.
