@@ -18,6 +18,7 @@ import { RefreshButton } from "@/components/console";
 import {
   Provenance,
   SectionCaption,
+  lensLinkTarget,
   useMachineAliaser,
   usePresentationMode,
   useRedactor,
@@ -151,6 +152,25 @@ export function HomeRefreshButton({
       title="Re-read coord's project state now instead of waiting for the next minute"
       data-testid={HOME_REFRESH_ID}
     />
+  );
+}
+
+/**
+ * Whether a link to `href` opens anything in this mode — `LensLink`'s own
+ * decision (`lensLinkTarget`, with "no lens above" read as operator mode, as
+ * `LensLink` reads it): always for the operator; while presenting, only when
+ * its page can be presented. Where it cannot, `LensLink` renders plain text,
+ * and "Open pipeline ↗" or "open Questions" in plain text is a dead end in
+ * front of an evaluator (`audience_profile/external-evaluator`: "no dead
+ * ends"), so the page leaves the action out instead. It comes back by itself
+ * the day its page is registered presentation-ready.
+ */
+export function useLinkOpens(): (href: string) => boolean {
+  const { presenting, source } = usePresentationMode();
+  return useCallback(
+    (href: string) =>
+      lensLinkTarget(href, presenting && source !== "absent") !== null,
+    [presenting, source]
   );
 }
 

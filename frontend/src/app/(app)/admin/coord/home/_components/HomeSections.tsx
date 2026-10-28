@@ -80,6 +80,7 @@ import {
 import {
   HomeRefreshButton,
   RegionCaption,
+  useLinkOpens,
   useRowKey,
   useSubjectText,
 } from "./HomeLens";
@@ -487,6 +488,7 @@ export function NeedsYouSection({
 }) {
   const { presenting } = usePresentationMode();
   const rowKey = useRowKey();
+  const opens = useLinkOpens();
   const read = needs.state === "read";
   const served = needs.items?.length ?? 0;
   // One displayable count, shared with the strip: never "1 shown of 0".
@@ -566,11 +568,20 @@ export function NeedsYouSection({
             className="m-0 text-sm text-muted-foreground"
             data-testid="coord-home.needs-you.unserved"
           >
-            {unservedDecisionsSentence(count)}; open{" "}
-            <LensLink href="/admin/coord/questions" className="underline">
-              Questions
-            </LensLink>
-            .
+            {unservedDecisionsSentence(count)}
+            {opens("/admin/coord/questions") ? (
+              <>
+                ; open{" "}
+                <LensLink href="/admin/coord/questions" className="underline">
+                  Questions
+                </LensLink>
+                .
+              </>
+            ) : (
+              // While presenting, an instruction to open a page the
+              // presentation cannot show is a dead end: the sentence ends.
+              "."
+            )}
           </p>
         ) : (
           <RecordList
@@ -628,7 +639,12 @@ function DegradationRow({
   const { presenting } = usePresentationMode();
   const redact = useRedactor();
   const subjectText = useSubjectText();
+  const opens = useLinkOpens();
+  // Evidence one click down — and only where the click opens something:
+  // while presenting, a drill to a page the presentation cannot show would
+  // be link-shaped text that opens nothing, so it is left out.
   const drillHref = internalHref(d.drill);
+  const drill = drillHref !== null && opens(drillHref) ? drillHref : null;
   const label =
     kind === "cleared"
       ? "cleared"
@@ -690,14 +706,13 @@ function DegradationRow({
           </div>
         }
         actions={
-          drillHref ? (
-            // Evidence one click down: while presenting it carries the
-            // presentation, or is plain text where its page cannot be shown.
+          drill ? (
+            // While presenting it carries the presentation (`LensLink`).
             <LensLink
-              href={drillHref}
+              href={drill}
               className="text-sm underline underline-offset-2"
             >
-              Open {drillHref.replace("/admin/coord/", "")} ↗
+              Open {drill.replace("/admin/coord/", "")} ↗
             </LensLink>
           ) : undefined
         }

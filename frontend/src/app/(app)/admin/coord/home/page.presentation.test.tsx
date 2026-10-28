@@ -67,6 +67,7 @@ import {
   FIRST_PARTY_HEADLINE,
   FIRST_PARTY_REPO,
   FIRST_PARTY_SHAPED_SERVICE,
+  FOREIGN_REPO,
   FIRST_PARTY_UNIT_TITLE,
   GATE_ID,
   HIDDEN_UNIT_TITLE,
@@ -339,11 +340,16 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
     expect(leakedIdentifiers()).toEqual([]);
   });
 
-  it("when coord counted decisions but served none: the way to them is text, not a link out of the lens", async () => {
+  it("when coord counted decisions but served none: it says so, with no instruction to open a page it cannot show", async () => {
     const view = await renderPresenting(unservedDecisionsBody());
     const unserved = screen.getByTestId("coord-home.needs-you.unserved");
-    expect(unserved).toHaveTextContent(/Coord counted 2 decisions/);
+    // The Questions page is not presentation-ready, so "open Questions"
+    // would be a dead end: the sentence ends instead.
+    expect(unserved).toHaveTextContent(
+      /^Coord counted 2 decisions for you but served none of them\.$/
+    );
     expect(within(unserved).queryByRole("link")).toBeNull();
+    expect(unserved.querySelector("[data-lens-link]")).toBeNull();
     expectPresentationSafe(view, {
       captions: HOME_CAPTIONS,
       forbidden: MUST_NOT_APPEAR,
@@ -545,6 +551,18 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     expect(
       within(detail).getByRole("link", { name: /Open devops/ })
     ).toHaveAttribute("href", "/admin/coord/devops?present=1");
+    // A drill to a page the presentation cannot show is left out, never
+    // link-shaped text that opens nothing: the merge train's pipeline, the
+    // credential's gates.
+    for (const area of ["merge train", "credential"]) {
+      const opened = expandRow(
+        region,
+        new RegExp(`Degradation · ${area} · degrading`)
+      );
+      expect(opened, area).toHaveTextContent(/Onset is when coord/);
+      expect(opened.textContent, area).not.toMatch(/↗|Open (pipeline|gates)/);
+      expect(opened.querySelector("[data-lens-link]"), area).toBeNull();
+    }
     expectPresentationSafe(view, {
       forbidden: [HOST_BUILD, FIRST_PARTY_SHAPED_SERVICE, "acme", "globex"],
     });
@@ -944,6 +962,13 @@ describe("/admin/coord/home for the operator — the console is unchanged", () =
     expect(degrading).toHaveTextContent(
       `A runner stopped answering on ${HOST_BUILD}`
     );
+    // Every drill is the operator's link, whether or not its page could be
+    // presented.
+    expect(
+      within(expandRow(degrading, FOREIGN_REPO)).getByRole("link", {
+        name: /Open pipeline/,
+      })
+    ).toHaveAttribute("href", "/admin/coord/pipeline");
     expect(
       screen.getByTestId("coord-home.degrading.incomplete")
     ).toHaveAttribute("title");
