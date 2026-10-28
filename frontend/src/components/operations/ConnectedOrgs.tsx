@@ -573,7 +573,11 @@ function AccountRow({
  * account list AND beside the empty state: a bound-away repo whose org has no
  * row here is still one nobody could otherwise see (D8).
  */
-function UnmatchedBoundAway({ entries }: { entries: readonly BoundAwayRepo[] }) {
+function UnmatchedBoundAway({
+  entries,
+}: {
+  entries: readonly BoundAwayRepo[];
+}) {
   if (entries.length === 0) return null;
   return (
     <div

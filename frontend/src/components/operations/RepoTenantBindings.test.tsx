@@ -21,7 +21,13 @@
  *     a failed write re-reads the list and renders the web's write-timeout
  *     refusal with its next action;
  *   - unbind busy/error survive the row collapsing; only the latest list read
- *     lands; every settled write calls `onChanged`.
+ *     lands; every settled write calls `onChanged`;
+ *   - every refusal the bind door's contract names (qontinui-coord#3522
+ *     `BindingError`) renders its extras: `schema_settling`'s retry delay and
+ *     replica census (null = UNKNOWN, never 0), `in_flight_merge_proposals`'
+ *     ids, `org_unbound`'s remedy, `not_admin_in_both_tenants`' side and
+ *     (possibly withheld) tenant, `binding_not_found`, `tenancy_changed`, and
+ *     the operator layer's `{error, hint}` / sentence-`error` shapes.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -76,7 +82,10 @@ vi.mock("@/contexts/tenant-context", () => ({
 import {
   RepoTenantBindings,
   bindTargetOptions,
+  coordRefusalOf,
+  refusalDetail,
   resultSummary,
+  tenantLabelFrom,
   validateBindForm,
 } from "./RepoTenantBindings";
 
@@ -112,9 +121,12 @@ const MOVE_RESULT = {
   governed_by: "binding",
   moved: { tenant_repos: 1, profile: 0, canonical: 1 },
   binding_written: true,
+  binding_deleted: false,
+  tombstone_cleared: false,
   audit_ids: ["a1", "a2"],
   notified: true,
   idempotent: false,
+  enrollment_spawned: false,
 };
 
 function json(body: unknown, status = 200): Response {
@@ -266,6 +278,7 @@ describe("<RepoTenantBindings> read states", () => {
           {
             error: "migration_pending",
             message: "the bindings table is not migrated yet",
+            missing: "coord.repo_tenant_bindings",
           },
           503
         ),
@@ -277,6 +290,9 @@ describe("<RepoTenantBindings> read states", () => {
     expect(unknown.textContent).toContain("503 migration_pending");
     expect(unknown.textContent).toContain(
       "the bindings table is not migrated yet"
+    );
+    expect(unknown.textContent).toContain(
+      "Missing: coord.repo_tenant_bindings."
     );
     expect(screen.queryByTestId("repo-bindings-bound-here-empty")).toBeNull();
     expect(screen.queryByTestId("repo-bindings-bound-here")).toBeNull();
@@ -419,6 +435,10 @@ describe("bind action", () => {
     const outcome = await screen.findByTestId("repo-binding-bind-outcome");
     expect(outcome.dataset.outcome).toBe("ok");
     expect(outcome.textContent).toContain("Bound Meryts/bauhaus-b2b-shop");
+    // Tenant ids are named by slug from the operator's own tenants.
+    expect(outcome.textContent).toContain(
+      "now governed by bauhaus-b2b (was meryts-2-0)"
+    );
     expect(outcome.textContent).toContain("2 audit rows");
 
     const [, opts] = callsOf("POST")[0]!;
@@ -442,6 +462,7 @@ describe("bind action", () => {
             error: "not_admin_in_both_tenants",
             message: "admin is required in both tenants",
             failed_tenant: BOUND_TENANT,
+            failed_side: "target",
           },
           403
         )
@@ -458,6 +479,11 @@ describe("bind action", () => {
     expect(outcome.dataset.outcome).toBe("error");
     expect(outcome.textContent).toContain("403 not_admin_in_both_tenants");
     expect(outcome.textContent).toContain("admin is required in both tenants");
+    const detail = within(outcome).getByTestId("repo-binding-refusal-detail");
+    expect(detail.dataset.refusalCode).toBe("not_admin_in_both_tenants");
+    expect(detail.textContent).toBe(
+      "You are not an administrator in the target tenant (bauhaus-b2b)."
+    );
     expect(JSON.parse(callsOf("POST")[0]![1].body!).decision_ref).toBe(
       "decision_record/x"
     );
@@ -581,9 +607,9 @@ describe("unbind action", () => {
       `repo-binding-unbind-error-${BOUND_AWAY.repo}`
     );
     expect(err.textContent).toContain("409 in_flight_merge_proposals");
+    expect(err.textContent).toContain("1 merge proposal is in flight: p1.");
     expect(screen.queryByTestId("repo-binding-unbind-outcome")).toBeNull();
   });
-
 });
 
 describe("who sees the card: admin IN THE ACTIVE TENANT", () => {
@@ -603,7 +629,12 @@ describe("who sees the card: admin IN THE ACTIVE TENANT", () => {
   it("a non-admin gets the admin-only notice and no GET is sent", async () => {
     authState.user = { is_superuser: false, coord_is_admin: false };
     tenantState.tenants = [
-      { id: ORG_TENANT, slug: "meryts-2-0", name: "Meryts", roles: ["developer"] },
+      {
+        id: ORG_TENANT,
+        slug: "meryts-2-0",
+        name: "Meryts",
+        roles: ["developer"],
+      },
     ];
     render(<RepoTenantBindings />);
     await screen.findByTestId("repo-tenant-bindings-admin-only");
@@ -646,7 +677,7 @@ describe("a 2xx write is a success, whatever its body", () => {
       typeof resultSummary
     >[1];
     expect(resultSummary("Unbound", partial, "o/r")).toBe(
-      "Unbound o/r — moved tenant_repos ?, profile ?, canonical ?; audit rows not reported; notification not reported."
+      "Unbound o/r — governing tenant not reported; moved tenant_repos ?, profile ?, canonical ?; audit rows not reported; notification not reported."
     );
     expect(
       resultSummary(
@@ -655,7 +686,38 @@ describe("a 2xx write is a success, whatever its body", () => {
         "x/y"
       )
     ).toBe(
-      "Bound Meryts/bauhaus-b2b-shop — moved tenant_repos 1, profile 0, canonical 1; 2 audit rows; operator notified."
+      `Bound Meryts/bauhaus-b2b-shop — now governed by ${BOUND_TENANT} (was ${ORG_TENANT}); moved tenant_repos 1, profile 0, canonical 1; 2 audit rows; operator notified.`
+    );
+  });
+
+  it("resultSummary names tenants by slug and the flags coord set", () => {
+    const label = tenantLabelFrom(tenantState.tenants as never);
+    const unbound = {
+      ...MOVE_RESULT,
+      from_tenant: BOUND_TENANT,
+      to_tenant: ORG_TENANT,
+      governed_by: "org",
+      binding_written: false,
+      binding_deleted: true,
+      tombstone_cleared: true,
+      enrollment_spawned: true,
+    } as Parameters<typeof resultSummary>[1];
+    expect(resultSummary("Unbound", unbound, "x/y", label)).toBe(
+      "Unbound Meryts/bauhaus-b2b-shop — now governed by meryts-2-0 (was bauhaus-b2b); moved tenant_repos 1, profile 0, canonical 1; 2 audit rows; operator notified; binding deleted; un-enrollment tombstone cleared; enrollment started for the new tenant."
+    );
+    // A tenant the operator does not belong to is named by its id.
+    expect(label("ffffffff-0000-4000-8000-000000000000")).toBe(
+      "ffffffff-0000-4000-8000-000000000000"
+    );
+    const repeated = {
+      ...MOVE_RESULT,
+      idempotent: true,
+      binding_written: false,
+      audit_ids: [],
+      notified: false,
+    } as Parameters<typeof resultSummary>[1];
+    expect(resultSummary("Bound", repeated, "x/y", label)).toBe(
+      "Meryts/bauhaus-b2b-shop: already in that state — nothing changed."
     );
   });
 
@@ -699,10 +761,14 @@ describe("a 2xx write is a success, whatever its body", () => {
       () => json({ repo: BOUND_HERE.repo, governed_by: "org" })
     );
     render(<RepoTenantBindings />);
-    const row = await screen.findByTestId(`repo-binding-row-${BOUND_HERE.repo}`);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
     fireEvent.click(within(row).getByRole("button", { expanded: false }));
     fireEvent.change(
-      await screen.findByTestId(`repo-binding-unbind-reason-${BOUND_HERE.repo}`),
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
       { target: { value: "returning it" } }
     );
     fireEvent.click(
@@ -772,16 +838,17 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
           json({ bindings: [BOUND_AWAY], measured_at: "2026-10-24T08:00:00Z" }),
       ],
       () =>
-        json(
-          { error: "in_flight_merge_proposals", message: "in flight" },
-          409
-        )
+        json({ error: "in_flight_merge_proposals", message: "in flight" }, 409)
     );
     render(<RepoTenantBindings />);
-    const row = await screen.findByTestId(`repo-binding-row-${BOUND_AWAY.repo}`);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_AWAY.repo}`
+    );
     fireEvent.click(within(row).getByRole("button", { expanded: false }));
     fireEvent.change(
-      await screen.findByTestId(`repo-binding-unbind-reason-${BOUND_AWAY.repo}`),
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_AWAY.repo}`
+      ),
       { target: { value: "reclaim" } }
     );
     fireEvent.click(
@@ -801,10 +868,14 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
       () => writeTimeout()
     );
     render(<RepoTenantBindings />);
-    const row = await screen.findByTestId(`repo-binding-row-${BOUND_HERE.repo}`);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
     fireEvent.click(within(row).getByRole("button", { expanded: false }));
     fireEvent.change(
-      await screen.findByTestId(`repo-binding-unbind-reason-${BOUND_HERE.repo}`),
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
       { target: { value: "returning it" } }
     );
     fireEvent.click(
@@ -840,10 +911,14 @@ describe("unbind state lives at card level", () => {
         })
     );
     render(<RepoTenantBindings />);
-    const row = await screen.findByTestId(`repo-binding-row-${BOUND_HERE.repo}`);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
     fireEvent.click(within(row).getByRole("button", { expanded: false }));
     fireEvent.change(
-      await screen.findByTestId(`repo-binding-unbind-reason-${BOUND_HERE.repo}`),
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
       { target: { value: "returning it" } }
     );
     fireEvent.click(
@@ -956,5 +1031,253 @@ describe("list reads and change notification", () => {
     fill();
     fireEvent.click(screen.getByTestId("repo-binding-bind-submit"));
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("every refusal the bind door's contract names (coord#3522)", () => {
+  /** A `readJson` rejection, exactly as the client throws it. */
+  function rejection(status: number, body: unknown, verb = "POST"): Error {
+    return new Error(
+      `${verb} /api/v1/operations${LIST_URL_SUFFIX} failed: ${status} - ${JSON.stringify(body)}`
+    );
+  }
+  const label = () => tenantLabelFrom(tenantState.tenants as never);
+  const detailOf = (status: number, body: unknown) =>
+    refusalDetail(coordRefusalOf(rejection(status, body)), label());
+
+  it("503 schema_settling: the retry delay and the replica census", () => {
+    expect(
+      detailOf(503, {
+        error: "schema_settling",
+        message: "m",
+        retry_after_secs: 30,
+        live_replicas: 3,
+        not_ready_replicas: 1,
+      })
+    ).toBe(
+      "Nothing was written; retry in about 30 s. Replicas: 3 live, 1 not yet applying bindings."
+    );
+  });
+
+  it("503 schema_settling: null counts are UNKNOWN, never 0", () => {
+    const both = detailOf(503, {
+      error: "schema_settling",
+      message: "m",
+      retry_after_secs: 30,
+      live_replicas: null,
+      not_ready_replicas: null,
+    });
+    expect(both).toBe(
+      "Nothing was written; retry in about 30 s. The replica census is UNKNOWN — coord could not read it."
+    );
+    expect(both).not.toMatch(/\b0\b/);
+    expect(
+      detailOf(503, {
+        error: "schema_settling",
+        message: "m",
+        retry_after_secs: 30,
+        live_replicas: 2,
+        not_ready_replicas: null,
+      })
+    ).toBe(
+      "Nothing was written; retry in about 30 s. Replicas: 2 live, UNKNOWN not yet applying bindings."
+    );
+    expect(detailOf(503, { error: "schema_settling", message: "m" })).toContain(
+      "retry shortly (coord did not say when)"
+    );
+  });
+
+  it("409 in_flight_merge_proposals: names the proposals", () => {
+    expect(
+      detailOf(409, {
+        error: "in_flight_merge_proposals",
+        message: "m",
+        proposal_ids: ["p1", "p2"],
+      })
+    ).toBe(
+      "2 merge proposals are in flight: p1, p2. Wait for them to land or cancel them, then retry."
+    );
+    expect(
+      detailOf(409, { error: "in_flight_merge_proposals", message: "m" })
+    ).toContain("were not reported");
+  });
+
+  it("422 org_unbound: names the org and coord's remedy", () => {
+    const d = detailOf(422, {
+      error: "org_unbound",
+      message: "m",
+      org: "meryts",
+      remedy: "coord_onboard_bind_account",
+    });
+    expect(d).toContain("GitHub organization meryts is bound to no tenant");
+    expect(d).toContain("Connect it to a tenant first");
+    expect(d).toContain("Coord's remedy: coord_onboard_bind_account.");
+  });
+
+  it("403 not_admin_in_both_tenants: the failed side, and a withheld tenant", () => {
+    expect(
+      detailOf(403, {
+        error: "not_admin_in_both_tenants",
+        message: "m",
+        failed_side: "governing",
+        failed_tenant: null,
+      })
+    ).toBe(
+      "You are not an administrator in the repository's current governing tenant (coord withholds which tenant)."
+    );
+    expect(
+      detailOf(403, {
+        error: "not_admin_in_both_tenants",
+        message: "m",
+        failed_side: "target",
+        failed_tenant: ORG_TENANT,
+      })
+    ).toBe("You are not an administrator in the target tenant (meryts-2-0).");
+  });
+
+  it("404 binding_not_found, 409 tenancy_changed, and the other typed codes", () => {
+    expect(
+      detailOf(404, {
+        error: "binding_not_found",
+        message: "m",
+        repo: "meryts/x",
+      })
+    ).toBe(
+      "meryts/x has no binding visible to this tenant — it may already have been unbound. The list has been re-read."
+    );
+    expect(detailOf(409, { error: "tenancy_changed", message: "m" })).toBe(
+      "The binding changed while coord was authorizing this request; nothing was written. Check the re-read list, then retry."
+    );
+    expect(
+      detailOf(403, { error: "caller_tenant_not_a_party", message: "m" })
+    ).toContain("Switch the active tenant");
+    expect(
+      detailOf(404, {
+        error: "tenant_not_found",
+        message: "m",
+        tenant_id: BOUND_TENANT,
+      })
+    ).toBe(`Coord has no tenant ${BOUND_TENANT}.`);
+    // A code with no extras adds no sentence.
+    expect(
+      detailOf(500, { error: "repo_binding_write_failed", message: "m" })
+    ).toBeNull();
+  });
+
+  it("the operator layer's shapes: hint, sentence-error, role gate", () => {
+    const principal = coordRefusalOf(
+      rejection(403, {
+        error: "operator_principal_required",
+        hint: "present an operator (Cognito SSO) bearer",
+      })
+    );
+    expect(principal.code).toBe("operator_principal_required");
+    expect(principal.message).toBe("present an operator (Cognito SSO) bearer");
+
+    const sso = coordRefusalOf(
+      rejection(401, { error: "operator context missing; SSO required" })
+    );
+    expect(sso.code).toBeNull();
+    expect(sso.message).toBe("operator context missing; SSO required");
+
+    const role = coordRefusalOf(
+      rejection(403, {
+        error: "insufficient role",
+        required: "admin",
+        held: ["developer"],
+      })
+    );
+    expect(role.code).toBeNull();
+    expect(role.message).toBe("insufficient role");
+    expect(refusalDetail(role)).toBe(
+      "This needs the admin role in the active tenant; you hold developer."
+    );
+  });
+
+  it("a bind refused with schema_settling renders its census and re-enables", async () => {
+    routeFetch(
+      [() => json({ bindings: [], measured_at: "2026-10-24T08:00:00Z" })],
+      () =>
+        json(
+          {
+            error: "schema_settling",
+            message:
+              "coord cannot yet show that every live replica applies bindings",
+            retry_after_secs: 30,
+            live_replicas: null,
+            not_ready_replicas: null,
+          },
+          503
+        )
+    );
+    render(<RepoTenantBindings />);
+    await screen.findByTestId("repo-bindings-bound-here-empty");
+    fireEvent.change(screen.getByTestId("repo-binding-bind-repo"), {
+      target: { value: "Meryts/bauhaus-b2b-shop" },
+    });
+    fireEvent.change(screen.getByTestId("repo-binding-bind-target"), {
+      target: { value: BOUND_TENANT },
+    });
+    fireEvent.change(screen.getByTestId("repo-binding-bind-reason"), {
+      target: { value: "r" },
+    });
+    fireEvent.click(screen.getByTestId("repo-binding-bind-submit"));
+
+    const outcome = await screen.findByTestId("repo-binding-bind-outcome");
+    expect(outcome.dataset.outcome).toBe("error");
+    expect(outcome.textContent).toContain("503 schema_settling");
+    const detail = within(outcome).getByTestId("repo-binding-refusal-detail");
+    expect(detail.dataset.refusalCode).toBe("schema_settling");
+    expect(detail.textContent).toContain("retry in about 30 s");
+    expect(detail.textContent).toContain("replica census is UNKNOWN");
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("repo-binding-bind-submit") as HTMLButtonElement)
+          .disabled
+      ).toBe(false)
+    );
+  });
+
+  it("an unbind answered binding_not_found whose row is gone says it may already be unbound", async () => {
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () => json({ bindings: [], measured_at: "2026-10-24T08:02:00Z" }),
+      ],
+      () =>
+        json(
+          {
+            error: "binding_not_found",
+            message: `${BOUND_HERE.repo} carries no binding visible to this tenant`,
+            repo: BOUND_HERE.repo,
+          },
+          404
+        )
+    );
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+
+    const orphan = await screen.findByTestId(
+      `repo-binding-unbind-error-unlisted-${BOUND_HERE.repo}`
+    );
+    expect(orphan.textContent).toContain("404 binding_not_found");
+    expect(
+      within(orphan).getByTestId("repo-binding-refusal-detail").textContent
+    ).toContain("it may already have been unbound");
+    // The measured re-read is what the card now shows.
+    await screen.findByTestId("repo-bindings-bound-here-empty");
   });
 });

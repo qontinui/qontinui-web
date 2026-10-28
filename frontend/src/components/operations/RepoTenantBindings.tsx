@@ -39,6 +39,14 @@
  * MEASURED list says so with the time coord measured it. Every action
  * acknowledges itself (disabled + spinner) and ends in a terminal state that
  * names coord's error code on failure (`an-action-must-acknowledge-itself`).
+ *
+ * Refusals follow the bind door's contract (qontinui-coord#3522
+ * `BindingError`): each code's extras are rendered as one more sentence
+ * ({@link refusalDetail}) — `schema_settling`'s retry delay and replica census
+ * (a `null` count is UNKNOWN, never 0), `in_flight_merge_proposals`'
+ * `proposal_ids`, `org_unbound`'s org and remedy, the side and tenant of
+ * `not_admin_in_both_tenants` (a `null` tenant is one coord withholds),
+ * `binding_not_found`'s repo, `tenancy_changed`'s retry, and the rest.
  * A write answered 2xx is a success whatever its body says. A failed write is
  * followed by a re-read, because a write that timed out may still have landed
  * (the web's `coord_write_timeout` refusal says so, and is rendered with its
@@ -83,6 +91,7 @@ import {
   bindRepoTenant,
   fetchRepoTenantBindings,
   unbindRepoTenant,
+  type RepoBindingRefusalBody,
   type RepoBindingResult,
   type RepoBindingsResponse,
   type RepoTenantBinding,
@@ -98,50 +107,70 @@ import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
 /**
- * Input caps — the SAME bounds `RepoBindRequest` / `RepoUnbindRequest` put on
- * the web backend's body (`operations/__init__.py`), so a value the browser
- * lets through is never a 422 there. `repo` is GitHub's 39-char login + `/` +
- * its 100-char name.
+ * Input caps. `reason` / `decision_ref` are coord's own bound — at most 2000
+ * characters (coord counts them after trimming, and this form sends them
+ * trimmed) — which the web backend's `RepoBindRequest` / `RepoUnbindRequest`
+ * mirror, so a value the browser lets through is never a 422 there. `repo` is
+ * the `owner/name` this form accepts: GitHub's 39-char login + `/` + its
+ * 100-char name (the backend admits coord's longer URL spellings too).
  */
 const REPO_MAX = 140;
 const REASON_MAX = 2000;
-const DECISION_REF_MAX = 1000;
+const DECISION_REF_MAX = 2000;
 
-/** A coord refusal as this card renders it: status, typed code, sentence. */
+/**
+ * A coord refusal as this card renders it: status, typed code, sentence, and
+ * the rejected body's fields (`{}` when it was not a JSON object), from which
+ * {@link refusalDetail} reads the code's extras.
+ */
 export interface CoordRefusal {
   status: number | null;
   code: string | null;
   message: string;
+  body: Partial<RepoBindingRefusalBody> & Record<string, unknown>;
+}
+
+/** A machine code (`not_admin_in_both_tenants`), as opposed to a sentence. */
+const CODE_RE = /^[a-z][a-z0-9_]*$/;
+
+function nonBlank(v: unknown): string | null {
+  return typeof v === "string" && v.trim() !== "" ? v : null;
 }
 
 /**
- * Read a rejected client call back into coord's typed error. Coord's body is
- * `{"error": "<code>", "message": "<text>", ...}` and the proxy passes it
- * through verbatim; anything else (a transport failure, the web gate's own
- * refusal) keeps the shared operations sentence and whatever code it has.
+ * Read a rejected client call back into coord's typed error. Coord's core
+ * answers `{"error": "<code>", "message": "<text>", ...extras}` and the proxy
+ * passes it through verbatim. The operator layer in front of the core answers
+ * `{error, hint}`, or a SENTENCE in `error` (`"insufficient role"`), so only a
+ * snake_case `error` (or web `detail`) is read as the code, and the message
+ * falls back through `hint` and a sentence `error` before the shared
+ * operations sentence (a transport failure, the web gate's own refusal).
  */
 export function coordRefusalOf(err: unknown): CoordRefusal {
   const status = httpStatusOf(err);
-  let body: Record<string, unknown> = {};
+  let body: CoordRefusal["body"] = {};
   try {
     const parsed: unknown = JSON.parse(httpBodyOf(err) ?? "");
-    if (parsed && typeof parsed === "object") {
-      body = parsed as Record<string, unknown>;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      body = parsed as CoordRefusal["body"];
     }
   } catch {
     // not JSON — fall through to the shared sentence
   }
+  const error = nonBlank(body.error);
+  const detail = nonBlank(body.detail);
   const code =
-    typeof body.error === "string"
-      ? body.error
-      : typeof body.detail === "string"
-        ? body.detail
+    error !== null && CODE_RE.test(error)
+      ? error
+      : detail !== null && CODE_RE.test(detail)
+        ? detail
         : null;
   const message =
-    typeof body.message === "string" && body.message.trim() !== ""
-      ? body.message
-      : operationsErrorMessage(err);
-  return { status, code, message };
+    nonBlank(body.message) ??
+    nonBlank(body.hint) ??
+    (error !== null && error !== code ? error : null) ??
+    operationsErrorMessage(err);
+  return { status, code, message, body };
 }
 
 /** "403 not_admin_in_both_tenants — <message>", omitting what is absent. */
@@ -150,6 +179,92 @@ export function refusalText(r: CoordRefusal): string {
     .filter(Boolean)
     .join(" ");
   return head ? `${head} — ${r.message}` : r.message;
+}
+
+/** A replica count from `schema_settling`: `null`/absent is UNKNOWN, never 0. */
+function censusCount(v: unknown): string {
+  return typeof v === "number" && Number.isFinite(v) ? String(v) : "UNKNOWN";
+}
+
+/**
+ * Names a tenant id for a sentence: its slug when the operator belongs to it,
+ * else the id itself.
+ */
+export type TenantLabel = (tenantId: string) => string;
+
+const idLabel: TenantLabel = (id) => id;
+
+/**
+ * The one sentence a refusal's EXTRAS add to its message, per the bind door's
+ * contract (qontinui-coord#3522 `BindingError::body`). `null` when the code
+ * carries no extras worth a sentence. Every field is read defensively: an
+ * absent extra is said to be "not reported", never rendered as empty or zero.
+ */
+export function refusalDetail(
+  r: CoordRefusal,
+  tenantLabel: TenantLabel = idLabel
+): string | null {
+  const b = r.body;
+  switch (r.code) {
+    case "schema_settling": {
+      const secs =
+        typeof b.retry_after_secs === "number" &&
+        Number.isFinite(b.retry_after_secs)
+          ? `Nothing was written; retry in about ${b.retry_after_secs} s.`
+          : "Nothing was written; retry shortly (coord did not say when).";
+      const census =
+        b.live_replicas == null && b.not_ready_replicas == null
+          ? "The replica census is UNKNOWN — coord could not read it."
+          : `Replicas: ${censusCount(b.live_replicas)} live, ${censusCount(b.not_ready_replicas)} not yet applying bindings.`;
+      return `${secs} ${census}`;
+    }
+    case "in_flight_merge_proposals": {
+      if (!Array.isArray(b.proposal_ids)) {
+        return "The in-flight proposals were not reported. Wait for them to land or cancel them, then retry.";
+      }
+      const ids = b.proposal_ids.map(String);
+      return `${ids.length} merge ${ids.length === 1 ? "proposal is" : "proposals are"} in flight${ids.length > 0 ? `: ${ids.join(", ")}` : ""}. Wait for ${ids.length === 1 ? "it" : "them"} to land or cancel ${ids.length === 1 ? "it" : "them"}, then retry.`;
+    }
+    case "org_unbound": {
+      const org = nonBlank(b.org) ?? "(org not reported)";
+      const remedy = nonBlank(b.remedy);
+      return `GitHub organization ${org} is bound to no tenant. Connect it to a tenant first (install the GitHub App on it and connect it on this page), then retry.${remedy ? ` Coord's remedy: ${remedy}.` : ""}`;
+    }
+    case "not_admin_in_both_tenants": {
+      const side =
+        b.failed_side === "governing"
+          ? "the repository's current governing tenant"
+          : b.failed_side === "target"
+            ? "the target tenant"
+            : "one of the two tenants (coord did not say which)";
+      const tenant =
+        typeof b.failed_tenant === "string" && b.failed_tenant !== ""
+          ? tenantLabel(b.failed_tenant)
+          : "coord withholds which tenant";
+      return `You are not an administrator in ${side} (${tenant}).`;
+    }
+    case "caller_tenant_not_a_party":
+      return "Switch the active tenant to the repository's governing tenant or to the target tenant, then retry.";
+    case "binding_not_found": {
+      const repo = nonBlank(b.repo) ?? "The repository";
+      return `${repo} has no binding visible to this tenant — it may already have been unbound. The list has been re-read.`;
+    }
+    case "tenancy_changed":
+      return "The binding changed while coord was authorizing this request; nothing was written. Check the re-read list, then retry.";
+    case "tenant_not_found":
+      return nonBlank(b.tenant_id)
+        ? `Coord has no tenant ${b.tenant_id}.`
+        : null;
+    case "migration_pending":
+      return nonBlank(b.missing) ? `Missing: ${b.missing}.` : null;
+    default:
+      break;
+  }
+  if (nonBlank(b.required) !== null) {
+    const held = Array.isArray(b.held) ? b.held.map(String) : null;
+    return `This needs the ${b.required} role in the active tenant; you hold ${held === null ? "roles not reported" : held.length > 0 ? held.join(", ") : "none"}.`;
+  }
+  return null;
 }
 
 /**
@@ -173,17 +288,46 @@ export function failureOf(err: unknown): CardFailure {
   };
 }
 
-/** One failure's text: the envelope with its next action, else coord's code. */
+/**
+ * One failure's text: the envelope with its next action, else coord's code
+ * and message — then the code's extras ({@link refusalDetail}) as a sentence of
+ * their own, stamped with the code for the UI Bridge.
+ */
 function FailureText({ failure }: { failure: CardFailure }) {
-  if (failure.envelope !== null) {
-    return (
-      <>
-        {failure.refusal.status !== null && `${failure.refusal.status} — `}
-        <BackendErrorMessage error={failure.envelope} />
-      </>
-    );
-  }
-  return <>{refusalText(failure.refusal)}</>;
+  const { tenants } = useTenant();
+  const tenantLabel = useMemo(() => tenantLabelFrom(tenants), [tenants]);
+  const detail = refusalDetail(failure.refusal, tenantLabel);
+  return (
+    <>
+      {failure.envelope !== null ? (
+        <>
+          {failure.refusal.status !== null && `${failure.refusal.status} — `}
+          <BackendErrorMessage error={failure.envelope} />
+        </>
+      ) : (
+        refusalText(failure.refusal)
+      )}
+      {detail !== null && (
+        <span
+          className="block"
+          data-testid="repo-binding-refusal-detail"
+          data-ui-bridge-id="operations.repo-binding-refusal-detail"
+          data-refusal-code={failure.refusal.code ?? undefined}
+        >
+          {detail}
+        </span>
+      )}
+    </>
+  );
+}
+
+/**
+ * A {@link TenantLabel} over the operator's own tenants: `slug` for a tenant
+ * they belong to, else the bare id (a tenant they cannot see by name).
+ */
+export function tenantLabelFrom(tenants: readonly Tenant[]): TenantLabel {
+  const slugs = new Map(tenants.map((t) => [t.id, t.slug] as const));
+  return (id) => slugs.get(id) ?? id;
 }
 
 export interface BindFormValues {
@@ -238,12 +382,16 @@ function countText(v: unknown): string {
  * `moved` / `audit_ids` / `notified`, still summarises as a success and says
  * which details were not reported, rather than throwing and rendering a
  * landed write as failed. `repo` is the repo the operator asked for, used when
- * coord's answer does not name one.
+ * coord's answer does not name one. `tenantLabel` names `from_tenant` /
+ * `to_tenant`. The flags coord sets only when they happened —
+ * `binding_deleted`, `tombstone_cleared`, `enrollment_spawned` — are named
+ * when `true` and otherwise left unsaid.
  */
 export function resultSummary(
   verb: "Bound" | "Unbound",
   r: RepoBindingResult | null,
-  repo: string
+  repo: string,
+  tenantLabel: TenantLabel = idLabel
 ): string {
   const res: Partial<RepoBindingResult> | null =
     r && typeof r === "object" ? r : null;
@@ -267,7 +415,20 @@ export function resultSummary(
       : res.notified === false
         ? "operator NOT notified"
         : "notification not reported";
-  return `${verb} ${name} — ${moved}; ${audit}; ${notified}.`;
+  const to = nonBlank(res.to_tenant);
+  const from = nonBlank(res.from_tenant);
+  const governance =
+    to !== null
+      ? `now governed by ${tenantLabel(to)}${from !== null ? ` (was ${tenantLabel(from)})` : ""}`
+      : "governing tenant not reported";
+  const flags = [
+    res.binding_deleted === true ? "binding deleted" : null,
+    res.tombstone_cleared === true ? "un-enrollment tombstone cleared" : null,
+    res.enrollment_spawned === true
+      ? "enrollment started for the new tenant"
+      : null,
+  ].filter((f): f is string => f !== null);
+  return `${verb} ${name} — ${governance}; ${moved}; ${audit}; ${notified}${flags.length > 0 ? `; ${flags.join("; ")}` : ""}.`;
 }
 
 type ListRead =
@@ -457,6 +618,7 @@ function BindingRow({
 function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
   const { tenants, loading: tenantsLoading, error: tenantsError } = useTenant();
   const options = useMemo(() => bindTargetOptions(tenants), [tenants]);
+  const tenantLabel = useMemo(() => tenantLabelFrom(tenants), [tenants]);
   const [values, setValues] = useState<BindFormValues>({
     repo: "",
     targetTenant: "",
@@ -500,7 +662,10 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
     }
     // Any 2xx is the success — the summary and the re-read sit outside the
     // failure path so neither can turn a landed bind into a reported failure.
-    setOutcome({ kind: "ok", text: resultSummary("Bound", result, repo) });
+    setOutcome({
+      kind: "ok",
+      text: resultSummary("Bound", result, repo, tenantLabel),
+    });
     setValues({ repo: "", targetTenant: "", reason: "" });
     setDecisionRef("");
     setTouched(false);
@@ -580,6 +745,14 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
             </option>
           ))}
         </select>
+        <p
+          className="text-xs text-muted-foreground"
+          data-ui-bridge-id="operations.repo-binding-bind-target-hint"
+        >
+          Coord binds only when the active tenant is the repository&apos;s
+          current governing tenant or the tenant chosen here, and you administer
+          both.
+        </p>
         {!tenantsLoading && !tenantsError && options.length === 0 && (
           <p
             className="text-xs text-muted-foreground"
@@ -742,11 +915,14 @@ export interface RepoTenantBindingsProps {
   onChanged?: () => void;
 }
 
-export function RepoTenantBindings({ onChanged }: RepoTenantBindingsProps = {}) {
+export function RepoTenantBindings({
+  onChanged,
+}: RepoTenantBindingsProps = {}) {
   const { user } = useAuth();
   const { tenants, activeTenantId } = useTenant();
   // The question the three routes' gate asks: admin IN THE ACTIVE TENANT.
   const canAdmin = isActiveTenantCoordAdmin({ user, tenants, activeTenantId });
+  const tenantLabel = useMemo(() => tenantLabelFrom(tenants), [tenants]);
 
   const [read, setRead] = useState<ListRead>({ state: "loading" });
   // Request sequencing: only the LATEST read may land. A slower earlier read
@@ -766,6 +942,7 @@ export function RepoTenantBindings({ onChanged }: RepoTenantBindingsProps = {}) 
               status: null,
               code: null,
               message: "coord answered without a bindings list",
+              body: {},
             },
             envelope: null,
           },
@@ -841,7 +1018,7 @@ export function RepoTenantBindings({ onChanged }: RepoTenantBindingsProps = {}) 
       }
       // Any 2xx is the success; summary and re-read are outside the failure
       // path so neither can report a landed unbind as failed.
-      setUnbindNotice(resultSummary("Unbound", result, repo));
+      setUnbindNotice(resultSummary("Unbound", result, repo, tenantLabel));
       unbindBusy.current.delete(repo);
       setUnbindStates((prev) => {
         const next = { ...prev };
@@ -850,7 +1027,7 @@ export function RepoTenantBindings({ onChanged }: RepoTenantBindingsProps = {}) 
       });
       await afterWrite();
     },
-    [afterWrite]
+    [afterWrite, tenantLabel]
   );
 
   const boundHere =

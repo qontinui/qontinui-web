@@ -13,8 +13,13 @@ re-checks admin in BOTH tenants for a bind), so what matters here is:
 * the ``?repo=`` filter and the bind/unbind bodies reach coord unchanged
   (``decision_ref`` omitted when absent), and DELETE carries its body;
 * coord's status code AND typed error body pass through VERBATIM, extras
-  (``remedy``, ``failed_tenant``, ``proposal_ids``) included;
-* an over-long body field is a web-side 422 and never reaches coord;
+  (``remedy``, ``failed_side`` / ``failed_tenant``, ``proposal_ids``, the
+  ``schema_settling`` replica counts) included — every refusal
+  qontinui-coord#3522's ``BindingError`` can answer — and so does a
+  ``Retry-After`` header;
+* an over-long body field is a web-side 422 and never reaches coord; no cap
+  is tighter than coord's own (``reason`` / ``decision_ref`` are trimmed and
+  then capped at 2000, as coord does);
 * a coord transport failure is the web's 502 / 504, and a timed-out WRITE's
   504 carries the ``coord_write_timeout`` refusal envelope the page renders
   (its next action names the re-read before any retry).
@@ -64,9 +69,12 @@ BIND_BODY: dict[str, Any] = {
     "governed_by": "binding",
     "moved": {"tenant_repos": 1, "profile": 1, "canonical": 1},
     "binding_written": True,
+    "binding_deleted": False,
+    "tombstone_cleared": False,
     "audit_ids": [str(uuid4()), str(uuid4())],
     "notified": True,
     "idempotent": False,
+    "enrollment_spawned": False,
 }
 
 
@@ -139,10 +147,13 @@ def auth_client() -> TestClient:
     return TestClient(_build_test_app())
 
 
-def _mock_response(status_code: int, json_data: Any) -> MagicMock:
+def _mock_response(
+    status_code: int, json_data: Any, headers: dict[str, str] | None = None
+) -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status_code
     resp.json.return_value = json_data
+    resp.headers = httpx.Headers(headers or {})
     return resp
 
 
@@ -300,6 +311,7 @@ def test_unbind_sends_delete_with_its_body(auth_client: TestClient) -> None:
         **BIND_BODY,
         "governed_by": "org",
         "binding_written": False,
+        "binding_deleted": True,
     }
     client = _patched_client(_mock_response(200, unbind_answer))
     with patch("httpx.AsyncClient", return_value=client):
@@ -327,13 +339,27 @@ def test_unbind_sends_delete_with_its_body(auth_client: TestClient) -> None:
     ("method", "status", "error_body"),
     [
         ("POST", 400, {"error": "invalid_repo", "message": "not owner/name"}),
-        ("POST", 404, {"error": "tenant_not_found", "message": "no such tenant"}),
+        (
+            "POST",
+            400,
+            {"error": "invalid_target_tenant", "message": "not a tenant UUID"},
+        ),
+        (
+            "POST",
+            404,
+            {
+                "error": "tenant_not_found",
+                "message": "no such tenant",
+                "tenant_id": TARGET_TENANT,
+            },
+        ),
         (
             "POST",
             422,
             {
                 "error": "org_unbound",
                 "message": "the org has no tenant",
+                "org": "meryts",
                 "remedy": "coord_onboard_bind_account",
             },
         ),
@@ -344,7 +370,23 @@ def test_unbind_sends_delete_with_its_body(auth_client: TestClient) -> None:
                 "error": "not_admin_in_both_tenants",
                 "message": "admin required in both tenants",
                 "failed_tenant": TARGET_TENANT,
+                "failed_side": "target",
             },
+        ),
+        (
+            "POST",
+            403,
+            {
+                "error": "not_admin_in_both_tenants",
+                "message": "admin required in both tenants",
+                "failed_tenant": None,
+                "failed_side": "governing",
+            },
+        ),
+        (
+            "POST",
+            403,
+            {"error": "caller_tenant_not_a_party", "message": "not a party"},
         ),
         (
             "POST",
@@ -355,9 +397,50 @@ def test_unbind_sends_delete_with_its_body(auth_client: TestClient) -> None:
                 "proposal_ids": [str(uuid4())],
             },
         ),
-        ("GET", 503, {"error": "migration_pending", "message": "table absent"}),
-        ("GET", 500, {"error": "authz_lookup_failed", "message": "lookup failed"}),
-        ("DELETE", 404, {"error": "binding_not_found", "message": "no binding"}),
+        ("POST", 409, {"error": "tenancy_changed", "message": "retry"}),
+        (
+            "POST",
+            503,
+            {
+                "error": "schema_settling",
+                "message": "a replica predates bindings",
+                "retry_after_secs": 30,
+                "live_replicas": None,
+                "not_ready_replicas": None,
+            },
+        ),
+        (
+            "POST",
+            500,
+            {"error": "repo_binding_write_failed", "message": "rolled back"},
+        ),
+        (
+            "GET",
+            503,
+            {
+                "error": "migration_pending",
+                "message": "table absent",
+                "missing": "coord.repo_tenant_bindings",
+            },
+        ),
+        ("GET", 500, {"error": "repo_binding_read_failed", "message": "unknown"}),
+        ("GET", 503, {"error": "coord_db_unavailable", "message": "no pool"}),
+        ("POST", 500, {"error": "authz_lookup_failed", "message": "lookup failed"}),
+        (
+            "POST",
+            403,
+            {"error": "operator_principal_required", "hint": "operator-only"},
+        ),
+        (
+            "DELETE",
+            404,
+            {
+                "error": "binding_not_found",
+                "message": "no binding",
+                "repo": "meryts/bauhaus-b2b-dev-notes",
+            },
+        ),
+        ("DELETE", 409, {"error": "tenancy_changed", "message": "retry"}),
         (
             "DELETE",
             403,
@@ -386,11 +469,47 @@ def test_coord_refusal_passes_through_verbatim(
     assert res.json() == error_body
 
 
+def test_schema_settling_retry_after_header_passes_through(
+    auth_client: TestClient,
+) -> None:
+    """Coord's ``503 schema_settling`` says when to come back in a
+    ``Retry-After`` header as well as in ``retry_after_secs``; the proxy echoes
+    the header, and both counts may be null (the census was unreadable)."""
+    settling = {
+        "error": "schema_settling",
+        "message": "a replica predates bindings",
+        "retry_after_secs": 30,
+        "live_replicas": 3,
+        "not_ready_replicas": 1,
+    }
+    client = _patched_client(
+        _mock_response(503, settling, headers={"Retry-After": "30"})
+    )
+    with patch("httpx.AsyncClient", return_value=client):
+        res = _call(
+            auth_client,
+            "POST",
+            json={"repo": REPO, "target_tenant": TARGET_TENANT, "reason": "r"},
+        )
+    assert res.status_code == 503
+    assert res.json() == settling
+    assert res.headers["retry-after"] == "30"
+
+
+def test_no_retry_after_is_invented(auth_client: TestClient) -> None:
+    client = _patched_client(_mock_response(200, LIST_BODY))
+    with patch("httpx.AsyncClient", return_value=client):
+        res = _call(auth_client, "GET")
+    assert res.status_code == 200
+    assert "retry-after" not in res.headers
+
+
 def test_non_json_coord_body_is_wrapped(auth_client: TestClient) -> None:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = 502
     resp.json.side_effect = ValueError("not json")
     resp.text = "Bad Gateway"
+    resp.headers = httpx.Headers()
     client = _patched_client(resp)
     with patch("httpx.AsyncClient", return_value=client):
         res = _call(auth_client, "GET")
@@ -466,7 +585,7 @@ def test_coord_timeout_carries_the_refusal_envelope(
     [
         (
             "POST",
-            {"repo": "o/" + "n" * 139, "target_tenant": TARGET_TENANT, "reason": "r"},
+            {"repo": "o/" + "n" * 255, "target_tenant": TARGET_TENANT, "reason": "r"},
         ),
         (
             "POST",
@@ -482,10 +601,10 @@ def test_coord_timeout_carries_the_refusal_envelope(
                 "repo": REPO,
                 "target_tenant": TARGET_TENANT,
                 "reason": "r",
-                "decision_ref": "d" * 1001,
+                "decision_ref": "d" * 2001,
             },
         ),
-        ("DELETE", {"repo": "o/" + "n" * 139, "reason": "r"}),
+        ("DELETE", {"repo": "o/" + "n" * 255, "reason": "r"}),
         ("DELETE", {"repo": REPO, "reason": "r" * 2001}),
     ],
 )
@@ -501,13 +620,48 @@ def test_over_long_fields_are_refused_before_coord(
 
 def test_fields_at_their_caps_are_forwarded(auth_client: TestClient) -> None:
     body = {
-        "repo": "o" * 39 + "/" + "n" * 100,
+        # The longest spelling coord normalizes: a github.com URL + `.git`.
+        "repo": "https://github.com/" + "o" * 39 + "/" + "n" * 100 + ".git",
         "target_tenant": TARGET_TENANT,
         "reason": "r" * 2000,
-        "decision_ref": "d" * 1000,
+        "decision_ref": "d" * 2000,
     }
     client = _patched_client(_mock_response(200, BIND_BODY))
     with patch("httpx.AsyncClient", return_value=client):
         res = _call(auth_client, "POST", json=body)
     assert res.status_code == 200
     assert client.request.call_args.kwargs["json"] == body
+
+
+def test_text_is_trimmed_before_its_cap_as_coord_does(
+    auth_client: TestClient,
+) -> None:
+    """Coord bounds ``reason`` / ``decision_ref`` at 2000 characters AFTER
+    trimming; a value that fits once trimmed is forwarded (trimmed), never a
+    web-side 422 for a value coord would have accepted."""
+    body = {
+        "repo": REPO,
+        "target_tenant": TARGET_TENANT,
+        "reason": "  " + "r" * 2000 + "\n",
+        "decision_ref": " " + "d" * 2000 + " ",
+    }
+    client = _patched_client(_mock_response(200, BIND_BODY))
+    with patch("httpx.AsyncClient", return_value=client):
+        res = _call(auth_client, "POST", json=body)
+    assert res.status_code == 200
+    sent = client.request.call_args.kwargs["json"]
+    assert sent["reason"] == "r" * 2000
+    assert sent["decision_ref"] == "d" * 2000
+
+
+def test_blank_reason_is_coords_to_refuse(auth_client: TestClient) -> None:
+    """Blankness is coord's ``400 invalid_reason``, not a web-side shape: a
+    whitespace-only reason reaches coord (as ``""``) and its refusal comes
+    back verbatim."""
+    refusal = {"error": "invalid_reason", "message": "`reason` is required"}
+    client = _patched_client(_mock_response(400, refusal))
+    with patch("httpx.AsyncClient", return_value=client):
+        res = _call(auth_client, "DELETE", json={"repo": REPO, "reason": "   "})
+    assert res.status_code == 400
+    assert res.json() == refusal
+    assert client.request.call_args.kwargs["json"] == {"repo": REPO, "reason": ""}

@@ -39,7 +39,14 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 from qontinui_schemas.generated.per_type.memory_restore_request import (
     MemoryRestoreRequest,
 )
@@ -1740,7 +1747,9 @@ async def _proxy_coord_verbatim(
     transport errors mapped like the raising helpers (ConnectError → 502,
     TimeoutException → 504), and coord's response — success OR error —
     echoed to the caller with its original status code and JSON body. A
-    non-JSON coord payload is wrapped as ``{"detail": <text>}``.
+    non-JSON coord payload is wrapped as ``{"detail": <text>}``. Coord's
+    ``Retry-After`` (a ``503`` that says when to come back, e.g. the bind
+    door's ``schema_settling``) is echoed too; no other upstream header is.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id)
@@ -1757,7 +1766,17 @@ async def _proxy_coord_verbatim(
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    # Only a real header string is echoed: anything else is no header at all.
+    retry_after = resp.headers.get("retry-after")
+    return JSONResponse(
+        content=content,
+        status_code=resp.status_code,
+        headers=(
+            {"Retry-After": retry_after}
+            if isinstance(retry_after, str) and retry_after.strip()
+            else None
+        ),
+    )
 
 
 class RepoNameCheckRequest(BaseModel):
@@ -2871,47 +2890,66 @@ async def post_pr_merge_onboarding_restore_repo(
 # org tenant for an unbind (D4 rule 2). This proxy adds the web-side
 # active-tenant admin gate and nothing else.
 #
-# Coord's typed refusals (`400 invalid_repo`, `404 tenant_not_found` /
-# `binding_not_found`, `422 org_unbound` + `remedy`, `403
-# not_admin_in_both_tenants` + `failed_tenant`, `403
-# not_admin_in_bound_or_org_tenant`, `409 in_flight_merge_proposals` +
-# `proposal_ids`, `503 migration_pending`, `500 authz_lookup_failed`) pass
-# through with their status and body unchanged, so the page can name the code.
+# Every coord answer passes through with its status and body unchanged (and,
+# for `503 schema_settling`, its `Retry-After` header), so the page can name
+# the code and read its extras. The contract is qontinui-coord#3522's
+# `BindingError` (`repo_tenant_binding/mod.rs`): `400 invalid_repo` /
+# `invalid_reason` / `invalid_decision_ref` / `invalid_target_tenant`; `403
+# caller_tenant_not_a_party`, `not_admin_in_both_tenants` (+ `failed_side`,
+# `failed_tenant`), `not_admin_in_bound_or_org_tenant`; `404
+# tenant_not_found` (+ `tenant_id`) / `binding_not_found` (+ `repo`); `409
+# in_flight_merge_proposals` (+ `proposal_ids`) / `tenancy_changed`; `422
+# org_unbound` (+ `org`, `remedy`); `500 authz_lookup_failed` /
+# `repo_binding_read_failed` / `repo_binding_write_failed`; `503
+# migration_pending` (+ `missing`) / `schema_settling` (bind only: +
+# `retry_after_secs`, `live_replicas`, `not_ready_replicas`) /
+# `coord_db_unavailable`. Coord's operator-layer refusals before the core (no
+# operator context, the `admin` role gate, `operator_principal_required`)
+# pass through the same way.
 COORD_REPO_BINDINGS_PATH = "/coord/onboarding/repo-bindings"
 
 
 #: Length caps on the binding bodies. Like :class:`OnboardingClaimRequest`'s,
 #: they only keep an unbounded blob out of a proxied request body — coord stays
-#: the authoritative check on every value, so nothing here is a pattern. A
-#: ``repo`` is GitHub's 39-char login + ``/`` + its 100-char repository name;
-#: a ``reason`` gets this module's usual 2000; a ``decision_ref`` is a decision
-#: record path or link. ``target_tenant`` is a uuid string, capped generously.
-#: The frontend form carries the same caps (``RepoTenantBindings.tsx``).
-REPO_BINDING_REPO_MAX = 140
-REPO_BINDING_REASON_MAX = 2000
-REPO_BINDING_DECISION_REF_MAX = 1000
+#: the authoritative check on every value, so nothing here is a pattern, and no
+#: cap is tighter than coord's own. ``repo`` admits every spelling coord
+#: normalizes (``owner/name``, a ``.git`` suffix, a github.com URL: GitHub's
+#: 39-char login + ``/`` + its 100-char name + the URL prefix and suffix).
+#: ``reason`` and ``decision_ref`` are coord's 2000 characters AFTER trimming
+#: (``MAX_TEXT_CHARS``), so they are stripped before the cap is applied.
+#: ``target_tenant`` is a uuid string, capped generously. The frontend form
+#: accepts ``owner/name`` only, with its own caps (``RepoTenantBindings.tsx``).
+REPO_BINDING_REPO_MAX = 256
+REPO_BINDING_TEXT_MAX = 2000
 REPO_BINDING_TENANT_MAX = 64
+
+#: Coord's ``reason`` / ``decision_ref`` bound: whitespace is trimmed first,
+#: then at most 2000 characters (coord ``repo_tenant_binding::reason_text``).
+_RepoBindingText = Annotated[
+    str, StringConstraints(strip_whitespace=True, max_length=REPO_BINDING_TEXT_MAX)
+]
 
 
 class RepoBindRequest(BaseModel):
     """Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).
 
-    ``repo`` is ``owner/name``; coord normalizes it case-insensitively and
-    answers ``400 invalid_repo`` for anything else. ``target_tenant`` is the
-    tenant uuid the repo is bound to; it is a plain string here so a malformed
-    value reaches coord and comes back as coord's own refusal rather than a
-    web-side validation shape. ``reason`` is recorded in the audit rows coord
-    writes per affected tenant; ``decision_ref`` is optional free text. Each
-    field is length-capped (see ``REPO_BINDING_*_MAX``): an over-long value is a
+    ``repo`` is ``owner/name`` (a ``.git`` suffix or a github.com URL is
+    accepted too); coord normalizes it to its lowercase key and answers ``400
+    invalid_repo`` for anything else. ``target_tenant`` is the tenant uuid the
+    repo is bound to; it is a plain string here so a malformed value reaches
+    coord and comes back as coord's own ``400 invalid_target_tenant`` rather
+    than a web-side validation shape. ``reason`` (required, non-blank — coord
+    decides blankness) is recorded on the binding and in the audit rows coord
+    writes per affected tenant; ``decision_ref`` is optional free text, and
+    coord reads a blank one as absent. Each field is length-capped (see
+    ``REPO_BINDING_*_MAX``) no tighter than coord: an over-long value is a
     web-side 422, never forwarded.
     """
 
     repo: str = Field(max_length=REPO_BINDING_REPO_MAX)
     target_tenant: str = Field(max_length=REPO_BINDING_TENANT_MAX)
-    reason: str = Field(max_length=REPO_BINDING_REASON_MAX)
-    decision_ref: str | None = Field(
-        default=None, max_length=REPO_BINDING_DECISION_REF_MAX
-    )
+    reason: _RepoBindingText
+    decision_ref: _RepoBindingText | None = None
 
 
 class RepoUnbindRequest(BaseModel):
@@ -2923,7 +2961,7 @@ class RepoUnbindRequest(BaseModel):
     """
 
     repo: str = Field(max_length=REPO_BINDING_REPO_MAX)
-    reason: str = Field(max_length=REPO_BINDING_REASON_MAX)
+    reason: _RepoBindingText
 
 
 @router.get("/pr-merge/onboarding/repo-bindings")
@@ -2957,9 +2995,12 @@ async def post_pr_merge_onboarding_repo_binding(
     Proxies coord's ``POST /coord/onboarding/repo-bindings``. Coord moves the
     repo's ``tenant_repos`` / profile / canonical rows, writes the binding, one
     audit row per affected tenant and an operator notification, and answers
-    ``{repo, from_tenant, to_tenant, governed_by, moved, binding_written,
-    audit_ids, notified, idempotent}``. ``decision_ref`` is omitted from the
-    wire when absent. Status + body verbatim.
+    ``{repo, from_tenant, to_tenant, governed_by: "binding", moved:
+    {tenant_repos, profile, canonical}, binding_written, binding_deleted,
+    tombstone_cleared, audit_ids, notified, idempotent, enrollment_spawned}``;
+    a repeated bind answers ``idempotent: true`` with nothing written.
+    ``decision_ref`` is omitted from the wire when absent. Status, body and
+    ``Retry-After`` verbatim (``503 schema_settling`` is a bind-only refusal).
     """
     return await _proxy_coord_verbatim(
         "POST",
@@ -2979,9 +3020,9 @@ async def delete_pr_merge_onboarding_repo_binding(
     Proxies coord's ``DELETE /coord/onboarding/repo-bindings`` with the body
     ``{repo, reason}``. An admin of either the bound tenant (release) or the
     org's tenant (reclaim) may unbind; coord decides. The 200 body has the
-    bind response's shape with ``governed_by: "org"`` and ``binding_written:
-    false``; ``404 binding_not_found`` when there is no binding. Status + body
-    verbatim.
+    bind response's shape with ``governed_by: "org"`` and ``binding_deleted:
+    true``; ``404 binding_not_found`` when there is no binding visible to the
+    active tenant. Status + body verbatim.
     """
     return await _proxy_coord_verbatim(
         "DELETE",

@@ -15496,9 +15496,12 @@ export interface paths {
          *     Proxies coord's ``POST /coord/onboarding/repo-bindings``. Coord moves the
          *     repo's ``tenant_repos`` / profile / canonical rows, writes the binding, one
          *     audit row per affected tenant and an operator notification, and answers
-         *     ``{repo, from_tenant, to_tenant, governed_by, moved, binding_written,
-         *     audit_ids, notified, idempotent}``. ``decision_ref`` is omitted from the
-         *     wire when absent. Status + body verbatim.
+         *     ``{repo, from_tenant, to_tenant, governed_by: "binding", moved:
+         *     {tenant_repos, profile, canonical}, binding_written, binding_deleted,
+         *     tombstone_cleared, audit_ids, notified, idempotent, enrollment_spawned}``;
+         *     a repeated bind answers ``idempotent: true`` with nothing written.
+         *     ``decision_ref`` is omitted from the wire when absent. Status, body and
+         *     ``Retry-After`` verbatim (``503 schema_settling`` is a bind-only refusal).
          */
         post: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_post"];
         /**
@@ -15508,9 +15511,9 @@ export interface paths {
          *     Proxies coord's ``DELETE /coord/onboarding/repo-bindings`` with the body
          *     ``{repo, reason}``. An admin of either the bound tenant (release) or the
          *     org's tenant (reclaim) may unbind; coord decides. The 200 body has the
-         *     bind response's shape with ``governed_by: "org"`` and ``binding_written:
-         *     false``; ``404 binding_not_found`` when there is no binding. Status + body
-         *     verbatim.
+         *     bind response's shape with ``governed_by: "org"`` and ``binding_deleted:
+         *     true``; ``404 binding_not_found`` when there is no binding visible to the
+         *     active tenant. Status + body verbatim.
          */
         delete: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_delete"];
         options?: never;
@@ -47086,13 +47089,16 @@ export interface components {
          * RepoBindRequest
          * @description Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).
          *
-         *     ``repo`` is ``owner/name``; coord normalizes it case-insensitively and
-         *     answers ``400 invalid_repo`` for anything else. ``target_tenant`` is the
-         *     tenant uuid the repo is bound to; it is a plain string here so a malformed
-         *     value reaches coord and comes back as coord's own refusal rather than a
-         *     web-side validation shape. ``reason`` is recorded in the audit rows coord
-         *     writes per affected tenant; ``decision_ref`` is optional free text. Each
-         *     field is length-capped (see ``REPO_BINDING_*_MAX``): an over-long value is a
+         *     ``repo`` is ``owner/name`` (a ``.git`` suffix or a github.com URL is
+         *     accepted too); coord normalizes it to its lowercase key and answers ``400
+         *     invalid_repo`` for anything else. ``target_tenant`` is the tenant uuid the
+         *     repo is bound to; it is a plain string here so a malformed value reaches
+         *     coord and comes back as coord's own ``400 invalid_target_tenant`` rather
+         *     than a web-side validation shape. ``reason`` (required, non-blank — coord
+         *     decides blankness) is recorded on the binding and in the audit rows coord
+         *     writes per affected tenant; ``decision_ref`` is optional free text, and
+         *     coord reads a blank one as absent. Each field is length-capped (see
+         *     ``REPO_BINDING_*_MAX``) no tighter than coord: an over-long value is a
          *     web-side 422, never forwarded.
          */
         RepoBindRequest: {

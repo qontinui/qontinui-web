@@ -382,26 +382,74 @@ export interface RepoUnbindRequest {
 }
 
 /**
- * The bind / unbind answer. For an unbind `to_tenant` is the org's tenant,
- * `governed_by` is `"org"` and `binding_written` is false.
+ * The bind / unbind answer (qontinui-coord#3522 `BindingOutcome`). `repo` is
+ * coord's lowercased key; `from_tenant` governed the repo before the call and
+ * `to_tenant` governs it after. A bind answers `governed_by: "binding"` and
+ * `binding_written`; an unbind answers `governed_by: "org"` (`to_tenant` is the
+ * org's tenant) and `binding_deleted`. A repeated bind is `idempotent: true`
+ * with nothing written, no audit rows and `notified: false`.
+ * `tombstone_cleared`: a target-tenant un-enrollment tombstone was cleared;
+ * `enrollment_spawned`: the per-repo enrollment steps were started for the
+ * target, which the move left with no profile.
  */
 export interface RepoBindingResult {
   repo: string;
-  from_tenant: string | null;
+  from_tenant: string;
   to_tenant: string;
   governed_by: "binding" | "org";
   moved: { tenant_repos: number; profile: number; canonical: number };
   binding_written: boolean;
+  binding_deleted: boolean;
+  tombstone_cleared: boolean;
   audit_ids: string[];
   notified: boolean;
   idempotent: boolean;
+  enrollment_spawned: boolean;
+}
+
+/**
+ * A refusal body from the bind door, passed through verbatim by the web proxy:
+ * always `{error, message}` from coord's core, plus the extras its code
+ * carries (qontinui-coord#3522 `BindingError::body`). The operator layer in
+ * front of the core answers `{error, hint}` or `{error, required, held}`
+ * shapes, so every field past `error` is optional here and read defensively.
+ */
+export interface RepoBindingRefusalBody {
+  error: string;
+  message?: string;
+  /** `not_admin_in_both_tenants`: which party's admin check failed. */
+  failed_side?: "governing" | "target";
+  /** `not_admin_in_both_tenants`: that tenant, or `null` when withheld. */
+  failed_tenant?: string | null;
+  /** `in_flight_merge_proposals`. */
+  proposal_ids?: string[];
+  /** `org_unbound`: the GitHub org, and the remedy coord names for it. */
+  org?: string;
+  remedy?: string;
+  /** `schema_settling` (bind only; also the `Retry-After` header). */
+  retry_after_secs?: number;
+  /** `schema_settling`: `null` when coord could not read its census. */
+  live_replicas?: number | null;
+  not_ready_replicas?: number | null;
+  /** `tenant_not_found`. */
+  tenant_id?: string;
+  /** `binding_not_found`. */
+  repo?: string;
+  /** `migration_pending`: the missing `coord.*` object. */
+  missing?: string;
+  /** `operator_principal_required` and the device refusals. */
+  hint?: string;
+  /** The operator `admin` role gate. */
+  required?: string;
+  held?: string[];
 }
 
 /**
  * `GET /pr-merge/onboarding/repo-bindings` —
  * `get_pr_merge_onboarding_repo_bindings`. Lists the bindings where the
- * active tenant is the bound tenant or the org's tenant. A rejection carries
- * coord's typed error body (`{error, message}`) for `httpBodyOf`.
+ * active tenant is the bound tenant or the org's tenant. `[]` is a MEASURED
+ * empty set; a failed read is a rejection (never an empty list) carrying
+ * coord's typed error body ({@link RepoBindingRefusalBody}) for `httpBodyOf`.
  */
 export async function fetchRepoTenantBindings(
   options: HttpOptions = {}

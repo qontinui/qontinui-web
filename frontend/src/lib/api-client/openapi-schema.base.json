@@ -44492,12 +44492,12 @@
         "type": "object"
       },
       "RepoBindRequest": {
-        "description": "Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).\n\n``repo`` is ``owner/name``; coord normalizes it case-insensitively and\nanswers ``400 invalid_repo`` for anything else. ``target_tenant`` is the\ntenant uuid the repo is bound to; it is a plain string here so a malformed\nvalue reaches coord and comes back as coord's own refusal rather than a\nweb-side validation shape. ``reason`` is recorded in the audit rows coord\nwrites per affected tenant; ``decision_ref`` is optional free text. Each\nfield is length-capped (see ``REPO_BINDING_*_MAX``): an over-long value is a\nweb-side 422, never forwarded.",
+        "description": "Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).\n\n``repo`` is ``owner/name`` (a ``.git`` suffix or a github.com URL is\naccepted too); coord normalizes it to its lowercase key and answers ``400\ninvalid_repo`` for anything else. ``target_tenant`` is the tenant uuid the\nrepo is bound to; it is a plain string here so a malformed value reaches\ncoord and comes back as coord's own ``400 invalid_target_tenant`` rather\nthan a web-side validation shape. ``reason`` (required, non-blank \u2014 coord\ndecides blankness) is recorded on the binding and in the audit rows coord\nwrites per affected tenant; ``decision_ref`` is optional free text, and\ncoord reads a blank one as absent. Each field is length-capped (see\n``REPO_BINDING_*_MAX``) no tighter than coord: an over-long value is a\nweb-side 422, never forwarded.",
         "properties": {
           "decision_ref": {
             "anyOf": [
               {
-                "maxLength": 1000,
+                "maxLength": 2000,
                 "type": "string"
               },
               {
@@ -44512,7 +44512,7 @@
             "type": "string"
           },
           "repo": {
-            "maxLength": 140,
+            "maxLength": 256,
             "title": "Repo",
             "type": "string"
           },
@@ -44771,7 +44771,7 @@
             "type": "string"
           },
           "repo": {
-            "maxLength": 140,
+            "maxLength": 256,
             "title": "Repo",
             "type": "string"
           }
@@ -104115,7 +104115,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/repo-bindings": {
       "delete": {
-        "description": "Unbind a repo, returning its governance to the org's tenant.\n\nProxies coord's ``DELETE /coord/onboarding/repo-bindings`` with the body\n``{repo, reason}``. An admin of either the bound tenant (release) or the\norg's tenant (reclaim) may unbind; coord decides. The 200 body has the\nbind response's shape with ``governed_by: \"org\"`` and ``binding_written:\nfalse``; ``404 binding_not_found`` when there is no binding. Status + body\nverbatim.",
+        "description": "Unbind a repo, returning its governance to the org's tenant.\n\nProxies coord's ``DELETE /coord/onboarding/repo-bindings`` with the body\n``{repo, reason}``. An admin of either the bound tenant (release) or the\norg's tenant (reclaim) may unbind; coord decides. The 200 body has the\nbind response's shape with ``governed_by: \"org\"`` and ``binding_deleted:\ntrue``; ``404 binding_not_found`` when there is no binding visible to the\nactive tenant. Status + body verbatim.",
         "operationId": "api_v1_operations_pr_merge_onboarding_repo_bindings_delete",
         "requestBody": {
           "content": {
@@ -104211,7 +104211,7 @@
         ]
       },
       "post": {
-        "description": "Bind a repo to a tenant (or rebind it to another one).\n\nProxies coord's ``POST /coord/onboarding/repo-bindings``. Coord moves the\nrepo's ``tenant_repos`` / profile / canonical rows, writes the binding, one\naudit row per affected tenant and an operator notification, and answers\n``{repo, from_tenant, to_tenant, governed_by, moved, binding_written,\naudit_ids, notified, idempotent}``. ``decision_ref`` is omitted from the\nwire when absent. Status + body verbatim.",
+        "description": "Bind a repo to a tenant (or rebind it to another one).\n\nProxies coord's ``POST /coord/onboarding/repo-bindings``. Coord moves the\nrepo's ``tenant_repos`` / profile / canonical rows, writes the binding, one\naudit row per affected tenant and an operator notification, and answers\n``{repo, from_tenant, to_tenant, governed_by: \"binding\", moved:\n{tenant_repos, profile, canonical}, binding_written, binding_deleted,\ntombstone_cleared, audit_ids, notified, idempotent, enrollment_spawned}``;\na repeated bind answers ``idempotent: true`` with nothing written.\n``decision_ref`` is omitted from the wire when absent. Status, body and\n``Retry-After`` verbatim (``503 schema_settling`` is a bind-only refusal).",
         "operationId": "api_v1_operations_pr_merge_onboarding_repo_bindings_post",
         "requestBody": {
           "content": {
