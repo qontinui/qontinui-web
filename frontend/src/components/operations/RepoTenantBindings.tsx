@@ -230,7 +230,7 @@ export function refusalDetail(
       // Coord's message says the transaction rolled back, but coord maps a
       // failed COMMIT to this code too, and a COMMIT whose acknowledgement
       // was lost may have applied.
-      return 'Coord also reports this code when the COMMIT itself fails, and a COMMIT whose acknowledgement was lost may still have applied — so "nothing was written" is not established. Before retrying, re-read the bindings (Refresh) and check whether the change is there.';
+      return 'Coord also reports this code when the COMMIT itself fails, and a COMMIT whose acknowledgement was lost may still have applied — so "nothing was written" is not established. Before retrying, re-read the bindings (the refresh button at the top of this card) and check whether the change is there.';
     case "org_unbound": {
       const org = nonBlank(b.org) ?? "(org not reported)";
       const remedy = nonBlank(b.remedy);
@@ -253,10 +253,10 @@ export function refusalDetail(
       return "Switch the active tenant to the repository's governing tenant or to the target tenant, then retry.";
     case "binding_not_found": {
       const repo = nonBlank(b.repo) ?? "The repository";
-      return `${repo} has no binding visible to this tenant — it may already have been unbound. The list has been re-read.`;
+      return `${repo} has no binding visible to this tenant — it may already have been unbound. Re-read the bindings (the refresh button at the top of this card) to confirm.`;
     }
     case "tenancy_changed":
-      return "The binding changed while coord was authorizing this request; nothing was written. Re-read the bindings (Refresh), then retry.";
+      return "The binding changed while coord was authorizing this request; nothing was written. Re-read the bindings (the refresh button at the top of this card), then retry.";
     case "tenant_not_found":
       return nonBlank(b.tenant_id)
         ? `Coord has no tenant ${b.tenant_id}.`

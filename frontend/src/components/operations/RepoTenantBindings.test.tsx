@@ -1069,8 +1069,56 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     expect(unread.textContent).toContain("is UNKNOWN");
     expect(unread.textContent).not.toContain("got no answer");
     expect(unread.textContent).toContain("is not established");
-    // The list could not be re-read, so the sentence must not point at one.
+    // The list could not be re-read, so the sentence must not point at one;
+    // it says to re-read instead.
     expect(unread.textContent).not.toContain("Check the re-read list");
+    expect(unread.textContent).toContain(
+      "re-read the bindings (the refresh button at the top of this card) and check whether the change is there"
+    );
+  });
+
+  it("a binding_not_found unbind whose re-read fails claims no re-read", async () => {
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () =>
+          json(
+            { error: "coord_db_unavailable", message: "coord DB pool down" },
+            503
+          ),
+      ],
+      () =>
+        json(
+          {
+            error: "binding_not_found",
+            message: `${BOUND_HERE.repo} carries no binding visible to this tenant`,
+            repo: BOUND_HERE.repo,
+          },
+          404
+        )
+    );
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+
+    const unread = await screen.findByTestId(
+      `repo-binding-unbind-error-unread-${BOUND_HERE.repo}`
+    );
+    expect(unread.dataset.mayHaveLanded).toBe("false");
+    expect(unread.textContent).toContain("it may already have been unbound");
+    expect(unread.textContent).not.toContain("has been re-read");
   });
 
   it("writeMayHaveLanded: decided by which side answered and what it meant", () => {
@@ -1389,10 +1437,10 @@ describe("every refusal the bind door's contract names (coord#3522)", () => {
         repo: "meryts/x",
       })
     ).toBe(
-      "meryts/x has no binding visible to this tenant — it may already have been unbound. The list has been re-read."
+      "meryts/x has no binding visible to this tenant — it may already have been unbound. Re-read the bindings (the refresh button at the top of this card) to confirm."
     );
     expect(detailOf(409, { error: "tenancy_changed", message: "m" })).toBe(
-      "The binding changed while coord was authorizing this request; nothing was written. Re-read the bindings (Refresh), then retry."
+      "The binding changed while coord was authorizing this request; nothing was written. Re-read the bindings (the refresh button at the top of this card), then retry."
     );
     expect(
       detailOf(403, { error: "caller_tenant_not_a_party", message: "m" })
@@ -1412,7 +1460,9 @@ describe("every refusal the bind door's contract names (coord#3522)", () => {
     // failed COMMIT to it, and a lost COMMIT ack may have applied.
     expect(
       detailOf(500, { error: "repo_binding_write_failed", message: "m" })
-    ).toContain("is not established");
+    ).toBe(
+      'Coord also reports this code when the COMMIT itself fails, and a COMMIT whose acknowledgement was lost may still have applied — so "nothing was written" is not established. Before retrying, re-read the bindings (the refresh button at the top of this card) and check whether the change is there.'
+    );
   });
 
   it("the operator layer's shapes: hint, sentence-error, role gate", () => {
