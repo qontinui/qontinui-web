@@ -543,6 +543,23 @@ export function noLiveInitiativeBody() {
   };
 }
 
+/**
+ * The next poll after the oldest decision was answered: the same body without
+ * the first needs-you row, so every row below it moves up one place.
+ */
+export function firstDecisionAnsweredBody() {
+  const body = fullBody();
+  return {
+    ...body,
+    needs_me: {
+      ...body.needs_me,
+      total: body.needs_me.total - 1,
+      by_domain: { operator_gate: 1, [UNNAMED_DOMAIN]: 1 },
+      items: body.needs_me.items.slice(1),
+    },
+  };
+}
+
 /** Coord counted decisions for the operator but served none of them. */
 export function unservedDecisionsBody() {
   return fullBody({

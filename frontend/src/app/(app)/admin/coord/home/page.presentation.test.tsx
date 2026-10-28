@@ -25,7 +25,10 @@
  *  6. the route is registered presentation-ready, so the console's page gate
  *     renders it rather than withholding it;
  *  7. the operator console unchanged: every carrier verbatim, the raw lines,
- *     the titles and the answer link, and no lens chrome.
+ *     the titles and the answer link, and no lens chrome;
+ *  8. an open row stays the record that was opened when a poll removes the
+ *     row above it, in both modes: a presented row's key is an alias of the
+ *     operator's, never its position.
  *
  * The pure half (descriptors, repository attribution, allowlists) is pinned
  * in `_lib/homeLens.test.ts`.
@@ -74,6 +77,7 @@ import {
   SHARED_UNIT_TITLE,
   TENANT_ID,
   TENANT_NAME,
+  firstDecisionAnsweredBody,
   fullBody,
   noLiveInitiativeBody,
   unreadBlocksBody,
@@ -731,6 +735,67 @@ describe("/admin/coord/home?present=1 — a kept reading after a failed refresh"
     expect(screen.queryByTestId("coord-home.kept-reading")).toBeNull();
     expect(document.querySelector("[data-provenance]")).toBeNull();
   });
+});
+
+describe("/admin/coord/home — an open row is the record that was opened", () => {
+  beforeEach(resetEnvironment);
+
+  /** The needs-you rows' clickable lines, top to bottom. */
+  function needsRows(): Element[] {
+    return [
+      ...screen
+        .getByTestId("coord-home.needs-you")
+        .querySelectorAll("[data-console-row]"),
+    ];
+  }
+
+  it.each([
+    ["while presenting", true],
+    ["for the operator (#1999's own behaviour)", false],
+  ] as const)(
+    "%s: a poll that removes the row above the open one never opens another record",
+    async (_mode, presenting) => {
+      httpFetch.mockImplementation(async () => jsonResponse(fullBody()));
+      const view = presenting
+        ? renderInPresentationMode(<CoordHomePage />, { scope: SCOPE })
+        : render(
+            <FixedPresentationMode presenting={false}>
+              <CoordHomePage />
+            </FixedPresentationMode>
+          );
+      await waitFor(() => expect(needsRows()).toHaveLength(3));
+      // Open the approval, the second row.
+      fireEvent.click(needsRows()[1]!);
+      expect(needsRows()[1]).toHaveAttribute("aria-expanded", "true");
+
+      // The next poll: the oldest question was answered, so the approval
+      // moves up and the open question takes its place.
+      httpFetch.mockImplementation(async () =>
+        jsonResponse(firstDecisionAnsweredBody())
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByTestId(HOME_REFRESH_ID));
+      });
+      await waitFor(() => expect(needsRows()).toHaveLength(2));
+      const [approval, question] = needsRows();
+      expect(approval).toHaveTextContent(
+        presenting ? /Approval · / : /Approve the deploy/
+      );
+      // The question now in the open row's place is not shown as opened —
+      // its detail would read as the approval the viewer opened.
+      expect(question).not.toHaveAttribute("aria-expanded", "true");
+      // Whatever stays open is the approval itself (for the operator, a key
+      // carrying its position collapses it; presenting does the same).
+      expect(
+        needsRows().filter((r) => r.getAttribute("aria-expanded") === "true")
+      ).toEqual(
+        approval!.getAttribute("aria-expanded") === "true" ? [approval] : []
+      );
+      if ("uiBridge" in view) {
+        expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+      }
+    }
+  );
 });
 
 describe("/admin/coord/home — the refresh is a read, registered where it renders", () => {

@@ -358,11 +358,32 @@ export function presentedInitiativeDate(date: string | null): string | null {
 }
 
 /**
- * A list row's key while presenting: its list and its position, so the
- * `data-row-key` attribute `RecordList` writes carries no question id, gate
- * id, device id, repository or source id. Operator mode keeps the page's own
- * keys.
+ * List row keys while presenting: an opaque alias of the key operator mode
+ * gives the same row.
+ *
+ * `RecordList` writes a row's key to `data-row-key`, and the page's own keys
+ * carry a question id, gate id, device id, repository or source id — so while
+ * presenting a row is keyed by an alias instead. The key is also what
+ * expansion compares, so the alias must not change which row is open: a key
+ * by POSITION would keep "row 2" open when a poll removes the row above it,
+ * and the detail on screen would silently become another record's. So the
+ * alias is of the WHOLE operator key, index suffix included: a bijection of
+ * it, assigned on first sight and never reused, so a presented row opens,
+ * stays open and collapses exactly when the operator's would (D1: the mode
+ * changes rendering only). One registry per mounted region, kept across
+ * polls (`HomeLens.tsx` `useRowKey`).
  */
-export function presentedRowKey(list: string, index: number): string {
-  return `${list}:${index}`;
+export class RowKeyAliases {
+  private readonly aliases = new Map<string, number>();
+
+  /** The presented key of the row operator mode keys `operatorKey` in `list`. */
+  key(list: string, operatorKey: string): string {
+    const identity = `${list}\u0000${operatorKey}`;
+    let n = this.aliases.get(identity);
+    if (n === undefined) {
+      n = this.aliases.size + 1;
+      this.aliases.set(identity, n);
+    }
+    return `${list}:row-${n}`;
+  }
 }

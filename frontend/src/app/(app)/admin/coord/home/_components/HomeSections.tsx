@@ -72,12 +72,16 @@ import {
   presentedInitiativeDate,
   presentedInitiativeStatus,
   presentedPlanPhase,
-  presentedRowKey,
   reasonDescriptor,
   type DegradationRowKind,
   type NamedListKind,
 } from "../_lib/homeLens";
-import { HomeRefreshButton, RegionCaption, useSubjectText } from "./HomeLens";
+import {
+  HomeRefreshButton,
+  RegionCaption,
+  useRowKey,
+  useSubjectText,
+} from "./HomeLens";
 import {
   BLOCK_STATE_PHRASE,
   HOME_ATTENTION_BY_KIND,
@@ -481,6 +485,7 @@ export function NeedsYouSection({
   generatedAt?: string | null;
 }) {
   const { presenting } = usePresentationMode();
+  const rowKey = useRowKey();
   const read = needs.state === "read";
   const served = needs.items?.length ?? 0;
   // One displayable count, shared with the strip: never "1 shown of 0".
@@ -570,9 +575,7 @@ export function NeedsYouSection({
           <RecordList
             items={needs.items ?? []}
             itemKey={(i, idx) =>
-              presenting
-                ? presentedRowKey("needs", idx)
-                : `${i.source ?? "item"}:${i.id}:${idx}`
+              rowKey("needs", `${i.source ?? "item"}:${i.id}:${idx}`)
             }
             renderRow={(item, ctx) => (
               <NeedsYouRow
@@ -731,6 +734,7 @@ export function DegradingSection({
   generatedAt?: string | null;
 }) {
   const { presenting } = usePresentationMode();
+  const rowKey = useRowKey();
   const open = openDegradations(deg);
   const declared = [
     ...(deg.open ?? []).filter((r) => r.declared),
@@ -819,9 +823,7 @@ export function DegradingSection({
             <RecordList
               items={rows}
               itemKey={(r, i) =>
-                presenting
-                  ? presentedRowKey(r.kind, i)
-                  : `${r.kind}:${r.d.id}:${i}`
+                rowKey("degrading", `${r.kind}:${r.d.id}:${i}`)
               }
               renderRow={(r, ctx) => (
                 <DegradationRow
@@ -871,11 +873,7 @@ export function DegradingSection({
             ) : (
               <RecordList
                 items={cleared}
-                itemKey={(d, i) =>
-                  presenting
-                    ? presentedRowKey("cleared", i)
-                    : `cleared:${d.id}:${i}`
-                }
+                itemKey={(d, i) => rowKey("cleared", `cleared:${d.id}:${i}`)}
                 renderRow={(d, ctx) => (
                   <DegradationRow
                     d={d}
@@ -1300,7 +1298,7 @@ export function OnTrackSection({
   stale?: boolean;
   generatedAt?: string | null;
 }) {
-  const { presenting } = usePresentationMode();
+  const rowKey = useRowKey();
   const read = onTrack.state === "read";
   const stallWindow = onTrack.stallWindowSecs;
   // Which repositories each named unit may belong to — read once from every
@@ -1362,9 +1360,7 @@ export function OnTrackSection({
               (g) => !(g.kind === "unattributed_repo" && g.rowCount === 0)
             )}
             itemKey={(g, i) =>
-              presenting
-                ? presentedRowKey("group", i)
-                : `${g.kind}:${g.key ?? "none"}:${i}`
+              rowKey("group", `${g.kind}:${g.key ?? "none"}:${i}`)
             }
             empty={
               <p className="m-0 text-sm text-muted-foreground">
@@ -1492,6 +1488,7 @@ export function DoesNotKnowSection({
   generatedAt?: string | null;
 }) {
   const { presenting } = usePresentationMode();
+  const rowKey = useRowKey();
   const count =
     sources === null
       ? "unknown"
@@ -1520,9 +1517,7 @@ export function DoesNotKnowSection({
       ) : (
         <RecordList
           items={sources}
-          itemKey={(s, i) =>
-            presenting ? presentedRowKey("source", i) : `${s.source}:${i}`
-          }
+          itemKey={(s, i) => rowKey("source", `${s.source}:${i}`)}
           empty={
             <p className="m-0 text-sm text-muted-foreground">
               Coord listed no sources — unknown.
