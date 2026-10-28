@@ -1641,6 +1641,37 @@ silently:
 | **An allowlist, not a blocklist, for values shown verbatim** | `OperatorAuditPanel.tsx` (`PresentedAuditRow`), `operations/auditPresentation.ts` (`VERBATIM_BLAST_KEYS`, `auditScope`) | The presented audit feed says what happened and when in fixed words. A blast-radius value is shown as it is only when its key is vouched for as coord's fixed vocabulary, a time or a number; repositories, scopes (coord's `tenant` / `repo:<owner>/<name>`), devices, tenants and people each have a redacting arm, and a key added later without one is withheld. | D3's "a blocklist alone fails open", applied to a key list: a default arm that shows every value it does not recognise shows coord's `repo:` scope — a partner's repository — the first time a kill switch is pulled on one. |
 | **Coord's vocabulary stays with the operator** | `presentedAuditActionLabel` (`auditPresentation.ts`), `presentedUnknownReason` (`runnerReportStatus.ts`), the audit feed's presented nil-operator cell (`OperatorAuditPanel.tsx`), the device-status tile's connection line (`DeviceStatusTile.tsx`), the roles lane table, the Conditions panel's labels and titles (`FleetConditionsPanel.tsx` over `fleetConditions.ts`), `faultToVisibilityBadge`'s `plainKinds`; guarded by the page test's `ENGINEERING_VOCABULARY` scan | While presenting, nothing the page shows — its text behind every disclosure, every `title`, every `aria-label` — is a coord token (`closed_by_role`), an action id or family (`pr_merge.kill_switch`, `fleet.*`), a variable, a table, a route or the transport a list updates over (`WS`): each is said in words, or not said. Where the console holds a closed table — an audit action's label and family, an unknown report's reason — a value the table does not know reads in fixed words ("A recorded change", "no report arrived for this machine"), never as itself. A role lane's state, a slowest fault kind, and a condition domain or setting kind the Conditions panel has no label for are coord's own closed vocabularies, which name no machine and no person: they read as coord's word with its underscores (and, for a domain or a setting kind, its hyphens) replaced by spaces ("closed by role"). The operator keeps every token, because to the operator it is a filter term and a fact. The resource strip's hover cards, which explain each figure's formula in coord's column names, are left as evidence one hover down, and the scan does not read them. | R8 keeps internal vocabulary off a primary surface; an evaluator reads every surface as primary, and `audience_profile/external-evaluator` names "internal status words shown without translation" as something it will not tolerate. |
 
+
+### 3.13 The coordination overview's presentation layer — recorded under §6.4
+
+`/admin/coord/home` in presentation mode (plan
+`2026-10-23-console-presentation-spaces` Phase 2; the page itself is plan
+`2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen`
+Phase 4) is rendered through the presentation lens over the page's one read
+of coord's project state — captions on, provenance on, controls off,
+redaction on. It composes the lens's primitives (`Caption`, `SectionCaption`,
+`Provenance`, `RedactedText` / `useRedactor`, `useMachineAliaser`,
+`OperatorOnly`, `LensLink`) over the console's, and adds no primitive: the
+console's `RefreshButton` gained an optional `ref`, and nothing else changed
+under `components/`. The page renders in presentation mode because it is
+registered in `PRESENTATION_READY_ROUTES` (`presentationReadiness.ts`) on the
+strength of `home/page.presentation.test.tsx`, the run-proven page test §6.5
+describes, over fixtures that feed every free-text carrier the page can show
+in every state its regions render. **Operator mode is unchanged**: every
+pattern below renders nothing, or the original, outside presentation mode.
+Eight things are recorded rather than shipped silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **One read, one chip per region** | `home/_components/HomeLens.tsx` (`RegionCaption`), `home/_lib/homeLens.ts` (`regionSources`) | Every figure on the page comes from one read, so each of the six regions opens with its `SectionCaption` carrying ONE `Provenance` chip — "coord's project state", dated by the answer's `generated_at` — the way §3.11's section caption serves a column. With nothing read, the chip's time is UNKNOWN on `UNKNOWN_AMBER`, and every region still says what it could not read. The strip's caption sits just before the strip, whose row is a flex line; every other region's caption opens its section. | §3.11 records a section caption with one chip per READ behind the section; here one read is behind six regions, and naming the other regions' sources in each would be chrome that cannot vary. |
+| **A kept reading names itself, led by the failure** | `HomeLens.tsx` (`KeptReadingNotice`), `homeLens.ts` (`PROJECT_STATE_KEPT_SOURCE`) | After a failed refresh the page keeps the last answer (#1999's R6 stale arm). While presenting, a notice leads the page — the latest read failed, its reason in fixed words (`presentedFailure.ts`), and everything below is its last reading, not a current one — and every region's chip names "coord's project state, last read", still dated by that answer, never by now. The strip keeps its own "at the last good read" headline, and its "Last failure" is the fixed words too. | §6.5's "A kept reading" says where the dot goes for a panel and for a list of rows; this is the same rule for a whole page whose regions are one reading. |
+| **Every free-text carrier, and what its descriptor is built from** | `HomeSections.tsx`; `homeLens.ts` (`needsDescriptor`, `degradationDescriptor`, `subjectDescriptor`, `namedUnitDescriptor`, `reasonDescriptor`, `TENANT_DESCRIPTOR`, `REPOSITORY_DESCRIPTOR`, `INITIATIVE_ITEM_DESCRIPTOR`, `INITIATIVE_KEYS_DESCRIPTOR`) | A question's or an approval's text, its recommendation, consequence and options, and the work unit it blocks; a degradation's headline and subject; a repository; a unit's title (or its slug); an initiative's items and the keys of items it does not list; coord's own reasons (an exclusion, a parse error, why no initiative is live); and the tenant's name — each renders through `RedactedText`, or `useRedactor` for a row's reason slot and a `title`, with a descriptor built from the item's own fixed fields: what it is, its area (a degradation's plane), the word its badge shows, its age. Only a degradation whose subject coord names as a repository, a repository group and a named unit are bound to a repository; everything else belongs to none, so it is a descriptor while presenting however harmless it reads. | §6.5's redaction bullet names a plan, PR, session or finding title; this page's carriers are its own, and each descriptor's fields are ones its row already shows. |
+| **A unit's repositories are bounded, or the unit is withheld** | `homeLens.ts` (`namedUnitRepos`) | Coord names a unit under each repository group it belongs to, but not its whole repository list. A unit's class is its own, so it sits in the same named list of every group it belongs to — named there unless that list was cut short. Its repositories are therefore the groups that name it plus, failing closed, every group whose list of the same kind was cut short (`omitted` above zero, or unknown) or not served. A unit under the unattributed group, or under a group whose repository is unknown, is withheld. A withheld unit is not linked, because its URL carries its slug. Today coord serves bare repository names, which no owner vouches for, so every unit title reads as its descriptor until coord serves an owner — the same answer the digital twin's plan list gives. | D3.3 says text that belongs to any repository off the first-party list is withheld; this is how a list that names a unit once per group is made to say every group the unit may span. |
+| **A subject by what coord says it is** | `HomeLens.tsx` (`useSubjectText`), `coordHomeStatus.ts` (`DegradationView.subjectKind`) | A degradation subject coord names as a `device` reads as its session alias (`Machine A`, one letter however many rows name it); a `repo` reads as its name when the scope clears it; a `service` or an alert `key` reads as its descriptor. The parser now keeps coord's `subject.kind`, which it used to drop. | §3.11 aliases a machine from the identifiers a row holds; here the subject's declared kind decides which of three rules applies. |
+| **Raw lines, raw-id titles and quoted errors stay with the operator** | `HomeSections.tsx` (each `RecordDetail` `raw`, `NotRead`, the strip's tenant, the gap sentence, the watcher lines, the source labels, the `RecordList` keys) | R8 puts raw ids on an expanded detail's last line; while presenting that line is not rendered at all (the slot stays empty, so no wrapper is left behind), and neither is a `title` holding a raw id or coord's own words: the tenant's UUID, coord's reason for an incomplete view, watcher names, a source's id. A block coord could not read still says so, and that coord reported an error, with the chain withheld; a source row with an error says the same instead of pointing at a last line that is not there. List rows are keyed by position while presenting, so `data-row-key` carries no question, gate, device or source id. | R8 decides what a primary surface shows; an evaluator reads every line, the last one included. §3.10's "a reason that quotes the outside world" covers a failed read's reason, not R8's raw line. |
+| **Shapes, not words, for a tenant's typed values** | `homeLens.ts` (`presentedInitiativeStatus`, `presentedInitiativeDate`, `presentedPlanPhase`) | The initiative's frontmatter is typed by hand: while presenting, its status reads `live` or `not live` (the one distinction coord's alignment makes), a start or end date shows only as an ISO date and otherwise reads `withheld`, and the plan phase a decision blocks shows only as a number. | §3.11's allowlist governs which audit KEYS show their values; this is the same allowlist for values a tenant typed. |
+| **The refresh declares its effect; answering is the operator's** | `HomeLens.tsx` (`HomeRefreshButton`), `console/RefreshButton.tsx` (`ref`) | The page's one control besides its disclosures is registered with the UI Bridge on the button itself (`coord-home.refresh`), its one custom action, `refresh`, declared `read`, so an automated walk sees what pressing it does; it stays live while presenting, navigation-only by construction. Answering a decision is a write on another page, so the "Answer it" link is `OperatorOnly`; every other link is a `LensLink`, plain text while presenting until its page can be presented. "Correct?" has no write control in either mode: one read-only row, whose toggle is a disclosure. | §6.5 says a lens page's UI Bridge registrations declare an effect; this page had none, and the refresh is the control an automated tour would press. |
+
 ---
 
 ## 4. The attention palette
@@ -2003,7 +2034,9 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   the router); and the state the proof checks the page in, which is the proof's
   to choose (a fixture that never loads data proves the empty page). The
   console's landing redirect (`/admin/coord`, one sentence) is registered from
-  the start: a withheld page never mounts, so it would never redirect.
+  the start: a withheld page never mounts, so it would never redirect. Where it
+  lands, the coordination overview (`/admin/coord/home`), is registered on its
+  own proof (§3.13), so a presenting arrival lands on a presented page.
 
 **Captions before data** (the departure from R1 and R9). `Caption` renders a page's
 or a panel's `{ title, oneLiner, whyItMatters }` ahead of its data: in presentation
@@ -2161,7 +2194,10 @@ is not a safety control — the co-pilot banner's "Disable for this account" is 
 
 **Redaction on.**
 
-- `RedactedText` / `useRedactor`: free text (a plan, PR, session or finding title)
+- `RedactedText` / `useRedactor`: free text (a plan, PR, session or finding title;
+  on the coordination overview also a question or an approval, a recommendation, a
+  degradation's headline and subject, an initiative item, coord's own reasons and
+  the tenant's name — §3.13)
   renders only when every repository it belongs to has a first-party owner and it
   holds none of the confidential terms; otherwise the descriptor
   `kind · area · status · age`, with `withheld` for a field that may name someone
@@ -2169,8 +2205,9 @@ is not a safety control — the co-pilot banner's "Disable for this account" is 
   tenant data, edited in operator mode on `/admin/coord/tenant-policy`.
 - `MachineName` / `useMachineName` / `useMachineAliaser`: a machine renders as
   `Machine A`, `B`… — one letter per computer for the session, on every panel,
-  however each panel identifies it (device id, hostname); two letters that turn out
-  to be one machine merge to the earlier.
+  however each panel identifies it (device id, hostname; on the coordination
+  overview, a degradation subject coord names as a device — §3.13); two letters
+  that turn out to be one machine merge to the earlier.
 - `CostFigure` is the only component that renders a per-task cost, always beside
   "list-price equivalent, not your bill", and in presentation mode never — a
   descriptor instead. `costRenders.test.ts` (over `src/test/costRenderScan.ts`)
