@@ -46,7 +46,10 @@ export function GateValue({
     <span className="inline-flex flex-wrap items-center gap-1 min-w-0">
       <Badge
         variant="outline"
-        className={cn("text-[11px] font-medium whitespace-normal", toneClass(cell))}
+        className={cn(
+          "text-[11px] font-medium whitespace-normal",
+          toneClass(cell)
+        )}
         title={cell.title}
         data-testid={testId}
         data-gate-state={cell.state}
@@ -101,17 +104,25 @@ export function EnforcedValue({
   );
 }
 
+/** The class switches a mirror can carry (the contract's `spawn_paths`). */
+const CLASS_ROWS: ReadonlySet<string> = new Set([
+  "standing_continuation",
+  "parallel_fanout",
+  "in_session_subagent",
+]);
+
 /** The short name a secondary gate's chip carries on the path's line. */
 export function gateChipLabel(gate: MatrixGate): string {
   const prefix = gate.key.split(":", 1)[0];
   switch (prefix) {
     case "mirror":
-      return gate.mirrorOf === "standing_continuation" ||
-        gate.mirrorOf === "parallel_fanout"
+      return gate.mirrorOf !== undefined && CLASS_ROWS.has(gate.mirrorOf)
         ? "class"
         : "gate continuation";
     case "dial":
       return "dial";
+    case "knob":
+      return "knob";
     case "autonomy":
       return "autonomy";
     case "flag":
@@ -128,7 +139,10 @@ export function GateChip({ gate }: { gate: MatrixGate }) {
   return (
     <Badge
       variant="outline"
-      className={cn("text-[10px] font-normal whitespace-nowrap", toneClass(cell))}
+      className={cn(
+        "text-[10px] font-normal whitespace-nowrap",
+        toneClass(cell)
+      )}
       title={`${gate.title}: ${cell.text}${cell.title ? ` — ${cell.title}` : ""}`}
       data-testid="coord-spawns-path-chip"
       data-gate={gate.key}
@@ -137,6 +151,30 @@ export function GateChip({ gate }: { gate: MatrixGate }) {
       {gateChipLabel(gate)} {value}
       {cell.stale ? " (stale)" : ""}
     </Badge>
+  );
+}
+
+/**
+ * The signed-in operator's own preference row, beside a value it does not
+ * set (operator mode only: the gate carries it only then).
+ */
+export function PreferenceNote({
+  cell,
+  testId,
+}: {
+  cell: GateCell;
+  testId?: string;
+}) {
+  return (
+    <span
+      className="text-[11px] text-muted-foreground"
+      title={cell.title}
+      data-testid={testId}
+      data-preference={cell.state}
+    >
+      {cell.text}
+      {cell.stale ? " (stale)" : ""}
+    </span>
   );
 }
 
@@ -179,14 +217,16 @@ export function LastSpawnedValue({
       </span>
     );
   }
+  // A LOWER bound: the list holds only the requests made in its window, so a
+  // request made earlier that started since is not on it.
   return (
     <span
       className="text-[11px] tabular-nums"
       data-testid="coord-spawns-path-last"
       data-last-spawned="spawned"
-      title={absoluteTime(cell.at)}
+      title={`${absoluteTime(cell.at)} — the newest start among ${cell.measured}. A request made before them that started since is not in that list, so this path may have started more recently.`}
     >
-      started {relativeTime(cell.at)}
+      started {relativeTime(cell.at)} or more recently
       {cell.stale ? " (at the last good read)" : ""}
     </span>
   );

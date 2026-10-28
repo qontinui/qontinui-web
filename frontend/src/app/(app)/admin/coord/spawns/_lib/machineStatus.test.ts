@@ -20,7 +20,9 @@ import {
 
 const NOW = Date.parse(AS_OF);
 
-function input(overrides: Partial<MachineStatusInput> = {}): MachineStatusInput {
+function input(
+  overrides: Partial<MachineStatusInput> = {}
+): MachineStatusInput {
   return {
     devices: ROSTER.devices,
     devicesError: null,
@@ -46,9 +48,20 @@ describe("machineStatusLines", () => {
     expect(lines?.map((l) => l.key)).toEqual([DEVICE_A, DEVICE_B]);
     const a = lineOf(lines, DEVICE_A);
     expect(a.identity).toEqual({ deviceId: DEVICE_A, hostname: "msi-wsl" });
-    expect(a.drain).toMatchObject({ state: "not_drained", text: "taking new work" });
-    expect(a.role).toMatchObject({ state: "workhorse", text: "Workhorse", unknown: false });
-    expect(a.sessions).toMatchObject({ state: "known", text: "3 open now", unknown: false });
+    expect(a.drain).toMatchObject({
+      state: "not_drained",
+      text: "taking new work",
+    });
+    expect(a.role).toMatchObject({
+      state: "workhorse",
+      text: "Workhorse",
+      unknown: false,
+    });
+    expect(a.sessions).toMatchObject({
+      state: "known",
+      text: "3 open now",
+      unknown: false,
+    });
     const b = lineOf(lines, DEVICE_B);
     expect(b.drain.state).toBe("drained");
     expect(b.drain.text).toMatch(/^out of service — back in /);
@@ -70,14 +83,19 @@ describe("machineStatusLines", () => {
     const b = lineOf(machineStatusLines(input()), DEVICE_B);
     expect(b.sessions.unknown).toBe(true);
     expect(b.sessions.text).toBe("UNKNOWN");
-    expect(b.sessions.title).toContain("lists no run on this machine in the last 24 hours");
+    expect(b.sessions.title).toContain(
+      "lists no run on this machine in the last 24 hours"
+    );
     expect(b.sessions.title).toContain("not none");
   });
 
   it("reads a silent machine's open runs as UNKNOWN", () => {
     const body = concurrencyBody();
     body.devices[0]!.heartbeat_age_seconds = 3 * 3600;
-    const a = lineOf(machineStatusLines(input({ sessions: { data: body, issue: null } })), DEVICE_A);
+    const a = lineOf(
+      machineStatusLines(input({ sessions: { data: body, issue: null } })),
+      DEVICE_A
+    );
     expect(a.sessions.unknown).toBe(true);
     expect(a.sessions.title).toContain("no heartbeat");
   });
@@ -88,12 +106,19 @@ describe("machineStatusLines", () => {
     );
     const a = lineOf(lines, DEVICE_A);
     expect(a.sessions.text).toBe("UNKNOWN");
-    expect(a.sessions.title).toContain("Coord does not serve the session run record yet");
+    expect(a.sessions.title).toContain(
+      "Coord does not serve the session run record yet"
+    );
   });
 
   it("keeps the last good count of a failed refresh, labelled stale", () => {
     const lines = machineStatusLines(
-      input({ sessions: { data: concurrencyBody(), issue: { kind: "error", message: "HTTP 502" } } })
+      input({
+        sessions: {
+          data: concurrencyBody(),
+          issue: { kind: "error", message: "HTTP 502" },
+        },
+      })
     );
     const a = lineOf(lines, DEVICE_A);
     expect(a.sessions.text).toBe("3 open now (stale)");
@@ -137,11 +162,19 @@ describe("machineStatusLines", () => {
 
   it("shows no list, and says why, before the roster is read", () => {
     expect(machineStatusLines(input({ devices: null }))).toBeNull();
-    expect(machineListUnknown({ devices: null, devicesError: null, presenting: false })).toBe(
-      "Reading the fleet roster…"
-    );
     expect(
-      machineListUnknown({ devices: null, devicesError: "GET /fleet/health failed: 502", presenting: false })
+      machineListUnknown({
+        devices: null,
+        devicesError: null,
+        presenting: false,
+      })
+    ).toBe("Reading the fleet roster…");
+    expect(
+      machineListUnknown({
+        devices: null,
+        devicesError: "GET /fleet/health failed: 502",
+        presenting: false,
+      })
     ).toContain("unknown — not none");
   });
 });
@@ -151,20 +184,39 @@ describe("in presentation mode", () => {
     const lines = machineStatusLines(
       input({
         presenting: true,
-        sessions: { data: null, issue: { kind: "error", message: "GET /api/v1/x failed: 500" } },
-        roles: { state: "unknown", reason: "HTTP 500 from /coord/fleet/dispatch-roles" },
+        sessions: {
+          data: null,
+          issue: { kind: "error", message: "GET /api/v1/x failed: 500" },
+        },
+        roles: {
+          state: "unknown",
+          reason: "HTTP 500 from /coord/fleet/dispatch-roles",
+        },
       })
     );
     const all = (lines ?? []).flatMap((l) =>
-      [l.drain, l.role, l.inFlight, l.sessions].flatMap((c) => [c.text, c.title ?? ""])
+      [l.drain, l.role, l.inFlight, l.sessions].flatMap((c) => [
+        c.text,
+        c.title ?? "",
+      ])
     );
     const joined = all.join("\n");
-    for (const hidden of ["rebuilding the box", "operator@example.com", "/api/v1", "/coord/", "500"]) {
+    for (const hidden of [
+      "rebuilding the box",
+      "operator@example.com",
+      "/api/v1",
+      "/coord/",
+      "500",
+    ]) {
       expect(joined, hidden).not.toContain(hidden);
     }
     expect(joined).toContain(IN_FLIGHT_UNKNOWN.presented);
     expect(
-      machineListUnknown({ devices: null, devicesError: "GET /fleet/health failed: 502", presenting: true })
+      machineListUnknown({
+        devices: null,
+        devicesError: "GET /fleet/health failed: 502",
+        presenting: true,
+      })
     ).not.toContain("502");
   });
 });

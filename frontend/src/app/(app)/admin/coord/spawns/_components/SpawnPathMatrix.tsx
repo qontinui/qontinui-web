@@ -15,8 +15,10 @@
  * control in operator mode.
  *
  * In presentation mode the section opens with its caption and the provenance
- * of each read; tokens (registry names, variables, routes) are not shown; and
- * no control is mounted — the disclosure is the only live element on a line.
+ * of each read; tokens (registry names, variables, routes) are not shown; no
+ * control is mounted — the disclosure is the only live element on a line —
+ * and where a control would be, a fixed sentence says it is the operator's;
+ * and no member's own preference is shown, since it is never a path's state.
  */
 
 import { Fragment, useMemo, useState, type ReactNode } from "react";
@@ -34,16 +36,22 @@ import type { AutonomyLevel } from "@/lib/api/operations/coordSettings";
 import type { AutoFixPrChoice } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
 import { cn } from "@/lib/utils";
 import type { MatrixGate } from "../_lib/spawnPathGates";
-import type { MatrixRow, SpawnPathMatrix } from "../_lib/spawnPathMatrix";
+import type {
+  MatrixCounts,
+  MatrixRow,
+  SpawnPathMatrix,
+} from "../_lib/spawnPathMatrix";
 import {
   EnforcedValue,
   GateChip,
   GateValue,
   LastSpawnedValue,
+  PreferenceNote,
 } from "./SpawnPathCells";
 import {
   AutonomySwitch,
   FixerDialSwitch,
+  RedMainKnobSwitch,
   RegistrySwitch,
   SetOnLink,
 } from "./SpawnPathControls";
@@ -53,9 +61,14 @@ export interface MatrixWriters {
   setRegistryDefault: (agentName: string, enabled: boolean) => Promise<void>;
   setAutonomyLevel: (domain: string, level: AutonomyLevel) => Promise<void>;
   setFixerDial: (choice: AutoFixPrChoice) => Promise<void>;
-  /** Gate keys with a write in flight. */
+  setRedMainKnob: (enabled: boolean) => Promise<void>;
+  /** Gate keys with a write in flight or re-reading. */
   busy: ReadonlySet<string>;
 }
+
+/** What stands where a write control would be, while presenting. */
+export const CONTROL_PRESENTED_NOTE =
+  "Changed by the operator in the console, not while presenting.";
 
 const COLUMNS = [
   "Path",
@@ -111,33 +124,68 @@ function GateControl({
   writers: MatrixWriters;
 }) {
   const busy = writers.busy.has(gate.key);
-  const control: ReactNode =
-    gate.write === null ? null : gate.write.door === "registry" ? (
-      <RegistrySwitch
-        agentName={gate.write.agentName}
-        pathLabel={row.label}
-        current={gate.write.current}
-        busy={busy}
-        onSet={writers.setRegistryDefault}
-      />
-    ) : gate.write.door === "next_step" ? (
-      <AutonomySwitch
-        domain={gate.write.domain}
-        pathLabel={row.label}
-        level={gate.write.level}
-        busy={busy}
-        onSet={writers.setAutonomyLevel}
-      />
-    ) : (
-      <FixerDialSwitch
-        choice={gate.write.choice}
-        busy={busy}
-        onSet={writers.setFixerDial}
-      />
-    );
+  const write = gate.write;
+  let control: ReactNode = null;
+  if (write !== null) {
+    switch (write.door) {
+      case "registry":
+        control = (
+          <RegistrySwitch
+            agentName={write.agentName}
+            pathLabel={row.label}
+            current={write.current}
+            busy={busy}
+            onSet={writers.setRegistryDefault}
+          />
+        );
+        break;
+      case "next_step":
+        control = (
+          <AutonomySwitch
+            domain={write.domain}
+            pathLabel={row.label}
+            level={write.level}
+            busy={busy}
+            onSet={writers.setAutonomyLevel}
+          />
+        );
+        break;
+      case "auto_fix_pr":
+        control = (
+          <FixerDialSwitch
+            choice={write.choice}
+            busy={busy}
+            onSet={writers.setFixerDial}
+          />
+        );
+        break;
+      case "auto_fix_red_main":
+        control = (
+          <RedMainKnobSwitch
+            current={write.current}
+            busy={busy}
+            onSet={writers.setRedMainKnob}
+          />
+        );
+        break;
+    }
+  }
   return (
     <div className="space-y-1">
-      {control !== null && <OperatorOnly>{control}</OperatorOnly>}
+      {control !== null && (
+        <OperatorOnly
+          placeholder={
+            <p
+              className="m-0 text-[11px] text-muted-foreground"
+              data-testid="coord-spawns-gate-presented-note"
+            >
+              {CONTROL_PRESENTED_NOTE}
+            </p>
+          }
+        >
+          {control}
+        </OperatorOnly>
+      )}
       {gate.readOnly && (
         <p
           className="m-0 text-[11px] text-muted-foreground"
@@ -207,7 +255,9 @@ function GateTable({
                   {gate.where}
                 </td>
                 <td className="py-1.5 pr-3">
-                  <span data-testid="coord-spawns-gate-scope">{gate.scope}</span>
+                  <span data-testid="coord-spawns-gate-scope">
+                    {gate.scope}
+                  </span>
                   {gate.scopeNote && (
                     <span className="block text-[11px] text-muted-foreground">
                       {gate.scopeNote}
@@ -226,11 +276,13 @@ function GateTable({
                       cell={gate.effective}
                       testId="coord-spawns-gate-effective"
                     />
-                    {gate.position && (
-                      <GateValue
-                        cell={gate.position}
-                        testId="coord-spawns-gate-position"
-                      />
+                    {gate.preference && (
+                      <span className="block">
+                        <PreferenceNote
+                          cell={gate.preference}
+                          testId="coord-spawns-gate-preference"
+                        />
+                      </span>
                     )}
                   </div>
                 </td>
@@ -312,6 +364,12 @@ function PathLine({
               cell={primary.effective}
               testId="coord-spawns-path-effective"
             />
+            {primary.preference && (
+              <PreferenceNote
+                cell={primary.preference}
+                testId="coord-spawns-path-preference"
+              />
+            )}
             {others.length > 0 && (
               <span className="flex flex-wrap gap-1">
                 {others.map((g) => (
@@ -336,6 +394,37 @@ function PathLine({
   );
 }
 
+/** The section's note: what the matrix lists, counted by kind (a kind with none is left out). */
+export function matrixCountsText(c: MatrixCounts): string {
+  const parts: Array<[number, string, string]> = [
+    [
+      c.automatic,
+      "path the coordination service starts on its own",
+      "paths the coordination service starts on its own",
+    ],
+    [
+      c.person,
+      "path a person starts from the console",
+      "paths a person starts from the console",
+    ],
+    [
+      c.classes,
+      "class switch that governs many paths at once",
+      "class switches that each govern many paths at once",
+    ],
+    [
+      c.runner,
+      "path each machine starts on its own",
+      "paths each machine starts on its own",
+    ],
+  ];
+  const said = parts
+    .filter(([n]) => n > 0)
+    .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
+  if (said.length <= 1) return said.join("");
+  return `${said.slice(0, -1).join(", ")} and ${said[said.length - 1]}`;
+}
+
 export function SpawnPathMatrixSection({
   matrix,
   writers,
@@ -349,10 +438,10 @@ export function SpawnPathMatrixSection({
 }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const title = captionEntry("agentic-activity.spawn-paths").title;
-  const counts = useMemo(() => {
-    const coord = matrix.rows.filter((r) => r.startedBy === "coord").length;
-    return { coord, runner: matrix.rows.length - coord };
-  }, [matrix.rows]);
+  const countsText = useMemo(
+    () => matrixCountsText(matrix.counts),
+    [matrix.counts]
+  );
   return (
     <section
       className="space-y-2"
@@ -374,11 +463,9 @@ export function SpawnPathMatrixSection({
         className="text-xs text-muted-foreground m-0"
         data-testid="coord-spawns-paths-note"
       >
-        {counts.coord} paths the coordination service starts and {counts.runner}{" "}
-        each machine starts on its own. Each switch shows the value its own
-        source serves; a path governed by several switches lists them all and
-        this page does not combine them — the coordination service refuses a
-        path&apos;s spawn when its own switch or its class switch is off.
+        {countsText}. This page does not combine a path&apos;s switches into one
+        verdict: for the paths it starts, the coordination service refuses a
+        spawn when the path&apos;s own switch or its class switch is off.
         {!presenting && matrix.roleRows !== null && matrix.roleRows > 0
           ? ` ${matrix.roleRows} further registry row${matrix.roleRows === 1 ? " is an agent role" : "s are agent roles"} that sessions call on, not spawn paths; they are set on the agent registry page.`
           : ""}

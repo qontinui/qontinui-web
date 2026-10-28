@@ -1342,10 +1342,10 @@ export function deriveSpawnsHealth(input: SpawnsHealthInput): SpawnsHealth {
           issue === null
             ? `Aggregates over the ${spec.label} appear once coord answers.`
             : spawnIssueTextFor(
-              issue,
-              "every aggregate on this strip",
-              input.presenting ?? false
-            ),
+                issue,
+                "every aggregate on this strip",
+                input.presenting ?? false
+              ),
         badges: [],
         verdict: "red",
       };
@@ -1363,10 +1363,10 @@ export function deriveSpawnsHealth(input: SpawnsHealthInput): SpawnsHealth {
       level: "amber",
       headline: headlineForIssue(issue),
       detail: spawnIssueTextFor(
-              issue,
-              "every aggregate on this strip",
-              input.presenting ?? false
-            ),
+        issue,
+        "every aggregate on this strip",
+        input.presenting ?? false
+      ),
       badges: [],
       verdict: "unknown",
     };

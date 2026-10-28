@@ -92,7 +92,11 @@ function Timeline({
         data-testid="coord-spawn-timeline-unknown"
         data-issue={read.issue.kind}
       >
-        {spawnIssueTextFor(read.issue, "where this request was sent", presenting)}
+        {spawnIssueTextFor(
+          read.issue,
+          "where this request was sent",
+          presenting
+        )}
       </p>
     );
   }

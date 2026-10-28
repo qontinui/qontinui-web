@@ -13,20 +13,20 @@
  * automated caller reads coord's answer, not its own request.
  *
  * A control that cannot be offered is not rendered disabled with no word: the
- * matrix shows the gate's `readOnly` reason instead.
+ * matrix shows the gate's `readOnly` reason instead. A second write to a
+ * switch whose first has not read back is refused by the switches hook; the
+ * UI Bridge action surfaces that refusal, and a click (which the `busy` flag
+ * already ignores) drops it — the first write's read-back is what shows.
  */
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUIElement } from "@qontinui/ui-bridge/react";
-import {
-  lensLinkTarget,
-  usePresentationMode,
-} from "@/components/presentation";
+import { lensLinkTarget, usePresentationMode } from "@/components/presentation";
 import type { AutonomyLevel } from "@/lib/api/operations/coordSettings";
 import type { AutoFixPrChoice } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
 import { cn } from "@/lib/utils";
-import { AUTONOMY_LEVELS, AUTONOMY_LEVEL_LABEL } from "../_lib/spawnPathGates";
+import { AUTONOMY_LEVELS, AUTONOMY_LEVEL_LABEL } from "../_lib/nextStepGates";
 
 /** One option of a segmented write control. */
 interface Segment<V extends string> {
@@ -95,7 +95,10 @@ function SegmentedWrite<V extends string>({
             disabled={active}
             onClick={() => {
               if (busy || active) return;
-              void onSelect(o.value);
+              onSelect(o.value).catch(() => {
+                // Refused only while this switch's first write reads back;
+                // that write's outcome is what the matrix shows.
+              });
             }}
             data-testid={`${id}-${o.value}`}
             className={cn(
@@ -198,6 +201,32 @@ export function FixerDialSwitch({
       current={choice}
       busy={busy}
       onSelect={onSet}
+    />
+  );
+}
+
+/** The tenant merge-settings knob gating the red-main fixer. */
+export function RedMainKnobSwitch({
+  current,
+  busy,
+  onSet,
+}: {
+  current: boolean;
+  busy: boolean;
+  onSet: (enabled: boolean) => Promise<void>;
+}) {
+  return (
+    <SegmentedWrite<"on" | "off">
+      id="coord-spawns-path-red-main-knob"
+      label='Set the tenant knob "auto-fix a failing main branch"'
+      description='Writes the tenant column auto_fix_red_main through the merge settings (PATCH /pr-merge/settings, that key only), then re-reads the merge settings. Params: {"value": "on" | "off"}. Resolves once the read-back has landed; the matrix shows what coord reads back.'
+      options={[
+        { value: "on", label: "On" },
+        { value: "off", label: "Off" },
+      ]}
+      current={current ? "on" : "off"}
+      busy={busy}
+      onSelect={(v) => onSet(v === "on")}
     />
   );
 }

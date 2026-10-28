@@ -40,6 +40,17 @@ describe("coordSettings", () => {
     ]);
   });
 
+  it("fetchNextStepSettings keeps the caller's retry budget", async () => {
+    fetchMock.mockResolvedValueOnce(
+      json({ master_enabled: true, can_edit: true, domains: [] })
+    );
+    await fetchNextStepSettings({ maxRetries: 0 });
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/coord/next-step-settings",
+      { maxRetries: 0, method: "GET", idempotent: true },
+    ]);
+  });
+
   it("putNextStepSettings PUTs {domains}, declared non-idempotent", async () => {
     fetchMock.mockResolvedValueOnce(json({ domains: [] }));
     await putNextStepSettings([

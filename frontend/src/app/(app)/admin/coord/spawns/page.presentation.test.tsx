@@ -18,8 +18,13 @@
  *     detail and timeline);
  *  2. no write control is mounted (the switches) and the launcher link is
  *     gone, while the session-load link stays text (its page is not
- *     presentable), and machines read as their alias;
- *  3. a failed read still says UNKNOWN, in fixed words;
+ *     presentable), and machines read as their alias; where a switch's
+ *     control would be, every gate's Note says why there is none;
+ *  3. a failed read still says UNKNOWN, in fixed words; a path reads the
+ *     tenant default coord enforces, never the presenter's own preference;
+ *     and no presented sentence in the matrix or the machine list calls the
+ *     service "coord" (provenance chips name their source, as on every lens
+ *     page);
  *  4. the operator console is unchanged: the same fixtures in operator mode
  *     show the real names, the controls and the launcher — so their absence
  *     above is the lens's doing, not an empty render;
@@ -77,6 +82,7 @@ import {
   sessionMachineAliases,
   type CaptionKey,
 } from "@/components/presentation";
+import { CONTROL_PRESENTED_NOTE } from "./_components/SpawnPathMatrix";
 import CoordSpawnsPage from "./page";
 
 /** Every caption the page carries. */
@@ -114,11 +120,16 @@ const FORBIDDEN = [
   "operator@example.com",
   DRAIN_REASON,
   "10.0.0.5",
-  // Registry names, variables and settings keys: the operator's vocabulary.
+  // Registry names, variables, settings keys and files: the operator's vocabulary.
   "pr_fix_dispatch",
   "merge_shepherd",
   "COORD_",
   "claude_cli",
+  "auto_fix",
+  "rulebook",
+  ".qontinui",
+  // A member's own preference is never a path's state in front of an audience.
+  "Your preference",
 ];
 
 /** A request row that carries every free-text field the row and its detail show. */
@@ -153,8 +164,18 @@ function presentationRoutes(): SpawnsRoutes {
     body: {
       state: "known",
       machines: [
-        { device_id: DEVICE_A, name: HOST_A, role: { dispatch_role: "workhorse" }, registration: "registered" },
-        { device_id: DEVICE_B, name: HOST_B, role: { dispatch_role: "bench" }, registration: "registered" },
+        {
+          device_id: DEVICE_A,
+          name: HOST_A,
+          role: { dispatch_role: "workhorse" },
+          registration: "registered",
+        },
+        {
+          device_id: DEVICE_B,
+          name: HOST_B,
+          role: { dispatch_role: "bench" },
+          registration: "registered",
+        },
       ],
     },
   });
@@ -171,7 +192,9 @@ function presentationRoutes(): SpawnsRoutes {
   r.drain = () => ({ body: drainBody(Date.now(), DRAIN_REASON) });
   // A preference row: the operator-mode words would name it.
   r.effective = () => ({
-    body: effectiveBody({ next_step_dispatch: { enabled: false, source: "user_pref" } }),
+    body: effectiveBody({
+      next_step_dispatch: { enabled: false, source: "user_pref" },
+    }),
   });
   // A failed read whose own text quotes a URL.
   r.concurrency = () => ({
@@ -183,7 +206,8 @@ function presentationRoutes(): SpawnsRoutes {
 
 async function settle() {
   await act(async () => {
-    for (let i = 0; i < 15; i += 1) await new Promise((res) => setTimeout(res, 0));
+    for (let i = 0; i < 15; i += 1)
+      await new Promise((res) => setTimeout(res, 0));
   });
 }
 
@@ -200,7 +224,9 @@ async function checkBehindEveryDisclosure(view: PresentationView) {
       fireEvent.click(toggles()[i]!);
     });
     await settle();
-    expect(screen.getAllByTestId("coord-spawns-gate").length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId("coord-spawns-gate").length).toBeGreaterThan(
+      0
+    );
     expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
   }
   const rows = () => screen.getAllByTestId("coord-spawn-row");
@@ -215,6 +241,21 @@ async function checkBehindEveryDisclosure(view: PresentationView) {
   }
 }
 
+/**
+ * A section's presented words — its text and every `title` — without its
+ * provenance chips, which name their source ("coord agent registry") on
+ * every lens page by design.
+ */
+function presentedWords(testId: string): string {
+  const section = screen.getByTestId(testId).cloneNode(true) as HTMLElement;
+  for (const chip of section.querySelectorAll("[data-provenance]"))
+    chip.remove();
+  const titles = [...section.querySelectorAll("[title]")].map(
+    (el) => el.getAttribute("title") ?? ""
+  );
+  return [section.textContent ?? "", ...titles].join("\n");
+}
+
 beforeEach(() => {
   routes = presentationRoutes();
   sessionMachineAliases.reset();
@@ -224,10 +265,14 @@ beforeEach(() => {
 
 describe("/admin/coord/spawns?present=1", () => {
   it("is safe to show an outsider, behind every disclosure: no write control, no cost, no identity, every caption", async () => {
-    const view = renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
+    const view = renderInPresentationMode(<CoordSpawnsPage />, {
+      scope: SCOPE,
+    });
     await settle();
     // The page rendered its data: the matrix, the machines, the requests.
-    expect(screen.getAllByTestId("coord-spawns-path-row").length).toBeGreaterThan(15);
+    expect(
+      screen.getAllByTestId("coord-spawns-path-row").length
+    ).toBeGreaterThan(15);
     expect(screen.getAllByTestId("coord-spawns-machine")).toHaveLength(2);
     expect(screen.getAllByTestId("coord-spawn-row")).toHaveLength(2);
     expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
@@ -243,19 +288,30 @@ describe("/admin/coord/spawns?present=1", () => {
       });
     }
     await settle();
-    expect(screen.queryByTestId("coord-spawns-path-switch-merge_shepherd")).toBeNull();
+    expect(
+      screen.queryByTestId("coord-spawns-path-switch-merge_shepherd")
+    ).toBeNull();
     expect(screen.queryByTestId("coord-spawns-path-fixer-dial")).toBeNull();
-    expect(document.querySelector('[data-testid^="coord-spawns-path-switch-"]')).toBeNull();
-    expect(document.querySelector('[data-testid^="coord-spawns-path-autonomy-"]')).toBeNull();
+    expect(
+      document.querySelector('[data-testid^="coord-spawns-path-switch-"]')
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-testid^="coord-spawns-path-autonomy-"]')
+    ).toBeNull();
     expect(screen.queryByTestId("coord-spawns-launch-link")).toBeNull();
     expect(
-      screen.getByTestId("coord-spawns-session-load-link").getAttribute("data-lens-link")
+      screen
+        .getByTestId("coord-spawns-session-load-link")
+        .getAttribute("data-lens-link")
     ).toBe("unlinked");
     const names = screen.getAllByTestId("coord-spawns-machine-name");
     expect(names.map((n) => n.textContent)).toEqual(["Machine A", "Machine B"]);
-    for (const n of names) expect(n.getAttribute("data-machine-alias")).toBe("true");
+    for (const n of names)
+      expect(n.getAttribute("data-machine-alias")).toBe("true");
     // The per-device share list names the same machines by the same letters.
-    const shares = screen.getAllByTestId("coord-spawns-device").map((d) => d.textContent ?? "");
+    const shares = screen
+      .getAllByTestId("coord-spawns-device")
+      .map((d) => d.textContent ?? "");
     expect(shares[0]).toContain("Machine A");
     expect(shares[1]).toContain("Machine B");
   });
@@ -267,13 +323,76 @@ describe("/admin/coord/spawns?present=1", () => {
       .getAllByTestId("coord-spawns-path-row")
       .find((r) => r.getAttribute("data-path") === "post_merge_followup")!;
     await act(async () => {
-      fireEvent.click(within(postMerge).getByTestId("coord-spawns-path-toggle"));
+      fireEvent.click(
+        within(postMerge).getByTestId("coord-spawns-path-toggle")
+      );
     });
     await settle();
-    const setOn = screen.getByTestId("coord-spawns-path-set-on-post_merge_followup");
+    const setOn = screen.getByTestId(
+      "coord-spawns-path-set-on-post_merge_followup"
+    );
     expect(setOn.getAttribute("data-lens-link")).toBe("unlinked");
     expect(setOn.tagName).toBe("SPAN");
-    expect(document.querySelector('a[href*="/admin/coord/agent-registry"]')).toBeNull();
+    expect(
+      document.querySelector('a[href*="/admin/coord/agent-registry"]')
+    ).toBeNull();
+  });
+
+  it("reads a path's tenant default, never the presenter's own preference row", async () => {
+    // The fixture's presenter holds a preference row turning next-step OFF;
+    // the tenant default — what the coordination service enforces — is on.
+    renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
+    await settle();
+    const nextStep = screen
+      .getAllByTestId("coord-spawns-path-row")
+      .find((r) => r.getAttribute("data-path") === "next_step_dispatch")!;
+    const line = within(nextStep).getByTestId("coord-spawns-path-effective");
+    expect(line.textContent).toBe("On");
+    expect(line.getAttribute("title")).toBe(
+      "Switched on for the whole project."
+    );
+    expect(
+      within(nextStep).queryByTestId("coord-spawns-path-preference")
+    ).toBeNull();
+  });
+
+  it("says, in every gate's Note, why there is no control — and never calls the service 'coord' in a sentence", async () => {
+    renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
+    await settle();
+    const toggles = () => screen.getAllByTestId("coord-spawns-path-toggle");
+    for (let i = 0; i < toggles().length; i += 1) {
+      await act(async () => {
+        fireEvent.click(toggles()[i]!);
+      });
+      await settle();
+      for (const g of screen.getAllByTestId("coord-spawns-gate")) {
+        const cells = g.querySelectorAll("td");
+        const note = (cells[cells.length - 1]!.textContent ?? "").trim();
+        expect(note, g.getAttribute("data-gate") ?? "").not.toBe("");
+      }
+      expect(presentedWords("coord-spawns-paths-section")).not.toMatch(
+        /\bcoord\b/i
+      );
+    }
+    expect(presentedWords("coord-spawns-machines-section")).not.toMatch(
+      /\bcoord\b/i
+    );
+
+    // A writable switch's Note is the fixed sentence where its control would be.
+    const shepherd = screen
+      .getAllByTestId("coord-spawns-path-row")
+      .find((r) => r.getAttribute("data-path") === "merge_shepherd")!;
+    await act(async () => {
+      fireEvent.click(within(shepherd).getByTestId("coord-spawns-path-toggle"));
+    });
+    await settle();
+    const gate = screen
+      .getAllByTestId("coord-spawns-gate")
+      .find((g) => g.getAttribute("data-gate") === "registry:merge_shepherd")!;
+    expect(
+      within(gate).getByTestId("coord-spawns-gate-presented-note").textContent
+    ).toBe(CONTROL_PRESENTED_NOTE);
+    expect(within(gate).queryByRole("button")).toBeNull();
   });
 
   it("still says a failed read is UNKNOWN, in fixed words", async () => {
@@ -286,25 +405,28 @@ describe("/admin/coord/spawns?present=1", () => {
         "How many sessions this machine has open could not be read."
       );
     }
-    expect(screen.getByTestId("coord-spawns-inflight-note").textContent).toContain(
-      "does not offer that figure"
-    );
+    expect(
+      screen.getByTestId("coord-spawns-inflight-note").textContent
+    ).toContain("does not offer that figure");
   });
 
   it("carries every section's caption and the provenance of its reads", async () => {
     renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
     await settle();
     for (const id of CAPTIONS) {
-      expect(document.querySelector(`[data-presentation-caption="${id}"]`), id).not.toBeNull();
+      expect(
+        document.querySelector(`[data-presentation-caption="${id}"]`),
+        id
+      ).not.toBeNull();
     }
     const paths = screen.getByTestId("coord-spawns-paths-caption");
     expect(paths.querySelectorAll("[data-provenance]").length).toBe(6);
     const machines = screen.getByTestId("coord-spawns-machines-caption");
     expect(machines.querySelectorAll("[data-provenance]").length).toBe(4);
     // The session read failed: its chip says UNKNOWN rather than an age.
-    const unknownChips = [...machines.querySelectorAll("[data-provenance]")].filter(
-      (c) => c.getAttribute("data-provenance-known") === "false"
-    );
+    const unknownChips = [
+      ...machines.querySelectorAll("[data-provenance]"),
+    ].filter((c) => c.getAttribute("data-provenance-known") === "false");
     expect(unknownChips).toHaveLength(1);
   });
 
@@ -317,13 +439,14 @@ describe("/admin/coord/spawns for the operator — the same fixtures", () => {
   it("shows the real names, the switches and the launcher the lens withholds", async () => {
     render(<CoordSpawnsPage />);
     await settle();
-    expect(screen.getAllByTestId("coord-spawns-machine-name").map((n) => n.textContent)).toEqual([
-      HOST_A,
-      HOST_B,
-    ]);
-    expect(screen.getByTestId("coord-spawns-launch-link").getAttribute("href")).toBe(
-      "/admin/coord/spawn"
-    );
+    expect(
+      screen
+        .getAllByTestId("coord-spawns-machine-name")
+        .map((n) => n.textContent)
+    ).toEqual([HOST_A, HOST_B]);
+    expect(
+      screen.getByTestId("coord-spawns-launch-link").getAttribute("href")
+    ).toBe("/admin/coord/spawn");
     const shepherd = screen
       .getAllByTestId("coord-spawns-path-row")
       .find((r) => r.getAttribute("data-path") === "merge_shepherd")!;
@@ -331,7 +454,9 @@ describe("/admin/coord/spawns for the operator — the same fixtures", () => {
       fireEvent.click(within(shepherd).getByTestId("coord-spawns-path-toggle"));
     });
     await settle();
-    expect(screen.getByTestId("coord-spawns-path-switch-merge_shepherd")).toBeTruthy();
+    expect(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd")
+    ).toBeTruthy();
     expect(document.body.textContent).toContain("merge_shepherd");
     const sessions = screen.getAllByTestId("coord-spawns-machine-sessions");
     expect(sessions[0]!.getAttribute("title")).toContain("10.0.0.5");

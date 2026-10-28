@@ -8,7 +8,9 @@
  * Phase 4 captions every section the page renders, in page order: the spawn
  * paths and their switches, the machines, the spawn requests (the strip and
  * the list), where they were placed, and the hourly rates. Each sentence says
- * only what that section shows.
+ * only what that section shows, and is true against coord; and since the
+ * page's captions are read together on one screen, a point made once (an
+ * unread value is unknown) is not made again by a section.
  */
 
 import { copy, term, type SurfaceCaptions } from "./captionTypes";
@@ -16,29 +18,33 @@ import { copy, term, type SurfaceCaptions } from "./captionTypes";
 export const AGENTIC_ACTIVITY_CAPTIONS = {
   "agentic-activity.page": {
     title: "Agentic activity",
-    // The three things the page shows, in its order: the automatic paths and
-    // their switches (the matrix), the machines that host the sessions, and
-    // the record of every request (the ledger, which holds person-started
-    // sessions too — so not "started on its own" for that half).
-    oneLiner: copy`Every way the system starts an ${term("agent_session", "agent session")} on its own and the switch that controls each one, the machines those sessions run on, and every session the ${term("coord", "coordination service")} was asked to start.`,
-    whyItMatters: copy`Each automatic path can be switched off by the people it acts for, so the page shows what each switch reads, which machines are taking new work, and how every request ended, and anything it could not read is shown as ${term("unknown")} rather than as on or as none.`,
+    // The three things the page shows, in its order: the spawn paths and
+    // their switches (the matrix — the system's own paths, and the console's
+    // launcher, which a person uses), the machines that host the sessions,
+    // and the record of every request (the ledger, which holds both kinds).
+    oneLiner: copy`Every way an ${term("agent_session", "agent session")} gets started — by the system on its own, or by a person from the console — with the switches that control each, the machines those sessions run on, and every session the ${term("coord", "coordination service")} was asked to start.`,
+    whyItMatters: copy`Each automatic path can be switched off by the people it acts for, so the page shows what each switch reads, which machines are taking new work and how every request ended — and anything it could not read is shown as ${term("unknown")}, never as on or as none.`,
   },
   "agentic-activity.spawn-paths": {
     title: "Spawn paths",
-    oneLiner: copy`Every path by which an ${term("agent_session", "agent session")} starts without a person asking, with the switch that controls it, where that switch is set, and whether it is enforced.`,
-    // `agent-spawn-authorization`: a standing path is on by default, with an
-    // off-switch at the scope its preference belongs to; the matrix shows each
-    // switch's own served value and never folds several into one verdict.
-    whyItMatters: copy`Every automatic path starts switched on and can be switched off for the whole project, one repository or one machine, so each line shows where its switch lives and the value the system reads from it; a path governed by several switches lists them all, and a value that could not be read is shown as ${term("unknown")}, never as on.`,
+    oneLiner: copy`Each path by which an ${term("agent_session", "agent session")} starts, with every switch this page can read that controls it: where the switch is set, at what scope, and whether it is enforced.`,
+    // True against coord: every registry row seeds `default_enabled: true`
+    // (the spawn contract), while the next-step and red-main dispatch arms
+    // ship dormant — their fleet flags are "Default OFF" (`next_step.rs`) and
+    // both domains default to Guidance only (`next_step_settings.rs`). The
+    // page caption already says an unread value is unknown; this one does not
+    // repeat it.
+    whyItMatters: copy`A path's own switch ships on, but several paths also wait on a project or deployment setting that ships off — dispatching the next step and fixing a failing main branch among them — so a line lists those switches beside its own, each with the value the system reads from it.`,
   },
   "agentic-activity.machines": {
     title: "Machines",
     oneLiner: copy`Every ${term("device", "machine")} that can host sessions: whether it is taking new work, what kind of work it may take, and how many sessions it has open now.`,
     // What the list shows and nothing about placement it does not: a drained
     // machine is refused new sessions (coord's drain interlock), and a role
-    // closes lanes; how much work each carries against its ceiling is shown
-    // as unknown because no console door reads it yet.
-    whyItMatters: copy`A machine taken out of service with a ${term("drain")}, or limited to one kind of work, is sent no new sessions, so each machine's standing is visible before any work is placed on it, and a figure nobody measured is shown as ${term("unknown")} instead of zero.`,
+    // closes lanes. How much work each carries against its ceiling is not
+    // offered to this page; the section's own note says so, and the page
+    // caption already says an unread value is unknown.
+    whyItMatters: copy`A machine taken out of service with a ${term("drain")}, or limited to one kind of work, is sent no new sessions, so each machine's standing is visible before any work is placed on it.`,
   },
   "agentic-activity.requests": {
     title: "Spawn requests",

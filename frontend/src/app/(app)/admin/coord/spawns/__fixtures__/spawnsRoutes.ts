@@ -147,7 +147,9 @@ export function answerSpawnsRequest(
   else if (url === "/api/v1/agent-registry") answer = routes.effective();
   else if (op?.startsWith("/coord/next-step-settings"))
     answer =
-      method === "PUT" ? routes.putNextStep(parseBody(init)) : routes.nextStep();
+      method === "PUT"
+        ? routes.putNextStep(parseBody(init))
+        : routes.nextStep();
   else if (op?.startsWith("/pr-merge/settings"))
     answer =
       method === "PATCH" ? routes.patchMerge(parseBody(init)) : routes.merge();

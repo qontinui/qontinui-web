@@ -17,6 +17,7 @@
  * generated api-client snapshot regen).
  */
 
+import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
 
@@ -145,9 +146,14 @@ async function handleResponse<T>(
  *  every 2xx it produces, which is exactly why anything else reaching here is
  *  a broken response — a proxy error page, a rewritten body — and not a
  *  tenant with no agents. An empty ARRAY is still a legitimate answer and
- *  passes through untouched. */
-export async function listAgentRegistry(): Promise<AgentRegistryEntry[]> {
-  const response = await httpClient.fetch(AGENT_REGISTRY_API);
+ *  passes through untouched.
+ *
+ *  `options` are the request's own (a dashboard poll passes
+ *  `COORD_DASHBOARD_POLL_OPTIONS`: one request, the next poll is the retry). */
+export async function listAgentRegistry(
+  options?: HttpOptions
+): Promise<AgentRegistryEntry[]> {
+  const response = await httpClient.fetch(AGENT_REGISTRY_API, options);
   const body = await handleResponse<{ agents: AgentRegistryEntry[] }>(
     response,
     "Failed to load agent registry"
@@ -225,9 +231,14 @@ export interface AgentRegistryDefaultsUpdate {
  *  with the `?? []` that function had already had removed. An admin reading
  *  an empty registry concludes the tenant has no agents to configure; a
  *  response that never carried a list is not that fact. An empty ARRAY still
- *  passes through untouched. */
-export async function listAdminAgentRegistry(): Promise<AdminAgentRegistryRow[]> {
-  const response = await httpClient.fetch(`${AGENT_REGISTRY_API}/admin/registry`);
+ *  passes through untouched. `options` as for `listAgentRegistry`. */
+export async function listAdminAgentRegistry(
+  options?: HttpOptions
+): Promise<AdminAgentRegistryRow[]> {
+  const response = await httpClient.fetch(
+    `${AGENT_REGISTRY_API}/admin/registry`,
+    options
+  );
   const body = await handleResponse<{ agents: AdminAgentRegistryRow[] }>(
     response,
     "Failed to load the agent registry"
