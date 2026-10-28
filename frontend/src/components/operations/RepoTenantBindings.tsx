@@ -522,6 +522,10 @@ export function settledElsewhereText(verb: "bind" | "unbind", repo: string) {
 /**
  * The active tenant as of the latest commit, readable after an await. A layout
  * effect, so the ref is current before any promise can resolve after a commit.
+ * That property is held by React's commit order (layout effects run inside the
+ * commit, passive ones are scheduled after it), not by a test: RTL's `act`
+ * flushes passive effects too, so the suite stays green with `useEffect` —
+ * which does not make that change safe.
  */
 function useLatestTenant(activeTenantId: string | null | undefined) {
   const ref = useRef(activeTenantId);
@@ -1122,10 +1126,17 @@ export function RepoTenantBindings({
   useEffect(() => {
     // Outcomes belong to the tenant they were reached in: a failure kept
     // across a switch would render as an "unlisted" (maybe-applied) binding
-    // of the new tenant. An unbind still in flight keeps its entry.
+    // of the new tenant. An unbind still in flight keeps its entry (the busy
+    // guard), but not its error: the other party's card lists the same repo,
+    // and must not show this tenant's failure on its row. The failure path
+    // re-applies the error once the tenant it was sent under is active again.
     setUnbindNotice(null);
     setUnbindStates((prev) =>
-      Object.fromEntries(Object.entries(prev).filter(([, s]) => s.busy))
+      Object.fromEntries(
+        Object.entries(prev)
+          .filter(([, s]) => s.busy)
+          .map(([repo, s]) => [repo, { ...s, error: null }])
+      )
     );
     if (!canAdmin) {
       // Invalidate anything in flight: it was asked under another answer.

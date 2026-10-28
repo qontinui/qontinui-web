@@ -784,6 +784,9 @@ describe("who sees the card: admin IN THE ACTIVE TENANT", () => {
     expect(outcome.dataset.outcome).toBe("elsewhere");
     expect(outcome.getAttribute("role")).toBe("status");
     expect(outcome.textContent).toContain("sent under another tenant");
+    expect(outcome.textContent).toContain(
+      "re-read its bindings to see whether it landed"
+    );
   });
 
   it("a switch during a bind's re-read does not show that outcome on the new card", async () => {
@@ -849,6 +852,59 @@ describe("who sees the card: admin IN THE ACTIVE TENANT", () => {
     const outcome = await screen.findByTestId("repo-binding-bind-outcome");
     await waitFor(() => expect(outcome.dataset.outcome).toBe("ok"));
     expect(outcome.textContent).toContain("Bound Meryts/bauhaus-b2b-shop");
+  });
+
+  it("an unbind failure is not shown on the other party's row while its re-read is in flight", async () => {
+    let releaseReRead: (r: Response) => void = () => undefined;
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () =>
+          new Promise<Response>((r) => {
+            releaseReRead = r;
+          }) as unknown as Response,
+        // The other party (the bound tenant) lists the same repo.
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:02:00Z" }),
+      ],
+      () => writeTimeout()
+    );
+    const { rerender } = render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+    // The DELETE has failed and its re-read is held.
+    await waitFor(() => expect(callsOf("GET")).toHaveLength(2));
+
+    tenantState.activeTenantId = BOUND_TENANT;
+    rerender(<RepoTenantBindings />);
+    await waitFor(() => expect(callsOf("GET")).toHaveLength(3));
+    const otherRow = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(otherRow).getByRole("button", { expanded: false }));
+    await screen.findByTestId(`repo-binding-unbind-form-${BOUND_HERE.repo}`);
+    expect(
+      screen.queryByTestId(`repo-binding-unbind-error-${BOUND_HERE.repo}`)
+    ).toBeNull();
+    expect(screen.queryByText(/coord_write_timeout/)).toBeNull();
+
+    releaseReRead(
+      json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:01:00Z" })
+    );
+    const notice = await screen.findByTestId("repo-binding-unbind-outcome");
+    expect(notice.textContent).toContain("sent under another tenant");
   });
 
   it("a bind outcome does not survive a switch to another tenant", async () => {
