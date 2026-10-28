@@ -20,6 +20,13 @@
  * contents. A re-read that fails keeps the earlier read's sections, labelled
  * stale with the reason. The "unsaved" chip follows the hook's `isDirty`, so
  * it never shows while nothing was read.
+ *
+ * While a re-read is out only the sections give way to the loader: hidden,
+ * they cannot take an edit the answer would silently replace. The labels and
+ * the controls row stay mounted, so the re-read a keyboard user pressed keeps
+ * focus and shows its own busy state (`RefreshButton`). The UNKNOWN state
+ * offers that same control in that same row, so focus also stays on it when a
+ * retry delivers and the sections appear.
  */
 
 import { useState } from "react";
@@ -132,42 +139,24 @@ export function ConstraintsPanel() {
 
         <CollapsibleContent>
           <div className="px-3 pb-3 space-y-4">
-            {/* Loading state */}
-            {(loading || readState === "pending") && (
-              <div
-                className="flex items-center justify-center gap-2 py-6 text-zinc-400"
-                data-testid="constraints-loading"
-              >
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Loading constraints...</span>
-              </div>
-            )}
-
             {/* Refused: the viewer is not a platform admin */}
             {!loading && readState === "admin-only" && <ConstraintsAdminOnly />}
 
-            {/* No read delivered: what applies is unknown */}
-            {!loading && readState === "unknown" && (
-              <ConstraintsReadNote
-                testId="constraints-read-failed"
-                reason={readFailure}
-                action={
-                  <RefreshButton
-                    onRefresh={reload}
-                    label="Read the constraints again"
-                    title="Asks the runner for this project's constraints again"
-                    data-testid="constraints-read-retry"
-                  />
-                }
-              >
-                The constraints could not be read, so which constraints apply is
-                unknown.
-              </ConstraintsReadNote>
-            )}
-
-            {!loading && readState === "read" && (
+            {/* The labels and the controls row stay mounted while a read is
+                out, so the re-read keeps focus (see the header comment). */}
+            {(readState === "unknown" || readState === "read") && (
               <>
-                {readFailure !== null && (
+                {/* No read delivered: what applies is unknown */}
+                {readState === "unknown" && (
+                  <ConstraintsReadNote
+                    testId="constraints-read-failed"
+                    reason={readFailure}
+                  >
+                    The constraints could not be read, so which constraints
+                    apply is unknown.
+                  </ConstraintsReadNote>
+                )}
+                {readState === "read" && readFailure !== null && (
                   <ConstraintsReadNote
                     testId="constraints-read-stale"
                     reason={readFailure}
@@ -176,7 +165,7 @@ export function ConstraintsPanel() {
                     below is from an earlier read and may be out of date.
                   </ConstraintsReadNote>
                 )}
-                {/* Save button + status */}
+                {/* Re-read, Save and their status */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {/* Error banner (inline) */}
@@ -208,23 +197,41 @@ export function ConstraintsPanel() {
                         data-testid="constraints-reread"
                       />
                     )}
-                    <button
-                      type="button"
-                      onClick={handleSave}
-                      disabled={!isDirty || isSaving}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Save constraints"
-                    >
-                      {isSaving ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Save className="w-3.5 h-3.5" />
-                      )}
-                      {isSaving ? "Saving..." : "Save"}
-                    </button>
+                    {/* Nothing was read, so there is nothing to save. */}
+                    {readState === "read" && (
+                      <button
+                        type="button"
+                        onClick={handleSave}
+                        disabled={!isDirty || isSaving}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Save constraints"
+                      >
+                        {isSaving ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Save className="w-3.5 h-3.5" />
+                        )}
+                        {isSaving ? "Saving..." : "Save"}
+                      </button>
+                    )}
                   </div>
                 </div>
+              </>
+            )}
 
+            {/* A read is out, the first or a re-read: never an empty list */}
+            {(loading || readState === "pending") && (
+              <div
+                className="flex items-center justify-center gap-2 py-6 text-zinc-400"
+                data-testid="constraints-loading"
+              >
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Loading constraints...</span>
+              </div>
+            )}
+
+            {!loading && readState === "read" && (
+              <>
                 {/* Built-in Constraints Section */}
                 <div>
                   <h3 className="text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">

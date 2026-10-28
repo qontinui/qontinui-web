@@ -22,14 +22,11 @@ import { cn } from "@/lib/utils";
 export function ConstraintsReadNote({
   reason,
   testId,
-  action,
   children,
 }: {
   /** Why the read failed, in the failed call's own words. */
   reason: string | null;
   testId: string;
-  /** A control that reads again, when the surface offers one. */
-  action?: ReactNode;
   /** What is unknown or stale, and what that means for the surface. */
   children: ReactNode;
 }) {
@@ -48,7 +45,6 @@ export function ConstraintsReadNote({
         <p>{children}</p>
         {reason !== null && <p className="mt-1">Reason: {reason}</p>}
       </div>
-      {action}
     </div>
   );
 }

@@ -12,7 +12,11 @@
  * - the "unsaved" chip shows only for an edit to what was read, and goes
  *   once the save lands: never while the read is out, failed or refused;
  * - a re-read is offered beside Save while nothing is unsaved, and one that
- *   fails keeps the lists, labelled stale with its reason.
+ *   fails keeps the lists, labelled stale with its reason;
+ * - a re-read never unmounts itself: while its read is out only the sections
+ *   give way to the loader, so the control a keyboard user pressed keeps
+ *   focus, busy, and the unknown state's retry is that same control, so focus
+ *   survives a retry that delivers.
  *
  * The panel is rendered whole, with the network stubbed at `httpClient.fetch`
  * (`src/test/constraintsRoutes.ts`), so the real API client, its refusal
@@ -52,16 +56,41 @@ import { ConstraintsPanel } from "./ConstraintsPanel";
 
 let routes: Record<string, RouteAnswer>;
 
+/** What `routes` scripts for this call. */
+function answer(url: unknown, init?: RequestInit): Response {
+  const scripted = routes[routeKey(url, init)];
+  if (scripted === undefined) {
+    throw new Error(`unscripted call ${routeKey(url, init)}`);
+  }
+  return respond(scripted);
+}
+
 beforeEach(() => {
   routes = readableRoutes();
-  fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
-    const answer = routes[routeKey(url, init)];
-    if (answer === undefined) {
-      throw new Error(`unscripted call ${routeKey(url, init)}`);
-    }
-    return respond(answer);
-  });
+  fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) =>
+    answer(url, init)
+  );
 });
+
+/**
+ * Hold every call from here on until the returned release is called, then
+ * answer it from `routes`: a read the test can look at while it is out.
+ */
+function holdReads(): () => void {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  fetchMock.mockImplementation(async (url: unknown, init?: RequestInit) => {
+    await gate;
+    return answer(url, init);
+  });
+  return release;
+}
+
+function saveButton(): HTMLButtonElement {
+  return screen.getByTitle("Save constraints") as HTMLButtonElement;
+}
 
 afterEach(() => {
   cleanup();
@@ -118,7 +147,7 @@ describe("ConstraintsPanel", () => {
     await screen.findByTestId("constraints-read-failed");
 
     routes = readableRoutes();
-    fireEvent.click(screen.getByTestId("constraints-read-retry"));
+    fireEvent.click(screen.getByTestId("constraints-reread"));
 
     expect(await screen.findByText(NO_SECRETS.name)).toBeTruthy();
     expect(screen.queryByTestId("constraints-read-failed")).toBeNull();
@@ -178,10 +207,6 @@ describe("ConstraintsPanel while the read is out", () => {
 });
 
 describe("ConstraintsPanel after a read", () => {
-  function saveButton(): HTMLButtonElement {
-    return screen.getByTitle("Save constraints") as HTMLButtonElement;
-  }
-
   it("says an edit is unsaved until the save lands", async () => {
     render(<ConstraintsPanel />);
     await screen.findByText(NO_SECRETS.name);
@@ -239,5 +264,64 @@ describe("ConstraintsPanel after a read", () => {
     fireEvent.click(screen.getByText("Add"));
 
     expect(screen.queryByTestId("constraints-reread")).toBeNull();
+  });
+});
+
+describe("ConstraintsPanel while a re-read is out", () => {
+  it("keeps the pressed re-read mounted, busy and focused, and holds the sections back", async () => {
+    render(<ConstraintsPanel />);
+    await screen.findByText(NO_SECRETS.name);
+    const release = holdReads();
+    const reread = screen.getByTestId("constraints-reread");
+    reread.focus();
+
+    fireEvent.click(reread);
+
+    // The control the viewer pressed is still there, busy, with focus...
+    expect(await screen.findByTestId("constraints-loading")).toBeTruthy();
+    expect(screen.getByTestId("constraints-reread")).toBe(reread);
+    expect(reread.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(reread);
+    // ...while the loader stands in for the sections, so no edit can be made
+    // that the answer would silently replace.
+    expect(screen.queryByText("Built-in Constraints")).toBeNull();
+    expect(screen.queryByText("Add")).toBeNull();
+    expect(saveButton().disabled).toBe(true);
+
+    release();
+
+    expect(await screen.findByText(NO_SECRETS.name)).toBeTruthy();
+    expect(screen.queryByTestId("constraints-loading")).toBeNull();
+    expect(document.activeElement).toBe(reread);
+    await waitFor(() => expect(reread.getAttribute("aria-busy")).toBeNull());
+  });
+
+  it("keeps the unknown state's re-read focused through a retry that delivers", async () => {
+    routes["GET /active"] = RUNNER_UNREACHABLE;
+    render(<ConstraintsPanel />);
+    await screen.findByTestId("constraints-read-failed");
+    routes = readableRoutes();
+    const release = holdReads();
+    const reread = screen.getByTestId("constraints-reread");
+    reread.focus();
+
+    fireEvent.click(reread);
+
+    expect(await screen.findByTestId("constraints-loading")).toBeTruthy();
+    expect(screen.getByTestId("constraints-reread")).toBe(reread);
+    expect(reread.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(reread);
+    // Still unknown until the retry answers, so still no list and no editor.
+    expect(screen.getByTestId("constraints-read-failed")).toBeTruthy();
+    expectNoListAndNoEditor();
+
+    release();
+
+    expect(await screen.findByText(NO_SECRETS.name)).toBeTruthy();
+    expect(screen.queryByTestId("constraints-read-failed")).toBeNull();
+    // The sections and Save appeared around the control, which kept focus.
+    expect(saveButton()).toBeTruthy();
+    expect(screen.getByTestId("constraints-reread")).toBe(reread);
+    expect(document.activeElement).toBe(reread);
   });
 });
