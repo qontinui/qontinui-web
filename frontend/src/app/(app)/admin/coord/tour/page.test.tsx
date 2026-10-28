@@ -51,11 +51,11 @@ beforeEach(() => {
 });
 
 describe("the tour page in operator mode", () => {
-  it("renders the tour's heading and one-liner, and every stop with its state", () => {
+  it("leaves the title to the console's crumb (R9), and lists every stop with its state", () => {
     const { container } = renderPage(false);
     expect(
-      screen.getByRole("heading", { level: 1, name: "Tour" })
-    ).toBeInTheDocument();
+      container.querySelector('[data-presentation-caption="tour.page"]')
+    ).toBeNull();
     expect(
       ["digital-twin", "coordination-overview", "agentic-activity", "ui-bridge", "dev-ops"].map(
         (id) => stateOf(container, id)
@@ -84,6 +84,19 @@ describe("the tour page in operator mode", () => {
 });
 
 describe("the tour page in presentation mode", () => {
+  it("opens with the tour's caption: its heading, one sentence and why it matters", () => {
+    renderPage(true);
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Tour" })
+    ).toBeInTheDocument();
+    const caption = document.querySelector(
+      '[data-presentation-caption="tour.page"]'
+    );
+    expect(
+      caption?.querySelector('[data-caption-part="why-it-matters"]')
+    ).not.toBeNull();
+  });
+
   it("says why each ready stop matters, and keeps that off a stop it does not show", () => {
     const { container } = renderPage(true);
     const why = (id: string) =>

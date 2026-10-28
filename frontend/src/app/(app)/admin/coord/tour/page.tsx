@@ -21,8 +21,9 @@
  *
  * Registered presentation-ready (`presentationReadiness.ts`), proven by
  * `page.presentation.test.tsx`. Console style (`console-ui-style-guide.md`
- * §3.12): its own caption is its heading (R9's exception for a page whose
- * title IS its caption, as on the digital twin).
+ * §3.12): in operator mode the console header's crumb is the page's title
+ * (R9), and while presenting the tour's caption opens the page, as on the UI
+ * Bridge dashboard.
  */
 
 import { Caption, tourStops } from "@/components/presentation";
@@ -33,10 +34,10 @@ export default function TourPage() {
   const stops = tourStops();
   return (
     <div
-      className="max-w-3xl space-y-6 p-3 sm:p-6"
+      className="max-w-3xl space-y-4 p-3 sm:p-6"
       data-testid="coord-tour-page"
     >
-      <Caption id="tour.page" level={1} persistent />
+      <Caption id="tour.page" level={2} />
       <TourStart stops={stops} />
       <TourStopList stops={stops} />
     </div>
