@@ -47,58 +47,27 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({}),
 }));
 
-interface Answer {
-  status?: number;
-  body: unknown;
-}
-
 /** What each route answers; a test overrides the ones it is about. */
-const routes: {
-  stats: (url: string) => Answer;
-  list: (url: string) => Answer;
-  pending: (url: string) => Answer;
-  detail: (id: string) => Answer;
-  fleet: () => Answer;
-  roles: () => Answer;
-} = {
-  stats: () => ({ body: {} }),
-  list: () => ({ body: {} }),
-  pending: () => ({ body: {} }),
-  detail: () => ({ body: {} }),
-  fleet: () => ({ body: { devices: [] } }),
-  roles: () => ({ body: { state: "known", machines: [] } }),
-};
+let routes: SpawnsRoutes = defaultSpawnsRoutes();
 const calls: string[] = [];
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    fetch: async (url: string) => {
+    fetch: async (url: string, init?: RequestInit) => {
       calls.push(url);
-      let answer: Answer;
-      if (url.startsWith("/api/v1/operations/spawns/stats"))
-        answer = routes.stats(url);
-      else if (url.startsWith("/api/v1/operations/spawns?"))
-        answer = url.includes("state=")
-          ? routes.pending(url)
-          : routes.list(url);
-      else if (url.startsWith("/api/v1/operations/spawns/"))
-        answer = routes.detail(decodeURIComponent(url.split("/").pop() ?? ""));
-      else if (url.startsWith("/api/v1/operations/fleet/health"))
-        answer = routes.fleet();
-      else if (url.startsWith("/api/v1/operations/fleet/dispatch-roles"))
-        answer = routes.roles();
-      else throw new Error(`unexpected fetch ${url}`);
-      return new Response(JSON.stringify(answer.body), {
-        status: answer.status ?? 200,
-      });
+      return answerSpawnsRequest(routes, url, init);
     },
   },
 }));
 
 import {
+  answerSpawnsRequest,
+  defaultSpawnsRoutes,
+  type SpawnsRoutes,
+} from "./__fixtures__/spawnsRoutes";
+import {
   DEVICE_A,
   DEVICE_B,
-  ROSTER,
   SCHEMA_MISSING,
   detailFx,
   eventFx,
@@ -127,32 +96,9 @@ async function refresh() {
   await settle();
 }
 
-const ROLES_KNOWN = {
-  state: "known",
-  machines: [
-    {
-      device_id: DEVICE_A,
-      name: "msi-wsl",
-      role: { dispatch_role: "workhorse" },
-      registration: "registered",
-    },
-    {
-      device_id: DEVICE_B,
-      name: "spaceship",
-      role: { dispatch_role: "bench" },
-      registration: "registered",
-    },
-  ],
-};
-
 beforeEach(() => {
   calls.length = 0;
-  routes.fleet = () => ({ body: ROSTER });
-  routes.roles = () => ({ body: ROLES_KNOWN });
-  routes.detail = () => ({ body: {} });
-  routes.stats = () => ({ body: statsFx() });
-  routes.list = () => ({ body: listFx([]) });
-  routes.pending = () => ({ body: listFx([]) });
+  routes = defaultSpawnsRoutes();
 });
 
 describe("/admin/coord/spawns — the ledger as coord serves it", () => {

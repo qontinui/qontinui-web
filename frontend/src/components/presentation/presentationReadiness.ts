@@ -107,6 +107,13 @@ export const PRESENTATION_READY_ROUTES: readonly PresentationReadyRoute[] = [
     route: "/admin/coord/devops",
     provenBy: "app/(app)/admin/coord/devops/page.presentation.test.tsx",
   },
+  // Phase 4: agentic activity — the spawn-path matrix, the machines and the
+  // spawn ledger. Its proof renders the real page over fixtures carrying every
+  // name, id and free sentence the page can show, behind every disclosure.
+  {
+    route: "/admin/coord/spawns",
+    provenBy: "app/(app)/admin/coord/spawns/page.presentation.test.tsx",
+  },
   // Phase 5: the digital twin explorer — the Twin map and every tab behind it,
   // and the sub-space drawer. Its proof renders the page unmocked beyond its
   // data hooks and walks all five tabs.

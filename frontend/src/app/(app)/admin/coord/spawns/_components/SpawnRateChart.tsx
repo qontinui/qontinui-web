@@ -52,6 +52,7 @@ export function SpawnRateChart({
   windowLabel,
   shown,
   total,
+  forceOpen = false,
 }: {
   /** `null` = the list has not been read (or could not be), so nothing is drawn. */
   series: RateSeries | null;
@@ -59,6 +60,11 @@ export function SpawnRateChart({
   /** Rows loaded, and the window's request count when coord sent one. */
   shown: number | null;
   total: number | null;
+  /**
+   * Hold the panel open — presentation mode, where a collapsed section would
+   * hide its figures from the audience (the UI Bridge dashboard's rule).
+   */
+  forceOpen?: boolean;
 }) {
   const active =
     series === null
@@ -81,6 +87,7 @@ export function SpawnRateChart({
         </span>
       }
       storageKey="coord-spawns-rate-chart-open"
+      forceOpen={forceOpen}
       data-testid="coord-spawns-rate-chart"
     >
       {series === null ? (

@@ -59,6 +59,7 @@ import {
   spawnFilterEmptyText,
   spawnFilterUnknownText,
   timeToSpawnText,
+  type DeviceNaming,
   type DeviceRoles,
   type SpawnKind,
 } from "./spawnStatus";
@@ -70,6 +71,13 @@ const ROLES: DeviceRoles = {
   kind: "known",
   byDevice: new Map([[DEVICE_A, "Workhorse"]]),
 };
+/** The operator's naming: the roster's hostnames, ids in titles. */
+const operatorNaming = (
+  roster: ReadonlyArray<{ device_id: string; hostname?: string }>
+): DeviceNaming => ({
+  nameOf: (id) => deviceName(id, roster),
+  showIds: true,
+});
 
 describe("deriveSpawnStatus — the continuation vocabulary", () => {
   it("reads only a finished session as success", () => {
@@ -541,7 +549,7 @@ describe("deriveSpawnsHealth", () => {
 
 describe("perDeviceShares", () => {
   it("names devices and their roles, and keeps an unsampled device as unknown", () => {
-    const { items, total } = perDeviceShares(statsFx(), ROSTER.devices, ROLES);
+    const { items, total } = perDeviceShares(statsFx(), ROLES, operatorNaming(ROSTER.devices));
     expect(total).toBe(38);
     expect(items.map((i) => i.label)).toEqual([
       "msi-wsl · Workhorse",
@@ -560,7 +568,7 @@ describe("perDeviceShares", () => {
   it("says every role is unknown, with the reason, when the role read failed", () => {
     const roles: DeviceRoles = { kind: "unknown", reason: "HTTP 404" };
     expect(deviceRoleText(DEVICE_A, roles)).toBe("role unknown");
-    const { items } = perDeviceShares(statsFx(), ROSTER.devices, roles);
+    const { items } = perDeviceShares(statsFx(), roles, operatorNaming(ROSTER.devices));
     expect(items[0]?.title).toContain("Role unknown: HTTP 404");
   });
 
@@ -584,7 +592,7 @@ describe("perDeviceShares", () => {
         wait_p50_secs: null,
       },
     ];
-    const { items, total } = perDeviceShares(stats, [], ROLES);
+    const { items, total } = perDeviceShares(stats, ROLES, operatorNaming([]));
     expect(total).toBe(4);
     expect(items[1]?.count).toBeNull();
   });
@@ -601,7 +609,25 @@ describe("perDeviceShares", () => {
         wait_p50_secs: null,
       },
     ];
-    expect(perDeviceShares(stats, [], ROLES).total).toBeNull();
+    expect(perDeviceShares(stats, ROLES, operatorNaming([])).total).toBeNull();
+  });
+
+  it("names every device by the naming it is handed, with no id and no role reason while presenting", () => {
+    const presented: DeviceNaming = {
+      nameOf: (id) => (id === DEVICE_A ? "Machine A" : "Machine B"),
+      showIds: false,
+    };
+    const roles: DeviceRoles = { kind: "unknown", reason: "HTTP 404 from /coord/fleet" };
+    const { items } = perDeviceShares(statsFx(), roles, presented);
+    expect(items.map((i) => i.label)).toEqual([
+      "Machine A · role unknown",
+      "Machine B · role unknown",
+    ]);
+    for (const item of items) {
+      expect(item.title).not.toContain(DEVICE_A);
+      expect(item.title).not.toContain(DEVICE_B);
+      expect(item.title).not.toContain("HTTP 404");
+    }
   });
 
   it("falls back to the id's first block for a device the roster does not name", () => {
