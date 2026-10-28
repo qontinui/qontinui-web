@@ -260,6 +260,22 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(shares[1]).toContain("Machine B");
   });
 
+  it("states where a per-repository switch is set as text, with no link into a page it cannot present", async () => {
+    renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
+    await settle();
+    const postMerge = screen
+      .getAllByTestId("coord-spawns-path-row")
+      .find((r) => r.getAttribute("data-path") === "post_merge_followup")!;
+    await act(async () => {
+      fireEvent.click(within(postMerge).getByTestId("coord-spawns-path-toggle"));
+    });
+    await settle();
+    const setOn = screen.getByTestId("coord-spawns-path-set-on-post_merge_followup");
+    expect(setOn.getAttribute("data-lens-link")).toBe("unlinked");
+    expect(setOn.tagName).toBe("SPAN");
+    expect(document.querySelector('a[href*="/admin/coord/agent-registry"]')).toBeNull();
+  });
+
   it("still says a failed read is UNKNOWN, in fixed words", async () => {
     renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
     await settle();

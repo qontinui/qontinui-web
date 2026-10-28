@@ -16,9 +16,13 @@
  * matrix shows the gate's `readOnly` reason instead.
  */
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUIElement } from "@qontinui/ui-bridge/react";
-import { LensLink } from "@/components/presentation";
+import {
+  lensLinkTarget,
+  usePresentationMode,
+} from "@/components/presentation";
 import type { AutonomyLevel } from "@/lib/api/operations/coordSettings";
 import type { AutoFixPrChoice } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
 import { cn } from "@/lib/utils";
@@ -199,12 +203,41 @@ export function FixerDialSwitch({
 }
 
 /**
- * A link to the console page where a switch is set. A `LensLink`: while
- * presenting it keeps the presentation, or is plain text when its page cannot
- * be presented (`lensLinkTarget`). Its registration declares a read: it only
- * changes what is displayed.
+ * A link to the console page where a switch is set. Where it leads is
+ * `lensLinkTarget`'s decision (`console-ui-style-guide.md` §6.5): as given for
+ * the operator; while presenting, carrying `?present=1` when its page can be
+ * presented, and plain text otherwise — no anchor, and no UI Bridge action,
+ * because a link that may not exist must not be reachable by an automated walk
+ * either. While it IS a link it registers where it renders, declaring a read:
+ * it only changes what is displayed.
  */
 export function SetOnLink({
+  id,
+  href,
+  label,
+}: {
+  id: string;
+  href: string;
+  label: string;
+}) {
+  const { presenting, source } = usePresentationMode();
+  // No lens above (`absent`) is operator mode, as for `LensLink`.
+  const target = lensLinkTarget(href, presenting && source !== "absent");
+  if (target === null) {
+    return (
+      <span
+        className="text-[11px] text-muted-foreground"
+        data-testid={id}
+        data-lens-link="unlinked"
+      >
+        {label}
+      </span>
+    );
+  }
+  return <RegisteredLink id={id} href={target} label={label} />;
+}
+
+function RegisteredLink({
   id,
   href,
   label,
@@ -222,7 +255,8 @@ export function SetOnLink({
       open: {
         id: "open",
         label: `Open ${href}`,
-        description: "Navigates to the page where this switch is set; changes nothing.",
+        description:
+          "Navigates to the page where this switch is set; changes nothing.",
         effect: "read",
         handler: async () => {
           router.push(href);
@@ -233,14 +267,13 @@ export function SetOnLink({
   });
   return (
     <span ref={ref} className="inline-flex">
-      <LensLink
+      <Link
         href={href}
         className="text-[11px] font-medium underline underline-offset-2 hover:no-underline"
-        textClassName="text-[11px] text-muted-foreground"
         data-testid={id}
       >
         {label}
-      </LensLink>
+      </Link>
     </span>
   );
 }
