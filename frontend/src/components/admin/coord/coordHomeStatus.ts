@@ -1487,6 +1487,10 @@ export function lastGoodReadPhrase(generatedAt: string | null): string {
 export const PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT =
   "this deployment does not serve the project-state door yet — unknown";
 
+/** The page's words for an answer that parsed as no project state. */
+export const NOT_A_PROJECT_STATE_TEXT =
+  "coord answered with a body that is not a project state";
+
 /**
  * Why a read of the door delivered nothing, as the clause the unread line
  * ("…could not be read: <this>.") and the stale strip ("Last failure:

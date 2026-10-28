@@ -21,7 +21,16 @@ import {
   type RedactionDescriptor,
   type SectionSource,
 } from "@/components/presentation";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
+  ROUTE_DISABLED_TEXT,
+  classifyCoordError,
+  deadlineText,
+} from "@/components/operations/coordPollError";
+import { FAILURE_REASON_WITHHELD } from "@/components/operations/presentedFailure";
+import { readErrorBody } from "@/lib/errors/backend-error-message";
+import {
+  PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
   decisionDomainLabel,
   isKnownDecisionDomain,
   planeLabel,
@@ -64,6 +73,86 @@ export function regionSources(reading: HomeReading): readonly SectionSource[] {
       asOf: reading.generatedAt,
     },
   ];
+}
+
+// ---------------------------------------------------------------------------
+// A failed read — explained in fixed words, or its reason withheld
+// ---------------------------------------------------------------------------
+
+/** The web proxy could not reach coord (its own `502 coord_unreachable`). */
+export const COORD_UNREACHABLE_TEXT = "coord could not be reached — unknown";
+
+/** The web proxy's wait for coord ran out (its own `504 coord_timeout`). */
+export const COORD_TIMEOUT_TEXT = "coord did not answer in time — unknown";
+
+/**
+ * Why a read of the project-state door failed, in words that quote nothing —
+ * or `null` when only the failure's own words can tell it.
+ *
+ * A presentation must still say "unknown — and here is why" when it can: to
+ * an evaluator, that is the evidence that the instrument is real
+ * (`audience_profile/external-evaluator`). But a rejection's own message
+ * quotes a URL and an upstream body, which can name a host or a client
+ * (`presentedFailure.ts`), so this is an ALLOWLIST of the arms whose reason
+ * the page states in its own fixed words — decided from the failure's
+ * STRUCTURE (status, coord's error body, the web proxy's refusal envelope),
+ * never from its text:
+ *
+ * - a deployment that does not serve the door (404/405/501): the page's own
+ *   {@link PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT};
+ * - a route an operator switched off: "disabled by operator";
+ * - coord's read deadline: its budget only — the loader coord names is its
+ *   own vocabulary, so it is not said;
+ * - the web proxy's own refusal when it could not reach coord, or gave up
+ *   waiting: fixed words for each, never the refusal's rendered sentence,
+ *   which carries coord's discriminator token.
+ *
+ * Every other failure — a status this page does not explain, an unstructured
+ * body, a network error — is `null`, and a presentation withholds it. A new
+ * or reworded failure therefore fails closed. The answer that parsed as no
+ * project state is the page's own sentence, recorded as such by
+ * `useProjectState`.
+ */
+export function presentableProjectStateFailure(err: unknown): string | null {
+  const status = httpStatusOf(err);
+  const body = httpBodyOf(err);
+  const verdict = classifyCoordError(status, body);
+  switch (verdict.kind) {
+    case "route_unavailable":
+      return PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT;
+    case "route_disabled":
+      return ROUTE_DISABLED_TEXT;
+    case "deadline":
+      return deadlineText(verdict.budgetMs);
+    case "other":
+      break;
+  }
+  if (status === null) return null;
+  const reading = readErrorBody(body ?? "", status);
+  if (reading.kind !== "refusal") return null;
+  switch (reading.refusal.discriminator) {
+    case "coord_unreachable":
+      return COORD_UNREACHABLE_TEXT;
+    case "coord_timeout":
+      return COORD_TIMEOUT_TEXT;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The latest read's failure as this mode may show it: the operator's own
+ * words; while presenting, the page's fixed words for it, or
+ * {@link FAILURE_REASON_WITHHELD} when only outside words can tell it.
+ * `null` (nothing failed) stays `null` in both modes.
+ */
+export function presentedHomeFailure(
+  lastError: string | null,
+  presentableError: string | null,
+  presenting: boolean
+): string | null {
+  if (lastError === null || !presenting) return lastError;
+  return presentableError ?? FAILURE_REASON_WITHHELD;
 }
 
 // ---------------------------------------------------------------------------

@@ -75,10 +75,18 @@ export function RegionCaption({
  * reading"): the latest read failed, so everything below is the LAST reading
  * — said first, named as such, and dated by its read, never shown as current.
  * The failure's own text can quote a URL or coord's error body, so its reason
- * is fixed words (`presentedFailure.ts`). Operator mode has the strip's own
- * stale qualifier and renders nothing here.
+ * is the page's fixed words where it has some (`presentedHomeFailure`), and
+ * withheld otherwise. Operator mode has the strip's own stale qualifier and
+ * renders nothing here.
  */
-export function KeptReadingNotice({ reading }: { reading: HomeReading }) {
+export function KeptReadingNotice({
+  reading,
+  failure,
+}: {
+  reading: HomeReading;
+  /** The latest failure as a presentation may show it (`presentedHomeFailure`). */
+  failure: string | null;
+}) {
   const { presenting } = usePresentationMode();
   if (!presenting || !reading.kept) return null;
   return (
@@ -89,8 +97,8 @@ export function KeptReadingNotice({ reading }: { reading: HomeReading }) {
     >
       <span>
         The latest read of coord&apos;s project state failed (
-        {FAILURE_REASON_WITHHELD}). Everything below is its last reading, not a
-        current one.
+        {failure ?? FAILURE_REASON_WITHHELD}). Everything below is its last
+        reading, not a current one.
       </span>
       <Provenance
         source={PROJECT_STATE_KEPT_SOURCE}

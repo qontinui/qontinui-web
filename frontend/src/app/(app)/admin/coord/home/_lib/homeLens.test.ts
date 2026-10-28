@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
   parseProjectState,
   type DegradationView,
   type NamedList,
@@ -13,8 +14,12 @@ import {
   type RepoGroup,
 } from "@/components/admin/coord/coordHomeStatus";
 import { WITHHELD, describeRedacted } from "@/components/presentation";
+import { ROUTE_DISABLED_TEXT } from "@/components/operations/coordPollError";
+import { FAILURE_REASON_WITHHELD } from "@/components/operations/presentedFailure";
 import {
   BLOCKED_UNIT_DESCRIPTOR,
+  COORD_TIMEOUT_TEXT,
+  COORD_UNREACHABLE_TEXT,
   INITIATIVE_ITEM_DESCRIPTOR,
   INITIATIVE_KEYS_DESCRIPTOR,
   PROJECT_STATE_KEPT_SOURCE,
@@ -31,7 +36,9 @@ import {
   namedUnitRepos,
   needsDescriptor,
   needsStatusWord,
+  presentableProjectStateFailure,
   presentedDecisionDomains,
+  presentedHomeFailure,
   presentedInitiativeDate,
   presentedInitiativeStatus,
   presentedPlanPhase,
@@ -117,6 +124,85 @@ describe("regionSources — one read, dated by coord's answer", () => {
     expect(regionSources({ generatedAt: null, kept: false })[0]!.asOf).toBe(
       null
     );
+  });
+});
+
+describe("presentableProjectStateFailure — fixed words, decided by structure", () => {
+  /** An `httpClient` rejection, in `readJson`'s message shape. */
+  const answered = (status: number, body: string) =>
+    new Error(
+      `GET /api/v1/operations/project-state failed: ${status} - ${body}`
+    );
+  const refusal = (status: number, code: string, discriminator: string) =>
+    answered(
+      status,
+      JSON.stringify({
+        error: "X",
+        message: "globex-gateway-7 said no",
+        refusal: {
+          code,
+          detail: "globex-gateway-7 said no",
+          discriminator,
+          glossary_terms: ["coord"],
+          next_action: { kind: "retry_later" },
+          observed_at: "2026-10-27T16:27:56Z",
+          source: "web_backend",
+        },
+        path: "https://api.globex.internal/x",
+      })
+    );
+
+  it("explains the arms the page words itself, and nothing they quote", () => {
+    expect(
+      presentableProjectStateFailure(answered(404, '{"detail":"globex"}'))
+    ).toBe(PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT);
+    expect(
+      presentableProjectStateFailure(
+        answered(404, '{"error":"route_disabled"}')
+      )
+    ).toBe(ROUTE_DISABLED_TEXT);
+    // coord's deadline: its budget, never the loader coord names.
+    expect(
+      presentableProjectStateFailure(
+        answered(
+          503,
+          '{"error":"deadline","budget_ms":8000,"loader":"globex_census"}'
+        )
+      )
+    ).toBe("coord read deadline (8000 ms) exceeded — unknown");
+    expect(
+      presentableProjectStateFailure(
+        refusal(502, "upstream_unavailable", "coord_unreachable")
+      )
+    ).toBe(COORD_UNREACHABLE_TEXT);
+    expect(
+      presentableProjectStateFailure(
+        refusal(504, "upstream_timeout", "coord_timeout")
+      )
+    ).toBe(COORD_TIMEOUT_TEXT);
+  });
+
+  it("withholds every other failure: its words are not the page's", () => {
+    for (const err of [
+      answered(502, '{"error":"upstream build-host-acme-07"}'),
+      answered(500, '{"error":"INTERNAL","message":"coord: globex down"}'),
+      refusal(503, "service_unavailable", "globex_maintenance"),
+      refusal(504, "upstream_timeout", "coord_write_timeout"),
+      new TypeError("Failed to fetch"),
+      new Error("GET https://coord.globex.internal failed"),
+    ]) {
+      expect(presentableProjectStateFailure(err), String(err)).toBeNull();
+    }
+  });
+
+  it("shows the operator's words for the operator, and the fixed words or the withheld reason while presenting", () => {
+    expect(presentedHomeFailure("raw text", "fixed", false)).toBe("raw text");
+    expect(presentedHomeFailure("raw text", "fixed", true)).toBe("fixed");
+    expect(presentedHomeFailure("raw text", null, true)).toBe(
+      FAILURE_REASON_WITHHELD
+    );
+    expect(presentedHomeFailure(null, null, true)).toBeNull();
+    expect(presentedHomeFailure(null, null, false)).toBeNull();
   });
 });
 

@@ -53,10 +53,7 @@ import {
   usePresentationScopeState,
   useRedactor,
 } from "@/components/presentation";
-import {
-  FAILURE_SENTENCE_WITHHELD,
-  presentedFailureReason,
-} from "@/components/operations/presentedFailure";
+import { FAILURE_SENTENCE_WITHHELD } from "@/components/operations/presentedFailure";
 import {
   BLOCKED_UNIT_DESCRIPTOR,
   INITIATIVE_ITEM_DESCRIPTOR,
@@ -234,7 +231,7 @@ export function HomeStripSection({
   tenantId,
   stale,
   generatedAt,
-  lastError,
+  failure,
   onRefresh,
 }: {
   strip: HomeStrip;
@@ -242,7 +239,13 @@ export function HomeStripSection({
   tenantId: string | null;
   stale: boolean;
   generatedAt: string | null;
-  lastError: string | null;
+  /**
+   * Why the latest read failed, as this mode may show it (`page.tsx`,
+   * `presentedHomeFailure`): the read's own words for the operator; while
+   * presenting, the page's fixed words or the withheld reason — never a URL
+   * or coord's body.
+   */
+  failure: string | null;
   onRefresh: () => Promise<void>;
 }) {
   const { presenting } = usePresentationMode();
@@ -268,9 +271,6 @@ export function HomeStripSection({
   const age = generatedAt
     ? `Showing coord's answer from ${relativeTime(generatedAt)} (${absoluteTime(generatedAt)}).`
     : "";
-  // The failure's own text can quote a URL or coord's body: fixed words
-  // while presenting.
-  const failure = presentedFailureReason(lastError, presenting);
   const lead = [
     stale ? staleDetail(age) : null,
     stale && failure ? `Last failure: ${failure}.` : null,

@@ -20,7 +20,10 @@
  *     figures, and its carriers redacted (and a first-party one shown);
  *  3. Correct? shows no write control while presenting;
  *  4. a kept reading after a failed refresh is named as the last one, led by
- *     the failure in fixed words, and dated by its read — never as current;
+ *     the failure, and dated by its read — never as current; a failure is
+ *     explained in the page's own fixed words where its arm has some (the
+ *     door not deployed, an answer that is no project state, the web proxy
+ *     giving up on coord) and withheld otherwise, never in its own text;
  *  5. the refresh is a read, registered with the UI Bridge where it renders;
  *  6. the route is registered presentation-ready, so the console's page gate
  *     renders it rather than withholding it;
@@ -73,8 +76,10 @@ import {
   HIDDEN_UNIT_TITLE,
   HOST_BUILD,
   MUST_NOT_APPEAR,
+  PROXY_TIMEOUT_REFUSAL_BODY,
   QUESTION_ID,
   REFRESH_FAILURE,
+  ROUTE_UNAVAILABLE_BODY,
   SCOPE,
   SHARED_UNIT_TITLE,
   TENANT_ID,
@@ -86,9 +91,14 @@ import {
   unservedDecisionsBody,
 } from "./__fixtures__/presentationFixture";
 import {
+  COORD_TIMEOUT_TEXT,
   PROJECT_STATE_KEPT_SOURCE,
   PROJECT_STATE_SOURCE,
 } from "./_lib/homeLens";
+import {
+  NOT_A_PROJECT_STATE_TEXT,
+  PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
+} from "@/components/admin/coord/coordHomeStatus";
 import { HOME_REFRESH_ACTION, HOME_REFRESH_ID } from "./_components/HomeLens";
 
 /**
@@ -368,6 +378,41 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
       expect(chips[0]).toHaveClass(...UNKNOWN_AMBER.split(" "));
     }
     expectPresentationSafe(view, { captions: HOME_CAPTIONS });
+  });
+
+  it("when the first read meets a deployment without the door: the page's own sentence says why, never the failure's text", async () => {
+    httpFetch.mockImplementation(
+      async () => new Response(ROUTE_UNAVAILABLE_BODY, { status: 404 })
+    );
+    const view = renderInPresentationMode(<CoordHomePage />, { scope: SCOPE });
+    // "Unknown — and here is why": a reason the page states in its own fixed
+    // words is not withheld (`presentableProjectStateFailure`).
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-home.unread")).toHaveTextContent(
+        `Coord's project state could not be read: ${PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT}. Every count on this page is a dash, not a zero.`
+      )
+    );
+    expect(document.body.textContent).not.toMatch(/globex|Not Found/i);
+    expect(document.body.textContent).not.toContain(FAILURE_REASON_WITHHELD);
+    expectPresentationSafe(view, {
+      captions: HOME_CAPTIONS,
+      forbidden: MUST_NOT_APPEAR,
+    });
+    expect(leakedIdentifiers()).toEqual([]);
+  });
+
+  it("when coord answers with something that is not a project state: the page's own sentence says so", async () => {
+    httpFetch.mockImplementation(async () => jsonResponse(["globex"]));
+    const view = renderInPresentationMode(<CoordHomePage />, { scope: SCOPE });
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-home.unread")).toHaveTextContent(
+        `could not be read: ${NOT_A_PROJECT_STATE_TEXT}.`
+      )
+    );
+    expectPresentationSafe(view, {
+      captions: HOME_CAPTIONS,
+      forbidden: MUST_NOT_APPEAR,
+    });
   });
 
   it("when the first read fails: it says so in fixed words, never in the failure's own text", async () => {
@@ -768,6 +813,38 @@ describe("/admin/coord/home?present=1 — a kept reading after a failed refresh"
       `Last failure: ${FAILURE_REASON_WITHHELD}.`
     );
     expect(document.body.textContent).not.toContain("coord.globex.internal");
+    expectPresentationSafe(view, {
+      captions: HOME_CAPTIONS,
+      forbidden: MUST_NOT_APPEAR,
+    });
+    expect(leakedIdentifiers()).toEqual([]);
+  });
+
+  it("explains a refresh the web proxy gave up on in the page's own words, still as the last reading", async () => {
+    const view = await renderPresenting(fullBody());
+    httpFetch.mockImplementationOnce(
+      async () => new Response(PROXY_TIMEOUT_REFUSAL_BODY, { status: 504 })
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(HOME_REFRESH_ID));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-home.strip")).toHaveAttribute(
+        "data-stale",
+        "true"
+      )
+    );
+    expect(screen.getByTestId("coord-home.kept-reading")).toHaveTextContent(
+      `The latest read of coord's project state failed (${COORD_TIMEOUT_TEXT}). Everything below is its last reading, not a current one.`
+    );
+    expect(screen.getByTestId("coord-home.strip")).toHaveTextContent(
+      `Last failure: ${COORD_TIMEOUT_TEXT}.`
+    );
+    // Never the refusal's rendered sentence (it carries coord's token), nor
+    // the request path the body names.
+    expect(document.body.textContent).not.toMatch(
+      /coord_timeout|globex|did not answer in time \(/
+    );
     expectPresentationSafe(view, {
       captions: HOME_CAPTIONS,
       forbidden: MUST_NOT_APPEAR,

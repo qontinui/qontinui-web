@@ -76,6 +76,22 @@ export const UNNAMED_DOMAIN = "quarterly_board_pack";
 export const REFRESH_FAILURE =
   'GET https://coord.globex.internal/coord/project-state failed: 502 - {"error":"upstream build-host-acme-07"}';
 
+/**
+ * A deployment without the project-state door answers 404 — here with a body
+ * that names a host. The page explains the arm in its own fixed words.
+ */
+export const ROUTE_UNAVAILABLE_BODY =
+  '{"detail":"Not Found: no route on coord.globex.internal"}';
+
+/**
+ * The web proxy's own refusal when its wait for coord runs out
+ * (`_coord_timeout(write=False)`), as its refusal handler serves it — its
+ * request path naming a host. The page explains it in fixed words, never the
+ * refusal's rendered sentence, which carries coord's discriminator token.
+ */
+export const PROXY_TIMEOUT_REFUSAL_BODY =
+  '{"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"},"timestamp":1793118476.83,"path":"https://api.globex.internal/api/v1/operations/project-state"}';
+
 /** The redaction scope: our owner is first-party; two clients are confidential. */
 export const SCOPE: PresentationScopeState = {
   status: "ready",
@@ -133,6 +149,7 @@ export const MUST_NOT_APPEAR: readonly string[] = [
   "no_successful_tick",
   "agent_question",
   "operator_gate",
+  "coord_timeout",
 ];
 
 const CLASSES = {
