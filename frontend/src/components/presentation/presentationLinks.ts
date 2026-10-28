@@ -19,11 +19,20 @@
  * has a presentation mode to enter), and in operator mode every link is
  * untouched. Navigation-only in effect — the URL changes what the destination
  * renders, nothing else.
+ *
+ * A link whose destination may not be presentable takes the stricter rule,
+ * {@link lensLinkTarget} (rendered by `LensLink`): while presenting it is
+ * plain text unless its page can be presented.
  */
 
 import { presentationHref } from "./lensSurfaces";
 import { usePresentationMode } from "./PresentationModeProvider";
-import { isLensTreePath } from "./presentationReadiness";
+import {
+  PRESENTATION_READY_ROUTES,
+  isLensTreePath,
+  isPresentationReady,
+  type PresentationReadyRoute,
+} from "./presentationReadiness";
 
 /** `href` as a link inside the lens renders it: carrying `?present=1` while presenting. */
 export function usePresentationHref(href: string): string {
@@ -35,4 +44,28 @@ export function usePresentationHref(href: string): string {
 export function lensLinkHref(href: string, presenting: boolean): string {
   if (!presenting || !isLensTreePath(href)) return href;
   return presentationHref(href, true);
+}
+
+/**
+ * Where a link to a page that may not be presentable leads (`LensLink`):
+ * `href` as given in operator mode; while presenting, `href` carrying
+ * `?present=1` when its page can be presented — inside a lens tree AND
+ * registered presentation-ready — and `null` otherwise.
+ *
+ * `null` is the fail-closed arm (D3): a page out of the lens trees has no
+ * presentation mode at all, so one click would drop the lens and show the
+ * operator's real page (`/sessions`: session titles, machines); and a lens
+ * page not yet proven safe renders only "Shown in the operator view only", a
+ * dead end in front of an evaluator. So neither is linked while presenting.
+ * The link comes back by itself the day its page is registered in
+ * `PRESENTATION_READY_ROUTES`.
+ */
+export function lensLinkTarget(
+  href: string,
+  presenting: boolean,
+  routes: readonly PresentationReadyRoute[] = PRESENTATION_READY_ROUTES
+): string | null {
+  if (!presenting) return href;
+  if (!isLensTreePath(href) || !isPresentationReady(href, routes)) return null;
+  return lensLinkHref(href, true);
 }

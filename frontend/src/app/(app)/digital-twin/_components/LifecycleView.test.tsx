@@ -8,7 +8,12 @@
  */
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { onlineManager } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  expectPresentationSafe,
+  renderInPresentationMode,
+} from "@/test/presentation";
 import type {
   SubspaceProbe,
   SubspacesProbeResponse,
@@ -258,32 +263,6 @@ describe("LifecycleView", () => {
     expect(drawer.queryByText("Query kind")).toBeNull();
   });
 
-  it("warns when coord is unreachable and still renders every stage from the manifest", () => {
-    state.probe = {
-      data: undefined,
-      isLoading: false,
-      isError: true,
-      error: new Error("connect ECONNREFUSED"),
-    };
-    const { container } = render(<LifecycleView />);
-    expect(
-      screen.getByText(
-        /Could not reach the coordination layer: connect ECONNREFUSED/
-      )
-    ).toBeInTheDocument();
-    expect(
-      container.querySelectorAll('section[data-testid^="digital-twin-stage-"]')
-    ).toHaveLength(LIFECYCLE_STAGES.length);
-    // The probe failed rather than being in flight: nothing reads "probing…",
-    // and a probed stage says no live probe is answering.
-    expect(screen.queryByText("probing…")).toBeNull();
-    expect(
-      within(stageSection("release")).getByText(
-        "No live probe answering at this stage."
-      )
-    ).toBeInTheDocument();
-  });
-
   it("renders one refused sub-space as its own Restricted cell, keeping the stages", () => {
     state.probe = {
       data: probeAll({ release: "restricted" }),
@@ -447,5 +426,263 @@ describe("LifecycleView restriction (the split per qontinui-coord#3128)", () => 
     // than reading "0/0"; the process twin's probes answer.
     expect(screen.getByText(/^all restricted for you · /)).toBeInTheDocument();
     expect(screen.getByText(/^\d+\/\d+ live-probed · /)).toBeInTheDocument();
+  });
+});
+
+describe("LifecycleView while the probe holds no reading — UNKNOWN, never a count", () => {
+  const SNAPSHOT_IDS = manifest.subspaces
+    .filter((s) => s.query_kind === "snapshot")
+    .map((s) => s.id);
+
+  const ARMS = [
+    {
+      name: "a failed read",
+      arrange: () => {
+        state.probe = {
+          data: undefined,
+          isLoading: false,
+          isError: true,
+          error: new Error(
+            "GET /api/v1/digital-twin/subspaces failed: 502 - connect ECONNREFUSED"
+          ),
+        };
+      },
+      reason: "Coord's live probe could not be read (HTTP 502).",
+      operator:
+        /Could not reach the coordination layer: .*connect ECONNREFUSED\. No probe has answered/,
+    },
+    {
+      name: "a degraded answer",
+      arrange: () => {
+        state.probe = {
+          data: {
+            subspaces: SNAPSHOT_IDS.map((id) => ({
+              id,
+              status: "error" as const,
+              error: "coord_unavailable",
+            })),
+            probed: 0,
+            restricted: false,
+            degraded: true,
+          },
+          isLoading: false,
+          isError: false,
+          error: null,
+        };
+      },
+      reason:
+        "Coord's live probe could not be made: coord could not be reached.",
+      operator:
+        /coord made no probe, so every live count and cell below is UNKNOWN/,
+    },
+    {
+      // React-query makes no read while this browser is offline: the probe
+      // is pending but not fetching — no answer, no failure, none in flight.
+      name: "a read react-query holds while this browser is offline",
+      arrange: () => {
+        state.probe = {
+          data: undefined,
+          isLoading: false,
+          isError: false,
+          error: null,
+        };
+        onlineManager.setOnline(false);
+      },
+      reason: "Coord's live probe has not answered: this browser is offline.",
+      operator:
+        /Coord's live probe has not answered: this browser is offline, so every live count and cell below is UNKNOWN/,
+    },
+  ];
+
+  afterEach(() => {
+    onlineManager.setOnline(true);
+  });
+
+  function intro(container: HTMLElement): HTMLElement {
+    const el = container.querySelector<HTMLElement>(
+      '[aria-labelledby="digital-twin-lifecycle-intro"]'
+    );
+    if (!el) throw new Error("no Lifecycle intro");
+    return el;
+  }
+
+  for (const arm of ARMS) {
+    it(`renders every stage from the manifest after ${arm.name}, its live count UNKNOWN with why`, () => {
+      arm.arrange();
+      const { container } = render(<LifecycleView />);
+      expect(
+        container.querySelectorAll(
+          'section[data-testid^="digital-twin-stage-"]'
+        )
+      ).toHaveLength(LIFECYCLE_STAGES.length);
+      expect(screen.queryByText("probing…")).toBeNull();
+      expect(PROBED_STAGES.length).toBeGreaterThan(0);
+      for (const stage of PROBED_STAGES) {
+        const count = within(stageSection(stage)).getByText(
+          "live-probed"
+        ).parentElement!;
+        expect(count, stage).toHaveTextContent("UNKNOWN");
+        expect(count.textContent, stage).not.toMatch(/\d/);
+        // Why — never that a probe was asked and did not answer.
+        expect(
+          screen.getByTestId(`digital-twin-stage-${stage}-note`),
+          stage
+        ).toHaveTextContent(arm.reason);
+      }
+      expect(screen.queryByText(/No live probe answering/)).toBeNull();
+      // A stage nothing probes still says so: that is the manifest's fact.
+      expect(
+        within(stageSection("intent")).getByText(/No live probe at this stage/)
+      ).toBeInTheDocument();
+      // Every probed cell is UNKNOWN, never the red Error of a probe that ran.
+      expect(screen.queryAllByText("Error")).toHaveLength(0);
+      expect(
+        screen.getByTestId("digital-twin-stage-release-cell-schema")
+      ).toHaveTextContent("UNKNOWN");
+      expect(
+        screen.getByTestId("digital-twin-coord-unreachable")
+      ).toHaveTextContent(arm.operator);
+    });
+
+    it(`shows each twin's live count as UNKNOWN with why after ${arm.name}, and no N/M anywhere in the intro`, () => {
+      arm.arrange();
+      const { container } = render(<LifecycleView />);
+      expect(intro(container).textContent).not.toMatch(/\d+\/\d+/);
+      const probedTwins = ["environment", "process", "intent"].filter((t) =>
+        manifest.subspaces.some(
+          (s) => s.query_kind === "snapshot" && s.twin === t
+        )
+      );
+      expect(probedTwins.length).toBeGreaterThan(0);
+      for (const twin of probedTwins) {
+        const counts = screen.getByTestId(
+          `digital-twin-lifecycle-twin-${twin}-counts`
+        );
+        expect(counts, twin).toHaveAttribute("data-reading", "unknown");
+        expect(counts, twin).toHaveTextContent("UNKNOWN");
+        expect(counts, twin).toHaveTextContent(arm.reason);
+      }
+    });
+
+    it(`draws the unread probes as their own segment after ${arm.name} — never "not answering"`, () => {
+      arm.arrange();
+      const { container } = render(<LifecycleView />);
+      expect(
+        container.querySelectorAll('[title*="not answering"]')
+      ).toHaveLength(0);
+      expect(
+        container.querySelectorAll('[title$="no reading (UNKNOWN)"]').length
+      ).toBeGreaterThan(0);
+      expect(
+        screen.getByText("live-probed, no reading (UNKNOWN)")
+      ).toBeInTheDocument();
+    });
+
+    it(`puts the notice above the twin counts and the stages after ${arm.name}`, () => {
+      arm.arrange();
+      const { container } = render(<LifecycleView />);
+      const banner = screen.getByTestId("digital-twin-coord-unreachable");
+      expect(
+        banner.compareDocumentPosition(intro(container)) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+    });
+  }
+
+  it("dates the UNKNOWN counts' chip by the failed attempt while presenting", () => {
+    state.probe = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error(
+        "GET /api/v1/digital-twin/subspaces failed: 502 - upstream"
+      ),
+      // No answer was ever read: only the failed attempt can date it.
+      dataUpdatedAt: 0,
+      errorUpdatedAt: Date.parse("2026-10-23T12:00:00Z"),
+    } as typeof state.probe;
+    const view = renderInPresentationMode(<LifecycleView />, {
+      uiBridge: {
+        unobservable: "LifecycleView.test.tsx mocks @qontinui/ui-bridge/react",
+      },
+    });
+    const chip = intro(view.container).querySelector("[data-provenance]");
+    expect(chip).toHaveAttribute("data-provenance-known", "true");
+    expect(chip).toHaveTextContent("source: coord's live twin probe");
+    expectPresentationSafe(view);
+  });
+
+  it("names no unread segment, and no notice, while the probe answers", () => {
+    render(<LifecycleView />);
+    expect(screen.queryByText("live-probed, no reading (UNKNOWN)")).toBeNull();
+    expect(screen.queryByTestId("digital-twin-coord-unreachable")).toBeNull();
+  });
+});
+
+/**
+ * The drawer shows the probe's current row for the sub-space it was opened
+ * on, not the row as it was clicked, as in the Completeness matrix: a drawer
+ * left open across the probe's answer must say what that answer says.
+ */
+describe("LifecycleView's open drawer follows the probe", () => {
+  function statusOf(drawer: HTMLElement): HTMLElement {
+    return within(drawer).getByText("Status").parentElement!;
+  }
+
+  it("moves from Probing… to the answer when the probe answers while it is open", () => {
+    state.probe = {
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+    };
+    const view = render(<LifecycleView />);
+    fireEvent.click(
+      screen.getByTestId("digital-twin-stage-release-cell-schema")
+    );
+    expect(statusOf(screen.getByRole("dialog"))).toHaveTextContent("Probing…");
+
+    state.probe = {
+      data: probeAll(),
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    view.rerender(<LifecycleView />);
+
+    expect(
+      screen.getByTestId("digital-twin-stage-release-cell-schema")
+    ).toHaveTextContent("Live");
+    const drawer = screen.getByRole("dialog");
+    expect(statusOf(drawer)).toHaveTextContent("Live");
+    expect(statusOf(drawer)).not.toHaveTextContent("Probing…");
+  });
+
+  it("names the probe's last answer as one after its refresh failed — the drawer reads the view's probe", () => {
+    const readAt = Date.now() - 5.5 * 60_000;
+    state.probe = {
+      data: probeAll(),
+      isLoading: false,
+      isError: true,
+      error: new Error(
+        "GET /api/v1/digital-twin/subspaces failed: 502 - upstream"
+      ),
+      dataUpdatedAt: readAt,
+      errorUpdatedAt: Date.now(),
+    } as typeof state.probe;
+    render(<LifecycleView />);
+    fireEvent.click(
+      screen.getByTestId("digital-twin-stage-release-cell-schema")
+    );
+    const drawer = screen.getByRole("dialog");
+    expect(statusOf(drawer)).toHaveTextContent("Last answer: Live");
+    expect(
+      within(drawer).getByTestId("digital-twin-drawer-status-meaning")
+    ).toHaveTextContent(
+      /^Coord's live probe's latest read failed \(HTTP 502\), so this is its last answer, not a current status: it found this observer answering/
+    );
+    expect(
+      within(drawer).getByTestId("digital-twin-drawer-status-provenance")
+    ).toHaveTextContent("source: coord's live twin probe · as of 5m ago");
   });
 });

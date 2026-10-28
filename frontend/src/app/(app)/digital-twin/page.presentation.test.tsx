@@ -36,6 +36,9 @@ vi.mock("@qontinui/ui-bridge/react", () => ({
 vi.mock("./_components/TwinCatalog", () => ({ TwinCatalog: () => null }));
 vi.mock("./_components/AskTheTwin", () => ({ AskTheTwin: () => null }));
 vi.mock("./_components/UiBridgePanel", () => ({ UiBridgePanel: () => null }));
+// The Twin map, the default tab, captions itself: stubbed so the
+// why-it-matters below can only be the page title's.
+vi.mock("./_components/TwinMap", () => ({ TwinMap: () => null }));
 
 import DigitalTwinPage from "./page";
 

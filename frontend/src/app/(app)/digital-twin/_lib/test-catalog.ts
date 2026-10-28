@@ -2,18 +2,93 @@
  * A served-catalog fixture for the view tests: one coord catalog entry per
  * named manifest row, in coord `twin_probe_door.rs` `served_entry` shape, with
  * the door coord declares for it — the admin `envelope` door for `outbound`,
- * a `report` door for `worktree`, and a `verdict_wrapper` twin door for every
- * other row. Test-only; nothing in the page imports it.
+ * a `report` door for each row coord answers with its own report
+ * (`REPORT_DOORS`), and a `verdict_wrapper` twin door for every other row
+ * (`test-catalog.test.ts` holds these to the derived spec's catalog stub).
+ * Also the body coord's admin outbound door really answers
+ * (`outboundEnvelope`). Every outbound probe answer that a digital-twin test
+ * builds by hand with an envelope uses it.
+ *
+ * One exception: the page tests that read the derived spec's route stub
+ * (`specs/pages/digital-twin/state-machine.derived.json`) still get its older
+ * outbound cell. That cell is a `partial` at 60%, which coord's door cannot
+ * send. The spec is re-derived from a snapshot, never hand-edited (style
+ * guide §6.3). Test-only; nothing in the page imports it.
  */
 
 import { manifest } from "./resolve";
-import type { DoorShape, TwinCatalogEntry, TwinCatalogResponse } from "./types";
+import type {
+  DoorShape,
+  TwinCatalogEntry,
+  TwinCatalogResponse,
+  VerdictMetrics,
+} from "./types";
+
+/** The drift classes coord's outbound observer writes on a bucket. */
+export type OutboundDriftClass =
+  | "exhausted"
+  | "cooling_down"
+  | "burning"
+  | "nominal"
+  | "unknown";
+
+/**
+ * The worst bucket coord's admin outbound door observed — the first, worst-
+ * first, and the one the answer's drift class comes from — as the backend
+ * serves it: its class, and its age in seconds when read, or `null` for a
+ * backend that predates carrying that age (`digital_twin.py`
+ * `_class_bucket_age`). The two halves deploy separately, so both occur.
+ */
+export interface WorstBucket {
+  readonly drift: OutboundDriftClass;
+  readonly ageSeconds: number | null;
+}
+
+/**
+ * The metrics the backend copies out of coord's admin outbound door: the
+ * door's real body, never an invented one (qontinui-coord
+ * `outbound_budget_read.rs` `OutboundBudgetResponse`, read through
+ * `digital_twin.py` `_envelope_metrics`).
+ *
+ * - `coverage` is exactly 1 when coord observed any bucket, else 0. It is
+ *   never in between, so the door never answers `partial`.
+ * - `drift_class` is the worst bucket's class, or `unknown` with no bucket.
+ * - `credibility` and `provenance` are the door's constants.
+ * - It has NO `posterior`: the door reports none, so the backend passes it
+ *   through as null.
+ * - It has no answer-level age. Each bucket carries its own, and the backend
+ *   serves the worst bucket's as `staleness_seconds`: `null` with no bucket,
+ *   or from a backend that predates it.
+ *
+ * `worst` is the worst bucket, or `null` when coord observed none.
+ */
+export function outboundEnvelope(worst: WorstBucket | null): VerdictMetrics {
+  return {
+    coverage: worst === null ? 0 : 1,
+    credibility: 0.95,
+    posterior: null,
+    staleness_seconds: worst?.ageSeconds ?? null,
+    provenance: "persisted_oplog",
+    drift_class: worst?.drift ?? "unknown",
+  };
+}
 
 const OUTBOUND_DOOR = "/admin/coord/outbound-budget";
 
+/**
+ * The rows coord answers on its twin door with a report of its own rather
+ * than a verdict: served, not graded.
+ */
+export const REPORT_DOORS: ReadonlySet<string> = new Set([
+  "worktree",
+  "train_activity",
+  "merge_economics",
+  "secrets_broker",
+]);
+
 function doorShapeOf(id: string): DoorShape {
   if (id === "outbound") return "envelope";
-  if (id === "worktree") return "report";
+  if (REPORT_DOORS.has(id)) return "report";
   return "verdict_wrapper";
 }
 

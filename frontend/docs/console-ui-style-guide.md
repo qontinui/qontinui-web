@@ -1956,7 +1956,13 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   (`usePresentationHref`: `?present=1` on its URL), so one opened in a new tab —
   which starts with no tab choice of its own — still presents. The page check
   below fails a lens link that does not (`presentation-dropping-link`), so a page
-  added later cannot forget it.
+  added later cannot forget it. A link whose destination may not be
+  presentable goes through `LensLink` (its decision is `lensLinkTarget`, both in
+  the presentation barrel): while presenting, a destination outside the lens
+  trees, or a lens page not yet in `PRESENTATION_READY_ROUTES`, renders as plain
+  text (`data-lens-link="unlinked"`) — never a click that leaves the lens or
+  lands on "Shown in the operator view only" — and the link returns by itself
+  the day its destination is registered.
 - It applies on the lens trees (`LENS_TREES`: `/admin/coord`, `/digital-twin`) and
   to the app shell beside them (`PresentationShell`, in `app/(app)/layout.tsx`):
   while presenting, the sidebar names only the active project, aliases the runner,
@@ -2024,9 +2030,109 @@ seconds count the tick would leave behind; and a render with no client clock (se
 hydration) states the instant in UTC to the minute, so the HTML and the first client
 render agree.
 
-**Density down.** Presentation mode never adds a row to a page: what it changes is
-which of the page's own elements render, and how large a caption is. A page does not
-grow a second presentation layout.
+**A kept reading, and two reads of one thing.** R6's stale arm holds on a lens
+surface too, in both modes. A reading kept after its latest read failed (react-query
+keeps a query's data when a refetch fails) is named as the last read. The failure
+leads, the reading is introduced as the last one read, it is never headed "Live", and
+its own staleness is worded as of when it was read ("its data was 30s stale when
+read"). An age that was not served is UNKNOWN, never "live": a missing
+`staleness_seconds` means a live answer only on coord's DriftVerdict, and the admin
+outbound door's envelope is not one. That door has no answer-level age. Each bucket
+carries its own, and its drift class is its worst (first) bucket's. So the web backend
+serves that bucket's age (`digital_twin.py` `_class_bucket_age`), and every sentence
+that shows it names the bucket: "its worst bucket's data was 12s stale when read" in
+the drawer, after "classified", and "worst bucket 12s stale when read" on the matrix
+cell, whose title says the bucket is the one its drift class comes from. On the Twin
+map the Staleness detail begins "the oldest of N answering readings", beside which
+"worst" would read as "oldest". Coord orders the buckets by drift severity, then by
+the share of budget left, never by age, so another bucket may be older. The map
+therefore names the bucket by what makes it that one: "outbound's reading is dated
+by the bucket its drift class comes from" (`digital-twin/_lib/status-presentation.ts`
+`readingAge`, `datesWorstBucket`, `CLASS_BUCKET`). With no age served (no bucket
+observed, or a backend that predates carrying it) all three read UNKNOWN with the
+reason "no age was served for this reading". That reason is true whichever half
+deploys first, and blames no one.
+
+Where a kept reading's dot goes depends on what carries it:
+
+- **A panel that states a verdict on one reading** draws the dot on the ignorance
+  floor, because the dot says what is true now. The sub-space drawer's Status reads
+  "Last answer: Live" on the amber ring.
+- **A list of rows under a page notice** keeps R6's row arm instead. The Completeness
+  matrix's and the Lifecycle view's cells keep their last answer's hue and label.
+  `CoordUnreachableBanner` above them says they show the probe's last answer, not a
+  current reading. In operator mode it says the cells "fall back to their last
+  status". While presenting it says "the live statuses below are not a current
+  reading". The drawer covers that notice, so it says so itself.
+- **The Twin map** has a notice of its own above its cards, worded for the map
+  (`TwinMapHeldNotice`), in both modes. Its live-probed part rows keep R6's row arm
+  under it. Its probe figures, which draw no dot, keep the last answer's values. The
+  notice names both as that answer, and only for the twins whose figures the answer
+  decides (`digital-twin/_lib/twin-aspects.ts` `probeFedAspects`). Under coord's
+  catalog those are the twins with a part it declares. A twin with none shows its
+  probe figures as UNKNOWN because nothing in it is probed live, whatever coord
+  answered or refused and whether or not the probe holds a reading, as the Lifecycle
+  view says of a stage nothing probes. The catalog says that, not the answer, so the
+  notice never calls those figures that answer. With the catalog unread, the
+  manifest's `snapshot` rows and the rows the answer has a cell for are the
+  live-probed ones (`resolve.ts`), so the answer decides every twin's figures, even
+  that a twin has no live-probed part, and the notice names every twin. Under a
+  catalog that declares no intent row it reads "the Observed, Coverage and Staleness
+  figures of the environment twin and the process twin, and the statuses of the
+  live-probed parts below, are its last answer, not a current reading", and a
+  `Provenance` chip dates it. With no twin to name, nothing on the map is the
+  probe's answer, and there is no notice. A probe holding no reading at all needs no
+  notice there either: every probe figure of a twin with a live-probed part, and
+  every live part, is then UNKNOWN with the reason.
+  An answer in which coord refused every reading is an answer, but no observer was
+  read in it. The other views replace themselves with the access notice; the map
+  keeps its cards, and both its probe figures and its live parts say UNKNOWN, naming
+  that refusal, in both modes (`digital-twin/_lib/probe-read.ts` `probeReadOf`). A
+  part never reads "Restricted" then: that status's meaning is a refusal of one
+  sub-space, the others unaffected, which is false of an answer that refused them
+  all.
+  The map's Staleness figure is worded as of the read ("15m stale when read"), since
+  in operator mode no chip dates it.
+- **A figure with no notice above it** keeps no reading. On the Twin map the Honesty
+  figure (coord's twin self-check) and the UI Bridge app twin's Observed and Coverage
+  figures (the runner's app registry and its model of its own interface) stand alone.
+  Nothing on their card could name a kept answer as the last one, so a read whose
+  latest attempt failed makes its figure UNKNOWN, dated by that attempt: "the
+  runner's app registry could not be read (HTTP 503)". That holds even where
+  react-query keeps an earlier answer beside the failure
+  (`digital-twin/_lib/twin-aspects.ts` `runnerAnswer`,
+  `digital-twin/_lib/twin-fidelity.ts` `readFidelity`). A read with no answer, no
+  failure and none in flight is not worded as a failure: "no read of the runner's
+  app registry has answered: this browser is offline". The UI Bridge tab reads the
+  same runner reads the same way. Its App field's suggestions and its graph counts
+  are the runner's only while their latest read answered
+  (`digital-twin/_components/UiBridgePanel.tsx`). Its live snapshot is a capture,
+  not a count, read only when Capture asks: never by a mount, a runner switch or a
+  reconnect (`digital-twin/_hooks/useUiBridge.ts` `useRunnerSnapshot`). What the
+  card says of it follows that read's own state, which react-query keeps for the
+  runner across mounts, never a flag of the mount that asked, so it says the same
+  after the operator leaves the tab and comes back. A capture carries the time it
+  was taken and a failed attempt the time it failed, each on a `persistent`
+  `Provenance` chip, and one kept after a re-capture failed stays under the failure,
+  introduced as "As last captured, before that failure:".
+
+Where one panel shows two reads of one thing, every line about a read says which read
+it is about. It does so by name ("Coord's live probe's latest read failed", "This
+drawer's own read of the live verdict failed") or by pointing back at the line before
+it ("As last read, before that failure:"). A reading names its read as the source of
+its own `Provenance` chip, and that chip dates it, `persistent` because nothing else
+in the panel does. The sub-space drawer's Status is the page probe's answer, and its
+Summary the drawer's own read (`digital-twin/_lib/drawer-status.ts`,
+`drawer-reading.ts`). Every state of both reads that can occur, in both modes, is a
+row of `SubspaceDetail.matrix.test.tsx`, including the outbound door's real answer,
+with its worst bucket's age served and without. That file's docblock names the
+combinations it leaves out because they cannot occur.
+
+**Density down.** Presentation mode never adds a record row to a page: what it changes
+is which of the page's own elements render, and how large a caption is. A headline
+strip (`HeadlineFigures`, §3.11) is one such element: a page may render it only while
+presenting, above its health strip, which departs from R1 the way a caption does. A
+page does not grow a second presentation layout.
 
 **Controls off.** Every control that writes renders inside `OperatorOnly` — not
 hidden, unmounted, so its UI Bridge registration goes with it; a `placeholder` that

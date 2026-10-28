@@ -12,10 +12,27 @@ import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import {
+  NAVIGATION_ONLY_PROPS,
+  OperatorOnly,
+  Provenance,
+  redactionVerdict,
+  useRedactor,
+  usePresentationMode,
+  usePresentationScopeState,
+} from "@/components/presentation";
 import { useDeliveryVerdict } from "../_hooks/useDeliveryVerdict";
 import { isRetiredCitation } from "../_lib/delivery-citations";
+import { RETAINED_LEAD } from "../_lib/drawer-reading";
+import { failureTail } from "../_lib/failure-text";
+import { presentedPlanStatus } from "../_lib/twin-plans";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
-import { formatRatio, formatStaleness } from "../_lib/status-presentation";
+import {
+  formatRatio,
+  formatReadingAge,
+  formatStalenessWhenRead,
+  readingAge,
+} from "../_lib/status-presentation";
 import type {
   DeliveryAnchorKind,
   DeliveryComponents,
@@ -39,6 +56,21 @@ import type {
  * `anchorPresentation` keys the displayed noun off the verdict's own
  * `anchor_kind`, so a verdict coord still anchors to a plan is still labelled
  * "Plan". That is coord's data speaking, not this card's own vocabulary.
+ *
+ * In presentation mode (plan `2026-10-23-console-presentation-spaces` D3) the
+ * lookup stays live — it is a read, and only changes what is displayed — the
+ * envelope carries its source and age, a cited PR's repository and a deploy
+ * target render only when they are provably first-party (a PR loses its
+ * outbound link otherwise, since the URL names its repository), and the raw
+ * JSON is `OperatorOnly`.
+ *
+ * The verdict stays on screen after it is read, so its staleness, and each
+ * deploy observation's, is worded as of that read ("45s stale when read"),
+ * and the `Provenance` chip says when that was. A verdict react-query keeps
+ * after its latest read failed (a refetch on reconnect) is the last one read:
+ * the failure leads, and the verdict is introduced as the last read (style
+ * guide R6, §6.5). Its facts name the data's own source "Data source", since
+ * the chip's "source:" names who read it: one label, one referent.
  */
 
 /** Visual vocabulary for the canonical delivery drift classes. */
@@ -81,8 +113,15 @@ function prUrl(repo: string, pr: number): string {
  * `plan_id` null and `work_unit_id` populated) instead of a plan. We never
  * crash on a null `plan_id` and key the noun + identifier off `anchor_kind`,
  * not a hard-coded vocabulary word.
+ *
+ * With no slug the operator sees coord's internal id instead; presentation
+ * mode shows a dash, since that id is an internal identifier an evaluator is
+ * never shown (D3.3). The slug itself is the one the presenter typed.
  */
-function anchorPresentation(components: DeliveryComponents | undefined): {
+function anchorPresentation(
+  components: DeliveryComponents | undefined,
+  presenting: boolean
+): {
   noun: string;
   statusLabel: string;
   /** The opaque identifier to show (slug, work-unit id, or "—"). */
@@ -90,22 +129,39 @@ function anchorPresentation(components: DeliveryComponents | undefined): {
 } {
   const kind: DeliveryAnchorKind = components?.anchor_kind ?? "plan";
   const slug = components?.slug ?? null;
+  const internalId = presenting
+    ? null
+    : kind === "work_unit"
+      ? (components?.work_unit_id ?? null)
+      : (components?.plan_id ?? null);
   if (kind === "work_unit") {
-    const id = slug ?? components?.work_unit_id ?? null;
     return {
       noun: "work unit",
       statusLabel: "Unit status",
-      identifier: id ?? "—",
+      identifier: slug ?? internalId ?? "—",
     };
   }
   // Default / "plan" / "none": fall back to plan-style presentation. For "none"
   // there is no anchor to name, so the generic "Status" label reads correctly.
-  const id = slug ?? components?.plan_id ?? null;
   return {
     noun: kind === "none" ? "work" : "plan",
     statusLabel: kind === "none" ? "Status" : "Plan status",
-    identifier: id ?? "—",
+    identifier: slug ?? internalId ?? "—",
   };
+}
+
+/**
+ * How the card words coord's work-unit status: verbatim for the operator; in
+ * presentation mode a word from the console's fixed vocabulary, since the
+ * status is opaque text a tenant can write anything into (D3.3) — the same
+ * rule the Twin map's plan badges follow (`presentedPlanStatus`).
+ */
+function unitStatusWord(
+  presenting: boolean
+): ((status: string) => string) | undefined {
+  return presenting
+    ? (status) => presentedPlanStatus({ status }).label
+    : undefined;
 }
 
 // A RETIRED citation: closed, never merged, no land stamp. It reads
@@ -119,6 +175,14 @@ function anchorPresentation(components: DeliveryComponents | undefined): {
 // the old rendering.
 function PrRow({ pr, retired }: { pr: DeliveryPr; retired: boolean }) {
   const merged = pr.merged;
+  const { presenting } = usePresentationMode();
+  const scope = usePresentationScopeState();
+  const redact = useRedactor();
+  const state = merged ? "merged" : retired ? "closed, never landed" : "unmerged";
+  // A repository name may be a client's: it renders, and keeps its outbound
+  // link (whose URL names it), only when the lens can clear it.
+  const repoShown =
+    !presenting || redactionVerdict({ text: pr.repo, repo: pr.repo }, scope).show;
   const dotClass = merged
     ? "bg-emerald-500"
     : retired
@@ -128,8 +192,16 @@ function PrRow({ pr, retired }: { pr: DeliveryPr; retired: boolean }) {
     <li className="flex items-center justify-between gap-2 py-1 text-sm">
       <span className="flex min-w-0 items-center gap-2">
         <span className={`size-2 shrink-0 rounded-full ${dotClass}`} />
-        <span className="truncate font-mono text-xs">{pr.repo}</span>
-        {pr.pr !== null ? (
+        <span className="truncate font-mono text-xs">
+          {redact({
+            text: pr.repo,
+            repo: pr.repo,
+            descriptor: { kind: "Repository", status: state },
+          })}
+        </span>
+        {pr.pr === null ? (
+          <span className="text-xs text-muted-foreground">(no PR #)</span>
+        ) : repoShown ? (
           <a
             href={prUrl(pr.repo, pr.pr)}
             target="_blank"
@@ -140,7 +212,7 @@ function PrRow({ pr, retired }: { pr: DeliveryPr; retired: boolean }) {
             <ExternalLink className="size-3" />
           </a>
         ) : (
-          <span className="text-xs text-muted-foreground">(no PR #)</span>
+          <span className="text-xs text-muted-foreground">#{pr.pr}</span>
         )}
       </span>
       <span
@@ -157,7 +229,7 @@ function PrRow({ pr, retired }: { pr: DeliveryPr; retired: boolean }) {
             : undefined
         }
       >
-        {merged ? "merged" : retired ? "closed, never landed" : "unmerged"}
+        {state}
       </span>
     </li>
   );
@@ -165,21 +237,43 @@ function PrRow({ pr, retired }: { pr: DeliveryPr; retired: boolean }) {
 
 function EnvRow({ env }: { env: DeliveryEnv }) {
   const inSync = env.in_sync === true;
+  const redact = useRedactor();
+  // A deploy target may be named for a client, so — like a cited PR's
+  // repository — it renders only when the lens can clear it against the
+  // repository it deploys (D3.3); otherwise its descriptor does.
+  const target = env.target
+    ? redact({
+        text: env.target,
+        repo: env.repo,
+        descriptor: {
+          kind: "Deploy target",
+          status:
+            env.in_sync === null
+              ? "sync unknown"
+              : inSync
+                ? "in sync"
+                : "not in sync",
+        },
+      })
+    : null;
   return (
     <li className="flex items-center justify-between gap-2 py-1 text-sm">
       <span className="flex min-w-0 items-center gap-2">
         <span
           className={`size-2 shrink-0 rounded-full ${inSync ? "bg-emerald-500" : "bg-amber-500"}`}
         />
-        <span className="truncate font-mono text-xs">
+        <span
+          className="truncate font-mono text-xs"
+          data-testid="delivery-env-target"
+        >
           {env.surface ?? "?"}
-          {env.target ? ` · ${env.target}` : ""}
+          {target ? ` · ${target}` : ""}
         </span>
       </span>
       <span className="shrink-0 text-xs text-muted-foreground">
         {env.drift_class ?? "—"}
         {env.observed_age_seconds !== null
-          ? ` · ${formatStaleness(env.observed_age_seconds)}`
+          ? ` · ${formatStalenessWhenRead(env.observed_age_seconds)}`
           : ""}
       </span>
     </li>
@@ -187,11 +281,12 @@ function EnvRow({ env }: { env: DeliveryEnv }) {
 }
 
 export function DeliveryVerdictCard() {
+  const { presenting } = usePresentationMode();
   const [input, setInput] = useState("");
   const [submitted, setSubmitted] = useState("");
   const [showRaw, setShowRaw] = useState(false);
 
-  const { data, isLoading, isError, error, isFetching } =
+  const { data, isLoading, isError, error, isFetching, dataUpdatedAt } =
     useDeliveryVerdict(submitted);
 
   const handleSubmit = useCallback(() => {
@@ -213,21 +308,25 @@ export function DeliveryVerdictCard() {
     label: "Delivery verdict — look up",
     type: "button",
   });
-  const { ref: showRawRef } = useUIElement({
-    id: "digital-twin-delivery-show-raw",
-    label: "Delivery verdict — toggle raw data",
-    type: "button",
-  });
 
   const verdict = data?.verdict;
   const components = (verdict?.components ?? undefined) as
     | DeliveryComponents
     | undefined;
-  const summary = verdict ? summarizeVerdict("delivery", verdict) : null;
+  const statusWord = unitStatusWord(presenting);
+  const summary = verdict
+    ? summarizeVerdict("delivery", verdict, { statusWord })
+    : null;
   const badge = driftBadgeStyle(verdict?.drift_class);
   const prs = components?.prs ?? [];
   const envs = components?.deployed_envs ?? [];
-  const anchor = anchorPresentation(components);
+  const anchor = anchorPresentation(components, presenting);
+  const unitStatus =
+    components?.status === undefined || components.status === null
+      ? "—"
+      : statusWord
+        ? statusWord(components.status)
+        : components.status;
 
   return (
     <section className="rounded-lg border border-border bg-card p-4">
@@ -244,6 +343,7 @@ export function DeliveryVerdictCard() {
       <div className="flex items-center gap-2">
         <Input
           ref={inputRef}
+          {...NAVIGATION_ONLY_PROPS}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -258,6 +358,7 @@ export function DeliveryVerdictCard() {
         />
         <Button
           ref={submitRef}
+          {...NAVIGATION_ONLY_PROPS}
           onClick={handleSubmit}
           disabled={!input.trim() || isFetching}
           className="gap-1.5"
@@ -279,15 +380,31 @@ export function DeliveryVerdictCard() {
       )}
 
       {isError && (
-        <p className="mt-3 text-sm text-muted-foreground">
-          Could not read the delivery verdict
-          {error instanceof Error ? `: ${error.message}` : ""}.
+        <p
+          data-testid="delivery-verdict-error"
+          className="mt-3 text-sm text-muted-foreground"
+        >
+          {/* The message quotes the upstream body: the operator's alone. */}
+          Could not read the delivery verdict{failureTail(error, presenting)}.
         </p>
       )}
 
       {verdict && summary && (
         <div className="mt-4 space-y-3 text-sm">
-          <div className="flex items-center gap-2">
+          {isError && (
+            // React-query keeps the verdict when a refetch fails: the
+            // failure above leads, and this is the last verdict read.
+            <p
+              data-testid="delivery-verdict-retained"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              {RETAINED_LEAD}
+            </p>
+          )}
+          <div
+            data-testid="delivery-verdict-envelope"
+            className="flex items-center gap-2"
+          >
             <span
               className={`rounded-full px-2 py-0.5 text-xs font-semibold ${badge.cls}`}
             >
@@ -299,8 +416,12 @@ export function DeliveryVerdictCard() {
               </span>
             )}
             <span className="ml-auto text-xs text-muted-foreground">
-              {formatStaleness(verdict.staleness_seconds)}
+              {formatStalenessWhenRead(verdict.staleness_seconds)}
             </span>
+            <Provenance
+              source="coord's delivery verdict"
+              asOf={dataUpdatedAt > 0 ? dataUpdatedAt : null}
+            />
           </div>
 
           <p>{summary.prose}</p>
@@ -341,7 +462,7 @@ export function DeliveryVerdictCard() {
               label={`${anchor.noun[0]!.toUpperCase()}${anchor.noun.slice(1)}`}
               value={anchor.identifier}
             />
-            <Fact label={anchor.statusLabel} value={components?.status ?? "—"} />
+            <Fact label={anchor.statusLabel} value={unitStatus} />
             <Fact
               label="Registered"
               value={
@@ -355,36 +476,70 @@ export function DeliveryVerdictCard() {
             <Fact label="Coverage" value={formatRatio(verdict.coverage)} />
             <Fact label="Credibility" value={formatRatio(verdict.credibility)} />
             <Fact
-              label="Freshness"
-              value={formatStaleness(verdict.staleness_seconds)}
+              label="Freshness when read"
+              value={formatReadingAge(
+                readingAge(verdict.staleness_seconds, "verdict_wrapper")
+              )}
             />
-            <Fact label="Source" value={verdict.provenance ?? "—"} />
+            {/* "Data source", not "Source": beside the provenance chip,
+                whose own "source:" names who read it, one label names one
+                thing. */}
+            <Fact label="Data source" value={verdict.provenance ?? "—"} />
           </dl>
 
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-muted-foreground">
-              The exact JSON an AI agent receives from{" "}
-              <code>{data?.tool ?? "coord_query_delivery"}</code>.
-            </span>
-            <Button
-              ref={showRawRef}
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
-              onClick={() => setShowRaw((v) => !v)}
-            >
-              <Code2 className="size-3.5" />
-              {showRaw ? "Hide raw data" : "Show raw data"}
-            </Button>
-          </div>
-          {showRaw && (
-            <pre className="max-h-72 overflow-auto rounded-md border border-border bg-muted/50 p-3 text-[11px] leading-relaxed">
-              {JSON.stringify(verdict, null, 2)}
-            </pre>
-          )}
+          <OperatorOnly>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-muted-foreground">
+                The exact JSON an AI agent receives from{" "}
+                <code>{data?.tool ?? "coord_query_delivery"}</code>.
+              </span>
+              <ShowRawToggle
+                showRaw={showRaw}
+                onToggle={() => setShowRaw((v) => !v)}
+              />
+            </div>
+            {showRaw && (
+              <pre className="max-h-72 overflow-auto rounded-md border border-border bg-muted/50 p-3 text-[11px] leading-relaxed">
+                {JSON.stringify(verdict, null, 2)}
+              </pre>
+            )}
+          </OperatorOnly>
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The raw-data toggle, registering its UI Bridge id where it renders and only
+ * while it does: it shows only beside a verdict, and only to the operator.
+ * A registration with no element on screen is one the SDK polls the DOM for
+ * (`useUIElement`'s `pollForTaggedElement`), and unmounting does not stop the
+ * poll (`SubspaceDetailActions.tsx` says the same of the drawer's buttons).
+ */
+function ShowRawToggle({
+  showRaw,
+  onToggle,
+}: {
+  showRaw: boolean;
+  onToggle: () => void;
+}) {
+  const { ref } = useUIElement({
+    id: "digital-twin-delivery-show-raw",
+    label: "Delivery verdict — toggle raw data",
+    type: "button",
+  });
+  return (
+    <Button
+      ref={ref}
+      variant="ghost"
+      size="sm"
+      className="h-7 gap-1.5 text-xs"
+      onClick={onToggle}
+    >
+      <Code2 className="size-3.5" />
+      {showRaw ? "Hide raw data" : "Show raw data"}
+    </Button>
   );
 }
 
