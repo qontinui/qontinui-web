@@ -21,11 +21,15 @@
  * - **Spawn paths** (`SpawnPathMatrixSection`, derived by `spawnPathMatrix.ts`
  *   from `useSpawnPathSwitches`): one row per spawn path — coord's served
  *   registry kinds and class switches, the post-merge follow-up, and the
- *   runner-local paths coord cannot see — with each switch that governs it,
- *   its scope, whether it is enforced, coord's own effective value for it, and
- *   when the path last spawned (from the ledger this page already reads).
- *   Tenant switches are writable in operator mode through their existing
- *   doors, and what a row shows after a write is coord's read-back.
+ *   runner-local paths coord cannot see — with each switch this console can
+ *   read that governs it (its registry row, its class row, a fixer's
+ *   merge-settings dial or knob, a dispatch arm's autonomy level and fleet
+ *   flag), its scope, whether it is enforced, coord's own value for it (for a
+ *   registry row, the tenant default coord enforces — never a member's own
+ *   preference), and when the path last spawned (from the ledger this page
+ *   already reads). Tenant switches are writable in operator mode through
+ *   their existing doors, and what a row shows after a write is coord's
+ *   read-back.
  * - **Machines** (`MachineStatusSection`, derived by `machineStatus.ts`): one
  *   line per machine — drain, dispatch role, in flight against ceiling (an
  *   UNKNOWN naming the door no console reads yet) and the sessions open now.
@@ -47,9 +51,16 @@
  *   serves; coord's authorization fold is coord's, and is never recomputed
  *   here.
  * - **"Never" for a path the ledger cannot attribute.** Last spawned is
- *   UNKNOWN, and says why, wherever no ledger field names the path.
+ *   UNKNOWN, and says why, wherever no ledger field names the path or names
+ *   only some of its starts; a start found is a lower bound, and "none" is
+ *   said of the requests the window holds, never of the path.
  * - **The value a write asked for.** After a switch write the row shows what
- *   coord reads back, and a read-back that disagrees is shown as one.
+ *   coord reads back, and a read-back that disagrees is shown as one; a write
+ *   coord refused says so, and one whose outcome coord could not confirm is
+ *   UNKNOWN until a re-read answers.
+ * - **A member's own preference as a path's state.** Coord enforces the
+ *   tenant default for the paths it starts; the operator's own preference row
+ *   is shown beside it in operator mode, and never while presenting.
  *
  * ## Presentation mode
  *
@@ -128,7 +139,10 @@ import {
   type SpawnFilter,
 } from "./_lib/spawnStatus";
 import { SPAWNS_SOURCES } from "./_lib/spawnsSources";
-import { useSessionConcurrency, SESSIONS_WINDOW } from "./_lib/useSessionConcurrency";
+import {
+  useSessionConcurrency,
+  SESSIONS_WINDOW,
+} from "./_lib/useSessionConcurrency";
 import { SPAWNS_POLL_MS, useSpawnLedger } from "./_lib/useSpawnLedger";
 import { useSpawnPathSwitches } from "./_lib/useSpawnPathSwitches";
 
@@ -260,7 +274,7 @@ export default function CoordSpawnsPage() {
         effective: switches.effective,
         defaults: switches.defaults,
         nextStep: switches.nextStep,
-        autoFixPr: switches.autoFixPr,
+        mergeSettings: switches.mergeSettings,
         followup: switches.followup,
         ledger: { list, issue: listIssue, windowLabel: spec.label },
         writes: switches.writes,
@@ -270,7 +284,7 @@ export default function CoordSpawnsPage() {
       switches.effective,
       switches.defaults,
       switches.nextStep,
-      switches.autoFixPr,
+      switches.mergeSettings,
       switches.followup,
       switches.writes,
       list,
@@ -279,11 +293,12 @@ export default function CoordSpawnsPage() {
       presenting,
     ]
   );
+  // A switch is busy from its request until its read-back has landed.
   const busy = useMemo(
     () =>
       new Set(
         Object.entries(switches.writes)
-          .filter(([, w]) => w.phase === "writing")
+          .filter(([, w]) => w.phase === "writing" || w.phase === "unconfirmed")
           .map(([key]) => key)
       ),
     [switches.writes]
@@ -438,7 +453,11 @@ export default function CoordSpawnsPage() {
           {list
             ? "Last refresh failed — the rows below are from the last good read. "
             : ""}
-          {spawnIssueTextFor(listIssue, "which spawns were requested", presenting)}
+          {spawnIssueTextFor(
+            listIssue,
+            "which spawns were requested",
+            presenting
+          )}
         </p>
       )}
       {pendingIssue && pendingIssue.kind !== listIssue?.kind && (
@@ -462,6 +481,7 @@ export default function CoordSpawnsPage() {
           setRegistryDefault: switches.setRegistryDefault,
           setAutonomyLevel: switches.setAutonomyLevel,
           setFixerDial: switches.setFixerDial,
+          setRedMainKnob: switches.setRedMainKnob,
           busy,
         }}
         presenting={presenting}
@@ -472,7 +492,10 @@ export default function CoordSpawnsPage() {
             asOf: switches.defaults.asOfMs,
           },
           { source: SPAWNS_SOURCES.nextStep, asOf: switches.nextStep.asOfMs },
-          { source: SPAWNS_SOURCES.mergeSettings, asOf: switches.dialAsOfMs },
+          {
+            source: SPAWNS_SOURCES.mergeSettings,
+            asOf: switches.mergeSettingsAsOfMs,
+          },
           {
             source: SPAWNS_SOURCES.followupScopes,
             asOf: switches.followupAsOfMs,

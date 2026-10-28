@@ -22,13 +22,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readAutoFixPr } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
 import { listFx } from "../__fixtures__/coordSpawns";
 import {
   defaultsBody,
   effectiveBody,
   effectiveFx,
-  mergeSettingsBody,
+  mergeSettingsRead,
   nextStepBody,
 } from "../__fixtures__/spawnPaths";
 import { SERVED_PATH_WORDS, UNSERVED_PATHS } from "./spawnPathCatalog";
@@ -41,7 +40,17 @@ import {
 import { deriveSpawnPathMatrix } from "./spawnPathMatrix";
 
 /** `qontinui-web/frontend/src/app/(app)/admin/coord/spawns/_lib` → workspace. */
-const REPO_ROOT = join(__dirname, "..", "..", "..", "..", "..", "..", "..", "..");
+const REPO_ROOT = join(
+  __dirname,
+  "..",
+  "..",
+  "..",
+  "..",
+  "..",
+  "..",
+  "..",
+  ".."
+);
 const SIBLING_CONTRACT = join(
   REPO_ROOT,
   "..",
@@ -105,9 +114,19 @@ describe("the hand-kept rows hold only what nothing serves", () => {
     ];
     const m = deriveSpawnPathMatrix({
       effective: { data: agents, error: null, asOfMs: 1, loading: false },
-      defaults: { data: defaultsBody().agents, error: null, asOfMs: 1, loading: false },
-      nextStep: { data: nextStepBody(), error: null, asOfMs: 1, loading: false },
-      autoFixPr: { loading: false, error: null, state: readAutoFixPr(mergeSettingsBody().profile) },
+      defaults: {
+        data: defaultsBody().agents,
+        error: null,
+        asOfMs: 1,
+        loading: false,
+      },
+      nextStep: {
+        data: nextStepBody(),
+        error: null,
+        asOfMs: 1,
+        loading: false,
+      },
+      mergeSettings: mergeSettingsRead(),
       followup: { loading: false, repos: [], reposError: null, readings: {} },
       ledger: { list: listFx([]), issue: null, windowLabel: "last 7 days" },
       writes: {},
@@ -132,10 +151,25 @@ describe("every served kind is on the matrix", () => {
 
   it("builds exactly one row for each kind and seeded class coord serves", () => {
     const m = deriveSpawnPathMatrix({
-      effective: { data: effectiveBody().agents, error: null, asOfMs: 1, loading: false },
-      defaults: { data: defaultsBody().agents, error: null, asOfMs: 1, loading: false },
-      nextStep: { data: nextStepBody(), error: null, asOfMs: 1, loading: false },
-      autoFixPr: { loading: false, error: null, state: readAutoFixPr(mergeSettingsBody().profile) },
+      effective: {
+        data: effectiveBody().agents,
+        error: null,
+        asOfMs: 1,
+        loading: false,
+      },
+      defaults: {
+        data: defaultsBody().agents,
+        error: null,
+        asOfMs: 1,
+        loading: false,
+      },
+      nextStep: {
+        data: nextStepBody(),
+        error: null,
+        asOfMs: 1,
+        loading: false,
+      },
+      mergeSettings: mergeSettingsRead(),
       followup: { loading: false, repos: [], reposError: null, readings: {} },
       ledger: { list: listFx([]), issue: null, windowLabel: "last 7 days" },
       writes: {},

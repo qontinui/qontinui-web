@@ -487,6 +487,27 @@ export async function patchTenantAutoFixPr(
   return readJson<TenantSettingsResponse>(res, `PATCH ${url}`);
 }
 
+/**
+ * `PATCH /pr-merge/settings` with ONLY `auto_fix_red_main` — the tenant knob
+ * coord checks before it consults the red-main fixer at all (gate 3 of
+ * `stuck_pr_watcher::maybe_consult_red_main_fix`). `PatchTenantSettings` is
+ * all-optional coord-side, so this body changes that one column and nothing
+ * else (the merge settings card re-sends every field on its save). The caller
+ * confirms the write by RE-READING the settings, not from this answer. Not
+ * re-sent on a 5xx (`idempotent: false`).
+ */
+export async function patchTenantAutoFixRedMain(
+  enabled: boolean
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/pr-merge/settings`;
+  const res = await httpClient.fetch(url, {
+    method: "PATCH",
+    body: JSON.stringify({ auto_fix_red_main: enabled }),
+    idempotent: false,
+  });
+  return readJson<unknown>(res, `PATCH ${url}`, { unparseable: "null" });
+}
+
 // ----------------------------------------------------------------------------
 // Merge pipeline — the fleet hero's reads (`useMergePipelineData`)
 // ----------------------------------------------------------------------------

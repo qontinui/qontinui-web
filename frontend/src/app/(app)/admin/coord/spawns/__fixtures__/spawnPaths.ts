@@ -14,12 +14,12 @@ import type {
   NextStepDomain,
   NextStepSettings,
 } from "@/lib/api/operations/coordSettings";
+import type { EffectiveProfile } from "@/lib/api/operations/prMerge";
 import type { PostMergeFollowupScopeView } from "@/lib/api/operations/repoFollowupDials";
+import { readAutoFixPr } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
+import type { MergeSettingsRead } from "../_lib/spawnPathGates";
 import type { ConcurrencyWire } from "@/app/(app)/admin/coord/session-load/_lib/sessionLoadStatus";
-import {
-  SEEDED_CLASS_ROWS,
-  SPAWN_KIND_SEEDS,
-} from "../_lib/spawnPathContract";
+import { SEEDED_CLASS_ROWS, SPAWN_KIND_SEEDS } from "../_lib/spawnPathContract";
 import { AS_OF, DEVICE_A, DEVICE_B } from "./coordSpawns";
 
 /** An agent ROLE row — served by the registry, not a spawn path. */
@@ -76,7 +76,10 @@ export function servedNames(): Array<{ name: string; spawnPath: string }> {
       name: k.agentName,
       spawnPath: k.spawnPath as string,
     })),
-    ...SEEDED_CLASS_ROWS.map((c) => ({ name: c as string, spawnPath: c as string })),
+    ...SEEDED_CLASS_ROWS.map((c) => ({
+      name: c as string,
+      spawnPath: c as string,
+    })),
     { name: ROLE_ROW_NAME, spawnPath: "in_session_subagent" },
   ];
 }
@@ -143,13 +146,26 @@ export function nextStepBody(
   };
 }
 
-/** `GET /pr-merge/settings`, carrying only what the dial reads. */
+/** The merge-settings knobs the matrix reads besides the dial. */
+export interface MergeKnobsFx {
+  /** `profile.auto_fix_red_main`; `undefined` leaves the field out. */
+  auto_fix_red_main?: boolean;
+  /** `profile.rulebook_overrides`, where `auto_fix_admission_stall` is recorded. */
+  rulebook_overrides?: Record<string, unknown> | null;
+}
+
+/**
+ * `GET /pr-merge/settings`, carrying what the matrix reads: the dial, the
+ * red-main knob (coord resolves it at tenant level; default on) and the
+ * rulebook overrides (nothing recorded by default).
+ */
 export function mergeSettingsBody(
   dial: { tenant: boolean | null; resolved: boolean; source: string } = {
     tenant: null,
     resolved: true,
     source: "default",
-  }
+  },
+  knobs: MergeKnobsFx = { auto_fix_red_main: true, rulebook_overrides: null }
 ) {
   return {
     tenant_id: "00000000-0000-4000-8000-0000000000aa",
@@ -157,7 +173,21 @@ export function mergeSettingsBody(
       auto_fix_pr_tenant: dial.tenant,
       auto_fix_pr: dial.resolved,
       auto_fix_pr_source: dial.source,
+      ...knobs,
     },
+  };
+}
+
+/** The merge settings as the dial hook holds them after `body` answered. */
+export function mergeSettingsRead(
+  body: ReturnType<typeof mergeSettingsBody> = mergeSettingsBody()
+): MergeSettingsRead {
+  return {
+    loading: false,
+    error: null,
+    dial: readAutoFixPr(body.profile),
+    // The fixture carries only the fields the matrix reads.
+    profile: body.profile as unknown as EffectiveProfile,
   };
 }
 

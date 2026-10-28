@@ -20,12 +20,15 @@
  *
  * ## What each row carries
  *
- * Its gates (`spawnPathGates.ts`), primary first: a coord path's own registry
- * row, then every other switch that governs it — its class row (a mirror of
- * that row's value), the next-step autonomy level and the fleet flag for the
- * dispatch arms, the merge-settings dial for the PR fixer. And when it last
- * spawned (`spawnPathLastSpawned.ts`). The rows are never folded into one
- * verdict per path: each gate's value is the one coord serves for it.
+ * Its gates (the model is `spawnPathGates.ts`), primary first: a coord path's
+ * own registry row (`registryGates.ts`), then every other switch this console
+ * can read that governs it — its class row (a mirror of that row's value),
+ * the merge-settings dial or knob of a fixer (`mergeSettingsGates.ts`: the
+ * PR fixer's `auto_fix_pr`, the red-main fixer's `auto_fix_red_main`, the
+ * stalled-train responder's `auto_fix_admission_stall`), and the next-step
+ * autonomy level and fleet flag of a dispatch arm (`nextStepGates.ts`). And
+ * when it last spawned (`spawnPathLastSpawned.ts`). The rows are never folded
+ * into one verdict per path: each gate's value is the one coord serves for it.
  */
 
 import type {
@@ -34,7 +37,6 @@ import type {
 } from "@/lib/api/agent-registry";
 import type { NextStepSettings } from "@/lib/api/operations/coordSettings";
 import {
-  SERVED_PATH_WORDS,
   UNSERVED_PATHS,
   servedPathWords,
   type ServedPathWords,
@@ -46,20 +48,21 @@ import {
   isSpawnClass,
   kindSeed,
 } from "./spawnPathContract";
-import {
-  autonomyGate,
-  fixerDialGate,
-  fleetFlagGate,
-  followupScopeGate,
-  mirrorGate,
-  registryGate,
-  runnerGate,
-  type AutoFixPrRead,
-  type FollowupRead,
-  type MatrixGate,
-  type ReadPart,
-  type SwitchWrite,
+import type {
+  FollowupRead,
+  MatrixGate,
+  MergeSettingsRead,
+  ReadPart,
+  SwitchWrite,
 } from "./spawnPathGates";
+import { mirrorGate, registryGate } from "./registryGates";
+import { autonomyGate, fleetFlagGate } from "./nextStepGates";
+import {
+  admissionStallKnobGate,
+  fixerDialGate,
+  redMainKnobGate,
+} from "./mergeSettingsGates";
+import { followupScopeGate, runnerGate } from "./followupGates";
 import {
   lastSpawnedCell,
   type LastSpawnedCell,
@@ -70,7 +73,7 @@ export interface MatrixInputs {
   effective: ReadPart<AgentRegistryEntry[]>;
   defaults: ReadPart<AdminAgentRegistryRow[]>;
   nextStep: ReadPart<NextStepSettings>;
-  autoFixPr: AutoFixPrRead;
+  mergeSettings: MergeSettingsRead;
   followup: FollowupRead;
   ledger: LedgerListView;
   /** The matrix's writes in flight or done, by gate key. */
@@ -87,6 +90,8 @@ export interface MatrixRow {
   label: string;
   summary: string;
   startedBy: "coord" | "runner";
+  /** Sessions a person asks for (the console's launcher), not started on its own. */
+  startedByPerson: boolean;
   source: RowSource;
   isClass: boolean;
   /** Primary first. Never empty. */
@@ -94,8 +99,21 @@ export interface MatrixRow {
   lastSpawned: LastSpawnedCell;
 }
 
+/** The rows by kind, for the section's note: what the matrix lists, counted. */
+export interface MatrixCounts {
+  /** Paths the coordination service starts on its own. */
+  automatic: number;
+  /** Paths a person starts (the console's launcher). */
+  person: number;
+  /** Class switches, each governing many paths at once. */
+  classes: number;
+  /** Paths each machine starts on its own. */
+  runner: number;
+}
+
 export interface SpawnPathMatrix {
   rows: MatrixRow[];
+  counts: MatrixCounts;
   /**
    * Served registry rows that are agent ROLES, not spawn paths; `null` when
    * neither registry read has answered.
@@ -139,7 +157,10 @@ function rank(row: MatrixRow): number {
 }
 
 /** Whether a served registry row is a spawn path rather than an agent role. */
-export function isSpawnPathRow(name: string, spawnPath: string | null): boolean {
+export function isSpawnPathRow(
+  name: string,
+  spawnPath: string | null
+): boolean {
   return (
     kindSeed(name) !== undefined ||
     isSpawnClass(name) ||
@@ -167,6 +188,19 @@ function classOf(spawnPath: string | null): string | null {
     : null;
 }
 
+/** A mirror of another registry row onto a path, read-only. */
+function mirrorOf(name: string, inputs: MatrixInputs): MatrixGate {
+  const words = servedPathWords(name, name);
+  return mirrorGate({
+    name,
+    words,
+    effective: inputs.effective,
+    defaults: inputs.defaults,
+    presenting: inputs.presenting,
+    mirrorLabel: words.label,
+  });
+}
+
 function coordRow(
   name: string,
   spawnPath: string | null,
@@ -178,7 +212,7 @@ function coordRow(
   const gates: MatrixGate[] = [
     registryGate({
       name,
-      enforcedBy: words.enforcedBy,
+      words,
       effective: inputs.effective,
       defaults: inputs.defaults,
       write: inputs.writes[`registry:${name}`],
@@ -186,26 +220,27 @@ function coordRow(
     }),
   ];
   const cls = words.isClass ? null : classOf(spawnPath);
-  if (cls !== null) {
-    gates.push(
-      mirrorGate({
-        name: cls,
-        enforcedBy: servedPathWords(cls, cls).enforcedBy,
-        effective: inputs.effective,
-        write: undefined,
-        presenting,
-        mirrorLabel: servedPathWords(cls, cls).label,
-      })
-    );
-  }
+  if (cls !== null) gates.push(mirrorOf(cls, inputs));
   if (words.tenantDial === "auto_fix_pr") {
     gates.push(
       fixerDialGate(
-        inputs.autoFixPr,
+        inputs.mergeSettings,
         inputs.writes["dial:auto_fix_pr"],
         presenting
       )
     );
+  }
+  if (words.tenantKnob === "auto_fix_red_main") {
+    gates.push(
+      redMainKnobGate(
+        inputs.mergeSettings,
+        inputs.writes["knob:auto_fix_red_main"],
+        presenting
+      )
+    );
+  }
+  if (words.tenantKnob === "auto_fix_admission_stall") {
+    gates.push(admissionStallKnobGate(inputs.mergeSettings, presenting));
   }
   if (words.nextStepDomain) {
     const domain = words.nextStepDomain;
@@ -224,16 +259,16 @@ function coordRow(
     label: words.label,
     summary: words.summary,
     startedBy: "coord",
+    startedByPerson: words.startedByPerson === true,
     source,
     isClass: words.isClass === true,
     gates,
-    lastSpawned: lastSpawnedCell(
-      inputs.ledger,
-      words.ledgerOrigin,
-      words.isClass
+    lastSpawned: lastSpawnedCell(inputs.ledger, {
+      origin: words.ledgerOrigin,
+      blind: words.isClass
         ? "a class switch governs several paths, and the ledger records each request under its own origin"
-        : "the ledger records this path under an origin it shares with other paths, so no field names it"
-    ),
+        : "the ledger records this path under an origin it shares with other paths, so no field names it",
+    }),
   };
 }
 
@@ -243,24 +278,8 @@ function handRow(path: UnservedPath, inputs: MatrixInputs): MatrixRow {
   if (path.key === "post_merge_followup") {
     gates = [
       followupScopeGate(inputs.followup, presenting),
-      mirrorGate({
-        name: "gate_continuation",
-        enforcedBy: "coord",
-        effective: inputs.effective,
-        write: undefined,
-        presenting,
-        mirrorLabel: SERVED_PATH_WORDS.gate_continuation?.label ?? "Gate continuation",
-      }),
-      mirrorGate({
-        name: "standing_continuation",
-        enforcedBy: "coord",
-        effective: inputs.effective,
-        write: undefined,
-        presenting,
-        mirrorLabel:
-          SERVED_PATH_WORDS.standing_continuation?.label ??
-          "Every standing spawn",
-      }),
+      mirrorOf("gate_continuation", inputs),
+      mirrorOf("standing_continuation", inputs),
     ];
   } else {
     gates = [
@@ -279,15 +298,33 @@ function handRow(path: UnservedPath, inputs: MatrixInputs): MatrixRow {
     label: path.label,
     summary: path.summary,
     startedBy: path.startedBy,
+    startedByPerson: false,
     source: "hand",
     isClass: false,
     gates,
-    lastSpawned: lastSpawnedCell(
-      inputs.ledger,
-      path.ledgerOrigin,
-      path.ledgerBlind ?? "the ledger carries no field that names this path"
-    ),
+    lastSpawned: lastSpawnedCell(inputs.ledger, {
+      origin: path.ledgerOrigin,
+      blind:
+        path.ledgerBlind ?? "the ledger carries no field that names this path",
+      partial: path.ledgerPartial,
+    }),
   };
+}
+
+function countRows(rows: readonly MatrixRow[]): MatrixCounts {
+  const counts: MatrixCounts = {
+    automatic: 0,
+    person: 0,
+    classes: 0,
+    runner: 0,
+  };
+  for (const row of rows) {
+    if (row.isClass) counts.classes += 1;
+    else if (row.startedBy === "runner") counts.runner += 1;
+    else if (row.startedByPerson) counts.person += 1;
+    else counts.automatic += 1;
+  }
+  return counts;
 }
 
 /** The matrix: one row per spawn path, in the plan's order. */
@@ -322,5 +359,9 @@ export function deriveSpawnPathMatrix(inputs: MatrixInputs): SpawnPathMatrix {
   rows.sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label));
   const answered =
     inputs.effective.data !== null || inputs.defaults.data !== null;
-  return { rows, roleRows: answered ? roleRows : null };
+  return {
+    rows,
+    counts: countRows(rows),
+    roleRows: answered ? roleRows : null,
+  };
 }

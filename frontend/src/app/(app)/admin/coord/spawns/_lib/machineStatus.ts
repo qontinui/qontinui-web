@@ -173,7 +173,11 @@ function roleCell(
         : "Coord's role read does not list this machine."
     );
   }
-  return { state: m.role ?? "unassigned", text: describeRole(m), unknown: false };
+  return {
+    state: m.role ?? "unassigned",
+    text: describeRole(m),
+    unknown: false,
+  };
 }
 
 function sessionsCell(
@@ -190,7 +194,10 @@ function sessionsCell(
       "UNKNOWN",
       presenting
         ? "How many sessions this machine has open could not be read."
-        : sessionLoadIssueText(read.issue, "how many sessions this machine has open")
+        : sessionLoadIssueText(
+            read.issue,
+            "how many sessions this machine has open"
+          )
     );
   }
   const stale = read.issue !== null;
@@ -231,7 +238,9 @@ export function machineStatusLines(
     role: roleCell(input.roles, d.device_id, input.presenting),
     inFlight: unknown(
       "UNKNOWN",
-      input.presenting ? IN_FLIGHT_UNKNOWN.presented : IN_FLIGHT_UNKNOWN.operator
+      input.presenting
+        ? IN_FLIGHT_UNKNOWN.presented
+        : IN_FLIGHT_UNKNOWN.operator
     ),
     sessions: sessionsCell(
       input.sessions,

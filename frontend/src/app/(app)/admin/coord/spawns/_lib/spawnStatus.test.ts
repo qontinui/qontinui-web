@@ -549,7 +549,11 @@ describe("deriveSpawnsHealth", () => {
 
 describe("perDeviceShares", () => {
   it("names devices and their roles, and keeps an unsampled device as unknown", () => {
-    const { items, total } = perDeviceShares(statsFx(), ROLES, operatorNaming(ROSTER.devices));
+    const { items, total } = perDeviceShares(
+      statsFx(),
+      ROLES,
+      operatorNaming(ROSTER.devices)
+    );
     expect(total).toBe(38);
     expect(items.map((i) => i.label)).toEqual([
       "msi-wsl · Workhorse",
@@ -568,7 +572,11 @@ describe("perDeviceShares", () => {
   it("says every role is unknown, with the reason, when the role read failed", () => {
     const roles: DeviceRoles = { kind: "unknown", reason: "HTTP 404" };
     expect(deviceRoleText(DEVICE_A, roles)).toBe("role unknown");
-    const { items } = perDeviceShares(statsFx(), roles, operatorNaming(ROSTER.devices));
+    const { items } = perDeviceShares(
+      statsFx(),
+      roles,
+      operatorNaming(ROSTER.devices)
+    );
     expect(items[0]?.title).toContain("Role unknown: HTTP 404");
   });
 
@@ -617,7 +625,10 @@ describe("perDeviceShares", () => {
       nameOf: (id) => (id === DEVICE_A ? "Machine A" : "Machine B"),
       showIds: false,
     };
-    const roles: DeviceRoles = { kind: "unknown", reason: "HTTP 404 from /coord/fleet" };
+    const roles: DeviceRoles = {
+      kind: "unknown",
+      reason: "HTTP 404 from /coord/fleet",
+    };
     const { items } = perDeviceShares(statsFx(), roles, presented);
     expect(items.map((i) => i.label)).toEqual([
       "Machine A · role unknown",

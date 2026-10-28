@@ -65,6 +65,12 @@ export interface NextStepDomain {
    * when nothing visible is off — `unknown` is how coord says so.
    */
   effective_state?: "effective" | "not_effective" | "unknown";
+  /**
+   * For `effective_state: "unknown"` only: coord's own words for the conjunct
+   * of the real gate this read cannot see (a per-repo or per-tenant knob).
+   * Absent on an older coord.
+   */
+  effective_unknown_reason?: string | null;
 }
 
 /**
@@ -98,10 +104,20 @@ export interface NextStepSettingsFleet {
   tenants: TenantNextStepSetting[];
 }
 
-/** `GET /coord/next-step-settings` (`get_next_step_settings`). */
-export async function fetchNextStepSettings(): Promise<NextStepSettings> {
+/**
+ * `GET /coord/next-step-settings` (`get_next_step_settings`). `options` are
+ * merged over the read's own (a dashboard poll passes
+ * `COORD_DASHBOARD_POLL_OPTIONS`: one request, the next poll is the retry).
+ */
+export async function fetchNextStepSettings(
+  options: HttpOptions = {}
+): Promise<NextStepSettings> {
   const url = `${OPERATIONS_BASE}/coord/next-step-settings`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
   return readJson<NextStepSettings>(res, `GET ${url}`);
 }
 

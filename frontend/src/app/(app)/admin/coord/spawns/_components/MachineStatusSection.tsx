@@ -37,7 +37,10 @@ function CellValue({ cell, testId }: { cell: MachineCell; testId: string }) {
     return (
       <Badge
         variant="outline"
-        className={cn("text-[11px] font-medium whitespace-normal", UNKNOWN_AMBER)}
+        className={cn(
+          "text-[11px] font-medium whitespace-normal",
+          UNKNOWN_AMBER
+        )}
         title={cell.title}
         data-testid={testId}
         data-machine-state={cell.state}

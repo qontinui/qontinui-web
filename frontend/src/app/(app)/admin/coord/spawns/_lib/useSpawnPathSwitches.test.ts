@@ -1,0 +1,151 @@
+/**
+ * The switches hook over the REAL `HttpClient` (only the network is stubbed),
+ * for the two rules no page test can see:
+ *
+ * 1. **Its own reads poll with no client retries.** A failing read is one
+ *    request per tick — the next tick is the retry — so a coord outage is not
+ *    multiplied by the client's retry budget on every poll.
+ * 2. **One write per switch at a time.** A second write to a switch whose
+ *    first has not read back is refused with an error (what a UI Bridge
+ *    caller sees), and nothing second is sent.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import type { TokenManager } from "@/services/auth/token-manager";
+
+const holder = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock("@/services/service-factory", () => ({
+  get httpClient() {
+    return holder.client;
+  },
+}));
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+  }),
+}));
+
+import { HttpClient } from "@/services/http-client";
+import { defaultsBody, effectiveBody } from "../__fixtures__/spawnPaths";
+import { WRITE_IN_FLIGHT, useSpawnPathSwitches } from "./useSpawnPathSwitches";
+
+function tokenManager(): TokenManager {
+  return {
+    getAccessToken: () => "tok",
+    getRefreshToken: () => "refresh",
+    getAccessTokenExpiry: () => Date.now() + 3_600_000,
+    isAccessTokenExpired: () => false,
+    isAccessTokenExpiringSoon: () => false,
+    isAuthenticated: () => true,
+    clearTokens: () => {},
+  } as unknown as TokenManager;
+}
+
+const requests: Array<{ path: string; method: string }> = [];
+let answer: (path: string, method: string) => Promise<Response>;
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+beforeEach(() => {
+  requests.length = 0;
+  for (const k of ["warn", "error", "log", "debug"] as const) {
+    vi.spyOn(console, k).mockImplementation(() => {});
+  }
+  holder.client = new HttpClient(tokenManager());
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: unknown, init?: RequestInit) => {
+      const raw =
+        typeof input === "string"
+          ? input
+          : String((input as Request).url ?? input);
+      const path = new URL(raw, "http://localhost").pathname;
+      const method = (init?.method ?? "GET").toUpperCase();
+      requests.push({ path, method });
+      return answer(path, method);
+    })
+  );
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+/** The three reads this hook owns and polls. */
+const OWN_READS = [
+  "/api/v1/agent-registry",
+  "/api/v1/agent-registry/admin/registry",
+  "/api/v1/operations/coord/next-step-settings",
+];
+
+describe("useSpawnPathSwitches", () => {
+  it("sends each of its own polled reads once per tick when they fail — no client retries", async () => {
+    vi.useFakeTimers();
+    answer = async () => json({ error: "unavailable" }, 503);
+    renderHook(() => useSpawnPathSwitches());
+    // Long enough for the client's whole retry backoff, short of the next tick.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+    for (const path of OWN_READS) {
+      expect(
+        requests.filter((r) => r.path === path && r.method === "GET"),
+        path
+      ).toHaveLength(1);
+    }
+  });
+
+  it("refuses a second write to a switch while the first has not read back, and sends nothing second", async () => {
+    let releasePut: () => void = () => {};
+    const putHeld = new Promise<void>((r) => {
+      releasePut = r;
+    });
+    answer = async (path, method) => {
+      if (method === "PUT") {
+        await putHeld;
+        return json({});
+      }
+      if (path === "/api/v1/agent-registry/admin/registry") {
+        return json(
+          defaultsBody({ merge_shepherd: { default_enabled: false } })
+        );
+      }
+      if (path === "/api/v1/agent-registry") return json(effectiveBody());
+      return json({ error: "not in this test" }, 404);
+    };
+    const { result } = renderHook(() => useSpawnPathSwitches());
+    let first: Promise<void> = Promise.resolve();
+    await act(async () => {
+      first = result.current.setRegistryDefault("merge_shepherd", false);
+    });
+    await expect(
+      result.current.setRegistryDefault("merge_shepherd", true)
+    ).rejects.toThrow(WRITE_IN_FLIGHT);
+    await act(async () => {
+      releasePut();
+      await first;
+    });
+    const puts = requests.filter((r) => r.method === "PUT");
+    expect(puts).toHaveLength(1);
+    expect(result.current.writes["registry:merge_shepherd"]).toMatchObject({
+      asked: "off",
+      phase: "written",
+      readbackError: null,
+    });
+    // Once read back, the switch takes a new write.
+    await act(async () => {
+      await result.current.setRegistryDefault("merge_shepherd", true);
+    });
+    expect(requests.filter((r) => r.method === "PUT")).toHaveLength(2);
+  });
+});
