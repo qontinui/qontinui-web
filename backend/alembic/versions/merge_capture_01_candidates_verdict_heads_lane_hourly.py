@@ -18,15 +18,22 @@ capture writes; the writers live in the coord PR (``merge_lane_capture``).
     children, and the lands that never had a candidate ref (``ac_cache``,
     ``ci_skip``, ``ff_reuse``, ``expedited``, or ``unknown`` when coord's
     records cannot tell which). ``candidate_key`` is the writer-computed
-    natural key of one PUSH: ``<candidate ref>@<tip sha>#<ledger id>`` for a
-    pushed candidate and ``<kind>:land@<land sha>#<ledger id>`` for a land with
-    no candidate ref, where the ledger id is the ``coord.git_write_ledger`` row
-    of that push (kept in ``ledger_id`` too). Keying on the push rather than
+    natural key. A pushed candidate is keyed on its PUSH,
+    ``<candidate ref>@<tip sha>#<ledger id>``, where the ledger id is the
+    ``coord.git_write_ledger`` row of that push; keying on the push rather than
     on the tip keeps two cuts that produce the same tip — a re-cut onto an
-    unmoved base, or a re-emit pinned to the same parent — as two rows.
+    unmoved base, or a re-emit pinned to the same parent — as two rows. A land
+    with no candidate ref is keyed ``land@<land sha>``: a sha lands on a repo
+    once, and a second push of it (the outward replication of the same land)
+    is the same land. Neither key carries ``kind``, which is a judgement a
+    later classifier may revise, never an identity. ``ledger_id`` is the push's
+    ledger row (for a land, its first applied push), NULL only on a row a
+    future writer derives from something other than a ledger push.
     ``uq_merge_candidates_repo_key`` is the conflict target of the writer's
     idempotent ``INSERT … ON CONFLICT (repo, candidate_key)``, so a projector
-    re-run or the 90-day backfill writes nothing twice.
+    re-run or the 90-day backfill writes nothing twice. On a land-only row
+    ``tip_sha`` is the land sha and ``cut_at`` the land push's ledger time, as
+    no cut was observed.
 
     ``base_sha`` is the tip the candidate was cut onto; ``base_basis`` names
     how it was established (``rebase_result``, ``speculative_chain``,
@@ -73,10 +80,12 @@ capture writes; the writers live in the coord PR (``merge_lane_capture``).
     when that verdict was a pass.
 
     ``recent_eval_at`` holds the instants of the head's newest evaluations,
-    ascending, at most 64 of them. It keeps two measures exact without a row
-    per evaluation: whether an evaluation is the head's first in its hour
-    (``merge_lane_hourly.distinct_heads``), and which evaluations came after
-    the PR had moved on (the stale-head count below).
+    ascending, at most 64 of them, each the evaluating replica's clock at the
+    verdict; the writer sorts them and keeps ``first_eval_at`` /
+    ``last_eval_at`` the minimum and maximum, whatever order evaluations
+    arrive in. Without a row per evaluation, the ring keeps the first-in-hour
+    test exact (``merge_lane_hourly.distinct_heads``) and gives the stale-head
+    count below its lower bound.
 
     ``pushed_at`` is the earliest evidence of the head's push, and
     ``pushed_basis`` names it: ``pull_request_webhook`` (the first
@@ -95,28 +104,32 @@ capture writes; the writers live in the coord PR (``merge_lane_capture``).
     which happens when coord misses a ``synchronize``. ``superseded_at`` is
     an upper bound and only the newest 64 instants are kept, so the count is
     a LOWER bound. The three are set together
-    (``ck_merge_verdict_heads_superseded_paired``).
+    (``ck_merge_verdict_heads_superseded_paired``), and an evaluation that
+    arrives after ``superseded_at`` is set adds one to the count.
 
     ``outcome`` (landed, closed, superseded) is filled at land, close or the
     next head, and is censored — NULL — until then; ``outcome_at`` is when
     coord recorded it.
 
 ``coord.merge_lane_hourly`` — the per-repo hourly rollup (D5, D6, D9)
-    Two kinds of column. LIVE counters start at zero and are incremented as
-    things happen: ``evaluations``, ``follower_evaluations``,
+    Two kinds of column. LIVE counters start at zero (or ``{}``) and are
+    incremented as things happen: ``evaluations``, ``follower_evaluations``,
     ``decisive_evaluations`` and ``distinct_heads`` (a head counts once in
-    each hour it was evaluated in) by the evaluation writer, and the
-    queue-depth sample sum and count by the leader's capture tick.
-    ``reeval_seated`` / ``reeval_deferred`` (``{reason: count}``) are live
-    too, written by the reconciler's selection; NULL means no selection
-    seated or deferred one of the repo's PRs in that hour.
+    each hour it was evaluated in) by the evaluation writer, the queue-depth
+    sample sum and count by the leader's capture tick, and ``reeval_seated``
+    / ``reeval_deferred`` (``{reason: count}``: the repo's PRs the
+    reconciler's cap seated, and the ones it left for a later tick) by the
+    reconciler's selection.
 
     ROLLED-UP measures are NULL until the hour is rolled up, and NULL is
     UNKNOWN, never zero; ``unknown_reasons`` names why a rolled-up measure
     could not be computed. ``stale_evaluations`` is a lower bound like the
     per-head count, and is re-rolled as supersessions become known.
-    ``decision_code_seconds`` is time-weighted, because the scheduler trace
-    writes a row only when its decision changes or a heartbeat elapses.
+    ``decision_code_seconds`` weights the scheduler trace's STATE codes by
+    time, because the trace writes a state row only when the decision
+    changes or a heartbeat elapses. Its admission rows (``admitted``,
+    ``priority_admitted:*``, ``tier0_admitted:*``) are events written on every
+    occurrence, so they are counted (``admissions``), never weighted.
     ``lane_state_seconds`` stays NULL until the lane-state ledger (plan Phase
     1b) exists. ``hour`` is a whole UTC hour
     (``ck_merge_lane_hourly_hour_aligned``, which reads the epoch, so it does
@@ -132,8 +145,9 @@ batch, repo or tenant deletion, and members and verdict heads outlive the
 rows they describe. Retention is coord's ``table_retention`` sweeps (400
 days, plan D9): candidates and members on ``cut_at``, verdict heads on
 ``first_eval_at``, the rollup on ``hour``. No index covers a column that every
-evaluation rewrites, so the evaluation writer's updates stay eligible for
-HOT (heap-only) updates.
+evaluation rewrites, and the two tables updated in place on every evaluation
+leave 30% of each page free (``fillfactor = 70``), so those updates can be HOT
+(heap-only) updates.
 
 Hand-authored; ``alembic revision --autogenerate`` was not run and is never
 run against ``coord.*``. coord authors **zero** DDL
@@ -403,7 +417,7 @@ def upgrade() -> None:
                 CHECK (outcome IS NULL OR outcome IN ('landed', 'closed', 'superseded')),
             CONSTRAINT ck_merge_verdict_heads_outcome_paired
                 CHECK ((outcome IS NULL) = (outcome_at IS NULL))
-        )
+        ) WITH (fillfactor = 70)
         """
     )
     op.execute(
@@ -445,8 +459,8 @@ def upgrade() -> None:
             distinct_heads          INTEGER          NOT NULL DEFAULT 0,
             queue_depth_sample_sum  BIGINT           NOT NULL DEFAULT 0,
             queue_depth_samples     INTEGER          NOT NULL DEFAULT 0,
-            reeval_seated           JSONB            NULL,
-            reeval_deferred         JSONB            NULL,
+            reeval_seated           JSONB            NOT NULL DEFAULT '{}'::jsonb,
+            reeval_deferred         JSONB            NOT NULL DEFAULT '{}'::jsonb,
             stale_evaluations       INTEGER          NULL,
             heads_first_decisive    INTEGER          NULL,
             decisive_latency_secs   JSONB            NULL,
@@ -487,7 +501,7 @@ def upgrade() -> None:
                     AND (candidates_red IS NULL OR candidates_red >= 0)
                     AND (session_hours IS NULL OR session_hours >= 0)
                 )
-        )
+        ) WITH (fillfactor = 70)
         """
     )
     op.execute(
@@ -527,9 +541,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # The DROP COLUMN takes ACCESS EXCLUSIVE on the sampler's table too.
+    # The DROP COLUMN takes ACCESS EXCLUSIVE on the sampler's table too: bound
+    # the wait, and run it LAST so the batch holds that lock only to commit.
     op.execute("SET LOCAL lock_timeout = '3s'")
-    op.execute("ALTER TABLE coord.ci_job_observations DROP COLUMN IF EXISTS steps")
     op.execute("DROP INDEX IF EXISTS coord.ix_merge_lane_hourly_hour")
     op.execute("DROP INDEX IF EXISTS coord.ix_merge_lane_hourly_tenant_repo_hour")
     op.execute("DROP TABLE IF EXISTS coord.merge_lane_hourly")
@@ -548,3 +562,4 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS coord.ix_merge_candidates_repo_tip")
     op.execute("DROP INDEX IF EXISTS coord.ix_merge_candidates_tenant_repo_cut")
     op.execute("DROP TABLE IF EXISTS coord.merge_candidates")
+    op.execute("ALTER TABLE coord.ci_job_observations DROP COLUMN IF EXISTS steps")

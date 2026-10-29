@@ -16,22 +16,26 @@ fails here rather than as a coord write error.
 What is pinned:
 
 1. The revision is wired to one real parent, drops nothing on upgrade, and
-   every statement it runs is ``coord.``-qualified. ``downgrade`` runs exactly
-   the expected statements, its lock bound first.
-2. Every column (type, nullability), every column DEFAULT (the complete map,
-   ``None`` for a column with none — a default that invents a value, such as
-   ``0`` on a rolled-up measure or ``'[]'`` on ``steps``, would render UNKNOWN
-   as a fact), every constraint (``pg_get_constraintdef``) and every index
-   (``pg_indexes.indexdef``). The ``steps`` comment equals the one the source
-   emits.
+   every statement it runs is ``coord.``-qualified; ``op.execute`` with one
+   string literal is the only ``op`` call either direction makes, anywhere in
+   the function. ``downgrade`` runs exactly the expected statements, its lock
+   bound first and the ALTER on the hot sampler table last.
+2. Every column (type — an array's element type included — and nullability),
+   every column DEFAULT (the complete map, ``None`` for a column with none — a
+   default that invents a value, such as ``0`` on a rolled-up measure or
+   ``'[]'`` on ``steps``, would render UNKNOWN as a fact), every constraint
+   (``pg_get_constraintdef``), every index (``pg_indexes.indexdef``) and every
+   table's storage options (``fillfactor``). The ``steps`` comment equals the
+   one the source emits. Re-running ``upgrade`` changes none of it.
 3. The constraints bite: an unknown vocabulary word, an outcome without its
    time, a land field without its partner, a base sha without its basis, a
    decisive verdict without its time, a push or supersession without its
    basis, a stale count above the evaluation count, a recent-evaluation ring
    that is empty or too long, follower evaluations or distinct heads above the
    total, and an hour that is not a whole UTC hour are all refused. The
-   writers' inserts are idempotent on their conflict targets, and two cuts
-   that share a tip are two rows.
+   writers' inserts are idempotent on their conflict targets, two cuts that
+   share a tip are two rows, and a land re-projected under another kind is
+   still one row.
 4. ``downgrade`` removes the four tables, their indexes and the ``steps``
    column and leaves ``coord.ci_job_observations`` exactly as it found it;
    ``upgrade`` re-applies.
@@ -48,6 +52,8 @@ import uuid
 from pathlib import Path
 
 import pytest
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
@@ -189,7 +195,7 @@ _EXPECTED_HEAD_COLUMNS: dict[str, tuple[str, str]] = {
     "last_eval_at": (_TZ, "NO"),
     "eval_count": ("integer", "NO"),
     "follower_eval_count": ("integer", "NO"),
-    "recent_eval_at": ("ARRAY", "NO"),
+    "recent_eval_at": ("_timestamptz", "NO"),
     "first_verdict": ("text", "NO"),
     "first_disposition": ("text", "YES"),
     "first_decisive_verdict": ("text", "YES"),
@@ -215,8 +221,8 @@ _EXPECTED_HOURLY_COLUMNS: dict[str, tuple[str, str]] = {
     "distinct_heads": ("integer", "NO"),
     "queue_depth_sample_sum": ("bigint", "NO"),
     "queue_depth_samples": ("integer", "NO"),
-    "reeval_seated": ("jsonb", "YES"),
-    "reeval_deferred": ("jsonb", "YES"),
+    "reeval_seated": ("jsonb", "NO"),
+    "reeval_deferred": ("jsonb", "NO"),
     "stale_evaluations": ("integer", "YES"),
     "heads_first_decisive": ("integer", "YES"),
     "decisive_latency_secs": ("jsonb", "YES"),
@@ -264,6 +270,8 @@ _EXPECTED_DEFAULTS: dict[str, dict[str, str | None]] = {
         "distinct_heads": "0",
         "queue_depth_sample_sum": "0",
         "queue_depth_samples": "0",
+        "reeval_seated": "'{}'::jsonb",
+        "reeval_deferred": "'{}'::jsonb",
         "unknown_reasons": "'{}'::jsonb",
         "updated_at": _NOW,
     },
@@ -539,11 +547,20 @@ _EXPECTED_INDEXES = {
     _HOURLY: _EXPECTED_HOURLY_INDEXES,
 }
 
-# ``downgrade()`` exactly, in order: the lock bound first, then the column, then
-# each table's own indexes before the table.
+# The two tables the evaluation writer updates in place on every evaluation
+# leave page room for HOT updates; the others take the default.
+_EXPECTED_STORAGE: dict[str, list[str] | None] = {
+    _CANDIDATES: None,
+    _MEMBERS: None,
+    _HEADS: ["fillfactor=70"],
+    _HOURLY: ["fillfactor=70"],
+}
+
+# ``downgrade()`` exactly, in order: the lock bound first, each table's own
+# indexes before the table, and the ALTER on the hot sampler table LAST, so the
+# batch holds its ACCESS EXCLUSIVE lock only until commit.
 _EXPECTED_DOWNGRADE: list[str] = [
     "SET LOCAL lock_timeout = '3s'",
-    "ALTER TABLE coord.ci_job_observations DROP COLUMN IF EXISTS steps",
     "DROP INDEX IF EXISTS coord.ix_merge_lane_hourly_hour",
     "DROP INDEX IF EXISTS coord.ix_merge_lane_hourly_tenant_repo_hour",
     "DROP TABLE IF EXISTS coord.merge_lane_hourly",
@@ -562,6 +579,7 @@ _EXPECTED_DOWNGRADE: list[str] = [
     "DROP INDEX IF EXISTS coord.ix_merge_candidates_repo_tip",
     "DROP INDEX IF EXISTS coord.ix_merge_candidates_tenant_repo_cut",
     "DROP TABLE IF EXISTS coord.merge_candidates",
+    "ALTER TABLE coord.ci_job_observations DROP COLUMN IF EXISTS steps",
 ]
 
 # The candidate projector's write: one row per PUSH, keyed on the push's ledger
@@ -676,31 +694,46 @@ def _module():
 
 
 def _function_sql(name: str) -> list[str]:
-    """The literal SQL of each ``op.execute`` in ``name``, in source order."""
+    """The literal SQL of each ``op.execute`` in ``name``, in source order.
+
+    Walks the WHOLE function, nested blocks included, and refuses any other
+    ``op.<attr>`` call (an ``op.drop_table`` would bypass the statement list) and
+    any ``execute`` whose argument is not one string literal.
+    """
     tree = ast.parse(_revision_path().read_text(encoding="utf-8"))
     fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
-    out: list[str] = []
-    for stmt in fn.body:
+    calls: list[ast.Call] = []
+    for node in ast.walk(fn):
         if not (
-            isinstance(stmt, ast.Expr)
-            and isinstance(stmt.value, ast.Call)
-            and isinstance(stmt.value.func, ast.Attribute)
-            and stmt.value.func.attr == "execute"
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "op"
         ):
             continue
-        args = stmt.value.args
-        assert len(args) == 1 and isinstance(args[0], ast.Constant), ast.dump(stmt)
-        assert isinstance(args[0].value, str)
-        out.append(args[0].value)
-    return out
+        assert node.func.attr == "execute", f"{name}() calls op.{node.func.attr}"
+        assert len(node.args) == 1 and not node.keywords, ast.dump(node)
+        arg = node.args[0]
+        assert isinstance(arg, ast.Constant) and isinstance(arg.value, str), ast.dump(
+            node
+        )
+        calls.append(node)
+    calls.sort(key=lambda c: (c.lineno, c.col_offset))
+    return [str(c.args[0].value) for c in calls]  # type: ignore[attr-defined]
 
 
 def _columns(engine: Engine, table: str) -> dict[str, tuple[str, str]]:
+    """``(type, is_nullable)`` per column. ``information_schema`` reports every
+    array as ``ARRAY``, so an array column reports its ``udt_name`` instead
+    (``_timestamptz``): a ``timestamp[]`` would lose the instants' zone."""
     with engine.connect() as conn:
         rows = conn.execute(
             text(
                 """
-                SELECT column_name, data_type, is_nullable
+                SELECT column_name,
+                       CASE WHEN data_type = 'ARRAY' THEN udt_name::text
+                            ELSE data_type END,
+                       is_nullable
                   FROM information_schema.columns
                  WHERE table_schema = 'coord' AND table_name = :table
                 """
@@ -708,6 +741,15 @@ def _columns(engine: Engine, table: str) -> dict[str, tuple[str, str]]:
             {"table": table},
         ).all()
     return {name: (dtype, nullable) for name, dtype, nullable in rows}
+
+
+def _storage_options(engine: Engine, table: str) -> list[str] | None:
+    with engine.connect() as conn:
+        options = conn.execute(
+            text("SELECT reloptions FROM pg_class WHERE oid = to_regclass(:rel)"),
+            {"rel": f"coord.{table}"},
+        ).scalar_one()
+    return None if options is None else list(options)
 
 
 def _defaults(engine: Engine, table: str) -> dict[str, str | None]:
@@ -783,6 +825,7 @@ def _assert_shape(engine: Engine) -> None:
         assert _defaults(engine, table) == _EXPECTED_DEFAULTS[table], table
         assert _constraints(engine, table) == _EXPECTED_CONSTRAINTS[table], table
         assert _indexes(engine, table) == _EXPECTED_INDEXES[table], table
+        assert _storage_options(engine, table) == _EXPECTED_STORAGE[table], table
 
     assert column_info(engine, _JOBS, "steps") == ("jsonb", "YES", None)
     source = _revision_path().read_text(encoding="utf-8")
@@ -864,6 +907,11 @@ def test_merge_capture_01_creates_the_stores_and_enforces_the_contract() -> None
         jobs_before = _jobs_shape(engine)
         run_alembic(backend_root(), url, "upgrade", _REVISION_ID)
         _assert_shape(engine)
+        # IF NOT EXISTS throughout: a second run of upgrade() changes nothing.
+        with engine.begin() as conn:
+            with Operations.context(MigrationContext.configure(conn)):
+                _module().upgrade()
+        _assert_shape(engine)
 
         # --- merge_candidates ---------------------------------------------
         cut_at = "2026-10-27T12:00:00Z"
@@ -906,6 +954,33 @@ def test_merge_capture_01_creates_the_stores_and_enforces_the_contract() -> None
                 repo=_REPO,
             )
             == 2
+        )
+        # A land with no candidate ref is keyed on its sha alone: a second push
+        # of it, or a re-projection that classifies it differently, is the same
+        # land.
+        land = {
+            **cut,
+            "key": "land@ccc",
+            "kind": "unknown",
+            "ref": None,
+            "ledger": 130,
+            "proposal": None,
+            "base": "b0",
+            "basis": "land_parent",
+            "tip": "ccc",
+        }
+        assert _run(engine, _INSERT_CUT, land) == 1
+        assert (
+            _run(engine, _INSERT_CUT, {**land, "kind": "ac_cache", "ledger": 131}) == 0
+        )
+        assert (
+            scalar(
+                engine,
+                "SELECT kind || ':' || ledger_id FROM coord.merge_candidates "
+                "WHERE repo = :repo AND candidate_key = 'land@ccc'",
+                repo=_REPO,
+            )
+            == "unknown:130"
         )
 
         row = {
@@ -1263,7 +1338,8 @@ def test_merge_capture_01_creates_the_stores_and_enforces_the_contract() -> None
                     SELECT evaluations, follower_evaluations, decisive_evaluations,
                            distinct_heads, queue_depth_sample_sum,
                            queue_depth_samples, unknown_reasons::text,
-                           reeval_seated, stale_evaluations, rolled_up_at
+                           reeval_seated::text, reeval_deferred::text,
+                           stale_evaluations, rolled_up_at
                       FROM coord.merge_lane_hourly
                      WHERE repo = :repo AND hour = :hour
                     """
@@ -1271,7 +1347,7 @@ def test_merge_capture_01_creates_the_stores_and_enforces_the_contract() -> None
                 {"repo": _REPO, "hour": _HOUR},
             ).one()
         # Live counters counted; every rolled-up measure still UNKNOWN.
-        assert tuple(counters) == (2, 1, 1, 1, 0, 0, "{}", None, None, None)
+        assert tuple(counters) == (2, 1, 1, 1, 0, 0, "{}", "{}", "{}", None, None)
 
         hour_row = {
             **bump,
