@@ -93,6 +93,24 @@ export function unchangedCoverage(
 ): UnchangedCoverage {
   const runners = view.runnerPasses;
   const n = view.unchangedMinPasses;
+  // A capped (or possibly capped) read, or one that did not say how many
+  // passes it covered, can have missed the stuck session: never confirmation.
+  if (view.truncated !== false) {
+    return {
+      everyRunnerCovered: false,
+      sentence:
+        view.truncated === true
+          ? "coord capped the rows it read — unchanged cannot be confirmed"
+          : "coord did not say whether it capped the rows — unchanged cannot be confirmed",
+    };
+  }
+  if (view.passesConsidered === undefined) {
+    return {
+      everyRunnerCovered: false,
+      sentence:
+        "how many passes were read is unknown — unchanged cannot be confirmed",
+    };
+  }
   if (runners === undefined) {
     return {
       everyRunnerCovered: false,
@@ -250,31 +268,38 @@ function closedBy(
   };
 }
 
+/**
+ * Coord's unchanged list, or `null` (UNKNOWN) when it is absent OR any entry
+ * cannot be read. Dropping an unreadable entry would shrink the list, and an
+ * empty list is what the strip's green and the list's all-clear stand on — a
+ * partial list could hide the one stuck session (the same rule
+ * {@link runnerPassesOf} applies to the per-runner counts).
+ */
 function unchangedOf(raw: unknown): FlowUnchangedSession[] | null {
   if (!Array.isArray(raw)) return null;
-  return raw.flatMap((r): FlowUnchangedSession[] => {
-    if (!isObj(r)) return [];
+  const rows: FlowUnchangedSession[] = [];
+  for (const r of raw) {
+    if (!isObj(r)) return null;
     const key = str(r.key);
     const terminalId = str(r.terminal_id);
     const verdict = str(r.verdict);
     const passes = count(r.consecutive_full_passes);
-    if (!key || !terminalId || !verdict || passes === undefined) return [];
-    return [
-      {
-        key,
-        claude_session_id: str(r.claude_session_id),
-        terminal_id: terminalId,
-        session_name: str(r.session_name),
-        verdict,
-        reason_codes: Array.isArray(r.reason_codes)
-          ? r.reason_codes.filter((c): c is string => typeof c === "string")
-          : [],
-        consecutive_full_passes: passes,
-        first_seen_at: str(r.first_seen_at) ?? "",
-        last_seen_at: str(r.last_seen_at) ?? "",
-      },
-    ];
-  });
+    if (!key || !terminalId || !verdict || passes === undefined) return null;
+    rows.push({
+      key,
+      claude_session_id: str(r.claude_session_id),
+      terminal_id: terminalId,
+      session_name: str(r.session_name),
+      verdict,
+      reason_codes: Array.isArray(r.reason_codes)
+        ? r.reason_codes.filter((c): c is string => typeof c === "string")
+        : [],
+      consecutive_full_passes: passes,
+      first_seen_at: str(r.first_seen_at) ?? "",
+      last_seen_at: str(r.last_seen_at) ?? "",
+    });
+  }
+  return rows;
 }
 
 /** `full` / `filtered` as sent; anything else is unknown, never a default. */
@@ -317,9 +342,11 @@ function latestUnknownOf(raw: unknown): LatestUnknownShare | null | undefined {
   if (!Array.isArray(raw)) return undefined;
   // An EMPTY list is coord saying "no pass in this window".
   if (raw.length === 0) return null;
+  // Any unreadable entry makes "the latest pass" unknown: its started_at may
+  // be the newest, so skipping it could report an older pass as the latest.
   let latest: LatestUnknownShare | undefined;
   for (const s of raw) {
-    if (!isObj(s)) continue;
+    if (!isObj(s)) return undefined;
     const passId = str(s.pass_id);
     const startedAt = str(s.started_at);
     const rows = count(s.rows);
@@ -330,7 +357,7 @@ function latestUnknownOf(raw: unknown): LatestUnknownShare | null | undefined {
       rows === undefined ||
       unknownRows === undefined
     ) {
-      continue;
+      return undefined;
     }
     const entry: LatestUnknownShare = {
       passId,
@@ -344,7 +371,6 @@ function latestUnknownOf(raw: unknown): LatestUnknownShare | null | undefined {
       latest = entry;
     }
   }
-  // Entries arrived and none could be read: unknown, not "no pass".
   return latest;
 }
 

@@ -289,6 +289,35 @@ describe("/admin/coord/overlord/flow", () => {
     }
   );
 
+  it.each([
+    [true, "coord capped the rows it read — unchanged cannot be confirmed"],
+    [
+      undefined,
+      "coord did not say whether it capped the rows — unchanged cannot be confirmed",
+    ],
+  ])(
+    "does not state an all-clear over a read whose truncation is %s, even with every runner covered",
+    async (truncated, sentence) => {
+      fetchFlow.mockResolvedValue({
+        ...FULL_FLOW,
+        full_passes_by_runner: RUNNERS_ALL_COVERED,
+        truncated,
+        unchanged: [],
+      });
+      render(<CoordOverlordFlowPage />);
+      const slot = await screen.findByTestId(
+        "overlord-flow-unchanged-not-confirmed"
+      );
+      expect(slot.textContent).toBe(
+        `None listed, but ${sentence}. This is not an all-clear.`
+      );
+      expect(screen.queryByTestId("overlord-flow-unchanged-empty")).toBeNull();
+      const s = await strip();
+      expect(s).toHaveAttribute("data-health-level", "amber");
+      expect(s).not.toHaveTextContent("No session is stuck unchanged");
+    }
+  );
+
   it("does not read an empty unchanged list over NO pass as an all-clear", async () => {
     fetchFlow.mockResolvedValue({
       ...NULL_FLOW,
