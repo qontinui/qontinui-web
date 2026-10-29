@@ -141,8 +141,8 @@ export function VerdictHistogramChart({
           className="text-sm text-muted-foreground italic m-0"
           data-testid="overlord-flow-histogram-unknown"
         >
-          No verdict series from coord — the per-pass histogram is unknown, not
-          empty.
+          No readable verdict series from coord — the per-pass histogram is
+          unknown, not empty.
         </p>
       ) : points.length === 0 ? (
         <p
