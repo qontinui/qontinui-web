@@ -193,6 +193,10 @@ function nudgeFinishStats(v: FlowView | null): Stat[] {
 
 const NO_PASS_TITLE = "no data — no pass was recorded in this window";
 
+/** Appended to a not-an-all-clear sentence that stands on the last good read. */
+const STALE_SUFFIX =
+  " That was the last good read — the latest refresh failed, so this may no longer hold.";
+
 function unknownShareStats(v: FlowView | null): Stat[] {
   const latest = v?.latestUnknown;
   const share =
@@ -397,7 +401,13 @@ export default function CoordOverlordFlowPage() {
               >
                 Unknown — coord&apos;s answer did not carry the unchanged list.
               </p>
-            ) : failed ? (
+            ) : failed &&
+              shown &&
+              shown.passesConsidered !== 0 &&
+              coverage?.everyRunnerCovered ? (
+              // Stale wording only over a last good read that WAS an
+              // all-clear; otherwise the branches below keep their
+              // not-an-all-clear sentence and say the refresh failed.
               <p
                 className="text-sm text-muted-foreground italic m-0"
                 data-testid="overlord-flow-unchanged-stale-empty"
@@ -414,6 +424,7 @@ export default function CoordOverlordFlowPage() {
               >
                 No triage pass recorded in {win.words} — no session could be
                 seen staying unchanged, so this is not an all-clear.
+                {failed ? STALE_SUFFIX : null}
               </p>
             ) : coverage && !coverage.everyRunnerCovered ? (
               <p
@@ -421,6 +432,7 @@ export default function CoordOverlordFlowPage() {
                 data-testid="overlord-flow-unchanged-not-confirmed"
               >
                 None listed, but {coverage.sentence}. This is not an all-clear.
+                {failed ? STALE_SUFFIX : null}
               </p>
             ) : (
               <p
