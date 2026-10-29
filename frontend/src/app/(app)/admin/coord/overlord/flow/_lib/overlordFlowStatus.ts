@@ -331,7 +331,14 @@ function seriesOf(raw: unknown): VerdictPass[] | null {
     if (!isObj(p)) return null;
     const passId = str(p.pass_id);
     const startedAt = str(p.started_at);
-    if (!passId || !startedAt || !isObj(p.histogram)) return null;
+    if (
+      !passId ||
+      !startedAt ||
+      !Number.isFinite(Date.parse(startedAt)) ||
+      !isObj(p.histogram)
+    ) {
+      return null;
+    }
     const histogram: Record<string, number> = {};
     for (const [verdict, n] of Object.entries(p.histogram)) {
       if (typeof n !== "number" || !Number.isFinite(n)) return null;
@@ -366,6 +373,8 @@ function latestUnknownOf(raw: unknown): LatestUnknownShare | null | undefined {
     if (
       !passId ||
       !startedAt ||
+      // An unparseable time cannot be ordered, so "latest" is unknown.
+      !Number.isFinite(Date.parse(startedAt)) ||
       rows === undefined ||
       unknownRows === undefined
     ) {

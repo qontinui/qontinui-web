@@ -79,6 +79,12 @@ describe("readFlowBody", () => {
   it("picks the most recent pass's unknown share whatever the list order", () => {
     expect(readFlowBody(FULL_FLOW)!.latestUnknown?.passId).toBe("p-new");
     expect(
+      readFlowBody({
+        ...FULL_FLOW,
+        unknown_share: [...FULL_FLOW.unknown_share].reverse(),
+      })!.latestUnknown?.passId
+    ).toBe("p-new");
+    expect(
       readFlowBody({ ok: true, unknown_share: [] })!.latestUnknown
     ).toBeNull();
   });
@@ -197,6 +203,25 @@ describe("latest unknown share", () => {
       unknown_share: [entry, { ...entry, pass_id: "p2", rows: "40" }],
     })!;
     expect(v.latestUnknown).toBeUndefined();
+  });
+
+  it("is unknown when an entry's start time cannot be parsed", () => {
+    for (const order of [0, 1]) {
+      const list = [entry, { ...entry, pass_id: "p2", started_at: "soon" }];
+      const v = readFlowBody({
+        ok: true,
+        unknown_share: order ? list.reverse() : list,
+      })!;
+      expect(v.latestUnknown).toBeUndefined();
+    }
+    expect(
+      readFlowBody({
+        ok: true,
+        verdict_series: [
+          { pass_id: "p1", started_at: "soon", histogram: { BUSY: 1 } },
+        ],
+      })!.series
+    ).toBeNull();
   });
 
   it("is 'no pass' (null) only for an empty list", () => {
