@@ -1,7 +1,7 @@
 """coord.recurring_agents (+ versions, device status, run requests) and project.scheduled_tasks managed_* columns
 
 Revision ID: recurring_agents_01
-Revises: journey_03_explorations_stop_unsettled
+Revises: overlord_03_passes
 Create Date: 2026-10-29
 
 Phase 2 of plan
@@ -253,7 +253,7 @@ from alembic import op
 # revision identifiers, used by Alembic.
 # Keep ``down_revision`` on ONE physical line — the CI gate parses it by line.
 revision: str = "recurring_agents_01"
-down_revision: str | Sequence[str] | None = "journey_03_explorations_stop_unsettled"
+down_revision: str | Sequence[str] | None = "overlord_03_passes"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
