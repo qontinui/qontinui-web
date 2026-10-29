@@ -353,6 +353,52 @@ def test_overlord_03_creates_the_pass_ledger_and_enforces_its_contract() -> None
             ).one()
         assert tuple(row_defaults) == ({}, [], "none", None)
 
+        # The defaults a writer relies on when it OMITS a column. The two
+        # helpers above always bind skipped_steps / reason_codes / action /
+        # action_outcome, so only an insert that leaves them out proves the
+        # DEFAULT clauses themselves.
+        omit_pass = uuid.uuid4()
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO coord.overlord_passes
+                        (pass_id, tenant_id, runner_port, scope, mode, started_at,
+                         row_count)
+                    VALUES (:p, :tid, 9876, 'full', 'report', :started, 0)
+                    """
+                ),
+                {"p": omit_pass, "tid": _TENANT, "started": _STARTED},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO coord.overlord_pass_rows
+                        (pass_id, terminal_id, tenant_id, observed_at, verdict)
+                    VALUES (:p, 'term-omit', :tid, :observed, 'STOPPED')
+                    """
+                ),
+                {"p": omit_pass, "tid": _TENANT, "observed": _STARTED},
+            )
+        with engine.connect() as conn:
+            omitted_pass = conn.execute(
+                text(
+                    "SELECT skipped_steps FROM coord.overlord_passes WHERE pass_id = :p"
+                ),
+                {"p": omit_pass},
+            ).scalar_one()
+            omitted_row = conn.execute(
+                text(
+                    """
+                    SELECT reason_codes, action, action_outcome, detail
+                      FROM coord.overlord_pass_rows WHERE pass_id = :p
+                    """
+                ),
+                {"p": omit_pass},
+            ).one()
+        assert omitted_pass == []
+        assert tuple(omitted_row) == ([], "none", None, {})
+
         # 4. The pass id is the idempotency key — a second pass with it is refused.
         _refused(engine, _INSERT_PASS, _pass(pass_id=pid))
 
