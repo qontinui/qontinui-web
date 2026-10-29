@@ -56,7 +56,7 @@ Phase 3. Deliberately NOT extended to ``git_write_ledger`` /
 small fraction of their size, which the default scale factor already handles.
 
 Revision ID: coord_test_results_autovac_01
-Revises: journey_03_explorations_stop_unsettled
+Revises: overlord_03_passes
 Create Date: 2026-09-30
 
 """
@@ -67,7 +67,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_test_results_autovac_01"
-down_revision: str | None = "journey_03_explorations_stop_unsettled"
+down_revision: str | None = "overlord_03_passes"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
