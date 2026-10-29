@@ -91,12 +91,34 @@ describe("readFlowBody", () => {
     ]);
   });
 
-  it("drops malformed unchanged rows rather than rendering half a row", () => {
-    const v = readFlowBody({
-      ok: true,
-      unchanged: [{ key: "k" }, FULL_FLOW.unchanged[0]],
-    })!;
-    expect(v.unchanged).toHaveLength(1);
+  it("reads the unchanged list as UNKNOWN when any row cannot be read", () => {
+    // Dropping the bad row would shrink the list toward the empty all-clear.
+    for (const bad of [{ key: "k" }, null, "garbage"]) {
+      const v = readFlowBody({
+        ok: true,
+        unchanged: [bad, FULL_FLOW.unchanged[0]],
+      })!;
+      expect(v.unchanged).toBeNull();
+    }
+    expect(
+      readFlowBody({ ok: true, unchanged: [FULL_FLOW.unchanged[0]] })!.unchanged
+    ).toHaveLength(1);
+  });
+
+  it("is never green when an unreadable row was the only stuck session", () => {
+    const h = deriveFlowHealth({
+      view: readFlowBody({
+        ...FULL_FLOW,
+        full_passes_by_runner: RUNNERS_ALL_COVERED,
+        unchanged: [{ ...FULL_FLOW.unchanged[0], terminal_id: null }],
+      })!,
+      loaded: true,
+      failed: false,
+      failure: null,
+      windowId: "7d",
+    });
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe("Session flow is partly unknown");
   });
 });
 
@@ -127,6 +149,16 @@ describe("latest unknown share", () => {
     const v = readFlowBody({
       ok: true,
       unknown_share: [{ pass_id: "p1" }, "garbage", { ...entry, rows: "40" }],
+    })!;
+    expect(v.latestUnknown).toBeUndefined();
+  });
+
+  it("is unknown when any entry is unreadable, even beside readable ones", () => {
+    // The unreadable entry may be the newest pass; reporting the older one
+    // as "latest" would be a stale number under a present-tense label.
+    const v = readFlowBody({
+      ok: true,
+      unknown_share: [entry, { ...entry, pass_id: "p2", rows: "40" }],
     })!;
     expect(v.latestUnknown).toBeUndefined();
   });
@@ -283,16 +315,47 @@ describe("deriveFlowHealth", () => {
   });
 
   it("is amber over a truncated read, and when truncation is unstated", () => {
-    for (const truncated of [true, undefined]) {
+    // Every runner is covered, so ONLY the truncation can hold green back.
+    const covered = readFlowBody({
+      ...FULL_FLOW,
+      full_passes_by_runner: RUNNERS_ALL_COVERED,
+      unchanged: [],
+    })!;
+    expect(
+      deriveFlowHealth({
+        view: covered,
+        loaded: true,
+        failed: false,
+        failure: null,
+        windowId: "7d",
+      }).level
+    ).toBe("green");
+    for (const [truncated, headline] of [
+      [true, "Session flow over a truncated read"],
+      [undefined, "Whether this read was capped is unknown"],
+    ] as const) {
+      const capped = { ...covered, truncated };
       const h = deriveFlowHealth({
-        view: { ...view, truncated, unchanged: [] },
+        view: capped,
         loaded: true,
         failed: false,
         failure: null,
         windowId: "7d",
       });
       expect(h.level).toBe("amber");
+      expect(h.headline).toBe(headline);
+      // The list's empty sentence reads the same verdict, so it cannot
+      // state an all-clear the strip withholds.
+      expect(
+        unchangedCoverage(capped, "the last 7 days").everyRunnerCovered
+      ).toBe(false);
     }
+    expect(
+      unchangedCoverage(
+        { ...covered, passesConsidered: undefined },
+        "the last 7 days"
+      ).everyRunnerCovered
+    ).toBe(false);
   });
 
   /** The strip for an empty unchanged list over a given flow body. */
