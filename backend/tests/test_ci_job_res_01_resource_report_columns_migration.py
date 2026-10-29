@@ -105,7 +105,10 @@ def _ci_job_mem_01_comment(column: str) -> str:
     """The COMMENT ``ci_job_mem_01`` gave ``column``, from that revision's own
     source, its one author. This test holds no copy of it."""
     source = (
-        backend_root() / "alembic" / "versions" / "ci_job_mem_01_memory_headroom_columns.py"
+        backend_root()
+        / "alembic"
+        / "versions"
+        / "ci_job_mem_01_memory_headroom_columns.py"
     ).read_text(encoding="utf-8")
     return comment_body_from_source(source, f"coord.{_TABLE}.{column}")
 
@@ -173,8 +176,7 @@ def test_downgrade_restores_ci_job_mem_01s_mem_total_comment_verbatim() -> None:
     prior = _ci_job_mem_01_comment("mem_total_mb")
     assert prior.startswith("Total system memory"), "ci_job_mem_01's comment moved"
     assert module._MEM_TOTAL_PRIOR_COMMENT == prior, (
-        "downgrade() would restore a mem_total_mb COMMENT that is not "
-        "ci_job_mem_01's"
+        "downgrade() would restore a mem_total_mb COMMENT that is not ci_job_mem_01's"
     )
 
 
