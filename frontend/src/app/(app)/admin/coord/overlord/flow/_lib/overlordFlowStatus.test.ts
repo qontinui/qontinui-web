@@ -74,6 +74,20 @@ describe("readFlowBody", () => {
       time_to_close: { count: 5, closed_by: { triage: 3 } },
     })!;
     expect(short.timeToClose.byAbsent).toBeUndefined();
+
+    // A kind that is PRESENT but unreadable is unknown even when the other
+    // kind already adds up to the count.
+    for (const unreadable of [null, "0"]) {
+      const v = readFlowBody({
+        ok: true,
+        time_to_close: {
+          count: 4,
+          closed_by: { triage: unreadable, absent: 4 },
+        },
+      })!;
+      expect(v.timeToClose.byTriage).toBeUndefined();
+      expect(v.timeToClose.byAbsent).toBe(4);
+    }
   });
 
   it("picks the most recent pass's unknown share whatever the list order", () => {

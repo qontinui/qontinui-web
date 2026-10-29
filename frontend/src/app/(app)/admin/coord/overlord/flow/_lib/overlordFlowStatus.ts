@@ -240,11 +240,11 @@ export interface FlowView {
   unchanged: FlowUnchangedSession[] | null;
   /**
    * The most recent pass's UNKNOWN share. `null` = coord sent an empty list
-   * (no pass in the window); `undefined` = the list is absent, or it has
-   * entries and none of them could be read — unknown, not "no pass".
+   * (no pass in the window); `undefined` = the list is absent, or any of
+   * its entries could not be read — unknown, not "no pass".
    */
   latestUnknown: LatestUnknownShare | null | undefined;
-  /** Oldest first; `null` = the series did not arrive. */
+  /** Oldest first; `null` = the series did not arrive or could not be read. */
   series: VerdictPass[] | null;
 }
 
@@ -262,9 +262,13 @@ function closedBy(
   const absent = count(raw.absent);
   const complete =
     total !== undefined && (triage ?? 0) + (absent ?? 0) === total;
+  // Zero-fill only a kind that is ABSENT from the map. A kind that is
+  // present but unreadable (`null`, a string) is unknown, never a zero.
+  const fill = (key: "triage" | "absent", v: number | undefined) =>
+    v ?? (complete && !(key in raw) ? 0 : undefined);
   return {
-    byTriage: triage ?? (complete ? 0 : undefined),
-    byAbsent: absent ?? (complete ? 0 : undefined),
+    byTriage: fill("triage", triage),
+    byAbsent: fill("absent", absent),
   };
 }
 
