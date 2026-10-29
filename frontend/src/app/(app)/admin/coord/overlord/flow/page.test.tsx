@@ -436,4 +436,49 @@ describe("/admin/coord/overlord/flow", () => {
       "1h 30m"
     );
   });
+
+  it("never turns a not-confirmed empty list into a stale all-clear on a failed refresh", async () => {
+    // The last good read was empty but NOT confirmed (runners short).
+    fetchFlow.mockResolvedValueOnce({
+      ...FULL_FLOW,
+      full_passes_by_runner: RUNNERS_TWO_SHORT,
+      unchanged: [],
+    });
+    render(<CoordOverlordFlowPage />);
+    await screen.findByTestId("overlord-flow-unchanged-not-confirmed");
+
+    fetchFlow.mockRejectedValueOnce(
+      rejection(503, { error: "db_unavailable" })
+    );
+    await userEvent.click(screen.getByTestId("overlord-flow-refresh"));
+    const s = await strip();
+    await waitFor(() =>
+      expect(s).toHaveTextContent("Session flow at the last good read")
+    );
+    const slot = screen.getByTestId("overlord-flow-unchanged-not-confirmed");
+    expect(slot).toHaveTextContent("This is not an all-clear.");
+    expect(slot).toHaveTextContent("the latest refresh failed");
+    expect(
+      screen.queryByTestId("overlord-flow-unchanged-stale-empty")
+    ).toBeNull();
+  });
+
+  it("says a confirmed empty list is stale on a failed refresh", async () => {
+    fetchFlow.mockResolvedValueOnce({
+      ...FULL_FLOW,
+      full_passes_by_runner: RUNNERS_ALL_COVERED,
+      unchanged: [],
+    });
+    render(<CoordOverlordFlowPage />);
+    await screen.findByTestId("overlord-flow-unchanged-empty");
+
+    fetchFlow.mockRejectedValueOnce(
+      rejection(503, { error: "db_unavailable" })
+    );
+    await userEvent.click(screen.getByTestId("overlord-flow-refresh"));
+    expect(
+      await screen.findByTestId("overlord-flow-unchanged-stale-empty")
+    ).toHaveTextContent("None at the last good read");
+    expect(screen.queryByTestId("overlord-flow-unchanged-empty")).toBeNull();
+  });
 });
