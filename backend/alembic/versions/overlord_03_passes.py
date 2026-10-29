@@ -1,7 +1,7 @@
 """coord.overlord_passes + coord.overlord_pass_rows — the session-flow pass ledger
 
 Revision ID: overlord_03_passes
-Revises: wthr_01
+Revises: journey_03_explorations_stop_unsettled
 Create Date: 2026-10-24
 
 Phase 1 of plan
@@ -274,7 +274,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "overlord_03_passes"
-down_revision: str | Sequence[str] | None = "wthr_01"
+down_revision: str | Sequence[str] | None = "journey_03_explorations_stop_unsettled"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
