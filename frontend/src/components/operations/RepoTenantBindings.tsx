@@ -48,10 +48,16 @@
  * `not_admin_in_both_tenants` (a `null` tenant is one coord withholds),
  * `binding_not_found`'s repo, `tenancy_changed`'s retry, and the rest.
  * A write answered 2xx is a success whatever its body says. A failed write is
- * followed by a re-read, because a write that timed out may still have landed
- * (the web's `coord_write_timeout` refusal says so, and is rendered with its
- * next action), and so may one whose COMMIT acknowledgement coord lost (coord
- * answers that `repo_binding_write_failed`; see {@link writeMayHaveLanded}).
+ * followed by a re-read, because a write that timed out, or whose answer was
+ * lost, may still have landed (the web's `coord_write_timeout` and
+ * `answer_lost` refusals say so, and are rendered with their next action), and
+ * so may one whose COMMIT failed (coord answers that
+ * `repo_binding_commit_unknown`). A `repo_binding_write_failed` reads as
+ * "nothing was written" only when its body says `"rolled_back": true`;
+ * without that marker it is read defensively as "may have landed", like every
+ * coord 5xx outside {@link NOTHING_WRITTEN_5XX} (the web's own refusals are
+ * decided by their discriminator) — see {@link rolledBack} and
+ * {@link writeMayHaveLanded}.
  *
  * Rows compose the console primitives (`RecordList` / `RecordRow` /
  * `RecordDetail`, style guide R2/R5): one line per binding, detail and the
@@ -228,11 +234,16 @@ export function refusalDetail(
       const ids = b.proposal_ids.map(String);
       return `${ids.length} merge ${ids.length === 1 ? "proposal is" : "proposals are"} in flight: ${ids.join(", ")}. Wait for ${ids.length === 1 ? "it" : "them"} to land or cancel ${ids.length === 1 ? "it" : "them"}, then retry.`;
     }
+    case "repo_binding_commit_unknown":
+      // The commit itself failed, so coord cannot say whether it applied.
+      return "The write may have landed: coord's commit failed, so whether it applied is unknown. Before retrying, re-read the bindings (the refresh button at the top of this card) and check whether the change is there.";
     case "repo_binding_write_failed":
-      // Coord's message says the transaction rolled back, but coord maps a
-      // failed COMMIT to this code too, and a COMMIT whose acknowledgement
-      // was lost may have applied.
-      return 'Coord also reports this code when the COMMIT itself fails, and a COMMIT whose acknowledgement was lost may still have applied — so "nothing was written" is not established. Before retrying, re-read the bindings (the refresh button at the top of this card) and check whether the change is there.';
+      // Coord marks a genuine rollback (a failure before the COMMIT) with
+      // `rolled_back: true`, and only that marker establishes "nothing was
+      // written". Without it the outcome is read defensively as unknown.
+      return rolledBack(r)
+        ? "Coord marked the transaction as rolled back before its commit, so nothing was written; it is safe to retry."
+        : 'Coord\'s answer carries no rolled_back: true marker, so "nothing was written" is not established. Before retrying, re-read the bindings (the refresh button at the top of this card) and check whether the change is there.';
     case "org_unbound": {
       const org = nonBlank(b.org) ?? "(org not reported)";
       const remedy = nonBlank(b.remedy);
@@ -279,6 +290,18 @@ export function refusalDetail(
 }
 
 /**
+ * Whether coord's answer positively says a failed write was rolled back, so
+ * nothing was written: a `repo_binding_write_failed` whose body carries
+ * `"rolled_back": true` (qontinui-coord#3522 `BindingError::WriteFailed`, the
+ * failure arm before the COMMIT). Only the JSON `true` counts, and only on
+ * that code; nothing else establishes a rollback (see
+ * {@link writeMayHaveLanded} for how every other failure is read).
+ */
+export function rolledBack(r: CoordRefusal): boolean {
+  return r.code === "repo_binding_write_failed" && r.body.rolled_back === true;
+}
+
+/**
  * A failed read or write as this card renders it. `envelope` is set when the
  * rejected body carried the web's refusal envelope (`body.refusal`) — the
  * write timeout's `coord_write_timeout` above all, whose next action says to
@@ -309,9 +332,15 @@ const WEB_MAY_HAVE_LANDED = new Set([
  * code outside it — `internal_panic` from coord's panic guard, which can fire
  * after the commit, or a code coord adds later — stays ambiguous.
  *
- * `repo_binding_write_failed` is deliberately NOT here. Coord maps a failed
- * COMMIT to it too, and a COMMIT whose acknowledgement was lost may have
- * applied — coord's own MCP tool descriptions call that code "UNKNOWN".
+ * `repo_binding_commit_unknown` (a failed COMMIT, whose outcome coord cannot
+ * know) is never here.
+ *
+ * `repo_binding_write_failed` is not here either: the contract is not the
+ * code but the marker. It is "nothing was written" per response, only when
+ * its body carries `"rolled_back": true` ({@link rolledBack}), which coord
+ * sends from the failure arm before the COMMIT, after the rollback. A
+ * `write_failed` without the marker, or with any value but `true`, is read
+ * defensively as ambiguous, like any other coord 5xx outside this list.
  */
 const NOTHING_WRITTEN_5XX = new Set([
   "authz_lookup_failed",
@@ -328,7 +357,9 @@ const NOTHING_WRITTEN_5XX = new Set([
  * - no HTTP answer at all (`status === null`: an abort or a network error) is
  *   ambiguous;
  * - a 4xx is a refusal before anything was written;
- * - a 5xx is "nothing written" only for a code on {@link NOTHING_WRITTEN_5XX}.
+ * - a 5xx is "nothing written" only for a code on {@link NOTHING_WRITTEN_5XX},
+ *   or a `repo_binding_write_failed` coord marked rolled back
+ *   ({@link rolledBack}).
  */
 export function writeMayHaveLanded(f: CardFailure): boolean {
   if (
@@ -339,6 +370,7 @@ export function writeMayHaveLanded(f: CardFailure): boolean {
   }
   if (f.refusal.status === null) return true;
   if (f.refusal.status < 500) return false;
+  if (rolledBack(f.refusal)) return false;
   return !(f.refusal.code !== null && NOTHING_WRITTEN_5XX.has(f.refusal.code));
 }
 

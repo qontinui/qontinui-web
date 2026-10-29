@@ -20,6 +20,10 @@
  *   - any 2xx write is a success (an unparseable or partial body included);
  *     a failed write re-reads the list and renders the web's write-timeout
  *     refusal with its next action;
+ *   - a `repo_binding_write_failed` is "nothing was written" only when coord
+ *     marked it `rolled_back: true`; an unmarked one stays "may have
+ *     landed", defensively, and `repo_binding_commit_unknown` stays "may
+ *     have landed" by coord's contract;
  *   - unbind busy/error survive the row collapsing; only the latest list read
  *     lands; every settled write calls `onChanged`;
  *   - every refusal the bind door's contract names (qontinui-coord#3522
@@ -138,26 +142,34 @@ function json(body: unknown, status = 200): Response {
 }
 
 /**
- * The web backend's own 504 for a timed-out WRITE (`_coord_timeout(write=
- * True)` composed by `http_exception_handler`): the legacy top level plus the
- * refusal envelope whose next action names the re-read.
+ * The web backend's own 504 for a WRITE whose outcome is unknown, composed by
+ * `http_exception_handler`: the legacy top level plus the refusal envelope
+ * whose next action names the re-read. `coord_write_timeout` is
+ * `_coord_timeout(write=True)`; `answer_lost` is
+ * `_coord_answer_lost_in_transit` (coord's answer cut off after the send).
  */
-function writeTimeout(): Response {
+function writeOutcomeUnknown(
+  discriminator: "coord_write_timeout" | "answer_lost"
+): Response {
+  const detail =
+    discriminator === "coord_write_timeout"
+      ? "timeout waiting for coord"
+      : "coord's answer was lost in transit (ReadError); the outcome is unknown and the change may have been applied, so re-read the current state before retrying";
   return json(
     {
       error: "GATEWAY_TIMEOUT",
-      message: "timeout waiting for coord",
+      message: detail,
       timestamp: 0,
       path: "/api/v1/operations/pr-merge/onboarding/repo-bindings",
       refusal: {
         code: "upstream_timeout",
-        discriminator: "coord_write_timeout",
+        discriminator,
         next_action: {
           kind: "retry_later",
           target: "whether the change was applied",
         },
         glossary_terms: ["coord"],
-        detail: "timeout waiting for coord",
+        detail,
         source: "web_backend",
         observed_at: "2026-10-24T08:00:00Z",
       },
@@ -165,6 +177,36 @@ function writeTimeout(): Response {
     504
   );
 }
+
+function writeTimeout(): Response {
+  return writeOutcomeUnknown("coord_write_timeout");
+}
+
+/**
+ * The bind door's two failed-write bodies, exactly as qontinui-coord#3522
+ * sends them (both 500). Only `write_failed` from the failure arm before the
+ * COMMIT carries `rolled_back`, and then always as the JSON `true`.
+ */
+const WRITE_FAILED_ROLLED_BACK = {
+  error: "repo_binding_write_failed",
+  message:
+    "the binding transaction failed before its commit and was rolled back; nothing was written — retry",
+  rolled_back: true,
+};
+/**
+ * The same code without the marker. Coord does not send it, but the card must
+ * still read it defensively as an unknown outcome, whatever its message says.
+ */
+const WRITE_FAILED_UNMARKED = {
+  error: "repo_binding_write_failed",
+  message:
+    "the binding transaction failed before its commit and was rolled back; nothing was written — retry",
+};
+const COMMIT_UNKNOWN = {
+  error: "repo_binding_commit_unknown",
+  message:
+    "the binding transaction's commit failed, so its outcome is unknown: the write may have landed. Re-read the bindings list (GET /coord/agent-onboarding/repo-bindings, or coord_repo_tenant_bindings) before retrying",
+};
 
 type Call = [string, { method: string; body?: string; maxRetries?: number }];
 
@@ -1115,41 +1157,54 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     await waitFor(() => expect(callsOf("GET")).toHaveLength(2));
   });
 
-  it("an unbind that timed out but landed keeps its failure at card level", async () => {
-    routeFetch(
-      [
-        () =>
-          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
-        () => json({ bindings: [], measured_at: "2026-10-24T08:02:00Z" }),
-      ],
-      () => writeTimeout()
-    );
-    render(<RepoTenantBindings />);
-    const row = await screen.findByTestId(
-      `repo-binding-row-${BOUND_HERE.repo}`
-    );
-    fireEvent.click(within(row).getByRole("button", { expanded: false }));
-    fireEvent.change(
-      await screen.findByTestId(
-        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
-      ),
-      { target: { value: "returning it" } }
-    );
-    fireEvent.click(
-      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
-    );
+  it.each(["coord_write_timeout", "answer_lost"] as const)(
+    "an unbind whose outcome is unknown (%s) but landed keeps its failure at card level",
+    async (discriminator) => {
+      routeFetch(
+        [
+          () =>
+            json({
+              bindings: [BOUND_HERE],
+              measured_at: "2026-10-24T08:00:00Z",
+            }),
+          () => json({ bindings: [], measured_at: "2026-10-24T08:02:00Z" }),
+        ],
+        () => writeOutcomeUnknown(discriminator)
+      );
+      render(<RepoTenantBindings />);
+      const row = await screen.findByTestId(
+        `repo-binding-row-${BOUND_HERE.repo}`
+      );
+      fireEvent.click(within(row).getByRole("button", { expanded: false }));
+      fireEvent.change(
+        await screen.findByTestId(
+          `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+        ),
+        { target: { value: "returning it" } }
+      );
+      fireEvent.click(
+        screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+      );
 
-    // The re-read no longer lists the row, so the failure moves to the card.
-    const orphan = await screen.findByTestId(
-      `repo-binding-unbind-error-unlisted-${BOUND_HERE.repo}`
-    );
-    expect(orphan.textContent).toContain("may have been applied");
-    expect(orphan.textContent).not.toContain("got no answer");
-    expect(
-      orphan.querySelector('[data-refusal="structured"]')?.textContent
-    ).toContain("coord_write_timeout");
-    await screen.findByTestId("repo-bindings-bound-here-empty");
-  });
+      // The re-read no longer lists the row, so the failure moves to the card.
+      const orphan = await screen.findByTestId(
+        `repo-binding-unbind-error-unlisted-${BOUND_HERE.repo}`
+      );
+      expect(orphan.getAttribute("data-may-have-landed")).toBe("true");
+      expect(orphan.textContent).toContain(
+        "does not establish whether it was applied"
+      );
+      expect(orphan.textContent).not.toContain(
+        "was not applied, so nothing was written"
+      );
+      expect(orphan.textContent).toContain("may have been applied");
+      expect(orphan.textContent).not.toContain("got no answer");
+      expect(
+        orphan.querySelector('[data-refusal="structured"]')?.textContent
+      ).toContain(discriminator);
+      await screen.findByTestId("repo-bindings-bound-here-empty");
+    }
+  );
 
   it("an unbind failure whose re-read ALSO fails is still shown, as UNKNOWN", async () => {
     routeFetch(
@@ -1247,7 +1302,7 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     expect(unread.textContent).toContain("coord_db_unavailable");
   });
 
-  it("a failed binding write whose re-read fails is UNKNOWN, and says why", async () => {
+  it("a write_failed WITHOUT the rolled_back marker whose re-read fails is UNKNOWN, and says why", async () => {
     routeFetch(
       [
         () =>
@@ -1258,15 +1313,7 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
             503
           ),
       ],
-      () =>
-        json(
-          {
-            error: "repo_binding_write_failed",
-            message:
-              "the binding transaction failed and was rolled back; nothing was written — retry",
-          },
-          500
-        )
+      () => json(WRITE_FAILED_UNMARKED, 500)
     );
     render(<RepoTenantBindings />);
     const row = await screen.findByTestId(
@@ -1296,6 +1343,88 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     expect(unread.textContent).toContain(
       "re-read the bindings (the refresh button at the top of this card) and check whether the change is there"
     );
+  });
+
+  it("a write_failed coord marked rolled_back: true, whose re-read fails, says nothing was written", async () => {
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () =>
+          json(
+            { error: "coord_db_unavailable", message: "coord DB pool down" },
+            503
+          ),
+      ],
+      () => json(WRITE_FAILED_ROLLED_BACK, 500)
+    );
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+
+    const unread = await screen.findByTestId(
+      `repo-binding-unbind-error-unread-${BOUND_HERE.repo}`
+    );
+    expect(unread.dataset.mayHaveLanded).toBe("false");
+    expect(unread.textContent).toContain(
+      "was not applied, so nothing was written by it"
+    );
+    expect(unread.textContent).not.toContain("is UNKNOWN");
+    expect(unread.textContent).not.toContain("is not established");
+    expect(unread.textContent).toContain("repo_binding_write_failed");
+    expect(unread.textContent).toContain(
+      "Coord marked the transaction as rolled back before its commit"
+    );
+  });
+
+  it("a failed COMMIT (repo_binding_commit_unknown) whose re-read fails says the write may have landed", async () => {
+    routeFetch(
+      [
+        () =>
+          json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () =>
+          json(
+            { error: "coord_db_unavailable", message: "coord DB pool down" },
+            503
+          ),
+      ],
+      () => json(COMMIT_UNKNOWN, 500)
+    );
+    render(<RepoTenantBindings />);
+    const row = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(row).getByRole("button", { expanded: false }));
+    fireEvent.change(
+      await screen.findByTestId(
+        `repo-binding-unbind-reason-${BOUND_HERE.repo}`
+      ),
+      { target: { value: "returning it" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+
+    const unread = await screen.findByTestId(
+      `repo-binding-unbind-error-unread-${BOUND_HERE.repo}`
+    );
+    expect(unread.dataset.mayHaveLanded).toBe("true");
+    expect(unread.textContent).toContain("is UNKNOWN");
+    expect(unread.textContent).not.toContain("was not applied");
+    expect(unread.textContent).toContain("repo_binding_commit_unknown");
+    expect(unread.textContent).toContain("The write may have landed");
+    expect(unread.textContent).not.toContain("nothing was written by it");
   });
 
   it("a binding_not_found unbind whose re-read fails claims no re-read", async () => {
@@ -1347,10 +1476,11 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
       status: number | null,
       code: string | null,
       discriminator: string | null = null,
-      source = "web_backend"
+      source = "web_backend",
+      body: Record<string, unknown> = {}
     ) =>
       writeMayHaveLanded({
-        refusal: { status, code, message: "m", body: {} },
+        refusal: { status, code, message: "m", body },
         envelope:
           discriminator === null
             ? null
@@ -1372,8 +1502,26 @@ describe("a failed write re-reads, and a timeout names its next action", () => {
     expect(f(422, null)).toBe(false);
     // A 5xx is "nothing written" only for the bind door's own codes.
     expect(f(503, "coord_db_unavailable")).toBe(false);
-    // A failed COMMIT maps to this code, and a lost COMMIT ack may have applied.
-    expect(f(500, "repo_binding_write_failed")).toBe(true);
+    // A failed COMMIT: its outcome is unknown, whatever else its body says.
+    const coordBody = (b: Record<string, unknown>) =>
+      f(500, b.error as string, null, "web_backend", b);
+    expect(coordBody(COMMIT_UNKNOWN)).toBe(true);
+    expect(coordBody({ ...COMMIT_UNKNOWN, rolled_back: true })).toBe(true);
+    // write_failed is "nothing written" ONLY when coord marked the rollback
+    // with the JSON true.
+    expect(coordBody(WRITE_FAILED_ROLLED_BACK)).toBe(false);
+    // Without the marker, or with any value but `true`, it is read
+    // defensively: ambiguous.
+    expect(coordBody(WRITE_FAILED_UNMARKED)).toBe(true);
+    for (const v of [false, null, "true", 1, {}]) {
+      expect(coordBody({ ...WRITE_FAILED_UNMARKED, rolled_back: v })).toBe(
+        true
+      );
+    }
+    // The marker counts on no other code.
+    expect(
+      coordBody({ error: "internal_panic", message: "m", rolled_back: true })
+    ).toBe(true);
     expect(f(500, "internal_panic")).toBe(true);
     expect(f(500, null)).toBe(true);
     // An envelope from any other source falls through to the status rules.
@@ -1685,12 +1833,33 @@ describe("every refusal the bind door's contract names (coord#3522)", () => {
     expect(
       detailOf(500, { error: "repo_binding_read_failed", message: "m" })
     ).toBeNull();
-    // A failed write's "nothing was written" is not established: coord maps a
-    // failed COMMIT to it, and a lost COMMIT ack may have applied.
+    // A failed write is "nothing written" only with coord's rollback marker.
+    expect(detailOf(500, WRITE_FAILED_ROLLED_BACK)).toBe(
+      "Coord marked the transaction as rolled back before its commit, so nothing was written; it is safe to retry."
+    );
+    // Without it, or with any value but true: not established.
+    const unmarked =
+      'Coord\'s answer carries no rolled_back: true marker, so "nothing was written" is not established. Before retrying, re-read the bindings (the refresh button at the top of this card) and check whether the change is there.';
+    expect(detailOf(500, WRITE_FAILED_UNMARKED)).toBe(unmarked);
+    for (const v of [false, null, "true", 1, {}]) {
+      expect(detailOf(500, { ...WRITE_FAILED_UNMARKED, rolled_back: v })).toBe(
+        unmarked
+      );
+    }
+    // The marker counts on no other code.
+    expect(detailOf(500, { ...COMMIT_UNKNOWN, rolled_back: true })).toBe(
+      detailOf(500, COMMIT_UNKNOWN)
+    );
     expect(
-      detailOf(500, { error: "repo_binding_write_failed", message: "m" })
-    ).toBe(
-      'Coord also reports this code when the COMMIT itself fails, and a COMMIT whose acknowledgement was lost may still have applied — so "nothing was written" is not established. Before retrying, re-read the bindings (the refresh button at the top of this card) and check whether the change is there.'
+      detailOf(500, {
+        error: "internal_panic",
+        message: "m",
+        rolled_back: true,
+      })
+    ).toBeNull();
+    // A failed COMMIT: the write may have landed, so re-read before retrying.
+    expect(detailOf(500, COMMIT_UNKNOWN)).toBe(
+      "The write may have landed: coord's commit failed, so whether it applied is unknown. Before retrying, re-read the bindings (the refresh button at the top of this card) and check whether the change is there."
     );
   });
 

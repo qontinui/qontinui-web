@@ -22,11 +22,14 @@ re-checks admin in BOTH tenants for a bind), so what matters here is:
   then capped at 2000, as coord does);
 * a coord transport failure is the web's 502 / 504, and a timed-out WRITE's
   504 carries the ``coord_write_timeout`` refusal envelope the page renders
-  (its next action names the re-read before any retry).
+  (its next action names the re-read before any retry); an answer lost after
+  the request may have been sent is a typed ``answer_lost`` 504 for a write
+  and a 502 for a read, never a bare 500.
 
 No live coord: ``httpx.AsyncClient`` is patched, as in the restore test.
 """
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
@@ -157,7 +160,9 @@ def _mock_response(
     return resp
 
 
-def _patched_client(resp: MagicMock | None = None, *, side_effect=None) -> MagicMock:
+def _patched_client(
+    resp: httpx.Response | MagicMock | None = None, *, side_effect=None
+) -> MagicMock:
     client = MagicMock()
     client.request = AsyncMock(return_value=resp, side_effect=side_effect)
     client.__aenter__ = AsyncMock(return_value=client)
@@ -335,6 +340,26 @@ def test_unbind_sends_delete_with_its_body(auth_client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 
+#: qontinui-coord#3522 ``BindingError::WriteFailed``: the failure arm before
+#: the COMMIT, which rolled back. ``rolled_back`` is always the JSON ``true``.
+_WRITE_FAILED_ROLLED_BACK: dict[str, Any] = {
+    "error": "repo_binding_write_failed",
+    "message": "the binding transaction failed before its commit and was "
+    "rolled back; nothing was written — retry",
+    "rolled_back": True,
+}
+
+#: ``BindingError::CommitUnknown``: the COMMIT failed, so the write may have
+#: landed. It never carries ``rolled_back``.
+_COMMIT_UNKNOWN: dict[str, Any] = {
+    "error": "repo_binding_commit_unknown",
+    "message": "the binding transaction's commit failed, so its outcome is "
+    "unknown: the write may have landed. Re-read the bindings list (GET "
+    "/coord/agent-onboarding/repo-bindings, or coord_repo_tenant_bindings) "
+    "before retrying",
+}
+
+
 @pytest.mark.parametrize(
     ("method", "status", "error_body"),
     [
@@ -409,11 +434,24 @@ def test_unbind_sends_delete_with_its_body(auth_client: TestClient) -> None:
                 "not_ready_replicas": None,
             },
         ),
+        # The bind door's two failed-write bodies, exactly as coord sends
+        # them: the page reads `rolled_back` as its "nothing was written"
+        # marker, so the key must survive the proxy on both verbs.
+        ("POST", 500, _WRITE_FAILED_ROLLED_BACK),
+        ("DELETE", 500, _WRITE_FAILED_ROLLED_BACK),
+        # The same code without the marker: the page reads it defensively as
+        # "may have landed", and the proxy passes it on exactly as sent.
         (
             "POST",
             500,
-            {"error": "repo_binding_write_failed", "message": "rolled back"},
+            {
+                "error": "repo_binding_write_failed",
+                "message": "the binding transaction failed before its commit "
+                "and was rolled back; nothing was written — retry",
+            },
         ),
+        ("POST", 500, _COMMIT_UNKNOWN),
+        ("DELETE", 500, _COMMIT_UNKNOWN),
         (
             "GET",
             503,
@@ -467,6 +505,32 @@ def test_coord_refusal_passes_through_verbatim(
         res = _call(auth_client, method, json=body)
     assert res.status_code == status
     assert res.json() == error_body
+
+
+@pytest.mark.parametrize("method", ["POST", "DELETE"])
+def test_rolled_back_marker_survives_the_proxy_as_json_true(
+    auth_client: TestClient, method: str
+) -> None:
+    """The page treats a ``repo_binding_write_failed`` as "nothing was
+    written" only when its body carries ``"rolled_back": true``, so the proxy
+    must hand that key on as the JSON boolean ``true``: not dropped, not ``1``,
+    not ``"true"``. Driven with a real ``httpx.Response`` so coord's bytes are
+    parsed the way they are in production."""
+    resp = httpx.Response(
+        500,
+        content=json.dumps(_WRITE_FAILED_ROLLED_BACK).encode(),
+        headers={"content-type": "application/json"},
+        request=httpx.Request(method, "https://coord.test/x"),
+    )
+    body: dict[str, Any] = {"repo": REPO, "reason": "r"}
+    if method == "POST":
+        body["target_tenant"] = TARGET_TENANT
+    with patch("httpx.AsyncClient", return_value=_patched_client(resp)):
+        res = _call(auth_client, method, json=body)
+    assert res.status_code == 500
+    assert res.json()["rolled_back"] is True
+    assert res.json() == _WRITE_FAILED_ROLLED_BACK
+    assert '"rolled_back":true' in res.text
 
 
 def test_schema_settling_retry_after_header_passes_through(
@@ -573,6 +637,53 @@ def test_coord_timeout_carries_the_refusal_envelope(
         assert refusal["next_action"].get("target") is None
     else:
         assert refusal["next_action"]["target"] == "whether the change was applied"
+
+
+@pytest.mark.parametrize(
+    "raised",
+    [
+        httpx.ReadError("connection reset mid-answer"),
+        httpx.RemoteProtocolError("server disconnected without a response"),
+    ],
+    ids=["ReadError", "RemoteProtocolError"],
+)
+@pytest.mark.parametrize(
+    ("method", "body"),
+    [
+        ("GET", None),
+        ("POST", {"repo": REPO, "target_tenant": TARGET_TENANT, "reason": "r"}),
+        ("DELETE", {"repo": REPO, "reason": "r"}),
+    ],
+)
+def test_answer_lost_after_send_is_a_typed_refusal_not_a_bare_500(
+    method: str, body: dict[str, Any] | None, raised: httpx.HTTPError
+) -> None:
+    """A transport failure after the request may have reached coord is
+    neither a connect error nor a timeout. A write's outcome is then unknown:
+    a 504 ``answer_lost`` whose next action names the re-read (the page reads
+    it as "may have landed"). A read changed nothing: a 502 that says retrying
+    is safe."""
+    client = _patched_client(side_effect=raised)
+    test_client = TestClient(_build_test_app(with_error_handler=True))
+    with patch("httpx.AsyncClient", return_value=client):
+        res = _call(test_client, method, json=body)
+    payload = res.json()
+    refusal = payload["refusal"]
+    assert refusal["next_action"]["kind"] == "retry_later"
+    assert type(raised).__name__ in payload["message"]
+    if method == "GET":
+        assert res.status_code == 502
+        assert refusal["code"] == "upstream_unavailable"
+        assert refusal["discriminator"] == "coord_read_answer_lost"
+        assert refusal["next_action"].get("target") is None
+        assert "retrying is safe" in payload["message"]
+    else:
+        assert res.status_code == 504
+        assert refusal["code"] == "upstream_timeout"
+        assert refusal["discriminator"] == "answer_lost"
+        assert refusal["next_action"]["target"] == "whether the change was applied"
+        assert "may have been applied" in payload["message"]
+        assert "outcome is unknown" in payload["message"]
 
 
 @pytest.mark.parametrize(

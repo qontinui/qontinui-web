@@ -1080,6 +1080,23 @@ def _coord_answer_lost(detail: str, *, not_json: bool) -> RefusalHTTPException:
     )
 
 
+def _coord_answer_lost_in_transit(exc: httpx.HTTPError) -> RefusalHTTPException:
+    """The 504 for a WRITE whose transport failed with something other than a
+    connect error or a timeout (``ReadError``, ``RemoteProtocolError``, ...).
+    Treated as after-send: coord may have received and committed it, so the
+    outcome is unknown. For the rare failure before anything was sent
+    (``LocalProtocolError``, ``UnsupportedProtocol``) this over-reports "may
+    have been applied", which is the safe direction. Shared by
+    ``_proxy_coord_write`` and ``_proxy_coord_verbatim`` so the two cannot
+    drift."""
+    return _coord_answer_lost(
+        f"coord's answer was lost in transit ({type(exc).__name__}); the "
+        "outcome is unknown and the change may have been applied, so re-read "
+        "the current state before retrying",
+        not_json=False,
+    )
+
+
 async def _proxy_coord_get(
     path: str,
     *,
@@ -1520,9 +1537,10 @@ async def _proxy_coord_write(
     * ``ConnectError`` → **502** ``coord is not reachable``: no connection was
       made, so coord never saw the request. The only arm that is safe to
       report as "nothing changed".
-    * a timeout, any OTHER transport failure after the request may have been
-      sent (``ReadError``, ``RemoteProtocolError`` — a load balancer cutting
-      the response), or a 2xx whose body is PRESENT but not JSON → **504**:
+    * a timeout, any other ``httpx.HTTPError`` (``ReadError``,
+      ``RemoteProtocolError`` — a load balancer cutting the response — treated
+      as after-send; see ``_coord_answer_lost_in_transit``), or a 2xx whose
+      body is PRESENT but not JSON → **504**:
       coord may well have committed, and only a re-read can tell. Each is
       logged, because a 504 the operator retries is otherwise invisible.
     * a coord ≥400 → coord's own status with ``detail=resp.text`` — or, with
@@ -1544,12 +1562,7 @@ async def _proxy_coord_write(
             raise _coord_timeout(write=True) from exc
         except httpx.HTTPError as exc:
             logger.warning(event, path=path, exc_type=type(exc).__name__)
-            raise _coord_answer_lost(
-                f"coord's answer was lost in transit ({type(exc).__name__}); "
-                "the change may have been applied, so re-read the current "
-                "state before retrying",
-                not_json=False,
-            ) from exc
+            raise _coord_answer_lost_in_transit(exc) from exc
     if resp.status_code >= 400:
         raise HTTPException(
             status_code=resp.status_code,
@@ -1746,7 +1759,12 @@ async def _proxy_coord_verbatim(
     posture ``post_github_clone_credential`` and the onboarding claim proxy
     open-code): operator bearer forwarded via ``_tenant_headers``, httpx
     transport errors mapped like the raising helpers (ConnectError → 502,
-    TimeoutException → 504), and coord's response — success OR error —
+    TimeoutException → 504, and any other ``httpx.HTTPError`` —
+    ``ReadError``, ``RemoteProtocolError``, treated as after-send — → the 504
+    ``answer_lost`` for a write, whose outcome is unknown
+    (``_coord_answer_lost_in_transit``, shared with ``_proxy_coord_write``),
+    or a 502 ``coord_read_answer_lost`` for a GET, which changed nothing),
+    and coord's response — success OR error —
     echoed to the caller with its original status code and JSON body. A
     non-JSON coord payload is wrapped as ``{"detail": <text>}``. Coord's
     ``Retry-After`` (a ``503`` that says when to come back, e.g. the bind
@@ -1756,6 +1774,7 @@ async def _proxy_coord_verbatim(
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id)
+    write = method.upper() != "GET"
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
             resp = await client.request(
@@ -1764,7 +1783,29 @@ async def _proxy_coord_verbatim(
         except httpx.ConnectError:
             raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise _coord_timeout(write=method.upper() != "GET")
+            raise _coord_timeout(write=write)
+        except httpx.HTTPError as exc:
+            # Any other transport failure (a load balancer cutting the
+            # response, a dropped connection mid-read) is treated as after
+            # coord received the request. Uncaught, it would be a bare 500
+            # that says nothing about whether a write applied.
+            logger.warning(
+                "coord_verbatim_answer_lost",
+                path=path,
+                method=method.upper(),
+                exc_type=type(exc).__name__,
+            )
+            if write:
+                raise _coord_answer_lost_in_transit(exc) from exc
+            raise refusal_error(
+                502,
+                RefusalCode.upstream_unavailable,
+                NextActionKind.retry_later,
+                f"coord's answer was lost in transit ({type(exc).__name__}); "
+                "a read changes nothing, so retrying is safe",
+                discriminator="coord_read_answer_lost",
+                glossary_terms=[GlossaryTerm.coord],
+            ) from exc
     try:
         content = resp.json()
     except ValueError:
@@ -2903,12 +2944,17 @@ async def post_pr_merge_onboarding_restore_repo(
 # tenant_not_found` (+ `tenant_id`) / `binding_not_found` (+ `repo`); `409
 # in_flight_merge_proposals` (+ `proposal_ids`) / `tenancy_changed`; `422
 # org_unbound` (+ `org`, `remedy`); `500 authz_lookup_failed` /
-# `repo_binding_read_failed` / `repo_binding_write_failed`; `503
-# migration_pending` (+ `missing`) / `schema_settling` (bind only: +
-# `retry_after_secs`, `live_replicas`, `not_ready_replicas`) /
-# `coord_db_unavailable`. Coord's operator-layer refusals before the core (no
-# operator context, the `admin` role gate, `operator_principal_required`)
-# pass through the same way.
+# `repo_binding_read_failed` / `repo_binding_write_failed` (the transaction
+# failed before its commit and rolled back; its body carries `"rolled_back":
+# true`, the marker the page reads as "nothing was written") /
+# `repo_binding_commit_unknown` (the commit failed, so the write may have
+# landed — re-read before retrying; never `rolled_back`); `503
+# migration_pending` (+ `missing`) /
+# `schema_settling` (bind only: + `retry_after_secs`, `live_replicas`,
+# `not_ready_replicas`) / `coord_db_unavailable`. Coord's operator-layer
+# refusals before the core (no operator context, the `admin` role gate,
+# `operator_principal_required`) pass through the same way. The web's own
+# transport refusals (`_proxy_coord_verbatim`) sit beside them.
 COORD_REPO_BINDINGS_PATH = "/coord/onboarding/repo-bindings"
 
 #: Timeout for a bind / unbind. Neither is a small read: before answering,

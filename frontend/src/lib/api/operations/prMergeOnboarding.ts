@@ -442,6 +442,13 @@ export interface RepoBindingRefusalBody {
   repo?: string;
   /** `migration_pending`: the missing `coord.*` object. */
   missing?: string;
+  /**
+   * `repo_binding_write_failed` from the failure arm before the COMMIT, which
+   * rolled back: coord's positive "nothing was written" marker. Always the
+   * JSON `true` when present, never sent with any other code; its absence on
+   * that code, or any value but `true`, is read as an unknown outcome.
+   */
+  rolled_back?: boolean;
   /** `operator_principal_required` and the device refusals. */
   hint?: string;
   /** The operator `admin` role gate. */
