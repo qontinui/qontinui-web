@@ -1,7 +1,7 @@
 """coord.merge_candidates, coord.merge_candidate_members, coord.merge_verdict_heads, coord.merge_lane_hourly, and coord.ci_job_observations.steps — the merge-lane capture stores
 
 Revision ID: merge_capture_01
-Revises: presentation_scope_01
+Revises: ci_job_res_01
 Create Date: 2026-10-27
 
 Slice B of Phase 1 (schema half) of plan
@@ -172,7 +172,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "merge_capture_01"
-down_revision: str | Sequence[str] | None = "presentation_scope_01"
+down_revision: str | Sequence[str] | None = "ci_job_res_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
