@@ -83,6 +83,42 @@ describe("readFlowBody", () => {
     ).toBeNull();
   });
 
+  it("reads the verdict series as UNKNOWN when any pass or count cannot be read", () => {
+    const good = {
+      pass_id: "p1",
+      started_at: "2026-10-23T20:00:00Z",
+      histogram: { BUSY: 1 },
+    };
+    for (const bad of [
+      "garbage",
+      { ...good, pass_id: null },
+      { ...good, histogram: "x" },
+      { ...good, histogram: { BUSY: "33" } },
+      { ...good, histogram: { BUSY: Number.NaN } },
+    ]) {
+      expect(
+        readFlowBody({ ok: true, verdict_series: [good, bad] })!.series
+      ).toBeNull();
+    }
+    expect(
+      readFlowBody({ ok: true, verdict_series: [good] })!.series
+    ).toHaveLength(1);
+  });
+
+  it("reads an absent or unreadable reason list as an unreadable row", () => {
+    const row = FULL_FLOW.unchanged[0]!;
+    for (const reason_codes of [undefined, "x", ["a", 1]]) {
+      expect(
+        readFlowBody({ ok: true, unchanged: [{ ...row, reason_codes }] })!
+          .unchanged
+      ).toBeNull();
+    }
+    expect(
+      readFlowBody({ ok: true, unchanged: [{ ...row, reason_codes: [] }] })!
+        .unchanged![0]!.reason_codes
+    ).toEqual([]);
+  });
+
   it("sorts the verdict series oldest first", () => {
     expect(readFlowBody(FULL_FLOW)!.series!.map((p) => p.passId)).toEqual([
       "p-old",

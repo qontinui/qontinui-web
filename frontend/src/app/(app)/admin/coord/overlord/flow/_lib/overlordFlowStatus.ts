@@ -285,15 +285,21 @@ function unchangedOf(raw: unknown): FlowUnchangedSession[] | null {
     const verdict = str(r.verdict);
     const passes = count(r.consecutive_full_passes);
     if (!key || !terminalId || !verdict || passes === undefined) return null;
+    // An absent or unreadable reason list is not "no reason codes".
+    if (
+      !Array.isArray(r.reason_codes) ||
+      !r.reason_codes.every((c) => typeof c === "string")
+    ) {
+      return null;
+    }
+    const reasonCodes = r.reason_codes as string[];
     rows.push({
       key,
       claude_session_id: str(r.claude_session_id),
       terminal_id: terminalId,
       session_name: str(r.session_name),
       verdict,
-      reason_codes: Array.isArray(r.reason_codes)
-        ? r.reason_codes.filter((c): c is string => typeof c === "string")
-        : [],
+      reason_codes: reasonCodes,
       consecutive_full_passes: passes,
       first_seen_at: str(r.first_seen_at) ?? "",
       last_seen_at: str(r.last_seen_at) ?? "",
@@ -312,27 +318,33 @@ function modeOf(v: unknown): PassMode {
   return v === "report" || v === "act" ? v : null;
 }
 
+/**
+ * The per-pass verdict series, or `null` (UNKNOWN) when it is absent OR any
+ * pass or any count in it cannot be read. Dropping a pass would shorten the
+ * chart without a word, and dropping a count would draw a measured-empty bar
+ * where the truth is "could not be read".
+ */
 function seriesOf(raw: unknown): VerdictPass[] | null {
   if (!Array.isArray(raw)) return null;
-  const passes = raw.flatMap((p): VerdictPass[] => {
-    if (!isObj(p)) return [];
+  const passes: VerdictPass[] = [];
+  for (const p of raw) {
+    if (!isObj(p)) return null;
     const passId = str(p.pass_id);
     const startedAt = str(p.started_at);
-    if (!passId || !startedAt || !isObj(p.histogram)) return [];
+    if (!passId || !startedAt || !isObj(p.histogram)) return null;
     const histogram: Record<string, number> = {};
     for (const [verdict, n] of Object.entries(p.histogram)) {
-      if (typeof n === "number" && Number.isFinite(n)) histogram[verdict] = n;
+      if (typeof n !== "number" || !Number.isFinite(n)) return null;
+      histogram[verdict] = n;
     }
-    return [
-      {
-        passId,
-        startedAt,
-        scope: scopeOf(p.scope),
-        mode: modeOf(p.mode),
-        histogram,
-      },
-    ];
-  });
+    passes.push({
+      passId,
+      startedAt,
+      scope: scopeOf(p.scope),
+      mode: modeOf(p.mode),
+      histogram,
+    });
+  }
   return passes.sort(
     (a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)
   );
