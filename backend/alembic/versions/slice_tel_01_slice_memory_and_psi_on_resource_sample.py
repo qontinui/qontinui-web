@@ -1,7 +1,7 @@
 """coord.device_resource_samples — per-slice cgroup memory and PSI telemetry
 
 Revision ID: slice_tel_01
-Revises: journey_04_explorations_stop_detail_any_stop
+Revises: merge_capture_01
 Create Date: 2026-10-30
 
 Phase 0b of plan
@@ -92,9 +92,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "slice_tel_01"
-down_revision: str | Sequence[str] | None = (
-    "journey_04_explorations_stop_detail_any_stop"
-)
+down_revision: str | Sequence[str] | None = "merge_capture_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
