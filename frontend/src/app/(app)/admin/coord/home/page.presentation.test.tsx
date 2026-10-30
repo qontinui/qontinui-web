@@ -753,6 +753,21 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     }
   );
 
+  it.each([
+    ["null", { starts: null }],
+    ["absent", { starts: undefined }],
+  ])(
+    "on track: an initiative start date that is %s reads unknown, not nothing",
+    async (_spelling, fields) => {
+      const view = await renderPresenting(initiativeBody(fields));
+      expect(
+        screen.getByTestId("coord-home.on-track.initiative")
+      ).toHaveTextContent(/Status live · from unknown · ends withheld ·/);
+      expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+      expect(leakedIdentifiers()).toEqual([]);
+    }
+  );
+
   it("on track: a unit also named by a group of an unknown kind is withheld, though the scope clears the repository that names it", async () => {
     const view = await renderPresenting(unitAlsoInUnknownGroupBody());
     const own = expandRow(

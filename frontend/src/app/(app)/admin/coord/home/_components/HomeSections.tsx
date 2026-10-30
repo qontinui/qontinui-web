@@ -1235,15 +1235,15 @@ function InitiativeBlock({
     const status = presenting
       ? presentedInitiativeStatus(i.status)
       : (i.status ?? "unknown");
-    const starts = presenting ? presentedInitiativeDate(i.starts) : i.starts;
+    const starts =
+      (presenting ? presentedInitiativeDate(i.starts) : i.starts) ?? "unknown";
     const ends =
       (presenting ? presentedInitiativeDate(i.ends) : i.ends) ?? "unknown";
     const unknownKeys = i.unknownKey?.keys.join(", ") ?? "";
     body = (
       <div className="space-y-1">
         <p className="m-0">
-          Status {status}
-          {starts ? ` · from ${starts}` : ""} · ends {ends} ·{" "}
+          Status {status} · from {starts} · ends {ends} ·{" "}
           <span data-testid="coord-home.on-track.initiative.alignment">
             {initiativeAttributionPhrase(i)}
           </span>
