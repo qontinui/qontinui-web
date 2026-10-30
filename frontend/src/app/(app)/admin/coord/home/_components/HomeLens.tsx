@@ -25,6 +25,7 @@ import {
 } from "@/components/presentation";
 import {
   degradationSubjectText,
+  planeLabel,
   type DegradationView,
 } from "@/components/admin/coord/coordHomeStatus";
 import { FAILURE_REASON_WITHHELD } from "@/components/operations/presentedFailure";
@@ -33,6 +34,7 @@ import {
   RowKeyAliases,
   degradationRepo,
   isMachineSubject,
+  presentedPlaneLabel,
   regionSources,
   subjectDescriptor,
   type DegradationRowKind,
@@ -197,6 +199,15 @@ export function useRowKey(): (list: string, operatorKey: string) => string {
       presenting ? aliases.key(list, operatorKey) : operatorKey,
     [presenting, aliases]
   );
+}
+
+/**
+ * How this mode words a degradation's area: `planeLabel` for the operator;
+ * while presenting, the table's words or `withheld` (`presentedPlaneLabel`).
+ */
+export function usePlaneLabel(): (plane: string | null) => string {
+  const { presenting } = usePresentationMode();
+  return presenting ? presentedPlaneLabel : planeLabel;
 }
 
 /**

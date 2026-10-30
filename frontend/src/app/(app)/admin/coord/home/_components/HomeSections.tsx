@@ -24,8 +24,9 @@
  * of its figures (`RegionCaption`); every free-text carrier renders through
  * `RedactedText` / `useRedactor` with a structured descriptor
  * (`_lib/homeLens.ts`), and every value read against one of the page's
- * tables — a decision kind, a does-not-know source — shows only when the
- * table names it, in fixed words otherwise; a machine is its alias
+ * tables — a decision kind, a does-not-know source, a degradation's area —
+ * shows only when the table names it, in fixed words otherwise; a machine is
+ * its alias
  * (`useMachineAliaser`); R8's raw last line and coord's quoted error chains
  * are not rendered; a row is keyed by an alias of its operator key
  * (`useRowKey`); a link goes through `LensLink`, and a drill or an
@@ -57,6 +58,7 @@ import {
   usePresentationMode,
   usePresentationScopeState,
   useRedactor,
+  WITHHELD,
 } from "@/components/presentation";
 import { FAILURE_SENTENCE_WITHHELD } from "@/components/operations/presentedFailure";
 import {
@@ -84,6 +86,7 @@ import {
   HomeRefreshButton,
   RegionCaption,
   useLinkOpens,
+  usePlaneLabel,
   useRowKey,
   useSubjectText,
 } from "./HomeLens";
@@ -110,7 +113,6 @@ import {
   initiativeAttributionPhrase,
   decisionDomainLabel,
   withoutVerdictWords,
-  planeLabel,
   remediationPhrase,
   sourceErrorSentence,
   sourceLabel,
@@ -650,6 +652,7 @@ function DegradationRow({
   const redact = useRedactor();
   const subjectText = useSubjectText();
   const opens = useLinkOpens();
+  const planeName = usePlaneLabel();
   // Evidence one click down — and only where the click opens something:
   // while presenting, a drill to a page the presentation cannot show would
   // be link-shaped text that opens nothing, so it is left out.
@@ -678,7 +681,7 @@ function DegradationRow({
     );
   return (
     <RecordRow
-      identity={planeLabel(d.plane)}
+      identity={planeName(d.plane)}
       label={
         d.headline === null ? (
           <span>(no headline)</span>
@@ -761,6 +764,7 @@ export function DegradingSection({
 }) {
   const { presenting } = usePresentationMode();
   const rowKey = useRowKey();
+  const planeName = usePlaneLabel();
   const open = openDegradations(deg);
   const declared = [
     ...(deg.open ?? []).filter((r) => r.declared),
@@ -816,8 +820,8 @@ export function DegradingSection({
                   : (degradationsGapTitle(deg) ?? undefined)
               }
             >
-              Incomplete view — {degradationsGapPhrase(deg, sources)}. The rows
-              below are real; there may be others.
+              Incomplete view — {degradationsGapPhrase(deg, sources, planeName)}
+              . The rows below are real; there may be others.
             </p>
           )}
           {open === null && (
@@ -936,14 +940,17 @@ export function DegradingSection({
               {deg.planes.map((p) => (
                 <li
                   key={p.plane}
-                  data-plane={p.plane}
+                  // Coord's own key: not on the element when its area is withheld.
+                  data-plane={
+                    planeName(p.plane) === WITHHELD ? undefined : p.plane
+                  }
                   // Watcher names are coord's internal vocabulary: a title
                   // for the operator only.
                   title={
                     presenting ? undefined : planeWatcherNames(p) || undefined
                   }
                 >
-                  {planeLabel(p.plane)}: {planeFreshnessPhrase(p)}
+                  {planeName(p.plane)}: {planeFreshnessPhrase(p)}
                 </li>
               ))}
             </ul>

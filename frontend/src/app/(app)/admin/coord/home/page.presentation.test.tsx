@@ -95,6 +95,10 @@ import {
   unservedDecisionsBody,
 } from "./__fixtures__/presentationFixture";
 import {
+  checkBehindEveryDisclosure,
+  expandRow,
+} from "./__fixtures__/homePageDriver";
+import {
   COORD_TIMEOUT_TEXT,
   PROJECT_STATE_KEPT_SOURCE,
   PROJECT_STATE_SOURCE,
@@ -188,41 +192,6 @@ function leakedIdentifiers(): string[] {
   return MUST_NOT_APPEAR.filter((needle) =>
     html.includes(needle.toLowerCase())
   );
-}
-
-/**
- * Run `check` on the page as rendered, then behind every disclosure: the
- * recently-cleared panel opened, then every record row expanded in turn (a
- * list keeps one row open, so each is checked open on its own).
- */
-function checkBehindEveryDisclosure(check: () => void) {
-  check();
-  const cleared = screen.queryByTestId("coord-home.degrading.cleared");
-  if (cleared) {
-    fireEvent.click(
-      within(cleared).getByRole("button", { name: /Recently cleared/ })
-    );
-    check();
-  }
-  const rows = [...document.querySelectorAll("[data-console-row]")];
-  expect(rows.length).toBeGreaterThan(0);
-  for (const row of rows) {
-    if (row.getAttribute("aria-expanded") !== "true") fireEvent.click(row);
-    check();
-  }
-}
-
-/** Expand the record row in `region` whose line shows `text`. */
-function expandRow(region: HTMLElement, text: string | RegExp) {
-  const row = [...region.querySelectorAll("[data-console-row]")].find((r) =>
-    typeof text === "string"
-      ? (r.textContent ?? "").includes(text)
-      : text.test(r.textContent ?? "")
-  );
-  if (!row) throw new Error(`no row showing ${String(text)}`);
-  if (row.getAttribute("aria-expanded") !== "true") fireEvent.click(row);
-  // `RecordRow`'s own wrapper: the line, and its detail once expanded.
-  return row.parentElement as HTMLElement;
 }
 
 /** The provenance chips a region's caption carries. */
@@ -780,10 +749,24 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
         '[data-testid^="coord-home.on-track.named."] [data-redacted="false"]'
       )
     ).toBeNull();
-    expectPresentationSafe(view, {
-      forbidden: [...MUST_NOT_APPEAR, FIRST_PARTY_UNIT_TITLE],
+    // The group that names it: a kind this page does not recognise, so its row
+    // says neither its key nor "repo", closed or open.
+    const unknownGroup = screen
+      .getAllByTestId("coord-home.on-track.group")
+      .at(-1)!;
+    expect(unknownGroup.querySelector("[data-console-row]")).toHaveTextContent(
+      /^no repo named/
+    );
+    fireEvent.click(unknownGroup.querySelector("[data-console-row]")!);
+    expect(unknownGroup).toHaveTextContent(
+      "Work units that name this repository."
+    );
+    checkBehindEveryDisclosure(() => {
+      expectPresentationSafe(view, {
+        forbidden: [...MUST_NOT_APPEAR, FIRST_PARTY_UNIT_TITLE],
+      });
+      expect(document.body.textContent).not.toContain(FIRST_PARTY_UNIT_TITLE);
     });
-    expect(document.body.textContent).not.toContain(FIRST_PARTY_UNIT_TITLE);
   });
 
   it("on track: a waiting unit is named once no waiting list can hide it", async () => {

@@ -1006,6 +1006,14 @@ export function planeLabel(plane: string | null): string {
 }
 
 /**
+ * Whether the page's table names this plane. An own-property check, so a key
+ * spelled `constructor` is not one it names.
+ */
+export function isKnownPlane(plane: string): boolean {
+  return ownEntry(PLANE_LABEL, plane) !== undefined;
+}
+
+/**
  * A degradation's subject for the collapsed row (R8): its name only. Coord's
  * subject id — a device UUID beside a hostname — is a raw id, so it goes to
  * the expanded detail's last line ({@link degradationRawLine}).
@@ -1089,20 +1097,22 @@ const PARTIAL_SOURCE_STATES: ReadonlySet<BlockState> = new Set([
  */
 export function degradationsGapPhrase(
   deg: DegradationsView,
-  sources: SourceCoverageView[] | null = null
+  sources: SourceCoverageView[] | null = null,
+  label: (plane: string | null) => string = planeLabel
 ): string {
   const planes = deg.planes ?? [];
   const parts: string[] = [];
-  const watched = planes
-    .filter((p) => p.fresh === false && p.watchers.length > 0)
-    .map((p) => planeLabel(p.plane));
+  // Distinct: while presenting, two planes can read the same `withheld`.
+  const areas = (ps: PlaneView[]) => [
+    ...new Set(ps.map((p) => label(p.plane))),
+  ];
+  const notFresh = planes.filter((p) => p.fresh === false);
+  const watched = areas(notFresh.filter((p) => p.watchers.length > 0));
   if (watched.length > 0) {
     parts.push(`not every watcher is fresh (${watched.join(", ")})`);
   }
-  for (const p of planes) {
-    if (p.fresh === false && p.watchers.length === 0) {
-      parts.push(`the ${planeLabel(p.plane)} reading could not be taken`);
-    }
+  for (const area of areas(notFresh.filter((p) => p.watchers.length === 0))) {
+    parts.push(`the ${area} reading could not be taken`);
   }
   const partial = [
     ...new Set(
@@ -1260,15 +1270,20 @@ function humanised(text: string): string {
  */
 export function sourceLabel(
   source: string,
-  planes: PlaneView[] | null = null
+  planes: PlaneView[] | null = null,
+  label: (plane: string | null) => string = planeLabel
 ): string {
   const known = ownEntry(SOURCE_LABEL, source);
   if (known) return known;
   if (isWatcherSource(source)) {
     const name = source.slice(WATCHER_SOURCE_PREFIX.length);
-    const fed = (planes ?? [])
-      .filter((p) => p.watchers.some((w) => w.name === name))
-      .map((p) => planeLabel(p.plane));
+    const fed = [
+      ...new Set(
+        (planes ?? [])
+          .filter((p) => p.watchers.some((w) => w.name === name))
+          .map((p) => label(p.plane))
+      ),
+    ];
     return fed.length > 0
       ? `Watcher feeding ${fed.join(", ")}`
       : "Watcher feeding Degrading";
