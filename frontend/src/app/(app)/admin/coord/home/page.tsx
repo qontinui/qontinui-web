@@ -21,15 +21,33 @@
  * regions are composed from console primitives in `_components/HomeSections`.
  * The answerability test this page is measured by is
  * `answerability.questions.json` beside this file.
+ *
+ * ## Presentation mode (plan `2026-10-23-console-presentation-spaces` Phase 2)
+ *
+ * The coordination overview is lens surface 2 (`lensSurfaces.ts`), and it is
+ * registered presentation-ready (`presentationReadiness.ts`) on the strength
+ * of `page.presentation.test.tsx`. The same route and the same read, rendered
+ * for an external evaluator (D1): the page opens with its caption, each
+ * region with its caption and the provenance of its figures (the one read,
+ * dated by coord's answer), a kept reading after a failed refresh is named as
+ * the last one and never as current, free text is redacted, machines are
+ * aliased, raw ids and coord's quoted errors are not rendered — a failed read
+ * is explained in the page's own fixed words where its reason allows, and
+ * withheld otherwise — and answering a decision is the operator's alone.
+ * Nothing new is fetched. Style guide §3.14 records it; in operator mode the
+ * page is unchanged.
  */
 
 import { useMemo, useState } from "react";
 import { useTenant } from "@/contexts/tenant-context";
+import { Caption, usePresentationMode } from "@/components/presentation";
 import {
   NOTHING_READ,
   deriveHomeStrip,
 } from "@/components/admin/coord/coordHomeStatus";
 import { useProjectState } from "./_hooks/useProjectState";
+import { presentedHomeFailure } from "./_lib/homeLens";
+import { KeptReadingNotice } from "./_components/HomeLens";
 import {
   CorrectSection,
   DegradingSection,
@@ -40,14 +58,24 @@ import {
 } from "./_components/HomeSections";
 
 export default function CoordHomePage() {
-  const { view, hasRead, stale, lastError, refresh } = useProjectState();
+  const { view, hasRead, stale, lastError, presentableError, refresh } =
+    useProjectState();
   const { tenants } = useTenant();
+  const { presenting } = usePresentationMode();
   const [correctOpen, setCorrectOpen] = useState(false);
   const strip = useMemo(() => deriveHomeStrip(view, { stale }), [view, stale]);
   const shown = view ?? NOTHING_READ;
   const tenantName =
     (view?.tenantId && tenants.find((t) => t.id === view.tenantId)?.name) ||
     null;
+  // Every region renders the one answer on screen: coord's `generated_at`
+  // dates it, and a kept one says so.
+  const generatedAt = shown.generatedAt;
+  const reading = { generatedAt, kept: stale };
+  // The latest failure as this mode may show it: the operator's own words;
+  // while presenting, the page's fixed words for it, or withheld when only
+  // outside words can tell it. One decision, for every line that says it.
+  const failure = presentedHomeFailure(lastError, presentableError, presenting);
 
   return (
     // `overflow-x-auto`: a wide detail panel scrolls instead of stranding its
@@ -57,13 +85,20 @@ export default function CoordHomePage() {
       data-testid="coord-home-page"
       data-ui-bridge-id="coord-home"
     >
+      {/* Presentation mode only (D1, "captions before data"): what this page
+          shows and why it matters, ahead of the strip; then, after a failed
+          refresh, that what follows is the last reading. Operator mode
+          renders neither, so R1's "the page opens with its health strip"
+          holds for the operator. */}
+      <Caption id="coordination-overview.page" />
+      <KeptReadingNotice reading={reading} failure={failure} />
       <HomeStripSection
         strip={strip}
         tenantName={tenantName}
         tenantId={view?.tenantId ?? null}
         stale={stale}
         generatedAt={view?.generatedAt ?? null}
-        lastError={lastError}
+        failure={failure}
         onRefresh={refresh}
       />
       {(!hasRead || !view) && (
@@ -72,30 +107,38 @@ export default function CoordHomePage() {
           data-testid="coord-home.unread"
         >
           {lastError
-            ? `Coord's project state could not be read: ${lastError}. Every count on this page is a dash, not a zero.`
+            ? `Coord's project state could not be read: ${failure}. Every count on this page is a dash, not a zero.`
             : "Reading coord's project state…"}
         </p>
       )}
       <NeedsYouSection
         needs={shown.needsMe}
         stale={stale}
-        generatedAt={shown.generatedAt}
+        generatedAt={generatedAt}
       />
       <DegradingSection
         deg={shown.degradations}
         sources={shown.doesNotKnow}
         stale={stale}
-        generatedAt={shown.generatedAt}
+        generatedAt={generatedAt}
       />
-      <OnTrackSection onTrack={shown.onTrack} />
+      <OnTrackSection
+        onTrack={shown.onTrack}
+        stale={stale}
+        generatedAt={generatedAt}
+      />
       <CorrectSection
         correctness={shown.correctness}
         expanded={correctOpen}
         onToggle={() => setCorrectOpen((o) => !o)}
+        stale={stale}
+        generatedAt={generatedAt}
       />
       <DoesNotKnowSection
         sources={shown.doesNotKnow}
         planes={shown.degradations.planes}
+        stale={stale}
+        generatedAt={generatedAt}
       />
     </div>
   );

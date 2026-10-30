@@ -1694,6 +1694,46 @@ silently:
 | **Metric tiles are headed `StatCluster`s, not a tile component** | `overlord/flow/page.tsx` (`MetricTile`) | Each metric (time-to-close, nudge → progress, nudge → finished, latest UNKNOWN share) is an `h2` + one `<StatCluster>` + a one-line explanation, two per row from `sm` up. Every value is one of THREE things (`overlordFlowStatus.ts`): a measured number; coord's explicit `null`, rendered as the words `no data` with a `title` saying why nothing was measurable; or unknown (field absent, read failed), rendered as `–`. | R6 says an unfetched count is `–`. This page also receives a value coord ANSWERED as not measurable (a median over no closed session, a rate over no nudge), and rendering that as `–` would call an answer unknown, while `0` would claim a measurement. A bordered tile per metric would be a new card shape (§6.4); the cluster already is the console's count vocabulary. |
 | **A categorical series palette, validated, in `config/theme.ts`** | `chartCategorical` (`config/theme.ts`), used by `overlord/flow/_components/VerdictHistogramChart.tsx` | The console's first multi-series stacked chart: one bar per triage pass, three verdicts on fixed categorical slots (a slot follows the verdict, never its rank), every other verdict folded into a neutral "other", UNKNOWN in muted grey, and the full per-pass breakdown in the tooltip and an `sr-only` table. Built like §3.8's count chart otherwise. | `colors.brand.*` fails as a categorical set on the console's dark surfaces (slate blue vs muted violet: ΔE 11.9 normal, 5.9 deutan), so a chart that needs more than one identity hue needs slots that pass. The slots are identity, never severity — they are not R3 families and must not be read as such. |
 
+### 3.14 The coordination overview's presentation layer — recorded under §6.4
+
+`/admin/coord/home` in presentation mode (plan
+`2026-10-23-console-presentation-spaces` Phase 2; the page itself is plan
+`2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen`
+Phase 4) is rendered through the presentation lens over the page's one read
+of coord's project state — captions on, provenance on, controls off,
+redaction on. It composes the lens's primitives (`Caption`, `SectionCaption`,
+`Provenance`, `RedactedText` / `useRedactor`, `useMachineAliaser`,
+`OperatorOnly`, `LensLink`) over the console's, and adds no primitive: the
+console's `RefreshButton` gained an optional `ref`; `coordHomeStatus.ts` now
+keeps coord's `subject.kind` on a degradation, exports `isWatcherSource`, and
+exports two own-property predicates over its tables (`isKnownDecisionDomain`,
+`isLabelledSource`) and its not-a-project-state sentence; the lens's
+descriptor gained `notApplicable` (§6.5, "Redaction on"); and the page's
+captions and its readiness entry are its own. The page renders in
+presentation mode because it is
+registered in `PRESENTATION_READY_ROUTES` (`presentationReadiness.ts`) on the
+strength of `home/page.presentation.test.tsx`, the run-proven page test §6.5
+describes, over fixtures that feed every free-text carrier the page can show
+in every state its regions render — the decision kinds coord's `needs_me` work
+(qontinui-coord#3053 and its successor) parses out of question text among them,
+one with a client's name and one with none.
+**Operator mode is unchanged**: every pattern below renders nothing, or the
+original, outside presentation mode. Ten things are recorded rather than
+shipped silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **One read, one chip per region** | `home/_components/HomeLens.tsx` (`RegionCaption`), `home/_lib/homeLens.ts` (`regionSources`) | Every figure on the page comes from one read, so each of the six regions opens with its `SectionCaption` carrying ONE `Provenance` chip — "coord's project state", dated by the answer's `generated_at` — the way §3.11's section caption serves a column. With nothing read, the chip's time is UNKNOWN on `UNKNOWN_AMBER`, and every region still says what it could not read. The strip's caption sits just before the strip, whose row is a flex line; every other region's caption opens its section. | §3.11 records a section caption with one chip per READ behind the section; here one read is behind six regions, and naming the other regions' sources in each would be chrome that cannot vary. |
+| **A kept reading names itself, led by the failure** | `HomeLens.tsx` (`KeptReadingNotice`), `homeLens.ts` (`PROJECT_STATE_KEPT_SOURCE`) | After a failed refresh the page keeps the last answer (#1999's R6 stale arm). While presenting, a notice leads the page — the latest read failed, why (the next row), and everything below is its last reading, not a current one — and every region's chip names "coord's project state, last read", still dated by that answer, never by now. The strip keeps its own "at the last good read" headline, and its "Last failure" says the same why. | §6.5's "A kept reading" says where the dot goes for a panel and for a list of rows; this is the same rule for a whole page whose regions are one reading. |
+| **A failed read says why in the page's own words, or withholds why** | `useProjectState.ts` (`presentableError`), `homeLens.ts` (`presentableProjectStateFailure`, `presentedHomeFailure`) | A failure is recorded in two registers in one state: its own words for the operator, and words that quote nothing. The second is decided from the failure's STRUCTURE, never its text — the 404/405/501 arm (the page's "does not serve the project-state door yet"), the `route_disabled` arm, coord's read deadline (its budget; not the loader coord names), the web proxy's own `coord_unreachable` and `coord_timeout` refusal envelopes (fixed words, never the refusal's rendered sentence with its discriminator token), and an answer that is no project state. Every other failure — a status the page does not explain, an unstructured body, a network error — reads "reason withheld in presentation mode". One decision serves the unread line, the strip's "Last failure" and the kept-reading notice. | §3.10's "a reason that quotes the outside world" is the same allow-list for a relay's reasons; here it is a single read's, and the arm a presentation meets before the door's coord half lands is one of the explained ones — "unknown, and here is why" is the evaluator's evidence that the instrument is real. |
+| **Every free-text carrier, and what its descriptor is built from** | `HomeSections.tsx`; `homeLens.ts` (`needsDescriptor`, `degradationDescriptor`, `subjectDescriptor`, `namedUnitDescriptor`, `reasonDescriptor`, `TENANT_DESCRIPTOR`, `REPOSITORY_DESCRIPTOR`, `INITIATIVE_ITEM_DESCRIPTOR`, `INITIATIVE_KEYS_DESCRIPTOR`) | A question's or an approval's text, its recommendation, consequence and options, and the work unit it blocks; a degradation's headline and subject; a repository; a unit's title (or its slug); an initiative's items and the keys of items it does not list; coord's own reasons (an exclusion, a parse error, why no initiative is live); and the tenant's name — each renders through `RedactedText`, or `useRedactor` for a row's reason slot and a `title`, with a descriptor built from the item's own fixed fields: what it is, its area (a degradation's plane), the word its badge shows, its age — the referent's own, so the unit a decision blocks reads "Work unit · area unknown · blocked · age unknown", never the question's status word or asked-at age — and without a field its kind does not have (`notApplicable`): the tenant reads "Project", a withheld repository "Repository", an initiative item "Initiative item · in scope", a reason "Reason · excluded · 2m ago". Only a degradation whose subject coord names as a repository, a repository group and a named unit are bound to a repository; everything else belongs to none — a service or alert key named like a first-party repository included — so it is a descriptor while presenting however harmless it reads. | §6.5's redaction bullet names a plan, PR, session or finding title; this page's carriers are its own, and each descriptor's fields are ones its row already shows. |
+| **A value read against the page's own table shows only when the table names it** | `homeLens.ts` (`presentedDecisionDomains`, `presentedSourceLabel`), `coordHomeStatus.ts` (`isKnownDecisionDomain`, `isLabelledSource`) | Needs-you's "By kind of decision" line shows coord's `needs_me.by_domain` keys through the page's label table. Coord's `needs_me` work (qontinui-coord#3053 and its successor) fills its own buckets (`operator_gate`, `unscanned`, `unclassified`), but every other key is the domain it parsed out of an escalation question's TEXT, which that work calls caller-controlled — a substring of a question the page withholds everywhere else. While presenting, a key shows only when the table names it; every other key is folded into ONE entry in fixed words, last, with their summed count ("kinds not named here 2"), so the questions stay counted and none of their words is on screen. A does-not-know source the table does not label reads "A source this view has no name for" rather than coord's identifier with its underscores spaced, its row and figures kept. Both are own-property checks, so a key spelled `constructor` is not one the table names. | §3.11 words a value a console table does not know in fixed words; this applies the rule to a COUNT keyed by caller text, where the folded entry has to keep the count true. |
+| **A unit's repositories are bounded, or the unit is withheld** | `homeLens.ts` (`namedUnitRepos`) | Coord names a unit under each repository group it belongs to, but not its whole repository list. A unit's class is its own, so it sits in the same named list of every group it belongs to — named there unless that list was cut short. Its repositories are therefore the groups that name it plus, failing closed, every group whose list of the same kind was cut short (`omitted` above zero, or unknown) or not served. A unit under the unattributed group, or under a group whose repository is unknown, is withheld. A withheld unit is not linked, because its URL carries its slug — not even handed to `LensLink`, whose plain-text arm would turn into an anchor carrying the slug the day the work-unit page is registered; the page test pins that by `data-lens-link`. Coord groups units by their `metadata.repos`, which names repositories bare today, with no owner to vouch for them, so every unit title reads as its descriptor until an owner is served — the same answer the digital twin's plan list gives over the same field. | D3.3 says text that belongs to any repository off the first-party list is withheld; this is how a list that names a unit once per group is made to say every group the unit may span. |
+| **A subject by what coord says it is** | `HomeLens.tsx` (`useSubjectText`), `coordHomeStatus.ts` (`DegradationView.subjectKind`) | A degradation subject coord names as a `device` reads as its session alias (`Machine A`, one letter however many rows name it); a `repo` reads as its name when the scope clears it; a `service` or an alert `key` reads as its descriptor. The parser now keeps coord's `subject.kind`, which it used to drop. | §3.11 aliases a machine from the identifiers a row holds; here the subject's declared kind decides which of three rules applies. |
+| **Raw lines, raw-id titles and quoted errors stay with the operator** | `HomeSections.tsx` (each `RecordDetail` `raw`, `NotRead`, the strip's tenant, the gap sentence, the watcher lines, the source labels, the `RecordList` keys) | R8 puts raw ids on an expanded detail's last line; while presenting that line is not rendered at all (the slot stays empty, so no wrapper is left behind), and neither is a `title` holding a raw id or coord's own words: the tenant's UUID, coord's reason for an incomplete view, watcher names, a source's id. A block coord could not read still says so, and that coord reported an error, with the chain withheld; a source row with an error says the same instead of pointing at a last line that is not there. List rows are keyed while presenting by an alias of the operator's key (`homeLens.ts` `RowKeyAliases`, `HomeLens.tsx` `useRowKey`), so `data-row-key` carries no question, gate, device or source id and no repository's name — and not by position: the key is also what expansion compares, and a positional key would keep "row 2" open when a poll removes the row above it, silently showing another record's detail. The alias is of the WHOLE operator key, index suffix included, so a presented row opens, stays open and collapses exactly when the operator's would. | R8 decides what a primary surface shows; an evaluator reads every line, the last one included. §3.10's "a reason that quotes the outside world" covers a failed read's reason, not R8's raw line. |
+| **Shapes, not words, for a tenant's typed values** | `homeLens.ts` (`presentedInitiativeStatus`, `presentedInitiativeDate`, `presentedPlanPhase`) | The initiative's frontmatter is typed by hand: while presenting, its status reads `live` or `not live` (the one distinction coord's alignment makes), a start or end date shows only as an ISO date and otherwise reads `withheld`, and the plan phase a decision blocks shows only as a number. | §3.11's allowlist governs which audit KEYS show their values; this is the same allowlist for values a tenant typed. |
+| **The refresh declares its effect; answering is the operator's** | `HomeLens.tsx` (`HomeRefreshButton`), `console/RefreshButton.tsx` (`ref`) | The page's one control besides its disclosures is registered with the UI Bridge on the button itself (`coord-home.refresh`), its one custom action, `refresh`, declared `read`, so an automated walk sees what pressing it does; it stays live while presenting, navigation-only by construction. Answering a decision is a write on another page, so the "Answer it" link is `OperatorOnly`; every other link is a `LensLink`, and an ACTION whose page cannot be presented — a degradation's "Open pipeline ↗", the unserved line's "open Questions", the unread line's pointer at Questions and Gates — is left out while presenting rather than shown as link-shaped text that opens nothing (`useLinkOpens`, `LensLink`'s own decision; it returns by itself the day its page is registered). "Correct?" has no write control in either mode: one read-only row, whose toggle is a disclosure. | §6.5 says a lens page's UI Bridge registrations declare an effect; this page had none, and the refresh is the control an automated tour would press. |
+
 ---
 
 ## 4. The attention palette
@@ -2063,7 +2103,9 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   the router); and the state the proof checks the page in, which is the proof's
   to choose (a fixture that never loads data proves the empty page). The
   console's landing redirect (`/admin/coord`, one sentence) is registered from
-  the start: a withheld page never mounts, so it would never redirect.
+  the start: a withheld page never mounts, so it would never redirect. Where it
+  lands, the coordination overview (`/admin/coord/home`), is registered on its
+  own proof (§3.14), so a presenting arrival lands on a presented page.
 
 **Captions before data** (the departure from R1 and R9). `Caption` renders a page's
 or a panel's `{ title, oneLiner, whyItMatters }` ahead of its data: in presentation
@@ -2222,16 +2264,28 @@ is not a safety control — the co-pilot banner's "Disable for this account" is 
 
 **Redaction on.**
 
-- `RedactedText` / `useRedactor`: free text (a plan, PR, session or finding title)
+- `RedactedText` / `useRedactor`: free text (a plan, PR, session or finding title;
+  on the coordination overview also a question or an approval, a recommendation, a
+  degradation's headline and subject, an initiative item, coord's own reasons and
+  the tenant's name — §3.14)
   renders only when every repository it belongs to has a first-party owner and it
   holds none of the confidential terms; otherwise the descriptor
   `kind · area · status · age`, with `withheld` for a field that may name someone
-  the scope cannot clear. An unknown scope withholds everything. The two lists are
+  the scope cannot clear, and without a field the item's KIND does not have
+  (`notApplicable` — a tenant's name has no area, status or age of its own;
+  "unknown" would claim a value exists and was not read). An unknown scope
+  withholds everything. A value read against a console table rather than shown
+  as text, unless it is one of the closed vocabularies §3.11 lets read spaced —
+  on the coordination overview, a decision kind parsed out of a question's text
+  (coord's `needs_me` work, qontinui-coord#3053 and its successor), or a source
+  the page does not label — shows only when the table names it, and in fixed
+  words otherwise (§3.11, §3.14). The two lists are
   tenant data, edited in operator mode on `/admin/coord/tenant-policy`.
 - `MachineName` / `useMachineName` / `useMachineAliaser`: a machine renders as
   `Machine A`, `B`… — one letter per computer for the session, on every panel,
-  however each panel identifies it (device id, hostname); two letters that turn out
-  to be one machine merge to the earlier.
+  however each panel identifies it (device id, hostname; on the coordination
+  overview, a degradation subject coord names as a device — §3.14); two letters
+  that turn out to be one machine merge to the earlier.
 - `CostFigure` is the only component that renders a per-task cost, always beside
   "list-price equivalent, not your bill", and in presentation mode never — a
   descriptor instead. `costRenders.test.ts` (over `src/test/costRenderScan.ts`)

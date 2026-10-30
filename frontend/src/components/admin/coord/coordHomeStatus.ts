@@ -713,6 +713,13 @@ export function needsYouReason(item: NeedsMeItem): string {
 export interface DegradationView {
   id: string;
   plane: string | null;
+  /**
+   * What the subject IS — coord's `subject.kind`: `device`, `repo`, `service`
+   * or `key` (`project_state.rs` `DegradationRow`). The presentation lens
+   * names a device by its alias and binds a repository's text to it; null
+   * when coord did not say.
+   */
+  subjectKind: string | null;
   subjectName: string | null;
   subjectId: string | null;
   headline: string | null;
@@ -742,6 +749,7 @@ function parseDegradation(raw: unknown, index: number): DegradationView | null {
   return {
     id: str(o.id) ?? `degradation-${index}`,
     plane: str(o.plane),
+    subjectKind: subject ? str(subject.kind) : null,
     subjectName: subject ? idString(subject.name) : null,
     subjectId: subject ? idString(subject.id) : null,
     headline: str(o.headline),
@@ -909,6 +917,18 @@ const DECISION_DOMAIN_LABEL: Readonly<Record<string, string>> = {
 
 export function decisionDomainLabel(domain: string): string {
   return DECISION_DOMAIN_LABEL[domain] ?? domain.replace(/_/g, " ");
+}
+
+/**
+ * Whether the page's table names `domain` — its own key, never one inherited
+ * from `Object.prototype`. In coord's `needs_me` work (qontinui-coord#3053 and
+ * its successor) a key it does not name is a parse of an escalation question's
+ * text (`escalation_domain` there), which that work calls caller-controlled:
+ * the presentation lens folds every such key into fixed words
+ * (`_lib/homeLens.ts` `presentedDecisionDomains`).
+ */
+export function isKnownDecisionDomain(domain: string): boolean {
+  return Object.prototype.hasOwnProperty.call(DECISION_DOMAIN_LABEL, domain);
 }
 
 export interface DegradationsView {
@@ -1184,8 +1204,19 @@ const SOURCE_LABEL: Readonly<Record<string, string>> = {
  */
 const WATCHER_SOURCE_PREFIX = "watcher:";
 
-function isWatcherSource(source: string): boolean {
+/** Whether a `does_not_know` row is a watcher's (`watcher:<name>`). */
+export function isWatcherSource(source: string): boolean {
   return source.startsWith(WATCHER_SOURCE_PREFIX);
+}
+
+/**
+ * Whether the page's table labels `source` — its own key, never one inherited
+ * from `Object.prototype`. A source it does not label reads as coord's own
+ * identifier, {@link humanised}; the presentation lens words such a row in
+ * fixed words instead (`_lib/homeLens.ts` `presentedSourceLabel`).
+ */
+export function isLabelledSource(source: string): boolean {
+  return Object.prototype.hasOwnProperty.call(SOURCE_LABEL, source);
 }
 
 /** Underscores spaced and the first letter capitalised. */
@@ -1466,6 +1497,10 @@ export function lastGoodReadPhrase(generatedAt: string | null): string {
 /** The page's words for a deployment that does not serve the door yet. */
 export const PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT =
   "this deployment does not serve the project-state door yet — unknown";
+
+/** The page's words for an answer that parsed as no project state. */
+export const NOT_A_PROJECT_STATE_TEXT =
+  "coord answered with a body that is not a project state";
 
 /**
  * Why a read of the door delivered nothing, as the clause the unread line

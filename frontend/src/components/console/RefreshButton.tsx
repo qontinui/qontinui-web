@@ -55,9 +55,16 @@
  * `NAVIGATION_ONLY_PROPS` (`./navigationOnly`): it stays live in presentation
  * mode, where every write control is withheld (plan
  * `2026-10-23-console-presentation-spaces` D3.2).
+ *
+ * ## A ref, for the page that registers it with the UI Bridge
+ *
+ * `ref` reaches the `<button>` itself, so a page can register the control
+ * with the UI Bridge (`useUIElement`) and declare its effect — a read — on
+ * the element an automated walk would press (`/admin/coord/home`, style
+ * guide §3.14).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type Ref } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NAVIGATION_ONLY_PROPS } from "./navigationOnly";
@@ -76,6 +83,8 @@ export interface RefreshButtonProps {
    * restate the label.
    */
   title: string;
+  /** The `<button>` element — for a UI Bridge registration (see the module doc). */
+  ref?: Ref<HTMLButtonElement>;
   className?: string;
   "data-testid"?: string;
 }
@@ -84,6 +93,7 @@ export function RefreshButton({
   onRefresh,
   label,
   title,
+  ref,
   className,
   "data-testid": testId,
 }: RefreshButtonProps) {
@@ -115,6 +125,7 @@ export function RefreshButton({
   return (
     <Button
       {...NAVIGATION_ONLY_PROPS}
+      ref={ref}
       variant="outline"
       size="sm"
       onClick={handleClick}

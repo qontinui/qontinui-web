@@ -25,6 +25,15 @@
  * always set by the newest read to finish, so it cannot disagree with
  * `stale`: an older success landing after a newer failure, or an older
  * failure landing after a newer success, can no longer happen.
+ *
+ * ## A failure in two registers
+ *
+ * A failed read is recorded once, in its own words (`lastError`, the
+ * operator's) and in words that quote nothing (`presentableError`, what a
+ * presentation may show — plan `2026-10-23-console-presentation-spaces`
+ * Phase 2): the page's own sentence for an arm whose reason is fixed, and
+ * null for a reason only outside words can tell. One state, so the two can
+ * never describe different reads.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -32,12 +41,14 @@ import { useRetainedValue } from "@/components/console";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import {
+  NOT_A_PROJECT_STATE_TEXT,
   PROJECT_STATE_POLL_MS,
   parseProjectState,
   projectStateErrorText,
   type ProjectStateView,
 } from "@/components/admin/coord/coordHomeStatus";
 import { fetchProjectState } from "@/lib/api/operations/projectState";
+import { presentableProjectStateFailure } from "../_lib/homeLens";
 
 export interface ProjectStateRead {
   /** The last view that parsed, or null when none ever did. */
@@ -48,13 +59,25 @@ export interface ProjectStateRead {
   stale: boolean;
   /** Why the most recent read delivered nothing, or null after a success. */
   lastError: string | null;
+  /**
+   * `lastError` in words that quote nothing — the page's own words for an
+   * arm whose reason is fixed (`presentableProjectStateFailure`) — or null
+   * when only outside words can tell it, or nothing failed.
+   */
+  presentableError: string | null;
   refresh: () => Promise<void>;
+}
+
+/** Why the latest read delivered nothing, in both registers. */
+interface ReadFailure {
+  readonly text: string;
+  readonly presentable: string | null;
 }
 
 export function useProjectState(): ProjectStateRead {
   const retained = useRetainedValue<ProjectStateView | null>(null);
   const { issue, settle } = retained;
-  const [lastError, setLastError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ReadFailure | null>(null);
   const cancelled = useRef(false);
   // The read that is out, if any (see "One read at a time").
   const inFlight = useRef<Promise<void> | null>(null);
@@ -67,15 +90,21 @@ export function useProjectState(): ProjectStateRead {
       const view = parseProjectState(body);
       if (view) {
         settle(seq, { value: view });
-        setLastError(null);
+        setFailure(null);
       } else {
         settle(seq, null);
-        setLastError("coord answered with a body that is not a project state");
+        setFailure({
+          text: NOT_A_PROJECT_STATE_TEXT,
+          presentable: NOT_A_PROJECT_STATE_TEXT,
+        });
       }
     } catch (err) {
       if (cancelled.current) return;
       settle(seq, null);
-      setLastError(projectStateErrorText(err));
+      setFailure({
+        text: projectStateErrorText(err),
+        presentable: presentableProjectStateFailure(err),
+      });
     }
   }, [issue, settle]);
 
@@ -104,7 +133,8 @@ export function useProjectState(): ProjectStateRead {
     view: retained.value,
     hasRead: retained.hasRead,
     stale: retained.stale,
-    lastError,
+    lastError: failure?.text ?? null,
+    presentableError: failure?.presentable ?? null,
     refresh: read,
   };
 }
