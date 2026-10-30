@@ -170,7 +170,10 @@ describe("FixerSpawnToggle — read", () => {
   it("a load failure renders unknown, never on, and Retry reloads", async () => {
     get.mockRejectedValueOnce(new Error("GET failed: 502"));
     render(<FixerSpawnToggle canEdit />);
-    expect(await tenantText()).toContain("Unknown (treated as off)");
+    const text = await tenantText();
+    expect(text).toContain("Tenant setting: Unknown — from");
+    // The failed read is this page's, and says nothing about what coord does.
+    expect(text).not.toContain("treated as off");
     expect(screen.getByTestId("fixer-spawn-error").textContent).toContain(
       "502"
     );
@@ -335,6 +338,8 @@ describe("FixerSpawnToggle — write", () => {
         "Request timeout - backend may be starting up. Please try again."
       ),
     ],
+    // No HTTP status at all: the request may have reached coord.
+    ["a fetch that threw", new TypeError("Failed to fetch")],
   ])("%s is reported as outcome UNKNOWN and reloads", async (_label, error) => {
     get.mockResolvedValue(DEFAULT_ON);
     patch.mockRejectedValue(error);
