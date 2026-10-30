@@ -2274,7 +2274,9 @@ is not a safety control — the co-pilot banner's "Disable for this account" is 
   the scope cannot clear, and without a field the item's KIND does not have
   (`notApplicable` — a tenant's name has no area, status or age of its own;
   "unknown" would claim a value exists and was not read). An unknown scope
-  withholds everything. A value read against a console table rather than shown
+  withholds everything, and when a read failed or the project has no first-party
+  owners the `PresentationModeToggle` says so beside itself, in fixed copy that
+  never carries the failure's own wording. A value read against a console table rather than shown
   as text, unless it is one of the closed vocabularies §3.11 lets read spaced —
   on the coordination overview, a decision kind parsed out of a question's text
   (coord's `needs_me` work, qontinui-coord#3053 and its successor), or a source
