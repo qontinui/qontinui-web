@@ -149,6 +149,105 @@ function withDeviceId(detail: string, deviceId: string): string {
   return [idLine, detail].filter(Boolean).join(" · ");
 }
 
+/** The `outcome` values coord's 409 `no_eligible_device` carries
+ *  (qontinui-coord `agents_spawn.rs`). Every one has its own copy below; a
+ *  value outside this list is a coord newer than this build, and is shown
+ *  verbatim rather than guessed at. */
+export const NO_ELIGIBLE_OUTCOMES = [
+  "no_capable_device",
+  "all_capable_offline",
+  "all_capable_drained",
+  "all_capable_role_closed",
+  "all_capable_at_capacity",
+] as const;
+
+export type NoEligibleOutcome = (typeof NO_ELIGIBLE_OUTCOMES)[number];
+
+function isNoEligibleOutcome(v: string): v is NoEligibleOutcome {
+  return (NO_ELIGIBLE_OUTCOMES as readonly string[]).includes(v);
+}
+
+function noEligible(
+  headline: string,
+  detail: string,
+  remedy: string
+): SpawnRefusal {
+  return {
+    kind: "no_eligible_device",
+    headline,
+    detail,
+    remedy,
+    offerOverride: false,
+  };
+}
+
+/** Coord placed nothing (409 `no_eligible_device`): say which of its
+ *  outcomes, in words, and what would change it. */
+function describeNoEligibleDevice(body: JsonObject): SpawnRefusal {
+  const outcome = str(body.outcome);
+  const detail = str(body.detail);
+  if (!isNoEligibleOutcome(outcome)) {
+    return noEligible(
+      "Coord found no device for this session",
+      [outcome ? `outcome: ${outcome}` : "", detail]
+        .filter(Boolean)
+        .join(" · "),
+      "Name a device, or spawn again once the fleet changes."
+    );
+  }
+  switch (outcome) {
+    case "no_capable_device": {
+      const missing = strList(body.missing_capabilities);
+      return noEligible(
+        missing.length > 0
+          ? `No online device advertises ${missing.join(", ")}`
+          : "No online device of this tenant can take this session",
+        detail,
+        missing.length > 0
+          ? "Start a machine that has those capabilities, or drop the requirement."
+          : "Start one of this tenant's machines, then spawn again."
+      );
+    }
+    case "all_capable_offline": {
+      const n =
+        typeof body.capable_offline === "number" ? body.capable_offline : 0;
+      return noEligible(
+        n === 1
+          ? "The device that could take this session is offline"
+          : "Every device that could take this session is offline",
+        detail,
+        "Start that machine so its runner connects, then spawn again."
+      );
+    }
+    case "all_capable_drained":
+      return noEligible(
+        "Every device that could take this session is drained",
+        detail,
+        "Release a drain, or name a drained device and choose to override its drain."
+      );
+    case "all_capable_role_closed":
+      return noEligible(
+        "Every device that could take this session has a role that takes no sessions",
+        detail,
+        "Its role (bench / CI node) does not accept agent sessions, and " +
+          "overriding a drain does not lift a role. Change a machine's role " +
+          "to workhorse to place sessions on it."
+      );
+    case "all_capable_at_capacity":
+      return noEligible(
+        "Every device that could take this session is at its session cap",
+        detail,
+        "Wait for a session to finish, raise a device's limit on concurrent " +
+          "sessions, " +
+          "or name a device — a named device is never refused for capacity."
+      );
+    default: {
+      const unhandled: never = outcome;
+      return unhandled;
+    }
+  }
+}
+
 /** Turn a non-2xx spawn response into a specific, actionable refusal.
  *
  *  `pinned` is what WE sent — whether `target_device_id` was on the body. It
@@ -165,6 +264,22 @@ export function describeSpawnRefusal(
   const code = body !== null ? str(body.error) : "";
   const device = ctx.deviceName;
   const id = ctx.pinned ? ctx.deviceId : "";
+
+  // A NAMED device whose dispatch role closes the agent lane. Coord sends its
+  // own error code here, not `pin_ineligible`, and a drain override does not
+  // lift a role — so no override is offered.
+  if (code === "role_closes_agent_lane") {
+    return {
+      kind: "pin_ineligible",
+      headline: `${device} has a role that takes no sessions`,
+      detail: withDeviceId(body !== null ? str(body.detail) : "", id),
+      remedy:
+        "Its role (bench / CI node) does not accept agent sessions, and " +
+        "overriding a drain does not lift a role. Switch to automatic " +
+        "placement, or change the machine's role to workhorse.",
+      offerOverride: false,
+    };
+  }
 
   if (code === "pin_ineligible" && body !== null) {
     const reason = str(body.reason);
@@ -215,56 +330,7 @@ export function describeSpawnRefusal(
   }
 
   if (code === "no_eligible_device" && body !== null) {
-    const outcome = str(body.outcome);
-    const missing = strList(body.missing_capabilities);
-    const detail = str(body.detail);
-    if (outcome === "no_capable_device") {
-      return {
-        kind: "no_eligible_device",
-        headline:
-          missing.length > 0
-            ? `No online device advertises ${missing.join(", ")}`
-            : "No online device of this tenant can take this session",
-        detail,
-        remedy:
-          missing.length > 0
-            ? "Start a machine that has those capabilities, or drop the requirement."
-            : "Start one of this tenant's machines, then spawn again.",
-        offerOverride: false,
-      };
-    }
-    if (outcome === "all_capable_drained") {
-      return {
-        kind: "no_eligible_device",
-        headline: "Every device that could take this session is drained",
-        detail,
-        remedy:
-          "Release a drain, or name a drained device and choose to override its drain.",
-        offerOverride: false,
-      };
-    }
-    if (outcome === "all_capable_at_capacity") {
-      return {
-        kind: "no_eligible_device",
-        headline:
-          "Every device that could take this session is at its session cap",
-        detail,
-        remedy:
-          "Wait for a session to finish, raise a device's limit on concurrent " +
-          "sessions, " +
-          "or name a device — a named device is never refused for capacity.",
-        offerOverride: false,
-      };
-    }
-    return {
-      kind: "no_eligible_device",
-      headline: "Coord found no device for this session",
-      detail: [outcome ? `outcome: ${outcome}` : "", detail]
-        .filter(Boolean)
-        .join(" · "),
-      remedy: "Name a device, or spawn again once the fleet changes.",
-      offerOverride: false,
-    };
+    return describeNoEligibleDevice(body);
   }
 
   if (code === "device_drained" && body !== null) {

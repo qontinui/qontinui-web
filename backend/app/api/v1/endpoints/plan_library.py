@@ -191,6 +191,9 @@ from app.schemas.plan_library import (
     DivergentVariant,
     DocumentState,
     KindForkGroup,
+    ModelFamilyOption,
+    ModelRoutingResponse,
+    ModelRoutingUpdate,
     PlanCandidate,
     PlanCandidateResponse,
     PlanDifficultyItem,
@@ -231,9 +234,9 @@ from app.schemas.plan_library_scan_roots import ScanRootListResponse, ScanRootRo
 from app.services import plan_status
 from app.services.permissions import resolve_personal_organization
 from app.services.plan_difficulty import (
+    DEFAULT_MODEL_SELECTORS,
+    MODEL_FAMILY_DISPLAY,
     MODEL_SELECTOR_VOCABULARY,
-    MODEL_SELECTORS,
-    MODEL_TIERS,
     RUBRIC_VERSION,
 )
 from app.services.plan_library_followup_view import (
@@ -242,6 +245,12 @@ from app.services.plan_library_followup_view import (
     open_followup,
 )
 from app.services.plan_library_vocabulary import build_vocabulary
+from app.services.plan_model_routing import (
+    ModelRouting,
+    load_model_routing,
+    reset_model_routing,
+    save_model_routing,
+)
 from app.services.plan_scan_root_health import (
     scan_roots_health,
     scan_roots_read_failed,
@@ -603,6 +612,7 @@ def _detail(
         kind=row.kind,
         kind_locked=row.kind_locked,
         slug=row.slug,
+        spec_ref=row.spec_ref,
         title=row.title,
         status=row.status,
         content_sha256=row.content_sha256,
@@ -2565,6 +2575,7 @@ def list_fingerprint(
     work_unit_slug: str | None = None,
     intent_ref: str | None = None,
     slug: str | None = None,
+    spec_ref: str | None = None,
 ) -> ScopeFingerprint:
     """``GET /plan-library``'s cursor scope: the org and EVERY filter, as
     applied. A cursor minted under one filter set is refused under another."""
@@ -2579,6 +2590,7 @@ def list_fingerprint(
         .opt_str("work_unit_slug", work_unit_slug)
         .opt_str("intent_ref", intent_ref)
         .opt_str("slug", slug)
+        .opt_str("spec_ref", spec_ref)
         .finish()
     )
 
@@ -2682,6 +2694,11 @@ async def list_work_artifacts(
         "citation such as success_metric/<name>. Not resolved; a citation "
         "no artifact carries simply returns an empty page.",
     ),
+    spec_ref: str | None = Query(
+        None,
+        description="Exact match on a specification artifact's stable ID "
+        "(e.g. REQ-0042). At most one row per organization.",
+    ),
     cursor: str | None = Query(None, description=_CURSOR_DESCRIPTION),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_async_db),
@@ -2726,6 +2743,7 @@ async def list_work_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        spec_ref=spec_ref,
     )
     after = fingerprint.decode_param(cursor, surface="GET /plan-library")
     rows, total = await crud.list_artifacts(
@@ -2739,6 +2757,7 @@ async def list_work_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        spec_ref=spec_ref,
         after=after,
         limit=limit,
     )
@@ -2747,6 +2766,7 @@ async def list_work_artifacts(
     corpus_health = await _load_corpus_health(db, org_id=org_id)
     inputs = status_currency_inputs(corpus_health.scan_roots)
     items = [_summary(r, _currency(r, inputs)) for r in rows]
+    routing = await load_model_routing(db, org_id)
     meta = _walk_meta(
         shown=len(items),
         limit=limit,
@@ -2758,9 +2778,9 @@ async def list_work_artifacts(
         **meta.model_dump(),
         items=items,
         corpus_health=corpus_health,
-        # Byte-identical on all three routes — one source, copied per response.
-        model_tiers=dict(MODEL_TIERS),
-        model_selectors=dict(MODEL_SELECTORS),
+        # Byte-identical on all three routes — one resolver, per organization.
+        model_tiers=routing.tiers,
+        model_selectors=dict(routing.selectors),
         model_selector_vocabulary=MODEL_SELECTOR_VOCABULARY,
     )
 
@@ -2946,6 +2966,9 @@ async def list_divergent_artifacts(
             KindForkGroup(
                 slug=f_slug,
                 source_repo=f_repo,
+                # Every row of a group is in one family (find_kind_forks
+                # buckets by it), so the first row names it.
+                family="spec" if crud.is_spec_kind(variants[0].kind) else "plan",
                 kinds=sorted({row.kind for row in variants}),
                 variant_count=len(variants),
                 # Exactly one locked row is a fork the scanner can heal by
@@ -4029,6 +4052,7 @@ async def list_plan_candidates(
     followup_anchors = await followups_crud.load_anchors(
         db, (edge.id for edge, _ in followup_rows)
     )
+    routing = await load_model_routing(db, org_id)
 
     # Report-only on THIS route: before it carried the block, /candidates read
     # neither the capture census nor the scan-root table, so a failure in
@@ -4170,9 +4194,9 @@ async def list_plan_candidates(
         open_followup_total=followup_total,
         corpus_health=corpus_health,
         corpus_health_unavailable_reason=corpus_health_unavailable_reason,
-        # Byte-identical on all three routes — one source, copied per response.
-        model_tiers=dict(MODEL_TIERS),
-        model_selectors=dict(MODEL_SELECTORS),
+        # Byte-identical on all three routes — one resolver, per organization.
+        model_tiers=routing.tiers,
+        model_selectors=dict(routing.selectors),
         model_selector_vocabulary=MODEL_SELECTOR_VOCABULARY,
     )
 
@@ -4213,9 +4237,10 @@ async def list_plan_difficulty(
 
     Plan ``2026-09-18-plan-library-difficulty-field``. The rating is computed
     from each plan's body by ``app.services.plan_difficulty`` — two axes,
-    conceptual and implementation, folded into a routing level (``high`` →
-    Fable 5.1, ``medium`` → Opus 5, ``low`` → a fast tier), with a plan's own
-    ``Difficulty:`` stamp overriding the computed level.
+    conceptual and implementation, folded into a routing level, with a plan's
+    own ``Difficulty:`` stamp overriding the computed level. Which model family
+    each level routes to is the caller's organization's map
+    (``GET/PUT /plan-library/model-routing``).
 
     Before answering, plans rated under an older rubric (or none) are re-rated,
     up to a per-request cap, newest first — see
@@ -4229,6 +4254,7 @@ async def list_plan_difficulty(
         db, org_id=org_id, route="difficulty"
     )
     rows = await crud.list_plan_difficulties(db, org_id=org_id)
+    routing = await load_model_routing(db, org_id)
     items = [
         PlanDifficultyItem(
             id=row.id,
@@ -4256,11 +4282,151 @@ async def list_plan_difficulty(
         rerate_pending=outcome.pending if outcome else None,
         rerate_failed_reason=failed_reason,
         rubric_version=RUBRIC_VERSION,
-        # Byte-identical on all three routes — one source, copied per response.
-        model_tiers=dict(MODEL_TIERS),
-        model_selectors=dict(MODEL_SELECTORS),
+        # Byte-identical on all three routes — one resolver, per organization.
+        model_tiers=routing.tiers,
+        model_selectors=dict(routing.selectors),
         model_selector_vocabulary=MODEL_SELECTOR_VOCABULARY,
     )
+
+
+def _model_routing_response(
+    routing: ModelRouting, *, can_edit: bool
+) -> ModelRoutingResponse:
+    return ModelRoutingResponse(
+        model_selectors=dict(routing.selectors),
+        model_tiers=routing.tiers,
+        model_selector_vocabulary=MODEL_SELECTOR_VOCABULARY,
+        sources=dict(routing.sources),
+        default_selectors=dict(DEFAULT_MODEL_SELECTORS),
+        families=[
+            ModelFamilyOption(family=family, display=display)
+            for family, display in MODEL_FAMILY_DISPLAY.items()
+        ],
+        updated_at=routing.updated_at,
+        updated_by_user_id=routing.updated_by_user_id,
+        can_edit=can_edit,
+    )
+
+
+# NOTE: declared BEFORE ``/{artifact_id}`` so the literal path wins the match.
+@router.get(
+    "/model-routing",
+    response_model=ModelRoutingResponse,
+    summary="Which model family each difficulty level routes to (this organization)",
+)
+async def get_model_routing(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_audit_actor_user),
+) -> ModelRoutingResponse:
+    """The routing map ``GET /plan-library``, ``/candidates`` and
+    ``/difficulty`` serve this caller, with each level's provenance.
+
+    Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+    Same admission as those three reads (a Cognito user OR a coord device JWT):
+    the map is already on their envelopes, this adds only where each level came
+    from. ``can_edit`` says whether ``PUT`` would be accepted for this scope —
+    the NULL organization bucket can never be written — not whether the
+    caller's CREDENTIAL can write (a device JWT cannot; see the PUT).
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    routing = await load_model_routing(db, org_id)
+    return _model_routing_response(routing, can_edit=org_id is not None)
+
+
+@router.put(
+    "/model-routing",
+    response_model=ModelRoutingResponse,
+    summary="Set the model family each difficulty level routes to (Cognito session only)",
+)
+async def put_model_routing(
+    payload: ModelRoutingUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    # DELIBERATELY ``current_active_user`` (a Cognito session, never a device
+    # JWT), like ``PATCH /{id}/kind``: which model a sweep spends is a human's
+    # cost decision, and a door the runner's device JWT could reach would let
+    # a sweep re-route its own spawns. This is a CREDENTIAL check, not a role
+    # check: any signed-in user may set the map for their own personal
+    # organization, which is the only scope it can reach.
+    current_user: User = Depends(current_active_user),
+) -> ModelRoutingResponse:
+    """Record the FULL ``{high, medium, low}`` → model-family map.
+
+    Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+    Families are the ``claude_code_agent_tool_v1`` selector vocabulary
+    (``fable | opus | sonnet | haiku``); the harness resolves each to that
+    family's latest model, so no version is ever stored. Every level is
+    required and every level's row is written, so a save is a whole map. Two
+    levels may share a family.
+
+    Scoped to the caller's personal organization — the scope the three serving
+    routes read. 409 for a principal with none: that is the shared NULL bucket.
+
+    Answers with the map as RE-READ after the commit, so what the console shows
+    after a save is what the serving routes now return.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    if org_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "no_organization_scope",
+                "message": (
+                    "This principal has no personal organization, so its plan "
+                    "library is the shared NULL bucket. Model routing cannot be "
+                    "set there; it serves the default map."
+                ),
+            },
+        )
+    routing = await save_model_routing(
+        db,
+        org_id=org_id,
+        selectors=payload.model_dump(),
+        actor_user_id=current_user.id,
+    )
+    logger.info(
+        "plan_library.model_routing_set",
+        organization_id=str(org_id),
+        selectors=routing.selectors,
+        actor=_actor(current_user),
+    )
+    return _model_routing_response(routing, can_edit=True)
+
+
+@router.delete(
+    "/model-routing",
+    response_model=ModelRoutingResponse,
+    summary="Clear this organization's model routing back to the defaults (Cognito session only)",
+)
+async def delete_model_routing(
+    db: AsyncSession = Depends(get_async_db),
+    # Cognito only, for the reason on ``put_model_routing``.
+    current_user: User = Depends(current_active_user),
+) -> ModelRoutingResponse:
+    """Delete every stored level, so each serves the shipped default again.
+
+    Not the same as ``PUT``-ing a map equal to today's defaults: that stores a
+    copy, which stays pinned if the defaults move. After this every level's
+    ``source`` is ``default``. Idempotent; 409 for the NULL bucket, as ``PUT``.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    if org_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "no_organization_scope",
+                "message": (
+                    "This principal has no personal organization; its plan "
+                    "library already serves the default map."
+                ),
+            },
+        )
+    routing = await reset_model_routing(db, org_id=org_id)
+    logger.info(
+        "plan_library.model_routing_reset",
+        organization_id=str(org_id),
+        actor=_actor(current_user),
+    )
+    return _model_routing_response(routing, can_edit=True)
 
 
 # NOTE: declared BEFORE ``/{artifact_id}`` so the literal path wins the match.
@@ -4691,6 +4857,21 @@ async def upsert_work_artifact(
                 "candidate_kinds": exc.candidate_kinds,
             },
         ) from exc
+    except crud.SpecFamilyBoundary as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": (
+                    "spec_family_boundary"
+                    if exc.reason == "kind_change"
+                    else "spec_artifact_key_collision"
+                ),
+                "message": str(exc),
+                "from_kind": exc.from_kind,
+                "to_kind": exc.to_kind,
+                "spec_ref": exc.spec_ref,
+            },
+        ) from exc
     except crud.ArtifactKindConflict as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -4886,6 +5067,21 @@ async def patch_work_artifact_kind(
         updated = await crud.set_artifact_kind(
             db, row, kind=payload.kind, org_id=org_id
         )
+    except crud.SpecFamilyBoundary as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": (
+                    "spec_family_boundary"
+                    if exc.reason == "kind_change"
+                    else "spec_artifact_key_collision"
+                ),
+                "message": str(exc),
+                "from_kind": exc.from_kind,
+                "to_kind": exc.to_kind,
+                "spec_ref": exc.spec_ref,
+            },
+        ) from exc
     except crud.ArtifactKindConflict as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

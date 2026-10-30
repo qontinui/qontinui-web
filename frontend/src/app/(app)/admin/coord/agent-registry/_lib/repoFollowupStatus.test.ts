@@ -10,6 +10,7 @@ import {
   UNKNOWN_DASH,
   buildScopeWrite,
   deliveryCurrentLabel,
+  deliveryProvenanceNote,
   fleetRolloutMode,
   parseGlobLines,
   readErrorText,
@@ -17,9 +18,9 @@ import {
   scopeStatus,
   summarizeScopes,
   EMPTY_READING,
-  type PostMergeFollowupScopeView,
   type RepoDialReading,
 } from "./repoFollowupStatus";
+import type { PostMergeFollowupScopeView } from "@/lib/api/operations/repoFollowupDials";
 
 function view(
   overrides: Partial<PostMergeFollowupScopeView> = {}
@@ -247,15 +248,39 @@ describe("parseGlobLines / readErrorText", () => {
 });
 
 describe("deliveryCurrentLabel", () => {
-  it("qualifies a value coord resolved but cannot confirm was set", () => {
-    expect(deliveryCurrentLabel("notify_only", false)).toBe(
-      "Notify only (resolved, not confirmed)"
+  it("says 'not confirmed' when coord did not say where the value came from", () => {
+    expect(deliveryCurrentLabel("notify_only", null)).toBe(
+      "Notify only (not confirmed)"
     );
   });
-  it("renders a confirmed value plainly, and unknown as a dash", () => {
-    expect(deliveryCurrentLabel("spawn_always", true)).toBe(
-      "Always a new session"
+  it("names each provenance coord reports", () => {
+    expect(deliveryCurrentLabel("spawn_always", "repo")).toBe(
+      "Always a new session (set for this repo)"
     );
-    expect(deliveryCurrentLabel(null, false)).toBe(UNKNOWN_DASH);
+    expect(deliveryCurrentLabel("spawn_always", "default")).toBe(
+      "Always a new session (default)"
+    );
+    expect(deliveryCurrentLabel("notify_only", "unrecognized")).toBe(
+      "Notify only (stored value not understood)"
+    );
+  });
+  it("renders an unknown mode as a dash whatever the scope", () => {
+    expect(deliveryCurrentLabel(null, "repo")).toBe(UNKNOWN_DASH);
+    expect(deliveryCurrentLabel(null, null)).toBe(UNKNOWN_DASH);
+  });
+});
+
+describe("deliveryProvenanceNote", () => {
+  it("claims an unreadable read is an error only when coord gave a provenance", () => {
+    expect(deliveryProvenanceNote("repo", null)).toContain("is an error");
+    expect(deliveryProvenanceNote("default", null)).toContain("is an error");
+    expect(deliveryProvenanceNote(null, null)).not.toContain("is an error");
+    expect(deliveryProvenanceNote(null, null)).toContain("may be the default");
+  });
+  it("names the stored value coord did not understand", () => {
+    expect(deliveryProvenanceNote("unrecognized", "inject_always")).toContain(
+      '"inject_always"'
+    );
+    expect(deliveryProvenanceNote("unrecognized", null)).toContain("a value");
   });
 });

@@ -38,14 +38,17 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  fetchFleetDrain,
+  postFleetDrain,
+  postFleetUndrain,
+  type FleetWriteAck,
+} from "@/lib/api/operations/coordFleet";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { servedAsOfMs } from "./servedAsOf";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { OPERATIONS_API } from "./utils";
 import { parseFleetDrain, type FleetDrainRead } from "./fleetDrain";
-
-export const FLEET_DRAIN_API = `${OPERATIONS_API}/fleet/drain`;
-export const FLEET_UNDRAIN_API = `${OPERATIONS_API}/fleet/undrain`;
 
 /**
  * Poll cadence. Slow on purpose — see the module doc. A drain is measured in
@@ -57,12 +60,23 @@ const LOADING: FleetDrainRead = { state: "loading" };
 
 export interface UseFleetDrainResult {
   read: FleetDrainRead;
+  /**
+   * When the last `ok` read was true, or `null` before there has been one:
+   * coord's own `as_of` on the drain body (`fleet_drain.rs`
+   * `DrainReadResponse` — expiry is evaluated on read, so a rendered row is
+   * true as of that instant), else the moment the answer arrived
+   * (`servedAsOfMs`). The presentation lens's provenance chip dates the drain
+   * states by it (plan `2026-10-23-console-presentation-spaces` Phase 7). An
+   * `unknown` read never moves it.
+   */
+  asOfMs: number | null;
   /** Force a re-read. Wired to the control so a write is visible at once. */
   refresh: () => Promise<void>;
 }
 
 export function useFleetDrain(): UseFleetDrainResult {
   const [read, setRead] = useState<FleetDrainRead>(LOADING);
+  const [asOfMs, setAsOfMs] = useState<number | null>(null);
 
   // Single-flight, no retries (plan
   // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5). The
@@ -70,12 +84,15 @@ export function useFleetDrain(): UseFleetDrainResult {
   // poll is in flight runs once, right after it, so the write is visible.
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: FleetDrainRead;
+    // When this answer was true; read only if it parses `ok`.
+    let answeredAsOf: number | null = null;
     try {
-      const res = await httpClient.fetch(
-        FLEET_DRAIN_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (res.status === 404) {
+      const body = await fetchFleetDrain(COORD_DASHBOARD_POLL_OPTIONS);
+      answeredAsOf = servedAsOfMs(body, Date.now());
+      next = parseFleetDrain(body);
+    } catch (err) {
+      const status = httpStatusOf(err);
+      if (status === 404) {
         next = {
           state: "unknown",
           reason:
@@ -84,43 +101,36 @@ export function useFleetDrain(): UseFleetDrainResult {
             "drained — this build simply cannot ask. Expected while coord " +
             "is a deploy behind this console.",
         };
-      } else if (!res.ok) {
+      } else if (status !== null) {
         next = {
           state: "unknown",
           reason:
-            `The drain read returned HTTP ${res.status}, so no machine's ` +
+            `The drain read returned HTTP ${status}, so no machine's ` +
             "drain state could be determined from it.",
         };
       } else {
-        // Two arms rather than a nullable `payload`: an unreadable body and a
-        // body that reads as `undefined` are the same UNKNOWN to the operator,
-        // but only one of them has a message worth showing.
-        let parsed: unknown;
-        try {
-          parsed = await res.json();
-        } catch (err) {
-          throw new Error(
-            `the drain read did not return valid JSON: ${
-              err instanceof Error ? err.message : "parse error"
-            }`
-          );
-        }
-        next = parseFleetDrain(parsed);
+        // An unreadable 2xx body and a transport failure are the same UNKNOWN
+        // to the operator; the body case keeps naming itself.
+        const message =
+          err instanceof SyntaxError
+            ? `the drain read did not return valid JSON: ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        next = {
+          state: "unknown",
+          reason: `Coord's drain state could not be read — ${message}`,
+        };
       }
-    } catch (err) {
-      next = {
-        state: "unknown",
-        reason: `Coord's drain state could not be read — ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      };
     }
-    if (isCurrent()) setRead(next);
+    if (!isCurrent()) return;
+    setRead(next);
+    if (next.state === "ok" && answeredAsOf !== null) setAsOfMs(answeredAsOf);
   }, []);
 
   const { refresh } = useSingleFlightPoll(poll, FLEET_DRAIN_POLL_MS);
 
-  return { read, refresh };
+  return { read, asOfMs, refresh };
 }
 
 /** The outcome of a drain/undrain write, as the control renders it. */
@@ -143,11 +153,13 @@ export async function postDrain(input: {
   untilIso: string;
   reason: string;
 }): Promise<DrainWriteResult> {
-  return postDrainChange(FLEET_DRAIN_API, {
-    device_id: input.deviceId,
-    until: input.untilIso,
-    reason: input.reason,
-  });
+  return drainWriteResult(() =>
+    postFleetDrain({
+      device_id: input.deviceId,
+      until: input.untilIso,
+      reason: input.reason,
+    })
+  );
 }
 
 /** `POST /api/v1/operations/fleet/undrain`. Coord requires a reason here too. */
@@ -155,49 +167,44 @@ export async function postUndrain(input: {
   deviceId: string;
   reason: string;
 }): Promise<DrainWriteResult> {
-  return postDrainChange(FLEET_UNDRAIN_API, {
-    device_id: input.deviceId,
-    reason: input.reason,
-  });
+  return drainWriteResult(() =>
+    postFleetUndrain({
+      device_id: input.deviceId,
+      reason: input.reason,
+    })
+  );
 }
 
-async function postDrainChange(
-  url: string,
-  body: Record<string, string>
+/**
+ * Map one drain/undrain write onto what the control renders. Takes the
+ * client call, not a URL: the route lives in `coordFleet.ts` alone.
+ */
+async function drainWriteResult(
+  write: () => Promise<FleetWriteAck | null>
 ): Promise<DrainWriteResult> {
+  let payload: FleetWriteAck | null;
   try {
-    const res = await httpClient.fetch(url, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      return { ok: false, status: res.status, body: await res.text() };
-    }
-    // Coord reports `changed: false` for a request that altered nothing — an
-    // undrain of a machine that was not held. Passed through rather than
-    // dressed up as a successful release, so the operator can tell "I released
-    // it" from "it was not held".
-    let changed = true;
-    try {
-      const payload: unknown = await res.json();
-      if (
-        typeof payload === "object" &&
-        payload !== null &&
-        "changed" in payload &&
-        typeof (payload as { changed: unknown }).changed === "boolean"
-      ) {
-        changed = (payload as { changed: boolean }).changed;
-      }
-    } catch {
-      // A success with an unreadable body still succeeded; `changed` stays
-      // true, which is the reading that does not claim a no-op happened.
-    }
-    return { ok: true, changed };
+    payload = await write();
   } catch (err) {
+    const status = httpStatusOf(err);
+    if (status !== null) {
+      return { ok: false, status, body: httpBodyOf(err) ?? "" };
+    }
     return {
       ok: false,
       status: null,
       body: err instanceof Error ? err.message : String(err),
     };
   }
+  // Coord reports `changed: false` for a request that altered nothing — an
+  // undrain of a machine that was not held. Passed through rather than
+  // dressed up as a successful release, so the operator can tell "I released
+  // it" from "it was not held". A success with an unreadable body (`null`)
+  // still succeeded; `changed` stays true, which is the reading that does not
+  // claim a no-op happened.
+  const changed =
+    payload !== null && typeof payload.changed === "boolean"
+      ? payload.changed
+      : true;
+  return { ok: true, changed };
 }

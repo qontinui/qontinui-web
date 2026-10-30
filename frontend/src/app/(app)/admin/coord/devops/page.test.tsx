@@ -43,12 +43,16 @@ const httpFetch = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => httpGet(...args),
-    // `/fleet/health` is read through `httpClient.fetch` (the typed client's
-    // `fetchFleetHealth`). This suite's routes answer it in `httpGet`'s table
-    // as a parsed body, so that one fetch read is served from there as a 200
-    // Response, and a rejection passes through exactly as `get`'s did.
+    // The reads that used to go through `httpClient.get` — `/fleet/health`,
+    // `/fleet/resource-samples`, `/fleet/worktree-slots`, `/fleet/ci-runners`
+    // and `/alerts/fault-to-visibility` — are read through `httpClient.fetch`
+    // now (the typed client). This suite's routes answer them in `httpGet`'s
+    // table as a parsed body, so each is served from there as a 200 Response,
+    // and a rejection passes through exactly as `get`'s did.
     fetch: async (url: string, init?: unknown) =>
-      String(url).includes("fleet/health")
+      /fleet\/health|resource-samples|worktree-slots|ci-runners|fault-to-visibility/.test(
+        String(url)
+      )
         ? new Response(JSON.stringify(await httpGet(url, init)), {
             status: 200,
           })
@@ -154,13 +158,13 @@ vi.mock("sonner", () => ({
 }));
 
 import CoordDevOpsPage from "./page";
+import { FixedPresentationMode } from "@/components/presentation";
 import * as fleetResources from "@/components/operations/fleetResources";
 import {
   DeviceCrossLinks,
   deviceStateBadgeVariant,
 } from "@/components/operations/FleetHealthSummary";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
-import { FAULT_TO_VISIBILITY_API } from "@/components/operations/useFaultToVisibility";
 import knownFleetHealth from "../../../../../../test-fixtures/devops-readout/known-fleet-health.json";
 import knownFaultToVisibility from "../../../../../../test-fixtures/devops-readout/known-fault-to-visibility.json";
 import unknownFleetHealth from "../../../../../../test-fixtures/devops-readout/unknown-fleet-health.json";
@@ -247,6 +251,7 @@ function hostSample(
     age_secs: 15,
     cpu_cores: 16,
     load_1m: null,
+    cpu_temp_c: null,
     mem_total_bytes: 1,
     mem_available_bytes: 1,
     commit_total_bytes: 1,
@@ -726,6 +731,7 @@ function incidentSample(deviceId: string) {
     age_secs: 15,
     cpu_cores: 16,
     load_1m: null,
+    cpu_temp_c: null,
     mem_total_bytes: 137_000_000_000,
     // Healthy on every memory instrument — that is the whole point.
     mem_available_bytes: 38_400_000_000,
@@ -1642,7 +1648,7 @@ describe("/admin/coord/devops — the Conditions panel", () => {
       calls.filter(
         (c) =>
           String(c[0]).includes("/alerts") &&
-          String(c[0]) !== FAULT_TO_VISIBILITY_API
+          String(c[0]) !== "/api/v1/operations/alerts/fault-to-visibility"
       );
     expect(alertReads(httpGet.mock.calls)).toHaveLength(0);
     expect(alertReads(httpFetch.mock.calls)).toHaveLength(0);
@@ -2845,13 +2851,15 @@ describe("/admin/coord/devops — the operations-ratchet readout", () => {
     const open = await screen.findByTestId("devops-runner-wedge-open");
     expect(open).toHaveTextContent("wedged: backend_wedged");
     expect(open.className).toContain("border-l-red-500");
-    expect(screen.getByTestId("devops-runner-wedges-summary")).toHaveTextContent(
-      "1 open · 1 ended recently"
-    );
+    expect(
+      screen.getByTestId("devops-runner-wedges-summary")
+    ).toHaveTextContent("1 open · 1 ended recently");
     const groups = [
       ...screen
         .getByTestId("devops-runner-capability")
-        .querySelectorAll<HTMLElement>("[data-testid^='devops-runner-capability-group-']"),
+        .querySelectorAll<HTMLElement>(
+          "[data-testid^='devops-runner-capability-group-']"
+        ),
     ].map((g) => g.dataset.testid);
     expect(groups).toEqual([
       "devops-runner-capability-group-inoperative",
@@ -2905,7 +2913,10 @@ describe("/admin/coord/devops — the operations-ratchet readout", () => {
       ],
     ] as const) {
       const spec = JSON.parse(
-        readFileSync(join(specsDir, specId, "state-machine.derived.json"), "utf8")
+        readFileSync(
+          join(specsDir, specId, "state-machine.derived.json"),
+          "utf8"
+        )
       ) as {
         id: string;
         metadata: { routeStubs: Array<{ urlPattern: string; body: unknown }> };
@@ -2917,5 +2928,54 @@ describe("/admin/coord/devops — the operations-ratchet readout", () => {
       expect(body("/fleet/health")).toEqual(health);
       expect(body("/alerts/fault-to-visibility")).toEqual(f2v);
     }
+  });
+});
+
+describe("/admin/coord/devops — the presentation lens (plan 2026-10-23-console-presentation-spaces Phase 1)", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    routerPush.mockReset();
+    deviceStatusRows.clear();
+    window.localStorage.clear();
+  });
+
+  it("leads with its caption — captions before data — in presentation mode", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+
+    render(
+      <FixedPresentationMode presenting>
+        <CoordDevOpsPage />
+      </FixedPresentationMode>
+    );
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    const caption = document.querySelector(
+      '[data-presentation-caption="dev-ops.page"]'
+    );
+    expect(caption).not.toBeNull();
+    expect(
+      caption!.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      within(caption as HTMLElement).getByRole("heading")
+    ).toHaveTextContent("Dev Ops");
+  });
+
+  it("renders no caption for the operator, so the page still opens with its strip (R1)", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await screen.findByTestId("coord-devops-health-strip");
+    expect(document.querySelector("[data-presentation-caption]")).toBeNull();
   });
 });

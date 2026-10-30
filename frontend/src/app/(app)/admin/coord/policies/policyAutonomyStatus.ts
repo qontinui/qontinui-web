@@ -33,12 +33,9 @@
 import type { Attention } from "@/components/console/attention";
 import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
 import { INERT } from "@/components/console/statusRow";
-
-/** Coord's tenant autonomy vocabulary, as it arrives on the wire. */
-export type AutonomyLevel =
-  | "always_escalate"
-  | "guidance_only"
-  | "auto_decide";
+// Coord's tenant autonomy vocabulary, as it arrives on the wire — owned by the
+// client that reads it.
+import type { AutonomyLevel } from "@/lib/api/operations/coordSettings";
 
 /** The vocabulary the ROW renders — level crossed with effectiveness. */
 export type PolicyAutonomyKind =

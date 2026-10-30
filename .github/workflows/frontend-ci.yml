@@ -5,18 +5,29 @@ on:
     branches: [main, develop]
     paths:
       - "frontend/**"
+      # The docs reference check (npm run check:doc-refs) reads docs/ too.
+      - "docs/**"
       - ".github/workflows/frontend-ci.yml"
       # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
       - "fleet-nouns.pin.toml"
       - ".github/actions/fleet-nouns-vocab/**"
+      # ADMIN_REQUIRED_DETAIL, which src/lib/api/fleet.test.ts reads (one line,
+      # one exact form): a backend-only PR that reshapes it must run that check
+      # here, not fail a later frontend PR. The test asserts this entry
+      # appears in BOTH filters.
+      - "backend/app/api/admin_deps.py"
   push:
     branches: [main, develop]
     paths:
       - "frontend/**"
+      # The docs reference check (npm run check:doc-refs) reads docs/ too.
+      - "docs/**"
       - ".github/workflows/frontend-ci.yml"
       # The pinned vocabulary the no-dev-stack-fallback vocabulary test reads.
       - "fleet-nouns.pin.toml"
       - ".github/actions/fleet-nouns-vocab/**"
+      # Read by src/lib/api/fleet.test.ts; see the pull_request filter above.
+      - "backend/app/api/admin_deps.py"
   workflow_dispatch:
 
 # Least privilege for GITHUB_TOKEN (zizmor excessive-permissions). A job
@@ -76,6 +87,14 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # Docs must not teach imports, methods, components or anchors that do
+      # not exist. Plain Node with no dependencies, so it runs before
+      # `npm ci` and fails fast. Scans docs/, frontend/docs/ and
+      # frontend/public/docs/ against frontend/src.
+      - name: Docs code references resolve
+        working-directory: ./frontend
+        run: npm run check:doc-refs
+
       - name: Install dependencies
         working-directory: ./frontend
         run: npm ci
@@ -119,6 +138,20 @@ jobs:
       - name: Unit tests
         working-directory: ./frontend
         run: npm test
+
+      # The image-slot placeholder inventory (plan
+      # 2026-10-13-image-generation-and-visual-judgment, Phase 14 step 4): every
+      # declared slot, and whether it ships a placeholder where it is placed,
+      # in this job's step summary plus one ::notice per such placement. A
+      # placeholder is a FINDING, never a failure (images are reversible, and
+      # only promoted checks gate). The only red this step can produce is a
+      # defect in the inventory's own inputs, which `npm test` above already
+      # asserted, so it adds the listing rather than a second gate.
+      - name: Image-slot placeholder inventory
+        working-directory: ./frontend
+        env:
+          IMAGE_SLOT_INVENTORY_REPORT: "1"
+        run: npm run image-slots:inventory
 
       # ADVISORY, last, bounded, and unable to fail the job: has schemas main
       # moved past fleet-nouns.pin.toml? A drift is a ::warning:: with the bump

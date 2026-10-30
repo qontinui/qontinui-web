@@ -14,7 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { SessionsApiError } from "./api";
+import { SessionsApiError } from "@/lib/api/operations/sessions";
 import { SessionsConsole, parseStatusTab } from "./SessionsConsole";
 import type {
   ConsolidatedSessionRow,

@@ -834,6 +834,23 @@ function statusFromGitHub(
       attention: "waiting",
     };
   }
+  // coord's `ci-failed-stale-base` merge_status overrides the raw CI fields the
+  // same way `landed-open` overrides them in `isMergedPr`: coord diagnosed the
+  // red as sitting on a base `main` has moved past, and its remedy is coord's
+  // own BEHIND freshen (update the branch, CI re-runs) — the very promise
+  // `needs-rebase` makes, under the same dwell cap that re-escalates it to red
+  // when the freshen never arrives. Without it the frozen red falls through to
+  // `checks-failing` and asks the author to "push a fix" for main's failure.
+  // Its sibling `ci-failed-infra-kill` gets no override: no existing kind
+  // promises "re-run once the runner is healthy" without naming the author.
+  if (pr.merge_status === "ci-failed-stale-base") {
+    return {
+      kind: "needs-rebase",
+      label: "Needs rebase",
+      reason: `CI red on a stale base — ${pr.base_branch} moved past it; coord freshens it (updates the branch, CI re-runs), no action needed`,
+      attention: "waiting",
+    };
+  }
   if (pr.mergeable === false || pr.merge_state_status === "DIRTY") {
     const longCi = isLongCiRepo(pr.repo, economics);
     const nearFront = isNearFrontOfQueue(pr.repo, economics);
@@ -1084,8 +1101,8 @@ const TERMINAL: ReadonlySet<ProposalStatus> = new Set(["merged", "cancelled"]);
  * the operator's point of view the attempt has not gone away.
  *
  * Exported for callers that only have a bare status string — `PrRow` carries
- * `proposal_status` but no `ProposalDetail` — notably `PrDraftStateControl`,
- * which must warn that drafting a PR does NOT stop a live merge attempt.
+ * `proposal_status` but no `ProposalDetail` — notably `PrHoldControl`, which
+ * warns that a merge attempt already pushing cannot be recalled by a hold.
  * A null/absent status means no proposal at all, which is not active.
  */
 export function proposalIsActive(status: string | null | undefined): boolean {

@@ -237,6 +237,16 @@ export interface ResourceSampleRow {
   age_secs: number;
   cpu_cores: number | null;
   load_1m: number | null;
+  /**
+   * CPU package temperature in degrees Celsius (plan
+   * 2026-10-13-cpu-temperature-in-fleet-resource-telemetry). DISPLAY ONLY: it
+   * feeds no pressure, saturation or headroom figure.
+   *
+   * `null` = **not measured** (no reading reported: sensor absent, a Windows
+   * host in v1, or a publisher that predates the field), never zero. Optional on the wire because a coord
+   * that predates the column sends no such key at all.
+   */
+  cpu_temp_c?: number | null;
   mem_total_bytes: number | null;
   mem_available_bytes: number | null;
   commit_total_bytes: number | null;
@@ -1152,6 +1162,12 @@ export interface StripRow {
 /** One machine's block: its display name plus its per-lane rows. */
 export interface MachineGroup {
   deviceId: string;
+  /**
+   * Coord's hostname for the device, when its device list carries one — what
+   * a presentation alias links on, beside the device id, so this block reads
+   * as the same machine every other panel names.
+   */
+  hostname?: string;
   displayName: string;
   state?: string;
   rows: StripRow[];
@@ -1231,7 +1247,13 @@ export function buildMachineGroups(
             },
           ];
 
-    groups.push({ deviceId, displayName, state: device.state, rows });
+    groups.push({
+      deviceId,
+      ...(device.hostname ? { hostname: device.hostname } : {}),
+      displayName,
+      state: device.state,
+      rows,
+    });
   }
 
   groups.sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -1594,4 +1616,38 @@ export function describePressureFloor(
       Number.isFinite(floor.reject_ratio) &&
       floor.reject_ratio >= floor.ratio,
   };
+}
+
+/** What the temperature cell should say for one sample. */
+export type CpuTempReading =
+  | { kind: "value"; celsius: number; text: string }
+  | { kind: "not_measurable_host" }
+  | { kind: "unknown" };
+
+/**
+ * Decide the temperature cell for one sample (display only; no colour ramp).
+ *
+ * - a finite reading wins: whole-degree text `71 C` (0 is a legal reading);
+ * - null / absent key is `unknown`, never `0 C`;
+ * - a `wsl` lane is `not_measurable_host`: WSL2 exposes no
+ *   `/sys/class/thermal` (plan D3), and the lane is a wire fact, not an
+ *   inference;
+ * - everything else with no reading is `unknown`. The wire row has NO OS
+ *   field, and `commit_total_bytes` is NOT a Windows signal (the Linux runner
+ *   publishes it too, `resource_sample.rs` `read_memory_status`), so a
+ *   missing reading on a `host` row can be a dead sensor, a collector that
+ *   predates the field, or a host that cannot measure it: it is never
+ *   relabelled as an expected limitation.
+ */
+export function cpuTempReading(
+  s: Pick<ResourceSampleRow, "cpu_temp_c" | "lane">
+): CpuTempReading {
+  const t = s.cpu_temp_c;
+  if (typeof t === "number" && Number.isFinite(t)) {
+    return { kind: "value", celsius: t, text: `${Math.round(t)} C` };
+  }
+  if (s.lane === "wsl") {
+    return { kind: "not_measurable_host" };
+  }
+  return { kind: "unknown" };
 }

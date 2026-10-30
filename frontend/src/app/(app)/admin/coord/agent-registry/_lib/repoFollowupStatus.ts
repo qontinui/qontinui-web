@@ -1,13 +1,14 @@
 /**
- * Per-repo follow-up dials — the wire shapes and every PURE derivation the
- * panel renders from (R8: no internal vocabulary on a primary surface; the
- * derivation lives here, not in JSX).
+ * Per-repo follow-up dials — the display vocabulary and every PURE derivation
+ * the panel renders from (R8: no internal vocabulary on a primary surface;
+ * the derivation lives here, not in JSX).
  *
  * Plan `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind`
  * Phase 4b. Two per-repo coord settings, each proxied by
- * `backend/app/api/v1/endpoints/repo_followup_dials.py`:
+ * `backend/app/api/v1/endpoints/repo_followup_dials.py` and called through
+ * `@/lib/api/operations/repoFollowupDials` (which owns the wire types):
  *
- * - **Post-merge follow-up scope** (`/api/v1/operations/post-merge-followup-scope`)
+ * - **Post-merge follow-up scope** (`/post-merge-followup-scope`)
  *   — whether a merged PR in this repo spawns its follow-up session: every
  *   merge (`all`, the default), only merges touching the repo's code globs
  *   (`code_only`), or never (`none`). The read also carries the fleet
@@ -15,7 +16,7 @@
  *   nothing, so a scope set here does not yet stop any spawn. That has to be
  *   on screen beside the setting, or an operator who sets `none` believes
  *   follow-ups stopped when they did not.
- * - **Continuation-delivery mode** (`/api/v1/operations/continuation-delivery-mode`)
+ * - **Continuation-delivery mode** (`/continuation-delivery-mode`)
  *   — how work is delivered back to an author session.
  *
  * The rules this module holds:
@@ -26,10 +27,10 @@
  *   `production-and-cost` `agent-spawn-authorization`).
  * - **`resolved_scope: "default"` is said in words** — "every merge (default)"
  *   is a different fact from "every merge, because an operator chose it".
- * - **The delivery mode's provenance is never claimed.** Coord's read of it is
- *   fail-open (a missing row, a missing column and a failed read all resolve
- *   the default), so the panel shows what coord's resolver returns and says
- *   that it cannot tell "set" from "default".
+ * - **The delivery mode's provenance is read, never guessed.** Coord says
+ *   whether a row declares the mode (`repo`), none does (`default`) or the
+ *   stored value is not understood (`unrecognized`); a missing field is
+ *   UNKNOWN and renders "not confirmed".
  * - **A configured scope is a setting in effect, not an alarm** (style guide
  *   §3.4). `none` is calm; only UNKNOWN is amber.
  */
@@ -42,72 +43,26 @@ import {
   type RowStatus,
   type StatusPalette,
 } from "@/components/console";
+import type {
+  ContinuationDeliveryModeView,
+  DeliveryMode,
+  DeliveryResolvedScope,
+  FollowupScope,
+  PostMergeFollowupScopeView,
+  RolloutMode,
+} from "@/lib/api/operations/repoFollowupDials";
 
-export const POST_MERGE_SCOPE_API =
-  "/api/v1/operations/post-merge-followup-scope";
-export const CONTINUATION_DELIVERY_API =
-  "/api/v1/operations/continuation-delivery-mode";
-
-export type FollowupScope = "all" | "code_only" | "none";
 export const FOLLOWUP_SCOPES: readonly FollowupScope[] = [
   "all",
   "code_only",
   "none",
 ];
 
-export type RolloutMode = "shadow" | "enforce" | "off";
-
-export type DeliveryMode =
-  | "in_session_with_spawn_fallback"
-  | "spawn_always"
-  | "notify_only";
 export const DELIVERY_MODES: readonly DeliveryMode[] = [
   "in_session_with_spawn_fallback",
   "spawn_always",
   "notify_only",
 ];
-
-/** Mirrors the backend's `PostMergeFollowupScopeView`. */
-export interface PostMergeFollowupScopeView {
-  repo: string;
-  scope: FollowupScope;
-  code_paths: string[];
-  /** `null` — coord did not say: UNKNOWN, neither "repo" nor "default". */
-  resolved_scope: "repo" | "default" | null;
-  /** `null` — coord did not say: UNKNOWN, not any of the three. */
-  mode: RolloutMode | null;
-  can_edit: boolean;
-}
-
-/** Mirrors `PostMergeFollowupScopeWriteResult`. */
-export interface PostMergeFollowupScopeWriteResult {
-  ok: boolean;
-  repo: string;
-  written_scope: FollowupScope;
-  stored_code_paths: string[] | null;
-  updated_by: string | null;
-  /** A SECOND, fresh read. `null` + `readback_error` = UNKNOWN. */
-  effective: PostMergeFollowupScopeView | null;
-  readback_error: string | null;
-}
-
-/** Mirrors `ContinuationDeliveryModeView`. */
-export interface ContinuationDeliveryModeView {
-  repo: string;
-  mode: DeliveryMode;
-  /** Always `false` today — coord's read is fail-open. */
-  provenance_known: boolean;
-  can_edit: boolean;
-}
-
-/** Mirrors `ContinuationDeliveryModeWriteResult`. */
-export interface ContinuationDeliveryModeWriteResult {
-  ok: boolean;
-  repo: string;
-  written_mode: DeliveryMode;
-  effective: ContinuationDeliveryModeView | null;
-  readback_error: string | null;
-}
 
 /** What a repo row shows for the scope. */
 export type FollowupScopeKind = FollowupScope | "unknown";
@@ -174,23 +129,46 @@ export const DELIVERY_HELP: Record<DeliveryMode, string> = {
   notify_only: "nothing is spawned or delivered; the author is only notified",
 };
 
-/** What the delivery read can and cannot say, in operator words. */
 /**
- * The delivery mode as displayed. Unconfirmed provenance (coord's fail-open
- * read) is qualified in words, never rendered as a confirmed setting.
+ * The delivery mode as displayed, qualified by where coord says it came from.
+ * An absent `resolvedScope` (UNKNOWN) is "not confirmed", never a plain setting.
  */
 export function deliveryCurrentLabel(
   mode: DeliveryMode | null,
-  confirmed: boolean
+  resolvedScope: DeliveryResolvedScope | null
 ): string {
   if (mode === null) return UNKNOWN_DASH;
-  return confirmed
-    ? DELIVERY_LABEL[mode]
-    : `${DELIVERY_LABEL[mode]} (resolved, not confirmed)`;
+  switch (resolvedScope) {
+    case "repo":
+      return `${DELIVERY_LABEL[mode]} (set for this repo)`;
+    case "default":
+      return `${DELIVERY_LABEL[mode]} (default)`;
+    case "unrecognized":
+      return `${DELIVERY_LABEL[mode]} (stored value not understood)`;
+    default:
+      return `${DELIVERY_LABEL[mode]} (not confirmed)`;
+  }
 }
 
-export const DELIVERY_PROVENANCE_NOTE =
-  "Coord reads this setting fail-open: a repo nobody configured and a read that failed both show the default, so this is what coord currently resolves, not proof that it was set.";
+/**
+ * The note under the delivery editor. Its claim depends on what coord said:
+ * "an unreadable setting is an error, not a default" holds only for an answer
+ * that carries a provenance, so the UNKNOWN arm says less.
+ */
+export function deliveryProvenanceNote(
+  resolvedScope: DeliveryResolvedScope | null,
+  storedValue: string | null
+): string {
+  switch (resolvedScope) {
+    case "repo":
+    case "default":
+      return "Coord reports whether a row sets this repo's delivery mode or none does (default). An unreadable setting is an error, not a default.";
+    case "unrecognized":
+      return `This repo stores ${storedValue === null ? "a value" : `"${storedValue}"`}, which coord does not understand, so dispatch uses the default shown. Choose a mode to replace it.`;
+    default:
+      return "Coord did not say where this value came from, so it may be the default rather than a setting for this repo.";
+  }
+}
 
 /** One repo's two dials as the hook holds them. */
 export interface RepoDialReading {

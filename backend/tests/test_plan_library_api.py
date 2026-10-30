@@ -2064,6 +2064,7 @@ class TestStrictQueryKeepsEveryDeclaredKey:
             f"{API_PREFIX}": {
                 **corpus_filter,
                 "intent_ref": "success_metric/development-speed",
+                "spec_ref": "REQ-0001",
                 "cursor": list_fingerprint(
                     org,
                     kind="plan",
@@ -2074,6 +2075,7 @@ class TestStrictQueryKeepsEveryDeclaredKey:
                     work_unit_slug="any-stem",
                     intent_ref="success_metric/development-speed",
                     slug="any-slug",
+                    spec_ref="REQ-0001",
                 ).encode(position),
                 "limit": "5",
             },
@@ -2111,6 +2113,7 @@ class TestStrictQueryKeepsEveryDeclaredKey:
                 "anchored": "true",
             },
             f"{API_PREFIX}/difficulty": {},
+            f"{API_PREFIX}/model-routing": {},
             f"{API_PREFIX}/vocabulary": {},
             f"{API_PREFIX}/{{artifact_id}}": {"include_coord": "false"},
             f"{API_PREFIX}/{{artifact_id}}/export": {"version_number": "1"},

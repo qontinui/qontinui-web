@@ -154,6 +154,10 @@ function runner(url: string): Promise<Response> {
   if (path === "apps/qontinui-runner/spec/graph") {
     return Promise.resolve(json(200, SPEC_GRAPH));
   }
+  if (path === "apps") {
+    // A published runner whose relay allowlist predates `GET /apps`.
+    return Promise.resolve(json(403, { detail: "path not allowed" }));
+  }
   if (path === "ui-bridge/control/snapshot") {
     return Promise.resolve(json(200, snapshotBody));
   }
@@ -340,4 +344,257 @@ describe("UiBridgePanel counters (real hooks, real-shaped bodies)", () => {
       expect(screen.queryByTestId("ui-bridge-count-pages")).toBeNull();
     }
   );
+});
+
+/**
+ * A read whose refetch failed keeps its last good `data` beside `isError`
+ * (react-query). The failure leads, and nothing below it may read as current:
+ * the graph's counts are the graph's only while its latest read succeeded
+ * (the snapshot's kept capture is the next describe's matrix).
+ */
+describe("UiBridgePanel — a read kept after its latest attempt failed", () => {
+  /** Answer `path` as the runner does `times` times, then fail it with a 503. */
+  function failAfter(path: string, times: number) {
+    let reads = 0;
+    state.fetch = (url) => {
+      const relayPath = url.slice(PROXY.length);
+      requested.push(relayPath);
+      if (relayPath === path && ++reads > times) {
+        return Promise.resolve(json(503, { detail: "runner busy" }));
+      }
+      return runner(url);
+    };
+  }
+
+  it("counts nothing from a graph whose refetch failed, and keeps the list's count", async () => {
+    failAfter("apps/qontinui-runner/spec/graph", 1);
+    renderPanel();
+    await waitFor(() => expect(count("states")).toBe("5 states"));
+
+    fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "the state-machine graph for qontinui-runner"
+      )
+    );
+    expect(count("states")).toBe("— states");
+    expect(count("transitions")).toBe("— transitions");
+    expect(count("graph-nodes")).toBe("— graph nodes");
+    // The list's latest read answered, so its count is current.
+    expect(count("pages")).toBe("2 pages");
+    // No page row claims the failed graph's states either.
+    expect(screen.getByText("runs").closest("li")?.textContent).not.toMatch(
+      /states/
+    );
+  });
+});
+
+/**
+ * The Live card over every state of its read, read three ways: in the mount
+ * that pressed Capture; after the inspector was unmounted and mounted again
+ * with the same query client, which is what leaving the tab and coming back
+ * does (Radix unmounts an inactive tab) and what presentation mode on and
+ * off does (`OperatorOnly`); and after the target switched to another runner
+ * and back.
+ *
+ * Everything the card says follows the snapshot read's own state, which
+ * react-query keeps per runner, so all three say the same: a capture is
+ * dated by when it was taken, a failed attempt leads, dated by when it
+ * failed, and a capture kept after a re-capture failed sits under that
+ * failure, introduced as the one before it (style guide R6, §6.5). Nothing
+ * is captured but by a press: not by a mount, and not of a runner the target
+ * switched to after a capture of another.
+ */
+describe("UiBridgePanel — the Live card reads the same in any mount", () => {
+  const OTHER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const T0 = Date.parse("2026-10-27T09:00:00Z");
+  /** Each press is five minutes after the one before. */
+  const pressedAt = (i: number) => T0 + i * 5 * 60_000;
+
+  /** What a press of Capture is answered with: the envelope, or a 503. */
+  type Answer = "ok" | "fail";
+
+  /** The snapshot requests made, by the device each was relayed to. */
+  let snapshots: string[];
+  /** What each snapshot request answers, in order. */
+  let plan: Answer[];
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    snapshots = [];
+    plan = [];
+    state.fetch = (url, init) => {
+      const path = url.slice(PROXY.length);
+      requested.push(path);
+      if (path === "ui-bridge/control/snapshot") {
+        const device = new Headers(init?.headers).get("X-Qontinui-Device-Id");
+        snapshots.push(device ?? "");
+        const answer = plan[snapshots.length - 1];
+        if (answer === undefined) {
+          return Promise.reject(new Error("a capture nobody pressed for"));
+        }
+        return Promise.resolve(
+          answer === "ok"
+            ? json(200, SNAPSHOT_ENVELOPE)
+            : json(503, { detail: "runner busy" })
+        );
+      }
+      return runner(url);
+    };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** The chip's title, which names its instant in the browser's locale. */
+  const asOf = (ms: number) => `As of ${new Date(ms).toLocaleString()}.`;
+
+  /** Press Capture at `at`, answered with `answer`, and wait for it to settle. */
+  async function press(answer: Answer, at: number) {
+    vi.setSystemTime(at);
+    plan.push(answer);
+    fireEvent.click(screen.getByRole("button", { name: /capture snapshot/i }));
+    const chip =
+      answer === "ok"
+        ? "ui-bridge-snapshot-provenance"
+        : "ui-bridge-snapshot-failure-provenance";
+    await waitFor(() =>
+      expect(screen.getByTestId(chip).getAttribute("title")).toContain(asOf(at))
+    );
+  }
+
+  const STATES: readonly {
+    name: string;
+    presses: readonly Answer[];
+  }[] = [
+    { name: "never captured", presses: [] },
+    { name: "captured", presses: ["ok"] },
+    { name: "a capture that failed, nothing kept", presses: ["fail"] },
+    {
+      name: "a re-capture that failed over a capture",
+      presses: ["ok", "fail"],
+    },
+    { name: "a capture after a failed one", presses: ["fail", "ok"] },
+    {
+      name: "a re-capture after a failed re-capture",
+      presses: ["ok", "fail", "ok"],
+    },
+  ];
+
+  const target = (id: string): RunnerTarget => ({
+    kind: "runner",
+    runner: { id },
+    locality: "unknown",
+  });
+  const tree = () => (
+    <QueryClientProvider client={client}>
+      <UiBridgePanel />
+    </QueryClientProvider>
+  );
+
+  const READS = ["as captured", "remounted", "after a runner switch"] as const;
+
+  const following = (a: Node, b: Node) =>
+    (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+  for (const c of STATES) {
+    for (const read of READS) {
+      it(`${c.name} · ${read}`, async () => {
+        const view = render(tree());
+        for (const [i, answer] of c.presses.entries()) {
+          await press(answer, pressedAt(i));
+        }
+        // The latest attempt, the latest capture, and when each was made.
+        const last = c.presses.length - 1;
+        const failed = c.presses[last] === "fail";
+        const captured = c.presses.lastIndexOf("ok");
+
+        if (read === "remounted") {
+          view.unmount();
+          render(tree());
+        } else if (read === "after a runner switch") {
+          state.target = target(OTHER);
+          view.rerender(tree());
+          await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          });
+          // Nothing was asked of the other runner, and nothing of this
+          // one's read is shown as its.
+          expect(snapshots.filter((d) => d === OTHER)).toEqual([]);
+          expect(
+            within(liveCard()).queryByTestId("ui-bridge-snapshot-subject")
+          ).toBeNull();
+          expect(within(liveCard()).queryByRole("alert")).toBeNull();
+          state.target = target(DESK);
+          view.rerender(tree());
+        }
+        // Let anything a mount or a switch would start be made.
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        });
+        // Only the presses captured, and only of this runner.
+        expect(snapshots).toEqual(c.presses.map(() => DESK));
+
+        const live = liveCard();
+        const alert = within(live).queryByRole("alert");
+        const failureChip = within(live).queryByTestId(
+          "ui-bridge-snapshot-failure-provenance"
+        );
+        const lead = within(live).queryByTestId("ui-bridge-snapshot-retained");
+        const subject = within(live).queryByTestId(
+          "ui-bridge-snapshot-subject"
+        );
+        const captureChip = within(live).queryByTestId(
+          "ui-bridge-snapshot-provenance"
+        );
+
+        if (failed) {
+          // The latest attempt failed: it leads, dated by that attempt.
+          expect(alert?.textContent).toContain("HTTP 503");
+          expect(failureChip?.getAttribute("title")).toContain(
+            asOf(pressedAt(last))
+          );
+          expect(failureChip).toHaveAttribute("data-provenance-known", "true");
+          expect(following(alert!, failureChip!)).toBe(true);
+        } else {
+          expect(alert).toBeNull();
+          expect(failureChip).toBeNull();
+        }
+
+        if (captured >= 0) {
+          // The capture, dated by when it was taken — not by a later attempt.
+          expect(subject?.textContent).toContain("qontinui-runner");
+          expect(captureChip?.textContent).toMatch(
+            /^source: the runner's live snapshot · as of /
+          );
+          expect(captureChip?.getAttribute("title")).toContain(
+            asOf(pressedAt(captured))
+          );
+          expect(captureChip).toHaveAttribute("data-provenance-known", "true");
+          expect(count("elements")).toBe("3 elements");
+          expect(following(subject!, captureChip!)).toBe(true);
+        } else {
+          expect(subject).toBeNull();
+          expect(captureChip).toBeNull();
+          expect(
+            within(live).queryByTestId("ui-bridge-count-elements")
+          ).toBeNull();
+        }
+
+        if (failed && captured >= 0) {
+          // A capture kept after a failed re-capture: the failure leads, then
+          // the line that says what follows is the one before it.
+          expect(lead?.textContent).toBe(
+            "As last captured, before that failure:"
+          );
+          expect(following(failureChip!, lead!)).toBe(true);
+          expect(following(lead!, subject!)).toBe(true);
+        } else {
+          expect(lead).toBeNull();
+        }
+      });
+    }
+  }
 });

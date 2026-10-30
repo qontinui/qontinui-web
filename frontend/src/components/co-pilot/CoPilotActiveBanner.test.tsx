@@ -26,10 +26,11 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { CoPilotActiveBanner } from "./CoPilotActiveBanner";
+import { PRESENTER_SAFETY_ATTRIBUTE } from "@/components/console/presenterSafety";
+import { FixedPresentationMode } from "@/components/presentation/PresentationModeProvider";
+import { findPresentationViolations } from "@/test/presentation";
 import { CO_PILOT_PREFERENCE_QUERY_KEY } from "@/hooks/useCoPilotPreference";
-import {
-  __CO_PILOT_SESSION_CONSENT_KEY__,
-} from "@/hooks/useCoPilotSessionConsent";
+import { __CO_PILOT_SESSION_CONSENT_KEY__ } from "@/hooks/useCoPilotSessionConsent";
 
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
@@ -113,10 +114,7 @@ describe("<CoPilotActiveBanner>", () => {
   });
 
   it("renders the banner when preference=on, consent=granted, and activity is recent", async () => {
-    window.sessionStorage.setItem(
-      __CO_PILOT_SESSION_CONSENT_KEY__,
-      "granted"
-    );
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "granted");
     const recent = new Date(Date.now() - 2_000).toISOString();
     fetchMock.mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("/preferences")) {
@@ -146,7 +144,9 @@ describe("<CoPilotActiveBanner>", () => {
     renderBanner();
     await waitFor(() => {
       expect(screen.queryByTestId("co-pilot-active-banner")).not.toBeNull();
-      expect(screen.queryByTestId("co-pilot-active-banner-stop")).not.toBeNull();
+      expect(
+        screen.queryByTestId("co-pilot-active-banner-stop")
+      ).not.toBeNull();
     });
     expect(
       screen.queryByTestId("co-pilot-active-banner-disable-account")
@@ -172,7 +172,9 @@ describe("<CoPilotActiveBanner>", () => {
     renderBanner(qc);
     await waitFor(() => {
       expect(qc.getQueryData(CO_PILOT_PREFERENCE_QUERY_KEY)).toBeDefined();
-      expect(screen.queryByTestId("co-pilot-active-banner-stop")).not.toBeNull();
+      expect(
+        screen.queryByTestId("co-pilot-active-banner-stop")
+      ).not.toBeNull();
     });
     await act(async () => {});
     expect(
@@ -215,10 +217,7 @@ describe("<CoPilotActiveBanner>", () => {
   });
 
   it("banner root is wrapped in data-bridge-invisible='true' (auto-register skip)", async () => {
-    window.sessionStorage.setItem(
-      __CO_PILOT_SESSION_CONSENT_KEY__,
-      "granted"
-    );
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "granted");
     const recent = new Date(Date.now() - 2_000).toISOString();
     fetchMock.mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("/preferences")) {
@@ -274,10 +273,7 @@ describe("<CoPilotActiveBanner>", () => {
   });
 
   it("Stop button revokes session consent AND fires a consent.revoked audit POST", async () => {
-    window.sessionStorage.setItem(
-      __CO_PILOT_SESSION_CONSENT_KEY__,
-      "granted"
-    );
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "granted");
     const recent = new Date(Date.now() - 2_000).toISOString();
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       if (typeof url === "string" && url.includes("/preferences")) {
@@ -320,10 +316,7 @@ describe("<CoPilotActiveBanner>", () => {
   });
 
   it("'Disable for this account' link mutates preference=false AND revokes session AND audits", async () => {
-    window.sessionStorage.setItem(
-      __CO_PILOT_SESSION_CONSENT_KEY__,
-      "granted"
-    );
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "granted");
     const recent = new Date(Date.now() - 2_000).toISOString();
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       if (typeof url === "string" && url.includes("/preferences")) {
@@ -383,5 +376,66 @@ describe("<CoPilotActiveBanner>", () => {
     const auditBody = JSON.parse(auditInit.body as string);
     expect(auditBody.command_name).toBe("consent.revoked");
     expect(auditBody.payload_summary?.reason).toBe("disable_for_account");
+  });
+});
+
+describe("<CoPilotActiveBanner> in the presentation lens (plan 2026-10-23-console-presentation-spaces D3.2)", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    window.sessionStorage.clear();
+    gates.loopbackDev = false;
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "granted");
+    const recent = new Date(Date.now() - 2_000).toISOString();
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/preferences")) {
+        return Promise.resolve(preferenceResponse(true));
+      }
+      return Promise.resolve(activityResponse([{ occurred_at: recent }]));
+    });
+  });
+  afterEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  function renderIn(presenting: boolean) {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    return render(
+      <QueryClientProvider client={qc}>
+        <FixedPresentationMode presenting={presenting}>
+          <CoPilotActiveBanner />
+        </FixedPresentationMode>
+      </QueryClientProvider>
+    );
+  }
+
+  it("keeps the banner and Stop — the presenter's safety control — and drops the account-wide opt-out", async () => {
+    renderIn(true);
+    const stop = await screen.findByTestId("co-pilot-active-banner-stop");
+    expect(stop.getAttribute(PRESENTER_SAFETY_ATTRIBUTE)).toBe("co-pilot-stop");
+    expect(screen.getByTestId("co-pilot-active-banner")).toHaveTextContent(
+      "AI co-pilot is active"
+    );
+    expect(
+      screen.queryByTestId("co-pilot-active-banner-disable-account")
+    ).toBeNull();
+    expect(
+      findPresentationViolations({
+        baseElement: document.body,
+        uiBridge: {
+          unobservable:
+            "the banner's controls are data-bridge-invisible by design, so no registration is expected",
+        },
+      })
+    ).toEqual([]);
+  });
+
+  it("offers the operator both", async () => {
+    renderIn(false);
+    expect(
+      await screen.findByTestId("co-pilot-active-banner-disable-account")
+    ).toBeTruthy();
+    expect(screen.getByTestId("co-pilot-active-banner-stop")).toBeTruthy();
   });
 });

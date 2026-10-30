@@ -76,3 +76,59 @@ describe("agents", () => {
     await expect(spawnAgent({})).resolves.toBe(res);
   });
 });
+
+const { fetchDeviceFleetSessions, postSessionControl } =
+  await import("./agents");
+
+describe("agents — session census and control", () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("fetchDeviceFleetSessions GETs /sessions/fleet for the device, with the caller's retry budget", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response('{"sessions":[]}', { status: 200 })
+    );
+    await expect(
+      fetchDeviceFleetSessions("d/1", 500, { maxRetries: 0 })
+    ).resolves.toEqual({ sessions: [] });
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/sessions/fleet?device_id=d%2F1&limit=500",
+      { maxRetries: 0, method: "GET", idempotent: true },
+    ]);
+  });
+
+  it("postSessionControl POSTs the action once, never re-issued", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response('{"event_id":"e1"}', { status: 202 })
+    );
+    await expect(
+      postSessionControl("s/1", { action: "finish_and_close", reason: "r" })
+    ).resolves.toEqual({ event_id: "e1" });
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/sessions/s%2F1/control",
+      {
+        method: "POST",
+        body: JSON.stringify({ action: "finish_and_close", reason: "r" }),
+        idempotent: false,
+      },
+    ]);
+  });
+
+  it("postSessionControl resolves null for a 202 whose body does not parse", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("", { status: 202 }));
+    await expect(
+      postSessionControl("s1", { action: "stop_at_boundary" })
+    ).resolves.toBeNull();
+  });
+
+  it("postSessionControl rejects a refusal with its status readable", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response('{"error":"session_closed"}', { status: 409 })
+    );
+    const err = await postSessionControl("s1", {
+      action: "stop_at_boundary",
+    }).catch((e: unknown) => e);
+    expect(httpStatusOf(err)).toBe(409);
+  });
+});

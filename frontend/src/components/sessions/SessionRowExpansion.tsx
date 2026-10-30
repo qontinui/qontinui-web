@@ -45,7 +45,7 @@ import {
   getSessionAgentStatus,
   getSessionClaims,
   getSessionLineage,
-} from "./api";
+} from "@/lib/api/operations/sessions";
 import { LineageTimeline } from "./LineageTimeline";
 import {
   useSessionEventRevalidation,

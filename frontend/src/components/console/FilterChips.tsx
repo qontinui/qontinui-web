@@ -67,10 +67,15 @@
  * the cap, and the order is the options' own — a chip that jumped position on
  * click would trade one usability problem for another. Omit `maxVisible` for a
  * vocabulary you author and can count.
+ *
+ * **Navigation-only by construction**, like `FilterTabs`: every chip narrows a
+ * view, so each carries `NAVIGATION_ONLY_PROPS` and stays live in presentation
+ * mode (plan `2026-10-23-console-presentation-spaces` D3.2).
  */
 
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { NAVIGATION_ONLY_PROPS } from "./navigationOnly";
 
 export interface FilterChipOption<V extends string> {
   value: V;
@@ -182,6 +187,7 @@ export function FilterChips<V extends string>({
         {label}:
       </span>
       <Button
+        {...NAVIGATION_ONLY_PROPS}
         type="button"
         size="sm"
         variant={none ? "secondary" : "ghost"}
@@ -212,6 +218,7 @@ export function FilterChips<V extends string>({
         const active = selected.includes(o.value);
         return (
           <Button
+            {...NAVIGATION_ONLY_PROPS}
             key={o.value}
             type="button"
             size="sm"
@@ -231,6 +238,7 @@ export function FilterChips<V extends string>({
       })}
       {(hidden > 0 || expanded) && (
         <Button
+          {...NAVIGATION_ONLY_PROPS}
           type="button"
           size="sm"
           variant="ghost"

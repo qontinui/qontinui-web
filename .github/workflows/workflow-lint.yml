@@ -18,33 +18,65 @@
 #   There is deliberately NO `push: main` trigger: coord reads a failing push
 #   run on main as main-red and holds the train.
 #
-# ADVISORY until >= 5 observed runs with zero unexplained reds (plan Phase
-# 1.5), then promote to a required check. Advisory is STEP-level
-# `continue-on-error: true`, never job-level: a job-level continue-on-error
-# lets the RUN conclude success but still publishes the job's CHECK RUN with
-# conclusion=failure, and coord's candidate classifier reads check runs, so it
-# would see red and hold the train. Evidence: qontinui-runner run 33284989396
-# concluded success while its continue-on-error job's check run 99186538561
-# reads conclusion=failure (`gh api repos/qontinui/qontinui-runner/check-runs/
-# 99186538561 --jq .conclusion`, verified 2026-10-04).
+# REQUIRED (promoted 2026-10-17, plan Phase 1.5): the tool steps below are
+# BLOCKING -- a zizmor or actionlint finding, a failed tool install and a
+# checkout or arch failure all red the check. Promotion evidence: the 12 most
+# recent completed runs of this workflow after qontinui-web#1897 (re-pin of
+# dtolnay/rust-toolchain + the DRIFT class) landed (2026-10-14T14:57Z) all
+# completed with zero failed steps and zero `##[error]` / "Process completed
+# with exit code" lines in their job logs.
 #
-# Every step is advisory that way, each with its own timeout-minutes:
-# checkout, the arch guard, the tool install (download / sha256 / extract /
-# hang -- curl is bounded and retried), zizmor, actionlint, and the final
-# summary step. What CANNOT be made advisory, and so can still red the check:
-# the runner-side "Set up job" phase (runner assignment, fetching the pinned
-# checkout action), losing the runner mid-job (host crash, runner process
-# killed), cancellation, and the job-level timeout-minutes backstop -- which
-# is set above the sum of the step timeouts so it should never fire first.
+# Only the final always() summary step keeps STEP-level
+# `continue-on-error: true` (never job-level: a job-level one still publishes
+# the CHECK RUN as conclusion=failure, which coord's candidate classifier
+# reads -- qontinui-runner check run 99186538561, verified 2026-10-04). What
+# can red the check regardless: the runner-side "Set up job" phase, losing the
+# runner mid-job, cancellation, and the job-level timeout-minutes backstop.
 #
-# VISIBILITY while the check stays green: each finding is emitted as a
-# `::warning`/`::error` workflow-command annotation (shown on the run and the
-# PR diff), the failing step is marked failed in the job log, and the run's
+# DRIFT (non-blocking): zizmor's `ref-version-mismatch`
+# audit judges a pinned `uses:` comment against where an UPSTREAM tag points
+# NOW, so it can go red on an unchanged workflow tree the moment an action's
+# maintainer moves a tag (observed 2026-10-09: dtolnay/rust-toolchain moved
+# `v1`, and every PR here reported FINDINGS for days). A required check that
+# an unrelated upstream push can turn red holds the whole train (plan D2), so
+# a finding of an audit in DRIFT_AUDITS is reported as DRIFT(n) (annotated as
+# a warning, never failing the step) ONLY when a line identical to the flagged
+# source line already exists in the BASE version of that file -- so the pin is
+# not new, and only the upstream moved. The same audit on a line this change
+# added or edited (a pin whose sha is not the release its comment claims), or
+# one whose base could not be read, counts as FINDINGS. The scheduled org scan
+# is where upstream drift is acted on. Every other audit, including the online
+# known-vulnerable-actions and impostor-commit, counts as FINDINGS.
+#
+# THE BASE, on a pull_request run, is the FIRST PARENT of the checked-out
+# merge commit (`HEAD^1`): the base-branch tip the PR head was merged onto to
+# make the very tree zizmor scans. It is never
+# `github.event.pull_request.base.sha`. On a PR that is behind its base that
+# sha is the stale merge base, while the checkout is the merge ref -- the PR
+# head merged onto the CURRENT base -- so every pin main has gained since the
+# branch point is present in the checkout and absent from the stale base, and
+# read as introduced by the PR. Measured 2026-10-24 on qontinui-web#1689 (merge
+# base bc3f44d0, 2026-10-05): style-gate.yml's dtolnay/rust-toolchain pin,
+# added to main in 27f18555 on 2026-10-14, went FINDINGS the moment upstream
+# moved `v1`, and coord refused the PR as ci-failed. `HEAD^1` rather than the
+# live branch tip: it is the exact tree the checkout was merged onto, so a line
+# is DRIFT iff the PR did not bring it, and a re-run (which reuses the same
+# merge commit) gets the same answer even after main moves again. The checkout
+# fetches depth 2 for it. A checkout that is not a two-parent merge whose
+# second parent is the PR head leaves no base, and every DRIFT_AUDITS finding
+# is then blocking (fail closed). A candidate/dispatch run uses the default
+# branch, by name, as before. Same defect class as migration-reversal.yml (plan
+# 2026-10-24-migration-reversal-overlays-onto-stale-pr-base-not-base-tip);
+# this one is plan 2026-10-24-workflow-lint-drift-judged-against-stale-pr-base,
+# tested by backend/tests/test_workflow_lint_drift.py.
+#
+# VISIBILITY: each finding is a workflow-command
+# annotation (::error for a finding, ::warning for DRIFT) on the run and the
+# PR diff, the failing step reds the check, and the run's
 # step summary gets exactly one line per tool:
-#   - zizmor: PASS | FINDINGS(n) | ERROR (...)
+#   - zizmor: PASS | DRIFT(n) | FINDINGS(n) | ERROR (...)
 #   - actionlint: PASS | FINDINGS(n) | ERROR (...)
-# so Phase 1.5's ">= 5 observed runs, zero unexplained reds" is countable from
-# the run summaries. The final always() step is the SOLE writer of those
+# The final always() step is the SOLE writer of those
 # lines: every other step only sets step outputs (`verdict=` / `reason=`), so
 # a step killed at any point yields exactly one ERROR (...) line per tool, never
 # zero and never two.
@@ -94,77 +126,131 @@ jobs:
   workflow-lint:
     name: workflow-lint
     runs-on: [self-hosted, public-pool]  # never GitHub-hosted: hosted runners are off
-    # Backstop only. Step timeouts sum to 16 min (checkout 2 + arch 1 +
-    # install 7 + zizmor 3 + actionlint 2 + summary 1); this sits above that so
-    # a slow step is killed by its own advisory timeout, not by this one.
-    timeout-minutes: 20
+    # Backstop only. Step timeouts sum to 27 min (checkout 2 + arch 1 +
+    # install 18 + zizmor 3 + actionlint 2 + summary 1); this sits 3 min above
+    # that, so a slow step is killed by its own timeout, not by this one.
+    timeout-minutes: 30
     env:
       ZIZMOR_VERSION: 1.30.1
       ZIZMOR_SHA256: e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a
       ACTIONLINT_VERSION: 1.7.12
       ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+      # zizmor audits reported as DRIFT, never as FINDINGS (see header).
+      # Space-separated zizmor audit idents.
+      DRIFT_AUDITS: ref-version-mismatch
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         id: checkout
-        continue-on-error: true  # advisory; see header
         timeout-minutes: 2
         with:
           persist-credentials: false
+          # The merge commit plus its parents: HEAD^1 is the DRIFT base on a
+          # pull_request run (see header).
+          fetch-depth: 2
       - name: Check host architecture (release tarballs below are x86_64)
         id: arch
         if: steps.checkout.outcome == 'success'
-        continue-on-error: true  # advisory; see header
         timeout-minutes: 1
         run: |
           arch="$(uname -m)"
           if [[ "$arch" != "x86_64" ]]; then
-            msg="host arch is ${arch}, but the pinned zizmor/actionlint downloads are x86_64-only; lint skipped (pin a matching tarball + sha256 to support this host)"
-            echo "::warning::workflow-lint: ${msg}"
+            msg="host arch is ${arch}, but the pinned zizmor/actionlint downloads are x86_64-only; check failed (pin a matching tarball + sha256 to support this host)"
+            echo "::error::workflow-lint: ${msg}"
             echo "reason=${msg}" >> "$GITHUB_OUTPUT"
             exit 1
           fi
-      - name: Install zizmor and actionlint (pinned, sha256-verified)
+      - name: Install zizmor and actionlint (pinned, sha256-verified, host-cached)
         id: install
         if: steps.arch.outcome == 'success'
-        continue-on-error: true  # advisory; see header
-        # Worst case per download: 3 attempts x 60 s + 2 x 3 s retry delay.
-        timeout-minutes: 7
+        # Cold fetch worst case: per tarball 2 attempts x 240 s + 5 s delay,
+        # 2 tarballs = 970 s, under this 18 min bound. A warm host-cache hit
+        # is a local copy + sha256 check.
+        timeout-minutes: 18
+        # HOST CACHE: verified release tarballs are kept in the runner's tool
+        # cache, keyed by their pinned sha256, so a host downloads each pinned
+        # version once instead of once per job. Before this, a saturated link
+        # timed the 9 MB zizmor download out at curl's 60 s bound (4 runs on
+        # 2026-10-13, e.g. qontinui-coord run 38463449752).
+        # The cache is NOT trusted and NEVER required: a hit is copied into this
+        # job's private $RUNNER_TEMP and its sha256 checked before use (so
+        # nothing can swap it between check and extract); a miss downloads
+        # straight into $RUNNER_TEMP and is checked there; populating the cache
+        # afterwards is best-effort (temp name + `mv -T` rename), so a planted
+        # file, a directory at the key or an unwritable cache only costs a
+        # download, never the install.
         run: |
-          set -Eeuo pipefail  # -E: the ERR trap must also fire inside fetch()
-          trap 'echo "::warning::workflow-lint: tool install failed (download, sha256 or extract); lint skipped"; echo "reason=install failed" >> "$GITHUB_OUTPUT"' ERR
+          set -Eeuo pipefail  # -E: the ERR trap must also fire inside get()
+          trap 'echo "::error::workflow-lint: tool install failed (download, sha256 or extract); check failed"; echo "reason=install failed" >> "$GITHUB_OUTPUT"' ERR
+          tmp=""
+          trap 'rm -f "$tmp"' EXIT
           bin="${RUNNER_TEMP}/workflow-lint-bin"
+          cache="${RUNNER_TOOL_CACHE:-${HOME}/.cache}/qontinui-workflow-lint"
           mkdir -p "$bin"
-          cd "$bin"
-          fetch() {
+          mkdir -p "$cache" 2>/dev/null || true
+          verify() { printf '%s  %s\n' "$1" "$2" | sha256sum -c "${@:3}" -; }
+          # get <name> <sha256> <url>: leaves a verified copy at $bin/<name>.tar.gz
+          get() {
+            local name="$1" want="$2" url="$3"
+            local hit="${cache}/${want}.tar.gz" copy="${bin}/${name}.tar.gz"
+            if [[ -f "$hit" ]] && cp -f -- "$hit" "$copy" 2>/dev/null \
+                && verify "$want" "$copy" --status; then
+              echo "${name}: host-cache hit (${hit})"
+              return 0
+            fi
+            rm -f -- "$copy"
             curl --fail --silent --show-error --location \
-              --connect-timeout 20 --max-time 60 --retry 2 --retry-delay 3 \
-              -o "$1" "$2"
+              --connect-timeout 20 --max-time 240 --retry 1 --retry-delay 5 \
+              -o "$copy" "$url"
+            verify "$want" "$copy"
+            # best-effort cache fill; any failure here only means no cache
+            if tmp="$(mktemp "${cache}/.download.XXXXXX" 2>/dev/null)" \
+                && cp -f -- "$copy" "$tmp" && mv -fT -- "$tmp" "$hit" 2>/dev/null; then
+              tmp=""
+            else
+              rm -f -- "$tmp"; tmp=""
+              echo "${name}: host cache not updated (${cache} unusable); continuing"
+            fi
           }
-          fetch zizmor.tar.gz \
+          get zizmor "$ZIZMOR_SHA256" \
             "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
-          echo "${ZIZMOR_SHA256}  zizmor.tar.gz" | sha256sum -c -
-          tar xzf zizmor.tar.gz zizmor
-          fetch actionlint.tar.gz \
+          tar xzf "${bin}/zizmor.tar.gz" -C "$bin" zizmor
+          get actionlint "$ACTIONLINT_SHA256" \
             "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
-          tar xzf actionlint.tar.gz actionlint
-          rm -f zizmor.tar.gz actionlint.tar.gz
+          tar xzf "${bin}/actionlint.tar.gz" -C "$bin" actionlint
+          rm -f "${bin}/zizmor.tar.gz" "${bin}/actionlint.tar.gz"
           echo "$bin" >> "$GITHUB_PATH"
       - name: zizmor
         id: zizmor
-        if: steps.install.outcome == 'success'
-        continue-on-error: true  # advisory; see header
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         timeout-minutes: 3
         env:
           # Online audits (impostor-commit, known-vulnerable-actions) read
           # public action repos; the job token is read-only.
           GH_TOKEN: ${{ github.token }}
-        # `--format github` emits each finding as a workflow-command annotation.
-        # Files are passed explicitly (not the directory) so each annotation's
-        # `file=` is the repo-relative path and attaches to the PR diff.
+          # Inputs of the DRIFT base (see header), resolved in the run body:
+          # HEAD^1 on a pull_request run, verified against the PR head; the
+          # default branch otherwise (merge-candidate pushes, workflow_dispatch).
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        # One `--format json` run drives both the verdict and the annotations:
+        # each finding not in DRIFT_AUDITS becomes an ::error annotation and
+        # counts as FINDINGS; each DRIFT_AUDITS finding becomes a ::warning
+        # and counts as DRIFT (see header). Files are passed explicitly (not
+        # the directory) so each annotation's `file=` is the repo-relative path
+        # and attaches to the PR diff. Annotation text is escaped (% CR LF in
+        # the message; also : , in properties) so a message can never break or
+        # forge a workflow command.
         # Exit codes (zizmor 1.30.1 docs/usage.md): 0 clean; 11-14 findings
         # (by max severity); 1/2/3 are tool errors, and anything else (101
         # panic, 137 SIGKILL, 143 SIGTERM, ...) is an error too, never FINDINGS.
+        # rc 11-14 with no parseable un-ignored finding is an ERROR as well.
+        # DRIFT test: the finding's source line (cut from this checkout at
+        # zizmor's byte offset, and required to contain the flagged version
+        # text) must occur verbatim in DRIFT_BASE_REF's copy of the same file, fetched
+        # read-only from the contents API ($GITHUB_API_URL, which the runner
+        # sets) with the job token; a fetch failure makes the finding blocking
+        # (fail closed).
         # `--cache-dir` under $RUNNER_TEMP (wiped per job): the public-pool
         # runners are PERSISTENT services, so zizmor's default HTTP cache
         # (~/.cache/zizmor of the runner user) is shared by every job on the
@@ -172,30 +258,124 @@ jobs:
         # online audits (impostor-commit, known-vulnerable-actions) of later
         # runs. A cold cache costs only the few action lookups this repo makes.
         run: |
+          DRIFT_BASE_REF=""
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            first="$(git rev-parse --verify -q 'HEAD^1^{commit}' || true)"
+            second="$(git rev-parse --verify -q 'HEAD^2^{commit}' || true)"
+            if [[ "$first" =~ ^[0-9a-f]{40}$ && -n "$second" && "$second" == "$PR_HEAD_SHA" ]]; then
+              DRIFT_BASE_REF="$first"
+            else
+              echo "::warning::workflow-lint: the checkout is not the PR's merge commit (HEAD^1=${first:-none} HEAD^2=${second:-none}), so there is no DRIFT base and every ${DRIFT_AUDITS} finding is blocking"
+            fi
+          else
+            DRIFT_BASE_REF="$DEFAULT_BRANCH"
+          fi
+          export DRIFT_BASE_REF
+          echo "DRIFT base: ${DRIFT_BASE_REF:-none}"
           mapfile -t files < <(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | sort)
           mapfile -t -O "${#files[@]}" files < <(find .github/actions -type f \( -name 'action.yml' -o -name 'action.yaml' \) | sort)
           files+=(.github/dependabot.yml)
           set +e
-          out="$(zizmor --no-progress --cache-dir "${RUNNER_TEMP}/zizmor-cache" --format github --config .github/zizmor.yml "${files[@]}")"
+          json="$(zizmor --no-progress --cache-dir "${RUNNER_TEMP}/zizmor-cache" --format json --config .github/zizmor.yml "${files[@]}")"
           rc=$?
           set -e
-          printf '%s\n' "$out"
-          n="$(printf '%s\n' "$out" | grep -c '^::' || true)"
-          if [[ $rc -eq 0 ]]; then verdict="PASS"
-          elif [[ $rc -ge 11 && $rc -le 14 ]]; then verdict="FINDINGS(${n})"
-          else verdict="ERROR (exit ${rc})"; fi
+          out="$(printf '%s' "$json" | python3 -c '
+          import json, os, sys, urllib.parse, urllib.request
+          raw = sys.stdin.read().strip()
+          found = json.loads(raw) if raw else []
+          drift_ids = set(os.environ.get("DRIFT_AUDITS", "").split())
+          def data(v):
+              return str(v).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          def prop(v):
+              return data(v).replace(":", "%3A").replace(",", "%2C")
+          base_cache = {}
+          # Lines are split on LF only (CR stripped), exactly as zizmor counts
+          # them -- never str.splitlines(), which also breaks on U+2028/U+2029/
+          # U+0085, characters YAML allows inside a comment.
+          def lf_lines(raw):
+              return [l[:-1] if l.endswith(b"\r") else l for l in raw.split(b"\n")]
+          def base_lines(path):
+              if path not in base_cache:
+                  try:
+                      if not os.environ.get("DRIFT_BASE_REF"):
+                          raise ValueError("no DRIFT base")  # fail closed
+                      url = "%s/repos/%s/contents/%s?ref=%s" % (
+                          os.environ.get("GITHUB_API_URL") or "https://api.github.com",
+                          os.environ["GITHUB_REPOSITORY"], urllib.parse.quote(path),
+                          urllib.parse.quote(os.environ["DRIFT_BASE_REF"], safe=""))
+                      req = urllib.request.Request(url, headers={
+                          "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                          "Accept": "application/vnd.github.raw"})
+                      with urllib.request.urlopen(req, timeout=20) as r:
+                          base_cache[path] = set(lf_lines(r.read()))
+                  except Exception:
+                      base_cache[path] = None
+              return base_cache[path]
+          # The flagged line is cut out of the head file at the zizmor BYTE offset
+          # (not a row index) and must contain the feature text of the finding
+          # (the version comment); any disagreement is blocking (fail closed).
+          def predates_change(path, offset, feature):
+              try:
+                  with open(path, "rb") as fh:
+                      raw = fh.read()
+                  if not (0 <= offset < len(raw)) or not feature:
+                      return False
+                  start = raw.rfind(b"\n", 0, offset) + 1
+                  end = raw.find(b"\n", offset)
+                  line = lf_lines(raw[start:len(raw) if end < 0 else end])[0]
+                  if feature.encode("utf-8") not in line:
+                      return False
+              except Exception:
+                  return False
+              base = base_lines(path)
+              return base is not None and line in base
+          blocking = drift = 0
+          for f in found:
+              if f.get("ignored"):
+                  continue
+              ident = str(f.get("ident", ""))
+              loc = next((l for l in f.get("locations", []) if l.get("symbolic", {}).get("kind") == "Primary"),
+                         (f.get("locations") or [{}])[0])
+              sym = loc.get("symbolic", {})
+              path = sym.get("key", {}).get("Local", {}).get("verbatim_path", "")
+              start = loc.get("concrete", {}).get("location", {}).get("start_point", {})
+              row = int(start.get("row", 0))
+              conc = loc.get("concrete", {})
+              offset = int(conc.get("location", {}).get("offset_span", {}).get("start", -1))
+              is_drift = ident in drift_ids and predates_change(path, offset, str(conc.get("feature") or ""))
+              if is_drift:
+                  drift += 1
+              else:
+                  blocking += 1
+              msg = "%s: %s" % (f.get("desc", ""), sym.get("annotation", ""))
+              if is_drift:
+                  msg = "DRIFT (non-blocking, upstream moved): " + msg
+              print("::%s file=%s,line=%s,col=%s,title=%s::%s" % (
+                  "warning" if is_drift else "error", prop(path),
+                  prop(row + 1), prop(int(start.get("column", 0)) + 1),
+                  prop("zizmor " + ident), data(msg)))
+          print("COUNTS %d %d" % (blocking, drift))
+          ')" || { echo "::error::workflow-lint: could not parse zizmor JSON output"; out=""; }
+          printf '%s\n' "$out" | grep -v '^COUNTS ' || true
+          read -r _ blocking drift < <(printf '%s\n' "$out" | grep '^COUNTS ' || echo "COUNTS - -")
+          if [[ $rc -eq 0 ]]; then verdict="PASS"; code=0
+          elif [[ $rc -ge 11 && $rc -le 14 && "$blocking" =~ ^[0-9]+$ ]]; then
+            if [[ $blocking -gt 0 ]]; then verdict="FINDINGS(${blocking})"; code=1
+            elif [[ $drift -gt 0 ]]; then verdict="DRIFT(${drift})"; code=0
+            else verdict="ERROR (exit ${rc} with no reportable finding)"; code=1; fi
+          elif [[ $rc -ge 11 && $rc -le 14 ]]; then verdict="ERROR (exit ${rc}, JSON unparseable)"; code=1
+          else verdict="ERROR (exit ${rc})"; code=$rc; fi
           echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"  # summary line: final step
-          exit "$rc"
+          exit "$code"
       - name: actionlint
         id: actionlint
-        if: steps.install.outcome == 'success'
-        continue-on-error: true  # advisory; see header
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         timeout-minutes: 2
         # `-shellcheck=` / `-pyflakes=` disable the external-linter integrations:
         # CI must not depend on whatever shellcheck/pyflakes each self-hosted
         # host happens to have installed (plan D2: exact pins, no floats).
         # Re-enable with a pinned, sha256-checked install when that is wanted.
-        # Findings come out as JSON and are turned into `::warning` annotations
+        # Findings come out as JSON and are turned into `::error` annotations
         # with workflow-command escaping (% CR LF in the message; also : , in
         # properties), so a message can never break or forge a command.
         # Exit codes: 0 clean, 1 findings, else a tool/config error.
@@ -213,13 +393,13 @@ jobs:
           def prop(v):
               return data(v).replace(":", "%3A").replace(",", "%2C")
           for e in errs or []:
-              print("::warning file=%s,line=%s,col=%s,title=%s::%s" % (
+              print("::error file=%s,line=%s,col=%s,title=%s::%s" % (
                   prop(e.get("filepath", "")), prop(e.get("line", "")),
                   prop(e.get("column", "")), prop("actionlint " + str(e.get("kind", ""))),
                   data(e.get("message", ""))))
-          ')" || { echo "::warning::workflow-lint: could not parse actionlint JSON output"; out=""; rc=99; }
+          ')" || { echo "::error::workflow-lint: could not parse actionlint JSON output"; out=""; rc=99; }
           printf '%s\n' "$out"
-          n="$(printf '%s\n' "$out" | grep -c '^::warning' || true)"
+          n="$(printf '%s\n' "$out" | grep -c '^::error file=' || true)"
           if [[ $rc -eq 0 ]]; then verdict="PASS"
           elif [[ $rc -eq 1 ]]; then verdict="FINDINGS(${n})"
           else verdict="ERROR (exit ${rc})"; fi
@@ -230,7 +410,7 @@ jobs:
       # using the failing step's own `reason=` when it managed to set one.
       - name: Record verdicts
         if: always()
-        continue-on-error: true  # advisory; see header
+        continue-on-error: true  # the summary line never decides the check
         timeout-minutes: 1
         env:
           CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}

@@ -20,7 +20,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, NoReturn
+from typing import Annotated, Any, Literal, NoReturn
 from urllib.parse import quote
 from uuid import UUID
 
@@ -39,7 +39,14 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 from qontinui_schemas.generated.per_type.memory_restore_request import (
     MemoryRestoreRequest,
 )
@@ -72,6 +79,13 @@ from app.api.deps import (
 )
 from app.api.v1.endpoints.devices import devices_to_wire
 from app.core.config import settings
+from app.core.refusal import (
+    GlossaryTerm,
+    NextActionKind,
+    RefusalCode,
+    RefusalHTTPException,
+    refusal_error,
+)
 from app.crud import runner_crud
 from app.middleware.rate_limit import get_authorization_identifier, user_limiter
 from app.models.machine_display_name import MachineDisplayName
@@ -851,10 +865,38 @@ async def _caller_owns_runner_host(
     return any((r.hostname or "").lower() == host for r in runners)
 
 
+#: A runner task-run id, as the two per-runner proxies below take it.
+#:
+#: The id is spliced into the path those proxies GET from the runner
+#: (``/task-runs/{id}/output``), and httpx resolves ``.`` and ``..`` segments
+#: and honours a ``?`` or ``#`` it finds in that path. A free string therefore
+#: let the caller choose ANY runner GET: ``../../apps#`` sent ``GET /apps`` (the
+#: app registry, every build and start command included) to whatever address
+#: the unauthenticated beacon registry holds for a host the caller owns a
+#: device on. The runner mints its ids as UUIDs or as ``-``-joined composites
+#: of words, UUIDs, timestamps, numbers and workflow ids, and it gives every
+#: saved workflow a UUID (``trigger-<workflow>-<ms>-<u8>``,
+#: ``<id>-replay-<uuid>``), so letters, digits, ``-`` and ``_`` are the
+#: characters a minted id carries. Anything else is a 422 naming this rule,
+#: before the runner is contacted. The length bound is a bound, not a format.
+#: The longest bases the runner mints are 67 characters
+#: (``trigger-<uuid>-<ms>-<u8>`` and ``unified-workflow-<uuid>-<ms>``), and a
+#: replay appends ``-replay-<uuid>`` (44 more), so a replay of a replay of one
+#: is 155 characters. Four levels (243) fit; five (287) do not.
+_TaskRunIdQuery = Annotated[
+    str,
+    Query(
+        max_length=256,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="A runner task-run id: letters, digits, '-' and '_' only.",
+    ),
+]
+
+
 @router.get("/fleet/runners/{runner_id}/output")
 async def get_runner_task_output(
     runner_id: str,
-    task_run_id: str = Query(...),
+    task_run_id: _TaskRunIdQuery,
     tail_chars: int = Query(default=5000),
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
@@ -881,7 +923,7 @@ async def get_runner_task_output(
 @router.get("/fleet/runners/{runner_id}/workflow-state")
 async def get_runner_workflow_state(
     runner_id: str,
-    task_run_id: str = Query(...),
+    task_run_id: _TaskRunIdQuery,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict:
@@ -936,7 +978,7 @@ async def remove_runner(
 # Per plans/2026-05-18-coordination-layer-demos.md §5.2.1.
 
 
-class CoordTransportUnavailable(HTTPException):
+class CoordTransportUnavailable(RefusalHTTPException):
     """The request to coord never completed — so its status is OURS, not coord's.
 
     :func:`_proxy_coord_get` invents a 502 for a connect error and a 504 for a
@@ -955,7 +997,104 @@ class CoordTransportUnavailable(HTTPException):
     retry loop, and covers any future transport conversion that uses it
     without a second edit. It is transparent to every other caller of the
     proxies: it IS an ``HTTPException``, with the same status and detail.
+
+    It is also a refusal (:class:`RefusalHTTPException`), built by
+    :func:`_coord_unreachable` / :func:`_coord_timeout` like every other
+    transport failure in this module.
     """
+
+
+def _coord_unreachable(
+    exc_type: type[RefusalHTTPException] = RefusalHTTPException,
+) -> RefusalHTTPException:
+    """The 502 for a connect error: coord never saw the request, so nothing
+    changed and the same request later is safe."""
+    return refusal_error(
+        502,
+        RefusalCode.upstream_unavailable,
+        NextActionKind.retry_later,
+        COORD_UNREACHABLE_DETAIL,
+        discriminator="coord_unreachable",
+        glossary_terms=[GlossaryTerm.coord],
+        exc_type=exc_type,
+    )
+
+
+def _coord_timeout(
+    exc_type: type[RefusalHTTPException] = RefusalHTTPException,
+    *,
+    write: bool,
+) -> RefusalHTTPException:
+    """The 504 for a timeout: coord may have acted.
+
+    ``write`` decides what "retry later" means. A timed-out READ is safe to
+    repeat. A timed-out WRITE may already have been applied, so a blind retry
+    can apply it twice: its next action names the re-read that must come
+    first, and its discriminator lets a reader refuse to render a bare Retry
+    button for it.
+    """
+    return refusal_error(
+        504,
+        RefusalCode.upstream_timeout,
+        NextActionKind.retry_later,
+        # The detail is the same constant for a read and a write: callers
+        # (``fleet_targets._reraise_coord_refusal``) recognise web's own
+        # transport text by it. The write's re-read lives in
+        # ``next_action.target``, which ``Refusal::render`` states since
+        # qontinui-schemas#204 ("... but first check "<target>": the earlier
+        # attempt may already have taken effect"), as does the web reader's
+        # mirror of it (frontend ``lib/errors/refusal.ts``).
+        COORD_TIMEOUT_DETAIL,
+        discriminator="coord_write_timeout" if write else "coord_timeout",
+        target=_REREAD_BEFORE_RETRY if write else None,
+        glossary_terms=[GlossaryTerm.coord],
+        exc_type=exc_type,
+    )
+
+
+#: The ``next_action.target`` of every refusal whose write may have landed.
+#: On ``retry_later`` the target names WHAT to re-check before retrying
+#: (qontinui-schemas#204), so ``Refusal::render`` reads: "Try again later, but
+#: first check "whether the change was applied": the earlier attempt may
+#: already have taken effect".
+_REREAD_BEFORE_RETRY = "whether the change was applied"
+
+
+def _coord_answer_lost(detail: str, *, not_json: bool) -> RefusalHTTPException:
+    """The 504 for a write whose answer did not arrive intact. The change may
+    have been applied; only a re-read can tell.
+
+    Two causes, told apart by ``code``: a transport error after the request
+    was sent is ``upstream_timeout`` (``answer_lost``); a 2xx whose body is
+    not JSON is an answer this backend cannot classify, so ``unknown``
+    (``answer_not_json``) rather than a timeout it was not.
+    """
+    return refusal_error(
+        504,
+        RefusalCode.unknown if not_json else RefusalCode.upstream_timeout,
+        NextActionKind.retry_later,
+        detail,
+        discriminator="answer_not_json" if not_json else "answer_lost",
+        target=_REREAD_BEFORE_RETRY,
+        glossary_terms=[GlossaryTerm.coord],
+    )
+
+
+def _coord_answer_lost_in_transit(exc: httpx.HTTPError) -> RefusalHTTPException:
+    """The 504 for a WRITE whose transport failed with something other than a
+    connect error or a timeout (``ReadError``, ``RemoteProtocolError``, ...).
+    Treated as after-send: coord may have received and committed it, so the
+    outcome is unknown. For the rare failure before anything was sent
+    (``LocalProtocolError``, ``UnsupportedProtocol``) this over-reports "may
+    have been applied", which is the safe direction. Shared by
+    ``_proxy_coord_write`` and ``_proxy_coord_verbatim`` so the two cannot
+    drift."""
+    return _coord_answer_lost(
+        f"coord's answer was lost in transit ({type(exc).__name__}); the "
+        "outcome is unknown and the change may have been applied, so re-read "
+        "the current state before retrying",
+        not_json=False,
+    )
 
 
 async def _proxy_coord_get(
@@ -1045,15 +1184,9 @@ async def _proxy_coord_get(
         try:
             resp = await client.get(url, params=params, headers=request_headers)
         except httpx.ConnectError as exc:
-            raise CoordTransportUnavailable(
-                status_code=502,
-                detail="coord is not reachable",
-            ) from exc
+            raise _coord_unreachable(CoordTransportUnavailable) from exc
         except httpx.TimeoutException as exc:
-            raise CoordTransportUnavailable(
-                status_code=504,
-                detail="timeout waiting for coord",
-            ) from exc
+            raise _coord_timeout(CoordTransportUnavailable, write=False) from exc
     if resp.status_code >= 400:
         raise HTTPException(
             status_code=resp.status_code,
@@ -1142,44 +1275,74 @@ async def get_pr_merge_prs(
     )
 
 
-@router.post("/prs/{owner}/{repo}/{number}/draft-state")
-async def set_pr_draft_state(
+# Body keys the hold proxy forwards to coord. coord's ``HoldBody`` is
+# ``deny_unknown_fields``, so anything else would be a 400 there; dropping it
+# here keeps the wire body exactly coord's contract.
+_PR_HOLD_FORWARDED_KEYS: tuple[str, ...] = ("held", "reason", "kind", "gate_id")
+
+
+@router.post("/prs/{owner}/{repo}/{number}/hold")
+async def set_pr_hold(
     owner: str,
     repo: str,
     number: int,
     body: dict[str, Any],
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
-    """Set a PR's GitHub draft state (operator release valve).
+    """Place or release a coord hold on a PR (the operator's hold control).
 
-    Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``
-    (plan 2026-07-23-operator-set-pr-draft-state). The body is ``{"draft": bool}``:
-    ``false`` marks the PR ready-for-review (releasing it to the merge train),
-    ``true`` converts it back to draft (the documented hold mechanism).
+    Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``
+    (plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced
+    the ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),
+    so it works on private repos on GitHub Free, which have no draft PRs.
 
-    Auth mirrors the gate-action stack (approve/reject): the operator's Cognito
-    bearer is forwarded (``require_coord_tenant_admin`` → ``tenant_id=`` →
-    fleet-auth P2/D6) and coord derives the tenant + validates repo authority
-    server-side. Releasing a draft-required (security-surface) PR is an operator
-    judgment, so this is operator-authed — never an agent JWT.
+    Body: ``{"held": bool, "reason"?: str, "kind"?: str, "gate_id"?: str}``.
+    ``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;
+    ``held: false`` releases. Release authority is coord's: the holder, or an
+    admin-role operator for any hold; a ``security_tier`` hold is the
+    operator's alone.
 
-    Only the ``draft`` boolean is forwarded; any other keys the client sends are
-    dropped so the wire body to coord is exactly its ``{"draft": bool}`` contract.
-    coord's status codes + ``{"error", "message"}`` bodies pass through verbatim
-    via ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant
-    / pr_not_found, 429 rate_limited, 503 github_app_unconfigured,
-    502 github_draft_state_failed, 500 internal).
+    Auth mirrors the gate-action stack: the operator's Cognito bearer is
+    forwarded (``require_coord_tenant_admin`` → ``tenant_id=``) and coord
+    derives the tenant, role and repo authority server-side. Only the four
+    contract keys are forwarded.
+
+    ``structured_errors=True``: coord's typed refusal object (``{"error",
+    "message"}``) becomes the ``HTTPException.detail`` dict, which the app's
+    ``http_exception_handler`` splices into the top level of its envelope, so
+    the browser receives ``error`` as coord's code (400 invalid_input,
+    403 not_holder / security_tier_operator_only, 404 not_found,
+    500 internal) rather than a JSON string inside ``message``. A coord error
+    body that is not a JSON object still falls back to its text.
     """
-    draft = body.get("draft")
-    if not isinstance(draft, bool):
-        raise HTTPException(
-            status_code=400,
-            detail="draft-state body requires a boolean `draft` field",
+    held = body.get("held")
+    if not isinstance(held, bool):
+        raise refusal_error(
+            400,
+            RefusalCode.invalid_request,
+            NextActionKind.fix_request,
+            "hold body requires a boolean `held` field",
+            discriminator="pr_hold_held_not_bool",
         )
+    forwarded: dict[str, Any] = {"held": held}
+    for key in _PR_HOLD_FORWARDED_KEYS[1:]:
+        value = body.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise refusal_error(
+                400,
+                RefusalCode.invalid_request,
+                NextActionKind.fix_request,
+                f"hold body field `{key}` must be a string",
+                discriminator="pr_hold_field_not_string",
+            )
+        forwarded[key] = value
     return await _proxy_coord_post(
-        f"/coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state",
-        {"draft": draft},
+        f"/coord/repos/{owner}/{repo}/pull-requests/{number}/hold",
+        forwarded,
         tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
@@ -1374,9 +1537,10 @@ async def _proxy_coord_write(
     * ``ConnectError`` → **502** ``coord is not reachable``: no connection was
       made, so coord never saw the request. The only arm that is safe to
       report as "nothing changed".
-    * a timeout, any OTHER transport failure after the request may have been
-      sent (``ReadError``, ``RemoteProtocolError`` — a load balancer cutting
-      the response), or a 2xx whose body is PRESENT but not JSON → **504**:
+    * a timeout, any other ``httpx.HTTPError`` (``ReadError``,
+      ``RemoteProtocolError`` — a load balancer cutting the response — treated
+      as after-send; see ``_coord_answer_lost_in_transit``), or a 2xx whose
+      body is PRESENT but not JSON → **504**:
       coord may well have committed, and only a re-read can tell. Each is
       logged, because a 504 the operator retries is otherwise invisible.
     * a coord ≥400 → coord's own status with ``detail=resp.text`` — or, with
@@ -1392,25 +1556,13 @@ async def _proxy_coord_write(
         try:
             resp = await send(url, json=body, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException as exc:
             logger.warning(event, path=path, exc_type=type(exc).__name__)
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            ) from exc
+            raise _coord_timeout(write=True) from exc
         except httpx.HTTPError as exc:
             logger.warning(event, path=path, exc_type=type(exc).__name__)
-            raise HTTPException(
-                status_code=504,
-                detail=(
-                    f"coord's answer was lost in transit ({type(exc).__name__}); "
-                    "the change may have been applied"
-                ),
-            ) from exc
+            raise _coord_answer_lost_in_transit(exc) from exc
     if resp.status_code >= 400:
         raise HTTPException(
             status_code=resp.status_code,
@@ -1429,12 +1581,11 @@ async def _proxy_coord_write(
             # `getattr`: a log line on an error path must never raise itself.
             content_type=getattr(resp, "headers", {}).get("content-type"),
         )
-        raise HTTPException(
-            status_code=504,
-            detail=(
-                f"coord answered {resp.status_code} with a body that is not "
-                "JSON; the change may have been applied"
-            ),
+        raise _coord_answer_lost(
+            f"coord answered {resp.status_code} with a body that is not "
+            "JSON; the change may have been applied, so re-read the current "
+            "state before retrying",
+            not_json=True,
         ) from exc
 
 
@@ -1569,9 +1720,9 @@ async def post_github_clone_credential(
         try:
             resp = await client.post(url, json={"repo": body.repo}, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(status_code=502, detail="coord is not reachable")
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+            raise _coord_timeout(write=True)
     try:
         content = resp.json()
     except ValueError:
@@ -1600,6 +1751,7 @@ async def _proxy_coord_verbatim(
     tenant_id: UUID,
     params: dict[str, Any] | None = None,
     json_body: dict[str, Any] | None = None,
+    timeout: httpx.Timeout = _COORD_TIMEOUT,
 ) -> JSONResponse:
     """Forward a request to coord, passing status + JSON body through verbatim.
 
@@ -1607,26 +1759,68 @@ async def _proxy_coord_verbatim(
     posture ``post_github_clone_credential`` and the onboarding claim proxy
     open-code): operator bearer forwarded via ``_tenant_headers``, httpx
     transport errors mapped like the raising helpers (ConnectError → 502,
-    TimeoutException → 504), and coord's response — success OR error —
+    TimeoutException → 504, and any other ``httpx.HTTPError`` —
+    ``ReadError``, ``RemoteProtocolError``, treated as after-send — → the 504
+    ``answer_lost`` for a write, whose outcome is unknown
+    (``_coord_answer_lost_in_transit``, shared with ``_proxy_coord_write``),
+    or a 502 ``coord_read_answer_lost`` for a GET, which changed nothing),
+    and coord's response — success OR error —
     echoed to the caller with its original status code and JSON body. A
-    non-JSON coord payload is wrapped as ``{"detail": <text>}``.
+    non-JSON coord payload is wrapped as ``{"detail": <text>}``. Coord's
+    ``Retry-After`` (a ``503`` that says when to come back, e.g. the bind
+    door's ``schema_settling``) is echoed too; no other upstream header is.
+    ``timeout`` defaults to the small-read budget; a write that does more work
+    before it answers passes its own (see ``_COORD_REPO_BINDING_WRITE_TIMEOUT``).
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id)
-    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+    write = method.upper() != "GET"
+    async with httpx.AsyncClient(timeout=timeout) as client:
         try:
             resp = await client.request(
                 method, url, params=params, json=json_body, headers=headers
             )
         except httpx.ConnectError:
-            raise HTTPException(status_code=502, detail="coord is not reachable")
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+            raise _coord_timeout(write=write)
+        except httpx.HTTPError as exc:
+            # Any other transport failure (a load balancer cutting the
+            # response, a dropped connection mid-read) is treated as after
+            # coord received the request. Uncaught, it would be a bare 500
+            # that says nothing about whether a write applied.
+            logger.warning(
+                "coord_verbatim_answer_lost",
+                path=path,
+                method=method.upper(),
+                exc_type=type(exc).__name__,
+            )
+            if write:
+                raise _coord_answer_lost_in_transit(exc) from exc
+            raise refusal_error(
+                502,
+                RefusalCode.upstream_unavailable,
+                NextActionKind.retry_later,
+                f"coord's answer was lost in transit ({type(exc).__name__}); "
+                "a read changes nothing, so retrying is safe",
+                discriminator="coord_read_answer_lost",
+                glossary_terms=[GlossaryTerm.coord],
+            ) from exc
     try:
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
-    return JSONResponse(content=content, status_code=resp.status_code)
+    # Only a real header string is echoed: anything else is no header at all.
+    retry_after = resp.headers.get("retry-after")
+    return JSONResponse(
+        content=content,
+        status_code=resp.status_code,
+        headers=(
+            {"Retry-After": retry_after}
+            if isinstance(retry_after, str) and retry_after.strip()
+            else None
+        ),
+    )
 
 
 class RepoNameCheckRequest(BaseModel):
@@ -2431,15 +2625,9 @@ async def post_pr_merge_onboarding_connect_state(
         try:
             resp = await client.post(url, json=payload, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout(write=True)
     try:
         content = resp.json()
     except ValueError:
@@ -2572,15 +2760,9 @@ async def post_pr_merge_onboarding_claim(
         try:
             resp = await client.post(url, json=payload, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout(write=True)
     # Pass coord's status code + JSON body straight through. Fall back to a
     # wrapped raw body if coord ever returns a non-JSON payload.
     try:
@@ -2660,15 +2842,9 @@ async def post_pr_merge_onboarding_enroll(
         try:
             resp = await client.post(url, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout(write=True)
     # Pass coord's status code + JSON body straight through. Fall back to a
     # wrapped raw body if coord ever returns a non-JSON payload.
     try:
@@ -2736,20 +2912,184 @@ async def post_pr_merge_onboarding_restore_repo(
         try:
             resp = await client.post(url, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
+            raise _coord_timeout(write=True)
     try:
         content = resp.json()
     except ValueError:
         content = {"detail": resp.text}
     return JSONResponse(content=content, status_code=resp.status_code)
+
+
+# ---- Per-repo tenant bindings (list / bind / unbind) ------------------------
+#
+# A binding makes one repo governed by a tenant other than its GitHub org's
+# tenant (plan `2026-10-17-per-repo-tenant-binding-overrides-the-org-tenant`,
+# Phase 7, D8). Coord owns the table and every authorization decision: the
+# operator arm `GET/POST/DELETE /coord/onboarding/repo-bindings` resolves the
+# ACTIVE tenant from the forwarded bearer + `X-Qontinui-Active-Tenant`, lists
+# only bindings where that tenant is the bound tenant or the org's tenant, and
+# re-checks admin in BOTH tenants for a bind (D4 O4) and in the bound OR the
+# org tenant for an unbind (D4 rule 2). This proxy adds the web-side
+# active-tenant admin gate and nothing else.
+#
+# Every coord answer passes through with its status and body unchanged (and,
+# for `503 schema_settling`, its `Retry-After` header), so the page can name
+# the code and read its extras. The contract is qontinui-coord#3522's
+# `BindingError` (`repo_tenant_binding/mod.rs`): `400 invalid_repo` /
+# `invalid_reason` / `invalid_decision_ref` / `invalid_target_tenant`; `403
+# caller_tenant_not_a_party`, `not_admin_in_both_tenants` (+ `failed_side`,
+# `failed_tenant`), `not_admin_in_bound_or_org_tenant`; `404
+# tenant_not_found` (+ `tenant_id`) / `binding_not_found` (+ `repo`); `409
+# in_flight_merge_proposals` (+ `proposal_ids`) / `tenancy_changed`; `422
+# org_unbound` (+ `org`, `remedy`); `500 authz_lookup_failed` /
+# `repo_binding_read_failed` / `repo_binding_write_failed` (the transaction
+# failed before its commit and rolled back; its body carries `"rolled_back":
+# true`, the marker the page reads as "nothing was written") /
+# `repo_binding_commit_unknown` (the commit failed, so the write may have
+# landed — re-read before retrying; never `rolled_back`); `503
+# migration_pending` (+ `missing`) /
+# `schema_settling` (bind only: + `retry_after_secs`, `live_replicas`,
+# `not_ready_replicas`) / `coord_db_unavailable`. Coord's operator-layer
+# refusals before the core (no operator context, the `admin` role gate,
+# `operator_principal_required`) pass through the same way. The web's own
+# transport refusals (`_proxy_coord_verbatim`) sit beside them.
+COORD_REPO_BINDINGS_PATH = "/coord/onboarding/repo-bindings"
+
+#: Timeout for a bind / unbind. Neither is a small read: before answering,
+#: coord runs the fleet census, a tenancy read, up to three admin lookups and a
+#: target-exists read, then a row-locking move across three tables plus audit
+#: and notification rows (and possibly an enrollment spawn). At the 5s read
+#: budget the "may have landed" 504 would be an ordinary outcome rather than an
+#: exceptional one. 30s stays under the frontend's 60s request default, so the
+#: proxy's own 504 envelope still reaches the page.
+_COORD_REPO_BINDING_WRITE_TIMEOUT = httpx.Timeout(30.0, connect=5.0)
+
+
+#: Length caps on the binding bodies. Like :class:`OnboardingClaimRequest`'s,
+#: they only keep an unbounded blob out of a proxied request body — coord stays
+#: the authoritative check on every value, so nothing here is a pattern, and no
+#: cap is tighter than coord's own. ``repo`` admits every spelling coord
+#: normalizes (``owner/name``, a ``.git`` suffix, a github.com URL: GitHub's
+#: 39-char login + ``/`` + its 100-char name + the URL prefix and suffix).
+#: ``reason`` and ``decision_ref`` are coord's 2000 characters AFTER trimming
+#: (``MAX_TEXT_CHARS``), so they are stripped before the cap is applied.
+#: ``target_tenant`` is a uuid string, capped generously. The frontend form
+#: accepts ``owner/name`` only, with its own caps (``RepoTenantBindings.tsx``).
+REPO_BINDING_REPO_MAX = 256
+REPO_BINDING_TEXT_MAX = 2000
+REPO_BINDING_TENANT_MAX = 64
+
+#: Coord's ``reason`` / ``decision_ref`` bound: whitespace is trimmed first,
+#: then at most 2000 characters (coord ``repo_tenant_binding::reason_text``).
+_RepoBindingText = Annotated[
+    str, StringConstraints(strip_whitespace=True, max_length=REPO_BINDING_TEXT_MAX)
+]
+
+
+class RepoBindRequest(BaseModel):
+    """Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).
+
+    ``repo`` is ``owner/name`` (a ``.git`` suffix or a github.com URL is
+    accepted too); coord normalizes it to its lowercase key and answers ``400
+    invalid_repo`` for anything else. ``target_tenant`` is the tenant uuid the
+    repo is bound to; it is a plain string here so a malformed value reaches
+    coord and comes back as coord's own ``400 invalid_target_tenant`` rather
+    than a web-side validation shape. ``reason`` (required, non-blank — coord
+    decides blankness) is recorded on the binding and in the audit rows coord
+    writes per affected tenant; ``decision_ref`` is optional free text, and
+    coord reads a blank one as absent. Each field is length-capped (see
+    ``REPO_BINDING_*_MAX``) no tighter than coord: an over-long value is a
+    web-side 422, never forwarded.
+    """
+
+    repo: str = Field(max_length=REPO_BINDING_REPO_MAX)
+    target_tenant: str = Field(max_length=REPO_BINDING_TENANT_MAX)
+    reason: _RepoBindingText
+    decision_ref: _RepoBindingText | None = None
+
+
+class RepoUnbindRequest(BaseModel):
+    """Body for ``DELETE /pr-merge/onboarding/repo-bindings`` (coord ``UnbindRequest``).
+
+    Unbinding returns governance to the org's tenant. ``reason`` is required
+    and must be non-blank; coord enforces that and records it in the audit.
+    Both fields carry the bind body's length caps.
+    """
+
+    repo: str = Field(max_length=REPO_BINDING_REPO_MAX)
+    reason: _RepoBindingText
+
+
+@router.get("/pr-merge/onboarding/repo-bindings")
+async def get_pr_merge_onboarding_repo_bindings(
+    repo: str | None = Query(
+        None, description="Narrow the list to one `owner/name` repository."
+    ),
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> JSONResponse:
+    """List the repo-tenant bindings visible to the active tenant.
+
+    Proxies coord's ``GET /coord/onboarding/repo-bindings[?repo=]``. The 200
+    body is ``{"bindings": [...], "measured_at": <rfc3339>}``; each binding
+    carries ``caller_side: "bound" | "org"`` — whether the active tenant is the
+    tenant the repo is bound TO, or the tenant of the org it was bound AWAY
+    from. ``repo`` is forwarded only when supplied. Status + body verbatim.
+    """
+    params = {"repo": repo} if repo is not None else None
+    return await _proxy_coord_verbatim(
+        "GET", COORD_REPO_BINDINGS_PATH, tenant_id=tenant_id, params=params
+    )
+
+
+@router.post("/pr-merge/onboarding/repo-bindings")
+async def post_pr_merge_onboarding_repo_binding(
+    body: RepoBindRequest,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> JSONResponse:
+    """Bind a repo to a tenant (or rebind it to another one).
+
+    Proxies coord's ``POST /coord/onboarding/repo-bindings``. Coord moves the
+    repo's ``tenant_repos`` / profile / canonical rows, writes the binding, one
+    audit row per affected tenant and an operator notification, and answers
+    ``{repo, from_tenant, to_tenant, governed_by: "binding", moved:
+    {tenant_repos, profile, canonical}, binding_written, binding_deleted,
+    tombstone_cleared, audit_ids, notified, idempotent, enrollment_spawned}``;
+    a repeated bind answers ``idempotent: true`` with nothing written.
+    ``decision_ref`` is omitted from the wire when absent. Status, body and
+    ``Retry-After`` verbatim (``503 schema_settling`` is a bind-only refusal).
+    """
+    return await _proxy_coord_verbatim(
+        "POST",
+        COORD_REPO_BINDINGS_PATH,
+        tenant_id=tenant_id,
+        timeout=_COORD_REPO_BINDING_WRITE_TIMEOUT,
+        json_body=body.model_dump(exclude_none=True),
+    )
+
+
+@router.delete("/pr-merge/onboarding/repo-bindings")
+async def delete_pr_merge_onboarding_repo_binding(
+    body: RepoUnbindRequest,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> JSONResponse:
+    """Unbind a repo, returning its governance to the org's tenant.
+
+    Proxies coord's ``DELETE /coord/onboarding/repo-bindings`` with the body
+    ``{repo, reason}``. An admin of either the bound tenant (release) or the
+    org's tenant (reclaim) may unbind; coord decides. The 200 body has the
+    bind response's shape with ``governed_by: "org"`` and ``binding_deleted:
+    true``; ``404 binding_not_found`` when there is no binding visible to the
+    active tenant. Status + body verbatim.
+    """
+    return await _proxy_coord_verbatim(
+        "DELETE",
+        COORD_REPO_BINDINGS_PATH,
+        tenant_id=tenant_id,
+        timeout=_COORD_REPO_BINDING_WRITE_TIMEOUT,
+        json_body=body.model_dump(),
+    )
 
 
 # ---- Coord device pairing — Step 1 of the onboarding wizard -------------
@@ -2989,6 +3329,14 @@ async def get_pr_merge_slo(
     Phase 5, along with the ``rollout_state`` column and the ``shadow`` state
     the last two existed to justify exiting.
 
+    Plan ``2026-08-27-operator-touch-read-and-surface`` C3 adds two TENANT-level
+    fields (touches carry no repo): ``operator_touch`` ``{last_7d, last_30d}``
+    — each window's ``measurement`` is ``measured`` | ``not_yet_measured`` |
+    ``unreadable`` — and ``structurally_zero``, the per-repo window fields
+    with no live writer (``operator_override_rate``, ``escalation_rate``).
+    This proxy returns coord's JSON as-is (no response model reshapes it), so
+    both reach the frontend without a change here.
+
     Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
     """
     return await _proxy_coord_get(
@@ -3027,13 +3375,19 @@ async def get_pr_merge_slo(
 
 
 async def _proxy_coord_passthrough(
-    method: Literal["GET", "POST"],
+    method: str,
     path: str,
     *,
     tenant_id: UUID,
     body: Any = None,
+    params: dict[str, Any] | None = None,
 ) -> JSONResponse:
     """Proxy to coord, forwarding its status code and JSON body VERBATIM.
+
+    ``params`` is the query string of a GET (ignored for a POST, whose input
+    is its ``body``). ``None`` puts nothing on the wire — callers build it
+    from their declared ``Query`` parameters and omit the unset ones, so an
+    absent filter reaches coord as absent rather than as an empty value.
 
     Unlike :func:`_proxy_coord_get` / :func:`_proxy_coord_post`, a coord 4xx is
     NOT re-raised as an ``HTTPException`` — it is returned as-is. That keeps
@@ -3054,16 +3408,19 @@ async def _proxy_coord_passthrough(
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id)
+    # One normalised verb decides both the call made and whether a timeout
+    # may have written, so the two can never disagree.
+    is_get = method.upper() == "GET"
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
-            if method == "GET":
-                resp = await client.get(url, headers=headers)
+            if is_get:
+                resp = await client.get(url, params=params, headers=headers)
             else:
                 resp = await client.post(url, json=body or {}, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(status_code=502, detail="coord is not reachable")
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+            raise _coord_timeout(write=not is_get)
     try:
         payload: Any = resp.json()
     except ValueError:
@@ -3333,15 +3690,9 @@ async def _proxy_coord_post(
         try:
             resp = await client.post(url, json=body, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail=COORD_UNREACHABLE_DETAIL,
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail=COORD_TIMEOUT_DETAIL,
-            )
+            raise _coord_timeout(write=True)
     if resp.status_code >= 400:
         raise HTTPException(
             status_code=resp.status_code,
@@ -3557,19 +3908,35 @@ async def reopen_gate(
     )
 
 
+class GateRejectRequest(BaseModel):
+    """Optional JSON body of ``POST /gates/{gate_id}/reject``."""
+
+    reason: str | None = None
+
+
+# ``reason`` was once a bare handler parameter, which FastAPI binds to the
+# QUERY string, so the reason the web client sends in the JSON body was
+# silently dropped and every rejection reached coord without one. It is now a
+# body model. The reason is stripped before forwarding because coord stores a
+# whitespace-only reason literally.
 @router.post("/gates/{gate_id}/reject")
 async def reject_gate(
     gate_id: str,
-    reason: str | None = None,
+    body: GateRejectRequest | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Reject an OperatorApproval gate (operator bearer forwarded —
-    fleet-auth P2/D6)."""
-    body: dict[str, Any] = {}
+    fleet-auth P2/D6).
+
+    The optional JSON body ``{"reason": ...}`` carries the reason. It is
+    forwarded to coord stripped, and only when non-blank; an absent body or a
+    blank reason forwards ``{}``."""
+    reject_body: dict[str, Any] = {}
+    reason = body.reason.strip() if body is not None and body.reason else ""
     if reason:
-        body["reason"] = reason
+        reject_body["reason"] = reason
     return await _proxy_coord_post(
-        f"/coord/gates/{gate_id}/reject", body, tenant_id=tenant_id
+        f"/coord/gates/{gate_id}/reject", reject_body, tenant_id=tenant_id
     )
 
 
@@ -4385,6 +4752,237 @@ async def get_pull_decisions(
     )
 
 
+# ---- Operator touches (the operator-touch read + constraint verdict) -----
+#
+# Plan ``2026-08-27-operator-touch-read-and-surface`` Phase C3 (C3a item 3).
+# coord's ``GET /coord/operator-touches`` is the FIRST read door over
+# ``coord.operator_touches``: one payload carrying the window aggregate
+# (per-disposition totals, reason classes ranked by share), a keyset page of
+# touches, and the constraint verdict — computed once in coord and served on
+# both routes below so the ``/admin/coord/operator-touches`` health strip is
+# DERIVED from the page's own payload rather than separately fetched (C3c).
+#
+# Error posture: ``_proxy_coord_passthrough``, not ``_proxy_coord_get``. coord
+# answers an unreadable store with a typed ``503 {"error":
+# "schema_migration_pending"|"db_unavailable", "detail"}`` and a bad query
+# with ``400 {"error": "bad_request", "detail"}``; the page renders those as
+# "unknown", never as an empty-but-healthy store, so the browser needs coord's
+# ``error`` key intact rather than folded into this module's generic envelope.
+#
+# Every query parameter is forwarded EXPLICITLY, unchanged, and only when set;
+# this edge adds no validation of its own. coord answers a bad query in two
+# shapes, and both pass through verbatim:
+#
+# * a VALUE error it validates itself — ``window_days`` not 7|30, an unknown
+#   ``disposition``, a malformed ``before`` cursor — is its typed
+#   ``400 {"error": "bad_request", "detail"}``; ``limit`` out of range is
+#   clamped, not refused;
+# * a TYPE error caught by axum's plain ``Query<...>`` extractor before coord's
+#   handler runs — ``window_days=abc``, ``open_only=yes``, a ``limit`` that
+#   overflows ``i64`` — is axum's PLAIN-TEXT 400, which
+#   ``_proxy_coord_passthrough`` wraps as ``{"error": "<axum's text>"}``.
+#
+# Typing the params here would instead answer a FastAPI 422 of a third shape,
+# which the page would misattribute to coord.
+
+
+@router.get("/coord/operator-touches")
+async def get_operator_touches(
+    window_days: str | None = Query(default=None),
+    disposition: str | None = Query(default=None),
+    open_only: str | None = Query(default=None),
+    actionable_only: str | None = Query(default=None),
+    limit: str | None = Query(default=None),
+    before: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).
+
+    Response shape is coord-authored and passed through untouched —
+    ``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,
+    ``aggregate_included`` (``false`` on a ``before`` page, where every
+    aggregate field and ``constraint_verdict`` are ``null``),
+    ``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,
+    ``unknown_share``, ``policy_authorized_split``, ``reason_classes``,
+    ``touches``, ``next_cursor`` and ``constraint_verdict``.
+
+    Every parameter is declared as a STRING and forwarded unchanged. coord
+    clamps ``limit`` to ``1..200``, answers a VALUE error with its typed
+    ``400 {"error": "bad_request", "detail"}``, and a TYPE error (``abc`` for
+    an integer, ``yes`` for a boolean) with axum's plain-text 400, which the
+    passthrough wraps as ``{"error": "<text>"}`` — see the section note.
+    Typing them here would answer a FastAPI ``422 {detail: [...]}`` instead,
+    which the page would misattribute to coord. A ``not_yet_measured`` store is coord's
+    answer, not a failure; coord's 400/503 bodies pass through verbatim.
+    """
+    candidates = {
+        "window_days": window_days,
+        "disposition": disposition,
+        "open_only": open_only,
+        "actionable_only": actionable_only,
+        "limit": limit,
+        "before": before,
+    }
+    params: dict[str, Any] = {k: v for k, v in candidates.items() if v}
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches",
+        tenant_id=tenant_id,
+        params=params or None,
+    )
+
+
+@router.get("/coord/operator-touches/constraint-verdict")
+async def get_operator_touch_constraint_verdict(
+    window_days: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/operator-touches/constraint-verdict``.
+
+    The standalone form of the ``constraint_verdict`` object the touch read
+    carries inline: ``{verdict: "operator"|"machines"|"tokens"|"unknown",
+    reason, inputs, unknown_inputs, computed_at}``. ``unknown`` is a permitted
+    verdict, never a default. Error bodies pass through verbatim.
+    """
+    params: dict[str, Any] | None = (
+        {"window_days": window_days} if window_days else None
+    )
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/operator-touches/constraint-verdict",
+        tenant_id=tenant_id,
+        params=params,
+    )
+
+
+# ---- Overlord session flow (the pass-ledger reads) ------------------------
+#
+# Plan ``2026-10-23-the-overlord-keeps-no-record-of-session-flow-so-its-
+# development-runs-on-anecdote`` Phase 4. coord's ``coord.overlord_passes`` /
+# ``coord.overlord_pass_rows`` hold one row per ``/triage-sessions`` pass and
+# one per terminal it screened; ``GET /coord/overlord/flow`` derives the flow
+# metrics (time-to-close, nudge→progress, nudge→finished, unchanged sessions,
+# UNKNOWN share, the per-pass verdict series) over a window of them, and the
+# two ``passes`` routes read the ledger itself. These proxies feed the
+# ``/admin/coord/overlord/flow`` page.
+#
+# Error posture is the operator-touch section's, for the same reason:
+# ``_proxy_coord_passthrough``. coord answers a ledger the web revision has not
+# provisioned with a typed ``503 {"error": "schema_migration_pending"}``, a
+# query it refuses with a typed ``422`` naming the field
+# (``invalid_vocabulary`` / ``invalid_shape``), and an absent pass with
+# ``404 {"error": "pass_not_found"}``. The page renders a failed read as
+# UNKNOWN and needs coord's ``error`` key intact to say why.
+#
+# Every QUERY parameter is declared as a string and forwarded EXPLICITLY,
+# unchanged, and only when set. coord owns their bounds (``window_hours`` max
+# 2160, ``unchanged_min_passes`` min 2, ``limit`` max 200, …); restating them
+# here would answer a FastAPI ``422 {detail: [...]}`` of a third shape — which
+# the page would misattribute to coord — and would drift from coord's own
+# numbers. What this edge DOES validate is the one input it splices into a URL
+# PATH: ``pass_id`` is typed ``UUID``, so ``..`` or an encoded separator can
+# never re-address a different coord route, and the canonical form is what
+# goes on the wire. A parameter the contract does not name is not declared,
+# so FastAPI drops it rather than forwarding it.
+
+
+@router.get("/coord/overlord/flow")
+async def get_overlord_flow(
+    window_hours: str | None = Query(default=None),
+    device_id: str | None = Query(default=None),
+    runner_port: str | None = Query(default=None),
+    unchanged_min_passes: str | None = Query(default=None),
+    nudge_window_passes: str | None = Query(default=None),
+    group_by: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/overlord/flow`` (tenant-scoped).
+
+    Response shape is coord-authored and passed through untouched —
+    ``window``, ``truncated``, ``passes_considered``,
+    ``full_passes_considered``, ``time_to_close`` (``median_secs`` /
+    ``p90_secs`` are ``null`` when ``count == 0``), ``nudge`` (rates ``null``
+    when ``nudged == 0``), ``unchanged``, ``unknown_share`` (``share`` ``null``
+    over an empty pass), ``verdict_series`` and, with
+    ``group_by=overlord_version``, ``groups``. A ``null`` is coord saying
+    "not measurable", and must reach the page as ``null`` — never a ``0``.
+
+    Every parameter is a STRING forwarded unchanged; coord's typed 422/503
+    bodies pass through verbatim — see the section note.
+    """
+    candidates = {
+        "window_hours": window_hours,
+        "device_id": device_id,
+        "runner_port": runner_port,
+        "unchanged_min_passes": unchanged_min_passes,
+        "nudge_window_passes": nudge_window_passes,
+        "group_by": group_by,
+    }
+    params: dict[str, Any] = {k: v for k, v in candidates.items() if v}
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/overlord/flow",
+        tenant_id=tenant_id,
+        params=params or None,
+    )
+
+
+@router.get("/coord/overlord/passes")
+async def list_overlord_passes(
+    device_id: str | None = Query(default=None),
+    runner_port: str | None = Query(default=None),
+    scope: str | None = Query(default=None),
+    mode: str | None = Query(default=None),
+    since: str | None = Query(default=None),
+    limit: str | None = Query(default=None),
+    offset: str | None = Query(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/overlord/passes`` (tenant-scoped list).
+
+    Answers ``{ok, passes, total_matching, truncated, limit, offset}``, newest
+    ``started_at`` first, each pass WITHOUT its rows. Filters are strings
+    forwarded unchanged (``scope`` ``full|filtered``, ``mode``
+    ``report|act``, ``since`` RFC 3339, ``limit`` ≤ 200 — coord validates);
+    error bodies pass through verbatim.
+    """
+    candidates = {
+        "device_id": device_id,
+        "runner_port": runner_port,
+        "scope": scope,
+        "mode": mode,
+        "since": since,
+        "limit": limit,
+        "offset": offset,
+    }
+    params: dict[str, Any] = {k: v for k, v in candidates.items() if v}
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/overlord/passes",
+        tenant_id=tenant_id,
+        params=params or None,
+    )
+
+
+@router.get("/coord/overlord/passes/{pass_id}")
+async def get_overlord_pass(
+    pass_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Proxy coord's ``GET /coord/overlord/passes/{pass_id}`` (tenant-scoped).
+
+    Answers ``{ok, pass: {<pass fields>, rows: [...]}}``; a pass absent in the
+    caller's tenant is coord's ``404 {"error": "pass_not_found"}``, passed
+    through verbatim. ``pass_id`` is typed ``UUID`` because it is spliced into
+    the coord URL path — see the section note.
+    """
+    return await _proxy_coord_passthrough(
+        "GET",
+        f"/coord/overlord/passes/{pass_id}",
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Alerts (full rollup; read API for agents and the red-main banner) ---
 
 
@@ -4685,6 +5283,123 @@ async def post_coord_notifications_mark_read(
         "/coord/notifications/mark-read",
         body.model_dump(mode="json", exclude_none=True),
         tenant_id=tenant_id,
+    )
+
+
+# ---- Operator action items (owed operator to-dos; pushed to the phone) ---
+#
+# Plan ``2026-10-12-operator-action-items-pushed-to-the-phone`` Phase 3.
+#
+# `coord.operator_action_items` holds a to-do the OPERATOR owes — created when
+# a gate with a `notify_operator` continuation clears, or when an agent posts
+# one — with an `open -> done | dismissed` lifecycle and a push-delivery state
+# coord records on the row. It is neither a notification (append-only, no
+# lifecycle) nor an agent question (a decision with a blocked asker).
+#
+# - `/operations/action-items`         -> coord `GET  /coord/operator-action-items`
+# - `/operations/action-items/resolve` -> coord `POST /coord/operator-action-items/resolve`
+#
+# Both back `/admin/coord/action-items`. Until the `coord.operator_action_items`
+# alembic revision deploys, coord answers ``503 {"error":
+# "schema_migration_pending"}``; that passes through verbatim and the page
+# reads it as "nothing to show yet", never as an error.
+#
+# Both proxies pass ``structured_errors=True`` so coord's typed refusal
+# (``schema_migration_pending``, ``already_resolved``) reaches the browser as
+# the envelope's top-level ``error`` rather than as JSON text inside
+# ``message`` — the page branches on that code, never on a substring.
+
+
+@router.get("/action-items")
+async def get_coord_operator_action_items(
+    status: str | None = Query(
+        default=None,
+        description="`open` (coord's default) | `done` | `dismissed` | `all`. "
+        "Forwarded verbatim — coord owns the vocabulary and answers 400 otherwise.",
+    ),
+    limit: int | None = Query(
+        default=None,
+        description="Page size. Forwarded verbatim — coord owns the default and the clamp.",
+    ),
+    cursor: str | None = Query(
+        default=None,
+        description="Opaque keyset cursor from a prior response's ``next_cursor``.",
+    ),
+    item_id: str | None = Query(
+        default=None,
+        description="Return at most this one item (any status).",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the tenant's operator action items.
+
+    Response envelope mirrors coord:
+    ``{"items": [...], "next_cursor": str|null,
+    "counts": {"open": N, "done": N, "dismissed": N}}``. ``counts`` are
+    server-computed over the whole tenant, not the page — consumers read them
+    rather than counting ``items``.
+
+    Every param is forwarded **verbatim** and only when the caller set it;
+    bounds live in coord (one clamp, one place). Tenant-scoped and
+    operator-bearer-forwarding, same posture as ``/operations/notifications``.
+    """
+    params: dict[str, Any] = {}
+    if status is not None:
+        params["status"] = status
+    if limit is not None:
+        params["limit"] = limit
+    if cursor is not None:
+        params["cursor"] = cursor
+    if item_id is not None:
+        params["item_id"] = item_id
+    return await _proxy_coord_get(
+        "/coord/operator-action-items",
+        params=params or None,
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+class ActionItemResolveBody(BaseModel):
+    """Body for ``POST /operations/action-items/resolve``.
+
+    Mirrors coord's resolve request. **Coord remains the authority** — this is
+    defence in depth at the boundary and must never accept something coord
+    rejects. ``extra="forbid"`` makes a misspelled field a loud 422 here
+    instead of a silently dropped key.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: UUID = Field(description="The action item to resolve.")
+    status: Literal["done", "dismissed"] = Field(
+        description="Terminal status. Re-sending the same one is idempotent; "
+        "a different one answers coord's 409 `already_resolved`."
+    )
+    note: str | None = Field(
+        default=None,
+        max_length=1000,
+        description="Optional resolution note, at most 1000 characters.",
+    )
+
+
+@router.post("/action-items/resolve")
+async def post_coord_operator_action_items_resolve(
+    body: ActionItemResolveBody,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Resolve an action item as ``done`` or ``dismissed``.
+
+    Coord answers ``{"item": {...}}``; ``resolved_by`` is the principal coord
+    derives from the forwarded bearer, never a body field. Coord's 404 (an item
+    outside the caller's tenant) and 409 ``already_resolved`` pass through with
+    coord's status.
+    """
+    return await _proxy_coord_post(
+        "/coord/operator-action-items/resolve",
+        body.model_dump(mode="json", exclude_none=True),
+        tenant_id=tenant_id,
+        structured_errors=True,
     )
 
 
@@ -6406,6 +7121,19 @@ async def get_computer(
 @router.get("/agent-questions/pending")
 async def get_pending_agent_questions(
     gap: bool | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int | None = Query(default=None, ge=0),
+    audience: Literal["operator", "agent"] | None = Query(
+        default=None,
+        description=(
+            "Audience filter, forwarded to coord. ``operator`` is the human "
+            "inbox; ``agent`` is the agent tier. Closed two-value set — the "
+            "same authorization boundary the ``audience`` column in coord's "
+            "schema carries a CHECK constraint for — so anything else is a 422 here "
+            "rather than a filter coord silently ignores. Absent = no "
+            "audience filter (coord's own default, which is every audience)."
+        ),
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return pending agent questions awaiting an operator response.
@@ -6414,10 +7142,68 @@ async def get_pending_agent_questions(
     when set, forwarded to coord as the POLICY_GAP filter —
     ``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.
     Backs the Gaps tab on the questions inbox.
+
+    ``limit`` / ``offset`` / ``audience`` (plan
+    2026-09-12-a-correctly-escalated-question-is-unreachable-in-the-operator-inbox).
+    Until these were declared here the proxy took ``gap`` alone, and FastAPI
+    drops an undeclared query param on the floor — so a caller asking for
+    ``?limit=500&audience=operator`` reached coord with NEITHER, and any
+    frontend-side limit change was a **no-op it could not observe**. Declaring
+    them is the whole fix on this side; the forwarding below is mechanical.
+
+    Why it mattered: measured 2026-09-12, ``coord.agent_questions`` held
+    ~23,700 pending rows, 23,258 of them ``pr_fix`` with ``audience='agent'``
+    and only ~442 with ``audience='operator'``. Coord's default page is 100
+    rows newest-first, so a correctly-escalated operator question sank out of
+    reach behind the agent tier's volume and was unanswerable for 10 days.
+    ``audience=operator`` is what makes the operator's own 442 addressable;
+    ``limit``/``offset`` are what make the rest of them reachable.
+
+    ``limit`` is validated exactly as the ANSWERED proxy below validates its
+    own (``ge=1, le=500``) rather than with a second convention. ``offset`` is
+    ``ge=0`` — the answered proxy has no offset to copy, and the work-units
+    proxy's ``offset: int | None = Query(default=None, ge=0)`` is the house
+    form.
+
+    ``audience`` and ``offset`` are **ignored by a DEPLOYED coord that predates
+    the sibling change**, and "deployed" is the load-bearing word. Coord's
+    source on ``main`` now DOES parse both — ``PendingQuery``
+    (``agent_questions.rs``:387) carries ``agent_id``, ``agent_session_id``,
+    ``limit``, ``gap``, ``audience`` and ``offset`` as of the sibling commit in
+    this same change set — so a grep of that source is not grounds for deleting
+    the degrade path here: what governs is the build answering this box, and it
+    lags ``main``. The struct is plain serde with no ``deny_unknown_fields``,
+    so on an older build an unknown query key is dropped rather than refused.
+    Forwarding them is therefore safe in both directions, but a 200 is never
+    proof the filter was applied — the frontend reads the echoed ``limit`` and
+    ``offset`` back and says which parameter went nowhere. ``limit`` coord has
+    always honoured (default 100, hard max 500), which is the bound the defect
+    below ran into.
+
+    The response envelope is **unchanged** and deliberately untranslated:
+    :func:`_proxy_coord_get` returns coord's JSON body verbatim, and coord
+    already ships ``{questions, count, limit, shown, offset}`` plus ``total``
+    and ``truncated`` — so the paging metadata the frontend needs arrives
+    without a re-wrap here.
+
+    ⚠️ **``total`` and ``truncated`` are OMITTED — the key absent — when coord
+    could not observe the count**, which is precisely why nothing here
+    re-wraps the body. ``total`` is a ``COUNT(*) OVER ()`` riding on the
+    returned rows, so an ``offset`` past the end of the match set returns zero
+    rows and no count with them; a ``0`` in its place would be a fabrication,
+    and the operator console turns a pending ``0`` into "No agent is waiting on
+    an answer". Any future re-wrap here MUST preserve the absence — a
+    ``body.get("total", 0)`` anywhere in this path recreates the defect.
     """
     params: dict[str, Any] = {}
     if gap is not None:
         params["gap"] = gap
+    if limit is not None:
+        params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
+    if audience is not None:
+        params["audience"] = audience
     return await _proxy_coord_get(
         "/coord/agent-questions/pending",
         params=params or None,
@@ -6428,7 +7214,19 @@ async def get_pending_agent_questions(
 @router.get("/agent-questions/answered")
 async def get_answered_agent_questions(
     limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int | None = Query(default=None, ge=0),
     gap: bool | None = Query(default=None),
+    audience: Literal["operator", "agent"] | None = Query(
+        default=None,
+        description=(
+            "Audience filter, forwarded to coord. ``operator`` is the human "
+            "inbox; ``agent`` is the agent tier. Closed two-value set — the "
+            "same authorization boundary the ``audience`` column in coord's "
+            "schema carries a CHECK constraint for — so anything else is a 422 here "
+            "rather than a filter coord silently ignores. Absent = no "
+            "audience filter (coord's own default, which is every audience)."
+        ),
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return recently-answered agent questions.
@@ -6438,12 +7236,34 @@ async def get_answered_agent_questions(
 
     ``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the
     Gaps tab can list pre-answered (non-blocking) gap reports.
+
+    ``offset`` / ``audience``: coord's ``fetch_answered`` takes the SAME
+    ``PendingQuery`` and ``AudienceFilter`` as the pending reader, so both
+    reach it — but only if they are declared HERE. Until they were, this
+    handler declared ``limit`` and ``gap`` alone and **FastAPI dropped the
+    rest on the floor**: a caller asking for ``?offset=50&audience=operator``
+    reached coord with neither, and got page 1 of every audience with a 200
+    in front of it. That is the exact failure the pending docstring above
+    describes in its own words, still live one handler down — no visible
+    defect only because nothing pages the answered tab yet, which makes the
+    next answered pager a silent no-op its author cannot observe. Validated
+    identically to the pending handler (``limit`` ``ge=1, le=500``,
+    ``offset`` ``ge=0``, ``audience`` a closed two-value set), rather than
+    with a second convention.
+
+    The envelope is coord's, verbatim, with the same absence contract the
+    pending docstring sets out: ``total``/``truncated`` are OMITTED when coord
+    could not observe the count, and an absent key is UNKNOWN, never zero.
     """
     params: dict[str, Any] = {}
     if limit is not None:
         params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
     if gap is not None:
         params["gap"] = gap
+    if audience is not None:
+        params["audience"] = audience
     return await _proxy_coord_get(
         "/coord/agent-questions/answered",
         params=params or None,
@@ -6852,15 +7672,9 @@ async def _proxy_coord_delete(
             else:
                 resp = await client.delete(url, params=params, headers=headers)
         except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail=COORD_UNREACHABLE_DETAIL,
-            )
+            raise _coord_unreachable()
         except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail=COORD_TIMEOUT_DETAIL,
-            )
+            raise _coord_timeout(write=True)
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     # Coord may return 204 No Content for delete; tolerate empty bodies.
@@ -7415,11 +8229,9 @@ async def get_device_status(
             tenant_id=tenant_id, since=since, headers=_tenant_headers(tenant_id)
         )
     except httpx.ConnectError as exc:
-        raise HTTPException(status_code=502, detail="coord is not reachable") from exc
+        raise _coord_unreachable() from exc
     except httpx.TimeoutException as exc:
-        raise HTTPException(
-            status_code=504, detail="timeout waiting for coord"
-        ) from exc
+        raise _coord_timeout(write=False) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=exc.response.status_code, detail=exc.response.text
@@ -9400,9 +10212,9 @@ async def get_coord_session_restore_record(
                     elif line.startswith("data:"):
                         data_lines.append(line[5:].removeprefix(" "))
     except httpx.ConnectError:
-        raise HTTPException(status_code=502, detail="coord is not reachable")
+        raise _coord_unreachable()
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="timeout waiting for coord")
+        raise _coord_timeout(write=False)
 
     return {
         "session_id": str(session_id),
@@ -10074,16 +10886,37 @@ _FLEET_POLICY_CONTROL_KEYS = (
 )
 
 
+class FleetPolicyRepoOverride(BaseModel):
+    """One repo-band row that overrides the tenant band for its repo.
+
+    Mirrors one entry of coord's ``repo_overrides``
+    (``fleet_policy_repo_band::RepoOverride``). ``effective_level`` is what a
+    reader of that repo resolves from the row: ``level``, or ``off`` when the
+    row's ``master_enabled`` is false. ``level`` is opaque here, as it is on
+    the write: a level this console does not recognise is the page's to name,
+    never this proxy's to drop.
+    """
+
+    #: The row's ``scope_key`` as coord stored it (``owner/name`` for the
+    #: domains keyed that way).
+    repo: str
+    level: str
+    master_enabled: bool
+    effective_level: str
+
+
 class FleetPolicyView(BaseModel):
     """The requested domain's resolved policy — and ONLY that domain's.
 
     ``effective_level`` is what a device actually resolves, which is not the
     same as the level that was last written: coord folds ``master_enabled``
     in (a disabled master resolves ``off`` whatever ``level`` says), and a
-    tenant with no row at all resolves ``off`` / ``resolved_scope: "none"``.
-    That last case is why ``resolved_scope`` is surfaced: "off because nobody
-    ever wrote a row" and "off because someone turned it off" are different
-    facts about the fleet and the operator is entitled to tell them apart.
+    tenant with no row at all resolves the domain's declared no-row default
+    with ``resolved_scope: "none"`` — ``off`` unless coord's
+    ``domain_default_level`` declares another for that domain. That last case
+    is why ``resolved_scope`` is surfaced: "set because nobody ever wrote a
+    row" and "set because someone chose it" are different facts about the
+    fleet and the operator is entitled to tell them apart.
     """
 
     domain: str
@@ -10109,6 +10942,22 @@ class FleetPolicyView(BaseModel):
     #: caller asked about ``fleet_resources`` itself, so they are its own.
     #: ``None`` when coord sent none.
     keys_not_shown_source: Literal["fleet_resources_row", "this_domain"] | None = None
+    #: Every repo-band row of THIS domain that overrides the tenant band —
+    #: coord's ``repo_overrides``, ordered by repo. An ``inherit`` row clears an
+    #: override and is not listed. ``None`` is UNKNOWN, never "no overrides":
+    #: coord sent no list (a coord predating it), or sent one this proxy could
+    #: not read whole — a list missing one entry would claim to be complete
+    #: while hiding an override that is in force.
+    repo_overrides: list[FleetPolicyRepoOverride] | None = None
+    #: Where a NO-ROW answer's level came from, as coord reports it:
+    #: ``"deployment_profile"`` (a self-hosted coord's egress default) or
+    #: ``"product"`` (the product's own per-domain default). ``None`` when a row
+    #: decided (``resolved_scope`` is a real band) or when coord predates the
+    #: field. Declared here because pydantic drops an undeclared key, and without
+    #: it the console could never tell a deployment default from a product
+    #: default (plan ``2026-10-10-spec-front-end-phase-9-generic-boundary``
+    #: Phase 8).
+    default_source: str | None = None
 
 
 class FleetPolicyPut(BaseModel):
@@ -10223,6 +11072,41 @@ class FleetPolicyWriteResult(BaseModel):
     readback_error: str | None = None
 
 
+def _fleet_policy_repo_overrides(raw: Any) -> list[FleetPolicyRepoOverride] | None:
+    """Coord's ``repo_overrides``, or ``None`` (UNKNOWN) unless it reads WHOLE.
+
+    All or nothing: one malformed entry makes the whole list unknown. A list
+    with that entry dropped would read as "these are every override", while an
+    override the operator cannot see is still in force for its repo.
+    """
+    if not isinstance(raw, list):
+        return None
+    overrides: list[FleetPolicyRepoOverride] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return None
+        repo = entry.get("repo")
+        level = entry.get("level")
+        master = entry.get("master_enabled")
+        effective = entry.get("effective_level")
+        if not (
+            isinstance(repo, str)
+            and isinstance(level, str)
+            and isinstance(master, bool)
+            and isinstance(effective, str)
+        ):
+            return None
+        overrides.append(
+            FleetPolicyRepoOverride(
+                repo=repo,
+                level=level,
+                master_enabled=master,
+                effective_level=effective,
+            )
+        )
+    return overrides
+
+
 def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPolicyView:
     """Project coord's GET body onto the requested domain's OWN fields."""
     body = payload if isinstance(payload, dict) else {}
@@ -10239,6 +11123,7 @@ def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPol
     level = body.get("effective_level")
     scope = body.get("resolved_scope")
     master = body.get("master_enabled")
+    default_source = body.get("default_source")
     return FleetPolicyView(
         # Echo the domain we ASKED for, not the one coord echoed: they are the
         # same today, and pinning it means a future coord that echoes the
@@ -10253,6 +11138,8 @@ def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPol
         can_edit=can_edit,
         keys_not_shown=not_shown,
         keys_not_shown_source=source,
+        repo_overrides=_fleet_policy_repo_overrides(body.get("repo_overrides")),
+        default_source=default_source if isinstance(default_source, str) else None,
     )
 
 
@@ -10425,6 +11312,9 @@ class CiHostingView(BaseModel):
     domain: str = "github_hosted_ci"
     tenant_default: CiHostingReading
     repos: list[CiHostingRepoReading] = Field(default_factory=list)
+    #: Set when coord could not LIST the tenant's repos (or sent no list): the
+    #: empty ``repos`` is then UNKNOWN, never "this tenant has no repos".
+    repos_unknown_reason: str | None = None
     #: Same effective-tenant rule as ``GET /fleet-policy``'s ``can_edit``.
     can_edit: bool
 
@@ -10468,11 +11358,19 @@ def _ci_hosting_view(payload: Any, *, can_edit: bool) -> CiHostingView:
                     **_ci_hosting_reading(entry),
                 )
             )
+    raw_reason = body.get("repos_unknown_reason")
+    repos_unknown_reason = (
+        raw_reason if isinstance(raw_reason, str) and raw_reason else None
+    )
+    if repos_unknown_reason is None and not isinstance(repos_raw, list):
+        # No list at all is not an empty list.
+        repos_unknown_reason = "no_repos_reported"
     return CiHostingView(
         tenant_default=CiHostingReading(
             **_ci_hosting_reading(body.get("tenant_default"))
         ),
         repos=repos,
+        repos_unknown_reason=repos_unknown_reason,
         can_edit=can_edit,
     )
 
@@ -10536,141 +11434,281 @@ async def get_ci_hosting(
     return _ci_hosting_view(payload, can_edit=can_edit)
 
 
-# ---- Tenant transcript-sync consent proxy -------------------------------
+# ---- Secrets broker device (fleet-policy column) ---------------------------
 #
-# Plan ``2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls``
-# Phase 3 (§3.6). Coord gates session-output ingest on
-# ``coord.tenant_policies.transcript_sync_enabled`` (qontinui-coord#2480): while
-# it is ``false`` coord refuses every chunk, on both the ``pty`` and the
-# ``transcript`` stream. This is the console's door onto that one flag.
+# Plan ``2026-10-20-secrets-broker-agents-act-on-secrets-never-see-them``
+# Phase 3. The tenant's designated secrets-broker device lives in the typed,
+# versioned column ``coord.fleet_runtime_policy.secrets_broker_device_id``
+# (alembic ``secrets_broker_01``), on the TENANT-band row of the
+# ``secrets_broker`` domain. coord admits a broker report on
+# ``POST /coord/secrets-broker/events`` only from a device JWT whose
+# ``device_id`` equals it, so setting it is an authorization decision and an
+# operator action.
 #
-# It proxies coord's ``GET``/``PATCH /tenant-policy`` — but deliberately exposes
-# only the transcript-sync SLICE of the policy, under a path that says so.
-# ``session_coordination_enabled`` (the Phase 10 cutover flag) rides the same
-# GET, and coord keeps it off the HTTP write surface on purpose; showing it on a
-# page with a toggle beside it would invite reading it as editable.
+# This is a dedicated door onto a dedicated coord route, rather than a field on
+# the generic ``PUT /fleet-policy`` above, because the value is a DEVICE, not a
+# level: it is proven bound to the tenant before it is written (below), and the
+# write must touch NOTHING but the device column. The generic PUT writes a whole
+# row (level, master_enabled, controls), and any door that re-sends a level it
+# read first is a read-then-overwrite race and, worse, freezes the system band
+# into a copy on the tenant row. So this door never reads, sends or preserves a
+# level.
 #
-# Two coord wire facts this encodes once:
+# Coord wire contract this encodes (the qontinui-coord half of Phase 3):
 #
-# 1. Coord's GET requires ``?tenant_id=`` and 403s unless it EQUALS the
-#    principal's tenant — which coord resolves AFTER applying the forwarded
-#    ``X-Qontinui-Active-Tenant`` override. ``get_tenant_id`` returns the HOME
-#    tenant, so passing it here would 403 every operator who has switched
-#    project. The query param is therefore the EFFECTIVE tenant.
-# 2. Coord's PATCH body is ``#[serde(deny_unknown_fields)]`` and carries no
-#    ``tenant_id`` at all: the write lands in the operator's own (effective)
-#    tenant by construction. The body is assembled here from a closed model.
+# * ``PUT /coord/fleet-policy/secrets-broker-device`` with exactly
+#   ``{"device_id": <uuid | null>}`` (``null`` clears). coord re-checks the
+#   device's tenant binding and writes ONLY the ``secrets_broker_device_id``
+#   column of the tenant-band ``secrets_broker`` row. It never touches
+#   ``level`` or ``master_enabled``. When no tenant row exists it creates one
+#   whose level does not govern, so the system band (or the domain's no-row
+#   default) still does. The schema has no NULL level (``level`` and
+#   ``master_enabled`` are NOT NULL), so "inherit" is spelled the way the store
+#   already spells it for the repo band: ``level = 'inherit'``, which coord's
+#   resolver must then also skip at the tenant band. It answers 503
+#   ``column_not_present`` while ``secrets_broker_01`` has not reached its
+#   database.
+# * ``GET /coord/fleet-policy?domain=secrets_broker`` answers, beside the usual
+#   resolved fields, ``secrets_broker_device_id``: the TENANT-band row's value
+#   (a UUID string) or ``null``. A coord whose answer carries NO such key
+#   predates the column's reader: UNKNOWN, never "no broker".
+#
+# Until that coord route is deployed, coord answers this door 404 or 405. That
+# is surfaced as 502 ``coord_secrets_broker_device_route_missing``, never as
+# written.
+
+#: The fleet-policy domain whose tenant-band row carries the broker device.
+SECRETS_BROKER_DOMAIN = "secrets_broker"
+#: coord's device-only write route (writes the device column and nothing else).
+_SECRETS_BROKER_DEVICE_ROUTE = "/coord/fleet-policy/secrets-broker-device"
+#: The key coord's fleet-policy GET carries the device under.
+_SECRETS_BROKER_DEVICE_KEY = "secrets_broker_device_id"
 
 
-class TenantTranscriptSyncView(BaseModel):
-    """The tenant's transcript-sync consent, as coord resolves it."""
+class SecretsBrokerDeviceView(BaseModel):
+    """The tenant's designated secrets-broker device, as coord resolves it."""
 
-    #: ``None`` when coord's answer carried no such field (a coord that predates
-    #: qontinui-coord#2480). That is UNKNOWN — it is NOT "on", even though the
-    #: column defaults to ``true``, because a coord that cannot report the flag
-    #: also does not enforce it.
-    transcript_sync_enabled: bool | None
-    #: ``True`` when coord read the flag as ``false`` only because its column is
-    #: not provisioned yet (the fail-closed deploy-ordering stand-in) — so an
-    #: "off" here was not an admin's decision.
-    column_missing: bool = False
-    #: Whether the caller may write — the SAME effective-tenant rule
-    #: ``require_coord_tenant_admin`` applies to the PATCH. UI gating only;
+    #: The designated device, or ``None`` when none is designated, in which
+    #: case coord refuses every broker report for this tenant. Meaningful only
+    #: when ``reported`` is true.
+    device_id: UUID | None = None
+    #: ``False`` when coord's answer carried no ``secrets_broker_device_id`` key
+    #: at all (a coord predating the column's reader) or carried one this proxy
+    #: could not parse. That is UNKNOWN, never "no broker designated".
+    reported: bool
+    #: The ``secrets_broker`` domain's resolved level (``off`` under a disabled
+    #: master), and the band it came from (``"none"`` when no row exists).
+    effective_level: str
+    master_enabled: bool
+    resolved_scope: str
+    #: Whether the caller may write: the SAME effective-tenant rule
+    #: ``require_coord_tenant_admin`` applies to the PUT. UI gating only;
     #: coord re-checks with ``rbac::is_tenant_admin``.
     can_edit: bool
 
 
-class TenantTranscriptSyncPatch(BaseModel):
-    """Closed body for the transcript-sync write — see wire fact 2 above."""
+class SecretsBrokerDevicePut(BaseModel):
+    """Closed body for the broker-device write.
+
+    ``device_id: null`` clears the designation (every broker report is then
+    refused). The field is REQUIRED, so an empty body is a 422 rather than a
+    silent clear.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    transcript_sync_enabled: bool
+    device_id: UUID | None
 
 
-class TenantTranscriptSyncWriteResult(BaseModel):
-    """What was written, and — separately — what coord now reads back.
+class SecretsBrokerDeviceWriteResult(BaseModel):
+    """What was written, and, separately, what coord now resolves.
 
-    ``effective`` is ``None`` with ``readback_error`` set when coord accepted
-    the write but did not return the policy it re-read (its own post-upsert
-    SELECT failed). That is UNKNOWN, not "applied".
+    ``effective`` is ``None`` with ``readback_error`` set when the write landed
+    but the re-read failed. That is UNKNOWN, not "applied".
     """
 
-    written: bool
-    effective: TenantTranscriptSyncView | None = None
+    ok: bool
+    written_device_id: UUID | None
+    versioned: bool | None = None
+    version: int | None = None
+    updated_by: str | None = None
+    effective: SecretsBrokerDeviceView | None = None
     readback_error: str | None = None
 
 
-def _transcript_sync_view(payload: Any, *, can_edit: bool) -> TenantTranscriptSyncView:
-    """Project coord's ``TenantPolicy`` body onto the transcript-sync slice."""
+def _secrets_broker_device_view(
+    payload: Any, *, can_edit: bool
+) -> SecretsBrokerDeviceView:
+    """Project coord's ``secrets_broker`` fleet-policy body onto the device view."""
     body = payload if isinstance(payload, dict) else {}
-    enabled = body.get("transcript_sync_enabled")
-    return TenantTranscriptSyncView(
-        transcript_sync_enabled=enabled if isinstance(enabled, bool) else None,
-        # Coord serves the marker only while it is true.
-        column_missing=body.get("transcript_sync_column_missing") is True,
+    view = _fleet_policy_view(body, domain=SECRETS_BROKER_DOMAIN, can_edit=can_edit)
+    reported = _SECRETS_BROKER_DEVICE_KEY in body
+    device_id: UUID | None = None
+    raw = body.get(_SECRETS_BROKER_DEVICE_KEY)
+    if raw is not None:
+        try:
+            device_id = UUID(str(raw))
+        except (TypeError, ValueError):
+            # An unparseable device is not "none designated": it is UNKNOWN.
+            reported = False
+    return SecretsBrokerDeviceView(
+        device_id=device_id,
+        reported=reported,
+        effective_level=view.effective_level,
+        master_enabled=view.master_enabled,
+        resolved_scope=view.resolved_scope,
         can_edit=can_edit,
     )
 
 
-@router.get("/tenant-policy/transcript-sync", response_model=TenantTranscriptSyncView)
-async def get_tenant_transcript_sync(
-    request: Request,
-    home_tenant_id: UUID = Depends(get_tenant_id),
-) -> TenantTranscriptSyncView:
-    """Read whether coord accepts session output for the caller's tenant.
-
-    ``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see
-    ``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike
-    that route it carries NO superuser bypass: coord's ``patch_tenant_policy``
-    authorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who
-    is not an admin of this tenant is refused ``admin_required`` — an enabled
-    button would promise a write coord will not take.
-    """
-    identity = await get_coord_identity(request)
-    active = request.headers.get(ACTIVE_TENANT_HEADER)
-    effective = _effective_tenant_id(identity, active) or home_tenant_id
-    payload = await _proxy_coord_get(
-        "/tenant-policy",
-        params={"tenant_id": str(effective)},
-        tenant_id=effective,
+def _secrets_broker_refusal(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={"error": code, "code": code, "message": message},
     )
-    can_edit = "admin" in _effective_tenant_roles(identity, active)
-    return _transcript_sync_view(payload, can_edit=can_edit)
 
 
-@router.patch(
-    "/tenant-policy/transcript-sync",
-    response_model=TenantTranscriptSyncWriteResult,
-)
-async def patch_tenant_transcript_sync(
-    body: TenantTranscriptSyncPatch,
-    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
-) -> TenantTranscriptSyncWriteResult:
-    """Turn transcript sync on or off for the caller's effective tenant.
+async def _require_device_bound_to_tenant(device_id: UUID, tenant_id: UUID) -> None:
+    """Refuse unless coord PROVES ``device_id`` is bound to ``tenant_id``.
 
-    Tenant-admin gated web-side; coord re-checks and answers 403
-    ``admin_required`` otherwise, and 503 ``column_not_present`` while the
-    column's migration has not reached its database — both pass through
-    verbatim. Coord re-reads the policy after its upsert and returns it, so no
-    second round trip is needed for the read-back.
+    Reads coord's single-device ``GET /coord/devices/:id/state`` on the
+    operator's bearer (coord's ``FleetPrincipal`` accepts it). That read
+    HYDRATES ``tenant_ids`` from ``coord.tenant_devices``, and its tri-state is
+    the point: ``null`` is "coord could not read the binding set" (UNKNOWN), so
+    the write is refused rather than trusted. Designating a broker is an
+    authorization, and an unproven one fails closed. ``[]`` and a list without
+    this tenant are a proven "not bound".
     """
-    answer = await _proxy_coord_patch(
-        "/tenant-policy",
-        body.model_dump(),
+    try:
+        row = await _proxy_coord_get(
+            f"/coord/devices/{device_id}/state", tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise _secrets_broker_refusal(
+                422,
+                "device_not_found",
+                "Coord knows no device with this id.",
+            ) from exc
+        raise
+    body = row if isinstance(row, dict) else {}
+    if str(body.get("device_id")) != str(device_id):
+        raise _secrets_broker_refusal(
+            502,
+            "coord_device_state_malformed",
+            "Coord answered for a different device.",
+        )
+    bindings = body.get("tenant_ids")
+    if not isinstance(bindings, list):
+        raise _secrets_broker_refusal(
+            503,
+            "device_binding_unknown",
+            "Coord could not say which tenants this device is bound to, so the "
+            "designation was not written. Retry once coord answers.",
+        )
+    if str(tenant_id) not in {str(t) for t in bindings}:
+        raise _secrets_broker_refusal(
+            422,
+            "device_not_in_tenant",
+            "This device is not bound to this tenant, so it cannot be its "
+            "secrets broker.",
+        )
+
+
+@router.get("/secrets-broker/device", response_model=SecretsBrokerDeviceView)
+async def get_secrets_broker_device(
+    request: Request,
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> SecretsBrokerDeviceView:
+    """Read the tenant's designated secrets-broker device.
+
+    ``can_edit`` is the operator's admin role in the EFFECTIVE tenant (plus the
+    superuser bypass), the same rule ``require_coord_tenant_admin`` applies to
+    this door's PUT, which writes through coord's device-only
+    ``PUT /coord/fleet-policy/secrets-broker-device`` (coord re-checks admin).
+    ``GET /fleet-policy``'s docstring says why ``identity.is_admin`` would be
+    wrong.
+    """
+    payload = await _proxy_coord_get(
+        "/coord/fleet-policy",
+        params={"domain": SECRETS_BROKER_DOMAIN},
         tenant_id=tenant_id,
     )
-    if isinstance(answer, dict) and isinstance(
-        answer.get("transcript_sync_enabled"), bool
-    ):
-        # The caller passed `require_coord_tenant_admin`, so `can_edit` is
-        # settled without another `/admin/coord/me` read.
-        return TenantTranscriptSyncWriteResult(
-            written=True, effective=_transcript_sync_view(answer, can_edit=True)
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    can_edit = (
+        "admin" in _effective_tenant_roles(identity, active)
+        or current_user.is_superuser
+    )
+    return _secrets_broker_device_view(payload, can_edit=can_edit)
+
+
+@router.put("/secrets-broker/device", response_model=SecretsBrokerDeviceWriteResult)
+async def put_secrets_broker_device(
+    body: SecretsBrokerDevicePut,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> SecretsBrokerDeviceWriteResult:
+    """Designate (or clear) the tenant's secrets-broker device, then READ BACK.
+
+    Tenant-admin gated web-side; coord re-checks admin and the device's tenant
+    binding. The order is: prove the binding, write the device column alone,
+    re-read. A failed proof writes nothing; nothing but the device is ever
+    sent, so no level is read, carried or overwritten. A coord without the
+    route (404/405) is an error, never "written". A failed re-read after a
+    landed write is UNKNOWN (``readback_error``), not "applied".
+    """
+    if body.device_id is not None:
+        await _require_device_bound_to_tenant(body.device_id, tenant_id)
+
+    device = str(body.device_id) if body.device_id is not None else None
+    try:
+        written = await _proxy_coord_put(
+            _SECRETS_BROKER_DEVICE_ROUTE,
+            {"device_id": device},
+            tenant_id=tenant_id,
+            structured_errors=True,
         )
-    readback_error = "coord accepted the write but did not return the policy it re-read"
-    logger.warning("tenant_policy.readback_failed", detail=readback_error)
-    return TenantTranscriptSyncWriteResult(written=True, readback_error=readback_error)
+    except HTTPException as exc:
+        if exc.status_code in (404, 405):
+            raise _secrets_broker_refusal(
+                502,
+                "coord_secrets_broker_device_route_missing",
+                "This coord does not serve the secrets-broker device route yet, "
+                "so nothing was written.",
+            ) from exc
+        raise
+    echo = written if isinstance(written, dict) else {}
+
+    effective: SecretsBrokerDeviceView | None = None
+    readback_error: str | None = None
+    try:
+        payload = await _proxy_coord_get(
+            "/coord/fleet-policy",
+            params={"domain": SECRETS_BROKER_DOMAIN},
+            tenant_id=tenant_id,
+        )
+        effective = _secrets_broker_device_view(payload, can_edit=True)
+    except HTTPException as exc:
+        readback_error = f"read-back failed: coord returned {exc.status_code}"
+    except Exception as exc:  # noqa: BLE001 — the WRITE succeeded; don't lose it
+        readback_error = f"read-back failed: {exc}"
+
+    if readback_error is not None:
+        logger.warning("secrets_broker_device.readback_failed", detail=readback_error)
+
+    version = echo.get("version")
+    versioned = echo.get("versioned")
+    updated_by = echo.get("updated_by")
+    return SecretsBrokerDeviceWriteResult(
+        ok=bool(echo.get("ok", True)),
+        written_device_id=body.device_id,
+        versioned=versioned if isinstance(versioned, bool) else None,
+        version=version if isinstance(version, int) else None,
+        updated_by=updated_by if isinstance(updated_by, str) else None,
+        effective=effective,
+        readback_error=readback_error,
+    )
 
 
 # ---- Unfinished sessions + auto-resume toggle proxy ---------------------
@@ -10844,8 +11882,9 @@ async def get_tenant_resume_unfinished(
     request: Request,
     home_tenant_id: UUID = Depends(get_tenant_id),
 ) -> TenantResumeUnfinishedView:
-    """Read the tenant's automatic-resume flag (effective tenant, as for
-    ``transcript-sync`` -- see wire fact 1 above)."""
+    """Read the tenant's automatic-resume flag, for the EFFECTIVE tenant (the
+    switched-to tenant when the caller holds a role there, else the home
+    tenant) -- the tenant coord's ``GET /tenant-policy`` is asked about."""
     identity = await get_coord_identity(request)
     active = request.headers.get(ACTIVE_TENANT_HEADER)
     effective = _effective_tenant_id(identity, active) or home_tenant_id
@@ -13172,6 +14211,291 @@ async def get_coord_findings(
             "unavailable_kind": "unprovisioned",
         }
     return body
+
+
+# ---------------------------------------------------------------------------
+# Dossiers — `GET /operations/coord/dossiers` → coord `GET /coord/dossiers`
+#
+# Backs `/admin/coord/dossiers`, the list of every dossier head: filter by
+# readiness, live remediation-plan state, recurrence, dates and slug; sort;
+# page with a keyset cursor. Plan
+# `2026-10-03-dossier-query-door-filters-sort-cursor`, Phase 5. coord's door is
+# `findings::dossiers::get_dossiers` (qontinui-coord#3421), the operator twin of
+# the agent door `GET /coord/agent-dossiers` and the MCP tool
+# `coord_list_dossiers`; all three run one `dossiers_answer`.
+#
+# **Verbatim forward, and the refusal is coord's** — the same contract as the
+# findings proxy above. Every one of coord's eighteen accepted keys
+# (`DOSSIER_QUERY_KEYS`) is declared here and forwarded ONLY when the caller set
+# it. The string and date values are not re-validated at this hop: coord answers
+# a malformed value with a typed `400 invalid_query_parameter` and a foreign or
+# stale cursor with `400 cursor_malformed`, and a second validator here would
+# drift from coord's. The typed params (`limit`, `recurrence_min/max`,
+# `has_open_remediation`, `include_body`) are parsed by FastAPI, so a
+# non-integer `limit` is a 422 here. `readiness` and `remediation_state` are
+# LISTS, so a repeated key stays repeated on the wire, which coord accepts as
+# well as a comma-joined value.
+#
+# Degrade rather than 502, exactly as the findings proxy: a coord that predates
+# the door answers 404, and that must read as "not answering", never as an
+# empty dossier list. coord's own `200 {"available": false}` (store not
+# provisioned) gets the same degrade pair.
+# ---------------------------------------------------------------------------
+
+_COORD_DOSSIERS_PATH = "/coord/dossiers"
+
+
+@router.get("/coord/dossiers")
+async def get_coord_dossiers(
+    readiness: list[str] | None = Query(
+        default=None,
+        description=(
+            "Repeatable (or comma-separated). Exact readiness match; ``none`` "
+            "selects heads whose readiness is NULL (UNKNOWN)."
+        ),
+    ),
+    slug: str | None = Query(default=None, description="Exact dossier slug."),
+    q: str | None = Query(
+        default=None,
+        description="Case-insensitive substring over slug and title.",
+    ),
+    recurrence_min: int | None = Query(
+        default=None,
+        description="Inclusive lower bound on ``recurrence_count``.",
+    ),
+    recurrence_max: int | None = Query(
+        default=None,
+        description="Inclusive upper bound on ``recurrence_count``.",
+    ),
+    last_seen_since: str | None = Query(default=None, description="ISO date."),
+    last_seen_until: str | None = Query(default=None, description="ISO date."),
+    first_seen_since: str | None = Query(default=None, description="ISO date."),
+    first_seen_until: str | None = Query(default=None, description="ISO date."),
+    updated_since: str | None = Query(default=None, description="ISO date."),
+    updated_until: str | None = Query(default=None, description="ISO date."),
+    has_open_remediation: bool | None = Query(
+        default=None,
+        description=(
+            "Ledger-derived (free text, lags the plan); ``remediation_state`` "
+            "is the live one."
+        ),
+    ),
+    remediation_state: list[str] | None = Query(
+        default=None,
+        description=(
+            "Repeatable. The LIVE roll-up of the dossier's remediation plans "
+            "against coord's work units: none | draft | vetted | in_progress | "
+            "shipped | closed | unknown."
+        ),
+    ),
+    sort: str | None = Query(
+        default=None,
+        description=(
+            "last_seen (coord's default) | first_seen | updated | "
+            "recurrence_count | slug."
+        ),
+    ),
+    order: str | None = Query(default=None, description="desc (default) | asc."),
+    limit: int | None = Query(
+        default=None,
+        description=(
+            "Page size. Forwarded verbatim — coord owns the default and the clamp."
+        ),
+    ),
+    cursor: str | None = Query(
+        default=None,
+        description=(
+            "The previous answer's ``next_cursor``, verbatim, under the SAME "
+            "filters and sort. A foreign or stale one is coord's typed 400."
+        ),
+    ),
+    include_body: bool | None = Query(
+        default=None,
+        description="``true`` adds each head's body (coord caps the page at 20).",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return one page of dossier heads for the calling operator's tenant.
+
+    The body is coord's, verbatim: ``{"dossiers": [...], "facets":
+    {"readiness", "remediation_state"}, "facets_scope", "dedup",
+    "*_applied" echoes, ...}`` plus the bounded-read envelope (``available``,
+    ``count``, ``truncated``, ``bound_kind``, ``next_cursor``, ``total``,
+    ``shown``, ``limit``, ``filter_narrowed``, ``enumerate_via``). The tenant
+    is coord's to resolve from the forwarded bearer; nothing in the request
+    names it.
+
+    Degraded answers carry every envelope key as UNKNOWN (``null``), ``facets``
+    as ``null`` and ``dossiers`` empty, plus ``unavailable`` /
+    ``unavailable_kind`` — a page reading that body must say "could not read",
+    never "no dossiers".
+    """
+    params: dict[str, Any] = {}
+    if readiness:
+        params["readiness"] = readiness
+    if slug is not None:
+        params["slug"] = slug
+    if q is not None:
+        params["q"] = q
+    if recurrence_min is not None:
+        params["recurrence_min"] = recurrence_min
+    if recurrence_max is not None:
+        params["recurrence_max"] = recurrence_max
+    for key, value in (
+        ("last_seen_since", last_seen_since),
+        ("last_seen_until", last_seen_until),
+        ("first_seen_since", first_seen_since),
+        ("first_seen_until", first_seen_until),
+        ("updated_since", updated_since),
+        ("updated_until", updated_until),
+    ):
+        if value is not None:
+            params[key] = value
+    if has_open_remediation is not None:
+        params["has_open_remediation"] = has_open_remediation
+    if remediation_state:
+        params["remediation_state"] = remediation_state
+    if sort is not None:
+        params["sort"] = sort
+    if order is not None:
+        params["order"] = order
+    if limit is not None:
+        params["limit"] = limit
+    if cursor is not None:
+        params["cursor"] = cursor
+    if include_body is not None:
+        params["include_body"] = include_body
+    try:
+        body = await _proxy_coord_get(
+            _COORD_DOSSIERS_PATH, params=params or None, tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code in _COORD_ABSENT_STATUSES:
+            return {
+                "available": False,
+                # null, not 0: nothing was counted.
+                "count": None,
+                "dossiers": [],
+                # UNKNOWN, not zero: no facet was counted.
+                "facets": None,
+                "truncated": None,
+                "bound_kind": "unknown",
+                "next_cursor": None,
+                "total": None,
+                "shown": 0,
+                # null, not the caller's request: no page was read, so no cap
+                # was applied (the findings proxy's reasoning).
+                "limit": None,
+                "filter_narrowed": None,
+                "enumerate_via": None,
+                "unavailable": (
+                    "coord's dossier door is not answering — its "
+                    "`/coord/dossiers` route returned 404, so the deployed "
+                    "coord predates it or the route is misrouted. Dossiers "
+                    "cannot be listed, which is not the same as there being none."
+                    if exc.status_code == 404
+                    else (
+                        "coord did not answer the dossier door "
+                        f"(HTTP {exc.status_code})."
+                    )
+                ),
+                "unavailable_kind": (
+                    "not_deployed" if exc.status_code == 404 else "unreachable"
+                ),
+            }
+        raise
+    if (
+        isinstance(body, dict)
+        and body.get("available") is False
+        and not body.get("unavailable")
+    ):
+        return {
+            **body,
+            "unavailable": (
+                "coord reports its findings store is not provisioned "
+                "(`available: false`). Dossiers cannot be listed, which is not "
+                "the same as there being none."
+            ),
+            "unavailable_kind": "unprovisioned",
+        }
+    return body
+
+
+# ---------------------------------------------------------------------------
+# Verification metrics — `GET /operations/coord/verification/metrics`
+#                      → coord `GET /coord/verification/metrics`
+#
+# Backs the overview's "Can I trust 'done'?" tile and its drill-down at
+# `/admin/coord/verification`. Plan
+# `2026-09-20-trust-calibration-and-independent-verification-coverage-are-measured-continuously`,
+# Phase 5 (web half).
+#
+# **A pass-through that never manufactures an answer.** coord's body is ONE
+# object — trust calibration (Wilson+fpc), independent-verification coverage,
+# unknowns, the pre-land review record beside coverage, the sampling posture,
+# the lane's freshness and a 12-week series — and its "could not look" answer
+# is already a body of its own (`200 {"degraded": true, "reason", …}` with
+# every number `null`). Both are forwarded byte-for-byte. Every NON-2xx is an
+# error here too, never a `200` with an empty or zeroed body: a tile that read
+# `{}` as "no verifications" would render the stale-green this surface exists
+# to rule out. That is the opposite of the findings proxy above, which
+# converts an absent coord into a `200` degrade envelope; this page renders
+# its own "could not look" from the error instead, so no envelope is needed
+# and none can be mistaken for data.
+#
+# One status IS rewritten: coord's `401` / `403`. The web backend forwards the
+# operator's Cognito bearer, and qontinui-coord 3088dc5d mounted this door on
+# a `require_jwt` sub-router (device / agent JWT only), which refuses that
+# bearer. Passed through as a `401`, the frontend http client would treat it
+# as a spent session and run its token-refresh branch on every tile read. It
+# is re-raised as a `502` whose detail names the refusal, so the page says
+# "could not look — coord refused the operator's credential" and nothing about
+# the user's own session changes.
+# ---------------------------------------------------------------------------
+
+_COORD_VERIFICATION_METRICS_PATH = "/coord/verification/metrics"
+
+
+@router.get("/coord/verification/metrics")
+async def get_coord_verification_metrics(
+    window: str | None = Query(
+        default=None,
+        description=(
+            "``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim — coord "
+            "owns the default (28d) and answers a malformed value with a "
+            "typed 422, which is passed through."
+        ),
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's verification metrics object for the operator's tenant.
+
+    The tenant is coord's to resolve from the forwarded bearer; nothing from
+    the request names it. The body is coord's, verbatim — including the
+    ``degraded: true`` answer, which the page renders as "could not look".
+    """
+    params = {"window": window} if window is not None else None
+    try:
+        return await _proxy_coord_get(
+            _COORD_VERIFICATION_METRICS_PATH, params=params, tenant_id=tenant_id
+        )
+    except CoordTransportUnavailable:
+        raise
+    except HTTPException as exc:
+        if exc.status_code in (401, 403):
+            raise refusal_error(
+                502,
+                RefusalCode.credential_rejected,
+                NextActionKind.report_defect,
+                (
+                    f"coord refused the operator's credential on "
+                    f"{_COORD_VERIFICATION_METRICS_PATH} (HTTP {exc.status_code}): "
+                    f"{exc.detail}"
+                ),
+                discriminator="coord_verification_metrics_credential_refused",
+                glossary_terms=[GlossaryTerm.coord],
+            ) from exc
+        raise
 
 
 @router.put("/coord/policies/system/{system_rule_id}/override")

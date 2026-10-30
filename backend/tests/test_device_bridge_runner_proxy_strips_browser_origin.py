@@ -29,6 +29,11 @@ from app.api.v1.endpoints import device_bridge_ws
 
 DEVICE_ID = "11111111-1111-1111-1111-111111111111"
 USER_ID = "22222222-2222-2222-2222-222222222222"
+# The co-located arm (no ``X-Qontinui-Device-Id``) is for platform admins
+# only: ``runner_proxy`` refuses anyone else before the hop these tests
+# exercise. That refusal is pinned in
+# ``test_device_bridge_runner_proxy_co_located_admin_gate.py``.
+ADMIN = SimpleNamespace(id=USER_ID, is_superuser=True)
 
 # What a browser adds that the runner's origin guard reads (``origin``,
 # ``sec-fetch-site``) plus the rest of the Fetch Metadata family, which carries
@@ -118,7 +123,7 @@ async def test_local_proxy_hop_does_not_forward_browser_origin(monkeypatch):
             body=b"{}",
         ),
         "unified-workflows",
-        user=SimpleNamespace(id=USER_ID),
+        user=ADMIN,
     )
 
     names = {k for k, _ in sent}
@@ -187,7 +192,7 @@ async def test_local_proxy_hop_does_not_forward_ambient_credentials(monkeypatch)
             body=b"{}",
         ),
         "unified-workflows",
-        user=SimpleNamespace(id=USER_ID),
+        user=ADMIN,
     )
 
     names = {k for k, _ in sent}

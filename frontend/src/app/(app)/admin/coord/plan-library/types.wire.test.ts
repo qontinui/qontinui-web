@@ -33,6 +33,8 @@ import {
   type SnapshotFile,
 } from "@/lib/api/route-walker";
 import {
+  MODEL_FAMILIES,
+  MODEL_ROUTING_LEVELS,
   PLAN_CENSUS_SIDE_NULLABLE,
   PLAN_CENSUS_SOURCES,
   PLAN_COVERAGE_NULLABLE,
@@ -43,8 +45,11 @@ import {
   SCAN_ROOT_ROLLUP_STATES,
   SCAN_ROOT_ROW_NULLABLE,
   SCAN_ROOT_STATES,
+  SPEC_ARTIFACT_KINDS,
   STATUS_CURRENCY_NULLABLE,
   STATUS_CURRENCY_STATES,
+  WORK_ARTIFACT_KINDS,
+  WORK_ARTIFACT_RELATIONS,
 } from "./types";
 
 /** Both snapshots backend CI regenerates: the composed one and the OSS base. */
@@ -127,6 +132,25 @@ describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
   const currency = component(file, "StatusCurrency");
   const summary = component(file, "WorkArtifactSummary");
   const candidate = component(file, "PlanCandidate");
+
+  it("the kind filter and correction offer exactly the backend's kinds", () => {
+    const upsert = component(file, "WorkArtifactUpsert");
+    expect(enumOf(upsert, "kind")).toEqual(sorted(WORK_ARTIFACT_KINDS));
+    // The spec family is a subset of them, never a kind of its own.
+    for (const kind of SPEC_ARTIFACT_KINDS) {
+      expect(WORK_ARTIFACT_KINDS).toContain(kind);
+    }
+  });
+
+  it("an edge's relation is exactly the backend's relation vocabulary", () => {
+    const edge = component(file, "WorkArtifactEdgeCreate");
+    expect(enumOf(edge, "relation")).toEqual(sorted(WORK_ARTIFACT_RELATIONS));
+  });
+
+  it("every artifact row carries its spec_ref — nullable, never absent", () => {
+    expect(summary.required ?? []).toContain("spec_ref");
+    expect(admitsNull(summary.properties.spec_ref ?? {})).toBe(true);
+  });
 
   it("a row's status currency admits exactly STATUS_CURRENCY_STATES", () => {
     expect(enumOf(currency, "state")).toEqual(sorted(STATUS_CURRENCY_STATES));
@@ -244,3 +268,26 @@ describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
     });
   });
 });
+
+describe.each(SNAPSHOTS)(
+  "the model-routing wire contract, against %s",
+  (file) => {
+    const update = component(file, "ModelRoutingUpdate");
+
+    it("the PUT requires exactly MODEL_ROUTING_LEVELS", () => {
+      expect(sorted(update.required ?? [])).toEqual(
+        sorted(MODEL_ROUTING_LEVELS)
+      );
+      expect(sorted(Object.keys(update.properties))).toEqual(
+        sorted(MODEL_ROUTING_LEVELS)
+      );
+    });
+
+    it.each(MODEL_ROUTING_LEVELS)(
+      "%s admits exactly MODEL_FAMILIES",
+      (level) => {
+        expect(enumOf(update, level)).toEqual(sorted(MODEL_FAMILIES));
+      }
+    );
+  }
+);

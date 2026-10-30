@@ -26,7 +26,7 @@ A mobile client reaches a **runner** it shares no LAN with.
   - ``/runner-proxy/{path}`` — see :func:`runner_proxy`. With an
     ``X-Qontinui-Device-Id`` header it relays HTTP-over-WebSocket through the
     runner's own outbound connection; without one it proxies to a co-located
-    runner on ``127.0.0.1``.
+    runner on ``127.0.0.1``, for platform admins only.
 
   Registry: **``coord.devices.ws_session_id``**, which this file only ever
   READS (via ``app/services/coord_device.py`` → coord's
@@ -96,6 +96,14 @@ from fastapi.responses import JSONResponse
 from app.api.deps import current_active_user, get_current_user_from_ws
 from app.config.redis_config import get_redis
 from app.core.config import settings
+from app.core.refusal import (
+    REFUSAL_KEY,
+    GlossaryTerm,
+    NextActionKind,
+    RefusalCode,
+    build_refusal,
+    refusal_payload,
+)
 from app.models.user import User
 from app.services import coord_device
 from app.services.device_bridge_service import DeviceBridgeService
@@ -274,6 +282,72 @@ def _redis_unavailable_response() -> JSONResponse:
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content={
             "detail": "Device bridge requires Redis, which is currently disabled."
+        },
+    )
+
+
+#: The ``next_action.target`` for a paired device whose runner has never
+#: opened the relay. ``Refusal::render`` reads: Set the "<target>" setting,
+#: then try again. "Web Integration" is the runner's own Settings section
+#: and toggle (``WebIntegrationSettings.tsx``); the relay starts at runner
+#: boot once it is on and the runner is signed in. The runner has no
+#: separate cloud-relay toggle any more.
+_RELAY_SETTING_TARGET = "Web Integration"
+
+#: The refusal sentence for the same case. The top-level ``detail`` keeps its
+#: prior value ("runner not connected") for older mobile builds.
+_NEVER_REGISTERED_SENTENCE = (
+    "this device is paired, but its runner has never connected to the cloud "
+    "relay: start the runner on that device, sign it in, and turn its cloud "
+    "relay on, then try again"
+)
+
+#: The header that selects the relay arm of :func:`runner_proxy`. It is also
+#: the ``next_action.target`` of the co-located arm's refusal, because adding
+#: it is how a caller who is not a platform admin reaches its own runner.
+_DEVICE_ID_HEADER = "X-Qontinui-Device-Id"
+
+#: Why the co-located arm refused a caller who is not a platform admin.
+_CO_LOCATED_ADMIN_ONLY_SENTENCE = (
+    "the co-located runner proxy (a request without X-Qontinui-Device-Id) is "
+    "limited to platform administrators, because it reaches the runner on this "
+    "backend's own host with full local trust; send X-Qontinui-Device-Id naming "
+    "your own runner to reach it through the relay"
+)
+
+
+def _co_located_admin_only_refusal(
+    request: Request, path: str, user_id: str
+) -> JSONResponse:
+    """The 403 for a caller who is not a platform admin on the co-located arm.
+
+    Logged at ``warning`` like the relay arm's refusals, so an attempt to drive
+    the host's runner is visible server-side and joins its request by
+    ``request_id``. The body follows the relay arm's shape: ``detail``, the
+    ``request_id`` and the typed ``refusal`` envelope.
+    """
+    request_id = _relay_request_id(request)
+    logger.warning(
+        "runner_proxy_co_located_refused",
+        user_id=user_id,
+        path=path,
+        method=request.method,
+        request_id=request_id,
+    )
+    refusal = build_refusal(
+        RefusalCode.permission_denied,
+        NextActionKind.fix_request,
+        _CO_LOCATED_ADMIN_ONLY_SENTENCE,
+        discriminator="co_located_proxy_admin_only",
+        target=_DEVICE_ID_HEADER,
+        glossary_terms=[GlossaryTerm.runner, GlossaryTerm.device],
+    )
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content={
+            "detail": _CO_LOCATED_ADMIN_ONLY_SENTENCE,
+            "request_id": request_id,
+            REFUSAL_KEY: refusal_payload(refusal),
         },
     )
 
@@ -845,7 +919,10 @@ async def runner_proxy(
     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
       async httpx path below. Used by the demo box where the runner is
-      on the same host as the backend.
+      on the same host as the backend. **Platform admins only**: the hop
+      reaches whichever runner listens on this host, with full local trust,
+      so any other caller is refused 403 before a port is looked up or a
+      byte is forwarded.
     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
       is relayed HTTP-over-WebSocket through the runner's existing outbound
       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -854,9 +931,27 @@ async def runner_proxy(
     user_id = str(user.id)
 
     # --- Remote relay path (mobile on a different network) ---------------
-    device_id_hdr = request.headers.get("X-Qontinui-Device-Id")
+    device_id_hdr = request.headers.get(_DEVICE_ID_HEADER)
     if device_id_hdr is not None:
         return await _runner_proxy_relay(request, path, user_id, device_id_hdr)
+
+    # --- Co-located path: platform admins only ---------------------------
+    # This hop reaches whichever runner listens on THIS host's loopback, with
+    # the caller's Origin and Fetch Metadata stripped, so the runner's origin
+    # guard classes it NonBrowser: full local trust, every route
+    # (qontinui-runner ``src-tauri/src/mcp/origin_guard.rs``). Nothing here
+    # ties that runner to the caller — the port lookup below names the
+    # caller's most recent runner wherever it runs, and falls back to 9876 —
+    # so without this gate any signed-in user could drive a co-located
+    # runner. That includes ``PATCH /apps/{app_id}`` and ``POST /apps``, which
+    # write the shared ``project.apps`` build and start commands the auto-fresh
+    # engine executes on fleet machines: the same write ``fleet_targets.py``
+    # gates on ``require_admin`` (coord finding
+    # ``b27adf71-4de5-49bc-ad89-7a8acd372035``). The relay arm above stays
+    # open to every user: it reaches only a runner the caller owns, and only
+    # the routes that runner relays (``relay_path_policy.rs``).
+    if not user.is_superuser:
+        return _co_located_admin_only_refusal(request, path, user_id)
 
     # Find the runner port over coord's HTTP boundary (Phase 3 of
     # ``2026-05-30-web-coord-schema-boundary-decoupling.md``). Replaces the
@@ -1151,9 +1246,19 @@ async def _runner_proxy_relay(
             "runner_proxy_relay_device_lookup_failed",
             device_id=str(device_uuid),
         )
+        refusal = build_refusal(
+            RefusalCode.internal_error,
+            NextActionKind.report_defect,
+            "device lookup failed",
+            discriminator="device_lookup_failed",
+            glossary_terms=[GlossaryTerm.device],
+        )
         return JSONResponse(
             status_code=500,
-            content={"detail": "device lookup failed"},
+            content={
+                "detail": "device lookup failed",
+                REFUSAL_KEY: refusal_payload(refusal),
+            },
         )
 
     if row is None:
@@ -1171,6 +1276,14 @@ async def _runner_proxy_relay(
             method=request.method,
             request_id=request_id,
         )
+        # A device this caller does not own becomes theirs by pairing it.
+        refusal = build_refusal(
+            RefusalCode.not_found,
+            NextActionKind.pair_device,
+            "device not found or not owned by caller",
+            discriminator="device_not_owned",
+            glossary_terms=[GlossaryTerm.device],
+        )
         return JSONResponse(
             status_code=404,
             # Additive, exactly as on the 503: ``detail`` keeps its prior value.
@@ -1178,6 +1291,7 @@ async def _runner_proxy_relay(
                 "detail": "device not found or not owned by caller",
                 "device_id": str(device_uuid),
                 "request_id": request_id,
+                REFUSAL_KEY: refusal_payload(refusal),
             },
         )
     if row.get("ws_session_id") is None:  # ws_session_id IS NULL
@@ -1216,11 +1330,43 @@ async def _runner_proxy_relay(
             if liveness.known
             else {}
         )
+        # Both arms are reached only for a device row this caller OWNS, so the
+        # device is already paired; pairing it again is a finished step and
+        # cannot help. What differs is the runner on it:
+        #
+        # * never registered (``ws_connected_at`` is null): its runner has
+        #   never opened the relay WebSocket. Waiting will not change that.
+        #   Someone has to start the runner on that device, sign it in, and
+        #   turn its cloud relay on, so the next action is that setting, and
+        #   the sentence says the rest.
+        # * connected before: it is expected back, so the same request later
+        #   is the next step. An unknown liveness is not "never registered"
+        #   either. It takes the retry arm, which is right for every runner
+        #   seen before.
+        never_registered = liveness.known and liveness.ws_connected_at is None
+        if never_registered:
+            refusal = build_refusal(
+                RefusalCode.device_not_connected,
+                NextActionKind.set_setting,
+                _NEVER_REGISTERED_SENTENCE,
+                discriminator="runner_never_registered",
+                target=_RELAY_SETTING_TARGET,
+                glossary_terms=[GlossaryTerm.runner, GlossaryTerm.device],
+            )
+        else:
+            refusal = build_refusal(
+                RefusalCode.device_not_connected,
+                NextActionKind.retry_later,
+                "runner not connected",
+                discriminator="runner_not_connected",
+                glossary_terms=[GlossaryTerm.runner, GlossaryTerm.device],
+            )
         content: dict[str, object] = {
             "detail": "runner not connected",
             "device_id": str(device_uuid),
             "request_id": request_id,
             **liveness_fields,
+            REFUSAL_KEY: refusal_payload(refusal),
         }
         logger.warning(
             "runner_proxy_relay_not_connected",

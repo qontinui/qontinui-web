@@ -81,8 +81,11 @@
  * 30 s, `/fleet/dispatch-roles` inside `FleetRolesSection` at 30 s (plan
  * `2026-10-02-fleet-machine-roles-workhorse-bench-ci-node` Phase 6),
  * `/fleet/ci-runners` here at coord's own registrar cadence,
- * `/fleet/worktree-slots` inside `FleetWorktreeSlotsSection` at 30 s (plan
- * `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3), and
+ * `/fleet/worktree-slots` here at 30 s (plan
+ * `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3; lifted out of
+ * `FleetWorktreeSlotsSection` by plan `2026-10-23-console-presentation-spaces`
+ * Phase 7, because the headline strip's workspace figure and the section's
+ * table must read ONE poll), and
  * `/alerts/fault-to-visibility` here at 60 s (plan
  * `2026-09-20-the-second-ratchet-domain-is-operations-and-its-cost-is-compared-to-the-first`
  * Phase 8 — a trailing-window percentile no other read on the page carries,
@@ -118,6 +121,22 @@
  * and writes that through `getCiNodeConfig` / `setCiNodeConfig`, the same two
  * functions `/environments/machines` calls, which is what makes the two mount
  * points one implementation instead of a fork.
+ *
+ * ## Presentation mode (plan `2026-10-23-console-presentation-spaces` Phase 7)
+ *
+ * The same route, the same reads, rendered for an external evaluator — a LENS,
+ * never a fork (D1). In presentation mode the page opens with its caption and
+ * three headline figures (`DevOpsHeadlineStrip`), each section opens with its
+ * caption and the provenance of its numbers (`SectionCaption`), every machine
+ * reads as its session alias ("Machine A"), every write control — the drain
+ * lever, CI capacity, role changes, renames — is unmounted (`OperatorOnly`),
+ * free text that can carry a foreign name renders as a descriptor
+ * (`RedactedText`), and a failed read still says it failed but in fixed words
+ * (`presentedFailure.ts`) — its own text can quote a URL or coord's words
+ * about a machine. The operator-orientation notes below the strips say where
+ * the operator acts and are not rendered for an outsider. Outside
+ * presentation mode every one of those primitives renders nothing, or the
+ * original, so the operator console keeps its levers and its density.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -127,6 +146,11 @@ import { ExternalLink } from "lucide-react";
 import { HealthStrip } from "@/components/console";
 import type { HealthBadge } from "@/components/console";
 import {
+  Caption,
+  SectionCaption,
+  usePresentationMode,
+} from "@/components/presentation";
+import {
   FleetConditionsPanel,
   FleetOverview,
   FleetResourcesSection,
@@ -134,7 +158,14 @@ import {
   FleetWorktreeSlotsSection,
   OperatorAuditPanel,
 } from "@/components/operations";
+import { DevOpsHeadlineStrip } from "@/components/operations/DevOpsHeadlineStrip";
+import {
+  DEVOPS_SOURCES,
+  latestInstant,
+} from "@/components/operations/devOpsHeadline";
 import { QUESTION_QUEUE_HREF } from "@/components/operations/fleetConditions";
+import { useFleetWorktreeSlots } from "@/components/operations/useFleetWorktreeSlots";
+import { presentedFailureReason } from "@/components/operations/presentedFailure";
 import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
 import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
@@ -157,7 +188,7 @@ import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 const EMPTY_DEVICES: FleetHealthDevice[] = [];
 
 export default function CoordDevOpsPage() {
-  const fleet = useFleetHealth();
+  const fleetRead = useFleetHealth();
   // Admin IN THE ACTIVE TENANT — what `require_coord_tenant_admin` checks on
   // the computers proxies. `useAuth().isCoordAdmin` is a union across tenants
   // and would show an admin of project A a link that 403s on project B.
@@ -191,7 +222,35 @@ export default function CoordDevOpsPage() {
   // How long faults sat before anyone who can act on them could see them —
   // the operations ratchet's perceive-stage readout (G1). Owned here, one
   // poll, like every other read on this page.
-  const faultToVisibility = useFaultToVisibility();
+  const faultToVisibilityRead = useFaultToVisibility();
+  // Agent-workspace occupancy, one poll, owned here: the worktree-slots
+  // section's table and the presentation headline's workspace figure read
+  // the SAME answer, so they cannot disagree about which machines count.
+  const worktreeSlotsRead = useFleetWorktreeSlots();
+  // The presentation lens (plan `2026-10-23-console-presentation-spaces`).
+  // Rendering only — every read above runs the same in both modes.
+  const { presenting } = usePresentationMode();
+  // What a failed read says. The operator reads the read's own text; an
+  // outsider reads that it failed, in fixed words, because that text can quote
+  // a URL or coord's words about a machine (`presentedFailure.ts`, D3.3).
+  // Applied ONCE, here, to each read this page owns — so every panel handed
+  // one of them says the same thing about it in both modes.
+  const fleet = {
+    ...fleetRead,
+    error: presentedFailureReason(fleetRead.error, presenting),
+  };
+  const faultToVisibility = {
+    ...faultToVisibilityRead,
+    error: presentedFailureReason(faultToVisibilityRead.error, presenting),
+  };
+  const worktreeSlots = {
+    ...worktreeSlotsRead,
+    error: presentedFailureReason(worktreeSlotsRead.error, presenting),
+  };
+  const deviceStatusError = presentedFailureReason(
+    deviceStatus.error,
+    presenting
+  );
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
   // The page's clock, advanced independently of every read. A runner's
   // `coord_credential` report goes stale by TIME alone
@@ -215,8 +274,9 @@ export default function CoordDevOpsPage() {
         devices,
         loading: fleet.loading,
         error: fleet.error,
+        answered: fleet.data !== null,
       }),
-    [devices, fleet.loading, fleet.error]
+    [devices, fleet.loading, fleet.error, fleet.data]
   );
 
   /**
@@ -278,6 +338,17 @@ export default function CoordDevOpsPage() {
     ]
   );
 
+  // The device-status stream's as-of, for the strip's provenance: its body
+  // dates its ROWS, so it is the newest report's own time (style guide
+  // §3.11). The credential badges above count from these reports.
+  const deviceStatusAsOf = useMemo(
+    () =>
+      latestInstant(
+        [...deviceStatus.byHostname.values()].map((row) => row.updated_at)
+      ),
+    [deviceStatus.byHostname]
+  );
+
   const credentialBadges = useMemo<HealthBadge[]>(() => {
     const badges: HealthBadge[] = [];
     if (credentials.needsAction > 0) {
@@ -295,6 +366,9 @@ export default function CoordDevOpsPage() {
         // posture coord's scan has not named raises no alert, and the Phase 5
         // hook may not have run (or be deployed) yet.
         onClick: () => navigate(QUESTION_QUEUE_HREF),
+        // The press opens the question queue and changes nothing, so it stays
+        // live in presentation mode (D3.2).
+        navigationOnly: true,
         "data-testid": "coord-devops-credential-dark-badge",
       });
     }
@@ -318,11 +392,11 @@ export default function CoordDevOpsPage() {
       }
       if (!deviceStatus.everSeeded) {
         causes.push(
-          `No full device-status read has succeeded yet (${deviceStatus.error ?? "not loaded yet"}); runner reports that arrived since may be incomplete, so machines coord did not name dark are UNKNOWN — not healthy.`
+          `No full device-status read has succeeded yet (${deviceStatusError ?? "not loaded yet"}); runner reports that arrived since may be incomplete, so machines coord did not name dark are UNKNOWN — not healthy.`
         );
-      } else if (deviceStatus.error !== null) {
+      } else if (deviceStatusError !== null) {
         causes.push(
-          `The last device-status read failed (${deviceStatus.error}); runner reports may be stale, so a machine counted here may have reported since.`
+          `The last device-status read failed (${deviceStatusError}); runner reports may be stale, so a machine counted here may have reported since.`
         );
       }
       badges.push({
@@ -337,7 +411,7 @@ export default function CoordDevOpsPage() {
       });
     }
     return badges;
-  }, [credentials, deviceStatus.error, deviceStatus.everSeeded, navigate]);
+  }, [credentials, deviceStatusError, deviceStatus.everSeeded, navigate]);
 
   /**
    * The operations-ratchet readouts (plan
@@ -350,11 +424,15 @@ export default function CoordDevOpsPage() {
    */
   const readoutBadges = useMemo<HealthBadge[]>(
     () => [
-      faultToVisibilityBadge({
-        data: faultToVisibility.data,
-        loading: faultToVisibility.loading,
-        error: faultToVisibility.error,
-      }),
+      faultToVisibilityBadge(
+        {
+          data: faultToVisibility.data,
+          loading: faultToVisibility.loading,
+          error: faultToVisibility.error,
+        },
+        // An outsider reads each slowest kind in words, not coord's token.
+        { plainKinds: presenting }
+      ),
       buildResolvabilityBadge(fleet.data, fleet.error),
     ],
     [
@@ -363,6 +441,7 @@ export default function CoordDevOpsPage() {
       faultToVisibility.error,
       fleet.data,
       fleet.error,
+      presenting,
     ]
   );
 
@@ -374,6 +453,36 @@ export default function CoordDevOpsPage() {
       className="p-3 sm:p-6 space-y-4 overflow-x-auto"
       data-testid="coord-devops-page"
     >
+      {/* Presentation mode only (plan
+          `2026-10-23-console-presentation-spaces` D1, "captions before
+          data"): what this page shows and why it matters, ahead of the
+          strip. Operator mode renders nothing here, so R1's "the page opens
+          with its health strip" is unchanged for the operator. */}
+      <Caption id="dev-ops.page" />
+      {/* Presentation mode only (Phase 7): three figures an evaluator can
+          read in one glance, each with its source and as-of, each UNKNOWN on
+          its own when its read fails. Derived from the reads above — nothing
+          new is fetched. */}
+      <DevOpsHeadlineStrip
+        health={fleet}
+        devices={devices}
+        worktreeSlots={worktreeSlots}
+        ciRunnerMirror={ciRunnerMirror}
+      />
+      {/* Every read the strip's badges count from: machine liveness and
+          coord's dark scan (fleet health), the fault-to-visibility readout,
+          and the runners' own credential reports (device status). */}
+      <SectionCaption
+        id="dev-ops.health-strip"
+        sources={[
+          { source: DEVOPS_SOURCES.fleetHealth, asOf: fleet.asOfMs },
+          {
+            source: DEVOPS_SOURCES.faultToVisibility,
+            asOf: faultToVisibility.data?.computed_at ?? null,
+          },
+          { source: DEVOPS_SOURCES.deviceStatus, asOf: deviceStatusAsOf },
+        ]}
+      />
       <HealthStrip
         data-testid="coord-devops-health-strip"
         level={liveness.level}
@@ -382,7 +491,10 @@ export default function CoordDevOpsPage() {
         badges={[
           {
             key: "machines",
-            label: `machines ${liveness.total}`,
+            label:
+              liveness.total === null
+                ? "machines unknown — not read yet"
+                : `machines ${liveness.total}`,
             tone: "muted",
             "data-testid": "coord-devops-machines-badge",
           },
@@ -460,80 +572,90 @@ export default function CoordDevOpsPage() {
         onNavigate={navigate}
       />
 
+      {/* The three notes below tell the OPERATOR where to act — the hosted-CI
+          setting, enrolment, the computers console — and describe the join
+          this list is keyed on. They are orientation for the tenth read of the
+          page, not content for an outsider, so presentation mode does not
+          render them (density down, plan
+          `2026-10-23-console-presentation-spaces` D1). */}
       {/* GitHub-hosted CI moved to Dev Ops ▸ CI (plan
           `2026-10-04-ci-dashboard-in-the-dev-ops-console` Phase 6): a control
           belongs with what it governs, and that page owns the pool axis the
           setting changes. This page is the machine axis, so it keeps a link. */}
-      <p
-        className="text-xs text-muted-foreground"
-        data-testid="coord-devops-hosted-ci-link-line"
-      >
-        The GitHub-hosted CI setting, per tenant with per-repo overrides, lives
-        on{" "}
-        <Link
-          href="/admin/coord/ci"
-          className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
-          data-testid="coord-devops-hosted-ci-link"
-        >
-          Dev Ops → CI
-          <ExternalLink className="h-3 w-3" />
-        </Link>
-        .
-      </p>
-
-      {/* The join this page is keyed on, stated once, before the list it
-          shapes. Rows here come from coord's device registry, and the bridge
-          to a machine record is `Machine.coord_device_id` — a soft, nullable
-          pointer. So a machine with no such link is not on this page at all,
-          and saying so is the difference between a reader knowing where it is
-          and a reader concluding it does not exist. */}
-      <p
-        className="text-xs text-muted-foreground"
-        data-testid="coord-devops-join-note"
-      >
-        Every row below is a machine coord has a device record for. A machine
-        enrolled under Environments that carries no coord device link does not
-        appear here at all — it is reachable, and its CI configurable, only
-        under{" "}
-        <Link
-          href="/environments/machines"
-          className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
-          data-testid="coord-devops-machines-link"
-        >
-          Environments → Machines
-          <ExternalLink className="h-3 w-3" />
-        </Link>
-        . This list is not a count of your machines.
-      </p>
-
-      {/* The computer as a record (plan
-          `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-coord-has-no-resource-model`
-          Phase 5). The rows below are coord DEVICES — one physical box can be
-          several of them — while the Computers page groups them under the
-          machine they run on, with its services, events and capacity.
-          Shown only to an admin of the ACTIVE tenant (or staff): both
-          computer reads are gated on `require_coord_tenant_admin`, which
-          checks the effective tenant's roles (they carry the registrar's
-          CI-runner rows and access facts), so anyone else following this
-          link would get a 403 page instead of an answer. */}
-      {canReadComputers && (
-        <p
-          className="text-xs text-muted-foreground"
-          data-testid="coord-devops-computers-note"
-        >
-          One computer can host several of the device rows below. For each
-          computer&apos;s capacity, usage per lane, watched services (CI runners
-          included), and event history, open{" "}
-          <Link
-            href="/admin/coord/computers"
-            className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
-            data-testid="coord-devops-computers-link"
+      {!presenting && (
+        <>
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="coord-devops-hosted-ci-link-line"
           >
-            Computers
-            <ExternalLink className="h-3 w-3" />
-          </Link>
-          .
-        </p>
+            The GitHub-hosted CI setting, per tenant with per-repo overrides,
+            lives on{" "}
+            <Link
+              href="/admin/coord/ci"
+              className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
+              data-testid="coord-devops-hosted-ci-link"
+            >
+              Dev Ops → CI
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+            .
+          </p>
+
+          {/* The join this page is keyed on, stated once, before the list it
+              shapes. Rows here come from coord's device registry, and the
+              bridge to a machine record is `Machine.coord_device_id` — a soft,
+              nullable pointer. So a machine with no such link is not on this
+              page at all, and saying so is the difference between a reader
+              knowing where it is and a reader concluding it does not exist. */}
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="coord-devops-join-note"
+          >
+            Every row below is a machine coord has a device record for. A
+            machine enrolled under Environments that carries no coord device
+            link does not appear here at all — it is reachable, and its CI
+            configurable, only under{" "}
+            <Link
+              href="/environments/machines"
+              className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
+              data-testid="coord-devops-machines-link"
+            >
+              Environments → Machines
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+            . This list is not a count of your machines.
+          </p>
+
+          {/* The computer as a record (plan
+              `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-coord-has-no-resource-model`
+              Phase 5). The rows below are coord DEVICES — one physical box can
+              be several of them — while the Computers page groups them under
+              the machine they run on, with its services, events and capacity.
+              Shown only to an admin of the ACTIVE tenant (or staff): both
+              computer reads are gated on `require_coord_tenant_admin`, which
+              checks the effective tenant's roles (they carry the registrar's
+              CI-runner rows and access facts), so anyone else following this
+              link would get a 403 page instead of an answer. */}
+          {canReadComputers && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="coord-devops-computers-note"
+            >
+              One computer can host several of the device rows below. For each
+              computer&apos;s capacity, usage per lane, watched services (CI
+              runners included), and event history, open{" "}
+              <Link
+                href="/admin/coord/computers"
+                className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
+                data-testid="coord-devops-computers-link"
+              >
+                Computers
+                <ExternalLink className="h-3 w-3" />
+              </Link>
+              .
+            </p>
+          )}
+        </>
       )}
 
       {/* 1. Machines — coord's device liveness merged INTO the machine list,
@@ -569,9 +691,10 @@ export default function CoordDevOpsPage() {
           that publishes no sample still gets a row, as `unknown`. */}
       <FleetResourcesSection devices={devices} />
 
-      {/* Worktree allocation-slot occupancy — its own list, its own poll of
-          /fleet/worktree-slots (plan
-          `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3). A
+      {/* Worktree allocation-slot occupancy — its own list, over the page's
+          one poll of /fleet/worktree-slots (plan
+          `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3), the
+          same answer the presentation headline's workspace figure reads. A
           worktree-slot cap is closer to a capacity fact than a live
           occupancy fact, and per
           `2026-08-25-coord-console-intent-and-devops-sections`'s "two lists
@@ -579,7 +702,7 @@ export default function CoordDevOpsPage() {
           existing section. `devices` is the same spine `FleetResourcesSection`
           uses, so a machine with no worktree-slots entry still gets a row,
           rendered unknown rather than dropped. */}
-      <FleetWorktreeSlotsSection devices={devices} />
+      <FleetWorktreeSlotsSection devices={devices} slots={worktreeSlots} />
 
       {/* 5. Who changed what. Plan
           `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5.
@@ -595,8 +718,9 @@ export default function CoordDevOpsPage() {
           compete with the three sections above that answer "what is happening
           right now". Unlike the drain dialog it persists being open — it is
           read-only, so there is no consent surface to keep out from under a
-          cursor. */}
-      <OperatorAuditPanel />
+          cursor. `devices` lets presentation mode recognise the rows whose
+          resource or actor is a machine, and name it by its alias. */}
+      <OperatorAuditPanel devices={devices} />
     </div>
   );
 }

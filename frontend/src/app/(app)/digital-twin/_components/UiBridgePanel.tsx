@@ -11,8 +11,10 @@ import {
 } from "lucide-react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
+import { OperatorOnly, Provenance } from "@/components/presentation";
 import { targetRunnerId, useRunnerTarget } from "@/lib/runner";
 import {
+  useRunnerApps,
   useRunnerSnapshot,
   useRunnerSpecGraph,
   useRunnerSpecList,
@@ -22,8 +24,10 @@ import { sharesRelayCause } from "../_lib/relay-error-presentation";
 import {
   APP_ID_RULE,
   isValidAppId,
+  registeredAppSuggestions,
   RUNNER_APP_ID,
   snapshotHasElementTree,
+  type AppIdSuggestion,
   summarizeSpecGraph,
   type UiBridgeSnapshot,
 } from "../_lib/ui-bridge-types";
@@ -31,14 +35,16 @@ import {
 /**
  * Suggestions for the App field — a datalist, not an allowlist: any id the
  * runner has registered works, and an id it has not registered answers
- * `404 app-not-found`. A runner registers ids through its dev bootstrap or
- * `POST /apps`, besides its own UI (see `RUNNER_APP_ID`). The dev bootstrap
- * (QONTINUI_DEV_BOOTSTRAP=1, `bootstrap_dev_apps`) registers `qontinui-web`
- * and `qontinui-supervisor`, each only when its `<workspace>/<dir>/frontend`
- * directory exists. The runner's `GET /apps` listing is not on its relay
- * allowlist, so the registered set cannot be read from here.
+ * `404 app-not-found`. The panel suggests the runner's REGISTERED ids, read
+ * from its `GET /apps` (see `useRunnerApps`). These static ids are the
+ * fallback while that read is loading or when it fails — a published runner
+ * whose relay allowlist predates `GET /apps` answers 403. A runner registers
+ * ids through its dev bootstrap or `POST /apps`, besides its own UI (see
+ * `RUNNER_APP_ID`). The dev bootstrap (QONTINUI_DEV_BOOTSTRAP=1,
+ * `bootstrap_dev_apps`) registers `qontinui-web` and `qontinui-supervisor`,
+ * each only when its `<workspace>/<dir>/frontend` directory exists.
  */
-const APP_ID_SUGGESTIONS: ReadonlyArray<{ id: string; note: string }> = [
+const APP_ID_SUGGESTIONS: ReadonlyArray<AppIdSuggestion> = [
   { id: RUNNER_APP_ID, note: "The runner's own UI" },
   { id: "qontinui-web", note: "Dev bootstrap only (QONTINUI_DEV_BOOTSTRAP=1)" },
   {
@@ -61,6 +67,23 @@ function Counter({
       <span className="text-muted-foreground">{label}</span>
     </span>
   );
+}
+
+/**
+ * The line that introduces a snapshot kept after a re-capture failed: the
+ * failure leads, and the capture below it is the one before it.
+ */
+export const SNAPSHOT_RETAINED_LEAD = "As last captured, before that failure:";
+
+/**
+ * The read a capture, or a failed attempt at one, comes from — the source its
+ * `Provenance` chip names (the UI Bridge dashboard's words for the same read).
+ */
+export const SNAPSHOT_SOURCE = "the runner's live snapshot";
+
+/** An epoch-ms react-query time, or `null` when nothing was ever recorded. */
+function recordedAt(ms: number): number | null {
+  return ms > 0 ? ms : null;
 }
 
 /** An array's length, or undefined when the payload does not carry the key. */
@@ -98,14 +121,156 @@ function SnapshotSubject({ snap }: { snap: UiBridgeSnapshot }) {
   );
 }
 
+/** What presentation mode shows in the inspector's place. */
+function UiBridgePresented() {
+  return (
+    <div
+      data-testid="ui-bridge-presented"
+      className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground"
+    >
+      Operators inspect the interface models behind the UI Bridge app twin here.
+      The app names, page ids and live window captures it shows are not shown in
+      presentation mode; the Twin map carries the app twin&apos;s summary.
+    </div>
+  );
+}
+
+/*
+ * The inspector's three controls register their UI Bridge ids (stable, for
+ * automation and spec-checks) where they render, and only while they do: they
+ * render only once a runner is connected. A registration with no element on
+ * screen is one the SDK goes looking for: `useUIElement` polls the DOM for
+ * it, 3 tries 100 ms apart (`pollForTaggedElement`), and unmounting does not
+ * stop the poll (`SubspaceDetailActions.tsx` says the same of the drawer's
+ * buttons). So registered in the inspector, above its no-runner return, all
+ * three ids started a poll on every mount with no runner.
+ */
+
+/** The App field, its suggestions and its Refresh button. */
+function AppIdControls({
+  appId,
+  onAppId,
+  appIdValid,
+  appIdInvalid,
+  suggestions,
+  onRefresh,
+}: {
+  appId: string;
+  onAppId: (appId: string) => void;
+  appIdValid: boolean;
+  appIdInvalid: boolean;
+  suggestions: ReadonlyArray<AppIdSuggestion>;
+  onRefresh: () => void;
+}) {
+  const { ref: appIdRef } = useUIElement({
+    id: "ui-bridge-app-id",
+    label: "UI Bridge app id to inspect",
+    type: "input",
+  });
+  const { ref: refreshRef } = useUIElement({
+    id: "ui-bridge-refresh",
+    label: "Refresh UI Bridge spec list/graph",
+    type: "button",
+  });
+  return (
+    <div className="flex items-center gap-2">
+      <label className="text-xs text-muted-foreground" htmlFor="dt-app-id">
+        App
+      </label>
+      <input
+        ref={appIdRef}
+        id="dt-app-id"
+        value={appId}
+        list="dt-app-id-options"
+        onChange={(e) => onAppId(e.target.value.trim())}
+        aria-invalid={appIdInvalid}
+        aria-describedby={appIdInvalid ? "dt-app-id-invalid" : undefined}
+        className={`h-7 w-48 rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${appIdInvalid ? "border-amber-500" : "border-input"}`}
+      />
+      <datalist id="dt-app-id-options">
+        {suggestions.map(({ id, note }) => (
+          <option key={id} value={id} label={note} />
+        ))}
+      </datalist>
+      <Button
+        ref={refreshRef}
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1.5 text-xs"
+        disabled={!appIdValid}
+        onClick={onRefresh}
+      >
+        <RefreshCw className="size-3.5" /> Refresh
+      </Button>
+    </div>
+  );
+}
+
+/** The button that captures a live snapshot of the runner's own window. */
+function CaptureSnapshotButton({
+  fetching,
+  onCapture,
+}: {
+  fetching: boolean;
+  onCapture: () => void;
+}) {
+  const { ref } = useUIElement({
+    id: "ui-bridge-capture-snapshot",
+    label: "Capture a live UI Bridge snapshot of the runner's own window",
+    type: "button",
+  });
+  return (
+    <Button
+      ref={ref}
+      size="sm"
+      className="mb-3 gap-1.5"
+      disabled={fetching}
+      onClick={onCapture}
+    >
+      {fetching ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : (
+        <Network className="size-4" />
+      )}
+      Capture snapshot
+    </Button>
+  );
+}
+
 /**
- * UI Bridge tab — the twin's UI half, split into its two natures:
+ * UI Bridge tab, inside the presentation lens's boundary (plan
+ * `2026-10-23-console-presentation-spaces` D3): the inspector reads app names
+ * and page ids a runner registered — free text the lens cannot prove
+ * first-party — and captures the runner's own window, which can show
+ * anything on the operator's screen. So the whole inspector is
+ * `OperatorOnly`; the Twin map's app-twin card is the presentable summary.
+ */
+export function UiBridgePanel() {
+  return (
+    <OperatorOnly placeholder={<UiBridgePresented />}>
+      <UiBridgeInspector />
+    </OperatorOnly>
+  );
+}
+
+/**
+ * The inspector — the twin's UI half, split into its two natures:
  *  - CACHED / processed: the runner's spec pages + state-machine graph for
  *    the App field's id, read from on-disk IR (no running app needed).
  *  - AUTOMATION-required: a live snapshot of the runner's OWN window,
  *    captured on demand. It does not follow the App field.
+ *
+ * The snapshot is read only when Capture asks: never on a mount, a runner
+ * switch or a reconnect. Everything the Live card says about it follows that
+ * read's own state, which react-query keeps for the runner across mounts
+ * (leaving the tab or flipping presentation mode unmounts this inspector),
+ * never a flag of this mount's. So it says the same thing whenever it is
+ * read: a capture carries the time it was taken, a failed attempt the time
+ * it failed, and a capture kept after a re-capture failed stays under that
+ * failure, introduced as {@link SNAPSHOT_RETAINED_LEAD} (style guide R6,
+ * §6.5).
  */
-export function UiBridgePanel() {
+function UiBridgeInspector() {
   // The runner this tree targets (explicit choice, else coord's pick), read
   // from the target so a device the web list has not caught up with counts.
   const deviceId = targetRunnerId(useRunnerTarget());
@@ -115,21 +280,45 @@ export function UiBridgePanel() {
   // admit cannot answer (see `isValidAppId`).
   const appIdValid = isValidAppId(appId);
   const appIdInvalid = appId !== "" && !appIdValid;
-  const [snapshotRequested, setSnapshotRequested] = useState(false);
+
+  // The runner's registered apps, when it can say; the static suggestions
+  // otherwise (loading, a 403 from a runner whose relay allowlist predates
+  // `GET /apps`, or any other failure). No banner for that: the field is free
+  // text either way, and the suggestions are only a convenience.
+  const registeredApps = useRunnerApps(deviceId);
+  // A failed REFETCH keeps the last good `data` beside `isError`; the list is
+  // only trusted while the latest read succeeded.
+  const registeredData = registeredApps.isError
+    ? undefined
+    : registeredApps.data;
+  const appSuggestions = useMemo(
+    () => registeredAppSuggestions(registeredData) ?? APP_ID_SUGGESTIONS,
+    [registeredData]
+  );
 
   const specList = useRunnerSpecList(deviceId, appId);
   const specGraph = useRunnerSpecGraph(deviceId, appId);
-  const snapshot = useRunnerSnapshot(deviceId, snapshotRequested);
+  // Never enabled: only Capture's `refetch()` reads it. Enabled by a flag of
+  // this mount's, a capture asked of one runner was made of the next one the
+  // target switched to, with no press — the key changes, the flag does not.
+  const snapshot = useRunnerSnapshot(deviceId, false);
 
   // useMemo so the array reference is stable across renders (the `?? []`
   // otherwise makes a new array every render).
   const specs = useMemo(() => specList.data?.specs ?? [], [specList.data]);
   // States and transitions come from the GRAPH: the spec list's per-page
   // `config` is a projection with no state machine, so counting states from
-  // it read 0 for every app. `null` until the graph has answered.
+  // it read 0 for every app. `null` until the graph has answered, and again
+  // while its latest read has failed: react-query keeps the last good `data`
+  // beside `isError`, and the failure box above the counts names that read,
+  // so the counts are the graph's only while its latest read succeeded (as
+  // the registry's suggestions are, and as the Twin map's app twin card is).
   const graph = useMemo(
-    () => (specGraph.data ? summarizeSpecGraph(specGraph.data) : null),
-    [specGraph.data]
+    () =>
+      specGraph.data && !specGraph.isError
+        ? summarizeSpecGraph(specGraph.data)
+        : null,
+    [specGraph.data, specGraph.isError]
   );
   const snap = snapshot.data;
   // A native window capture has no element tree, so its `elements: []` is
@@ -145,23 +334,6 @@ export function UiBridgePanel() {
     specGraph.isError &&
     sharesRelayCause(specList.error, specGraph.error);
 
-  // UI Bridge: stable ids for the tab's controls (automation + spec-checks).
-  const { ref: appIdRef } = useUIElement({
-    id: "ui-bridge-app-id",
-    label: "UI Bridge app id to inspect",
-    type: "input",
-  });
-  const { ref: refreshRef } = useUIElement({
-    id: "ui-bridge-refresh",
-    label: "Refresh UI Bridge spec list/graph",
-    type: "button",
-  });
-  const { ref: captureRef } = useUIElement({
-    id: "ui-bridge-capture-snapshot",
-    label: "Capture a live UI Bridge snapshot of the runner's own window",
-    type: "button",
-  });
-
   if (!deviceId) {
     return (
       <div className="rounded-lg border border-border bg-card p-4">
@@ -175,39 +347,17 @@ export function UiBridgePanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <label className="text-xs text-muted-foreground" htmlFor="dt-app-id">
-          App
-        </label>
-        <input
-          ref={appIdRef}
-          id="dt-app-id"
-          value={appId}
-          list="dt-app-id-options"
-          onChange={(e) => setAppId(e.target.value.trim())}
-          aria-invalid={appIdInvalid}
-          aria-describedby={appIdInvalid ? "dt-app-id-invalid" : undefined}
-          className={`h-7 w-48 rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${appIdInvalid ? "border-amber-500" : "border-input"}`}
-        />
-        <datalist id="dt-app-id-options">
-          {APP_ID_SUGGESTIONS.map(({ id, note }) => (
-            <option key={id} value={id} label={note} />
-          ))}
-        </datalist>
-        <Button
-          ref={refreshRef}
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 text-xs"
-          disabled={!appIdValid}
-          onClick={() => {
-            specList.refetch();
-            specGraph.refetch();
-          }}
-        >
-          <RefreshCw className="size-3.5" /> Refresh
-        </Button>
-      </div>
+      <AppIdControls
+        appId={appId}
+        onAppId={setAppId}
+        appIdValid={appIdValid}
+        appIdInvalid={appIdInvalid}
+        suggestions={appSuggestions}
+        onRefresh={() => {
+          specList.refetch();
+          specGraph.refetch();
+        }}
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* CACHED / processed side */}
@@ -335,33 +485,53 @@ export function UiBridgePanel() {
             shown with the result.
           </p>
 
-          <Button
-            ref={captureRef}
-            size="sm"
-            className="mb-3 gap-1.5"
-            disabled={snapshot.isFetching}
-            onClick={() => {
-              setSnapshotRequested(true);
-              if (snapshotRequested) snapshot.refetch();
+          <CaptureSnapshotButton
+            fetching={snapshot.isFetching}
+            onCapture={() => {
+              snapshot.refetch();
             }}
-          >
-            {snapshot.isFetching ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Network className="size-4" />
-            )}
-            Capture snapshot
-          </Button>
+          />
 
-          {snapshot.isError && snapshotRequested && (
-            <RelayFailure
-              errors={[snapshot.error]}
-              subject="a live snapshot of the runner's window"
-            />
+          {/* The latest attempt failed: whenever this card is read, not only
+              in the mount that pressed Capture, and dated by the attempt. */}
+          {snapshot.isError && (
+            <div className="mb-2 space-y-1.5">
+              <RelayFailure
+                errors={[snapshot.error]}
+                subject="a live snapshot of the runner's window"
+              />
+              <Provenance
+                persistent
+                source={SNAPSHOT_SOURCE}
+                asOf={recordedAt(snapshot.errorUpdatedAt)}
+                data-testid="ui-bridge-snapshot-failure-provenance"
+              />
+            </div>
           )}
           {snap && (
             <>
+              {snapshot.isError && (
+                // React-query keeps the last capture when a re-capture
+                // fails: the failure above leads, and this is the capture
+                // before it, not the window as it is now (style guide R6,
+                // §6.5).
+                <p
+                  data-testid="ui-bridge-snapshot-retained"
+                  className="mb-2 text-xs font-medium text-muted-foreground"
+                >
+                  {SNAPSHOT_RETAINED_LEAD}
+                </p>
+              )}
               <SnapshotSubject snap={snap} />
+              {/* When it was captured, in operator mode too: nothing else on
+                  the card dates it, and a capture is never "now". */}
+              <Provenance
+                persistent
+                source={SNAPSHOT_SOURCE}
+                asOf={recordedAt(snapshot.dataUpdatedAt)}
+                className="mb-2"
+                data-testid="ui-bridge-snapshot-provenance"
+              />
               {typeof snap.note === "string" && snap.note && (
                 <p className="mb-2 text-xs text-amber-700 dark:text-amber-500">
                   {snap.note}

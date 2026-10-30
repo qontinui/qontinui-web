@@ -32,15 +32,20 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Icons are file-based, beside this file, all from `public/q-logo.png`, whose
+// 152×177 frame is not square and so cannot serve as an icon itself:
+// `favicon.ico`, `icon1.png` (32×32) and `icon2.png` (48×48) are square
+// downscales; `apple-icon.png` (180×180) is the mark at its own size, centred
+// on an opaque tile of the design-token canvas. There is no `icon.svg` yet.
+// It needs a vector master of the mark, no repo holds one, and a vtracer
+// trace of the raster was measured and was not faithful. The social cards
+// are file-based too (`opengraph-image.tsx` and `twitter-image.tsx` here and
+// in `(marketing)/`).
 export const metadata: Metadata = {
   metadataBase: new URL("https://qontinui.io"),
-  title: "Qontinui - Open Source AI Development Platform",
+  title: "Qontinui - Open-Source Software Factory for AI Agents",
   description:
-    "An open-source desktop app that orchestrates AI coding sessions with automated feedback loops, verification, and error monitoring. Multi-provider support for Claude and Gemini.",
-  icons: {
-    icon: "/q-logo.png",
-    apple: "/q-logo.png",
-  },
+    "An open-source software factory: a fleet of AI agents plans, implements, tests and lands changes on your own codebase, against a digital twin of your development process, so they answer their own questions instead of asking you.",
 };
 
 export default function RootLayout({

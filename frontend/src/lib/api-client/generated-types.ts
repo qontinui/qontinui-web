@@ -454,6 +454,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/coord/overlord/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Overlord Label
+         * @description Append the operator's label to an intervention; return coord's new row.
+         */
+        post: operations["api_v1_admin_coord_overlord_labels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/download-analytics": {
         parameters: {
             query?: never;
@@ -2289,6 +2309,199 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/build-records/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Build Record Products
+         * @description The tenant's product definitions (``{products: [...]}``), from coord.
+         */
+        get: operations["api_v1_build_records_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/products/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Build Record Product
+         * @description Create or replace one product definition. Tenant admins only: this is
+         *     the switch that makes a product publishable (``is_public``).
+         *
+         *     ``is_public: false`` — or a ``repos`` list that no longer covers every repo
+         *     the live snapshot names — retracts this tenant's live public snapshot of
+         *     the slug FIRST and commits, then calls coord — so whatever coord answers, the
+         *     page is not left public under a product that was just made private. The
+         *     ``X-Build-Record-Retracted`` header says whether this request retracted.
+         */
+        put: operations["api_v1_build_records_products_slug_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile Build Records
+         * @description Retract every live public build record of this tenant whose coord
+         *     product is gone, private or another tenant's — now, with the caller's own
+         *     coord credential — or whose snapshot names a repo the product no longer
+         *     includes. GitHub visibility is NOT re-checked here: that spends the shared
+         *     anonymous GitHub budget and runs only as the scheduled
+         *     ``build_record_visibility_recheck`` task. The same reconcile also runs on the in-process scheduler
+         *     every 10 minutes (``app/jobs/build_record_reconcile.py``); this door is for
+         *     the launch kit and the operator notice, which should not wait for a tick.
+         *
+         *     A coord read that fails is a refusal (coord's status), never an empty
+         *     listing — an unanswered question retracts nothing.
+         */
+        post: operations["api_v1_build_records_reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Build Record
+         * @description The live ``build-record/1`` document for one product, from coord.
+         *
+         *     coord's 404 ``{"error": "build_record_product_not_found"}`` passes through
+         *     as a structured detail.
+         */
+        get: operations["api_v1_build_records_slug_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}/publication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Build Record Publication
+         * @description The caller's tenant's publication state for ``slug`` (any member):
+         *     whether it owns the public address, whether it is currently unpublished,
+         *     and the latest snapshot's version and digest. Read-only; no coord call.
+         */
+        get: operations["api_v1_build_records_slug_publication_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/build-records/{slug}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Build Record
+         * @description Freeze the product's current build record as its next public version.
+         *
+         *     Refuses (nothing stored) when:
+         *
+         *     * another tenant already owns this public slug → 409
+         *       ``public_slug_owned_by_another_tenant``;
+         *     * the slug is retracted and the body does not say ``reactivate: true`` →
+         *       409 ``build_record_retracted``;
+         *     * the product does not exist in the caller's tenant → 404;
+         *     * coord's product row names a different tenant → 409
+         *       ``build_record_tenant_mismatch``;
+         *     * the product's ``is_public`` is not ``true`` → 409 (D3: nothing is public
+         *       by default);
+         *
+         *     — and in those three cases a LIVE snapshot this tenant owns is retracted
+         *     on the spot (``retracted`` in the refusal says whether it was);
+         *
+         *     * coord's document fails the D3 allowlist, names another product, or lists
+         *       a repo outside the product definition → 502 (coord sent something it
+         *       must not; the violations are listed);
+         *     * coord's ``generated_at`` is outside [now − 15 min, now + 5 min] → 502
+         *       ``build_record_generated_at_out_of_window``;
+         *     * GitHub, asked anonymously, does not confirm a listed repo is public →
+         *       502 ``build_record_repo_not_public`` (it said private / absent) or
+         *       ``build_record_repo_visibility_unknown`` (no answer, rate limit, error);
+         *       refused without asking when the product has more than 50 repos (409
+         *       ``build_record_too_many_repos``) or the shared GitHub budget is at its
+         *       publish reserve (502 ``build_record_repo_visibility_budget_reserved``);
+         *     * the slug was retracted or re-activated while coord was being asked → 409
+         *       ``build_record_retraction_changed``;
+         *     * the document is older than the latest snapshot → 409
+         *       ``build_record_stale``.
+         *
+         *     After storing, the product is read from coord once more; if it went
+         *     private (or the read fails) in the meantime, the new version is retracted
+         *     at once and the answer is 409 ``build_record_product_not_public`` /
+         *     502 ``build_record_post_publish_check_unanswered`` with ``retracted``.
+         */
+        post: operations["api_v1_build_records_slug_publish_post"];
+        /**
+         * Unpublish Build Record
+         * @description D7's one-step unpublish: retract the public address immediately.
+         *
+         *     ``GET /api/v1/public/build-records/{slug}`` answers 404 from the moment
+         *     this commits. Every snapshot row is kept as history and the tenant keeps
+         *     the slug; ``POST /{slug}/publish`` with ``{"reactivate": true}``
+         *     re-activates it as the next version. Idempotent: unpublishing a retracted
+         *     slug keeps its first retraction time.
+         *
+         *     Refuses with the publish route's own answers: 404
+         *     ``build_record_not_published`` when nothing was ever published under the
+         *     slug, 409 ``public_slug_owned_by_another_tenant`` when another tenant owns
+         *     it. coord is not consulted — retraction must work while coord is down.
+         */
+        delete: operations["api_v1_build_records_slug_publish_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/capture/actions/batch": {
         parameters: {
             query?: never;
@@ -3590,7 +3803,7 @@ export interface paths {
         };
         /**
          * Get active constraints
-         * @description Proxy to runner: returns active constraints for a project path.
+         * @description Proxy to the co-located runner: the active constraints for a project. Platform admins only.
          */
         get: operations["api_v1_constraints_active_get"];
         put?: never;
@@ -3610,13 +3823,13 @@ export interface paths {
         };
         /**
          * Get constraint config
-         * @description Proxy to runner: returns the constraint TOML config for a project path.
+         * @description Proxy to the co-located runner: the constraint TOML config found from a project path. Platform admins only.
          */
         get: operations["api_v1_constraints_config_get"];
         put?: never;
         /**
          * Write constraint config
-         * @description Proxy to runner: writes a new constraint TOML config.
+         * @description Proxy to the co-located runner: writes a constraint TOML config, whose command checks the runner's workflow loop executes. Platform admins only.
          */
         post: operations["api_v1_constraints_config_post"];
         delete?: never;
@@ -3634,7 +3847,7 @@ export interface paths {
         };
         /**
          * Get constraint results
-         * @description Proxy to runner: returns constraint evaluation results for a task run.
+         * @description Proxy to the co-located runner: constraint evaluation results for a task run. Platform admins only.
          */
         get: operations["api_v1_constraints_results_task_run_id_get"];
         put?: never;
@@ -3656,7 +3869,7 @@ export interface paths {
         put?: never;
         /**
          * Validate constraint config
-         * @description Proxy to runner: validates a TOML config string without writing it.
+         * @description Proxy to the co-located runner: validates a TOML config string without writing it. Platform admins only.
          */
         post: operations["api_v1_constraints_validate_post"];
         delete?: never;
@@ -4811,7 +5024,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -4838,7 +5054,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -4865,7 +5084,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -4892,7 +5114,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -4921,7 +5146,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5886,14 +6114,15 @@ export interface paths {
         /**
          * Get Twin Subspaces
          * @description Live numerator for the completeness matrix: a per-sub-space probe of
-         *     every fleet-wide snapshot twin observer.
+         *     every sub-space coord's served catalog declares probeable.
          *
          *     Per-tenant: the tenant is resolved best-effort (and the caller's Cognito
          *     bearer **plus their tenant-switcher selection** captured for forwarding).
          *     The matrix reflects what coord can observe for *their* tenant — flag-gated
-         *     / tenant-scoped observers legitimately read ``blind`` for some tenants. If
-         *     coord/the tenant is unavailable we DEGRADE to an all-error matrix (HTTP
-         *     200), never 5xx.
+         *     / tenant-scoped observers legitimately read ``blind`` for some tenants, and
+         *     a Qontinui-internal sub-space reads ``restricted`` for another tenant. If
+         *     coord, the tenant or the catalog is unavailable we DEGRADE (HTTP 200, see
+         *     ``_degraded_matrix``), never 5xx.
          *
          *     Tenant selection (plan
          *     ``2026-08-28-tenant-creation-followup-defects-from-the-preemptive-sweep``
@@ -7334,11 +7563,12 @@ export interface paths {
         };
         /**
          * List Apps
-         * @description List registered apps + their fleet-fresh config.
+         * @description List registered apps + their fleet-fresh config. Platform admins only.
          *
          *     ``project.apps`` is not user-partitioned (it is the runner-local app
          *     registry mirrored on shared Postgres), so this returns every registered
-         *     app — the fleet UI is an operator surface.
+         *     app, build and start commands included — which is why it is gated on
+         *     :func:`require_admin` rather than on any signed-in user.
          */
         get: operations["api_v1_fleet_apps_get"];
         put?: never;
@@ -7364,10 +7594,15 @@ export interface paths {
         head?: never;
         /**
          * Update App Config
-         * @description Edit an app's update strategy + build/start commands.
+         * @description Edit an app's update strategy + build/start commands. Platform admins only.
          *
          *     Fields left ``None`` are unchanged. ``build_command`` / ``start_command``
          *     are cleared by sending a blank value (empty or whitespace-only).
+         *
+         *     Gated on :func:`require_admin`: a stored command is executed by the
+         *     auto-fresh engine on every fleet machine that auto-freshes this app, and
+         *     ``project.apps`` is shared across tenants. The refusal comes from the
+         *     dependency, before this body reads or touches the row.
          */
         patch: operations["api_v1_fleet_apps_app_id_patch"];
         trace?: never;
@@ -7687,6 +7922,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/image-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an image to the content-addressed store
+         * @description Store one image under the hash of its bytes, for the caller's tenant.
+         *
+         *     Every refusal — a malformed or unstorable field, an oversized or
+         *     unreadable image — happens before anything is written to storage.
+         */
+        post: operations["api_v1_image_assets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/slot-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List one image slot's candidates, a page at a time
+         * @description One page of the slot's candidates, each with the asset it names.
+         */
+        get: operations["api_v1_image_assets_slot_candidates_get"];
+        /**
+         * Propose an image for a slot, or move a proposal
+         * @description Create or update the (repo, slot_id, asset_sha256) candidate.
+         *
+         *     ``recipe_hash``, ``values`` and ``judge`` are replaced when sent and kept
+         *     when omitted. ``status: chosen`` returns the slot's previous choice to
+         *     ``candidate`` in the same transaction; ``demoted`` names it.
+         */
+        put: operations["api_v1_image_assets_slot_candidates_put"];
+        post?: never;
+        /**
+         * Withdraw one proposal (the image itself stays)
+         * @description Delete the (repo, slot_id, asset_sha256) candidate row.
+         */
+        delete: operations["api_v1_image_assets_slot_candidates_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/{sha256}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one image's record and a URL to its bytes
+         * @description Answers only when the caller's tenant holds an image with this hash.
+         */
+        get: operations["api_v1_image_assets_sha256_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-assets/{sha256}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one image's bytes
+         * @description The bytes of an image the caller's tenant holds — the same 404 as the
+         *     record route for any other hash, another tenant's included.
+         */
+        get: operations["api_v1_image_assets_sha256_content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/integration-testing/execute": {
         parameters: {
             query?: never;
@@ -7809,6 +8140,31 @@ export interface paths {
         get: operations["api_v1_integration_testing_snapshots_run_id_screenshots_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/internal/coord-push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Coord Push
+         * @description Push one notification to every active device of the named users.
+         *
+         *     ``devices: 0`` is an answer, not an error: coord maps it to the item's
+         *     ``no_devices`` state. Expo failures are counted, not raised, so the
+         *     response is always the counts — a non-2xx from this route means the call
+         *     itself was refused (401 secret, 422 body), never that Expo failed.
+         */
+        post: operations["api_v1_internal_coord_push_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8844,6 +9200,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/action-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Operator Action Items
+         * @description Return the tenant's operator action items.
+         *
+         *     Response envelope mirrors coord:
+         *     ``{"items": [...], "next_cursor": str|null,
+         *     "counts": {"open": N, "done": N, "dismissed": N}}``. ``counts`` are
+         *     server-computed over the whole tenant, not the page — consumers read them
+         *     rather than counting ``items``.
+         *
+         *     Every param is forwarded **verbatim** and only when the caller set it;
+         *     bounds live in coord (one clamp, one place). Tenant-scoped and
+         *     operator-bearer-forwarding, same posture as ``/operations/notifications``.
+         */
+        get: operations["api_v1_operations_action_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/action-items/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Coord Operator Action Items Resolve
+         * @description Resolve an action item as ``done`` or ``dismissed``.
+         *
+         *     Coord answers ``{"item": {...}}``; ``resolved_by`` is the principal coord
+         *     derives from the forwarded bearer, never a body field. Coord's 404 (an item
+         *     outside the caller's tenant) and 409 ``already_resolved`` pass through with
+         *     coord's status.
+         */
+        post: operations["api_v1_operations_action_items_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/agent-logs/by-agent/{agent_id}": {
         parameters: {
             query?: never;
@@ -8930,6 +9341,24 @@ export interface paths {
          *
          *     ``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the
          *     Gaps tab can list pre-answered (non-blocking) gap reports.
+         *
+         *     ``offset`` / ``audience``: coord's ``fetch_answered`` takes the SAME
+         *     ``PendingQuery`` and ``AudienceFilter`` as the pending reader, so both
+         *     reach it — but only if they are declared HERE. Until they were, this
+         *     handler declared ``limit`` and ``gap`` alone and **FastAPI dropped the
+         *     rest on the floor**: a caller asking for ``?offset=50&audience=operator``
+         *     reached coord with neither, and got page 1 of every audience with a 200
+         *     in front of it. That is the exact failure the pending docstring above
+         *     describes in its own words, still live one handler down — no visible
+         *     defect only because nothing pages the answered tab yet, which makes the
+         *     next answered pager a silent no-op its author cannot observe. Validated
+         *     identically to the pending handler (``limit`` ``ge=1, le=500``,
+         *     ``offset`` ``ge=0``, ``audience`` a closed two-value set), rather than
+         *     with a second convention.
+         *
+         *     The envelope is coord's, verbatim, with the same absence contract the
+         *     pending docstring sets out: ``total``/``truncated`` are OMITTED when coord
+         *     could not observe the count, and an absent key is UNKNOWN, never zero.
          */
         get: operations["api_v1_operations_agent_questions_answered_get"];
         put?: never;
@@ -8979,6 +9408,58 @@ export interface paths {
          *     when set, forwarded to coord as the POLICY_GAP filter —
          *     ``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.
          *     Backs the Gaps tab on the questions inbox.
+         *
+         *     ``limit`` / ``offset`` / ``audience`` (plan
+         *     2026-09-12-a-correctly-escalated-question-is-unreachable-in-the-operator-inbox).
+         *     Until these were declared here the proxy took ``gap`` alone, and FastAPI
+         *     drops an undeclared query param on the floor — so a caller asking for
+         *     ``?limit=500&audience=operator`` reached coord with NEITHER, and any
+         *     frontend-side limit change was a **no-op it could not observe**. Declaring
+         *     them is the whole fix on this side; the forwarding below is mechanical.
+         *
+         *     Why it mattered: measured 2026-09-12, ``coord.agent_questions`` held
+         *     ~23,700 pending rows, 23,258 of them ``pr_fix`` with ``audience='agent'``
+         *     and only ~442 with ``audience='operator'``. Coord's default page is 100
+         *     rows newest-first, so a correctly-escalated operator question sank out of
+         *     reach behind the agent tier's volume and was unanswerable for 10 days.
+         *     ``audience=operator`` is what makes the operator's own 442 addressable;
+         *     ``limit``/``offset`` are what make the rest of them reachable.
+         *
+         *     ``limit`` is validated exactly as the ANSWERED proxy below validates its
+         *     own (``ge=1, le=500``) rather than with a second convention. ``offset`` is
+         *     ``ge=0`` — the answered proxy has no offset to copy, and the work-units
+         *     proxy's ``offset: int | None = Query(default=None, ge=0)`` is the house
+         *     form.
+         *
+         *     ``audience`` and ``offset`` are **ignored by a DEPLOYED coord that predates
+         *     the sibling change**, and "deployed" is the load-bearing word. Coord's
+         *     source on ``main`` now DOES parse both — ``PendingQuery``
+         *     (``agent_questions.rs``:387) carries ``agent_id``, ``agent_session_id``,
+         *     ``limit``, ``gap``, ``audience`` and ``offset`` as of the sibling commit in
+         *     this same change set — so a grep of that source is not grounds for deleting
+         *     the degrade path here: what governs is the build answering this box, and it
+         *     lags ``main``. The struct is plain serde with no ``deny_unknown_fields``,
+         *     so on an older build an unknown query key is dropped rather than refused.
+         *     Forwarding them is therefore safe in both directions, but a 200 is never
+         *     proof the filter was applied — the frontend reads the echoed ``limit`` and
+         *     ``offset`` back and says which parameter went nowhere. ``limit`` coord has
+         *     always honoured (default 100, hard max 500), which is the bound the defect
+         *     below ran into.
+         *
+         *     The response envelope is **unchanged** and deliberately untranslated:
+         *     :func:`_proxy_coord_get` returns coord's JSON body verbatim, and coord
+         *     already ships ``{questions, count, limit, shown, offset}`` plus ``total``
+         *     and ``truncated`` — so the paging metadata the frontend needs arrives
+         *     without a re-wrap here.
+         *
+         *     ⚠️ **``total`` and ``truncated`` are OMITTED — the key absent — when coord
+         *     could not observe the count**, which is precisely why nothing here
+         *     re-wraps the body. ``total`` is a ``COUNT(*) OVER ()`` riding on the
+         *     returned rows, so an ``offset`` past the end of the match set returns zero
+         *     rows and no count with them; a ``0`` in its place would be a fabrication,
+         *     and the operator console turns a pending ``0`` into "No agent is waiting on
+         *     an answer". Any future re-wrap here MUST preserve the absence — a
+         *     ``body.get("total", 0)`` anywhere in this path recreates the defect.
          */
         get: operations["api_v1_operations_agent_questions_pending_get"];
         put?: never;
@@ -9791,8 +10272,8 @@ export interface paths {
          * Get Continuation Delivery Mode
          * @description Read what coord resolves for one repo's continuation-delivery mode.
          *
-         *     See :class:`ContinuationDeliveryModeView` ``provenance_known`` for why
-         *     this is a resolver answer and not a stored value.
+         *     See :class:`ContinuationDeliveryModeView` ``resolved_scope`` for what
+         *     coord says about where ``mode`` came from.
          */
         get: operations["api_v1_operations_continuation_delivery_mode_get"];
         /**
@@ -10079,6 +10560,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/coord/dossiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Dossiers
+         * @description Return one page of dossier heads for the calling operator's tenant.
+         *
+         *     The body is coord's, verbatim: ``{"dossiers": [...], "facets":
+         *     {"readiness", "remediation_state"}, "facets_scope", "dedup",
+         *     "*_applied" echoes, ...}`` plus the bounded-read envelope (``available``,
+         *     ``count``, ``truncated``, ``bound_kind``, ``next_cursor``, ``total``,
+         *     ``shown``, ``limit``, ``filter_narrowed``, ``enumerate_via``). The tenant
+         *     is coord's to resolve from the forwarded bearer; nothing in the request
+         *     names it.
+         *
+         *     Degraded answers carry every envelope key as UNKNOWN (``null``), ``facets``
+         *     as ``null`` and ``dossiers`` empty, plus ``unavailable`` /
+         *     ``unavailable_kind`` — a page reading that body must say "could not read",
+         *     never "no dossiers".
+         */
+        get: operations["api_v1_operations_coord_dossiers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/coord/findings": {
         parameters: {
             query?: never;
@@ -10325,6 +10839,151 @@ export interface paths {
          *     never sent on the wire.
          */
         get: operations["api_v1_operations_coord_next_step_settings_fleet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/operator-touches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Operator Touches
+         * @description Proxy coord's ``GET /coord/operator-touches`` (tenant-scoped).
+         *
+         *     Response shape is coord-authored and passed through untouched —
+         *     ``measurement`` (``measured`` | ``not_yet_measured``), ``window_days``,
+         *     ``aggregate_included`` (``false`` on a ``before`` page, where every
+         *     aggregate field and ``constraint_verdict`` are ``null``),
+         *     ``measured_since``, ``covered_days``, ``totals``, ``agent_absorbed_rate``,
+         *     ``unknown_share``, ``policy_authorized_split``, ``reason_classes``,
+         *     ``touches``, ``next_cursor`` and ``constraint_verdict``.
+         *
+         *     Every parameter is declared as a STRING and forwarded unchanged. coord
+         *     clamps ``limit`` to ``1..200``, answers a VALUE error with its typed
+         *     ``400 {"error": "bad_request", "detail"}``, and a TYPE error (``abc`` for
+         *     an integer, ``yes`` for a boolean) with axum's plain-text 400, which the
+         *     passthrough wraps as ``{"error": "<text>"}`` — see the section note.
+         *     Typing them here would answer a FastAPI ``422 {detail: [...]}`` instead,
+         *     which the page would misattribute to coord. A ``not_yet_measured`` store is coord's
+         *     answer, not a failure; coord's 400/503 bodies pass through verbatim.
+         */
+        get: operations["api_v1_operations_coord_operator_touches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/operator-touches/constraint-verdict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Operator Touch Constraint Verdict
+         * @description Proxy coord's ``GET /coord/operator-touches/constraint-verdict``.
+         *
+         *     The standalone form of the ``constraint_verdict`` object the touch read
+         *     carries inline: ``{verdict: "operator"|"machines"|"tokens"|"unknown",
+         *     reason, inputs, unknown_inputs, computed_at}``. ``unknown`` is a permitted
+         *     verdict, never a default. Error bodies pass through verbatim.
+         */
+        get: operations["api_v1_operations_coord_operator_touches_constraint_verdict_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/overlord/flow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlord Flow
+         * @description Proxy coord's ``GET /coord/overlord/flow`` (tenant-scoped).
+         *
+         *     Response shape is coord-authored and passed through untouched —
+         *     ``window``, ``truncated``, ``passes_considered``,
+         *     ``full_passes_considered``, ``time_to_close`` (``median_secs`` /
+         *     ``p90_secs`` are ``null`` when ``count == 0``), ``nudge`` (rates ``null``
+         *     when ``nudged == 0``), ``unchanged``, ``unknown_share`` (``share`` ``null``
+         *     over an empty pass), ``verdict_series`` and, with
+         *     ``group_by=overlord_version``, ``groups``. A ``null`` is coord saying
+         *     "not measurable", and must reach the page as ``null`` — never a ``0``.
+         *
+         *     Every parameter is a STRING forwarded unchanged; coord's typed 422/503
+         *     bodies pass through verbatim — see the section note.
+         */
+        get: operations["api_v1_operations_coord_overlord_flow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/overlord/passes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Overlord Passes
+         * @description Proxy coord's ``GET /coord/overlord/passes`` (tenant-scoped list).
+         *
+         *     Answers ``{ok, passes, total_matching, truncated, limit, offset}``, newest
+         *     ``started_at`` first, each pass WITHOUT its rows. Filters are strings
+         *     forwarded unchanged (``scope`` ``full|filtered``, ``mode``
+         *     ``report|act``, ``since`` RFC 3339, ``limit`` ≤ 200 — coord validates);
+         *     error bodies pass through verbatim.
+         */
+        get: operations["api_v1_operations_coord_overlord_passes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/overlord/passes/{pass_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlord Pass
+         * @description Proxy coord's ``GET /coord/overlord/passes/{pass_id}`` (tenant-scoped).
+         *
+         *     Answers ``{ok, pass: {<pass fields>, rows: [...]}}``; a pass absent in the
+         *     caller's tenant is coord's ``404 {"error": "pass_not_found"}``, passed
+         *     through verbatim. ``pass_id`` is typed ``UUID`` because it is spliced into
+         *     the coord URL path — see the section note.
+         */
+        get: operations["api_v1_operations_coord_overlord_passes_pass_id_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -11696,6 +12355,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/coord/verification/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Verification Metrics
+         * @description Return coord's verification metrics object for the operator's tenant.
+         *
+         *     The tenant is coord's to resolve from the forwarded bearer; nothing from
+         *     the request names it. The body is coord's, verbatim — including the
+         *     ``degraded: true`` answer, which the page renders as "could not look".
+         */
+        get: operations["api_v1_operations_coord_verification_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/deploys": {
         parameters: {
             query?: never;
@@ -13018,6 +13701,10 @@ export interface paths {
          * Reject Gate
          * @description Reject an OperatorApproval gate (operator bearer forwarded —
          *     fleet-auth P2/D6).
+         *
+         *     The optional JSON body ``{"reason": ...}`` carries the reason. It is
+         *     forwarded to coord stripped, and only when non-blank; an absent body or a
+         *     blank reason forwards ``{}``.
          */
         post: operations["api_v1_operations_gates_gate_id_reject_post"];
         delete?: never;
@@ -14783,6 +15470,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/pr-merge/onboarding/repo-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pr Merge Onboarding Repo Bindings
+         * @description List the repo-tenant bindings visible to the active tenant.
+         *
+         *     Proxies coord's ``GET /coord/onboarding/repo-bindings[?repo=]``. The 200
+         *     body is ``{"bindings": [...], "measured_at": <rfc3339>}``; each binding
+         *     carries ``caller_side: "bound" | "org"`` — whether the active tenant is the
+         *     tenant the repo is bound TO, or the tenant of the org it was bound AWAY
+         *     from. ``repo`` is forwarded only when supplied. Status + body verbatim.
+         */
+        get: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_get"];
+        put?: never;
+        /**
+         * Post Pr Merge Onboarding Repo Binding
+         * @description Bind a repo to a tenant (or rebind it to another one).
+         *
+         *     Proxies coord's ``POST /coord/onboarding/repo-bindings``. Coord moves the
+         *     repo's ``tenant_repos`` / profile / canonical rows, writes the binding, one
+         *     audit row per affected tenant and an operator notification, and answers
+         *     ``{repo, from_tenant, to_tenant, governed_by: "binding", moved:
+         *     {tenant_repos, profile, canonical}, binding_written, binding_deleted,
+         *     tombstone_cleared, audit_ids, notified, idempotent, enrollment_spawned}``;
+         *     a repeated bind answers ``idempotent: true`` with nothing written.
+         *     ``decision_ref`` is omitted from the wire when absent. Status, body and
+         *     ``Retry-After`` verbatim (``503 schema_settling`` is a bind-only refusal).
+         */
+        post: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_post"];
+        /**
+         * Delete Pr Merge Onboarding Repo Binding
+         * @description Unbind a repo, returning its governance to the org's tenant.
+         *
+         *     Proxies coord's ``DELETE /coord/onboarding/repo-bindings`` with the body
+         *     ``{repo, reason}``. An admin of either the bound tenant (release) or the
+         *     org's tenant (reclaim) may unbind; coord decides. The 200 body has the
+         *     bind response's shape with ``governed_by: "org"`` and ``binding_deleted:
+         *     true``; ``404 binding_not_found`` when there is no binding visible to the
+         *     active tenant. Status + body verbatim.
+         */
+        delete: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/pr-merge/onboarding/repos/{repo}/restore": {
         parameters: {
             query?: never;
@@ -15089,6 +15827,14 @@ export interface paths {
          *     Phase 5, along with the ``rollout_state`` column and the ``shadow`` state
          *     the last two existed to justify exiting.
          *
+         *     Plan ``2026-08-27-operator-touch-read-and-surface`` C3 adds two TENANT-level
+         *     fields (touches carry no repo): ``operator_touch`` ``{last_7d, last_30d}``
+         *     — each window's ``measurement`` is ``measured`` | ``not_yet_measured`` |
+         *     ``unreadable`` — and ``structurally_zero``, the per-repo window fields
+         *     with no live writer (``operator_override_rate``, ``escalation_rate``).
+         *     This proxy returns coord's JSON as-is (no response model reshapes it), so
+         *     both reach the frontend without a change here.
+         *
          *     Drives MergeOrchestrationSettings.tsx's SLO Dashboard section.
          */
         get: operations["api_v1_operations_pr_merge_slo_get"];
@@ -15253,7 +15999,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/operations/prs/{owner}/{repo}/{number}/draft-state": {
+    "/api/v1/operations/prs/{owner}/{repo}/{number}/hold": {
         parameters: {
             query?: never;
             header?: never;
@@ -15263,28 +16009,34 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Set Pr Draft State
-         * @description Set a PR's GitHub draft state (operator release valve).
+         * Set Pr Hold
+         * @description Place or release a coord hold on a PR (the operator's hold control).
          *
-         *     Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/draft-state``
-         *     (plan 2026-07-23-operator-set-pr-draft-state). The body is ``{"draft": bool}``:
-         *     ``false`` marks the PR ready-for-review (releasing it to the merge train),
-         *     ``true`` converts it back to draft (the documented hold mechanism).
+         *     Proxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``
+         *     (plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced
+         *     the ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),
+         *     so it works on private repos on GitHub Free, which have no draft PRs.
          *
-         *     Auth mirrors the gate-action stack (approve/reject): the operator's Cognito
-         *     bearer is forwarded (``require_coord_tenant_admin`` → ``tenant_id=`` →
-         *     fleet-auth P2/D6) and coord derives the tenant + validates repo authority
-         *     server-side. Releasing a draft-required (security-surface) PR is an operator
-         *     judgment, so this is operator-authed — never an agent JWT.
+         *     Body: ``{"held": bool, "reason"?: str, "kind"?: str, "gate_id"?: str}``.
+         *     ``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;
+         *     ``held: false`` releases. Release authority is coord's: the holder, or an
+         *     admin-role operator for any hold; a ``security_tier`` hold is the
+         *     operator's alone.
          *
-         *     Only the ``draft`` boolean is forwarded; any other keys the client sends are
-         *     dropped so the wire body to coord is exactly its ``{"draft": bool}`` contract.
-         *     coord's status codes + ``{"error", "message"}`` bodies pass through verbatim
-         *     via ``_proxy_coord_post`` (400 invalid_input, 404 repo_not_registered_to_tenant
-         *     / pr_not_found, 429 rate_limited, 503 github_app_unconfigured,
-         *     502 github_draft_state_failed, 500 internal).
+         *     Auth mirrors the gate-action stack: the operator's Cognito bearer is
+         *     forwarded (``require_coord_tenant_admin`` → ``tenant_id=``) and coord
+         *     derives the tenant, role and repo authority server-side. Only the four
+         *     contract keys are forwarded.
+         *
+         *     ``structured_errors=True``: coord's typed refusal object (``{"error",
+         *     "message"}``) becomes the ``HTTPException.detail`` dict, which the app's
+         *     ``http_exception_handler`` splices into the top level of its envelope, so
+         *     the browser receives ``error`` as coord's code (400 invalid_input,
+         *     403 not_holder / security_tier_operator_only, 404 not_found,
+         *     500 internal) rather than a JSON string inside ``message``. A coord error
+         *     body that is not a JSON object still falls back to its text.
          */
-        post: operations["api_v1_operations_prs_owner_repo_number_draft_state_post"];
+        post: operations["api_v1_operations_prs_owner_repo_number_hold_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15368,6 +16120,160 @@ export interface paths {
          * @description Deregister a canonical repository.
          */
         delete: operations["api_v1_operations_repos_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/secrets-broker/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Secrets Broker Device
+         * @description Read the tenant's designated secrets-broker device.
+         *
+         *     ``can_edit`` is the operator's admin role in the EFFECTIVE tenant (plus the
+         *     superuser bypass), the same rule ``require_coord_tenant_admin`` applies to
+         *     this door's PUT, which writes through coord's device-only
+         *     ``PUT /coord/fleet-policy/secrets-broker-device`` (coord re-checks admin).
+         *     ``GET /fleet-policy``'s docstring says why ``identity.is_admin`` would be
+         *     wrong.
+         */
+        get: operations["api_v1_operations_secrets_broker_device_get"];
+        /**
+         * Put Secrets Broker Device
+         * @description Designate (or clear) the tenant's secrets-broker device, then READ BACK.
+         *
+         *     Tenant-admin gated web-side; coord re-checks admin and the device's tenant
+         *     binding. The order is: prove the binding, write the device column alone,
+         *     re-read. A failed proof writes nothing; nothing but the device is ever
+         *     sent, so no level is read, carried or overwritten. A coord without the
+         *     route (404/405) is an error, never "written". A failed re-read after a
+         *     landed write is UNKNOWN (``readback_error``), not "applied".
+         */
+        put: operations["api_v1_operations_secrets_broker_device_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Runs
+         * @description Proxy coord's ``GET /coord/session-runs`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{runs: [Run], shown, total, truncated, next_cursor, as_of}``,
+         *     newest first, or coord's ``503 schema_missing`` while the run record is
+         *     not migrated. A ``Run`` carries its device, session id and ``run_seq``,
+         *     ``initiator``, ``work_type`` (and the facts it was classified from —
+         *     ``skill``, ``first_command``, ``spawn_origin``, ``dispatch_source``,
+         *     ``gate_id``, ``spawn_request_id`` …), its timestamps, ``wall_seconds`` and
+         *     ``held_after_finish_seconds`` (``null`` while open), ``end_reason`` /
+         *     ``end_source`` and ``history_complete`` (``false`` on a backfilled row).
+         */
+        get: operations["api_v1_operations_session_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/concurrency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Concurrency
+         * @description Proxy coord's ``GET /coord/session-runs/concurrency`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, bucket_seconds, since, raw_from, grid, devices:
+         *     [Device], truncated, as_of}``. A ``Device`` carries ``name``, ``budget``
+         *     (``{state: "published" | "zero" | "none", value, label}`` — read from
+         *     ``max_concurrent_agents``, never from a role), ``last_heartbeat`` /
+         *     ``heartbeat_age_seconds``, ``known_device``, ``open_now``, ``peak``,
+         *     ``p95`` and its ``series`` of ``{bucket_start, source, total, by_work_type}``.
+         */
+        get: operations["api_v1_operations_session_runs_concurrency_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/growth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Growth
+         * @description Proxy coord's ``GET /coord/session-runs/growth`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, bucket_seconds, since, raw_from,
+         *     recording_since, devices_recording, series: [Bucket], fleet, truncated,
+         *     as_of}``. Each bucket carries ``runs`` / ``slot_hours`` per work type and
+         *     their totals, ``partial`` (the bucket holding now) and ``backfilled_runs``;
+         *     ``fleet`` carries ``available_state`` — ``published``,
+         *     ``no_budget_published`` (no device published a budget) or
+         *     ``zero_budget_published`` (every published budget is 0) — with
+         *     ``available_slot_hours_per_day`` / ``_per_bucket`` (published non-zero
+         *     budgets × 24) stated only for ``published`` and ``null`` otherwise, never
+         *     0; and how many devices published a budget, a zero budget or none.
+         *     ``recording_since: null`` means nothing is recorded yet — an absent bucket
+         *     before it is UNKNOWN, not zero.
+         */
+        get: operations["api_v1_operations_session_runs_growth_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/session-runs/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Run Stats
+         * @description Proxy coord's ``GET /coord/session-runs/stats`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{window_seconds, since, group_by, population, groups: [Group],
+         *     classifier_version, as_of}``. Each group carries ``runs``, ``open_now``,
+         *     ``wall_seconds {p50, p90, p99, sum, samples}`` over OBSERVED ends only,
+         *     ``slot_hours``, ``active_seconds``, ``held_after_finish_seconds {sum,
+         *     samples}`` and the ``inferred`` / ``reconciled`` / ``unknown`` counts. A
+         *     percentile over no observed end is ``null`` — coord's UNKNOWN.
+         */
+        get: operations["api_v1_operations_session_runs_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -15813,6 +16719,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/spawns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawns
+         * @description Proxy coord's ``GET /coord/spawns`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, items: [SpawnRow], shown, total, truncated,
+         *     next_cursor, as_of}``, or ``{available: false, reason}`` while coord's
+         *     ledger tables are absent. A ``SpawnRow`` carries the request's class and
+         *     origin, its timestamps (``requested_at`` is the first moment coord tried to
+         *     place it), its state, attempts and deferrals, its pinned / preferred /
+         *     current / spawned device, its placement basis, the started session's id,
+         *     account and outcome, ``history_complete`` (``false`` on a backfilled row)
+         *     and ``wait_seconds`` (``null`` until it started).
+         */
+        get: operations["api_v1_operations_spawns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/spawns/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawn Stats
+         * @description Proxy coord's ``GET /coord/spawns/stats`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, window, window_start, as_of, overall,
+         *     per_device, local_report_counts}``, or ``{available: false, reason}``.
+         *     Every share and percentile in ``overall`` is ``null`` when its
+         *     denominator is empty — coord's UNKNOWN, which this proxy never turns into
+         *     a ``0``.
+         */
+        get: operations["api_v1_operations_spawns_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/spawns/{spawn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Spawn
+         * @description Proxy coord's ``GET /coord/spawns/{id}`` (tenant-scoped), verbatim.
+         *
+         *     Returns ``{available: true, request: SpawnRow, events: [{at, kind,
+         *     device_id, reason, detail}]}`` — the request and its device history
+         *     (placed, dispatched, deferred, refused, rerouted, …), oldest first — or
+         *     ``{available: false, reason}``. ``spawn_id`` is validated as a UUID here so
+         *     a malformed id is a 422 at the web edge and never reaches coord as an
+         *     arbitrary path segment.
+         */
+        get: operations["api_v1_operations_spawns_spawn_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/symbol-claims": {
         parameters: {
             query?: never;
@@ -15865,8 +16853,9 @@ export interface paths {
         };
         /**
          * Get Tenant Resume Unfinished
-         * @description Read the tenant's automatic-resume flag (effective tenant, as for
-         *     ``transcript-sync`` -- see wire fact 1 above).
+         * @description Read the tenant's automatic-resume flag, for the EFFECTIVE tenant (the
+         *     switched-to tenant when the caller holds a role there, else the home
+         *     tenant) -- the tenant coord's ``GET /tenant-policy`` is asked about.
          */
         get: operations["api_v1_operations_tenant_policy_resume_unfinished_get"];
         put?: never;
@@ -15879,43 +16868,6 @@ export interface paths {
          * @description Turn automatic resume on or off for the caller's effective tenant.
          */
         patch: operations["api_v1_operations_tenant_policy_resume_unfinished_patch"];
-        trace?: never;
-    };
-    "/api/v1/operations/tenant-policy/transcript-sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Tenant Transcript Sync
-         * @description Read whether coord accepts session output for the caller's tenant.
-         *
-         *     ``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see
-         *     ``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike
-         *     that route it carries NO superuser bypass: coord's ``patch_tenant_policy``
-         *     authorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who
-         *     is not an admin of this tenant is refused ``admin_required`` — an enabled
-         *     button would promise a write coord will not take.
-         */
-        get: operations["api_v1_operations_tenant_policy_transcript_sync_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Patch Tenant Transcript Sync
-         * @description Turn transcript sync on or off for the caller's effective tenant.
-         *
-         *     Tenant-admin gated web-side; coord re-checks and answers 403
-         *     ``admin_required`` otherwise, and 503 ``column_not_present`` while the
-         *     column's migration has not reached its database — both pass through
-         *     verbatim. Coord re-reads the policy after its upsert and returns it, so no
-         *     second round trip is needed for the read-back.
-         */
-        patch: operations["api_v1_operations_tenant_policy_transcript_sync_patch"];
         trace?: never;
     };
     "/api/v1/operations/tenants": {
@@ -17057,9 +18009,10 @@ export interface paths {
          *
          *     Plan ``2026-09-18-plan-library-difficulty-field``. The rating is computed
          *     from each plan's body by ``app.services.plan_difficulty`` — two axes,
-         *     conceptual and implementation, folded into a routing level (``high`` →
-         *     Fable 5.1, ``medium`` → Opus 5, ``low`` → a fast tier), with a plan's own
-         *     ``Difficulty:`` stamp overriding the computed level.
+         *     conceptual and implementation, folded into a routing level, with a plan's
+         *     own ``Difficulty:`` stamp overriding the computed level. Which model family
+         *     each level routes to is the caller's organization's map
+         *     (``GET/PUT /plan-library/model-routing``).
          *
          *     Before answering, plans rated under an older rubric (or none) are re-rated,
          *     up to a per-request cap, newest first — see
@@ -17402,6 +18355,59 @@ export interface paths {
          */
         post: operations["api_v1_plan_library_followups_reconcile_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan-library/model-routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Which model family each difficulty level routes to (this organization)
+         * @description The routing map ``GET /plan-library``, ``/candidates`` and
+         *     ``/difficulty`` serve this caller, with each level's provenance.
+         *
+         *     Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+         *     Same admission as those three reads (a Cognito user OR a coord device JWT):
+         *     the map is already on their envelopes, this adds only where each level came
+         *     from. ``can_edit`` says whether ``PUT`` would be accepted for this scope —
+         *     the NULL organization bucket can never be written — not whether the
+         *     caller's CREDENTIAL can write (a device JWT cannot; see the PUT).
+         */
+        get: operations["api_v1_plan_library_model_routing_get"];
+        /**
+         * Set the model family each difficulty level routes to (Cognito session only)
+         * @description Record the FULL ``{high, medium, low}`` → model-family map.
+         *
+         *     Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+         *     Families are the ``claude_code_agent_tool_v1`` selector vocabulary
+         *     (``fable | opus | sonnet | haiku``); the harness resolves each to that
+         *     family's latest model, so no version is ever stored. Every level is
+         *     required and every level's row is written, so a save is a whole map. Two
+         *     levels may share a family.
+         *
+         *     Scoped to the caller's personal organization — the scope the three serving
+         *     routes read. 409 for a principal with none: that is the shared NULL bucket.
+         *
+         *     Answers with the map as RE-READ after the commit, so what the console shows
+         *     after a save is what the serving routes now return.
+         */
+        put: operations["api_v1_plan_library_model_routing_put"];
+        post?: never;
+        /**
+         * Clear this organization's model routing back to the defaults (Cognito session only)
+         * @description Delete every stored level, so each serves the shipped default again.
+         *
+         *     Not the same as ``PUT``-ing a map equal to today's defaults: that stores a
+         *     copy, which stays pinned if the defaults move. After this every level's
+         *     ``source`` is ``default``. Idempotent; 409 for the NULL bucket, as ``PUT``.
+         */
+        delete: operations["api_v1_plan_library_model_routing_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -17831,6 +18837,24 @@ export interface paths {
          *     is an operator's assertion and it takes an operator's credential.
          */
         patch: operations["api_v1_plan_library_artifact_id_kind_patch"];
+        trace?: never;
+    };
+    "/api/v1/presentation/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the active project's presentation scope */
+        get: operations["api_v1_presentation_scope_get"];
+        /** Replace the active project's stored presentation scope */
+        put: operations["api_v1_presentation_scope_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects": {
@@ -20301,6 +21325,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/build-records/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Public Build Record
+         * @description The latest published snapshot of a product's build record, without
+         *     authentication.
+         *
+         *     Serves ONLY rows frozen by ``POST /api/v1/build-records/{slug}/publish``,
+         *     which refuses a product that is not opted in (``is_public``) and
+         *     re-validates the D3 allowlist before storing. It never proxies to coord,
+         *     so the authed export is never reachable from here. 404 when nothing has
+         *     been published under ``slug``, or when its owner has unpublished it
+         *     (``DELETE /api/v1/build-records/{slug}/publish``).
+         *
+         *     A snapshot validated under an older allowlist version is re-validated
+         *     against the current one (once per process, cached, off the event loop
+         *     under a dedicated limiter) and 404s if it fails; one validated under the
+         *     current version is served on its stored verdict. Rate-limited per peer
+         *     (:data:`PUBLIC_BUILD_RECORD_RATE_LIMIT`). Every answer carries
+         *     ``Cache-Control: no-store`` so an unpublish is not outlived by a cached
+         *     copy.
+         *
+         *     ``content_sha256`` is the SHA-256 of ``document`` serialized with sorted
+         *     keys and no insignificant whitespace, so a reader can verify it.
+         */
+        get: operations["api_v1_public_build_records_slug_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/projects": {
         parameters: {
             query?: never;
@@ -21215,10 +22278,18 @@ export interface paths {
         };
         /**
          * Get Screenshot
-         * @description Serve a screenshot file.
+         * @description Serve one verification screenshot image.
          *
-         *     Attempts to resolve the path locally first (from the .dev-logs directory),
-         *     then falls back to proxying from the runner HTTP API.
+         *     ``path`` is the image's path as the runner recorded it (a leading
+         *     ``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.
+         *     It is served from this workspace's ``.dev-logs`` when this backend runs
+         *     from a checkout and the image is there, and asked of the co-located
+         *     runner otherwise. The runner writes its screenshots into its own
+         *     dev-logs directory, which is this ``.dev-logs`` only where its
+         *     ``dev_logs_dir`` setting says so, and serves none under
+         *     ``/screenshots/`` (qontinui-runner ``5dc3f37f``): at its default, every
+         *     runner screenshot is a 404. So is anything that is not an image file
+         *     under ``.dev-logs``.
          */
         get: operations["api_v1_screenshots_path_get"];
         put?: never;
@@ -22336,6 +23407,157 @@ export interface paths {
          * @description Batch upsert verification phase results. Called by runner after each verification phase.
          */
         post: operations["api_v1_task_runs_task_run_id_verification_results_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/calibration-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue the calibration batch: pairs across the tenant's directions
+         * @description Idempotent: a pair already queued is never queued twice, so building
+         *     again only adds pairs the pool's growth makes possible.
+         */
+        post: operations["api_v1_taste_calibration_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the taste inbox: the queue head, the budget, recent labels */
+        get: operations["api_v1_taste_inbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the label feed: labels and undos, by commit-ordered position */
+        get: operations["api_v1_taste_labels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue one pairwise taste question */
+        post: operations["api_v1_taste_pairs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs/{pair_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw a never-answered pair
+         * @description Two populations: a device or service credential — studio correcting
+         *     its own push — and an operator. The operator's path is the labeller's:
+         *     a member who may only view the inbox may not empty it either.
+         */
+        delete: operations["api_v1_taste_pairs_pair_id_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs/{pair_id}/label": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Label one pair: A, B or both bad, with reasons, a comment and an edit */
+        put: operations["api_v1_taste_pairs_pair_id_label_put"];
+        post?: never;
+        /**
+         * Undo your label (or, with force, a colleague's): the pair returns to the queue
+         * @description Admin-gated like every label write (``get_labeller``), ``force``
+         *     included: only a coord-tenant admin of the effective tenant, or a
+         *     qontinui superuser, reaches this handler at all.
+         */
+        delete: operations["api_v1_taste_pairs_pair_id_label_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/pairs/{pair_id}/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Skip an unanswered pair: it moves to the back of the queue */
+        post: operations["api_v1_taste_pairs_pair_id_skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/taste/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the weekly labelling budget */
+        put: operations["api_v1_taste_settings_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -25084,6 +26306,34 @@ export interface components {
             to_state?: string | null;
         };
         /**
+         * ActionItemResolveBody
+         * @description Body for ``POST /operations/action-items/resolve``.
+         *
+         *     Mirrors coord's resolve request. **Coord remains the authority** — this is
+         *     defence in depth at the boundary and must never accept something coord
+         *     rejects. ``extra="forbid"`` makes a misspelled field a loud 422 here
+         *     instead of a silently dropped key.
+         */
+        ActionItemResolveBody: {
+            /**
+             * Item Id
+             * Format: uuid
+             * @description The action item to resolve.
+             */
+            item_id: string;
+            /**
+             * Note
+             * @description Optional resolution note, at most 1000 characters.
+             */
+            note?: string | null;
+            /**
+             * Status
+             * @description Terminal status. Re-sending the same one is idempotent; a different one answers coord's 409 `already_resolved`.
+             * @enum {string}
+             */
+            status: "done" | "dismissed";
+        };
+        /**
          * ActionReliabilityStats
          * @description Reliability statistics for an action type.
          */
@@ -25984,6 +27234,24 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * AllCapableAtCapacityOutcome
+         * @description Capable, undrained online devices exist and every one is at its
+         *     ``max_concurrent_agents`` cap.
+         */
+        AllCapableAtCapacityOutcome: {
+            /** Capable Devices */
+            capable_devices: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_at_capacity";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
         /** AllCapableDrainedOutcome */
         AllCapableDrainedOutcome: {
             /**
@@ -25994,7 +27262,41 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
+        /**
+         * AllCapableOfflineOutcome
+         * @description No ONLINE device is capable, but a capable one was seen recently —
+         *     bring it up rather than look for another.
+         */
+        AllCapableOfflineOutcome: {
+            /** Capable Offline */
+            capable_offline: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_offline";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+        };
+        /**
+         * AllCapableRoleClosedOutcome
+         * @description Every capable device (online, or offline but seen recently) is closed by
+         *     its DISPATCH ROLE (bench / ci_node) — only a role change helps.
+         */
+        AllCapableRoleClosedOutcome: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "all_capable_role_closed";
+            /** Pin Released Detail */
+            pin_released_detail?: string | null;
+            /** Pin Released Reason */
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
         };
         /** AllocationRead */
         AllocationRead: {
@@ -27335,6 +28637,25 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_image_asset_api_v1_image_assets_post */
+        Body_upload_image_asset_api_v1_image_assets_post: {
+            /**
+             * File
+             * @description The image. Its filename and Content-Type are ignored: the format is read from the bytes.
+             */
+            file: string;
+            /**
+             * Kind
+             * @description How the image entered the store. The first upload's kind stands.
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /**
+             * Provenance
+             * @description The generator's provenance record: a JSON object, serialized, at most 65536 bytes. Stored as JSONB; a re-upload adds keys, up to that same cap, and never removes or changes one.
+             */
+            provenance?: string | null;
+        };
         /** Body_upload_recording_api_v1_recordings_upload_post */
         Body_upload_recording_api_v1_recordings_upload_post: {
             /** Description */
@@ -27567,6 +28888,87 @@ export interface components {
             target_element_id: string | null;
         };
         /**
+         * BuildRecordProductWrite
+         * @description Body of ``PUT /products/{slug}`` — the coord contract's product fields.
+         */
+        BuildRecordProductWrite: {
+            /**
+             * Is Public
+             * @default false
+             */
+            is_public: boolean;
+            /** Repos */
+            repos?: string[];
+            /** Title */
+            title: string;
+            /** Window End */
+            window_end?: string | null;
+            /** Window Start */
+            window_start?: string | null;
+        };
+        /**
+         * BuildRecordPublication
+         * @description What ``GET /{slug}/publication`` returns, for the CALLER's tenant.
+         */
+        BuildRecordPublication: {
+            /** Content Sha256 */
+            content_sha256: string | null;
+            /** Owned By Caller Tenant */
+            owned_by_caller_tenant: boolean;
+            /** Public Slug */
+            public_slug: string;
+            /** Unpublished */
+            unpublished: boolean;
+            /** Version */
+            version: number | null;
+        };
+        /**
+         * BuildRecordPublishRequest
+         * @description Optional body of ``POST /{slug}/publish``.
+         */
+        BuildRecordPublishRequest: {
+            /**
+             * Reactivate
+             * @default false
+             */
+            reactivate: boolean;
+        };
+        /**
+         * BuildRecordPublishResult
+         * @description What ``POST /{slug}/publish`` returns.
+         */
+        BuildRecordPublishResult: {
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Public Slug */
+            public_slug: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * BuildRecordReconcileResult
+         * @description What ``POST /reconcile`` returns.
+         */
+        BuildRecordReconcileResult: {
+            /** Retracted */
+            retracted: string[];
+        };
+        /**
+         * BuildRecordUnpublishResult
+         * @description What ``DELETE /{slug}/publish`` returns.
+         */
+        BuildRecordUnpublishResult: {
+            /** Latest Version */
+            latest_version: number | null;
+            /** Public Slug */
+            public_slug: string;
+            /**
+             * Unpublished At
+             * Format: date-time
+             */
+            unpublished_at: string;
+        };
+        /**
          * BulkAnnotationError
          * @description Schema for bulk operation error
          */
@@ -27631,6 +29033,41 @@ export interface components {
              * Format: date
              */
             start_date: string;
+        };
+        /**
+         * CalibrationBatchRequest
+         * @description ``POST /api/v1/taste/calibration-batch``.
+         */
+        CalibrationBatchRequest: {
+            /**
+             * Size
+             * @default 20
+             */
+            size: number;
+        };
+        /**
+         * CalibrationBatchResult
+         * @description What a calibration build did.
+         *
+         *     ``created`` new pairs were queued; ``already_queued`` were pairs the
+         *     builder chose that the queue already held. ``shortfall`` names why fewer
+         *     than ``requested`` were created: ``pool_too_small`` (fewer than two images
+         *     to pair), ``pool_exhausted`` (every pairing the pool allows is queued),
+         *     ``concurrent_build`` (another build queued some of this one's pairs
+         *     first).
+         */
+        CalibrationBatchResult: {
+            /** Already Queued */
+            already_queued: number;
+            /** Created */
+            created: number;
+            /** Pair Ids */
+            pair_ids: string[];
+            pool: components["schemas"]["TastePool"];
+            /** Requested */
+            requested: number;
+            /** Shortfall */
+            shortfall: ("pool_too_small" | "pool_exhausted" | "concurrent_build") | null;
         };
         /**
          * CancelProposalBody
@@ -28611,11 +30048,17 @@ export interface components {
             domain: string;
             /** Repos */
             repos?: components["schemas"]["CiHostingRepoReading"][];
+            /** Repos Unknown Reason */
+            repos_unknown_reason?: string | null;
             tenant_default: components["schemas"]["CiHostingReading"];
         };
         /**
          * CiNodeConfig
-         * @description The four ``CiNodeSettings`` fields, with the runner's own defaults.
+         * @description The ``CiNodeSettings`` fields, with the runner's own defaults.
+         *
+         *     ``model_access`` is the exception: its default is ``None`` ("not set
+         *     here"), not the runner's ``True``, because an absent value must leave the
+         *     runner's stored consent alone rather than overwrite it.
          *
          *     The defaults are copied from the Rust ``Default for CiNodeSettings`` impl
          *     on purpose: a machine that has never been configured here must round-trip
@@ -28636,6 +30079,8 @@ export interface components {
              * @default 20
              */
             min_free_disk_gb: number;
+            /** Model Access */
+            model_access?: boolean | null;
             /** Repo Allowlist */
             repo_allowlist?: string[];
         };
@@ -29977,7 +31422,7 @@ export interface components {
         };
         /**
          * ContinuationDeliveryModeView
-         * @description What coord's resolver returns for one repo's continuation delivery.
+         * @description One repo's continuation-delivery mode and where coord says it came from.
          */
         ContinuationDeliveryModeView: {
             /** Can Edit */
@@ -29994,6 +31439,10 @@ export interface components {
             provenance_known: boolean;
             /** Repo */
             repo: string;
+            /** Resolved Scope */
+            resolved_scope?: ("repo" | "default" | "unrecognized") | null;
+            /** Stored Value */
+            stored_value?: string | null;
         };
         /**
          * ContinuationDeliveryModeWriteResult
@@ -30012,6 +31461,85 @@ export interface components {
              * @enum {string}
              */
             written_mode: "in_session_with_spawn_fallback" | "spawn_always" | "notify_only";
+        };
+        /**
+         * CoordPushRequest
+         * @description Body coord sends to ``POST /internal/coord-push``.
+         *
+         *     Deliberately carries NO ``category`` / ``channel_id`` (plan D7): a push
+         *     naming an Android channel the device has not created is not displayed
+         *     while Expo still returns an ``ok`` ticket, which would turn ``accepted``
+         *     into an invisible failure.
+         */
+        CoordPushRequest: {
+            /**
+             * Body
+             * @description Notification body, at most 1000 UTF-8 bytes. Coord sends at most 180 characters.
+             */
+            body: string;
+            /**
+             * Collapse Id
+             * @description Newer pushes with the same id replace older ones on the device.
+             */
+            collapse_id?: string | null;
+            /**
+             * Data
+             * @description Opaque payload delivered to the app (e.g. the deep link). At most 1024 bytes as serialized JSON.
+             */
+            data: {
+                [key: string]: unknown;
+            };
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "high" | "default";
+            /**
+             * Title
+             * @description At most 200 characters and 600 UTF-8 bytes.
+             */
+            title: string;
+            /**
+             * User Ids
+             * @description Web user ids (auth.users.id) to push to. 1-50.
+             */
+            user_ids: string[];
+        };
+        /**
+         * CoordPushResponse
+         * @description Per-request counts coord records as the item's push state.
+         */
+        CoordPushResponse: {
+            /**
+             * Accepted
+             * @description Tickets Expo answered with status ok.
+             */
+            accepted: number;
+            /**
+             * Deactivated
+             * @description Tokens deactivated because their ticket said DeviceNotRegistered.
+             */
+            deactivated: number;
+            /**
+             * Devices
+             * @description Active push devices the batch was sent to.
+             */
+            devices: number;
+            /**
+             * Errors
+             * @description At most 3 error messages, first seen first.
+             */
+            errors: string[];
+            /**
+             * Failed
+             * @description Messages without an ok ticket.
+             */
+            failed: number;
+            /**
+             * Users
+             * @description Distinct requested users with >= 1 active device.
+             */
+            users: number;
         };
         /**
          * CoordSignal
@@ -31993,7 +33521,7 @@ export interface components {
          * DeviceResolveResponse
          * @description ``POST /api/v1/devices/resolve`` — always 200, switch on ``outcome``.
          */
-        DeviceResolveResponse: components["schemas"]["ResolvedOutcome"] | components["schemas"]["PinIneligibleOutcome"] | components["schemas"]["NoCapableDeviceOutcome"] | components["schemas"]["AllCapableDrainedOutcome"] | components["schemas"]["DrainUnreadableOutcome"] | components["schemas"]["UnavailableOutcome"];
+        DeviceResolveResponse: components["schemas"]["ResolvedOutcome"] | components["schemas"]["PinIneligibleOutcome"] | components["schemas"]["NoCapableDeviceOutcome"] | components["schemas"]["AllCapableOfflineOutcome"] | components["schemas"]["AllCapableAtCapacityOutcome"] | components["schemas"]["AllCapableDrainedOutcome"] | components["schemas"]["AllCapableRoleClosedOutcome"] | components["schemas"]["DrainUnreadableOutcome"] | components["schemas"]["UnavailableOutcome"] | components["schemas"]["UnknownOutcome"];
         /**
          * DeviceResponse
          * @description Response shape for ``GET /api/v1/devices`` and ``GET /api/v1/devices/{id}``.
@@ -36409,20 +37937,45 @@ export interface components {
             scope_key?: string | null;
         };
         /**
+         * FleetPolicyRepoOverride
+         * @description One repo-band row that overrides the tenant band for its repo.
+         *
+         *     Mirrors one entry of coord's ``repo_overrides``
+         *     (``fleet_policy_repo_band::RepoOverride``). ``effective_level`` is what a
+         *     reader of that repo resolves from the row: ``level``, or ``off`` when the
+         *     row's ``master_enabled`` is false. ``level`` is opaque here, as it is on
+         *     the write: a level this console does not recognise is the page's to name,
+         *     never this proxy's to drop.
+         */
+        FleetPolicyRepoOverride: {
+            /** Effective Level */
+            effective_level: string;
+            /** Level */
+            level: string;
+            /** Master Enabled */
+            master_enabled: boolean;
+            /** Repo */
+            repo: string;
+        };
+        /**
          * FleetPolicyView
          * @description The requested domain's resolved policy — and ONLY that domain's.
          *
          *     ``effective_level`` is what a device actually resolves, which is not the
          *     same as the level that was last written: coord folds ``master_enabled``
          *     in (a disabled master resolves ``off`` whatever ``level`` says), and a
-         *     tenant with no row at all resolves ``off`` / ``resolved_scope: "none"``.
-         *     That last case is why ``resolved_scope`` is surfaced: "off because nobody
-         *     ever wrote a row" and "off because someone turned it off" are different
-         *     facts about the fleet and the operator is entitled to tell them apart.
+         *     tenant with no row at all resolves the domain's declared no-row default
+         *     with ``resolved_scope: "none"`` — ``off`` unless coord's
+         *     ``domain_default_level`` declares another for that domain. That last case
+         *     is why ``resolved_scope`` is surfaced: "set because nobody ever wrote a
+         *     row" and "set because someone chose it" are different facts about the
+         *     fleet and the operator is entitled to tell them apart.
          */
         FleetPolicyView: {
             /** Can Edit */
             can_edit: boolean;
+            /** Default Source */
+            default_source?: string | null;
             /** Domain */
             domain: string;
             /** Effective Level */
@@ -36433,6 +37986,8 @@ export interface components {
             keys_not_shown_source?: ("fleet_resources_row" | "this_domain") | null;
             /** Master Enabled */
             master_enabled: boolean;
+            /** Repo Overrides */
+            repo_overrides?: components["schemas"]["FleetPolicyRepoOverride"][] | null;
             /** Resolved Scope */
             resolved_scope: string;
         };
@@ -36999,6 +38554,14 @@ export interface components {
             name: string;
         };
         /**
+         * GateRejectRequest
+         * @description Optional JSON body of ``POST /gates/{gate_id}/reject``.
+         */
+        GateRejectRequest: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
          * GenerateDescriptionRequest
          * @description Request to generate LLM description for an element region.
          */
@@ -37374,6 +38937,115 @@ export interface components {
             show_find?: boolean | null;
             /** Show Type */
             show_type?: boolean | null;
+        };
+        /**
+         * ImageAssetConflict
+         * @description One thing a re-upload sent that the store did not apply.
+         */
+        ImageAssetConflict: {
+            /** Path */
+            path: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "kind_stands" | "stored_value_stands" | "provenance_full";
+        };
+        /**
+         * ImageAssetUploadResponse
+         * @description ``created`` is true when this request created the row (HTTP 201) and
+         *     false when the tenant already held these bytes (HTTP 200).
+         */
+        ImageAssetUploadResponse: {
+            /** Byte Size */
+            byte_size: number;
+            /** Conflicts */
+            conflicts: components["schemas"]["ImageAssetConflict"][];
+            /** Created */
+            created: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Orientation */
+            orientation: number | null;
+            /** Provenance */
+            provenance: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Width */
+            width: number;
+        };
+        /**
+         * ImageAssetWithUrl
+         * @description A stored image plus a URL to its bytes.
+         *
+         *     On S3 / MinIO ``url`` is a presigned URL. Its ``url_expires_at`` is the
+         *     requested lifetime capped at the signing credential's own expiry when the
+         *     backend can read one (an assumed role, an instance or task profile): a
+         *     presigned URL stops working when the credential that signed it expires,
+         *     whatever its ``X-Amz-Expires`` says. When no expiry can be read — long-lived
+         *     access keys, or credentials whose expiry botocore does not expose — the
+         *     value ASSUMES the credential outlives the URL.
+         *
+         *     On the local development backend ``url`` is this API's own authenticated
+         *     content route (``GET /api/v1/image-assets/{sha256}/content``): fetch it
+         *     with the same credential. It does not expire, so ``url_expires_at`` is
+         *     null.
+         */
+        ImageAssetWithUrl: {
+            /** Byte Size */
+            byte_size: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Orientation */
+            orientation: number | null;
+            /** Provenance */
+            provenance: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Url */
+            url: string;
+            /** Url Expires At */
+            url_expires_at: string | null;
+            /** Width */
+            width: number;
         };
         /**
          * ImageExtractRequest
@@ -38271,8 +39943,18 @@ export interface components {
          *     ``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` —
          *     the scanner can then unambiguously prefer that row and the fork will heal
          *     itself. ``False`` means an operator must pick, via ``PATCH .../kind``.
+         *
+         *     ``family`` names which kind family forked: ``"spec"`` (the specification
+         *     kinds) or ``"plan"`` (every other kind). Kinds are counted within one
+         *     family, so a key forked in BOTH families is two groups sharing
+         *     ``(slug, source_repo)``; ``family`` is what tells them apart.
          */
         KindForkGroup: {
+            /**
+             * Family
+             * @enum {string}
+             */
+            family: "spec" | "plan";
             /** Kinds */
             kinds: string[];
             /** Resolvable */
@@ -38624,6 +40306,11 @@ export interface components {
              */
             tokens_total?: number | null;
         };
+        /**
+         * LabelKind
+         * @enum {string}
+         */
+        LabelKind: "class" | "false_finish";
         /**
          * LearnedWorkflowResponse
          * @description Schema for learned workflow response.
@@ -40388,6 +42075,80 @@ export interface components {
             tokens_output: number;
         };
         /**
+         * ModelFamilyOption
+         * @description One family the console offers, with the copy ``model_tiers`` serves for it.
+         */
+        ModelFamilyOption: {
+            /** Display */
+            display: string;
+            /** Family */
+            family: string;
+        };
+        /**
+         * ModelRoutingResponse
+         * @description The caller's organization's routing map, as STORED and as SERVED.
+         *
+         *     ``model_selectors`` / ``model_tiers`` / ``model_selector_vocabulary`` are
+         *     exactly what ``GET /plan-library``, ``/candidates`` and ``/difficulty``
+         *     serve this caller. ``sources`` says, per level, whether a stored row or the
+         *     shipped default answered (``default_selectors``). ``can_edit`` is false for
+         *     a principal with no personal organization: that scope is the shared NULL
+         *     bucket, which reads the defaults and refuses a write (409).
+         */
+        ModelRoutingResponse: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Default Selectors */
+            default_selectors: {
+                [key: string]: string;
+            };
+            /** Families */
+            families: components["schemas"]["ModelFamilyOption"][];
+            /** Model Selector Vocabulary */
+            model_selector_vocabulary: string;
+            /** Model Selectors */
+            model_selectors: {
+                [key: string]: string;
+            };
+            /** Model Tiers */
+            model_tiers: {
+                [key: string]: string;
+            };
+            /** Sources */
+            sources: {
+                [key: string]: "stored" | "default";
+            };
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By User Id */
+            updated_by_user_id?: string | null;
+        };
+        /**
+         * ModelRoutingUpdate
+         * @description ``PUT /plan-library/model-routing`` — the FULL map, one family per level.
+         *
+         *     Every level is required and an unknown key is refused, so a save is always
+         *     a whole, explicit map: there is no partial write whose omitted levels mean
+         *     either "keep" or "reset" depending on who reads the code.
+         */
+        ModelRoutingUpdate: {
+            /**
+             * High
+             * @enum {string}
+             */
+            high: "fable" | "opus" | "sonnet" | "haiku";
+            /**
+             * Low
+             * @enum {string}
+             */
+            low: "fable" | "opus" | "sonnet" | "haiku";
+            /**
+             * Medium
+             * @enum {string}
+             */
+            medium: "fable" | "opus" | "sonnet" | "haiku";
+        };
+        /**
          * MonitorSettingsSchema
          * @description Monitor configuration settings schema.
          */
@@ -40439,7 +42200,19 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
+            /**
+             * Stale Capable
+             * @description Capable devices last seen before coord's offline window (reported, never waited for). 0 from a coord that predates the field.
+             * @default 0
+             */
+            stale_capable: number;
+            /**
+             * Unprobed Online Devices
+             * @description Online devices that have not run the cred probes while a cred: token is required. 0 from a coord that predates the field.
+             * @default 0
+             */
+            unprobed_online_devices: number;
         };
         /**
          * NodeMetadata
@@ -41078,6 +42851,11 @@ export interface components {
             truncated: boolean | null;
         };
         /**
+         * OperatorLabel
+         * @enum {string}
+         */
+        OperatorLabel: "A" | "B" | "E";
+        /**
          * OrganizationCreate
          * @description Schema for creating a new organization.
          */
@@ -41223,6 +43001,19 @@ export interface components {
             retry_count: number;
             /** Success */
             success: boolean;
+        };
+        /**
+         * OverlordLabelRequest
+         * @description ``extra='forbid'``: a stray ``label_source`` is a 422, not ignored.
+         */
+        OverlordLabelRequest: {
+            /**
+             * Intervention Id
+             * Format: uuid
+             */
+            intervention_id: string;
+            label_kind: components["schemas"]["LabelKind"];
+            operator_label?: components["schemas"]["OperatorLabel"] | null;
         };
         /**
          * OverviewSettingsRead
@@ -42541,7 +44332,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "not_a_paired_device" | "offline" | "missing_capabilities" | "drained";
+            reason: "not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity";
         };
         /**
          * PlanCandidate
@@ -42910,7 +44701,11 @@ export interface components {
          *     row that is still unrated is left OUT of ``items`` — absent here means
          *     "no rating", which the console renders as unrated, never as "low".
          *     ``model_tiers`` maps each level to the model tier it routes to, served so
-         *     every consumer names the same models. It is DISPLAY COPY — never parse it.
+         *     every consumer names the same models. It is DISPLAY COPY — never parse it —
+         *     derived from ``model_selectors``, so the two always agree. Both are the
+         *     caller's organization's map as the operator set it on
+         *     ``PUT /plan-library/model-routing``, each level defaulting to the shipped
+         *     map when no row names it.
          *     ``model_selectors`` is the machine-readable twin: each level's harness
          *     selector, in the vocabulary ``model_selector_vocabulary`` names (the Claude
          *     Code Agent tool's ``model`` values). A consumer whose harness does not
@@ -43068,6 +44863,114 @@ export interface components {
              * @enum {string}
              */
             written_scope: "all" | "code_only" | "none";
+        };
+        /**
+         * PresentationScopeConfigured
+         * @description What the project has stored — the form's editable half.
+         */
+        PresentationScopeConfigured: {
+            /** Confidential Terms */
+            confidential_terms: string[];
+            /**
+             * First Party Owners
+             * @description The stored owners, or null when none are configured.
+             */
+            first_party_owners: string[] | null;
+            /** Updated At */
+            updated_at: string | null;
+            /**
+             * Updated By
+             * @description The email of whoever saved it last, when that is known.
+             */
+            updated_by: string | null;
+            /**
+             * Version
+             * @description 0 when the project has never saved a scope.
+             */
+            version: number;
+        };
+        /**
+         * PresentationScopeDefaults
+         * @description What applies when nothing is configured, read fresh for this viewer.
+         */
+        PresentationScopeDefaults: {
+            /**
+             * Registered Repo Owners
+             * @description The owners of this project's registered repositories, or null when they could not be read.
+             */
+            registered_repo_owners: string[] | null;
+            /** Registered Repo Owners Unknown Reason */
+            registered_repo_owners_unknown_reason: ("tenant_scope_mismatch" | "coord_unreachable" | "coord_refused" | "coord_unreadable") | null;
+            /**
+             * Viewer Other Tenant Names
+             * @description The names of the viewer's other projects. Always withheld for this viewer, whatever is configured.
+             */
+            viewer_other_tenant_names: string[];
+        };
+        /**
+         * PresentationScopeOut
+         * @description The scope a presentation-mode render applies, and how it was reached.
+         */
+        PresentationScopeOut: {
+            /**
+             * Can Edit
+             * @description Whether this caller may PUT the scope: an admin of this project, or qontinui staff — the same rule the PUT enforces.
+             */
+            can_edit: boolean;
+            /**
+             * Confidential Terms
+             * @description The configured terms plus the viewer's other projects' names.
+             */
+            confidential_terms: string[];
+            configured: components["schemas"]["PresentationScopeConfigured"];
+            defaults: components["schemas"]["PresentationScopeDefaults"];
+            /**
+             * First Party Owners
+             * @description The owners whose items may show their titles. Null means UNKNOWN (see first_party_owners_unknown_reason): withhold everything.
+             */
+            first_party_owners: string[] | null;
+            /**
+             * First Party Owners Source
+             * @enum {string}
+             */
+            first_party_owners_source: "configured" | "registered_repos";
+            /** First Party Owners Unknown Reason */
+            first_party_owners_unknown_reason: ("tenant_scope_mismatch" | "coord_unreachable" | "coord_refused" | "coord_unreadable") | null;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+        };
+        /**
+         * PresentationScopeWrite
+         * @description ``PUT /presentation/scope`` — replaces the tenant's stored scope.
+         *
+         *     A refusal names a confidential term by its position, never by its text:
+         *     the terms are the names presentation mode exists to keep off screen.
+         */
+        PresentationScopeWrite: {
+            /**
+             * Confidential Terms
+             * @description Terms that withhold a title wherever they appear, matched ignoring case, accents, spacing and punctuation. Stored trimmed with whitespace collapsed; a term matching an earlier one is dropped. The viewer's other projects' names are always added on read and are never stored.
+             */
+            confidential_terms: string[];
+            /**
+             * Expected Tenant Id
+             * Format: uuid
+             * @description The `tenant_id` of the scope this edit was made against. It never chooses the row -- the write lands in the project this request resolves to -- it only refuses a write made for another project: when the two differ the answer is 409 `presentation_scope_tenant_mismatch` and nothing is written.
+             */
+            expected_tenant_id: string;
+            /**
+             * Expected Version
+             * @description The `configured.version` this edit was made against (0 when the project has never saved a scope). A write against a version that moved answers 409 `presentation_scope_conflict`.
+             */
+            expected_version: number;
+            /**
+             * First Party Owners
+             * @description GitHub owners whose repositories are this project's own, or null to use the owners of the project's registered repositories. An empty list withholds every title in presentation mode. Stored trimmed, without a leading @, lower-cased and de-duplicated.
+             */
+            first_party_owners: string[] | null;
         };
         /**
          * PresignedUrlResponse
@@ -43975,6 +45878,27 @@ export interface components {
              * @description Sequential version number
              */
             version_number: number;
+        };
+        /**
+         * PublicBuildRecord
+         * @description The latest frozen version of a published build record.
+         */
+        PublicBuildRecord: {
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Document */
+            document: {
+                [key: string]: unknown;
+            };
+            /** Public Slug */
+            public_slug: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Version */
+            version: number;
         };
         /**
          * PushDeviceRegister
@@ -45162,6 +47086,32 @@ export interface components {
             viewport_width?: number | null;
         };
         /**
+         * RepoBindRequest
+         * @description Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).
+         *
+         *     ``repo`` is ``owner/name`` (a ``.git`` suffix or a github.com URL is
+         *     accepted too); coord normalizes it to its lowercase key and answers ``400
+         *     invalid_repo`` for anything else. ``target_tenant`` is the tenant uuid the
+         *     repo is bound to; it is a plain string here so a malformed value reaches
+         *     coord and comes back as coord's own ``400 invalid_target_tenant`` rather
+         *     than a web-side validation shape. ``reason`` (required, non-blank — coord
+         *     decides blankness) is recorded on the binding and in the audit rows coord
+         *     writes per affected tenant; ``decision_ref`` is optional free text, and
+         *     coord reads a blank one as absent. Each field is length-capped (see
+         *     ``REPO_BINDING_*_MAX``) no tighter than coord: an over-long value is a
+         *     web-side 422, never forwarded.
+         */
+        RepoBindRequest: {
+            /** Decision Ref */
+            decision_ref?: string | null;
+            /** Reason */
+            reason: string;
+            /** Repo */
+            repo: string;
+            /** Target Tenant */
+            target_tenant: string;
+        };
+        /**
          * RepoCiRow
          * @description One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.
          *
@@ -45300,6 +47250,20 @@ export interface components {
             owner: string;
         };
         /**
+         * RepoUnbindRequest
+         * @description Body for ``DELETE /pr-merge/onboarding/repo-bindings`` (coord ``UnbindRequest``).
+         *
+         *     Unbinding returns governance to the org's tenant. ``reason`` is required
+         *     and must be non-blank; coord enforces that and records it in the audit.
+         *     Both fields carry the bind body's length caps.
+         */
+        RepoUnbindRequest: {
+            /** Reason */
+            reason: string;
+            /** Repo */
+            repo: string;
+        };
+        /**
          * ReposApplyDispatchRequest
          * @description Ask a machine's runner to reconcile its cloned repositories.
          *
@@ -45369,7 +47333,7 @@ export interface components {
             /** Pin Released Detail */
             pin_released_detail?: string | null;
             /** Pin Released Reason */
-            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained") | null;
+            pin_released_reason?: ("not_a_paired_device" | "offline" | "missing_capabilities" | "drained" | "role_closes_agent_lane" | "at_capacity") | null;
             /**
              * Via
              * @enum {string}
@@ -45576,7 +47540,10 @@ export interface components {
             hostname: string;
             /** Instance Name */
             instance_name?: string | null;
-            /** Ip */
+            /**
+             * Ip
+             * @description The runner's IPv4 or IPv6 address literal, with no zone id.
+             */
             ip: string;
             /** Lan Reachable */
             lan_reachable?: boolean | null;
@@ -46656,6 +48623,58 @@ export interface components {
             similarity_score: number;
         };
         /**
+         * SecretsBrokerDevicePut
+         * @description Closed body for the broker-device write.
+         *
+         *     ``device_id: null`` clears the designation (every broker report is then
+         *     refused). The field is REQUIRED, so an empty body is a 422 rather than a
+         *     silent clear.
+         */
+        SecretsBrokerDevicePut: {
+            /** Device Id */
+            device_id: string | null;
+        };
+        /**
+         * SecretsBrokerDeviceView
+         * @description The tenant's designated secrets-broker device, as coord resolves it.
+         */
+        SecretsBrokerDeviceView: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Device Id */
+            device_id?: string | null;
+            /** Effective Level */
+            effective_level: string;
+            /** Master Enabled */
+            master_enabled: boolean;
+            /** Reported */
+            reported: boolean;
+            /** Resolved Scope */
+            resolved_scope: string;
+        };
+        /**
+         * SecretsBrokerDeviceWriteResult
+         * @description What was written, and, separately, what coord now resolves.
+         *
+         *     ``effective`` is ``None`` with ``readback_error`` set when the write landed
+         *     but the re-read failed. That is UNKNOWN, not "applied".
+         */
+        SecretsBrokerDeviceWriteResult: {
+            effective?: components["schemas"]["SecretsBrokerDeviceView"] | null;
+            /** Ok */
+            ok: boolean;
+            /** Readback Error */
+            readback_error?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+            /** Version */
+            version?: number | null;
+            /** Versioned */
+            versioned?: boolean | null;
+            /** Written Device Id */
+            written_device_id: string | null;
+        };
+        /**
          * SectionDrift
          * @description Per-section rollup of key deltas.
          */
@@ -47714,6 +49733,154 @@ export interface components {
             } | null;
             /** Version */
             version?: string | null;
+        };
+        /**
+         * SlotCandidateAsset
+         * @description The asset a candidate names, as stored.
+         */
+        SlotCandidateAsset: {
+            /** Byte Size */
+            byte_size: number;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Sha256 */
+            sha256: string;
+            /** Width */
+            width: number;
+        };
+        /**
+         * SlotCandidateDemotion
+         * @description A slot's previous choice, returned to ``candidate`` because another
+         *     asset was chosen in the same request.
+         */
+        SlotCandidateDemotion: {
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /**
+             * Status After
+             * @default candidate
+             * @constant
+             */
+            status_after: "candidate";
+            /**
+             * Status Before
+             * @default chosen
+             * @constant
+             */
+            status_before: "chosen";
+        };
+        /**
+         * SlotCandidateList
+         * @description ``GET /api/v1/image-assets/slot-candidates`` — one page of a slot's
+         *     candidates, ``oldest`` or ``newest`` first.
+         *
+         *     The query is echoed so an empty page can be checked against what was
+         *     asked. ``truncated`` says whether more rows exist past this page, and
+         *     ``next_cursor`` — set exactly when it is true — fetches them: pass it back
+         *     as ``after`` with the same ``order``.
+         */
+        SlotCandidateList: {
+            /** Candidates */
+            candidates: components["schemas"]["SlotCandidateOut"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+            /**
+             * Order
+             * @enum {string}
+             */
+            order: "oldest" | "newest";
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /** Status */
+            status: ("candidate" | "chosen" | "rejected" | "shipped") | null;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** SlotCandidateOut */
+        SlotCandidateOut: {
+            asset: components["schemas"]["SlotCandidateAsset"];
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Judge */
+            judge: {
+                [key: string]: unknown;
+            };
+            /** Recipe Hash */
+            recipe_hash: string | null;
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "candidate" | "chosen" | "rejected" | "shipped";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Values */
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * SlotCandidateUpsert
+         * @description ``PUT /api/v1/image-assets/slot-candidates`` — propose an asset for a
+         *     slot, or move a proposal.
+         *
+         *     Identity is ``repo`` + ``slot_id`` + ``asset_sha256``. ``status`` is
+         *     always sent. ``recipe_hash``, ``values`` and ``judge`` are replaced when
+         *     sent and left as stored when omitted (``recipe_hash: null`` clears it).
+         */
+        SlotCandidateUpsert: {
+            /** Asset Sha256 */
+            asset_sha256: string;
+            /** Judge */
+            judge?: {
+                [key: string]: unknown;
+            };
+            /** Recipe Hash */
+            recipe_hash?: string | null;
+            /** Repo */
+            repo: string;
+            /** Slot Id */
+            slot_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "candidate" | "chosen" | "rejected" | "shipped";
+            /** Values */
+            values?: {
+                [key: string]: unknown;
+            };
+        };
+        /** SlotCandidateUpsertResponse */
+        SlotCandidateUpsertResponse: {
+            candidate: components["schemas"]["SlotCandidateOut"];
+            /** Created */
+            created: boolean;
+            /** Demoted */
+            demoted: components["schemas"]["SlotCandidateDemotion"][];
         };
         /** SnapshotRun */
         SnapshotRun: {
@@ -49486,6 +51653,352 @@ export interface components {
          */
         TaskType: "task" | "automation" | "scheduled";
         /**
+         * TasteBudget
+         * @description The weekly labelling budget and how much of it this week has used.
+         *
+         *     A week starts Monday 00:00 UTC. ``source`` says whether ``weekly_budget``
+         *     was written for this tenant (``setting``) or is the declared default
+         *     (``default``). A pair is charged ONCE, to the week it was first
+         *     answered: relabelling it, or undoing and answering it again, costs
+         *     nothing.
+         */
+        TasteBudget: {
+            /** Labelled This Week */
+            labelled_this_week: number;
+            /** Remaining */
+            remaining: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "setting" | "default";
+            /**
+             * Week Starts At
+             * Format: date-time
+             */
+            week_starts_at: string;
+            /** Weekly Budget */
+            weekly_budget: number;
+        };
+        /** TasteDirection */
+        TasteDirection: {
+            /** Direction */
+            direction: string;
+            /** Images */
+            images: number;
+        };
+        /**
+         * TasteImage
+         * @description One image of a pair, as the store holds it.
+         */
+        TasteImage: {
+            /** Byte Size */
+            byte_size: number;
+            /** Direction */
+            direction: string | null;
+            /** Height */
+            height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "candidate" | "derivative" | "capture" | "exemplar";
+            /** Mime Type */
+            mime_type: string;
+            /** Sha256 */
+            sha256: string;
+            /** Width */
+            width: number;
+        };
+        /**
+         * TasteInbox
+         * @description ``GET /api/v1/taste/inbox`` — everything the inbox page renders, in
+         *     one read.
+         *
+         *     ``pairs`` is the head of the queue in the order it is asked: never-skipped
+         *     pairs first (most uncertain, then oldest), then skipped ones (least
+         *     recently skipped first). While the week's budget is spent it is empty
+         *     unless ``over_budget`` was asked for — the queue itself is untouched, and
+         *     ``pending_total`` still counts it.
+         */
+        TasteInbox: {
+            budget: components["schemas"]["TasteBudget"];
+            /** Can Label */
+            can_label: boolean;
+            /** Labelled Total */
+            labelled_total: number;
+            /** Over Budget */
+            over_budget: boolean;
+            /** Pairs */
+            pairs: components["schemas"]["TastePairOut"][];
+            /** Pending Total */
+            pending_total: number;
+            pool: components["schemas"]["TastePool"];
+            /** Reason Vocabulary */
+            reason_vocabulary: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+            /** Recent */
+            recent: components["schemas"]["TastePairOut"][];
+            /** Viewer User Id */
+            viewer_user_id: string | null;
+        };
+        /**
+         * TasteLabelPage
+         * @description ``GET /api/v1/taste/labels`` — the tenant's label feed, for the taste
+         *     twin (Phase 24).
+         *
+         *     Every pair that has ever been answered, once, at its LATEST change, in
+         *     ``change_seq`` order. A label or relabel is a row with ``label`` set; an
+         *     undo is a tombstone (``tombstone: true``, ``label`` null). Positions are
+         *     handed out in commit order per tenant, so paging by ``next_cursor`` never
+         *     skips a late commit; a pair changed again reappears at its new position,
+         *     so a reader that keeps the last row per pair id holds the current state.
+         *     ``next_cursor`` is the position after the last row returned — or the
+         *     ``after`` that was sent, when the page is empty — so it is set on the
+         *     LAST page too: to follow the feed, ask again later with it. ``truncated``
+         *     says whether more rows exist right now.
+         */
+        TasteLabelPage: {
+            /** Labels */
+            labels: components["schemas"]["TastePairOut"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
+         * TasteLabelWrite
+         * @description ``PUT /api/v1/taste/pairs/{id}/label`` — answer one pair.
+         *
+         *     A pair someone has already labelled is refused (409
+         *     ``pair_already_labelled``) unless ``relabel`` is true, so two labellers
+         *     working the queue at once never silently overwrite each other. A relabel
+         *     replaces only your OWN answer; another labeller's needs ``force`` too
+         *     (409 ``label_not_yours`` otherwise), and the replaced answer is kept.
+         */
+        TasteLabelWrite: {
+            /**
+             * Choice
+             * @enum {string}
+             */
+            choice: "a" | "b" | "both_bad";
+            /** Comment */
+            comment?: string | null;
+            /** Edit Asset Sha256 */
+            edit_asset_sha256?: string | null;
+            /** Edit Note */
+            edit_note?: string | null;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /** Reasons */
+            reasons?: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+            /**
+             * Relabel
+             * @default false
+             */
+            relabel: boolean;
+        };
+        /** TastePairOut */
+        TastePairOut: {
+            asset_a: components["schemas"]["TasteImage"];
+            asset_b: components["schemas"]["TasteImage"];
+            /** Capture A Sha256 */
+            capture_a_sha256: string | null;
+            /** Capture B Sha256 */
+            capture_b_sha256: string | null;
+            /** Change Seq */
+            change_seq: number | null;
+            /** Comment */
+            comment: string | null;
+            /** Context */
+            context: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Edit Asset Sha256 */
+            edit_asset_sha256: string | null;
+            /** Edit Note */
+            edit_note: string | null;
+            /** First Labelled At */
+            first_labelled_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** In Situ */
+            in_situ: boolean;
+            /** Label */
+            label: ("a" | "b" | "both_bad") | null;
+            /** Labelled At */
+            labelled_at: string | null;
+            /** Labeller Name */
+            labeller_name: string | null;
+            /** Labeller User Id */
+            labeller_user_id: string | null;
+            /** Pushed By */
+            pushed_by: string;
+            /** Reasons */
+            reasons: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+            removal: components["schemas"]["TasteRemoval"] | null;
+            /** Repo */
+            repo: string | null;
+            /** Skip Count */
+            skip_count: number;
+            /** Skipped At */
+            skipped_at: string | null;
+            /** Slot Id */
+            slot_id: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "calibration" | "active_learning" | "post_hoc";
+            /** Tombstone */
+            tombstone: boolean;
+            /** Uncertainty */
+            uncertainty: number | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * TastePairPush
+         * @description ``POST /api/v1/taste/pairs`` — put one pairwise question in the queue.
+         *
+         *     Studio's door (Phase 20 onward: where the judge panel disagrees or the
+         *     taste head is least certain, plus post-hoc samples of landed images).
+         *     Identity is the slot plus the UNORDERED pair of images: a push of a pair
+         *     already queued answers with that row (``created: false``) and changes
+         *     nothing.
+         */
+        TastePairPush: {
+            /** Asset A Sha256 */
+            asset_a_sha256: string;
+            /** Asset B Sha256 */
+            asset_b_sha256: string;
+            /** Capture A Sha256 */
+            capture_a_sha256?: string | null;
+            /** Capture B Sha256 */
+            capture_b_sha256?: string | null;
+            /** Context */
+            context?: {
+                [key: string]: unknown;
+            };
+            /** Repo */
+            repo?: string | null;
+            /** Slot Id */
+            slot_id?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "calibration" | "active_learning" | "post_hoc";
+            /** Uncertainty */
+            uncertainty?: number | null;
+        };
+        /** TastePairPushResponse */
+        TastePairPushResponse: {
+            /** Created */
+            created: boolean;
+            pair: components["schemas"]["TastePairOut"];
+        };
+        /**
+         * TastePool
+         * @description The images a calibration batch can draw from: every ``candidate`` and
+         *     ``exemplar`` the tenant holds, grouped by direction.
+         */
+        TastePool: {
+            /** Directions */
+            directions: components["schemas"]["TasteDirection"][];
+            /** Images */
+            images: number;
+        };
+        /**
+         * TasteRemoval
+         * @description The most recent removal of a pair's answer: an undo (``via: undo``,
+         *     the pair went back to the queue) or a relabel that replaced it
+         *     (``via: relabel``). Kept after the pair is answered again, so a removed
+         *     answer is never lost without a trace.
+         */
+        TasteRemoval: {
+            /** Forced */
+            forced: boolean;
+            removed: components["schemas"]["TasteRemovedLabel"];
+            /**
+             * Removed At
+             * Format: date-time
+             */
+            removed_at: string;
+            /** Removed By Name */
+            removed_by_name: string | null;
+            /** Removed By User Id */
+            removed_by_user_id: string | null;
+            /**
+             * Via
+             * @enum {string}
+             */
+            via: "undo" | "relabel";
+        };
+        /**
+         * TasteRemovedLabel
+         * @description The answer an undo or a relabel removed, as it stood.
+         */
+        TasteRemovedLabel: {
+            /** Comment */
+            comment: string | null;
+            /** Edit Asset Sha256 */
+            edit_asset_sha256: string | null;
+            /** Edit Note */
+            edit_note: string | null;
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "a" | "b" | "both_bad";
+            /**
+             * Labelled At
+             * Format: date-time
+             */
+            labelled_at: string;
+            /** Labeller Name */
+            labeller_name: string | null;
+            /** Labeller User Id */
+            labeller_user_id: string | null;
+            /** Reasons */
+            reasons: ("on_style" | "off_style" | "off_palette" | "composition" | "cropping" | "wrong_subject" | "too_busy" | "text_in_image" | "artifacts" | "low_quality")[];
+        };
+        /** TasteSettingsOut */
+        TasteSettingsOut: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "setting" | "default";
+            /** Updated At */
+            updated_at: string | null;
+            /** Weekly Budget */
+            weekly_budget: number;
+        };
+        /**
+         * TasteSettingsWrite
+         * @description ``PUT /api/v1/taste/settings``.
+         */
+        TasteSettingsWrite: {
+            /** Weekly Budget */
+            weekly_budget: number;
+        };
+        /**
          * TeamMemberCreate
          * @description Schema for adding a team member.
          */
@@ -50004,44 +52517,6 @@ export interface components {
         /** TenantResumeUnfinishedWriteResult */
         TenantResumeUnfinishedWriteResult: {
             effective?: components["schemas"]["TenantResumeUnfinishedView"] | null;
-            /** Readback Error */
-            readback_error?: string | null;
-            /** Written */
-            written: boolean;
-        };
-        /**
-         * TenantTranscriptSyncPatch
-         * @description Closed body for the transcript-sync write — see wire fact 2 above.
-         */
-        TenantTranscriptSyncPatch: {
-            /** Transcript Sync Enabled */
-            transcript_sync_enabled: boolean;
-        };
-        /**
-         * TenantTranscriptSyncView
-         * @description The tenant's transcript-sync consent, as coord resolves it.
-         */
-        TenantTranscriptSyncView: {
-            /** Can Edit */
-            can_edit: boolean;
-            /**
-             * Column Missing
-             * @default false
-             */
-            column_missing: boolean;
-            /** Transcript Sync Enabled */
-            transcript_sync_enabled: boolean | null;
-        };
-        /**
-         * TenantTranscriptSyncWriteResult
-         * @description What was written, and — separately — what coord now reads back.
-         *
-         *     ``effective`` is ``None`` with ``readback_error`` set when coord accepted
-         *     the write but did not return the policy it re-read (its own post-upsert
-         *     SELECT failed). That is UNKNOWN, not "applied".
-         */
-        TenantTranscriptSyncWriteResult: {
-            effective?: components["schemas"]["TenantTranscriptSyncView"] | null;
             /** Readback Error */
             readback_error?: string | null;
             /** Written */
@@ -52031,6 +54506,26 @@ export interface components {
             package_id: number;
         };
         /**
+         * UnknownOutcome
+         * @description Coord answered a 200 with an ``outcome`` tag this build does not know.
+         *
+         *     Not ``malformed_response``: coord spoke the contract's envelope, it just
+         *     has an arm this build predates. ``raw_outcome`` is coord's tag verbatim so
+         *     the gap is named, not swallowed. Names no device — never a pick.
+         */
+        UnknownOutcome: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            outcome: "unknown_outcome";
+            /**
+             * Raw Outcome
+             * @description Coord's outcome tag, verbatim.
+             */
+            raw_outcome: string;
+        };
+        /**
          * UnreadCountResponse
          * @description Schema for unread notification count response.
          */
@@ -53140,6 +55635,8 @@ export interface components {
             source_path: string | null;
             /** Source Repo */
             source_repo: string | null;
+            /** Spec Ref */
+            spec_ref: string | null;
             /** Status */
             status: string;
             status_currency: components["schemas"]["StatusCurrency"];
@@ -53200,7 +55697,7 @@ export interface components {
              * Relation
              * @enum {string}
              */
-            relation: "produced_report" | "feeds" | "authored_plan" | "supersedes" | "depends_on" | "spawned_followup" | "refutes";
+            relation: "produced_report" | "feeds" | "authored_plan" | "supersedes" | "depends_on" | "spawned_followup" | "refutes" | "derives_from" | "refines" | "implements" | "verifies" | "traces_to";
             /** Size Class */
             size_class?: ("trivial" | "small" | "plan_sized") | null;
             /** To Id */
@@ -53259,7 +55756,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic";
+            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic" | "request" | "requirement" | "interface_mapping" | "story" | "test_case" | "doc_correction";
         };
         /**
          * WorkArtifactListResponse
@@ -53401,6 +55898,8 @@ export interface components {
             source_path: string | null;
             /** Source Repo */
             source_repo: string | null;
+            /** Spec Ref */
+            spec_ref: string | null;
             /** Status */
             status: string;
             status_currency: components["schemas"]["StatusCurrency"];
@@ -53443,7 +55942,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic";
+            kind: "investigation_prompt" | "plan_authoring_prompt" | "implementation_prompt" | "investigation_report" | "handoff" | "plan" | "diagnostic" | "request" | "requirement" | "interface_mapping" | "story" | "test_case" | "doc_correction";
             /**
              * Kind Is Heuristic
              * @default false
@@ -55082,6 +57581,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_admin_coord_overlord_labels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverlordLabelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -58104,6 +60636,209 @@ export interface operations {
             };
         };
     };
+    api_v1_build_records_products_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_build_records_products_slug_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuildRecordProductWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordReconcileResult"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publication_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordPublication"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["BuildRecordPublishRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordPublishResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_build_records_slug_publish_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildRecordUnpublishResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_capture_actions_batch_post: {
         parameters: {
             query?: never;
@@ -60258,9 +62993,9 @@ export interface operations {
     };
     api_v1_constraints_active_get: {
         parameters: {
-            query: {
-                /** @description Absolute path to the project */
-                project_path: string;
+            query?: {
+                /** @description Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root. */
+                project_path?: string | null;
             };
             header?: never;
             path?: never;
@@ -60290,9 +63025,9 @@ export interface operations {
     };
     api_v1_constraints_config_get: {
         parameters: {
-            query: {
-                /** @description Absolute path to the project */
-                project_path: string;
+            query?: {
+                /** @description Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root. */
+                project_path?: string | null;
             };
             header?: never;
             path?: never;
@@ -60361,6 +63096,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
             };
             cookie?: never;
@@ -66714,6 +69450,281 @@ export interface operations {
             };
         };
     };
+    api_v1_image_assets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_image_asset_api_v1_image_assets_post"];
+            };
+        };
+        responses: {
+            /** @description The tenant already held these bytes; nothing was re-stored. The first upload's kind stands and provenance only gained keys (up to its cap); `conflicts` names what was not applied, and why. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetUploadResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetUploadResponse"];
+                };
+            };
+            /** @description The image is larger than the store accepts. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The bytes are not an accepted image format. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unreadable image, too many frames or pixels, or a field that is malformed or cannot be stored (NaN, U+0000, nested too deep). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_get: {
+        parameters: {
+            query: {
+                repo: string;
+                slot_id: string;
+                /** @description Only candidates in this status. */
+                status?: ("candidate" | "chosen" | "rejected" | "shipped") | null;
+                /** @description oldest (the default) or newest first. */
+                order?: "oldest" | "newest";
+                limit?: number;
+                /** @description The previous page's next_cursor, with the same order. */
+                after?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateList"];
+                };
+            };
+            /** @description A malformed cursor, or one for the other order. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlotCandidateUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateUpsertResponse"];
+                };
+            };
+            /** @description The candidate was created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidateUpsertResponse"];
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Another choice for the slot landed concurrently. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_slot_candidates_delete: {
+        parameters: {
+            query: {
+                repo: string;
+                slot_id: string;
+                asset_sha256: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such candidate for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_sha256_get: {
+        parameters: {
+            query?: {
+                /** @description Seconds a presigned URL stays valid (S3 / MinIO). */
+                expires_in?: number;
+            };
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageAssetWithUrl"];
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_image_assets_sha256_content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image's bytes, as uploaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/avif": unknown;
+                    "image/gif": unknown;
+                    "image/jpeg": unknown;
+                    "image/png": unknown;
+                    "image/webp": unknown;
+                };
+            };
+            /** @description This tenant holds no image with that sha256. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The record exists but its stored bytes do not. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     api_v1_integration_testing_execute_post: {
         parameters: {
             query?: never;
@@ -66869,6 +69880,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_internal_coord_push_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Coord-Service-Secret"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoordPushRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoordPushResponse"];
                 };
             };
             /** @description Validation Error */
@@ -69060,6 +72106,77 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_action_items_get: {
+        parameters: {
+            query?: {
+                /** @description `open` (coord's default) | `done` | `dismissed` | `all`. Forwarded verbatim — coord owns the vocabulary and answers 400 otherwise. */
+                status?: string | null;
+                /** @description Page size. Forwarded verbatim — coord owns the default and the clamp. */
+                limit?: number | null;
+                /** @description Opaque keyset cursor from a prior response's ``next_cursor``. */
+                cursor?: string | null;
+                /** @description Return at most this one item (any status). */
+                item_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_action_items_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionItemResolveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_agent_logs_by_agent_agent_id_get: {
         parameters: {
             query?: {
@@ -69166,7 +72283,10 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number | null;
+                offset?: number | null;
                 gap?: boolean | null;
+                /** @description Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set — the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for — so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience). */
+                audience?: ("operator" | "agent") | null;
             };
             header?: never;
             path?: never;
@@ -69229,6 +72349,10 @@ export interface operations {
         parameters: {
             query?: {
                 gap?: boolean | null;
+                limit?: number | null;
+                offset?: number | null;
+                /** @description Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set — the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for — so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience). */
+                audience?: ("operator" | "agent") | null;
             };
             header?: never;
             path?: never;
@@ -70403,6 +73527,72 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_coord_dossiers_get: {
+        parameters: {
+            query?: {
+                /** @description Repeatable (or comma-separated). Exact readiness match; ``none`` selects heads whose readiness is NULL (UNKNOWN). */
+                readiness?: string[] | null;
+                /** @description Exact dossier slug. */
+                slug?: string | null;
+                /** @description Case-insensitive substring over slug and title. */
+                q?: string | null;
+                /** @description Inclusive lower bound on ``recurrence_count``. */
+                recurrence_min?: number | null;
+                /** @description Inclusive upper bound on ``recurrence_count``. */
+                recurrence_max?: number | null;
+                /** @description ISO date. */
+                last_seen_since?: string | null;
+                /** @description ISO date. */
+                last_seen_until?: string | null;
+                /** @description ISO date. */
+                first_seen_since?: string | null;
+                /** @description ISO date. */
+                first_seen_until?: string | null;
+                /** @description ISO date. */
+                updated_since?: string | null;
+                /** @description ISO date. */
+                updated_until?: string | null;
+                /** @description Ledger-derived (free text, lags the plan); ``remediation_state`` is the live one. */
+                has_open_remediation?: boolean | null;
+                /** @description Repeatable. The LIVE roll-up of the dossier's remediation plans against coord's work units: none | draft | vetted | in_progress | shipped | closed | unknown. */
+                remediation_state?: string[] | null;
+                /** @description last_seen (coord's default) | first_seen | updated | recurrence_count | slug. */
+                sort?: string | null;
+                /** @description desc (default) | asc. */
+                order?: string | null;
+                /** @description Page size. Forwarded verbatim — coord owns the default and the clamp. */
+                limit?: number | null;
+                /** @description The previous answer's ``next_cursor``, verbatim, under the SAME filters and sort. A foreign or stale one is coord's typed 400. */
+                cursor?: string | null;
+                /** @description ``true`` adds each head's body (coord caps the page at 20). */
+                include_body?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_coord_findings_get: {
         parameters: {
             query?: {
@@ -70722,6 +73912,177 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_operator_touches_get: {
+        parameters: {
+            query?: {
+                window_days?: string | null;
+                disposition?: string | null;
+                open_only?: string | null;
+                actionable_only?: string | null;
+                limit?: string | null;
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_operator_touches_constraint_verdict_get: {
+        parameters: {
+            query?: {
+                window_days?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_overlord_flow_get: {
+        parameters: {
+            query?: {
+                window_hours?: string | null;
+                device_id?: string | null;
+                runner_port?: string | null;
+                unchanged_min_passes?: string | null;
+                nudge_window_passes?: string | null;
+                group_by?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_overlord_passes_get: {
+        parameters: {
+            query?: {
+                device_id?: string | null;
+                runner_port?: string | null;
+                scope?: string | null;
+                mode?: string | null;
+                since?: string | null;
+                limit?: string | null;
+                offset?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_overlord_passes_pass_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pass_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -72344,6 +75705,38 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_coord_verification_metrics_get: {
+        parameters: {
+            query?: {
+                /** @description ``<days>d`` (e.g. ``28d``), 1..=365. Forwarded verbatim — coord owns the default (28d) and answers a malformed value with a typed 422, which is passed through. */
+                window?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_deploys_get: {
         parameters: {
             query?: {
@@ -73011,6 +76404,7 @@ export interface operations {
     api_v1_operations_fleet_runners_runner_id_output_get: {
         parameters: {
             query: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
                 tail_chars?: number;
             };
@@ -73047,6 +76441,7 @@ export interface operations {
     api_v1_operations_fleet_runners_runner_id_workflow_state_get: {
         parameters: {
             query: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
             };
             header?: never;
@@ -73468,16 +76863,18 @@ export interface operations {
     };
     api_v1_operations_gates_gate_id_reject_post: {
         parameters: {
-            query?: {
-                reason?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 gate_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GateRejectRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -75262,6 +78659,104 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_get: {
+        parameters: {
+            query?: {
+                /** @description Narrow the list to one `owner/name` repository. */
+                repo?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoBindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoUnbindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_pr_merge_onboarding_repos_repo_restore_post: {
         parameters: {
             query?: never;
@@ -75785,7 +79280,7 @@ export interface operations {
             };
         };
     };
-    api_v1_operations_prs_owner_repo_number_draft_state_post: {
+    api_v1_operations_prs_owner_repo_number_hold_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -75949,6 +79444,207 @@ export interface operations {
             query: {
                 /** @description Repository slug (owner/name) */
                 repo: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_secrets_broker_device_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretsBrokerDeviceView"];
+                };
+            };
+        };
+    };
+    api_v1_operations_secrets_broker_device_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretsBrokerDevicePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretsBrokerDeviceWriteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_get: {
+        parameters: {
+            query?: {
+                /** @description Only runs classified as this work type. */
+                work_type?: string | null;
+                /** @description Only runs on this coord device. */
+                device?: string | null;
+                /** @description Only runs this initiator started. */
+                initiator?: ("operator" | "coord" | "runner_local" | "unknown") | null;
+                /** @description Only runs started at or after this instant. Must carry a UTC offset — a naive timestamp names no instant. */
+                since?: string | null;
+                /** @description Only runs started before this instant (offset required). */
+                until?: string | null;
+                /** @description coord's ``next_cursor`` from the previous page. */
+                cursor?: string | null;
+                /** @description Page size; coord's default is 50. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_concurrency_get: {
+        parameters: {
+            query?: {
+                /** @description Only this coord device (unset = every device that ran a session). */
+                device?: string | null;
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Series bucket width; coord's default is ``1h``. */
+                bucket?: ("1m" | "5m" | "15m" | "1h" | "hour" | "6h" | "1d" | "day" | "7d" | "week") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_growth_get: {
+        parameters: {
+            query?: {
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Day (coord's default) or week buckets. */
+                bucket?: ("1d" | "day" | "7d" | "week") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_session_runs_stats_get: {
+        parameters: {
+            query?: {
+                /** @description The window, ``<N>d`` or ``<N>h`` (coord bounds it to 1h..400d). Unset takes coord's default. */
+                window?: string | null;
+                /** @description Group by ``work_type`` (coord's default), ``device``, or both. */
+                group_by?: ("work_type" | "device" | "device,work_type" | "work_type,device") | null;
             };
             header?: never;
             path?: never;
@@ -76424,6 +80120,115 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_spawns_get: {
+        parameters: {
+            query?: {
+                /** @description Only requests of this admission class. */
+                class?: ("autofix" | "continuation" | "local" | "attended") | null;
+                /** @description Only requests currently in one of these states — a comma list, e.g. ``queued,dispatched,deferred``. */
+                state?: string | null;
+                /** @description Only requests placed on, or started on, this coord device. */
+                device?: string | null;
+                /** @description Only requests first requested at or after this instant. Must carry a UTC offset — a naive timestamp names no instant. */
+                since?: string | null;
+                /** @description Only requests first requested before this instant (offset required). */
+                until?: string | null;
+                /** @description Order by ``requested_at``: ``desc`` (coord's default, newest first) or ``asc`` (oldest first). */
+                order?: ("asc" | "desc") | null;
+                /** @description coord's opaque ``next_cursor`` from the previous page. */
+                cursor?: string | null;
+                /** @description Page size; coord's default is 50. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_spawns_stats_get: {
+        parameters: {
+            query?: {
+                /** @description Aggregation window; coord's default is ``7d``. */
+                window?: ("24h" | "7d" | "30d") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_spawns_spawn_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spawn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_symbol_claims_get: {
         parameters: {
             query?: {
@@ -76497,59 +80302,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TenantResumeUnfinishedWriteResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_v1_operations_tenant_policy_transcript_sync_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TenantTranscriptSyncView"];
-                };
-            };
-        };
-    };
-    api_v1_operations_tenant_policy_transcript_sync_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TenantTranscriptSyncPatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TenantTranscriptSyncWriteResult"];
                 };
             };
             /** @description Validation Error */
@@ -78542,6 +82294,8 @@ export interface operations {
                 slug?: string | null;
                 /** @description Exact member of intent_refs[] — a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page. */
                 intent_ref?: string | null;
+                /** @description Exact match on a specification artifact's stable ID (e.g. REQ-0042). At most one row per organization. */
+                spec_ref?: string | null;
                 /** @description The previous page's `next_cursor`, verbatim; omit for the first page. A token is bound to the filters it was minted under: replayed under other filters (or garbled) it is a 400 `cursor_malformed` naming `cursor`, never a silently different page. */
                 cursor?: string | null;
                 limit?: number;
@@ -78951,6 +82705,79 @@ export interface operations {
             };
         };
     };
+    api_v1_plan_library_model_routing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_model_routing_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelRoutingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_plan_library_model_routing_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingResponse"];
+                };
+            };
+        };
+    };
     api_v1_plan_library_reconciliation_get: {
         parameters: {
             query?: {
@@ -79226,6 +83053,73 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WorkArtifactSummary"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_presentation_scope_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresentationScopeOut"];
+                };
+            };
+        };
+    };
+    api_v1_presentation_scope_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresentationScopeWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresentationScopeOut"];
+                };
+            };
+            /** @description Not an admin of the active project. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The stored scope moved since expected_version, or the active project is not expected_tenant_id. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -84043,6 +87937,37 @@ export interface operations {
             };
         };
     };
+    api_v1_public_build_records_slug_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicBuildRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_public_projects_get: {
         parameters: {
             query?: {
@@ -87726,6 +91651,383 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VerificationResultResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_calibration_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalibrationBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationBatchResult"];
+                };
+            };
+            /** @description An image left the pool mid-build; nothing was queued. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_inbox_get: {
+        parameters: {
+            query?: {
+                /** @description How many queued pairs to return. */
+                limit?: number;
+                /** @description Return queued pairs even when this week's budget is spent (the operator chose to keep going). */
+                over_budget?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TasteInbox"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_labels_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description The previous page's next_cursor (set on every page, the last one included, so a reader can follow the feed). */
+                after?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TasteLabelPage"];
+                };
+            };
+            /** @description A malformed cursor. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_taste_pairs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TastePairPush"];
+            };
+        };
+        responses: {
+            /** @description The pair was already queued (in either order); nothing changed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairPushResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairPushResponse"];
+                };
+            };
+            /** @description This tenant holds no image with a named sha256 (or one was deleted while the pair was being queued). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A malformed field, or a capture that is not one. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An operator who may not label (a coord-tenant admin, or a qontinui superuser, may). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such pair for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The pair is labelled, or was answered and undone (its history is in the label feed); neither is withdrawn. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_label_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TasteLabelWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairOut"];
+                };
+            };
+            /** @description No such pair, or no such edited image, for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description pair_already_labelled: the pair is already labelled (send relabel: true to replace your own answer). label_not_yours: the answer is another labeller's (send force: true as well; the replaced answer is recorded). pair_changed_meanwhile: the pair changed under the write (a concurrent undo); nothing was changed — read it again. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_label_delete: {
+        parameters: {
+            query?: {
+                /** @description Remove the label even though another labeller gave it. The row records that the undo was forced, who forced it, and the answer it removed. */
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairOut"];
+                };
+            };
+            /** @description No such pair for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The pair is not labelled, or its label is another labeller's and force was not sent. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_pairs_pair_id_skip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pair_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TastePairOut"];
+                };
+            };
+            /** @description No such pair for this tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The pair is already labelled. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_taste_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TasteSettingsWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TasteSettingsOut"];
                 };
             };
             /** @description Validation Error */

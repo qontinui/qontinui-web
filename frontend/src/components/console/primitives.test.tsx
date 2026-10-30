@@ -140,7 +140,11 @@ describe("FilterChips (R6, multi-select)", () => {
     { value: "critical", label: "Critical" },
   ] as const;
 
-  function renderChips(selected: readonly string[], on = vi.fn(), clear = vi.fn()) {
+  function renderChips(
+    selected: readonly string[],
+    on = vi.fn(),
+    clear = vi.fn()
+  ) {
     render(
       <FilterChips
         label="severity"
@@ -170,7 +174,10 @@ describe("FilterChips (R6, multi-select)", () => {
 
   it("marks EVERY selected chip, not just the last one", () => {
     renderChips(["info", "critical"]);
-    expect(screen.getByTestId("f-info")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("f-info")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
     expect(screen.getByTestId("f-critical")).toHaveAttribute(
       "aria-pressed",
       "true"
@@ -179,7 +186,10 @@ describe("FilterChips (R6, multi-select)", () => {
       "aria-pressed",
       "false"
     );
-    expect(screen.getByTestId("f-all")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("f-all")).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
     expect(screen.getByTestId("f")).toHaveAttribute(
       "data-selected",
       "info,critical"
@@ -436,9 +446,9 @@ describe("RecordRow (R2, R4)", () => {
           data-testid="row"
         />
       );
-      expect(
-        document.querySelector("[data-console-row]")
-      ).not.toHaveAttribute("data-attention");
+      expect(document.querySelector("[data-console-row]")).not.toHaveAttribute(
+        "data-attention"
+      );
     });
   });
 
@@ -460,12 +470,7 @@ describe("RecordRow (R2, R4)", () => {
 
   it("drops the inline reason while expanded — the panel carries it in full", () => {
     render(
-      <RecordRow
-        {...base}
-        expanded
-        onToggle={() => {}}
-        data-testid="row"
-      >
+      <RecordRow {...base} expanded onToggle={() => {}} data-testid="row">
         <div data-testid="detail">why</div>
       </RecordRow>
     );
@@ -505,8 +510,7 @@ describe("RecordRow (R2, R4)", () => {
         data-testid="row"
       />
     );
-    const cls =
-      within(screen.getByTestId("row")).getByRole("button").className;
+    const cls = within(screen.getByTestId("row")).getByRole("button").className;
     expect(cls).toContain("border-l-2");
     expect(cls).toContain("border-l-red-500/80");
     // R4's whole point: 40 rows stay readable when 6 are red.
@@ -534,7 +538,12 @@ describe("RecordRow (R2, R4)", () => {
     // Absent, not empty: an empty `data-row-key` would look like an identity a
     // selector could match on.
     render(
-      <RecordRow {...base} expanded={false} onToggle={() => {}} data-testid="row" />
+      <RecordRow
+        {...base}
+        expanded={false}
+        onToggle={() => {}}
+        data-testid="row"
+      />
     );
     expect(screen.getByTestId("row")).not.toHaveAttribute("data-row-key");
   });
@@ -580,7 +589,11 @@ describe("RecordRow identity inside a RecordList", () => {
         items={items}
         itemKey={(i, index) => `${i.name}#${index}`}
         renderRow={(item, ctx) => (
-          <SelfKeyingRow item={item} expanded={ctx.expanded} onToggle={ctx.onToggle} />
+          <SelfKeyingRow
+            item={item}
+            expanded={ctx.expanded}
+            onToggle={ctx.onToggle}
+          />
         )}
         loaded
       />
@@ -600,7 +613,11 @@ describe("RecordRow identity inside a RecordList", () => {
         items={items}
         itemKey={(i, index) => `${i.name}#${index}`}
         renderRow={(item, ctx) => (
-          <SelfKeyingRow item={item} expanded={ctx.expanded} onToggle={ctx.onToggle} />
+          <SelfKeyingRow
+            item={item}
+            expanded={ctx.expanded}
+            onToggle={ctx.onToggle}
+          />
         )}
         loaded
       />
@@ -644,7 +661,11 @@ describe("RecordRow identity inside a RecordList", () => {
         items={items}
         itemKey={(i, index) => `${i.name}#${index}`}
         renderRow={(item, ctx) => (
-          <SelfKeyingRow item={item} expanded={ctx.expanded} onToggle={ctx.onToggle} />
+          <SelfKeyingRow
+            item={item}
+            expanded={ctx.expanded}
+            onToggle={ctx.onToggle}
+          />
         )}
         loaded
         expandedKey="shared-subject#1"
@@ -654,7 +675,8 @@ describe("RecordRow identity inside a RecordList", () => {
     const open = screen
       .getAllByTestId("row")
       .filter(
-        (r) => within(r).getByRole("button").getAttribute("aria-expanded") === "true"
+        (r) =>
+          within(r).getByRole("button").getAttribute("aria-expanded") === "true"
       );
     expect(open).toHaveLength(1);
     expect(open[0]).toHaveAttribute("data-row-key", "shared-subject#1");
@@ -931,7 +953,12 @@ describe("StatCluster (R1)", () => {
         data-testid="sc"
         stats={[
           { key: "open", label: "open", value: 0, "data-testid": "s-open" },
-          { key: "failed", label: "failed", value: null, "data-testid": "s-failed" },
+          {
+            key: "failed",
+            label: "failed",
+            value: null,
+            "data-testid": "s-failed",
+          },
         ]}
       />
     );
@@ -944,8 +971,20 @@ describe("StatCluster (R1)", () => {
     render(
       <StatCluster
         stats={[
-          { key: "a", label: "stuck", value: 3, tone: "attention", "data-testid": "s-a" },
-          { key: "b", label: "archived", value: 7, tone: "muted", "data-testid": "s-b" },
+          {
+            key: "a",
+            label: "stuck",
+            value: 3,
+            tone: "attention",
+            "data-testid": "s-a",
+          },
+          {
+            key: "b",
+            label: "archived",
+            value: 7,
+            tone: "muted",
+            "data-testid": "s-b",
+          },
         ]}
       />
     );
@@ -988,7 +1027,14 @@ describe("RefreshButton (§6.4)", () => {
   it("is busy for exactly as long as the read its press returned", async () => {
     const read = pending();
     const onRefresh = vi.fn(() => read.promise);
-    render(<RefreshButton onRefresh={onRefresh} label="Refresh" title="t" data-testid="rb" />);
+    render(
+      <RefreshButton
+        onRefresh={onRefresh}
+        label="Refresh"
+        title="t"
+        data-testid="rb"
+      />
+    );
     const button = screen.getByTestId("rb");
 
     fireEvent.click(button);
@@ -997,7 +1043,9 @@ describe("RefreshButton (§6.4)", () => {
     expect(button).toHaveAttribute("aria-disabled", "true");
     // Busy is aria-disabled, never `disabled`: the keyboard user keeps focus.
     expect(button).not.toBeDisabled();
-    expect(button.querySelector("svg")?.getAttribute("class")).toContain("animate-spin");
+    expect(button.querySelector("svg")?.getAttribute("class")).toContain(
+      "animate-spin"
+    );
 
     // A second press while busy issues nothing.
     fireEvent.click(button);
@@ -1008,7 +1056,9 @@ describe("RefreshButton (§6.4)", () => {
     });
     expect(button).not.toHaveAttribute("aria-busy");
     expect(button).not.toHaveAttribute("aria-disabled");
-    expect(button.querySelector("svg")?.getAttribute("class")).not.toContain("animate-spin");
+    expect(button.querySelector("svg")?.getAttribute("class")).not.toContain(
+      "animate-spin"
+    );
 
     fireEvent.click(button);
     expect(onRefresh).toHaveBeenCalledTimes(2);
@@ -1017,7 +1067,12 @@ describe("RefreshButton (§6.4)", () => {
   it("ends the busy state when the read fails, too", async () => {
     const read = pending();
     render(
-      <RefreshButton onRefresh={() => read.promise} label="Refresh" title="t" data-testid="rb" />
+      <RefreshButton
+        onRefresh={() => read.promise}
+        label="Refresh"
+        title="t"
+        data-testid="rb"
+      />
     );
     const button = screen.getByTestId("rb");
     fireEvent.click(button);
@@ -1031,10 +1086,130 @@ describe("RefreshButton (§6.4)", () => {
 
   it("acknowledges nothing when the press returns no read", () => {
     render(
-      <RefreshButton onRefresh={() => undefined} label="Refresh" title="t" data-testid="rb" />
+      <RefreshButton
+        onRefresh={() => undefined}
+        label="Refresh"
+        title="t"
+        data-testid="rb"
+      />
     );
     const button = screen.getByTestId("rb");
     fireEvent.click(button);
     expect(button).not.toHaveAttribute("aria-busy");
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Navigation-only claims (plan 2026-10-23-console-presentation-spaces D3.2).
+// A primitive that marks a control `NAVIGATION_ONLY_PROPS` keeps it live in
+// presentation mode, so the mark is a claim the primitive must make only where
+// its caller asked for it — and must make wherever the control only changes
+// what is displayed.
+// ----------------------------------------------------------------------------
+
+describe("navigation-only claims (presentation lens)", () => {
+  // Imported lazily so the primitives above stay testable without the helper.
+  async function helper() {
+    return import("@/test/presentation");
+  }
+
+  it("HealthStrip marks only the badges whose caller claims navigation-only", async () => {
+    const { findPresentationViolations, renderInPresentationMode } =
+      await helper();
+    const view = renderInPresentationMode(
+      <HealthStrip
+        level="ok"
+        headline="All healthy"
+        badges={[
+          {
+            key: "jump",
+            label: "red 2",
+            onClick: () => {},
+            navigationOnly: true,
+            "data-testid": "jump",
+          },
+          {
+            key: "write",
+            label: "retry 1",
+            onClick: () => {},
+            "data-testid": "write",
+          },
+        ]}
+      />,
+      { uiBridge: { unobservable: "no registrations in this primitive" } }
+    );
+    // The badge carries the test id; the button around it is the control.
+    expect(view.getByTestId("jump").closest("button")).toHaveAttribute(
+      "data-presentation-nav"
+    );
+    expect(view.getByTestId("write").closest("button")).not.toHaveAttribute(
+      "data-presentation-nav"
+    );
+    const violations = findPresentationViolations(view);
+    expect(violations.map((v) => v.kind)).toEqual(["enabled-control"]);
+    expect(violations[0]?.detail).toContain('"retry 1"');
+  });
+
+  it("StatCluster marks only the stats whose caller claims navigation-only", async () => {
+    const { findPresentationViolations, renderInPresentationMode } =
+      await helper();
+    const view = renderInPresentationMode(
+      <StatCluster
+        stats={[
+          {
+            key: "open",
+            label: "open",
+            value: 4,
+            onClick: () => {},
+            navigationOnly: true,
+            "data-testid": "open",
+          },
+          {
+            key: "rerun",
+            label: "rerun",
+            value: 1,
+            onClick: () => {},
+            "data-testid": "rerun",
+          },
+        ]}
+      />,
+      { uiBridge: { unobservable: "no registrations in this primitive" } }
+    );
+    expect(view.getByTestId("open").closest("button")).toHaveAttribute(
+      "data-presentation-nav"
+    );
+    expect(view.getByTestId("rerun").closest("button")).not.toHaveAttribute(
+      "data-presentation-nav"
+    );
+    const violations = findPresentationViolations(view);
+    expect(violations.map((v) => v.kind)).toEqual(["enabled-control"]);
+    expect(violations[0]?.detail).toContain('"rerun1"');
+  });
+
+  it("FilterChips marks every chip, the all chip and the overflow disclosure", async () => {
+    const { findPresentationViolations, renderInPresentationMode } =
+      await helper();
+    const view = renderInPresentationMode(
+      <FilterChips
+        label="kind:"
+        options={[
+          { value: "a", label: "a" },
+          { value: "b", label: "b" },
+          { value: "c", label: "c" },
+        ]}
+        selected={["a"]}
+        onToggle={() => {}}
+        onClear={() => {}}
+        maxVisible={1}
+        testIdPrefix="chip"
+      />,
+      { uiBridge: { unobservable: "no registrations in this primitive" } }
+    );
+    const buttons = view.getAllByRole("button");
+    expect(buttons.length).toBeGreaterThanOrEqual(3);
+    for (const button of buttons) {
+      expect(button).toHaveAttribute("data-presentation-nav");
+    }
+    expect(findPresentationViolations(view)).toEqual([]);
   });
 });

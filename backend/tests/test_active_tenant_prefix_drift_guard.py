@@ -243,11 +243,29 @@ _FORWARDED_TO_COORD: dict[str, str] = {
 # selection degrades to home) before using it for anything local, such as a
 # cache key. They also forward it to coord.
 _VALIDATED_LOCALLY: dict[str, str] = {
+    "app.api.v1.endpoints.overlord_labels": (
+        "never forwards the client's raw value: it sends the tenant "
+        "require_coord_tenant_admin resolved, which is membership-checked "
+        "against the caller's coord operator roles"
+    ),
     "app.api.v1.endpoints.admin_dev": (
         "_capture_bearer_best_effort matches the selection against identity.tenants"
     ),
     "app.api.v1.endpoints.digital_twin": (
         "subspaces keys its cache on _effective_tenant_id(identity, header)"
+    ),
+    "app.api.v1.endpoints.taste": (
+        "reads it only for get_can_label's _effective_tenant_roles, which "
+        "matches it against identity.tenants (a non-member selection degrades "
+        "to home); every row is scoped by the tenant get_memory_tenant / "
+        "require_coord_tenant_admin_target resolve, never by the raw value"
+    ),
+    "app.api.v1.endpoints.presentation": (
+        "reads it only through _effective_tenant_id / _effective_tenant_roles, "
+        "which match it against identity.tenants (a non-member selection "
+        "degrades to home); every row is keyed on that resolved tenant, and "
+        "operations' _tenant_headers forwards the header to coord's "
+        "/pr-merge/repos read"
     ),
 }
 
@@ -336,7 +354,10 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
     "app.api.v1.endpoints.plan_library": (
         "organization-scoped web-DB plan bodies; only candidates, "
         "reconciliation and by-id add the coord overlay; /vocabulary is a "
-        "static description of the write doors' closed fields (auth only)",
+        "static description of the write doors' closed fields (auth only); "
+        "/model-routing is the caller's personal organization's stored "
+        "level -> model-family map (web DB, _resolve_org_id), never the "
+        "selected coord tenant",
         frozenset(
             {
                 "/api/v1/plan-library",
@@ -346,6 +367,7 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
                 "/api/v1/plan-library/edges/{edge_id}",
                 "/api/v1/plan-library/export",
                 "/api/v1/plan-library/followups",
+                "/api/v1/plan-library/model-routing",
                 "/api/v1/plan-library/vocabulary",
                 "/api/v1/plan-library/{artifact_id}/edges",
                 "/api/v1/plan-library/{artifact_id}/export",
@@ -404,8 +426,9 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({"/api/v1/dispatch/status/{app_id}"}),
     ),
     "app.api.v1.endpoints.fleet_targets": (
-        "device-owner scoped reads and the project.apps config edit; only the "
-        "designation PUT/DELETE resolve a tenant (they forward it to coord's "
+        "device-owner scoped reads and the platform-admin-only project.apps "
+        "config read/edit (project.apps is not partitioned by tenant yet); only "
+        "the designation PUT/DELETE resolve a tenant (they forward it to coord's "
         "binding-checked test-targets writer)",
         frozenset(
             {

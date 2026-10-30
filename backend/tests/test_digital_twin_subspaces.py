@@ -3,19 +3,23 @@
 Three layers:
   - Pure `_classify` unit tests: the envelope → cell-status rubric (the goal
     #3/#4 surface — how a DriftVerdict becomes implemented / partial / blind).
-  - The probe list itself: `_PROBEABLE_SUBSPACES` against a hand-copied list
-    of coord's snapshot ids, and against the frontend manifest's `snapshot`
-    rows, read from disk.
+  - The declared probe list: `_declared_probes` over coord's served catalog
+    (plan ``2026-10-11-twin-honesty-and-reachability`` Phase 9 — the matrix
+    probes what coord declares, not a hand copy), including the Spec CI stubs,
+    whose catalog and probe bodies must describe the same sub-spaces.
   - An integration test over `GET /api/v1/digital-twin/subspaces` with a mocked
-    coord: per-sub-space probe → cell, with honest blind/error degradation.
+    coord: catalog → per-sub-space probe at its declared door → cell, with
+    honest blind/error/restricted degradation.
 
 Mirrors the proxy-test pattern in ``test_operations_gates_proxy.py``: minimal
 FastAPI app + mocked ``httpx.AsyncClient`` so no live coord/runner is needed.
 """
 
+import asyncio
 import json
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -24,78 +28,135 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.v1.endpoints.digital_twin import _PROBEABLE_SUBSPACES, _classify
+from app.api.v1.endpoints.digital_twin import (
+    _class_bucket_age,
+    _classify,
+    _declared_probes,
+    _is_operator_gated,
+)
 
 API_PREFIX = "/api/v1/digital-twin"
 
-# The snapshot ids coord ``twin_routes.rs`` ``subspace_tool`` serves
-# (``memory`` since 2026-07-10), HAND-COPIED from qontinui-coord: coord is
-# another repo, so nothing in this suite can read its map. This copy stays
-# right only while someone re-verifies it against ``subspace_tool`` whenever
-# coord's map or ``_PROBEABLE_SUBSPACES`` changes (last checked 2026-10-11, on
-# qontinui-coord origin/main f608425968df).
-_COORD_SNAPSHOT_SUBSPACES = {
-    "release",
-    "schema",
-    "infra",
-    "infra_health",
-    "config",
-    "health",
-    "deps",
-    "route_serving",
-    "client_telemetry",
-    "worktree",
-    "memory",
-}
-
-# The snapshot sub-spaces qontinui-coord#3128 (open at the time of writing)
-# scopes to the SystemTenant, so once it lands a non-system tenant is refused
-# each of them per cell (403) while ``worktree`` and ``memory`` still answer.
-# Hand-copied from that PR's description, like the list above.
-_SYSTEM_TENANT_SUBSPACES = {
-    "release",
-    "schema",
-    "infra",
-    "infra_health",
-    "config",
-    "health",
-    "deps",
-    "route_serving",
-    "client_telemetry",
-}
-
 # backend/tests/x.py -> parents[2] == the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-# The frontend manifest — the matrix's denominator, whose ``snapshot`` rows are
-# the ids the page expects this backend to probe.
-_MANIFEST = (
+# The page's Spec CI spec, whose route stubs carry a catalog body and a matrix
+# body. Spec CI renders the page from both, so they must describe the same
+# probed sub-spaces.
+_SPEC = (
     _REPO_ROOT
     / "frontend"
-    / "src"
-    / "app"
-    / "(app)"
+    / "specs"
+    / "pages"
     / "digital-twin"
-    / "_lib"
-    / "subspaces.manifest.json"
+    / "state-machine.derived.json"
 )
 
 
-def _manifest_snapshot_ids() -> set[str]:
-    """The ``id`` of every ``query_kind: snapshot`` manifest row.
+def _catalog_entry(
+    subspace: str,
+    *,
+    snapshot: bool,
+    door: str | None,
+    door_shape: str | None,
+    access: str | None,
+) -> dict[str, Any]:
+    """One served-catalog row, in coord ``twin_probe_door.rs`` ``served_entry``
+    shape (only the fields this backend reads matter; the rest ride along)."""
+    return {
+        "id": subspace,
+        "subspace": subspace,
+        "symbol": f"Ξ_{subspace}",
+        "twin": "environment",
+        "stages": ["operate"],
+        "description": subspace,
+        "query_tool": f"coord_query_{subspace}",
+        "kind": "snapshot" if snapshot else "parameterized",
+        "declared_status": "live",
+        "params": [],
+        "snapshot": snapshot,
+        "access": access,
+        "door": door,
+        "door_shape": door_shape,
+        "observed": None,
+    }
 
-    Fails closed: a missing manifest, or one with no snapshot rows, fails the
-    test instead of comparing the probe list against an empty set.
-    """
-    if not _MANIFEST.is_file():
-        pytest.fail(
-            f"Manifest not found: {_MANIFEST}. The probe list is pinned to its "
-            "snapshot rows; if the manifest moved, update _MANIFEST."
-        )
-    rows = json.loads(_MANIFEST.read_text(encoding="utf-8"))["subspaces"]
-    ids = {row["id"] for row in rows if row["query_kind"] == "snapshot"}
-    if not ids:
-        pytest.fail(f"No snapshot rows in {_MANIFEST}; the pin would be vacuous.")
-    return ids
+
+def _snapshot(subspace: str, shape: str = "verdict_wrapper", access="system_tenant"):
+    return _catalog_entry(
+        subspace,
+        snapshot=True,
+        door=f"/coord/twin/{subspace}/verdict",
+        door_shape=shape,
+        access=access,
+    )
+
+
+# A stubbed served catalog. Probed: four verdict-wrapper snapshots, a
+# report-shaped snapshot (`worktree`), a post-phase-16 process probe
+# (`workers`) and the admin outbound door (an `envelope` door, `snapshot:
+# false`). Not probed: the parameterized delivery read (a door, but not a
+# snapshot and not an envelope) and `ci` (no door at all).
+_CATALOG = {
+    "total": 9,
+    "entries": [
+        _snapshot("release"),
+        _snapshot("infra"),
+        _snapshot("config"),
+        _snapshot("memory", access="tenant"),
+        _snapshot("worktree", shape="report", access="tenant"),
+        _snapshot("workers", access="coord_internal"),
+        _catalog_entry(
+            "outbound",
+            snapshot=False,
+            door="/admin/coord/outbound-budget",
+            door_shape="envelope",
+            access=None,
+        ),
+        _catalog_entry(
+            "delivery",
+            snapshot=False,
+            door="/coord/twin/delivery/verdict",
+            door_shape="verdict_wrapper",
+            access="tenant",
+        ),
+        _catalog_entry("ci", snapshot=False, door=None, door_shape=None, access=None),
+    ],
+}
+# Verdict-wrapper snapshots only, for the tests that grade every cell alike.
+_WRAPPER_CATALOG = {
+    "total": 3,
+    "entries": [_snapshot("release"), _snapshot("infra"), _snapshot("memory")],
+}
+_PROBED_IDS = {
+    "release",
+    "infra",
+    "config",
+    "memory",
+    "worktree",
+    "workers",
+    "outbound",
+}
+_CATALOG_PATH = "/coord/twin/catalog"
+_OUTBOUND_DOOR = "/admin/coord/outbound-budget"
+
+
+def settings_coord_url() -> str:
+    """The coord base URL the endpoint prefixes every door with."""
+    from app.core.config import settings
+
+    return settings.COORD_URL
+
+
+def _spec_stub_body(url_pattern: str) -> Any:
+    """The body the page's Spec CI spec stubs ``url_pattern`` with; fails
+    closed on a missing spec or stub."""
+    if not _SPEC.is_file():
+        pytest.fail(f"Spec not found: {_SPEC}; if it moved, update _SPEC.")
+    stubs = json.loads(_SPEC.read_text(encoding="utf-8"))["metadata"]["routeStubs"]
+    for stub in stubs:
+        if stub["urlPattern"] == url_pattern:
+            return stub["body"]
+    pytest.fail(f"{_SPEC} stubs no route {url_pattern}")
 
 
 # ---------------------------------------------------------------------------
@@ -204,20 +265,65 @@ def _resolved_identity(tenant_id=None, also_member_of=()):
     return AsyncMock(return_value=_identity(tenant_id, also_member_of=also_member_of))
 
 
-def _verdict_response(coverage, provenance, drift_class="ok") -> MagicMock:
+def _json_response(body: Any, status_code: int = 200) -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
-    resp.status_code = 200
-    resp.json.return_value = {
-        "subspace": "x",
-        "tool": "coord_query_x",
-        "verdict": {
-            "coverage": coverage,
-            "credibility": 0.9,
-            "provenance": provenance,
-            "drift_class": drift_class,
-        },
-    }
+    resp.status_code = status_code
+    resp.json.return_value = body
+    resp.text = json.dumps(body)
     return resp
+
+
+def _catalog_response(catalog: Any = None) -> MagicMock:
+    return _json_response(_CATALOG if catalog is None else catalog)
+
+
+def _verdict_response(coverage, provenance, drift_class="ok") -> MagicMock:
+    return _json_response(
+        {
+            "subspace": "x",
+            "tool": "coord_query_x",
+            "verdict": {
+                "coverage": coverage,
+                "credibility": 0.9,
+                "provenance": provenance,
+                "drift_class": drift_class,
+            },
+        }
+    )
+
+
+def _envelope_response(coverage, drift_class="none") -> MagicMock:
+    """The admin outbound door's ``OutboundBudgetResponse``: the DriftVerdict
+    fields at the TOP level, no ``verdict`` wrapper."""
+    return _json_response(
+        {
+            "dependency": None,
+            "scope_reason": "system_tenant_fleet_wide",
+            "scoped_installation_ids": [],
+            "buckets": [],
+            "count": 0,
+            "drift_class": drift_class,
+            "coverage": coverage,
+            "staleness_threshold_seconds": 300,
+            "observer_interval_seconds": 30,
+            "low_fraction_threshold": 0.1,
+            "budget_target_fraction": 0.8,
+            "provenance": "outbound_budget_observations",
+            "credibility": 0.9,
+        }
+    )
+
+
+def _report_response() -> MagicMock:
+    """A report-shaped twin door body: ``verdict`` is the tool's own report
+    (``coord_list_worktrees`` answers ``{devices}``), not a DriftVerdict."""
+    return _json_response(
+        {
+            "subspace": "worktree",
+            "tool": "coord_list_worktrees",
+            "verdict": {"devices": []},
+        }
+    )
 
 
 def _status_response(status_code: int) -> MagicMock:
@@ -228,86 +334,259 @@ def _status_response(status_code: int) -> MagicMock:
     return resp
 
 
+@contextmanager
+def _coord(route, identity=None):
+    """Patch identity + the probe client. ``route(url)`` answers every probe;
+    the catalog route answers ``_CATALOG`` unless ``route`` answers it first
+    (return ``None`` to fall through). Yields the list of requested URLs."""
+    urls: list[str] = []
+
+    def fake_get(url, **kwargs):
+        urls.append(url)
+        answer = route(url)
+        if answer is not None:
+            return answer
+        if url.endswith(_CATALOG_PATH):
+            return _catalog_response()
+        raise AssertionError(f"unrouted coord GET {url}")
+
+    with (
+        patch(
+            "app.api.v1.endpoints.digital_twin.get_coord_identity",
+            new=identity or _resolved_identity(),
+        ),
+        patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
+    ):
+        instance = AsyncMock()
+        instance.get.side_effect = fake_get
+        instance.__aenter__ = AsyncMock(return_value=instance)
+        instance.__aexit__ = AsyncMock(return_value=False)
+        MockClient.return_value = instance
+        yield urls
+
+
+class TestDeclaredProbes:
+    def test_probes_the_snapshot_rows_and_the_envelope_door_only(self):
+        declared = _declared_probes(_CATALOG)
+        assert declared is not None
+        assert {p["subspace"] for p in declared} == _PROBED_IDS
+        by_id = {p["subspace"]: p for p in declared}
+        # The outbound row is probed at the admin door coord declares for it,
+        # although coord does not serve it as a snapshot.
+        assert by_id["outbound"]["door"] == _OUTBOUND_DOOR
+        assert by_id["outbound"]["door_shape"] == "envelope"
+        assert by_id["worktree"]["door_shape"] == "report"
+        assert by_id["memory"]["access"] == "tenant"
+        # A parameterized door and a doorless row are never probed.
+        assert "delivery" not in by_id
+        assert "ci" not in by_id
+
+    def test_operator_gated_by_coords_declaration_or_by_the_path(self):
+        """A probe is never cached when coord declares no twin-door class for it
+        (``access: null``) OR its door is off the twin router — either alone."""
+        twin = {"door": "/coord/twin/release/verdict", "access": "system_tenant"}
+        assert _is_operator_gated(twin) is False
+        # coord's declaration alone: a twin-router path with no access class.
+        assert _is_operator_gated({**twin, "access": None}) is True
+        # The path alone: an access class, but a door off the twin router.
+        assert (
+            _is_operator_gated({"door": "/admin/coord/x", "access": "tenant"}) is True
+        )
+        by_id = {p["subspace"]: p for p in _declared_probes(_CATALOG) or []}
+        assert _is_operator_gated(by_id["outbound"]) is True
+        assert not any(
+            _is_operator_gated(p) for sid, p in by_id.items() if sid != "outbound"
+        )
+
+    def test_a_catalog_that_declares_nothing_is_none_not_an_empty_list(self):
+        # A coord predating the declaration serves rows with no `snapshot`
+        # flag. That is "nothing declared", not "coord declares no sub-space".
+        legacy = {
+            "total": 1,
+            "entries": [
+                {
+                    "id": "release",
+                    "description": "x",
+                    "query_tool": "coord_query_release_state",
+                    "params": [],
+                    "kind": "snapshot",
+                    "status": "live",
+                }
+            ],
+        }
+        assert _declared_probes(legacy) is None
+        assert _declared_probes({"entries": "nope"}) is None
+        assert _declared_probes(["not", "a", "catalog"]) is None
+        assert _declared_probes(None) is None
+
+    def test_the_spec_ci_stubs_describe_the_same_probed_subspaces(self):
+        """The Spec CI catalog stub and matrix stub agree.
+
+        The page joins the two, so a sub-space the catalog stub declares but the
+        matrix stub omits renders an error cell under Spec CI, and one the
+        matrix stub carries but the catalog does not declare is a cell the page
+        never shows as live.
+        """
+        catalog = _spec_stub_body("**/api/v1/digital-twin/catalog")
+        matrix = _spec_stub_body("**/api/v1/digital-twin/subspaces")
+        declared = _declared_probes(catalog)
+        assert declared, "the catalog stub declares no probe"
+        probed = [cell["id"] for cell in matrix["subspaces"]]
+        assert len(probed) == len(set(probed)), "duplicate id in the matrix stub"
+        assert {p["subspace"] for p in declared} == set(probed)
+        assert matrix["probed"] == len(probed)
+
+
 class TestSubspacesEndpoint:
-    def test_probe_list_matches_pinned_coord_snapshot_ids(self):
-        """The probe list equals the hand-copied list of coord's snapshot ids.
-
-        A pin against a COPY, not against coord: a change to coord's map leaves
-        this green until someone updates ``_COORD_SNAPSHOT_SUBSPACES``. What it
-        does catch is an edit to the tuple alone. A missing id is a sub-space
-        coord serves that the page never asks about (``memory`` sat unprobed
-        from 2026-07-10 until this test); an extra id 404s at coord and renders
-        as a permanent error cell.
-        """
-        assert set(_PROBEABLE_SUBSPACES) == _COORD_SNAPSHOT_SUBSPACES
-        assert len(_PROBEABLE_SUBSPACES) == len(_COORD_SNAPSHOT_SUBSPACES)
-        # `auth` stays out on purpose (recon-sensitive; coord leaves it unmapped).
-        assert "auth" not in _PROBEABLE_SUBSPACES
-
-    def test_probe_list_matches_the_manifest_snapshot_rows(self):
-        """The probe list equals the frontend manifest's ``snapshot`` rows.
-
-        A real pin: it reads the manifest itself. A manifest ``snapshot`` row
-        this backend does not probe resolves to ``error`` forever on the page;
-        a probed id with no ``snapshot`` row is a probe nothing renders.
-        ``_lib/lifecycle.test.ts`` asserts the same equality from the frontend
-        side by parsing the tuple, because each side's CI runs only on its own
-        paths: this test catches a backend-only edit, that one a frontend-only
-        edit.
-        """
-        assert _manifest_snapshot_ids() == set(_PROBEABLE_SUBSPACES)
-
-    def test_probes_all_and_classifies_per_subspace(self):
+    def test_probes_each_declared_door_and_classifies_per_subspace(self):
         client = TestClient(_build_test_app())
 
-        # Route the mocked coord response by the sub-space id in the URL so the
-        # concurrent fan-out is deterministic regardless of completion order.
-        def fake_get(url, **kwargs):
+        # Route the mocked coord response by URL so the concurrent fan-out is
+        # deterministic regardless of completion order.
+        def route(url):
             if "/twin/release/" in url:
                 return _verdict_response(1.0, "live_aws")  # implemented
             if "/twin/infra/" in url:
                 return _verdict_response(0.4, "live_aws")  # partial
             if "/twin/config/" in url:
                 return _verdict_response(0.0, "config:unconfigured")  # blind
-            if "/twin/worktree/" in url:
-                return _status_response(404)  # no_snapshot_tool classification
-            if "/twin/health/" in url:
+            if "/twin/memory/" in url:
                 return _status_response(502)  # error
-            return _verdict_response(1.0, "live_rds")  # default implemented
+            if "/twin/worktree/" in url:
+                return _report_response()  # served, not graded
+            if "/twin/workers/" in url:
+                return _status_response(404)  # declared door that 404s
+            if url.endswith(_OUTBOUND_DOOR):
+                return _envelope_response(0.6)  # partial, read at top level
+            return None
 
-        with (
-            patch(
-                "app.api.v1.endpoints.digital_twin.get_coord_identity",
-                new=_resolved_identity(),
-            ),
-            patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
-        ):
-            instance = AsyncMock()
-            instance.get.side_effect = fake_get
-            instance.__aenter__ = AsyncMock(return_value=instance)
-            instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = instance
+        with _coord(route) as urls:
             resp = client.get(f"{API_PREFIX}/subspaces")
 
         assert resp.status_code == 200
         body = resp.json()
         by_id = {s["id"]: s for s in body["subspaces"]}
-        assert body["probed"] == len(body["subspaces"]) == len(_PROBEABLE_SUBSPACES)
-        assert set(by_id) == _COORD_SNAPSHOT_SUBSPACES
+        assert set(by_id) == _PROBED_IDS
+        assert body["probed"] == len(body["subspaces"]) == len(_PROBED_IDS)
+        assert body["restricted"] is False
         assert by_id["release"]["status"] == "implemented"
-        # Ξ_Memory rides the same verdict route as every other snapshot cell.
-        assert by_id["memory"]["status"] == "implemented"
+        assert by_id["release"]["metrics"]["provenance"] == "live_aws"
         assert by_id["infra"]["status"] == "partial"
         assert by_id["config"]["status"] == "blind"
-        assert by_id["worktree"]["status"] == "no_snapshot_tool"
-        assert by_id["health"]["status"] == "error"
-        # `auth` is intentionally NOT probed (sensitive — Cognito wiring), so it
-        # never appears in the matrix response.
-        assert "auth" not in by_id
-        # Envelope metrics ride along for the responding cells.
-        assert by_id["release"]["metrics"]["provenance"] == "live_aws"
+        assert by_id["memory"]["status"] == "error"
+        assert by_id["workers"]["status"] == "no_snapshot_tool"
+        # A report is served, never graded: no `partial` from a missing
+        # coverage, and no metrics invented for it.
+        assert by_id["worktree"]["status"] == "served"
+        assert "metrics" not in by_id["worktree"]
+        assert by_id["worktree"]["door_shape"] == "report"
+        # The envelope door is read at the top level, not as malformed.
+        assert by_id["outbound"]["status"] == "partial"
+        assert by_id["outbound"]["metrics"]["coverage"] == 0.6
+        assert by_id["outbound"]["door_shape"] == "envelope"
+        # The catalog is read first; then exactly the declared doors, each once.
+        assert urls[0].endswith(_CATALOG_PATH)
+        assert any(u.endswith(_OUTBOUND_DOOR) for u in urls)
+        assert not any("/twin/outbound/" in u for u in urls)
+        assert not any("/twin/delivery/" in u or "/twin/ci/" in u for u in urls)
+        assert len(urls) == 1 + len(_PROBED_IDS)
 
-    def test_coord_unreachable_marks_error_not_500(self):
+    def test_an_envelope_door_with_a_verdict_wrapper_reading_would_be_malformed(
+        self,
+    ):
+        """The door shape is what makes the outbound cell readable: the same
+        top-level body read through a ``{verdict}`` wrapper is malformed."""
+        client = TestClient(_build_test_app())
+        catalog = {
+            "total": 1,
+            "entries": [
+                _catalog_entry(
+                    "outbound",
+                    snapshot=True,
+                    door=_OUTBOUND_DOOR,
+                    door_shape="verdict_wrapper",
+                    access=None,
+                )
+            ],
+        }
+
+        def route(url):
+            if url.endswith(_CATALOG_PATH):
+                return _catalog_response(catalog)
+            return _envelope_response(1.0)
+
+        with _coord(route):
+            resp = client.get(f"{API_PREFIX}/subspaces")
+
+        cell = resp.json()["subspaces"][0]
+        assert cell["status"] == "error"
+        assert cell["error"] == "malformed_verdict"
+
+    def test_a_single_403_marks_only_its_own_cell(self):
+        """Another tenant's operator: the Qontinui-internal sub-spaces and the
+        admin outbound door refuse, their own `memory` and `worktree` answer.
+        The matrix is NOT `restricted` — that flag means every probe refused."""
+        client = TestClient(_build_test_app())
+
+        def route(url):
+            if "/twin/memory/" in url:
+                return _verdict_response(1.0, "coord_memory_observations")
+            if "/twin/worktree/" in url:
+                return _report_response()
+            if url.endswith(_CATALOG_PATH):
+                return None
+            return _status_response(403)
+
+        with _coord(route):
+            resp = client.get(f"{API_PREFIX}/subspaces")
+
+        body = resp.json()
+        by_id = {s["id"]: s["status"] for s in body["subspaces"]}
+        assert body["restricted"] is False
+        assert by_id["memory"] == "implemented"
+        assert by_id["worktree"] == "served"
+        for refused in ("release", "infra", "config", "workers", "outbound"):
+            assert by_id[refused] == "restricted", refused
+
+    def test_one_refused_door_alone_does_not_restrict_the_matrix(self):
+        # Only the admin outbound door refuses (a non-admin operator).
+        client = TestClient(_build_test_app())
+
+        def route(url):
+            if url.endswith(_OUTBOUND_DOOR):
+                return _status_response(403)
+            if url.endswith(_CATALOG_PATH):
+                return None
+            return _verdict_response(1.0, "live_aws")
+
+        with _coord(route):
+            body = client.get(f"{API_PREFIX}/subspaces").json()
+
+        assert body["restricted"] is False
+        statuses = {s["id"]: s["status"] for s in body["subspaces"]}
+        assert statuses["outbound"] == "restricted"
+        assert statuses["release"] == "implemented"
+
+    def test_every_probe_refused_sets_the_top_level_restricted(self):
+        # The coarse gate armed against this operator: every door answers 403.
+        client = TestClient(_build_test_app())
+
+        def route(url):
+            if url.endswith(_CATALOG_PATH):
+                return None
+            return _status_response(403)
+
+        with _coord(route):
+            resp = client.get(f"{API_PREFIX}/subspaces")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["restricted"] is True
+        assert {s["status"] for s in body["subspaces"]} == {"restricted"}
+
+    def test_coord_unreachable_degrades_with_no_invented_ids(self):
+        """No identity and no catalog ever read: an empty degraded matrix, not
+        a list of ids this module made up."""
         client = TestClient(_build_test_app())
         with patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient:
             instance = AsyncMock()
@@ -317,48 +596,123 @@ class TestSubspacesEndpoint:
             MockClient.return_value = instance
             resp = client.get(f"{API_PREFIX}/subspaces")
 
-        # Honest degradation: the matrix endpoint itself stays 200; every cell
-        # is "error" — never a 500 that blanks the whole page.
+        # Honest degradation: the matrix endpoint itself stays 200 — never a
+        # 500 that blanks the whole page.
         assert resp.status_code == 200
-        statuses = {s["status"] for s in resp.json()["subspaces"]}
-        assert statuses == {"error"}
+        assert resp.json() == {"subspaces": [], "probed": 0, "degraded": True}
 
-    def test_tenant_gate_403_surfaces_restricted(self):
-        # coord's twin tenant gate 403s every route for a non-allowed operator;
-        # the matrix surfaces a top-level `restricted` flag + per-cell
-        # "restricted" (an access decision, distinct from a 502 tool failure).
+    def test_catalog_unreadable_degrades_to_the_last_declared_list(self):
         client = TestClient(_build_test_app())
-        with (
-            patch(
-                "app.api.v1.endpoints.digital_twin.get_coord_identity",
-                new=_resolved_identity(),
-            ),
-            patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
-        ):
-            instance = AsyncMock()
-            instance.get.side_effect = lambda url, **kw: _status_response(403)
-            instance.__aenter__ = AsyncMock(return_value=instance)
-            instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = instance
+
+        def healthy(url):
+            if url.endswith(_CATALOG_PATH):
+                return None
+            return _verdict_response(1.0, "live_aws")
+
+        # A good read first: it records the declared list.
+        with _coord(healthy):
+            first = client.get(f"{API_PREFIX}/subspaces")
+        assert first.json()["restricted"] is False
+
+        from app.api.v1.endpoints.digital_twin import _MATRIX_CACHE
+
+        _MATRIX_CACHE.clear()
+
+        def route(url):
+            if url.endswith(_CATALOG_PATH):
+                return _status_response(502)
+            raise AssertionError(f"probed {url} with no catalog")
+
+        with _coord(route):
             resp = client.get(f"{API_PREFIX}/subspaces")
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["restricted"] is True
-        assert {s["status"] for s in body["subspaces"]} == {"restricted"}
+        assert body["degraded"] is True
+        assert {s["id"] for s in body["subspaces"]} == _PROBED_IDS
+        assert {s["status"] for s in body["subspaces"]} == {"error"}
+        assert {s["error"] for s in body["subspaces"]} == {"catalog_unavailable"}
+        # A degraded matrix is not cached: the next request retries coord.
+        assert _MATRIX_CACHE == {}
 
-    def test_one_restricted_cell_does_not_restrict_the_matrix(self):
-        # The split a non-system tenant sees once qontinui-coord#3128 lands: coord
-        # 403s the nine SystemTenant-scoped sub-spaces per cell while worktree
-        # and memory answer. The grid-level `restricted` flag hides the WHOLE
-        # matrix, so restricted cells must surface only as their own status,
-        # never as the flag, while any cell still answers.
+    def test_the_admin_outbound_door_is_never_shared_across_operators(self):
+        """coord gates the outbound door per OPERATOR (``require_role("admin")``)
+        while the matrix cache is per TENANT. Two operators of ONE tenant — an
+        admin, then a non-admin, then the admin again inside the TTL — each get
+        their own outbound answer; only the twin-door probes are shared."""
         client = TestClient(_build_test_app())
+        tenant = uuid4()
+        calls: list[tuple[str, str | None]] = []
 
         def fake_get(url, **kwargs):
-            subspace = url.split("/twin/", 1)[1].split("/", 1)[0]
-            if subspace in _SYSTEM_TENANT_SUBSPACES:
+            bearer = dict(kwargs.get("headers") or {}).get("Authorization")
+            calls.append((url, bearer))
+            if url.endswith(_CATALOG_PATH):
+                return _catalog_response()
+            if url.endswith(_OUTBOUND_DOOR):
+                if bearer == "Bearer admin-token":
+                    return _envelope_response(1.0)
                 return _status_response(403)
+            if "/twin/worktree/" in url:
+                return _report_response()
+            return _verdict_response(1.0, "live_aws")
+
+        def outbound_status(token: str) -> str:
+            resp = client.get(
+                f"{API_PREFIX}/subspaces",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code == 200
+            by_id = {s["id"]: s for s in resp.json()["subspaces"]}
+            assert set(by_id) == _PROBED_IDS
+            return by_id["outbound"]["status"]
+
+        with (
+            patch(
+                "app.api.v1.endpoints.digital_twin.get_coord_identity",
+                new=_resolved_identity(tenant),
+            ),
+            patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.get.side_effect = fake_get
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+
+            assert outbound_status("admin-token") == "implemented"
+            first = len(calls)
+            assert outbound_status("viewer-token") == "restricted"
+            # The second request dialled ONLY the outbound door, with its own
+            # bearer: the twin-door probes came from the tenant's cache.
+            assert calls[first:] == [
+                (f"{settings_coord_url()}{_OUTBOUND_DOOR}", "Bearer viewer-token")
+            ]
+            assert outbound_status("admin-token") == "implemented"
+
+    def test_a_cache_miss_probes_shared_and_operator_gated_doors_concurrently(
+        self,
+    ):
+        """On a miss the twin-door probes and the operator-gated door are ONE
+        fan-out: every twin-door probe here waits (bounded) for the outbound
+        probe to have started, which a twin-doors-first sequence never lets
+        happen."""
+        client = TestClient(_build_test_app())
+        started: dict[str, asyncio.Event] = {}
+
+        def outbound_event() -> asyncio.Event:
+            # Created lazily, on the loop the request runs on.
+            return started.setdefault("outbound", asyncio.Event())
+
+        async def fake_get(url, **kwargs):
+            if url.endswith(_CATALOG_PATH):
+                return _catalog_response()
+            if url.endswith(_OUTBOUND_DOOR):
+                outbound_event().set()
+                return _envelope_response(1.0)
+            await asyncio.wait_for(outbound_event().wait(), timeout=2.0)
+            if "/twin/worktree/" in url:
+                return _report_response()
             return _verdict_response(1.0, "live_aws")
 
         with (
@@ -376,38 +730,207 @@ class TestSubspacesEndpoint:
             resp = client.get(f"{API_PREFIX}/subspaces")
 
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["restricted"] is False
-        by_status: dict[str, set[str]] = {}
-        for s in body["subspaces"]:
-            by_status.setdefault(s["status"], set()).add(s["id"])
-        assert by_status["restricted"] == _SYSTEM_TENANT_SUBSPACES
-        assert len(by_status["restricted"]) == 9
-        assert by_status["implemented"] == {"worktree", "memory"}
-        assert body["probed"] == len(_PROBEABLE_SUBSPACES)
+        statuses = {s["id"]: s["status"] for s in resp.json()["subspaces"]}
+        assert set(statuses) == _PROBED_IDS
+        assert "error" not in statuses.values()
 
-    def test_empty_probe_list_is_not_restricted(self):
-        # `all()` over nothing is True; an empty matrix is not an access denial.
+    def test_catalog_unreadable_with_no_prior_declaration_is_empty(self):
         client = TestClient(_build_test_app())
-        with (
-            patch(
-                "app.api.v1.endpoints.digital_twin.get_coord_identity",
-                new=_resolved_identity(),
-            ),
-            patch("app.api.v1.endpoints.digital_twin._PROBEABLE_SUBSPACES", ()),
-            patch("app.api.v1.endpoints.digital_twin.httpx.AsyncClient") as MockClient,
-        ):
-            instance = AsyncMock()
-            instance.get.side_effect = lambda url, **kw: _status_response(403)
-            instance.__aenter__ = AsyncMock(return_value=instance)
-            instance.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = instance
-            resp = client.get(f"{API_PREFIX}/subspaces")
 
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["probed"] == 0
-        assert body["restricted"] is False
+        def route(url):
+            if url.endswith(_CATALOG_PATH):
+                return _catalog_response({"entries": "not a list"})
+            raise AssertionError(f"probed {url} with no catalog")
+
+        with _coord(route):
+            body = client.get(f"{API_PREFIX}/subspaces").json()
+
+        assert body == {"subspaces": [], "probed": 0, "degraded": True}
+
+
+# ---------------------------------------------------------------------------
+# The admin outbound door's age: the bucket its drift class comes from
+#
+# coord's ``OutboundBudgetResponse`` has no answer-level ``staleness_seconds``;
+# each bucket carries its own. ``get_outbound_budget`` sorts the buckets
+# worst-first and takes ``drift_class`` from the first, so that bucket's age
+# dates the class (qontinui-coord ``outbound_budget_read.rs``, read at
+# origin/main 58719876). These bodies are the door's real shape.
+# ---------------------------------------------------------------------------
+
+_OUTBOUND_ONLY_CATALOG = {
+    "total": 2,
+    "entries": [
+        _catalog_entry(
+            "outbound",
+            snapshot=False,
+            door=_OUTBOUND_DOOR,
+            door_shape="envelope",
+            access=None,
+        ),
+        _snapshot("release"),
+    ],
+}
+
+
+_MISSING = object()
+
+
+def _bucket(drift_class: str, age: Any, resource: str = "core:134903706") -> dict:
+    """One served bucket (``OutboundBudgetBucket``), observed ``age`` seconds
+    before the read. ``age`` is sent as given (``_MISSING`` leaves the field
+    out), so a test can send a value coord never would."""
+    bucket = {
+        "dependency": "github",
+        "resource": resource,
+        "installation_id": 134903706,
+        "drift_class": drift_class,
+        "drift_subclass": None,
+        "remaining": 3189,
+        "limit_total": 5850,
+        "remaining_fraction": 0.545,
+        "burn_rate_per_min": 84.8,
+        "paced_rate_per_min": 78.0,
+        "below_low_threshold": False,
+        "low_threshold_kind": "coord_github_ratelimit_low",
+        "cooldown_until": None,
+        "reset_at": None,
+        "serving_stale_reads": None,
+        "observed_at": "2026-10-27T12:00:00+00:00",
+        # coord's own bound: stale past 10 polls of 30 s.
+        "freshness": "stale" if isinstance(age, int) and age > 300 else "fresh",
+        "top_consumers": None,
+        "caller_breakdown": None,
+    }
+    if age is not _MISSING:
+        bucket["staleness_seconds"] = age
+    return bucket
+
+
+def _outbound_body(buckets: list[dict], drift_class: str | None = None) -> dict:
+    """The door's body over ``buckets`` (already worst-first). Its class is
+    the first bucket's unless ``drift_class`` says otherwise, as coord's own
+    rule would not."""
+    if drift_class is None:
+        drift_class = buckets[0]["drift_class"] if buckets else "unknown"
+    return {
+        "dependency": None,
+        "scope_reason": "system_tenant_fleet_wide",
+        "scoped_installation_ids": [],
+        "buckets": buckets,
+        "count": len(buckets),
+        "drift_class": drift_class,
+        "coverage": 1.0 if buckets else 0.0,
+        "staleness_threshold_seconds": 300,
+        "observer_interval_seconds": 30,
+        "low_fraction_threshold": 0.1,
+        "budget_target_fraction": 0.8,
+        "provenance": "persisted_oplog",
+        "credibility": 0.95,
+    }
+
+
+def _matrix_cells(body: dict, release_staleness: Any = 30) -> dict[str, dict]:
+    """GET the matrix over HTTP, coord answering ``body`` at the outbound door
+    and a twin-door verdict aged ``release_staleness`` for ``release``; return
+    the cells by id."""
+    client = TestClient(_build_test_app())
+
+    def route(url):
+        if url.endswith(_CATALOG_PATH):
+            return _catalog_response(_OUTBOUND_ONLY_CATALOG)
+        if url.endswith(_OUTBOUND_DOOR):
+            return _json_response(body)
+        if "/twin/release/" in url:
+            return _json_response(
+                {
+                    "subspace": "release",
+                    "tool": "coord_query_release_state",
+                    "verdict": {
+                        "coverage": 1.0,
+                        "credibility": 0.9,
+                        "provenance": "ecs_describe_tasks",
+                        "drift_class": "none",
+                        "staleness_seconds": release_staleness,
+                        # A wrapper verdict's own bucket-like field is not
+                        # read: only an envelope door's buckets are.
+                        "buckets": [_bucket("none", 999)],
+                    },
+                }
+            )
+        return None
+
+    with _coord(route):
+        resp = client.get(f"{API_PREFIX}/subspaces")
+    assert resp.status_code == 200
+    return {c["id"]: c for c in resp.json()["subspaces"]}
+
+
+def _outbound_cell(body: dict) -> dict:
+    return _matrix_cells(body)["outbound"]
+
+
+class TestOutboundEnvelopeAge:
+    def test_carries_the_age_of_the_bucket_its_class_comes_from(self):
+        # Worst-first: the burning bucket drives the class. Behind it an
+        # orphan last observed weeks ago, which is older but not the class's.
+        cell = _outbound_cell(
+            _outbound_body(
+                [_bucket("burning", 12), _bucket("nominal", 3_009_931, "search:1")]
+            )
+        )
+        assert cell["status"] == "implemented"
+        assert cell["door_shape"] == "envelope"
+        assert cell["metrics"]["drift_class"] == "burning"
+        assert cell["metrics"]["staleness_seconds"] == 12
+
+    def test_an_orphan_bucket_that_drives_the_class_is_dated_by_its_own_age(self):
+        cell = _outbound_cell(
+            _outbound_body([_bucket("exhausted", 3_009_931), _bucket("nominal", 2)])
+        )
+        assert cell["metrics"]["drift_class"] == "exhausted"
+        assert cell["metrics"]["staleness_seconds"] == 3_009_931
+
+    def test_serves_no_age_when_coord_observed_no_bucket(self):
+        cell = _outbound_cell(_outbound_body([]))
+        assert cell["status"] == "blind"
+        assert cell["metrics"]["coverage"] == 0.0
+        assert cell["metrics"]["staleness_seconds"] is None
+
+    def test_serves_no_age_when_the_first_bucket_is_not_where_the_class_comes_from(
+        self,
+    ):
+        # Not coord's rule today; if it changes, no bucket's age is passed off
+        # as the class's.
+        cell = _outbound_cell(
+            _outbound_body([_bucket("nominal", 12)], drift_class="exhausted")
+        )
+        assert cell["metrics"]["drift_class"] == "exhausted"
+        assert cell["metrics"]["staleness_seconds"] is None
+
+    @pytest.mark.parametrize("age", [_MISSING, None, "12", True, -1])
+    def test_serves_no_age_that_is_not_a_number_of_seconds(self, age):
+        cell = _outbound_cell(_outbound_body([_bucket("burning", age)]))
+        assert cell["metrics"]["drift_class"] == "burning"
+        assert cell["metrics"]["staleness_seconds"] is None
+
+    @pytest.mark.parametrize("age", [float("nan"), float("inf"), float("-inf")])
+    def test_takes_no_age_from_a_float_that_is_not_finite(self, age):
+        # Called directly: over HTTP the route's ``-> Any`` serialization
+        # already writes a non-finite float as null, so only the function's
+        # own guard can be seen to hold here.
+        envelope = _outbound_body([_bucket("burning", age)])
+        assert _class_bucket_age(envelope) is None
+        assert _class_bucket_age(_outbound_body([_bucket("burning", 12)])) == 12
+
+    def test_a_twin_door_verdict_keeps_its_own_staleness(self):
+        body = _outbound_body([_bucket("burning", 12)])
+        release = _matrix_cells(body, release_staleness=30)["release"]
+        assert release["door_shape"] == "verdict_wrapper"
+        assert release["metrics"]["staleness_seconds"] == 30
+        # coord omits it on a live answer: passed through as it came.
+        release = _matrix_cells(body, release_staleness=None)["release"]
+        assert release["metrics"]["staleness_seconds"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -442,12 +965,18 @@ def _mock_coord(identity_mock, coverage_by_tenant=None):
     so a per-tenant matrix is distinguishable in the response body — the point
     being that a wrong cache key serves the WRONG TENANT'S NUMBERS, not merely
     a duplicate key.
+
+    The catalog read is recorded too: it rides the same forwarded headers, and
+    it declares only verdict-wrapper snapshots (``_WRAPPER_CATALOG``) so every
+    cell is graded from the per-tenant coverage.
     """
     recorded: list[dict[str, str]] = []
 
     def fake_get(url, **kwargs):
         headers = dict(kwargs.get("headers") or {})
         recorded.append(headers)
+        if url.endswith(_CATALOG_PATH):
+            return _catalog_response(_WRAPPER_CATALOG)
         active = headers.get(ACTIVE_TENANT_HEADER)
         coverage = (coverage_by_tenant or {}).get(active, 1.0)
         return _verdict_response(coverage, "live_aws")
@@ -471,11 +1000,15 @@ def _mock_coord(identity_mock, coverage_by_tenant=None):
 def _clear_matrix_cache():
     """The fan-out cache is a module global keyed by tenant; a leftover entry
     from another test would let a broken key look correct."""
-    from app.api.v1.endpoints.digital_twin import _MATRIX_CACHE
+    from app.api.v1.endpoints import digital_twin
 
-    _MATRIX_CACHE.clear()
+    digital_twin._MATRIX_CACHE.clear()
+    # The last declared probe list is module state too: a list left by another
+    # test would turn a "never declared" degrade into a "last declared" one.
+    digital_twin._LAST_DECLARED = None
     yield
-    _MATRIX_CACHE.clear()
+    digital_twin._MATRIX_CACHE.clear()
+    digital_twin._LAST_DECLARED = None
 
 
 class TestActiveTenantSelection:

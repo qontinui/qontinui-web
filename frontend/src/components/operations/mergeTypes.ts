@@ -1,3 +1,5 @@
+import type { PrHold } from "./prHold";
+
 // ============================================================================
 // Merge-train wire types
 // ============================================================================
@@ -200,6 +202,13 @@ export interface PrRow {
   close_cause?: string | null;
   /** kebab-case deploy state ("has my merged PR deployed yet?"). */
   deploy_state?: string | null;
+  /**
+   * coord hold (plan `2026-10-04-coord-pr-hold-without-github-drafts`). `null`
+   * = read and not held; an ABSENT key = UNKNOWN (an older coord);
+   * `hold_unknown: true` = coord's hold read failed. See `prHold.ts`.
+   */
+  hold?: PrHold | null;
+  hold_unknown?: boolean;
 }
 
 export interface PrListResponse {
@@ -223,6 +232,21 @@ export interface PrListResponse {
 export type MergeStatusToken =
   | "draft"
   | "ci-failed"
+  /** CI is red, but `main` has moved past the PR's CI base, so the red may be
+   *  main's fault rather than the PR's. Emitted from the predicate code
+   *  `ci-not-green-stale-base`, ABOVE plain `ci-failed`. The remedy is coord's
+   *  own BEHIND freshen (update the branch; CI re-runs) — not author work.
+   *  Plan `2026-09-05-a-red-pr-is-classified-before-coord-looks-at-behind-so-a-stale-base-is-never-refreshed`. */
+  | "ci-failed-stale-base"
+  /** Added by qontinui-coord#2723 (not yet emitted by coord main — mapped here
+   *  ahead of it): CI is red and EVERY failing check run at the head failed on
+   *  a self-hosted runner with zero failed steps — an infrastructure failure,
+   *  proven by coord's per-job classifier. Not the author's code and not a
+   *  code fix: the remedy is re-running the failed jobs once the runner is
+   *  healthy, an infra/operator-side action (coord's own bounded re-run reflex
+   *  is a deferred phase). Plan
+   *  `2026-09-21-coord-already-classifies-an-infra-killed-ci-run-but-the-merge-classifier-never-reads-it`. */
+  | "ci-failed-infra-kill"
   | "ci-pending"
   | "conflicts"
   | "behind-base"

@@ -45,6 +45,7 @@ vi.mock("@/contexts/auth-context", () => ({
 }));
 
 import { MergeOrchestrationSettings } from "./MergeOrchestrationSettings";
+import { UNKNOWN_AMBER } from "@/components/console";
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -1895,5 +1896,530 @@ describe("<MergeOrchestrationSettings> top-level read errors", () => {
     render(<MergeOrchestrationSettings />);
     await screen.findByTestId("settings-auto-fix-red-main");
     expect(screen.queryByText(/HTTP 503/)).toBeNull();
+  });
+});
+
+// ----------------------------------------------------------------------------
+// The expedited-land dials (plan 2026-10-13-coord-expedited-land-lever-for-agents,
+// Phase 1b). The off-switch must be reachable here before the lever ships `on`.
+// The load-bearing assertions: an unreadable value is shown as UNKNOWN (never as
+// "inherit"), and only EDITED expedite keys go on the wire — a re-sent stale
+// value would silently undo another operator's switch-off.
+// ----------------------------------------------------------------------------
+
+describe("<MergeOrchestrationSettings> expedited-land dials", () => {
+  const REPO = "acme/app";
+  const TENANT = "00000000-0000-0000-0000-000000000001";
+
+  type Dials = {
+    expedited_land: "on" | "shadow" | "off" | null;
+    expedite_max_files: number | null;
+    expedite_max_changed_lines: number | null;
+    expedite_review_arm: boolean | null;
+  };
+
+  const STORED_TENANT: Dials = {
+    expedited_land: "shadow",
+    expedite_max_files: 12,
+    expedite_max_changed_lines: null,
+    expedite_review_arm: true,
+  };
+
+  const STORED_REPO: Dials = {
+    expedited_land: "on",
+    expedite_max_files: null,
+    expedite_max_changed_lines: 250,
+    expedite_review_arm: null,
+  };
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  /**
+   * `tenant` / `repo` are the wire values: `"absent"` omits the key (an older
+   * coord build), `null` is coord saying it could not read them.
+   */
+  function route(
+    url: string,
+    init: RequestInit | undefined,
+    tenant: Dials | null | "absent",
+    repo: Dials | null | "absent",
+    withRepos: boolean
+  ) {
+    if (init?.method === "PATCH") {
+      if (url.includes("/profile")) {
+        return jsonResponse({
+          tenant_id: TENANT,
+          repo: REPO,
+          profile: makeProfile({ repo: REPO }),
+          merge_enabled_override: null,
+          ...(repo === "absent" ? {} : { expedite_override: repo }),
+        });
+      }
+      return jsonResponse({ tenant_id: TENANT, profile: makeProfile() });
+    }
+    if (url.includes("/pr-merge/settings")) {
+      return jsonResponse({
+        tenant_id: TENANT,
+        profile: makeProfile(),
+        ...(tenant === "absent" ? {} : { expedite_tenant: tenant }),
+      });
+    }
+    if (url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      return jsonResponse({
+        tenant_id: TENANT,
+        repo: REPO,
+        profile: makeProfile({ repo: REPO }),
+        merge_enabled_override: null,
+        ...(repo === "absent" ? {} : { expedite_override: repo }),
+      });
+    }
+    if (url.includes("/pr-merge/repos") && withRepos) {
+      return jsonResponse({
+        repos: [
+          {
+            repo: REPO,
+            role: "owner",
+            framework_signals: [],
+            profile_source: null,
+            profile_version: null,
+            merge_enabled: true,
+            merge_enabled_override: null,
+          },
+        ],
+        total: 1,
+      });
+    }
+    return routeGet(url, {});
+  }
+
+  function renderWith(
+    tenant: Dials | null | "absent",
+    repo: Dials | null | "absent" = "absent",
+    withRepos = false
+  ) {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      Promise.resolve(route(url, init, tenant, repo, withRepos))
+    );
+    render(<MergeOrchestrationSettings />);
+  }
+
+  function patchBodies(): Array<{
+    url: string;
+    body: Record<string, unknown>;
+  }> {
+    return fetchMock.mock.calls
+      .filter((c) => (c[1] as RequestInit | undefined)?.method === "PATCH")
+      .map((c) => ({
+        url: c[0] as string,
+        body: JSON.parse((c[1] as RequestInit).body as string),
+      }));
+  }
+
+  const EXPEDITE_KEYS = [
+    "expedited_land",
+    "expedite_max_files",
+    "expedite_max_changed_lines",
+    "expedite_review_arm",
+  ];
+
+  const el = (id: string) => screen.getByTestId(id) as HTMLInputElement;
+
+  // --- Tenant defaults -------------------------------------------------------
+
+  it("renders the tenant's STORED dials, null fields as inherit", async () => {
+    renderWith(STORED_TENANT);
+    const land = (await screen.findByTestId(
+      "settings-expedited-land"
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(land.value).toBe("shadow"));
+    expect(el("settings-expedite-max-files").value).toBe("12");
+    expect(el("settings-expedite-max-changed-lines").value).toBe("");
+    expect(el("settings-expedite-review-arm").value).toBe("true");
+    expect(screen.queryByTestId("settings-expedite-unknown")).toBeNull();
+    expect(screen.queryByTestId("settings-expedite-unsupported")).toBeNull();
+  });
+
+  it("sends NO expedite key on a tenant save that did not touch them", async () => {
+    renderWith(STORED_TENANT);
+    await screen.findByTestId("settings-expedited-land");
+    fireEvent.click(screen.getByTestId("settings-save"));
+    await waitFor(() => expect(patchBodies()).toHaveLength(1));
+    const { body } = patchBodies()[0];
+    for (const k of EXPEDITE_KEYS) expect(k in body).toBe(false);
+    // The always-sent fields are still there.
+    expect(body.auto_fix_red_main).toBe(false);
+  });
+
+  it("switches the lever OFF tenant-wide, sending only that key", async () => {
+    renderWith(STORED_TENANT);
+    const land = await screen.findByTestId("settings-expedited-land");
+    await waitFor(() =>
+      expect((land as HTMLSelectElement).value).toBe("shadow")
+    );
+    fireEvent.change(land, { target: { value: "off" } });
+    fireEvent.click(screen.getByTestId("settings-save"));
+    await waitFor(() => expect(patchBodies()).toHaveLength(1));
+    const { url, body } = patchBodies()[0];
+    expect(url).toContain("/pr-merge/settings");
+    expect(body.expedited_land).toBe("off");
+    for (const k of EXPEDITE_KEYS.filter((k) => k !== "expedited_land")) {
+      expect(k in body).toBe(false);
+    }
+  });
+
+  it("clears tenant dials to inherit with null, and sends sizes as integers", async () => {
+    renderWith(STORED_TENANT);
+    await waitFor(() =>
+      expect(el("settings-expedite-max-files").value).toBe("12")
+    );
+    fireEvent.change(el("settings-expedited-land"), {
+      target: { value: "inherit" },
+    });
+    fireEvent.change(el("settings-expedite-review-arm"), {
+      target: { value: "inherit" },
+    });
+    fireEvent.change(el("settings-expedite-max-files"), {
+      target: { value: "" },
+    });
+    fireEvent.change(el("settings-expedite-max-changed-lines"), {
+      target: { value: "300" },
+    });
+    fireEvent.click(screen.getByTestId("settings-save"));
+    await waitFor(() => expect(patchBodies()).toHaveLength(1));
+    const { body } = patchBodies()[0];
+    expect(body.expedited_land).toBeNull();
+    expect(body.expedite_review_arm).toBeNull();
+    expect(body.expedite_max_files).toBeNull();
+    expect(body.expedite_max_changed_lines).toBe(300);
+  });
+
+  it("refuses a non-positive size before sending anything", async () => {
+    renderWith(STORED_TENANT);
+    await waitFor(() =>
+      expect(el("settings-expedite-max-files").value).toBe("12")
+    );
+    for (const bad of ["0", "-3", "1.5"]) {
+      fireEvent.change(el("settings-expedite-max-files"), {
+        target: { value: bad },
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("settings-save"));
+      });
+      expect(
+        await screen.findByText(/expedite_max_files: must be a positive/)
+      ).toBeInTheDocument();
+    }
+    expect(patchBodies()).toEqual([]);
+  });
+
+  it("shows UNKNOWN, not inherit, when coord could not read the tenant dials — and stays settable", async () => {
+    renderWith(null);
+    const land = (await screen.findByTestId(
+      "settings-expedited-land"
+    )) as HTMLSelectElement;
+    expect(land.value).toBe("unknown");
+    expect(el("settings-expedite-review-arm").value).toBe("unknown");
+    expect(el("settings-expedite-max-files").placeholder).toBe("unknown");
+    expect(screen.getByTestId("settings-expedite-unknown")).toBeInTheDocument();
+    expect(land).not.toBeDisabled();
+
+    fireEvent.change(land, { target: { value: "off" } });
+    fireEvent.click(screen.getByTestId("settings-save"));
+    await waitFor(() => expect(patchBodies()).toHaveLength(1));
+    const { body } = patchBodies()[0];
+    expect(body.expedited_land).toBe("off");
+    // The untouched UNKNOWN arm is not sent as anything.
+    expect("expedite_review_arm" in body).toBe(false);
+  });
+
+  it("never re-sends a saved expedite edit when the dials stay unreadable", async () => {
+    renderWith(null);
+    const land = (await screen.findByTestId(
+      "settings-expedited-land"
+    )) as HTMLSelectElement;
+    fireEvent.change(land, { target: { value: "off" } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("settings-save"));
+    });
+    await waitFor(() => expect(patchBodies()).toHaveLength(1));
+    expect(patchBodies()[0].body.expedited_land).toBe("off");
+    // After the 2xx the control holds what coord now stores; the reload's
+    // `null` changes nothing, and the edit is consumed.
+    expect(land.value).toBe("off");
+
+    // An unrelated save must not carry the consumed edit.
+    fireEvent.change(el("settings-min-green-dwell"), {
+      target: { value: "90" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("settings-save"));
+    });
+    await waitFor(() => expect(patchBodies()).toHaveLength(2));
+    const second = patchBodies()[1].body;
+    expect(second.min_green_dwell_secs).toBe(90);
+    for (const k of EXPEDITE_KEYS) expect(k in second).toBe(false);
+  });
+
+  it("shows the value just SAVED, not the pre-save read, when the reload fails", async () => {
+    let settingsReads = 0;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (
+        init?.method !== "PATCH" &&
+        url.includes("/pr-merge/settings") &&
+        ++settingsReads > 1
+      ) {
+        return Promise.resolve(new Response("down", { status: 503 }));
+      }
+      return Promise.resolve(route(url, init, STORED_TENANT, "absent", false));
+    });
+    render(<MergeOrchestrationSettings />);
+    const land = (await screen.findByTestId(
+      "settings-expedited-land"
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(land.value).toBe("shadow"));
+    fireEvent.change(land, { target: { value: "off" } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("settings-save"));
+    });
+    await screen.findByText(/settings: HTTP 503/);
+    expect(settingsReads).toBe(2);
+    // coord stores `off`; the stale pre-save `shadow` must not come back.
+    expect(land.value).toBe("off");
+  });
+
+  it("refuses an unparseable size instead of sending it as a clear", async () => {
+    renderWith(STORED_TENANT);
+    await waitFor(() =>
+      expect(el("settings-expedite-max-files").value).toBe("12")
+    );
+    fireEvent.change(el("settings-expedite-max-files"), {
+      target: { value: "1e3" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("settings-save"));
+    });
+    expect(
+      await screen.findByText(/expedite_max_files: must be a positive/)
+    ).toBeInTheDocument();
+    expect(patchBodies()).toEqual([]);
+  });
+
+  it("shows coord's 422 dial refusal by its message, naming the field", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        const coordBody = JSON.stringify({
+          error: "dial_value_invalid",
+          field: "expedited_land",
+          message: "`expedited_land` must be one of on, shadow, off",
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: coordBody }), { status: 422 })
+        );
+      }
+      return Promise.resolve(route(url, init, STORED_TENANT, "absent", false));
+    });
+    render(<MergeOrchestrationSettings />);
+    const land = await screen.findByTestId("settings-expedited-land");
+    fireEvent.change(land, { target: { value: "off" } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("settings-save"));
+    });
+    expect(
+      await screen.findByText(/expedited_land/, { selector: "p" })
+    ).toBeInTheDocument();
+  });
+
+  it("disables the dials, says why, and sends no key on an older coord build", async () => {
+    renderWith("absent");
+    const land = await screen.findByTestId("settings-expedited-land");
+    expect(land).toBeDisabled();
+    expect(
+      screen.getByTestId("settings-expedite-unsupported")
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("settings-save"));
+    await waitFor(() => expect(patchBodies()).toHaveLength(1));
+    const { body } = patchBodies()[0];
+    for (const k of EXPEDITE_KEYS) expect(k in body).toBe(false);
+  });
+
+  // --- Per-repo override -----------------------------------------------------
+
+  it("preloads the repo's STORED dials", async () => {
+    renderWith(STORED_TENANT, STORED_REPO, true);
+    await screen.findByTestId(`repo-card-${REPO}`);
+    await waitFor(() =>
+      expect(el(`repo-expedited-land-${REPO}`).value).toBe("on")
+    );
+    expect(el(`repo-expedite-max-files-${REPO}`).value).toBe("");
+    expect(el(`repo-expedite-max-changed-lines-${REPO}`).value).toBe("250");
+    expect(el(`repo-expedite-review-arm-${REPO}`).value).toBe("inherit");
+  });
+
+  it("PATCHes only the edited repo dial, and the repo kill switch to off", async () => {
+    renderWith(STORED_TENANT, STORED_REPO, true);
+    await waitFor(() =>
+      expect(el(`repo-expedited-land-${REPO}`).value).toBe("on")
+    );
+    fireEvent.change(el(`repo-expedited-land-${REPO}`), {
+      target: { value: "off" },
+    });
+    fireEvent.change(el(`repo-expedite-review-arm-${REPO}`), {
+      target: { value: "false" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    });
+    await waitFor(() => expect(patchBodies()).toHaveLength(1));
+    const { url, body } = patchBodies()[0];
+    expect(url).toContain(`/pr-merge/repos/${REPO}/profile`);
+    expect(body).toEqual({
+      expedited_land: "off",
+      expedite_review_arm: false,
+    });
+  });
+
+  it("sends no PATCH on a no-op save of a preloaded repo card", async () => {
+    renderWith(STORED_TENANT, STORED_REPO, true);
+    await waitFor(() =>
+      expect(el(`repo-expedited-land-${REPO}`).value).toBe("on")
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    });
+    expect(patchBodies()).toEqual([]);
+  });
+
+  it("shows the repo dials as UNKNOWN when coord could not read them", async () => {
+    renderWith(STORED_TENANT, null, true);
+    await screen.findByTestId(`repo-expedite-unknown-${REPO}`);
+    expect(el(`repo-expedited-land-${REPO}`).value).toBe("unknown");
+    expect(el(`repo-expedited-land-${REPO}`)).not.toBeDisabled();
+  });
+
+  it("disables the repo dials when the tenant read shows an older coord build", async () => {
+    renderWith("absent", "absent", true);
+    await screen.findByTestId(`repo-card-${REPO}`);
+    expect(el(`repo-expedited-land-${REPO}`)).toBeDisabled();
+    expect(
+      screen.getByTestId(`repo-expedite-unsupported-${REPO}`)
+    ).toBeInTheDocument();
+  });
+});
+
+// Plan `2026-08-27-operator-touch-read-and-surface` C3: the SLO Dashboard's
+// tenant-level operator-touch line, and the two dead neighbours labelled so a
+// reader can tell which numbers are live.
+describe("<MergeOrchestrationSettings> SLO operator-touch strip", () => {
+  const SLO_REPO = "qontinui/qontinui-web";
+
+  function sloWindow() {
+    return {
+      auto_merge_success_rate: 0.9,
+      escalation_rate: 0,
+      post_merge_verification_lag_p95_seconds: null,
+      operator_override_rate: 0,
+      total_decisions: 3,
+    };
+  }
+
+  function routeSlo(extra: Record<string, unknown>) {
+    return (url: string) => {
+      if (url.includes("/pr-merge/slo")) {
+        return Promise.resolve(
+          jsonResponse({
+            tenant_id: "00000000-0000-0000-0000-000000000001",
+            repos: [
+              {
+                repo: SLO_REPO,
+                merge_enabled: true,
+                merge_enabled_override: null,
+                windows: { last_7d: sloWindow(), last_30d: sloWindow() },
+              },
+            ],
+            kill_switch_history_last_30d: [],
+            generated_at: "2026-09-27T00:00:00Z",
+            ...extra,
+          })
+        );
+      }
+      return Promise.resolve(routeGet(url, {}));
+    };
+  }
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("says Not yet measured for an empty touch store — never 0", async () => {
+    const empty = { measurement: "not_yet_measured" };
+    fetchMock.mockImplementation(
+      routeSlo({
+        operator_touch: { last_7d: empty, last_30d: empty },
+        structurally_zero: ["operator_override_rate", "escalation_rate"],
+      })
+    );
+    render(<MergeOrchestrationSettings />);
+    const w7 = await screen.findByTestId("slo-operator-touch-7d");
+    expect(w7).toHaveTextContent(
+      "Not yet measured — the touch emitter has not run"
+    );
+    expect(w7).toHaveAttribute("data-touch-state", "not_yet_measured");
+    // One tenant-level line, not a tile per repo card.
+    expect(screen.getAllByTestId("slo-operator-touch-strip")).toHaveLength(1);
+    expect(
+      screen.getByTestId(`slo-repo-card-${SLO_REPO}`)
+    ).not.toHaveTextContent("Operator touches");
+  });
+
+  it("labels the two dead neighbours structurally zero", async () => {
+    fetchMock.mockImplementation(
+      routeSlo({
+        operator_touch: {
+          last_7d: {
+            measurement: "measured",
+            touches: 4,
+            operator_reaching: 2,
+            operator_reaching_per_day: 0.5,
+            agent_absorbed_rate: 0.5,
+            unknown_share: 0,
+          },
+          last_30d: { measurement: "unreadable", unreadable_reason: "db_unavailable" },
+        },
+        structurally_zero: ["operator_override_rate", "escalation_rate"],
+      })
+    );
+    render(<MergeOrchestrationSettings />);
+    const override = await screen.findByTestId(
+      "slo-structurally-zero-operator_override_rate"
+    );
+    expect(override).toHaveTextContent("structurally 0");
+    expect(
+      screen.getByTestId("slo-structurally-zero-escalation_rate")
+    ).toHaveTextContent("structurally 0");
+    // The live one is NOT labelled dead, and says what it measured.
+    expect(screen.getByTestId("slo-operator-touch-7d")).toHaveTextContent(
+      "0.5/day reached you · 50.0% agent-absorbable"
+    );
+    expect(screen.getByTestId("slo-operator-touch-30d")).toHaveAttribute(
+      "data-touch-state",
+      "unknown"
+    );
+    // The unknown window wears the console's own UNKNOWN_AMBER token.
+    const unknownText = screen
+      .getByTestId("slo-operator-touch-30d")
+      .querySelector("span:last-child");
+    expect(unknownText?.className).toContain(UNKNOWN_AMBER);
+  });
+
+  it("labels nothing dead, and shows the touch line as unknown, on an older coord", async () => {
+    fetchMock.mockImplementation(routeSlo({}));
+    render(<MergeOrchestrationSettings />);
+    const w7 = await screen.findByTestId("slo-operator-touch-7d");
+    expect(w7).toHaveAttribute("data-touch-state", "unknown");
+    expect(
+      screen.queryByTestId("slo-structurally-zero-operator_override_rate")
+    ).toBeNull();
   });
 });

@@ -52,7 +52,7 @@ import {
   type ResolveSessionResponse,
   type SessionCard,
 } from "@/services/agent-sessions-api";
-import { SessionsApiError } from "./api";
+import { SessionsApiError } from "@/lib/api/operations/sessions";
 import type { SessionRow } from "./types";
 
 /**

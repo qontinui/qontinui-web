@@ -15,12 +15,25 @@ const listRepos = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...a: unknown[]) => httpGet(...a),
-    put: (...a: unknown[]) => httpPut(...a),
+    // The dials go through `httpClient.fetch` (the typed /operations client);
+    // route each request onto the per-verb mock the assertions below read.
+    fetch: async (url: string, init: { method?: string; body?: string }) => {
+      const method = init.method ?? "GET";
+      const body = JSON.parse(init.body ?? "null");
+      let out: unknown;
+      if (method === "GET") out = await httpGet(url);
+      else if (method === "PUT") out = await httpPut(url, body);
+      else throw new Error(`fetch mock: unexpected ${method} ${url}`);
+      // A mock that resolves a `Response` (an error path) is answered
+      // as-is, so a non-2xx goes through `readJson` like the real one.
+      return out instanceof Response
+        ? out
+        : new Response(JSON.stringify(out ?? null));
+    },
   },
 }));
 
-vi.mock("@/components/sessions/api", () => ({
+vi.mock("@/lib/api/operations/tenants", () => ({
   listRegisteredRepos: (...a: unknown[]) => listRepos(...a),
 }));
 
@@ -58,7 +71,14 @@ function scopeView(scope = "all", resolved = "default") {
 }
 
 function deliveryView(mode = "in_session_with_spawn_fallback") {
-  return { repo: REPO, mode, provenance_known: false, can_edit: true };
+  return {
+    repo: REPO,
+    mode,
+    resolved_scope: null,
+    stored_value: null,
+    provenance_known: false,
+    can_edit: true,
+  };
 }
 
 function routeGets(

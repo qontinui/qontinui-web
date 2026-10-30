@@ -34,6 +34,7 @@ from app.api.v1.endpoints import (
     automation_ws,
     background_removal,
     batch_import,
+    build_records,
     capture,
     chat_sessions,
     claude_accounts,
@@ -74,8 +75,10 @@ from app.api.v1.endpoints import (
     helper_tasks,
     historical,
     identity_resolution,
+    image_assets,
     images,
     integration_testing,
+    internal,
     issues,
     known_issues,
     library,
@@ -83,12 +86,14 @@ from app.api.v1.endpoints import (
     notifications,
     operations,
     organizations,
+    overlord_labels,
     overview,
     pair_codes,
     phase_results,
     plan_library,
     plan_library_followups,
     plan_library_scan_roots,
+    presentation,
     project_files,
     project_images,
     project_screenshots,
@@ -119,13 +124,16 @@ from app.api.v1.endpoints import (
     semantic_search,
     served_routes,
     session_repository,
+    session_runs,
     settings,
     skills,
     snapshots,
+    spawn_ledger,
     state_discovery,
     state_discovery_results,
     state_machine_configs,
     task_runs,
+    taste,
     template_capture,
     training,
     training_datasets,
@@ -236,6 +244,10 @@ api_router.include_router(
 api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
+# Internal coord -> web service surface (no user auth; shared-secret gated).
+# `POST /internal/coord-push` sends operator-action-item pushes for coord
+# (plan 2026-10-12-operator-action-items-pushed-to-the-phone, Phase 3).
+api_router.include_router(internal.router, prefix="/internal", tags=["internal"])
 # Per-repo follow-up dials (post-merge follow-up scope, continuation-delivery
 # mode) — proxies of coord's two per-repo `tenant_repo_profiles` dials, under
 # the same `/operations` prefix as the fleet-policy proxy they copy, so the
@@ -243,6 +255,23 @@ api_router.include_router(operations.router, prefix="/operations", tags=["operat
 # Plan `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` 4b.
 api_router.include_router(
     repo_followup_dials.router, prefix="/operations", tags=["operations"]
+)
+# Spawn ledger reads — every spawn coord was asked to place, where it went,
+# how long it waited and how it ended. Under `/operations` beside the reads the
+# Spawns page uses with it; a sibling module so the operations package's hub
+# file is untouched. Plan
+# `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration` Phase 5.
+api_router.include_router(
+    spawn_ledger.router, prefix="/operations", tags=["operations"]
+)
+# Session load reads — how long each work type holds a session slot, how many
+# sessions each machine carries against its configured session budget, and how
+# demanded slot-hours grow against the fleet's. Under `/operations` beside the
+# spawn ledger the Session load page links back to; a sibling module for the
+# same reason. Plan
+# `2026-10-23-session-duration-by-work-type-and-per-device-session-load` Phase 5.
+api_router.include_router(
+    session_runs.router, prefix="/operations", tags=["operations"]
 )
 # Plan & Prompt Library — versioned store for plans, prompts, investigation
 # reports and handoffs (agent.work_artifacts). Phase 1 of
@@ -288,6 +317,13 @@ api_router.include_router(conditions.router, prefix="/conditions", tags=["condit
 # Digital Twin Explorer (Phase 1) — coord-backed completeness matrix.
 api_router.include_router(
     digital_twin.router, prefix="/digital-twin", tags=["digital-twin"]
+)
+# Build records (plan 2026-10-09-factory-built-product-portfolio-and-launch-kit,
+# Phase 1) — the authed coord export proxy and the publish step. The frozen,
+# unauthenticated copy is served by ``public.router`` at
+# ``/public/build-records/{slug}``.
+api_router.include_router(
+    build_records.router, prefix="/build-records", tags=["build-records"]
 )
 # Project Overview — the business-leader surface (overview.*): the project
 # settings, hand-written. Tenant-scoped on the active coord tenant, so the frontend attaches
@@ -468,6 +504,24 @@ api_router.include_router(
 # Tenant agentic memory — write/query/supersede/stats over
 # coord.memory_records (plan 2026-07-10-tenant-agentic-memory, Phase 1).
 api_router.include_router(memory.router, prefix="/memory", tags=["memory"])
+# Content-addressed image store — web.image_assets + web.image_slot_candidates
+# under the memory endpoints' device-JWT tenant (plan
+# 2026-10-13-image-generation-and-visual-judgment, Phase 13).
+api_router.include_router(
+    image_assets.router, prefix="/image-assets", tags=["image-assets"]
+)
+# The taste inbox — web.taste_pairs + web.taste_settings: pairwise image labels
+# over the image store, read and pushed under the same device-JWT tenant,
+# labelled by coord-tenant admins (plan
+# 2026-10-13-image-generation-and-visual-judgment, Phase 23).
+api_router.include_router(taste.router, prefix="/taste", tags=["taste"])
+# The presentation scope — web.presentation_scopes: the first-party owners and
+# confidential terms the console's presentation lens redacts by, read by any
+# member of the active project and written by its admins (plan
+# 2026-10-23-console-presentation-spaces, Phase 1, D3.3).
+api_router.include_router(
+    presentation.router, prefix="/presentation", tags=["presentation"]
+)
 # Library items (checks, check groups, shell commands, API requests, contexts, macros, prompt snippets)
 api_router.include_router(library.router, prefix="/library", tags=["library"])
 # Error monitor entries
@@ -524,6 +578,11 @@ api_router.include_router(
 # path is /api/v1/admin-dev/overview (it must NOT inherit agent_sessions'
 # /admin prefix).
 api_router.include_router(admin_dev.router, tags=["admin-dev"])
+# Operator label write for the overlord intervention ledger (plan
+# 2026-10-01-overlord-session-supervisor-..., Phase 2b).
+api_router.include_router(
+    overlord_labels.router, prefix="/admin/coord/overlord", tags=["overlord"]
+)
 
 # Cloud-control extension hook — no-op when no cloud-control package has
 # registered any route extensions. Cloud-control's

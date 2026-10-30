@@ -16,18 +16,23 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  fetchFleetDispatchRoles,
+  putFleetDispatchRole,
+  type DispatchRoleRequest,
+  type FleetWriteAck,
+} from "@/lib/api/operations/coordFleet";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { servedAsOfMs } from "./servedAsOf";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { OPERATIONS_API } from "./utils";
 import {
   parseDispatchRoles,
+  parseEffectsNotApplied,
   type DispatchRole,
   type DispatchRolesRead,
+  type EffectNotApplied,
 } from "./fleetDispatchRoles";
-
-export const FLEET_DISPATCH_ROLES_API = `${OPERATIONS_API}/fleet/dispatch-roles`;
-export const FLEET_DISPATCH_ROLE_API = `${OPERATIONS_API}/fleet/dispatch-role`;
 
 export const FLEET_DISPATCH_ROLES_POLL_MS = 30_000;
 
@@ -35,20 +40,33 @@ const LOADING: DispatchRolesRead = { state: "loading" };
 
 export interface UseFleetDispatchRolesResult {
   read: DispatchRolesRead;
+  /**
+   * When the last `known` read was true, or `null` before there has been one:
+   * coord's own `as_of` on the body (`dispatch_role_routes.rs`
+   * `DispatchRolesResponse`), else the moment the answer arrived
+   * (`servedAsOfMs`). The presentation lens's provenance chip dates the roles
+   * by it (plan `2026-10-23-console-presentation-spaces` Phase 7). An
+   * `unknown` read never moves it.
+   */
+  asOfMs: number | null;
   refresh: () => Promise<void>;
 }
 
 export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
   const [read, setRead] = useState<DispatchRolesRead>(LOADING);
+  const [asOfMs, setAsOfMs] = useState<number | null>(null);
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: DispatchRolesRead;
+    // When this answer was true; read only if it parses `known`.
+    let answeredAsOf: number | null = null;
     try {
-      const res = await httpClient.fetch(
-        FLEET_DISPATCH_ROLES_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (res.status === 404) {
+      const body = await fetchFleetDispatchRoles(COORD_DASHBOARD_POLL_OPTIONS);
+      answeredAsOf = servedAsOfMs(body, Date.now());
+      next = parseDispatchRoles(body);
+    } catch (err) {
+      const status = httpStatusOf(err);
+      if (status === 404) {
         next = {
           state: "unknown",
           reason:
@@ -57,39 +75,35 @@ export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
             "be set — this build cannot ask. Expected while coord is a deploy " +
             "behind this console.",
         };
-      } else if (!res.ok) {
+      } else if (status !== null) {
         next = {
           state: "unknown",
           reason:
-            `The dispatch-role read returned HTTP ${res.status}, so no ` +
+            `The dispatch-role read returned HTTP ${status}, so no ` +
             "machine's role could be determined from it.",
         };
       } else {
-        let parsed: unknown;
-        try {
-          parsed = await res.json();
-        } catch (err) {
-          throw new Error(
-            `the dispatch-role read did not return valid JSON: ${
-              err instanceof Error ? err.message : "parse error"
-            }`
-          );
-        }
-        next = parseDispatchRoles(parsed);
+        const message =
+          err instanceof SyntaxError
+            ? `the dispatch-role read did not return valid JSON: ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        next = {
+          state: "unknown",
+          reason: `Coord's dispatch roles could not be read — ${message}`,
+        };
       }
-    } catch (err) {
-      next = {
-        state: "unknown",
-        reason: `Coord's dispatch roles could not be read — ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      };
     }
-    if (isCurrent()) setRead(next);
+    if (!isCurrent()) return;
+    setRead(next);
+    if (next.state === "known" && answeredAsOf !== null) {
+      setAsOfMs(answeredAsOf);
+    }
   }, []);
 
   const { refresh } = useSingleFlightPoll(poll, FLEET_DISPATCH_ROLES_POLL_MS);
-  return { read, refresh };
+  return { read, asOfMs, refresh };
 }
 
 export type RoleWriteResult =
@@ -97,8 +111,17 @@ export type RoleWriteResult =
       ok: true;
       /** Coord's `changed`: `false` when the machine already had this role. */
       changed: boolean;
-      /** Coord's `live_sessions_on_machine`, when served. */
-      liveSessions: number | null;
+      /**
+       * Coord's `live_sessions_on_machine`: a count, `"unknown"` when coord
+       * served `null` (not measured — a CI-host write, or an unreadable count;
+       * never 0), or `undefined` when the field was not served.
+       */
+      liveSessions: number | "unknown" | undefined;
+      /**
+       * Coord's `effects_not_applied` — what this build of coord did NOT do
+       * for the change. `null` when not served (never read as "none").
+       */
+      notApplied: EffectNotApplied[] | null;
     }
   | { ok: false; status: number | null; body: string };
 
@@ -113,48 +136,44 @@ export async function putDispatchRole(input: {
   reason: string;
   force: boolean;
 }): Promise<RoleWriteResult> {
-  const body: Record<string, unknown> = {
+  const body: DispatchRoleRequest = {
     dispatch_role: input.role,
     reason: input.reason,
     force: input.force,
   };
   if (input.deviceId) body.device_id = input.deviceId;
   else body.ci_host_name = input.ciHostName;
+  // Never auto-retried (`putFleetDispatchRole`: `maxRetries: 0`) — a retry
+  // after a lost-but-committed first attempt would report "nothing changed"
+  // for a change this operator just made. A 5xx reaches here, and the caller
+  // re-reads instead.
+  let payload: FleetWriteAck | null;
   try {
-    const res = await httpClient.fetch(FLEET_DISPATCH_ROLE_API, {
-      method: "PUT",
-      body: JSON.stringify(body),
-      // Never auto-retry: coord answers a repeated PUT with `changed: false`,
-      // so a retry after a lost-but-committed first attempt would report
-      // "nothing changed" for a change this operator just made. A 5xx must
-      // reach the caller, which re-reads instead. `maxRetries: 0` disables the
-      // whole chain (PUT is otherwise retried as idempotent on any 5xx).
-      maxRetries: 0,
-    });
-    if (!res.ok) {
-      return { ok: false, status: res.status, body: await res.text() };
-    }
-    // A success with an unreadable body still succeeded; `changed` stays
-    // true, the reading that does not claim a no-op happened.
-    let changed = true;
-    let liveSessions: number | null = null;
-    try {
-      const payload: unknown = await res.json();
-      if (typeof payload === "object" && payload !== null) {
-        const p = payload as Record<string, unknown>;
-        if (typeof p.changed === "boolean") changed = p.changed;
-        if (typeof p.live_sessions_on_machine === "number")
-          liveSessions = p.live_sessions_on_machine;
-      }
-    } catch {
-      // see above
-    }
-    return { ok: true, changed, liveSessions };
+    payload = await putFleetDispatchRole(body);
   } catch (err) {
+    const status = httpStatusOf(err);
+    if (status !== null) {
+      return { ok: false, status, body: httpBodyOf(err) ?? "" };
+    }
     return {
       ok: false,
       status: null,
       body: err instanceof Error ? err.message : String(err),
     };
   }
+  // A success with an unreadable body (`null`) still succeeded; `changed`
+  // stays true, the reading that does not claim a no-op happened.
+  let changed = true;
+  let liveSessions: number | "unknown" | undefined = undefined;
+  let notApplied: EffectNotApplied[] | null = null;
+  if (payload !== null && typeof payload === "object") {
+    if (typeof payload.changed === "boolean") changed = payload.changed;
+    if (typeof payload.live_sessions_on_machine === "number")
+      liveSessions = payload.live_sessions_on_machine;
+    else if ("live_sessions_on_machine" in payload)
+      // `null` (or a shape we do not know) is NOT MEASURED — never 0.
+      liveSessions = "unknown";
+    notApplied = parseEffectsNotApplied(payload.effects_not_applied);
+  }
+  return { ok: true, changed, liveSessions, notApplied };
 }

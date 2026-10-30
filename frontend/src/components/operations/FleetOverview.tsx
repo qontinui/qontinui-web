@@ -21,15 +21,17 @@ import { TaskRunCard } from "./TaskRunCard";
 import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
 import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { coordDeviceHostKey } from "./coordCredentialStatus";
-import { httpClient } from "@/services/service-factory";
 import {
   formatBytes,
-  OPERATIONS_API,
   POLL_INTERVAL_MS,
   relativeTime,
   volumeSeverity,
 } from "./utils";
+import { statusOnlyErrorText } from "@/lib/api/operations/base";
 import { CollapsiblePanel } from "@/components/console";
+import { SectionCaption, usePresentationMode } from "@/components/presentation";
+import { DEVOPS_SOURCES, latestInstant } from "./devOpsHeadline";
+import { FAILURE_SENTENCE_WITHHELD } from "./presentedFailure";
 import {
   resolveMachineVolumes,
   tightestVolume,
@@ -39,7 +41,11 @@ import {
 import { useFleetVolumes } from "./useFleetVolumes";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { isCiRunnerDevice } from "./useFleetHealth";
-import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
+import {
+  fetchFleetStatus,
+  fetchFleetTasks,
+  type FleetHealthDevice,
+} from "@/lib/api/operations/coordFleet";
 import type { UseFleetHealthResult } from "./useFleetHealth";
 import { resolveCiCapacity, type DevenvMachinesRead } from "./ciCapacity";
 import { resolveDeviceDrain, resolveDrainTarget } from "./fleetDrain";
@@ -339,6 +345,24 @@ function buildMachineGroups(
 // Stat badge component
 // ============================================================================
 
+/**
+ * A runner-inventory count, or `unknown` when the inventory has not been read.
+ *
+ * These badges used to read `fleet?.total_runners ?? 0`, which rendered an
+ * unread (or failed) inventory as "Runners 0 · Healthy 0" — UNKNOWN wearing a
+ * zero, the one thing a fleet page must never show (plan
+ * `2026-10-23-console-presentation-spaces` Phase 7: "UNKNOWN never zero on
+ * every figure"). A failed latest read KEEPS the last inventory, so this is
+ * `unknown` only while nothing has been read at all; the "partial error" badge
+ * beside the row already says a retained one may be stale.
+ */
+function inventoryCount(
+  fleet: FleetStatus | null,
+  pick: (f: FleetStatus) => number
+): number | string {
+  return fleet ? pick(fleet) : "unknown";
+}
+
 function StatBadge({
   icon: Icon,
   label,
@@ -460,6 +484,10 @@ export function FleetOverview({
   const [fleet, setFleet] = useState<FleetStatus | null>(null);
   const [tasks, setTasks] = useState<AggregatedTaskRuns | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // When the runner inventory last ANSWERED. `lastUpdated` is the refresh
+  // loop's clock — it is stamped even when the inventory read failed — so it
+  // cannot date the inventory itself; the presentation chip reads this.
+  const [inventoryAsOf, setInventoryAsOf] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   // Disk telemetry is its own 30 s, single-flight, no-retry poll now — see
@@ -473,28 +501,47 @@ export function FleetOverview({
   const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
       const [fleetRes, tasksRes] = await Promise.allSettled([
-        httpClient.fetch(`${OPERATIONS_API}/fleet`),
-        httpClient.fetch(`${OPERATIONS_API}/fleet/tasks`),
+        fetchFleetStatus(),
+        fetchFleetTasks(),
       ]);
 
-      if (fleetRes.status === "fulfilled" && fleetRes.value.ok) {
-        const data: FleetStatus = await fleetRes.value.json();
+      // A 2xx whose body does not parse is not "unreachable": it fails the
+      // whole refresh with its own message, as it did when this component
+      // parsed the Response itself — tasks are skipped and `lastUpdated` is
+      // not stamped. The same holds for `/fleet/tasks` below.
+      if (
+        fleetRes.status === "rejected" &&
+        fleetRes.reason instanceof SyntaxError
+      ) {
+        throw fleetRes.reason;
+      }
+
+      if (fleetRes.status === "fulfilled") {
         if (!isCurrent()) return;
-        setFleet(data);
+        setFleet(fleetRes.value);
+        setInventoryAsOf(Date.now());
         setError(null);
       } else {
         if (!isCurrent()) return;
-        const reason =
-          fleetRes.status === "rejected"
-            ? (fleetRes.reason as Error).message
-            : `HTTP ${fleetRes.value.status}`;
+        // A non-2xx reads `HTTP <status>`, as it always has; a transport
+        // failure is its own message.
+        const reason = statusOnlyErrorText(
+          fleetRes.reason,
+          String(fleetRes.reason)
+        );
         setError(`Operations API unreachable: ${reason}`);
       }
 
-      if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
-        const data: AggregatedTaskRuns = await tasksRes.value.json();
+      if (
+        tasksRes.status === "rejected" &&
+        tasksRes.reason instanceof SyntaxError
+      ) {
+        throw tasksRes.reason;
+      }
+
+      if (tasksRes.status === "fulfilled") {
         if (!isCurrent()) return;
-        setTasks(data);
+        setTasks(tasksRes.value);
       } else {
         if (!isCurrent()) return;
         // Tasks endpoint failing is non-critical
@@ -626,21 +673,76 @@ export function FleetOverview({
     [tasks]
   );
 
+  // The as-of of the two reads whose bodies date their ROWS, not themselves:
+  // the newest disk measurement coord holds, and the newest device-status
+  // report. UNKNOWN (null) while a read has not answered or dates nothing.
+  const diskAsOf = useMemo(
+    () =>
+      volumes.state === "ok"
+        ? latestInstant(
+            [...volumes.byDevice.values()].flatMap((entry) =>
+              entry.volumes.map((v) => v.observed_at)
+            )
+          )
+        : null,
+    [volumes]
+  );
+  const deviceStatusAsOf = useMemo(
+    () =>
+      latestInstant(
+        [...deviceStatus.byHostname.values()].map((row) => row.updated_at)
+      ),
+    [deviceStatus.byHostname]
+  );
+
+  // The presentation lens (plan `2026-10-23-console-presentation-spaces`
+  // Phase 7). The section caption states the source and as-of of EVERY read
+  // whose numbers this list shows — the runner inventory, coord's device
+  // health, the CI-runner mirror, the disk telemetry, the drain states and the
+  // device-status reports — and renders in every branch below, so an outsider
+  // is told what this list is even while it loads or has failed. Nothing here
+  // renders for the operator.
+  const { presenting } = usePresentationMode();
+  const caption = (
+    <SectionCaption
+      id="dev-ops.machines"
+      sources={[
+        { source: DEVOPS_SOURCES.runnerInventory, asOf: inventoryAsOf },
+        { source: DEVOPS_SOURCES.fleetHealth, asOf: health.asOfMs },
+        {
+          source: DEVOPS_SOURCES.ciRunnerMirror,
+          asOf: ciRunnerMirror.state === "ok" ? ciRunnerMirror.asOf : null,
+        },
+        { source: DEVOPS_SOURCES.diskTelemetry, asOf: diskAsOf },
+        {
+          source: DEVOPS_SOURCES.drainState,
+          // Only an answered read is dated: an unknown one is UNKNOWN as of
+          // nothing, whatever the last good read was.
+          asOf: drain.read.state === "ok" ? drain.asOfMs : null,
+        },
+        { source: DEVOPS_SOURCES.deviceStatus, asOf: deviceStatusAsOf },
+      ]}
+    />
+  );
+
   // ---- Loading state ----
   if (loading) {
     return (
-      <div className="space-y-6 p-6">
-        <div className="flex items-center gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-40 rounded-lg" />
-          ))}
+      <>
+        {caption}
+        <div className="space-y-6 p-6">
+          <div className="flex items-center gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-40 rounded-lg" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-48 rounded-xl" />
+            ))}
+          </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-48 rounded-xl" />
-          ))}
-        </div>
-      </div>
+      </>
     );
   }
 
@@ -652,16 +754,24 @@ export function FleetOverview({
   if (error && !fleet && coordDevices.length === 0) {
     return (
       <TooltipProvider delayDuration={200}>
+        {caption}
         <div className="space-y-6">
           <div className="flex flex-col items-center justify-center gap-4 py-12 text-muted-foreground">
             <WifiOff className="h-12 w-12 opacity-40" />
             <p className="text-lg font-medium">Backend Unreachable</p>
-            <p className="text-sm max-w-md text-center">{error}</p>
-            <p className="text-xs">
-              Make sure the backend is running at{" "}
-              <code className="bg-muted px-1 rounded">localhost:8000</code> and
-              the operations endpoints are deployed.
+            {/* The request's own text, and the operator's next step, are not
+                for an outsider: they read that the inventory could not be
+                read (D3.3). */}
+            <p className="text-sm max-w-md text-center">
+              {presenting ? FAILURE_SENTENCE_WITHHELD : error}
             </p>
+            {!presenting && (
+              <p className="text-xs">
+                Make sure the backend is running at{" "}
+                <code className="bg-muted px-1 rounded">localhost:8000</code>{" "}
+                and the operations endpoints are deployed.
+              </p>
+            )}
           </div>
           <DeviceStatusTile stream={deviceStatus} />
         </div>
@@ -677,6 +787,7 @@ export function FleetOverview({
 
   return (
     <TooltipProvider delayDuration={200}>
+      {caption}
       <CollapsiblePanel
         data-testid="coord-devops-machines"
         storageKey="devops:machines"
@@ -745,24 +856,36 @@ export function FleetOverview({
               read of GitHub, and a page that implies otherwise will one day
               tell an operator a delabelled host is fine. When the read failed,
               the same line says the label state is UNKNOWN — never that a host
-              advertises nothing. */}
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="ci-runner-mirror-freshness"
-            data-ci-runner-mirror={ciRunnerMirror.state}
-          >
-            {describeMirrorFreshness(ciRunnerMirror)}
-          </p>
+              advertises nothing. In presentation mode the section caption's
+              CI-runner-mirror chip states the same read's as-of instead, and
+              this operator sentence (coord's window constant, its row-count
+              faults) is not rendered. */}
+          {!presenting && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="ci-runner-mirror-freshness"
+              data-ci-runner-mirror={ciRunnerMirror.state}
+            >
+              {describeMirrorFreshness(ciRunnerMirror)}
+            </p>
+          )}
 
           {/* Machine cards grid */}
           {isEmpty ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+            <div
+              className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3"
+              data-testid="coord-devops-machines-empty"
+            >
               <Server className="h-10 w-10 opacity-30" />
               <p className="text-sm font-medium">No runners online</p>
-              <p className="text-xs max-w-sm text-center">
-                Connect a runner via Settings → Backend Connection, or launch a
-                Claude Code session on any machine to see it here.
-              </p>
+              {/* Where to go to connect one is the operator's next step, not
+                  something an outsider can act on. */}
+              {!presenting && (
+                <p className="text-xs max-w-sm text-center">
+                  Connect a runner via Settings → Backend Connection, or launch
+                  a Claude Code session on any machine to see it here.
+                </p>
+              )}
             </div>
           ) : (
             <div>
@@ -822,27 +945,31 @@ export function FleetOverview({
             <StatBadge
               icon={Server}
               label="Runners"
-              value={fleet?.total_runners ?? 0}
+              value={inventoryCount(fleet, (f) => f.total_runners)}
             />
             <StatBadge
               icon={HeartPulse}
               label="Healthy"
-              value={fleet?.total_healthy ?? 0}
+              value={inventoryCount(fleet, (f) => f.total_healthy)}
+              // No inventory is neither healthy nor short: outline, never the
+              // green a fleet with every runner healthy earns.
               variant={
-                fleet && fleet.total_healthy < fleet.total_runners
-                  ? "warning"
-                  : "success"
+                fleet === null
+                  ? "outline"
+                  : fleet.total_healthy < fleet.total_runners
+                    ? "warning"
+                    : "success"
               }
             />
             <StatBadge
               icon={Play}
               label="Running Tasks"
-              value={fleet?.total_running_tasks ?? 0}
+              value={inventoryCount(fleet, (f) => f.total_running_tasks)}
             />
             <StatBadge
               icon={Terminal}
               label="CC Sessions"
-              value={fleet?.total_claude_sessions ?? 0}
+              value={inventoryCount(fleet, (f) => f.total_claude_sessions)}
             />
             {totalCiRunners > 0 && (
               <StatBadge
@@ -857,7 +984,11 @@ export function FleetOverview({
               label="Tightest volume"
               value={
                 worstFreeVolume
-                  ? `${formatBytes(worstFreeVolume.free_bytes)} free (${worstFreeVolume.volume})`
+                  ? // The mount names a path someone chose; an outsider gets
+                    // the figure without it (D3.3, as `VolumeRows` does).
+                    presenting
+                    ? `${formatBytes(worstFreeVolume.free_bytes)} free`
+                    : `${formatBytes(worstFreeVolume.free_bytes)} free (${worstFreeVolume.volume})`
                   : !volumesRead
                     ? "not read"
                     : volumesWarning
@@ -875,16 +1006,27 @@ export function FleetOverview({
               }
             />
 
-            {/* Refresh indicator */}
+            {/* Refresh indicator. `lastUpdated` is the refresh loop's own
+                clock: it is stamped when the inventory read FAILED too, so
+                it dates nothing an outsider reads (style guide §3.11, "A read
+                is dated only by its answers"). Presentation mode drops it;
+                the section caption's runner-inventory chip states that read's
+                as-of instead. */}
             <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-              <RefreshCw
-                className="h-3 w-3 animate-spin"
-                style={{ animationDuration: "3s" }}
-              />
-              <span>
-                Updated{" "}
-                {lastUpdated ? relativeTime(lastUpdated.toISOString()) : "--"}
-              </span>
+              {!presenting && (
+                <>
+                  <RefreshCw
+                    className="h-3 w-3 animate-spin"
+                    style={{ animationDuration: "3s" }}
+                  />
+                  <span>
+                    Updated{" "}
+                    {lastUpdated
+                      ? relativeTime(lastUpdated.toISOString())
+                      : "--"}
+                  </span>
+                </>
+              )}
               {error && (
                 <Badge variant="destructive" className="text-[10px]">
                   partial error

@@ -7,9 +7,14 @@ Two validation rules are deliberate and load-bearing:
 * ``kind``, ``captured_by`` and ``relation`` ARE ``Literal`` unions, because
   Postgres CHECKs back them — a bad value would otherwise surface as a 500
   IntegrityError instead of a 422.
-* ``status`` is **plain ``str`` with no constraint at all**. It mirrors
-  free-form plan front-matter and must never 422. Do not "tidy" it into a
-  Literal.
+* ``status`` is **plain ``str``**. For every kind outside the specification
+  family it mirrors free-form plan front-matter and must never 422 — do not
+  "tidy" it into a Literal. For a SPEC kind (``request``, ``requirement``,
+  ``interface_mapping``, ``story``, ``test_case``, ``doc_correction`` —
+  ``plan_library_11_spec_artifacts``) it is that kind's lifecycle, a closed
+  per-kind set (:data:`SPEC_KIND_STATUS_LITERALS`) checked by
+  :meth:`WorkArtifactUpsert._spec_kind_rules`; an omitted status takes the
+  lifecycle's first member.
 
 ``organization_id`` appears on responses but is **absent from every request
 model on purpose** — it is derived server-side from the authenticated
@@ -38,10 +43,10 @@ back as ``cursor``. There is no ``offset`` anywhere: it was deleted, not
 deprecated.
 """
 
-from typing import Literal
+from typing import Any, Literal, Self, get_args
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.bounded_read import BoundedReadMeta
 from app.schemas.base import BaseORMSchema, IsoDatetime
@@ -66,7 +71,56 @@ WorkArtifactKind = Literal[
     #: ``investigation_report`` so the two families remain separable on the
     #: ``kind`` filter. See ``plan_library_04_diagnostic_refutes``.
     "diagnostic",
+    # ── The specification family (``plan_library_11_spec_artifacts``) ──
+    #: A stakeholder ask, as received — the raw input requirements derive from.
+    "request",
+    #: One testable statement of required behaviour (EARS form where it fits).
+    "requirement",
+    #: A field-level mapping between two interfaces (source → target, rule).
+    "interface_mapping",
+    #: A deliverable slice of a requirement, sized for one delivery cycle.
+    "story",
+    #: A test that verifies a requirement or story.
+    "test_case",
+    #: A proposed correction to existing documentation.
+    "doc_correction",
 ]
+
+#: The lifecycle of each specification kind, in lifecycle order; the FIRST
+#: member is what a write that omits ``status`` gets. Mirrors
+#: ``app.models.work_artifact.SPEC_KIND_STATUSES`` (held equal by test).
+RequestStatus = Literal["new", "triaged", "accepted", "rejected", "withdrawn"]
+RequirementStatus = Literal[
+    "draft",
+    "proposed",
+    "approved",
+    "implemented",
+    "verified",
+    "deprecated",
+    "rejected",
+]
+InterfaceMappingStatus = Literal["draft", "in_review", "approved", "deprecated"]
+StoryStatus = Literal["draft", "ready", "in_progress", "done", "cancelled"]
+TestCaseStatus = Literal["draft", "ready", "passing", "failing", "blocked", "retired"]
+DocCorrectionStatus = Literal["proposed", "accepted", "applied", "rejected"]
+
+#: Spec kind → its status ``Literal``. Keyed by every spec kind and nothing
+#: else; ``/plan-library/vocabulary`` serves each as ``status[kind=<kind>]``.
+SPEC_KIND_STATUS_LITERALS: dict[str, Any] = {
+    "request": RequestStatus,
+    "requirement": RequirementStatus,
+    "interface_mapping": InterfaceMappingStatus,
+    "story": StoryStatus,
+    "test_case": TestCaseStatus,
+    "doc_correction": DocCorrectionStatus,
+}
+
+
+def spec_kind_statuses(kind: str) -> tuple[str, ...] | None:
+    """The closed lifecycle of a spec kind, or ``None`` for an opaque-status kind."""
+    literal = SPEC_KIND_STATUS_LITERALS.get(kind)
+    return None if literal is None else tuple(get_args(literal))
+
 
 CapturedBy = Literal["runner_scan", "agent", "operator"]
 
@@ -94,6 +148,18 @@ WorkArtifactRelation = Literal[
     #: which means "a newer version of the same thing". See
     #: ``plan_library_04_diagnostic_refutes``.
     "refutes",
+    # ── Traceability (``plan_library_11_spec_artifacts``) — all two-ended ──
+    #: THIS artifact was derived from THAT one (a requirement from a request).
+    "derives_from",
+    #: THIS artifact is a more detailed statement of THAT one (a story refines
+    #: a requirement).
+    "refines",
+    #: THIS artifact implements THAT one (a plan implements a requirement).
+    "implements",
+    #: THIS artifact verifies THAT one (a test case verifies a requirement).
+    "verifies",
+    #: A traceability link with no stronger meaning.
+    "traces_to",
 ]
 
 
@@ -145,6 +211,35 @@ class WorkArtifactUpsert(BaseModel):
     #: Getting this backwards is what silently forks a corrected artifact into
     #: a second row — see alembic ``plan_library_02_kind_lock``.
     kind_is_heuristic: bool = False
+
+    @model_validator(mode="after")
+    def _spec_kind_rules(self) -> Self:
+        """A spec kind's status is its closed lifecycle, and its kind is never
+        a guess.
+
+        An empty status takes the lifecycle's first member; any other value
+        outside the lifecycle is a 422 naming the accepted set. A heuristic
+        write of a spec kind is refused: those artifacts are authored, never
+        scanned, and a guessed kind would mint a stable ``spec_ref`` for a
+        guess. Every other kind is untouched — its status stays opaque.
+        """
+        allowed = spec_kind_statuses(self.kind)
+        if allowed is None:
+            return self
+        if self.kind_is_heuristic:
+            raise ValueError(
+                f"kind {self.kind!r} is a specification kind and cannot be "
+                "written with kind_is_heuristic=true: spec artifacts are "
+                "authored, never guessed by a scan"
+            )
+        if self.status == "":
+            self.status = allowed[0]
+        elif self.status not in allowed:
+            raise ValueError(
+                f"status {self.status!r} is not in the {self.kind} lifecycle; "
+                f"accepted: {', '.join(allowed)}"
+            )
+        return self
 
 
 class WorkArtifactKindPatch(BaseModel):
@@ -405,6 +500,11 @@ class WorkArtifactSummary(BaseORMSchema):
     #: ``PATCH .../kind`` door) and a heuristic re-scan may no longer move it.
     kind_locked: bool
     slug: str
+    #: The stable, human-readable ID of a specification artifact
+    #: (``REQ-0042``) — assigned once on create, never reused within the
+    #: organization, ``None`` on every other kind. Find one with
+    #: ``GET /plan-library?spec_ref=``.
+    spec_ref: str | None
     title: str
     status: str
     content_sha256: str
@@ -553,10 +653,16 @@ class KindForkGroup(BaseModel):
     ``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` —
     the scanner can then unambiguously prefer that row and the fork will heal
     itself. ``False`` means an operator must pick, via ``PATCH .../kind``.
+
+    ``family`` names which kind family forked: ``"spec"`` (the specification
+    kinds) or ``"plan"`` (every other kind). Kinds are counted within one
+    family, so a key forked in BOTH families is two groups sharing
+    ``(slug, source_repo)``; ``family`` is what tells them apart.
     """
 
     slug: str
     source_repo: str | None
+    family: Literal["spec", "plan"]
     kinds: list[str]
     variant_count: int
     resolvable: bool
@@ -679,8 +785,9 @@ class WorkArtifactListResponse(BoundedReadMeta):
     ordering: Literal["newest_captured_first"] = "newest_captured_first"
     corpus_health: CorpusHealth
     #: The level → model maps, served on every page so a consumer routing on
-    #: an item's ``difficulty`` reads the map in the same call. Corpus
-    #: constants, so envelope-level rather than per item; byte-identical to
+    #: an item's ``difficulty`` reads the map in the same call. One map per
+    #: organization (operator-editable, ``GET/PUT /plan-library/model-routing``),
+    #: so envelope-level rather than per item; byte-identical to
     #: ``/candidates`` and ``/difficulty``. See :class:`PlanDifficultyResponse`.
     model_tiers: dict[str, str]
     model_selectors: dict[str, str]
@@ -834,7 +941,11 @@ class PlanDifficultyResponse(BaseModel):
     row that is still unrated is left OUT of ``items`` — absent here means
     "no rating", which the console renders as unrated, never as "low".
     ``model_tiers`` maps each level to the model tier it routes to, served so
-    every consumer names the same models. It is DISPLAY COPY — never parse it.
+    every consumer names the same models. It is DISPLAY COPY — never parse it —
+    derived from ``model_selectors``, so the two always agree. Both are the
+    caller's organization's map as the operator set it on
+    ``PUT /plan-library/model-routing``, each level defaulting to the shipped
+    map when no row names it.
     ``model_selectors`` is the machine-readable twin: each level's harness
     selector, in the vocabulary ``model_selector_vocabulary`` names (the Claude
     Code Agent tool's ``model`` values). A consumer whose harness does not
@@ -860,6 +971,61 @@ class PlanDifficultyResponse(BaseModel):
     model_tiers: dict[str, str]
     model_selectors: dict[str, str]
     model_selector_vocabulary: str
+
+
+# ─────────────── model routing (operator-editable) ───────────────
+#
+# Plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``.
+
+#: The model families an operator may route a level to — the
+#: ``claude_code_agent_tool_v1`` selector vocabulary. Pinned against
+#: ``app.models.plan_model_route.MODEL_FAMILIES`` (the CHECK's source) by
+#: ``tests/test_plan_model_routing.py``.
+ModelFamily = Literal["fable", "opus", "sonnet", "haiku"]
+
+
+class ModelRoutingUpdate(BaseModel):
+    """``PUT /plan-library/model-routing`` — the FULL map, one family per level.
+
+    Every level is required and an unknown key is refused, so a save is always
+    a whole, explicit map: there is no partial write whose omitted levels mean
+    either "keep" or "reset" depending on who reads the code.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    high: ModelFamily
+    medium: ModelFamily
+    low: ModelFamily
+
+
+class ModelFamilyOption(BaseModel):
+    """One family the console offers, with the copy ``model_tiers`` serves for it."""
+
+    family: str
+    display: str
+
+
+class ModelRoutingResponse(BaseModel):
+    """The caller's organization's routing map, as STORED and as SERVED.
+
+    ``model_selectors`` / ``model_tiers`` / ``model_selector_vocabulary`` are
+    exactly what ``GET /plan-library``, ``/candidates`` and ``/difficulty``
+    serve this caller. ``sources`` says, per level, whether a stored row or the
+    shipped default answered (``default_selectors``). ``can_edit`` is false for
+    a principal with no personal organization: that scope is the shared NULL
+    bucket, which reads the defaults and refuses a write (409).
+    """
+
+    model_selectors: dict[str, str]
+    model_tiers: dict[str, str]
+    model_selector_vocabulary: str
+    sources: dict[str, Literal["stored", "default"]]
+    default_selectors: dict[str, str]
+    families: list[ModelFamilyOption]
+    updated_at: IsoDatetime | None = None
+    updated_by_user_id: UUID | None = None
+    can_edit: bool
 
 
 # ─────────────── open follow-ups (Phase 7) ───────────────

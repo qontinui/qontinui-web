@@ -21,10 +21,10 @@ import {
   HelpCircle,
 } from "lucide-react";
 import type { Runner } from "@qontinui/shared-types";
-import { httpClient } from "@/services/service-factory";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { renameMachine } from "@/lib/api/operations/coordFleet";
 import {
   formatBytes,
-  machineRenameUrl,
   percentFree,
   readingAgeMs,
   relativeTime,
@@ -33,7 +33,14 @@ import {
 } from "./utils";
 import { StatusBadge } from "@/components/console";
 import {
+  MachineName,
+  OperatorOnly,
+  usePresentationMode,
+  type MachineIdentity,
+} from "@/components/presentation";
+import {
   COORD_CREDENTIAL_PALETTE,
+  coordCredentialPostureReason,
   reportedCoordCredential,
   reportedCoordCredentialFor,
   resolveCoordCredential,
@@ -221,11 +228,19 @@ function HealthDot({
  *   a STALE marker so it is never mistaken for current.
  * - **A number that could not be computed says so.** An unusable `total_bytes`
  *   produces "unknown", not a 0 % bar.
+ *
+ * In presentation mode a volume is named by its position on the machine
+ * ("Volume 2"), never by its mount: a mount point or a volume label is a path
+ * or a name someone typed — `/home/<user>`, `/Volumes/<label>` — and can name
+ * a person or a client (plan `2026-10-23-console-presentation-spaces` D3.3).
+ * The figures and their ages are unchanged.
  */
 function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
+  const { presenting } = usePresentationMode();
   return (
     <div className="space-y-2">
       {volumes.map((v, i) => {
+        const name = presenting ? `Volume ${i + 1}` : v.volume;
         const pct = percentFree(v.free_bytes, v.total_bytes);
         const usable = pct !== null;
         const ageMs = readingAgeMs(v.observed_at);
@@ -259,9 +274,12 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
         // for one device yields two rows here. A duplicate React key logs a
         // warning and can mis-reconcile, so the index disambiguates.
         return (
-          <div key={`${i}-${v.volume}`} data-operations-volume={v.volume}>
+          <div
+            key={`${i}-${v.volume}`}
+            data-operations-volume={presenting ? undefined : v.volume}
+          >
             <div className="flex items-baseline justify-between gap-2">
-              <span className="font-mono text-sm font-medium">{v.volume}</span>
+              <span className="font-mono text-sm font-medium">{name}</span>
               <span className={`text-sm font-semibold ${textColor}`}>
                 {formatBytes(v.free_bytes)} free
                 <span className="text-muted-foreground font-normal">
@@ -277,7 +295,7 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
               <div
                 className="mt-1 h-2 w-full rounded-full bg-muted overflow-hidden"
                 role="img"
-                aria-label={`${v.volume}: ${pct}% free`}
+                aria-label={`${name}: ${pct}% free`}
               >
                 <div
                   className={`h-full ${barColor}`}
@@ -338,7 +356,17 @@ function VolumesUnknown({
   );
 }
 
+/**
+ * What presentation mode says for disk telemetry that could not be read. The
+ * operator's reason can name the host (`no device_status for "<hostname>"`),
+ * so an outsider gets the fact without the identifier (plan
+ * `2026-10-23-console-presentation-spaces` D3.3).
+ */
+export const DISK_UNREADABLE_PRESENTED =
+  "Disk telemetry for this machine could not be read, so nothing here says whether its disk is fine or full.";
+
 function DiskSection({ volumes }: { volumes: MachineVolumes }) {
+  const { presenting } = usePresentationMode();
   return (
     <div data-operations-machine-disk data-disk-state={volumes.state}>
       <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -359,7 +387,7 @@ function DiskSection({ volumes }: { volumes: MachineVolumes }) {
       ) : (
         <VolumesUnknown
           headline="disk telemetry could not be read"
-          detail={volumes.reason}
+          detail={presenting ? DISK_UNREADABLE_PRESENTED : volumes.reason}
         />
       )}
     </div>
@@ -381,6 +409,17 @@ function DiskSection({ volumes }: { volumes: MachineVolumes }) {
  * `currentlyEditing` so the join in `FleetOverview` keeps compiling;
  * this component just no longer renders them. Phase 9 cleanup deletes
  * those fields entirely.
+ *
+ * ## Presentation mode (plan `2026-10-23-console-presentation-spaces` Phase 7)
+ *
+ * The card names its machine by its session alias (`MachineName`, fed every
+ * identifier the row holds — coord's device id, the hostname, the operator's
+ * alias — so it reads as the same letter on every other panel), carries no
+ * hostname or device id in any attribute, tooltip or link, and unmounts every
+ * write control: the rename, the drain lever, the CI-capacity disclosure
+ * (`OperatorOnly`). Runner names, session working directories, volume mounts
+ * and the runner's free-text credential reason are not rendered; counts,
+ * states and positions ("Runner 2", "Volume 1") are.
  */
 export function MachineCard({
   machine,
@@ -392,6 +431,17 @@ export function MachineCard({
   nowMs,
 }: MachineCardProps) {
   const { hostname, displayName, runners, claudeSessions } = machine;
+  const { presenting } = usePresentationMode();
+  // Every identifier this row holds, so the alias links to the one other
+  // panels assign: coord's device id when the row is matched, else the CI
+  // mirror registration's, plus the hostname and the operator's alias.
+  const identity: MachineIdentity = {
+    deviceId: machine.coordHealth?.matched
+      ? machine.coordHealth.device_id
+      : machine.ciRunner?.deviceId,
+    hostname,
+    displayName,
+  };
 
   // The shown title: an operator alias when set, otherwise the raw hostname.
   // Optimistic local override wins while a save is in flight / before the poll
@@ -451,25 +501,22 @@ export function MachineCard({
     setRenameError(null);
 
     try {
-      const res = await httpClient.fetch(machineRenameUrl(hostname), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: next }),
-        // Safe to re-issue: `rename_machine` UPSERTs the (user, hostname) row
-        // (DELETEs it for an empty name) — pure assignment, repeat is a no-op.
-        idempotent: true,
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
+      // Safe to re-issue (`renameMachine` is `idempotent`): `rename_machine`
+      // UPSERTs the (user, hostname) row — pure assignment.
+      await renameMachine(hostname, next);
       // Re-fetch the fleet so the authoritative name lands; the
       // `displayName`-keyed effect then drops the optimistic override.
       onRenamed?.();
     } catch (err) {
       // Revert the optimistic name and surface a subtle inline error.
       setOptimisticName(null);
+      const status = httpStatusOf(err);
       setRenameError(
-        err instanceof Error ? err.message : "Failed to rename machine"
+        status !== null
+          ? `HTTP ${status}`
+          : err instanceof Error
+            ? err.message
+            : "Failed to rename machine"
       );
     } finally {
       setSaving(false);
@@ -555,6 +602,8 @@ export function MachineCard({
       ? (machine.coordHealth.state ?? "unknown")
       : "unknown"
     : null;
+  // The device id is the operator's handle on the row; an outsider gets the
+  // same sentence without it (D3.3).
   const coordStateLabel = !machine.coordHealth
     ? ""
     : !machine.coordHealth.matched
@@ -562,10 +611,15 @@ export function MachineCard({
         `its liveness state is UNKNOWN. That is a gap in the join, not a ` +
         `verdict about the machine.`
       : machine.coordHealth.state
-        ? `Coord device state: ${machine.coordHealth.state} ` +
-          `(device ${machine.coordHealth.device_id}).`
-        : `Coord knows this device (${machine.coordHealth.device_id}) but ` +
-          `reports no state for it. Unknown, not healthy.`;
+        ? presenting
+          ? `Coord device state: ${machine.coordHealth.state}.`
+          : `Coord device state: ${machine.coordHealth.state} ` +
+            `(device ${machine.coordHealth.device_id}).`
+        : presenting
+          ? `Coord knows this device but reports no state for it. ` +
+            `Unknown, not healthy.`
+          : `Coord knows this device (${machine.coordHealth.device_id}) but ` +
+            `reports no state for it. Unknown, not healthy.`;
 
   /**
    * **Can this machine still reach coord?** — the second credential question
@@ -630,6 +684,14 @@ export function MachineCard({
   const credentialSince = credential?.since
     ? relativeTime(credential.since, { now: nowMs })
     : null;
+  // The resolved reason prefers what the runner or coord said, which is free
+  // text that can name a host or a URL; an outsider reads this module's fixed
+  // reason for the same posture instead (D3.3). The posture itself is
+  // unchanged.
+  const shownCredential =
+    credential && presenting
+      ? { ...credential, reason: coordCredentialPostureReason(credential.kind) }
+      : credential;
 
   /**
    * What only the RUNNER can see about this machine — its wedge incidents and
@@ -653,7 +715,10 @@ export function MachineCard({
     <Card
       className="gap-3 py-4 transition-shadow"
       data-operations-machine-card
-      data-hostname={hostname}
+      // The hostname is the device-status tile's jump target in operator
+      // mode; in presentation mode it is an identifier an outsider may not
+      // see, and the tile does not jump (D3.3).
+      data-hostname={presenting ? undefined : hostname}
       data-runner-inventory={machine.coordHealthOnly ? "absent" : "present"}
     >
       <CardHeader className="pb-0 py-0">
@@ -668,7 +733,7 @@ export function MachineCard({
               aria-label={headerHealthLabel}
               data-operations-machine-health={headerHealth}
             />
-            {editing ? (
+            {editing && !presenting ? (
               <Input
                 ref={inputRef}
                 value={draft}
@@ -688,31 +753,39 @@ export function MachineCard({
                 className="h-7 text-base"
               />
             ) : (
-              <CardTitle className="text-base truncate">{shownName}</CardTitle>
+              <CardTitle className="text-base truncate">
+                {/* The operator's name for it (alias, else hostname); its
+                    session alias in presentation mode. */}
+                <MachineName identity={identity} label={shownName} />
+              </CardTitle>
             )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {!editing && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={startEditing}
-                    disabled={saving}
-                    aria-label={`Rename ${hostname}`}
-                    className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:pointer-events-none"
-                  >
-                    {saving ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Pencil className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">Rename machine</TooltipContent>
-              </Tooltip>
-            )}
+            {/* Renaming writes the operator's alias for the machine — a write
+                control, so it is not mounted in presentation mode (D3.2). */}
+            <OperatorOnly>
+              {!editing && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={startEditing}
+                      disabled={saving}
+                      aria-label={`Rename ${hostname}`}
+                      className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      {saving ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Pencil className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Rename machine</TooltipContent>
+                </Tooltip>
+              )}
+            </OperatorOnly>
 
             {coordState && (
               <Tooltip>
@@ -741,16 +814,16 @@ export function MachineCard({
                 as ignorance rather than as calm (style guide R3/§4.1). The
                 badge carries its own `title`, so the "why" is one hover away
                 without a tooltip provider. */}
-            {credential && (
+            {shownCredential && (
               <span
                 className="contents"
-                data-operations-coord-credential={credential.kind}
+                data-operations-coord-credential={shownCredential.kind}
                 data-operations-coord-credential-measured={String(
-                  credential.measured
+                  shownCredential.measured
                 )}
               >
                 <StatusBadge
-                  status={credential}
+                  status={shownCredential}
                   palette={COORD_CREDENTIAL_PALETTE}
                 />
                 {credentialSince && (
@@ -826,7 +899,7 @@ export function MachineCard({
               Runners ({runners.length})
             </h4>
             <div className="space-y-1.5">
-              {runners.map((runner) => {
+              {runners.map((runner, index) => {
                 const health = runnerHealthState(runner);
                 return (
                   <div
@@ -843,8 +916,10 @@ export function MachineCard({
                           :{runner.port}
                         </span>
                       ) : null}
+                      {/* A runner's name is often its host's; an outsider
+                          reads its position on the machine instead (D3.3). */}
                       <span className="text-muted-foreground text-xs truncate">
-                        {runner.name}
+                        {presenting ? `Runner ${index + 1}` : runner.name}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -874,6 +949,19 @@ export function MachineCard({
             {claudeSessions.length === 0 ? (
               <p className="text-xs text-muted-foreground/60 italic">
                 No active sessions
+              </p>
+            ) : presenting ? (
+              // A session's process id and working directory name the
+              // operator's repositories and checkouts; an outsider reads the
+              // count, which the heading already carries, and nothing else
+              // (density down, D3.3).
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="machine-sessions-presented"
+              >
+                {claudeSessions.length === 1
+                  ? "1 agent session is running here."
+                  : `${claudeSessions.length} agent sessions are running here.`}
               </p>
             ) : (
               <div className="space-y-1">
@@ -932,21 +1020,31 @@ export function MachineCard({
             runner's labels and never reads coord's drain map. Keyed off coord's
             own capability read, not the CI-runner mirror, which can be loading
             or down. */}
-        {machine.coordHealth?.matched && machine.coordHealth.ciRunner && (
-          <p
-            className="text-[11px] leading-snug break-words text-muted-foreground"
-            data-testid="ci-runner-drain-scope"
-          >
-            {CI_RUNNER_DRAIN_SCOPE}
-          </p>
-        )}
+        {/* Operator guidance for the drain lever, which presentation mode
+            does not mount — so neither is the note about what it reaches. */}
+        {!presenting &&
+          machine.coordHealth?.matched &&
+          machine.coordHealth.ciRunner && (
+            <p
+              className="text-[11px] leading-snug break-words text-muted-foreground"
+              data-testid="ci-runner-drain-scope"
+            >
+              {CI_RUNNER_DRAIN_SCOPE}
+            </p>
+          )}
 
         {/* CI capacity — how much CI this machine is ALLOWED to take, next to
             the telemetry that says what to set it to. Deliberately adjacent to
             the CI-runner badge above, which says what it is taking right now:
             the knob and its evidence in one viewport is the whole reason this
             page exists. Collapsed, so opening it is a deliberate act. */}
-        {ciCapacity && <CiCapacityDisclosure join={ciCapacity} />}
+        {/* A CI-capacity edit is a write (and its notices name machine
+            records), so the whole disclosure is operator-only (D3.2). */}
+        {ciCapacity && (
+          <OperatorOnly>
+            <CiCapacityDisclosure join={ciCapacity} />
+          </OperatorOnly>
+        )}
 
         {/* Summary footer */}
         <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border text-xs text-muted-foreground">
@@ -978,8 +1076,9 @@ export function MachineCard({
             )}
           {/* The cross-links HealthSummaryCard carried per device. They only
               resolve for a matched coord device — the trees view is keyed on
-              `device_id`. */}
-          {machine.coordHealth?.matched && (
+              `device_id`, which the links carry in their href and a data
+              attribute, so presentation mode does not render them (D3.3). */}
+          {!presenting && machine.coordHealth?.matched && (
             <span className="ml-auto">
               <DeviceCrossLinks deviceId={machine.coordHealth.device_id} />
             </span>

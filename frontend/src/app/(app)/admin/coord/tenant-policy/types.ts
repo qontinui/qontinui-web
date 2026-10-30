@@ -1,39 +1,82 @@
 /**
- * Wire types for the tenant-policy page: the transcript-sync consent proxy,
- * and (at the bottom) the command-safety rewrite fleet-policy domain, whose
- * wire shape is the shared `_shared/fleetPolicy.ts` one.
- *
- * Mirrors `TenantTranscriptSyncView` / `TenantTranscriptSyncWriteResult` in
- * `backend/app/api/v1/endpoints/operations.py`, which proxy coord's
- * `GET`/`PATCH /tenant-policy` (qontinui-coord#2480). Plan
- * `2026-09-22-transcript-sync-default-on-with-tenant-and-user-controls` §3.6.
+ * Level vocabularies for the tenant-policy page's fleet-policy dials: the
+ * egress switches, the command-safety rewrite, permission-prompt capture,
+ * permission auto-accept, the account-selection mode and image generation.
+ * All are coord fleet-policy
+ * domains; the wire shape — the fleet-policy view — lives with its client in
+ * `@/lib/api/operations/tenantPolicy`.
  */
 
-export interface TranscriptSyncView {
-  /**
-   * `null` — coord's answer carried no such field (a coord predating the
-   * gate). UNKNOWN, never "on": a coord that cannot report it does not enforce
-   * it either.
-   */
-  transcript_sync_enabled: boolean | null;
-  /**
-   * `true` — coord read `false` only because the column is not provisioned
-   * yet (fail closed during the deploy window), not because an admin chose it.
-   */
-  column_missing: boolean;
-  /** Effective-tenant admin (or superuser). UI gating only; coord re-checks. */
-  can_edit: boolean;
-}
+// ────────────────────────────── egress switches ──────────────────────────────
 
-export interface TranscriptSyncWriteResult {
-  written: boolean;
-  /** Coord's own post-write re-read. `null` + `readback_error` = UNKNOWN. */
-  effective: TranscriptSyncView | null;
-  readback_error: string | null;
-}
+/**
+ * The six outbound data flows a runner can send off its machine, each a
+ * tenant-band coord fleet-policy domain with levels `on` | `off` (plan
+ * `2026-10-10-spec-front-end-phase-9-generic-boundary`, C4). Coord's no-row
+ * default is `on` for a hosted deployment and `off` for a coord started with
+ * `COORD_DEPLOYMENT_PROFILE=self_hosted`; the read's `default_source` says
+ * which.
+ *
+ * The runner enforces each switch where the flow's bytes would leave (C5), so a
+ * flow that is off sends nothing — coord's ingest refusal is only a second
+ * line. `appliesAtNextStart` marks the flows a runner reads at boot.
+ */
+export const EGRESS_FLOWS = [
+  {
+    flow: "transcript_sync",
+    domain: "egress_transcript_sync",
+    label: "Transcript sync",
+    description:
+      "Claude Code session transcripts, and the tenant memory sync and memory queries that ride the same consent, are sent from each runner to this project's coord.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "code_mirror",
+    domain: "egress_code_mirror",
+    label: "Code mirror",
+    description:
+      "Each runner pushes its agents' working branches to coord's git mirror about every five minutes. Turning this off also removes that protection against losing unpushed work with a machine.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "terminal_stream",
+    domain: "egress_terminal_stream",
+    label: "Terminal streaming",
+    description:
+      "Live terminal output from runner sessions is streamed to coord and to this web console, and the console can attach to a runner's terminal.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "telemetry",
+    domain: "egress_telemetry",
+    label: "Telemetry",
+    description:
+      "Crash reports, OpenTelemetry traces and UI error reports are sent from runners to the configured error-reporting and tracing services.",
+    appliesAtNextStart: true,
+  },
+  {
+    flow: "update_check",
+    domain: "egress_update_check",
+    label: "Update check",
+    description:
+      "Runners ask GitHub's release feed whether a newer runner version exists, at startup and when asked.",
+    appliesAtNextStart: false,
+  },
+  {
+    flow: "skill_mirror",
+    domain: "egress_skill_mirror",
+    label: "Skill mirror",
+    description:
+      "Runners fetch the latest Claude skills and commands from the public qontinui-claude-config repository on GitHub; when off they serve the bundle built into the runner.",
+    appliesAtNextStart: false,
+  },
+] as const;
 
-export const TRANSCRIPT_SYNC_API =
-  "/api/v1/operations/tenant-policy/transcript-sync";
+export type EgressFlow = (typeof EGRESS_FLOWS)[number]["flow"];
+export type EgressFlowSpec = (typeof EGRESS_FLOWS)[number];
+
+export const EGRESS_LEVELS = ["on", "off"] as const;
+export type EgressLevel = (typeof EGRESS_LEVELS)[number];
 
 // ──────────────────────── command-safety rewrite dial ────────────────────────
 
@@ -54,6 +97,80 @@ export const COMMAND_SAFETY_REWRITE_LEVELS = ["on", "off"] as const;
 export type CommandSafetyRewriteLevel =
   (typeof COMMAND_SAFETY_REWRITE_LEVELS)[number];
 
+// ─────────────────────── permission-prompt capture dial ───────────────────────
+
+/**
+ * The fleet-policy domain the permission-prompt capture toggle writes. Levels:
+ * `on` | `off`; coord's no-row default is `on` — set by coord's Phase 1
+ * change of this plan (`PERMISSION_PROMPT_CAPTURE_DEFAULT`, not on coord's
+ * main yet; this console's PR is ordered after it).
+ *
+ * When `on`, a runner registers a capture hook in the settings carrier it
+ * hands each Claude Code session, and records every permission prompt that
+ * session raises — the tool and its first command word, counts, first/last
+ * seen, permission modes and redacted command excerpts, once an hour per
+ * kind of prompt and per machine (the prompt's own wording is not in any hook
+ * payload, plan Phase 0) — as a finding in this tenant's coord findings,
+ * which the findings steward folds into one dossier per prompt class. A
+ * separate consent from
+ * {@link COMMAND_SAFETY_REWRITE_DOMAIN} because it sends command text. Like
+ * that dial, the runner decides at spawn, so a change reaches only terminals
+ * and agent sessions started after it. Plan
+ * `2026-10-14-permission-prompts-are-never-recorded-so-guard-rules-grow-on-anecdote`
+ * D6/D7.
+ */
+export const PERMISSION_PROMPT_CAPTURE_DOMAIN = "permission_prompt_capture";
+
+export const PERMISSION_PROMPT_CAPTURE_LEVELS = ["on", "off"] as const;
+export type PermissionPromptCaptureLevel =
+  (typeof PERMISSION_PROMPT_CAPTURE_LEVELS)[number];
+
+// ──────────────────────── permission auto-accept dial ────────────────────────
+
+/**
+ * The fleet-policy domain the permission auto-accept switch writes. Levels:
+ * `on` | `off`; coord's no-row default is `on`
+ * (`PERMISSION_AUTO_ACCEPT_DEFAULT`, Phase 1 of plan
+ * `2026-10-23-runner-sessions-stop-at-permission-dialogs-so-accept-them-by-default-with-a-tenant-switch`).
+ * A coord that does not know the domain answers a no-row `off` instead.
+ *
+ * Unlike {@link PERMISSION_PROMPT_CAPTURE_DOMAIN}, this one is decided LIVE,
+ * per prompt (plan D2): every runner session's `PermissionRequest` hook asks
+ * the runner, and the runner allows the prompt only when it has READ an `on`
+ * from coord (an answered gate, D1). So a change reaches sessions that are
+ * already running within one poll (the runner polls about every 45 s).
+ * `AskUserQuestion`, plan approval (`ExitPlanMode`) and any prompt in `plan`
+ * or `dontAsk` mode are never accepted (D3). The permission requests of
+ * headless stream-json sessions are allowed unless the runner reads an
+ * answered `off` from an explicit row (`resolved_scope` ≠ `none`), which
+ * denies them; the session keeps running (D5).
+ */
+export const PERMISSION_AUTO_ACCEPT_DOMAIN = "permission_auto_accept";
+
+export const PERMISSION_AUTO_ACCEPT_LEVELS = ["on", "off"] as const;
+export type PermissionAutoAcceptLevel =
+  (typeof PERMISSION_AUTO_ACCEPT_LEVELS)[number];
+
+/**
+ * Classify a served level the way the runner does
+ * (`normalize_permission_auto_accept_level`: trimmed, ASCII-lowercased), so
+ * the console and the runner agree that `"ON"` or `" off "` is a recognised
+ * level. Anything else is `null`: UNKNOWN, which the runner treats as
+ * neither on nor off. (JS `trim()` also strips U+FEFF, which Rust's
+ * `str::trim` does not, and Rust's also strips U+0085 (NEL), which JS's does
+ * not.)
+ */
+export function parsePermissionAutoAcceptLevel(
+  raw: string | null | undefined
+): PermissionAutoAcceptLevel | null {
+  if (typeof raw !== "string") return null;
+  // ASCII-only folding, as Rust's `to_ascii_lowercase`.
+  const level = raw.trim().replace(/[A-Z]/g, (c) => c.toLowerCase());
+  return (PERMISSION_AUTO_ACCEPT_LEVELS as readonly string[]).includes(level)
+    ? (level as PermissionAutoAcceptLevel)
+    : null;
+}
+
 // ───────────────────────── account-selection mode dial ─────────────────────────
 
 /**
@@ -71,7 +188,7 @@ export type CommandSafetyRewriteLevel =
 export const ACCOUNT_SELECTION_DOMAIN = "account_selection_mode";
 
 /**
- * The levels this console offers. The last three are the runner's
+ * The levels this console offers. The last five are the runner's
  * `AccountSelectionMode::as_str` wire spellings, byte for byte; `off` is how
  * the console spells **no fleet opinion** — coord's own no-row fallback for an
  * unlisted domain, which the runner's `normalize_account_selection_level`
@@ -83,6 +200,8 @@ export const ACCOUNT_SELECTION_LEVELS = [
   "manual",
   "least_usage",
   "highest_expected_usage",
+  "weighted_random",
+  "alternating_handoff",
 ] as const;
 export type AccountSelectionLevel = (typeof ACCOUNT_SELECTION_LEVELS)[number];
 
@@ -97,7 +216,7 @@ export const ACCOUNT_SELECTION_DEFAULT_LEVEL: AccountSelectionLevel = "off";
  * Normalise a served level the way the runner does — trimmed, ASCII
  * case-insensitive (it matches the runner for every realistic input; JS
  * `trim()` also strips U+FEFF, which Rust's `str::trim` does not) — and
- * return it only when it is one of the four known
+ * return it only when it is one of the six known
  * levels. Anything else is `null`: UNKNOWN, never a guessed level (a guessed
  * mode is exactly what a runner would force-apply over every unpinned
  * machine).
@@ -112,4 +231,67 @@ export function parseAccountSelectionLevel(
   return (ACCOUNT_SELECTION_LEVELS as readonly string[]).includes(level)
     ? (level as AccountSelectionLevel)
     : null;
+}
+
+// ───────────────────────────── image generation dial ─────────────────────────────
+
+/**
+ * The fleet-policy domain that switches image generation per tenant, with a
+ * per-repo override. Plan `2026-10-13-image-generation-and-visual-judgment`
+ * Phase 12 (D1.7: it ships on, with off-switches at tenant and machine scope).
+ *
+ * Studio is to read it before each image request, naming the repo it is
+ * generating for (`GET /coord/fleet-policy?domain=image_generation&repo=<owner/name>`
+ * — Phase 12 step 3; no Studio build reads it yet), so
+ * unlike the two dials above this one IS decided with a repo in hand — hence
+ * the per-repo overrides. coord's no-row default is `on`; its PUT refuses any
+ * level outside {@link IMAGE_GENERATION_LEVELS} (plus `inherit` on the repo
+ * band) and any repo key that is not `owner/name`.
+ */
+export const IMAGE_GENERATION_DOMAIN = "image_generation";
+
+export const IMAGE_GENERATION_LEVELS = ["on", "local_only", "off"] as const;
+export type ImageGenerationLevel = (typeof IMAGE_GENERATION_LEVELS)[number];
+
+/** coord's no-row default for the domain: what "nobody chose" resolves. */
+export const IMAGE_GENERATION_DEFAULT_LEVEL: ImageGenerationLevel = "on";
+
+/**
+ * What a repo override can be set to. `inherit` clears it, so the repo
+ * follows the tenant setting again (coord has no DELETE for a policy row).
+ */
+export const IMAGE_GENERATION_REPO_CHOICES = [
+  "inherit",
+  ...IMAGE_GENERATION_LEVELS,
+] as const;
+export type ImageGenerationRepoChoice =
+  (typeof IMAGE_GENERATION_REPO_CHOICES)[number];
+
+/**
+ * A served level, matched EXACTLY — coord stores a canonical spelling or
+ * refuses the write — or `null`: UNKNOWN, never a guessed level. A spelling
+ * coord would refuse today can still be served by a row written before its
+ * vocabulary existed, and guessing which level it meant is how a console
+ * starts showing "on" for a repo studio treats as something else.
+ */
+export function parseImageGenerationLevel(
+  raw: string | null | undefined
+): ImageGenerationLevel | null {
+  return typeof raw === "string" &&
+    (IMAGE_GENERATION_LEVELS as readonly string[]).includes(raw)
+    ? (raw as ImageGenerationLevel)
+    : null;
+}
+
+/**
+ * coord's rule for a repo-band key of this domain (`is_owner_name` in
+ * qontinui-coord `ci_hosting_policy.rs`): no whitespace, exactly one `/`, a
+ * non-empty owner and name. Checked here only so the console can say why a
+ * write would be refused before sending it; coord is the authority.
+ */
+export function isOwnerName(key: string): boolean {
+  if (/\s/.test(key)) return false;
+  const slash = key.indexOf("/");
+  if (slash <= 0 || slash === key.length - 1) return false;
+  return !key.slice(slash + 1).includes("/");
 }

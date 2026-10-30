@@ -21,7 +21,11 @@ import {
   type RunnerDotStatus,
 } from "@/components/runner/runner-state";
 import type { RunnerLocality } from "@/lib/runner/locality";
-import type { ResolvedRunnerState } from "@/lib/runner/resolve";
+import { useMachineAliaser } from "@/components/presentation";
+import {
+  isNothingEligible,
+  type ResolvedRunnerState,
+} from "@/lib/runner/resolve";
 import { cn } from "@/lib/utils";
 
 interface RunnerStatusLineProps {
@@ -50,16 +54,10 @@ function unresolvedLabel(
   if (listState === "failed") return "Runner list unavailable";
   if (listState === "loading") return "Loading runners";
   if (runnerCount === 0) return "No runner paired";
-  switch (resolution.status) {
-    case "loading":
-      return "Resolving runner";
-    case "no_capable":
-    case "all_drained":
-    case "pin_ineligible":
-      return "No runner available";
-    default:
-      return "Runner unknown";
-  }
+  if (resolution.status === "loading") return "Resolving runner";
+  if (resolution.status === "all_offline") return "Runner offline";
+  if (isNothingEligible(resolution)) return "No runner available";
+  return "Runner unknown";
 }
 
 /**
@@ -72,17 +70,22 @@ function unresolvedLabel(
 function resolverNotice(
   pin: RunnerPin | null,
   resolution: ResolvedRunnerState,
-  activeRunner: Runner | null
+  activeRunner: Runner | null,
+  runnerName: string | null
 ): string | null {
   switch (resolution.status) {
     case "unavailable":
     case "drain_unreadable":
+    case "unknown_outcome":
       if (!activeRunner) return "Resolver unavailable";
       return pin?.id === activeRunner.id
         ? "Resolver unavailable — using your pick"
-        : `Resolver unavailable — showing ${activeRunner.name ?? "this runner"}'s data`;
+        : `Resolver unavailable — showing ${runnerName ?? "this runner"}'s data`;
     case "no_capable":
     case "all_drained":
+    case "all_offline":
+    case "all_at_capacity":
+    case "all_role_closed":
     case "pin_ineligible":
       return activeRunner
         ? "Not eligible for new work — showing its data"
@@ -101,22 +104,38 @@ function resolverNotice(
  * the runner reads currently address with its measured locality, plus the
  * resolver's state. Where work runs is chosen on the execution surfaces
  * ("Run on:"), where the choice means something (plan Phase 4).
+ *
+ * The runner is a machine, so a presentation names it by its session alias
+ * ("Machine A"), the same letter every lens panel gives it (plan
+ * `2026-10-23-console-presentation-spaces` D3.3).
  */
 export function RunnerStatusLine({ isCollapsed }: RunnerStatusLineProps) {
   const { activeRunner, runners, pin, listState, localityById, resolution } =
     useActiveRunner();
+  const nameMachine = useMachineAliaser();
 
   const status = getStatus(activeRunner, listState, localityById);
   const locality =
     activeRunner === null
       ? null
       : LOCALITY_PHRASE[runnerLocality(activeRunner, localityById)];
-  const label = activeRunner
-    ? `Runner: ${activeRunner.name ?? "unnamed"}`
-    : unresolvedLabel(listState, runners.length, resolution);
+  const runnerName = activeRunner
+    ? nameMachine(
+        {
+          deviceId: activeRunner.id,
+          hostname: activeRunner.hostname,
+          displayName: activeRunner.name,
+        },
+        activeRunner.name ?? "unnamed"
+      )
+    : null;
+  const label =
+    runnerName !== null
+      ? `Runner: ${runnerName}`
+      : unresolvedLabel(listState, runners.length, resolution);
   const notice =
     listState === "loaded" && runners.length > 0
-      ? resolverNotice(pin, resolution, activeRunner)
+      ? resolverNotice(pin, resolution, activeRunner, runnerName)
       : null;
   const summary = [label, locality].filter(Boolean).join(" · ");
 

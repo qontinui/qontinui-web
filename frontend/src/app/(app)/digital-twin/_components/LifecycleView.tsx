@@ -1,21 +1,28 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useUIElement } from "@qontinui/ui-bridge/react";
+import { LensLink, Provenance } from "@/components/presentation";
 import { cn } from "@/lib/utils";
-import { useDigitalTwinSubspaces } from "../_hooks/useDigitalTwinSubspaces";
+import { useProbeRead } from "../_hooks/useProbeRead";
 import {
   LIFECYCLE_STAGES,
   TWIN_PLANTS,
+  gradedOf,
   rowsForStage,
   stageSummary,
   twinSummary,
 } from "../_lib/lifecycle";
 import type { CoverageCounts, LifecycleStageInfo } from "../_lib/lifecycle";
-import { resolveSubspaces } from "../_lib/resolve";
-import { COUNT_FILLS, STATUS_STYLES } from "../_lib/status-presentation";
+import { probeUnread, type ProbeSilence } from "../_lib/probe-read";
+import {
+  COUNT_FILLS,
+  STATUS_STYLES,
+  upperFirst,
+} from "../_lib/status-presentation";
+import { FIDELITY_SOURCE } from "../_lib/twin-aspects";
 import type { ResolvedSubspace } from "../_lib/types";
+import { UnknownBadge } from "./FidelityFigures";
 import { SubspaceCell } from "./SubspaceCell";
 import { SubspaceDetail } from "./SubspaceDetail";
 import {
@@ -25,9 +32,11 @@ import {
 
 /**
  * Honesty-bar segments, in order. Only the first is a live verdict; then come
- * probes still in flight (no verdict yet), probes that did not answer, probes
- * coord refused for this tenant (an access decision, not silence), manifest
- * claims, and the roadmap.
+ * reports coord served (an answer, not a verdict), probes coord refused to
+ * this operator, probes still in flight (no verdict yet), probes with no
+ * reading at all (the probe failed or answered degraded), probes that did
+ * not answer, manifest claims, and the roadmap. A served report, a refused
+ * sub-space and an unread one are never counted as "not answering".
  */
 const SEGMENTS = [
   {
@@ -36,19 +45,29 @@ const SEGMENTS = [
     className: COUNT_FILLS.live,
   },
   {
+    key: "served",
+    label: "live-probed, a report (not graded)",
+    className: "bg-violet-500",
+  },
+  {
+    key: "restricted",
+    label: "restricted (not yours to read)",
+    className: STATUS_STYLES.restricted.dot,
+  },
+  {
     key: "pending",
     label: "probing…",
-    className: "animate-pulse bg-zinc-400",
+    className: STATUS_STYLES.probing.dot,
+  },
+  {
+    key: "unknown",
+    label: "live-probed, no reading (UNKNOWN)",
+    className: STATUS_STYLES.unknown.dot,
   },
   {
     key: "silent",
     label: "probed, not answering",
     className: "bg-sky-500",
-  },
-  {
-    key: "restricted",
-    label: "restricted (access)",
-    className: STATUS_STYLES.restricted.dot,
   },
   {
     key: "claim",
@@ -58,7 +77,7 @@ const SEGMENTS = [
   {
     key: "unbuilt",
     label: "planned / not built",
-    className: "bg-zinc-300 dark:bg-zinc-600",
+    className: STATUS_STYLES["not-built"].dot,
   },
 ] as const;
 
@@ -67,9 +86,11 @@ type SegmentKey = (typeof SEGMENTS)[number]["key"];
 function segmentValues(c: CoverageCounts): Record<SegmentKey, number> {
   return {
     live: c.live,
-    pending: c.pending,
-    silent: c.probed - c.live - c.pending,
+    served: c.served,
     restricted: c.restricted,
+    pending: c.pending,
+    unknown: c.unknown,
+    silent: c.probed - c.live - c.pending - c.served - c.restricted - c.unknown,
     claim: c.manifestBuilt,
     unbuilt: c.planned + c.notBuilt,
   };
@@ -100,22 +121,26 @@ function HonestyBar({ counts }: { counts: CoverageCounts }) {
 }
 
 /**
- * The legend; the probing entry shows only while a probe is in flight, and the
- * restricted entry only when coord refused at least one probe.
+ * The legend; the probing entry shows only while a probe is in flight, the
+ * restricted entry only when coord refused at least one probe, and the
+ * unknown entry only while the probe holds no reading.
  */
 function HonestyLegend({
   probing,
   restricted,
+  unknown,
 }: {
   probing: boolean;
   restricted: boolean;
+  unknown: boolean;
 }) {
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
       {SEGMENTS.filter(
         (s) =>
           (probing || s.key !== "pending") &&
-          (restricted || s.key !== "restricted")
+          (restricted || s.key !== "restricted") &&
+          (unknown || s.key !== "unknown")
       ).map((s) => (
         <li key={s.key} className="flex items-center gap-1.5">
           <span className={cn("size-2 rounded-full", s.className)} />
@@ -130,15 +155,19 @@ function CountItem({
   label,
   value,
   of,
+  reason,
 }: {
   label: string;
   /**
    * `"probing"` while the count has no verdict yet; `"none"` when there is no
    * count to show at all (every probe was refused), rendered as an em dash so
-   * it never reads as a 0 that looks like "nothing answered".
+   * it never reads as a 0 that looks like "nothing answered"; `"unknown"`
+   * when the probe holds no reading, rendered as UNKNOWN with `reason`.
    */
-  value: number | "probing" | "none";
+  value: number | "probing" | "none" | "unknown";
   of?: number;
+  /** Why an `"unknown"` count has no reading (its title). */
+  reason?: string;
 }) {
   return (
     <div className="flex flex-col">
@@ -147,7 +176,9 @@ function CountItem({
         {label}
       </dt>
       <dd className="order-1 text-base font-semibold tabular-nums">
-        {value === "probing" ? (
+        {value === "unknown" ? (
+          <UnknownBadge title={reason ? `${upperFirst(reason)}.` : undefined} />
+        ) : value === "probing" ? (
           <span className="text-xs font-normal text-muted-foreground">
             probing…
           </span>
@@ -171,26 +202,41 @@ function CountItem({
 /**
  * The three labelled counts every stage shows: live vs claim vs roadmap.
  * While a probe is in flight the live count has no verdict, so it reads
- * "probing…" rather than a "0/N" that would look like silence.
+ * "probing…" rather than a "0/N" that would look like silence; while the
+ * probe holds no reading at all it is UNKNOWN, for the same reason.
  */
-function StageCounts({ counts }: { counts: CoverageCounts }) {
+function StageCounts({
+  counts,
+  silence,
+}: {
+  counts: CoverageCounts;
+  silence: ProbeSilence | null;
+}) {
+  // A stage nothing probes has a live count of 0 whatever the probe did:
+  // that zero is the declaration's, not a reading.
+  if (silence !== null && counts.probed > 0) {
+    return (
+      <dl className="grid grid-cols-3 gap-2">
+        <CountItem
+          label="live-probed"
+          value="unknown"
+          reason={silence.reason}
+        />
+        <CountItem label="built (claim)" value={counts.manifestBuilt} />
+        <CountItem
+          label="planned / not built"
+          value={counts.planned + counts.notBuilt}
+        />
+      </dl>
+    );
+  }
   const probing = counts.pending > 0;
   return (
     <dl className="grid grid-cols-3 gap-2">
       <CountItem
-        label={
-          counts.restricted > 0
-            ? `live-probed · ${counts.restricted} restricted`
-            : "live-probed"
-        }
-        value={
-          probing
-            ? "probing"
-            : counts.probed === 0 && counts.restricted > 0
-              ? "none"
-              : counts.live
-        }
-        of={!probing && counts.probed > 0 ? counts.probed : undefined}
+        label="live-probed"
+        value={probing ? "probing" : counts.live}
+        of={!probing && gradedOf(counts) > 0 ? gradedOf(counts) : undefined}
       />
       <CountItem label="built (claim)" value={counts.manifestBuilt} />
       <CountItem
@@ -202,26 +248,75 @@ function StageCounts({ counts }: { counts: CoverageCounts }) {
 }
 
 /** Say in words when nothing at a stage is live-verified. */
-function liveProbeNote(counts: CoverageCounts): string | null {
-  if (counts.probed === 0 && counts.restricted > 0) {
-    return "Every live probe at this stage is restricted for this tenant.";
-  }
+function liveProbeNote(
+  counts: CoverageCounts,
+  silence: ProbeSilence | null
+): string | null {
   if (counts.probed === 0) {
     return "No live probe at this stage — every status here is a manifest claim.";
   }
+  // No reading: why, never "no live probe answering" — none was asked.
+  if (silence !== null) return `${upperFirst(silence.reason)}.`;
   // While a probe is in flight the live-probed count itself reads "probing…".
   if (counts.pending > 0 || counts.live > 0) return null;
-  return "No live probe answering at this stage.";
+  // A served report beside it does not make a silent verdict probe answer.
+  if (gradedOf(counts) > 0) return "No live probe answering at this stage.";
+  if (counts.served === 0) {
+    return "Every live probe at this stage is restricted for you.";
+  }
+  return null;
 }
 
 /** A twin card's live-probe count — in words while it has no verdict yet. */
 function liveProbeSummary(counts: CoverageCounts): string {
   if (counts.pending > 0) return "probing…";
-  const restricted =
-    counts.restricted > 0 ? `${counts.restricted} restricted` : null;
-  if (counts.probed === 0) return restricted ?? "no live probe";
-  const live = `${counts.live}/${counts.probed} live-probed`;
-  return restricted ? `${live} · ${restricted}` : live;
+  if (counts.probed === 0) return "no live probe";
+  // Nothing here can answer this operator with a verdict: say why, never "0/0".
+  if (gradedOf(counts) === 0) {
+    return counts.served > 0
+      ? `${counts.served} served (not graded)`
+      : "all restricted for you";
+  }
+  return `${counts.live}/${gradedOf(counts)} live-probed`;
+}
+
+/**
+ * One twin's counts on its intro card. While the probe holds no reading, a
+ * twin with live probes has no live count: UNKNOWN, and why — never the
+ * "0/N live-probed" its stand-in cells would add up to.
+ */
+function TwinCounts({
+  plantId,
+  counts,
+  silence,
+}: {
+  plantId: string;
+  counts: CoverageCounts;
+  silence: ProbeSilence | null;
+}) {
+  const claims = `${counts.manifestBuilt} built (claim) · ${counts.planned + counts.notBuilt} planned / not built`;
+  const testId = `digital-twin-lifecycle-twin-${plantId}-counts`;
+  if (silence !== null && counts.probed > 0) {
+    return (
+      <div data-testid={testId} data-reading="unknown" className="space-y-1">
+        <p className="flex flex-wrap items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
+          <UnknownBadge />
+          <span>live-probed · {claims}</span>
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          {upperFirst(silence.reason)}.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <p
+      data-testid={testId}
+      className="text-[11px] tabular-nums text-muted-foreground"
+    >
+      {liveProbeSummary(counts)} · {claims}
+    </p>
+  );
 }
 
 interface StageSectionProps {
@@ -230,6 +325,8 @@ interface StageSectionProps {
   position: number;
   rows: ResolvedSubspace[];
   counts: CoverageCounts;
+  /** Why the probe holds no reading (`probeUnread`), or `null`. */
+  silence: ProbeSilence | null;
   onSelect: (row: ResolvedSubspace) => void;
 }
 
@@ -238,6 +335,7 @@ function StageSection({
   position,
   rows,
   counts,
+  silence,
   onSelect,
 }: StageSectionProps) {
   const uiId = `digital-twin-stage-${stage.id}`;
@@ -249,7 +347,7 @@ function StageSection({
     type: "custom",
   });
   const headingId = `${uiId}-heading`;
-  const note = liveProbeNote(counts);
+  const note = liveProbeNote(counts, silence);
 
   return (
     <li>
@@ -278,9 +376,14 @@ function StageSection({
 
           <div className="space-y-1.5">
             <HonestyBar counts={counts} />
-            <StageCounts counts={counts} />
+            <StageCounts counts={counts} silence={silence} />
             {note && (
-              <p className="text-[11px] text-muted-foreground">{note}</p>
+              <p
+                data-testid={`${uiId}-note`}
+                className="text-[11px] text-muted-foreground"
+              >
+                {note}
+              </p>
             )}
           </div>
 
@@ -295,13 +398,16 @@ function StageSection({
             <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
               <span className="text-muted-foreground">Console:</span>
               {stage.consoleLinks.map((link) => (
-                <Link
+                // Plain text while presenting unless the page can be
+                // presented (LensLink): no click leaves the lens.
+                <LensLink
                   key={link.href}
                   href={link.href}
                   className="font-medium text-primary underline-offset-4 hover:underline"
+                  textClassName="font-medium"
                 >
                   {link.label}
-                </Link>
+                </LensLink>
               ))}
             </p>
           )}
@@ -337,22 +443,39 @@ function StageSection({
  * what is live-probed versus only claimed by the manifest.
  */
 export function LifecycleView() {
-  const { data, isLoading, isError, error } = useDigitalTwinSubspaces();
-  const [selected, setSelected] = useState<ResolvedSubspace | null>(null);
+  // The probe joined with coord's declaration of what the twin probes, with
+  // the one rule for when it holds no reading that the Twin map and the
+  // Completeness matrix apply too.
+  const probe = useProbeRead();
+  const { rows } = probe;
+  // The open drawer's sub-space, kept by id so the drawer is handed the
+  // probe's CURRENT row for it and moves when the probe does (as in the
+  // Completeness matrix): the row object as it was clicked would keep the
+  // status it had then.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected =
+    selectedId === null
+      ? null
+      : (rows.find((r) => r.id === selectedId) ?? null);
+  const select = (row: ResolvedSubspace) => setSelectedId(row.id);
 
-  const rows = useMemo(
-    () => resolveSubspaces(data?.subspaces, isLoading),
-    [data?.subspaces, isLoading]
-  );
   const byStage = useMemo(() => stageSummary(rows), [rows]);
   const byTwin = useMemo(() => twinSummary(rows), [rows]);
   const probing = rows.some((r) => r.cellStatus === "probing");
   const anyRestricted = rows.some((r) => r.cellStatus === "restricted");
+  const anyUnknown = rows.some((r) => r.cellStatus === "unknown");
+  // No reading at all: every live count below is UNKNOWN, with why.
+  const silence = probeUnread(probe);
 
-  if (data?.restricted) return <TwinAccessRestricted />;
+  // The whole-view notice only when EVERY probe was refused; a single refused
+  // sub-space renders as its own `restricted` cell.
+  if (probe.restricted) return <TwinAccessRestricted />;
 
   return (
     <div className="space-y-6">
+      {/* Above the twin counts and the stages: "below" covers them all. */}
+      <CoordUnreachableBanner probe={probe} />
+
       <section
         aria-labelledby="digital-twin-lifecycle-intro"
         className="space-y-4 rounded-lg border border-border bg-card p-4"
@@ -370,6 +493,12 @@ export function LifecycleView() {
             runs; built (claim) counts are what the manifest says is built —
             claims, not live verdicts.
           </p>
+          {/* The live counts' source and age, in presentation mode — UNKNOWN
+              ones dated by the attempt that left them so. */}
+          <Provenance
+            source={FIDELITY_SOURCE.probe}
+            asOf={silence ? silence.asOf : probe.asOf}
+          />
         </div>
 
         <ul className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -387,20 +516,22 @@ export function LifecycleView() {
                   </p>
                 </div>
                 <HonestyBar counts={counts} />
-                <p className="text-[11px] tabular-nums text-muted-foreground">
-                  {liveProbeSummary(counts)} · {counts.manifestBuilt} built
-                  (claim) · {counts.planned + counts.notBuilt} planned / not
-                  built
-                </p>
+                <TwinCounts
+                  plantId={plant.id}
+                  counts={counts}
+                  silence={silence}
+                />
               </li>
             );
           })}
         </ul>
 
-        <HonestyLegend probing={probing} restricted={anyRestricted} />
+        <HonestyLegend
+          probing={probing}
+          restricted={anyRestricted}
+          unknown={anyUnknown}
+        />
       </section>
-
-      {isError && <CoordUnreachableBanner error={error} />}
 
       <ol className="space-y-4">
         {LIFECYCLE_STAGES.map((stage, index) => (
@@ -410,15 +541,17 @@ export function LifecycleView() {
             position={index + 1}
             rows={rowsForStage(rows, stage.id)}
             counts={byStage[stage.id]}
-            onSelect={setSelected}
+            silence={silence}
+            onSelect={select}
           />
         ))}
       </ol>
 
       <SubspaceDetail
         row={selected}
+        probe={probe}
         onOpenChange={(open) => {
-          if (!open) setSelected(null);
+          if (!open) setSelectedId(null);
         }}
       />
     </div>

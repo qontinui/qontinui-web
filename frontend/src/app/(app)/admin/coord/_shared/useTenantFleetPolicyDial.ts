@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
 import {
-  FLEET_POLICY_API,
+  fetchFleetPolicy,
+  putFleetPolicy,
   type FleetPolicyView,
   type FleetPolicyWriteResult,
-} from "./fleetPolicy";
+} from "@/lib/api/operations/tenantPolicy";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -22,9 +22,12 @@ function capitalise(s: string): string {
  * level, then read it back. Shared by every tenant-band dial in the console
  * (`plan_capture` and `citation_scope_backfill_write` on the plan library;
  * `policy_write` and `policy_upstream` on prompt documents;
- * `command_safety_rewrite` and `account_selection_mode` on tenant policy). Each domain's
- * hook binds `domain` + `label` and layers its own level vocabulary on top
- * (a no-row default, a fail-closed parse), so the honesty properties below are
+ * `command_safety_rewrite`, `permission_prompt_capture`,
+ * `permission_auto_accept`, `account_selection_mode` and `image_generation`
+ * on tenant policy;
+ * `github_hosted_ci` on Dev Ops ▸ CI). Each domain's hook binds `domain` +
+ * `label` and layers its own level vocabulary on top (a no-row default, a
+ * fail-closed parse), so the honesty properties below are
  * stated and tested once rather than drifting between copies — the four used
  * to be hand-copied, and the refresh-vs-write race fix reached only two.
  *
@@ -50,12 +53,18 @@ function capitalise(s: string): string {
  *    not repo-scoped), the citation backfill agent door operates on the
  *    caller's whole tenant, and `policy_write` / `policy_upstream` govern the
  *    tenant's prompt documents, which belong to no repo, and the runner picks
- *    a session's `command_safety_rewrite` carrier at spawn, before the session
- *    is scoped to any repo, and `account_selection_mode` is a machine-global
- *    mode on a machine that is not repo-scoped. A `repo` band would
+ *    a session's `command_safety_rewrite` and `permission_prompt_capture`
+ *    carrier at spawn, before the session is scoped to any repo, the runner
+ *    answers a session's `permission_auto_accept` prompts for that same
+ *    unscoped session, and `account_selection_mode` is a machine-global mode
+ *    on a machine that is not repo-scoped. A `repo` band would
  *    have no resolvable `scope_key` at the moment any of those decisions is
  *    made, so the hook offers no per-repo write. It still SHOWS the resolved band, because the band that won tells
- *    the operator whether this tenant's row is the one in force.
+ *    the operator whether this tenant's row is the one in force. The two
+ *    domains that ARE decided with a repo in hand — `github_hosted_ci` (a CI
+ *    run belongs to a repo) and `image_generation` (studio names the repo it is
+ *    generating for) — bind this hook for their TENANT band only, and write
+ *    their repo band through the sibling `useRepoFleetPolicyWrite`.
  *
  * Coord resolves **most-specific-wins**: `repo` beats `tenant` beats `system`
  * (`resolve_effective` picks the lowest `ScopeBand` ordinal, Repo=0 < Tenant=1
@@ -89,25 +98,31 @@ export function useTenantFleetPolicyDial<L extends string>(
   // in flight beside it would be silently discarded.
   const writeGeneration = useRef(0);
 
-  const load = useCallback(async () => {
+  /**
+   * Read the resolved value. Resolves `true` only when THIS read landed and is
+   * now what is shown — `false` when it failed, or when a write landed while it
+   * was in flight and it was discarded — so a caller can tell a confirmed read
+   * from a refresh that confirmed nothing.
+   */
+  const load = useCallback(async (): Promise<boolean> => {
     const generation = writeGeneration.current;
     try {
       setLoading(true);
-      const view = await httpClient.get<FleetPolicyView>(
-        `${FLEET_POLICY_API}?domain=${encodeURIComponent(domain)}`
-      );
-      if (generation !== writeGeneration.current) return;
+      const view = await fetchFleetPolicy(domain);
+      if (generation !== writeGeneration.current) return false;
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure. The
       // banner it drives says "the value above may be stale" — leaving it up
       // beside a value we just confirmed would be the opposite of honest.
       setLastWrite(null);
+      return true;
     } catch (err) {
-      if (generation !== writeGeneration.current) return;
+      if (generation !== writeGeneration.current) return false;
       // Keep the last known-good value on screen; the banner says it is stale.
       // Blanking it would read as "off", which is a claim we cannot make.
       setError(message(err, `Failed to read the ${label} dial`));
+      return false;
     } finally {
       setLoading(false);
     }
@@ -116,6 +131,16 @@ export function useTenantFleetPolicyDial<L extends string>(
   useEffect(() => {
     load();
   }, [load]);
+
+  /**
+   * A write to this domain LANDED outside this hook — a repo-band write whose
+   * effect shows up in this read (`repo_overrides`). Retires every read that
+   * began before it, exactly as a landed tenant write does; call it the moment
+   * the write lands, before re-reading, so the re-read is the one applied.
+   */
+  const noteWriteLanded = useCallback(() => {
+    writeGeneration.current += 1;
+  }, []);
 
   /**
    * Write `level` at the tenant band.
@@ -129,18 +154,15 @@ export function useTenantFleetPolicyDial<L extends string>(
     async (level: L, changeNote?: string): Promise<boolean> => {
       try {
         setSaving(true);
-        const result = await httpClient.put<FleetPolicyWriteResult>(
-          FLEET_POLICY_API,
-          {
-            domain,
-            scope_band: "tenant",
-            scope_key: null,
-            level,
-            master_enabled: true,
-            change_note:
-              changeNote ?? `Set ${label} to "${level}" from the console`,
-          }
-        );
+        const result = await putFleetPolicy({
+          domain,
+          scope_band: "tenant",
+          scope_key: null,
+          level,
+          master_enabled: true,
+          change_note:
+            changeNote ?? `Set ${label} to "${level}" from the console`,
+        });
         writeGeneration.current += 1;
         setLastWrite(result);
 
@@ -187,7 +209,10 @@ export function useTenantFleetPolicyDial<L extends string>(
     /** Set only when the last write's read-back failed. UNKNOWN, not "off". */
     readbackError: lastWrite?.readback_error ?? null,
     lastWrite,
+    /** Re-read; resolves `true` only when that read landed and is now shown. */
     reload: load,
     setLevel,
+    /** A write to this domain landed elsewhere: retire reads that began before it. */
+    noteWriteLanded,
   };
 }
