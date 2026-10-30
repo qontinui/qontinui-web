@@ -46,16 +46,25 @@ table kept current by triggers on the base table.
   policy-scoped reader.
 * ``coord.policy_outcome_counts_seeded``: one row per ``(decision_domain,
   surface)`` key coord has seeded, unique ``NULLS NOT DISTINCT``. A reader
-  trusts the rollup for a key only when the key is here.
-* ``coord.policy_outcome_counts_apply()`` and three statement-level triggers on
+  scoped to one such key trusts the rollup only when the key is here.
+* ``coord.policy_outcome_counts_seed_state``: a singleton (``id boolean
+  PRIMARY KEY DEFAULT true CHECK (id)``) whose ``full_pass_completed_at`` the
+  coord seeder sets once one complete enumeration pass over every labeled key
+  has finished. A reader NOT scoped to one ``(decision_domain, surface)`` key
+  (``fetch_outcome_counts(policy_id, surface)`` spans domains) uses the rollup
+  only when that column is NOT NULL. After the triggers are installed every
+  new label is counted by them, so only labels that predate the triggers need
+  seeding, and one completed pass seeds all of them.
+* ``coord.policy_outcome_counts_apply()`` and four statement-level triggers on
   ``coord.policy_rule_resolutions`` that execute it.
 
-Both tables have every key column nullable, so neither can carry a primary key
-or a ``REPLICA IDENTITY USING INDEX``. They are set ``REPLICA IDENTITY FULL``
-(every column type has a default equality operator), which is what
-``tests/test_replica_identity_published_schemas.py`` requires of a table in a
-published schema with no primary key. Rows are a handful of narrow columns, so
-the extra WAL from FULL is small.
+The two key-only tables have every key column nullable, so neither can carry a
+primary key or a ``REPLICA IDENTITY USING INDEX``. They are set ``REPLICA
+IDENTITY FULL`` (every column type has a default equality operator), which is
+what ``tests/test_replica_identity_published_schemas.py`` requires of a table
+in a published schema with no primary key. Rows are a handful of narrow
+columns, so the extra WAL from FULL is small. ``_seed_state`` has a primary
+key, so its DEFAULT identity already satisfies that guard.
 
 ## The FIRST trigger and the FIRST function in the coord chain
 
@@ -76,7 +85,7 @@ safety decision. A trigger is the one place no writer can bypass.
 
 Row-level triggers would run the rollup upsert once per affected row: 5,000
 times per retention batch, and once per row of a multi-row label UPDATE. The
-three triggers are ``AFTER ... FOR EACH STATEMENT`` with transition tables, so
+three row-changing triggers are ``AFTER ... FOR EACH STATEMENT`` with transition tables, so
 each statement aggregates its own delta once and upserts one row per distinct
 key it touched. Three triggers rather than one, because PostgreSQL refuses
 transition tables on a trigger with more than one event, and refuses them on a
@@ -106,6 +115,19 @@ function depends on the table row type having exactly the eight columns in
 this order. A later revision that adds a column to the rollup must rewrite the
 function with it.
 
+## TRUNCATE
+
+A fourth trigger, ``trg_policy_outcome_counts_trunc`` (``AFTER TRUNCATE ...
+FOR EACH STATEMENT``, no transition table: PostgreSQL has none for TRUNCATE),
+runs the same function, whose ``TRUNCATE`` branch empties
+``policy_outcome_counts`` and ``policy_outcome_counts_seeded`` and sets
+``seed_state.full_pass_completed_at`` back to NULL. Without it a TRUNCATE of
+the base table (no production code issues one; test suites do) would leave
+every seeded key trusted and wrong. The branch takes no fence lock: TRUNCATE
+holds ACCESS EXCLUSIVE on the base table, which already waits for any seeder
+transaction that has read the base table to end. It uses DELETE rather than
+TRUNCATE on the rollup tables so it takes no ACCESS EXCLUSIVE on them.
+
 ## No CHECK on n
 
 ``n`` has no ``CHECK (n >= 0)``. The triggers go live before coord has seeded
@@ -124,58 +146,95 @@ snapshot of its batch would be counted twice (label time is independent of
 I/O), and a multi-minute scan holding a snapshot risks the migrate workflow
 waiter deadline. Seeding is coord Phase 2, per key, behind the fence below.
 
-## The seeding fence: advisory lock class 774177001
+## The seeding fence: advisory lock class 774177001, SHARED in the trigger
 
 For each non-empty ``(decision_domain, surface)`` group in its delta the
 function takes::
 
-    pg_advisory_xact_lock(774177001,
+    pg_advisory_xact_lock_shared(774177001,
         hashtext(coalesce(decision_domain, '') || '|' || coalesce(surface, '')))
 
-before it upserts. Class id ``774177001`` is reserved for this rollup. coord
-seeder takes the SAME lock, then in a later statement (a fresh READ COMMITTED
-snapshot) recounts the key from the base table, deletes the key rollup rows,
-inserts the truth and records the key in ``_seeded``, all in one transaction.
-A labeling transaction whose trigger took the lock first has committed before
-that snapshot, so its row is in the recount and its earlier ``+1`` is
-overwritten; one whose trigger arrives later blocks on the lock, is invisible
-to the recount, and applies its ``+1`` after the seeder commits. Only label
-writes and labeled-row deletes of that one key wait. The lock is taken in the
-statement trigger, so it is held to the end of the writing transaction.
+before it upserts. Class id ``774177001`` is reserved for this rollup, and the
+key is computed in SQL with exactly that expression on both sides. The trigger
+takes the lock SHARED, so concurrent labelers of one hot key do not serialize
+on it; they serialize only on the rollup row itself, via ``ON CONFLICT DO
+UPDATE``, and each statement upserts in one fixed key order, so two of them
+cannot deadlock on rollup rows. The coord seeder (and reconcile) take the SAME
+lock EXCLUSIVE, then in a later statement (a fresh READ COMMITTED snapshot)
+recount the key from the base table, delete the key rollup rows, insert the
+truth and record the key in ``_seeded``, all in one transaction. A labeling
+transaction whose trigger took the shared lock first has committed before the
+seeder obtains the exclusive lock, so its row is in the recount and its earlier
+``+1`` is overwritten; one whose trigger arrives later blocks on the lock, is
+invisible to the recount, and applies its ``+1`` after the seeder commits. Only
+label writes and labeled-row deletes of the key being seeded wait. The lock is
+taken in the statement trigger, so it is held to the end of the writing
+transaction.
 
 The locks are taken in ascending order of the lock key itself (the
-``hashtext`` value), not of the text key. Both orders are consistent across
-statements, but ordering by the lock key is also deadlock-free when two text
-keys hash to the same lock. The seeder takes one key lock per transaction, so
-the order is internal to this function.
+``hashtext`` value), not of the text key. Shared locks never conflict with
+each other, so the order matters only against an exclusive holder; the seeder
+takes one key lock per transaction, so the order is internal to this function.
+
+## Trigger errors abort the writer
+
+Any error raised in ``policy_outcome_counts_apply()`` aborts the base
+statement that fired it: a label UPDATE, a resolution INSERT, a 5,000-row
+retention DELETE. That is the price of a rollup no writer can bypass, and it
+is why the function has no CHECK to trip, upserts with ``ON CONFLICT``, and
+pins ``SET search_path = pg_catalog, coord`` so a caller search_path cannot
+resolve one of its names to another object. Anyone changing the function
+must keep it unable to fail on any row the base table accepts.
+
+Row level security: the rollup tables carry ``tenant_id`` but no policies,
+like the rest of coord today. When coord adopts RLS tenant roles for
+``coord.policy_rule_resolutions``, these three tables must get matching
+policies in the same change, or the rollup becomes a cross-tenant read path
+(and a trigger running as a restricted role would fail, aborting the writer).
 
 ## Locking on the hot table, and why the triggers are in an autocommit block
 
 ``CREATE TRIGGER`` takes ``SHARE ROW EXCLUSIVE`` on
 ``coord.policy_rule_resolutions`` (4.97 M rows, 8.9 GB heap, written on every
-decision). env.py runs a whole upgrade batch in ONE transaction, so a trigger
-created in it would hold that lock until the batch commits, and its queued
-request would sit behind the 21 to 48 s calibration counts and stall every
-writer behind it. So the function and the triggers are created inside
-``op.get_context().autocommit_block()`` with ``SET lock_timeout = '3s'``, and
-the three ``CREATE OR REPLACE TRIGGER`` statements run in one DO block that
-retries ``lock_not_available`` (55P03) up to 10 attempts with a growing pause
-(worst case about 52 s, far inside the migrate waiter deadline), then re-raises.
-The three triggers are created in one subtransaction, so they appear together
-or not at all. ``lock_timeout`` is RESET afterwards (env.py also resets it
-after every revision).
+decision). That mode does NOT conflict with the ``ACCESS SHARE`` of the 20 to
+50 s calibration count reads; it conflicts with ``ROW EXCLUSIVE`` (every
+INSERT, UPDATE and DELETE) and ``SHARE UPDATE EXCLUSIVE`` (autovacuum), so it
+queues behind in-flight writers and autovacuum, and while queued it stalls
+every new writer behind it. env.py runs a whole upgrade batch in ONE
+transaction, so a trigger created in the batch would also HOLD the lock until
+the batch commits, stalling every writer for the rest of the batch. So the
+function and the triggers are created inside
+``op.get_context().autocommit_block()``, where each statement commits on its
+own, with ``SET lock_timeout = '500ms'`` so a queued request stalls writers for
+at most half a second at a time. The four ``CREATE OR REPLACE TRIGGER``
+statements run in one DO block that retries ``lock_not_available`` (55P03)
+with a pause of ``least(0.1 * attempt, 2)`` s, up to 40 attempts (about 80 s
+worst case, far inside the migrate waiter deadline), then re-raises. The four
+triggers are created in one subtransaction, so they appear together or not at
+all. ``lock_timeout`` is RESET afterwards (env.py also resets it after every
+revision).
+
+The attempt budget can be lowered for a test through the custom setting
+``qontinui.policy_outcome_counts_ddl_attempts`` (unset in production, so the
+defaults above apply). It is read inside the DO block so every SQL string
+stays a static literal.
 
 ``CREATE OR REPLACE TRIGGER`` (PostgreSQL 14+) is what makes a retry, or a
 re-run after a partial apply, idempotent. ``DROP TRIGGER IF EXISTS`` would take
-``ACCESS EXCLUSIVE`` on the table even when no trigger exists, blocking every
-reader while queued; ``CREATE OR REPLACE`` takes the same ``SHARE ROW
-EXCLUSIVE`` as a plain create. The two new tables are created in the normal
-batch transaction: they are new and nothing references them.
+``ACCESS EXCLUSIVE`` on the table even when no trigger exists;
+``CREATE OR REPLACE`` takes the same ``SHARE ROW EXCLUSIVE`` as a plain create.
+The new tables are created in the normal batch transaction: they are new and
+nothing references them.
 
 ## Downgrade
 
-Drops the triggers (``ACCESS EXCLUSIVE``, so the same bounded retry), the
-function, then both tables, all inside an autocommit block.
+``DROP TRIGGER`` takes ``ACCESS EXCLUSIVE``, which DOES conflict with the
+count reads, and one of those is almost always in flight. So the downgrade
+first replaces the function body with ``RETURN NULL`` (no base-table lock at
+all), which makes the triggers inert at once, and only then drops the four
+triggers with ``lock_timeout = '200ms'`` and up to 100 attempts with the same
+capped backoff (about 210 s worst case), then drops the function and the three
+tables. Everything runs inside an autocommit block.
 
 ## Head choice
 
@@ -244,7 +303,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.policy_outcome_counts IS
-            'Labeled coord.policy_rule_resolutions rows counted per (decision_domain, surface, decision, tenant_id, policy_id, labeled_hour, outcome_category). Maintained by the policy_outcome_counts_apply statement triggers; seeded per (decision_domain, surface) by coord. Trust a key only when it is in policy_outcome_counts_seeded: n may be transiently negative for an unseeded key.'
+            'Labeled coord.policy_rule_resolutions rows counted per (decision_domain, surface, decision, tenant_id, policy_id, labeled_hour, outcome_category). Maintained by the policy_outcome_counts_apply statement triggers; seeded per (decision_domain, surface) by coord. Trust a key only when it is in policy_outcome_counts_seeded (or, for a reader spanning keys, when policy_outcome_counts_seed_state.full_pass_completed_at is set): n may be transiently negative for an unseeded key.'
         """
     )
     op.execute(
@@ -274,27 +333,52 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.policy_outcome_counts_seeded IS
-            'The (decision_domain, surface) keys coord has seeded into policy_outcome_counts under advisory lock class 774177001. A reader serves a key from the rollup only when it is listed here.'
+            'The (decision_domain, surface) keys coord has seeded into policy_outcome_counts under advisory lock class 774177001. A reader scoped to one key serves it from the rollup only when it is listed here.'
+        """
+    )
+
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS coord.policy_outcome_counts_seed_state (
+            id                      BOOLEAN NOT NULL DEFAULT true,
+            full_pass_completed_at  TIMESTAMPTZ,
+            CONSTRAINT policy_outcome_counts_seed_state_pkey PRIMARY KEY (id),
+            CONSTRAINT policy_outcome_counts_seed_state_singleton_check CHECK (id)
+        )
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON TABLE coord.policy_outcome_counts_seed_state IS
+            'Singleton. full_pass_completed_at is set by the coord seeder when one complete pass over every labeled (decision_domain, surface) key has finished, and cleared by a TRUNCATE of coord.policy_rule_resolutions. A reader not scoped to one key uses the rollup only when it is set.'
         """
     )
 
     # The function and the triggers run OUTSIDE the batch transaction, so the
     # SHARE ROW EXCLUSIVE lock on the hot base table is held for one short
-    # statement and not until the batch commits.
+    # statement and not until the batch commits, and each queued request stalls
+    # writers for at most the lock_timeout.
     with op.get_context().autocommit_block():
-        op.execute("SET lock_timeout = '3s'")
+        op.execute("SET lock_timeout = '500ms'")
         try:
             op.execute(
                 """
                 CREATE OR REPLACE FUNCTION coord.policy_outcome_counts_apply()
                 RETURNS trigger
                 LANGUAGE plpgsql
+                SET search_path = pg_catalog, coord
                 AS $fn$
                 DECLARE
                     delta coord.policy_outcome_counts[];
                     k record;
                 BEGIN
-                    IF TG_OP = 'INSERT' THEN
+                    IF TG_OP = 'TRUNCATE' THEN
+                        DELETE FROM coord.policy_outcome_counts;
+                        DELETE FROM coord.policy_outcome_counts_seeded;
+                        UPDATE coord.policy_outcome_counts_seed_state
+                           SET full_pass_completed_at = NULL;
+                        RETURN NULL;
+                    ELSIF TG_OP = 'INSERT' THEN
                         SELECT array_agg(ROW(g.decision_domain, g.surface, g.decision,
                                              g.tenant_id, g.policy_id, g.labeled_hour,
                                              g.outcome_category, g.n
@@ -382,9 +466,9 @@ def upgrade() -> None:
                         RETURN NULL;
                     END IF;
 
-                    -- Seeding fence: one advisory lock per (decision_domain,
-                    -- surface) key, ascending by lock key so concurrent
-                    -- statements cannot deadlock, even on a hash collision.
+                    -- Seeding fence: one SHARED advisory lock per
+                    -- (decision_domain, surface) key, ascending by lock key.
+                    -- The coord seeder takes the same lock EXCLUSIVE.
                     FOR k IN
                         SELECT DISTINCT pg_catalog.hashtext(
                                    coalesce(x.decision_domain, '') || '|' || coalesce(x.surface, '')
@@ -392,7 +476,7 @@ def upgrade() -> None:
                           FROM unnest(delta) AS x
                          ORDER BY 1
                     LOOP
-                        PERFORM pg_catalog.pg_advisory_xact_lock(774177001, k.lock_key);
+                        PERFORM pg_catalog.pg_advisory_xact_lock_shared(774177001, k.lock_key);
                     END LOOP;
 
                     INSERT INTO coord.policy_outcome_counts AS c (
@@ -416,7 +500,7 @@ def upgrade() -> None:
             op.execute(
                 """
                 COMMENT ON FUNCTION coord.policy_outcome_counts_apply() IS
-                    'Statement trigger body maintaining coord.policy_outcome_counts from the transition tables of coord.policy_rule_resolutions: +1 per labeled NEW row, -1 per labeled OLD row, per full rollup key, zero-sum groups dropped. Takes pg_advisory_xact_lock(774177001, hashtext(coalesce(decision_domain, empty) || pipe || coalesce(surface, empty))) per key before upserting: the coord seeding fence.'
+                    'Statement trigger body maintaining coord.policy_outcome_counts from the transition tables of coord.policy_rule_resolutions: +1 per labeled NEW row, -1 per labeled OLD row, per full rollup key, zero-sum groups dropped. Takes pg_advisory_xact_lock_shared(774177001, hashtext(coalesce(decision_domain, empty) || pipe || coalesce(surface, empty))) per key before upserting: the coord seeding fence, which the seeder takes exclusive. On TRUNCATE empties the rollup and the seeded set and clears seed_state. Any error here aborts the writing statement.'
                 """
             )
             op.execute(
@@ -424,6 +508,9 @@ def upgrade() -> None:
                 DO $retry$
                 DECLARE
                     attempt integer := 0;
+                    max_attempts integer := coalesce(
+                        nullif(current_setting('qontinui.policy_outcome_counts_ddl_attempts', true), '')::integer,
+                        40);
                 BEGIN
                     LOOP
                         attempt := attempt + 1;
@@ -443,13 +530,17 @@ def upgrade() -> None:
                                 REFERENCING OLD TABLE AS old_rows
                                 FOR EACH STATEMENT
                                 EXECUTE FUNCTION coord.policy_outcome_counts_apply();
+                            CREATE OR REPLACE TRIGGER trg_policy_outcome_counts_trunc
+                                AFTER TRUNCATE ON coord.policy_rule_resolutions
+                                FOR EACH STATEMENT
+                                EXECUTE FUNCTION coord.policy_outcome_counts_apply();
                             EXIT;
                         EXCEPTION WHEN lock_not_available THEN
-                            IF attempt >= 10 THEN
+                            IF attempt >= max_attempts THEN
                                 RAISE;
                             END IF;
                             RAISE NOTICE 'policy_outcome_counts triggers: lock_timeout on attempt %, retrying', attempt;
-                            PERFORM pg_catalog.pg_sleep(0.5 * attempt);
+                            PERFORM pg_catalog.pg_sleep(least(0.1 * attempt, 2.0));
                         END;
                     END LOOP;
                 END
@@ -461,15 +552,35 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the triggers (bounded retry), the function, then both tables."""
+    """Neutralise the function, drop the triggers (bounded retry), then the rest."""
     with op.get_context().autocommit_block():
-        op.execute("SET lock_timeout = '3s'")
+        # Takes no lock on the base table and makes every trigger inert at once,
+        # so nothing depends on how long the trigger drops below have to wait.
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION coord.policy_outcome_counts_apply()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            SET search_path = pg_catalog, coord
+            AS $fn$
+            BEGIN
+                RETURN NULL;
+            END
+            $fn$
+            """
+        )
+        # DROP TRIGGER takes ACCESS EXCLUSIVE, which conflicts with the count
+        # reads, so each queued attempt may stall readers for 200 ms at most.
+        op.execute("SET lock_timeout = '200ms'")
         try:
             op.execute(
                 """
                 DO $retry$
                 DECLARE
                     attempt integer := 0;
+                    max_attempts integer := coalesce(
+                        nullif(current_setting('qontinui.policy_outcome_counts_ddl_attempts', true), '')::integer,
+                        100);
                 BEGIN
                     LOOP
                         attempt := attempt + 1;
@@ -480,13 +591,15 @@ def downgrade() -> None:
                                 ON coord.policy_rule_resolutions;
                             DROP TRIGGER IF EXISTS trg_policy_outcome_counts_del
                                 ON coord.policy_rule_resolutions;
+                            DROP TRIGGER IF EXISTS trg_policy_outcome_counts_trunc
+                                ON coord.policy_rule_resolutions;
                             EXIT;
                         EXCEPTION WHEN lock_not_available THEN
-                            IF attempt >= 10 THEN
+                            IF attempt >= max_attempts THEN
                                 RAISE;
                             END IF;
                             RAISE NOTICE 'policy_outcome_counts triggers: lock_timeout on attempt %, retrying', attempt;
-                            PERFORM pg_catalog.pg_sleep(0.5 * attempt);
+                            PERFORM pg_catalog.pg_sleep(least(0.1 * attempt, 2.0));
                         END;
                     END LOOP;
                 END
@@ -494,6 +607,7 @@ def downgrade() -> None:
                 """
             )
             op.execute("DROP FUNCTION IF EXISTS coord.policy_outcome_counts_apply()")
+            op.execute("DROP TABLE IF EXISTS coord.policy_outcome_counts_seed_state")
             op.execute("DROP TABLE IF EXISTS coord.policy_outcome_counts_seeded")
             op.execute("DROP TABLE IF EXISTS coord.policy_outcome_counts")
         finally:
