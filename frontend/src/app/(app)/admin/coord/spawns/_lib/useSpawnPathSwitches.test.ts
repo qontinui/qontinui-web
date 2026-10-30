@@ -8,6 +8,9 @@
  * 2. **One write per switch at a time.** A second write to a switch whose
  *    first has not read back is refused with an error (what a UI Bridge
  *    caller sees), and nothing second is sent.
+ * 3. **What the real client throws is classified.** A fetch that rejected leaves
+ *    the write open, and an offline browser sent nothing: only the real client
+ *    turns the second into the message the classifier reads.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -30,6 +33,7 @@ vi.mock("sonner", () => ({
 
 import { HttpClient } from "@/services/http-client";
 import { defaultsBody, effectiveBody } from "../__fixtures__/spawnPaths";
+import { NO_CONNECTION_MESSAGE } from "@/services/http-client";
 import { WRITE_IN_FLIGHT, useSpawnPathSwitches } from "./useSpawnPathSwitches";
 
 function tokenManager(): TokenManager {
@@ -147,5 +151,56 @@ describe("useSpawnPathSwitches", () => {
       await result.current.setRegistryDefault("merge_shepherd", true);
     });
     expect(requests.filter((r) => r.method === "PUT")).toHaveLength(2);
+  });
+
+  it("answers a PUT whose fetch rejected with the read it settled on, not as refused", async () => {
+    answer = async (path, method) => {
+      if (method === "PUT") throw new TypeError("Failed to fetch");
+      if (path === "/api/v1/agent-registry/admin/registry") {
+        return json(
+          defaultsBody({ merge_shepherd: { default_enabled: false } })
+        );
+      }
+      if (path === "/api/v1/agent-registry") return json(effectiveBody());
+      return json({ error: "not in this test" }, 404);
+    };
+    const { result } = renderHook(() => useSpawnPathSwitches());
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.setRegistryDefault(
+        "merge_shepherd",
+        false
+      );
+    });
+    expect(outcome).toMatchObject({ outcome: "read_back", readBack: "off" });
+    expect(result.current.writes["registry:merge_shepherd"]).toMatchObject({
+      phase: "written",
+      outcomeUnknown: true,
+      settledState: "off",
+    });
+  });
+
+  it("answers a PUT made while the browser is offline as refused", async () => {
+    vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(false);
+    answer = async (path, method) => {
+      if (method === "PUT") throw new TypeError("Failed to fetch");
+      if (path === "/api/v1/agent-registry/admin/registry") {
+        return json(defaultsBody());
+      }
+      if (path === "/api/v1/agent-registry") return json(effectiveBody());
+      return json({ error: "not in this test" }, 404);
+    };
+    const { result } = renderHook(() => useSpawnPathSwitches());
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.setRegistryDefault(
+        "merge_shepherd",
+        false
+      );
+    });
+    expect(outcome).toMatchObject({
+      outcome: "refused",
+      message: expect.stringContaining(NO_CONNECTION_MESSAGE),
+    });
   });
 });

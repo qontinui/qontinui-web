@@ -22,6 +22,9 @@
  * resolves permissive.
  */
 
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { NO_CONNECTION_MESSAGE } from "@/services/http-client";
+
 export type AutoFixPrSource = "default" | "tenant" | "repo" | "unknown";
 
 /** The three positions of the tenant dial — one per tenant column value. */
@@ -91,7 +94,8 @@ export function readAutoFixPr(profile: unknown): AutoFixPrState | null {
  *    web proxy's 504 "timeout waiting for coord", or HttpClient's own abort
  *    ("Request timeout - …").
  *
- * A 502 (coord unreachable) is a clean failure, because nothing was sent.
+ * A 502 (coord unreachable) is a clean failure, because nothing was sent. For
+ * a failure with no status at all, see {@link isUnconfirmedFailure}.
  *
  * What the browser sees: the proxy raises `HTTPException(detail=<coord body
  * text>)`, and the backend's error handler wraps it as
@@ -105,6 +109,21 @@ export function isUnconfirmedWrite(errorMessage: string): boolean {
   if (/commit_unconfirmed/.test(errorMessage)) return true;
   if (/ failed: 504 - /.test(errorMessage)) return true;
   return /^Request timeout/.test(errorMessage);
+}
+
+/**
+ * {@link isUnconfirmedWrite} for what a write's call actually threw, which also
+ * covers a failure that carries no HTTP status at all. A fetch that rejected
+ * says nothing about whether the request reached the server and only its answer
+ * was lost, and a 2xx whose body would not parse did reach it, so neither is a
+ * refusal: `null` from `httpStatusOf` must not fall into a calm arm. The one
+ * statusless failure kept as a refusal is the browser reporting it is offline.
+ */
+export function isUnconfirmedFailure(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  if (isUnconfirmedWrite(message)) return true;
+  if (httpStatusOf(err) !== null) return false;
+  return message !== NO_CONNECTION_MESSAGE;
 }
 
 export function choiceFromTenant(tenant: boolean | null): AutoFixPrChoice {

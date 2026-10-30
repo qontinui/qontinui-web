@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { NO_CONNECTION_MESSAGE } from "@/services/http-client";
 import {
   choiceFromTenant,
+  isUnconfirmedFailure,
   isUnconfirmedWrite,
   readAutoFixPr,
   tenantFromChoice,
@@ -150,6 +152,37 @@ describe("isUnconfirmedWrite", () => {
     ).toBe(false);
     expect(isUnconfirmedWrite("PATCH failed: 400 - unknown field")).toBe(false);
     expect(isUnconfirmedWrite("network down")).toBe(false);
+  });
+});
+
+describe("isUnconfirmedFailure", () => {
+  it("reads a failure the server did not answer as unconfirmed: the request may have gone out", () => {
+    expect(isUnconfirmedFailure(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isUnconfirmedFailure(new Error("network down"))).toBe(true);
+    // A 2xx whose body could not be parsed: answered, and not read.
+    expect(isUnconfirmedFailure(new SyntaxError("Unexpected token <"))).toBe(
+      true
+    );
+    expect(isUnconfirmedFailure("something else entirely")).toBe(true);
+  });
+
+  it("keeps what isUnconfirmedWrite already calls open", () => {
+    expect(
+      isUnconfirmedFailure(new Error("PUT /x failed: 504 - timeout"))
+    ).toBe(true);
+    expect(isUnconfirmedFailure(new Error("Request timeout - PUT /x"))).toBe(
+      true
+    );
+  });
+
+  it("reads an HTTP answer as that answer, and an offline browser as a refusal", () => {
+    expect(isUnconfirmedFailure(new Error("PUT /x failed: 403 - no"))).toBe(
+      false
+    );
+    expect(
+      isUnconfirmedFailure(new Error("PUT /x failed: 502 - unreachable"))
+    ).toBe(false);
+    expect(isUnconfirmedFailure(new Error(NO_CONNECTION_MESSAGE))).toBe(false);
   });
 });
 

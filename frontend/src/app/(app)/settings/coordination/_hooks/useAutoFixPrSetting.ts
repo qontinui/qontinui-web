@@ -10,7 +10,7 @@ import {
 import {
   type AutoFixPrChoice,
   type AutoFixPrState,
-  isUnconfirmedWrite,
+  isUnconfirmedFailure,
   readAutoFixPr,
   tenantFromChoice,
 } from "./auto-fix-pr";
@@ -35,8 +35,9 @@ export type AutoFixPrReread =
  *   502 before anything was sent): nothing changed as far as coord said, and
  *   the hook keeps what it read before.
  * - `unconfirmed` — whether the write landed is unknown: coord could not
- *   confirm its commit (`written: null`), the request timed out after it may
- *   have been processed, or a 2xx answer did not read back the value sent.
+ *   confirm its commit (`written: null`), the request timed out or its answer
+ *   was lost after it may have been processed, or a 2xx answer did not read
+ *   back the value sent.
  *   The hook re-reads what coord serves, and `reread` settles when that read
  *   does — until then the dial's value is UNKNOWN.
  * - `busy` — another write from this hook was still in flight; nothing was
@@ -182,10 +183,10 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
         return { kind: "saved" };
       } catch (err) {
         const message = errorText(err, "Failed to save fixer setting");
-        if (isUnconfirmedWrite(message)) {
-          // coord could not confirm the commit, or the request timed out after
-          // it may have been processed. Neither "saved" nor "safe to retry":
-          // show what coord actually serves now.
+        if (isUnconfirmedFailure(err)) {
+          // coord could not confirm the commit, or the answer never arrived
+          // after the request may have been processed. Neither "saved" nor
+          // "safe to retry": show what coord actually serves now.
           toast.error(
             "Save outcome unknown — the change may or may not have been applied. Reloading to check."
           );
