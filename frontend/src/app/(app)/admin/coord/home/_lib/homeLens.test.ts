@@ -641,12 +641,21 @@ describe("values shown verbatim only in a shape that names no one", () => {
     // The whole value must have the shape: a number at either end clears nothing.
     expect(presentedPlanPhase("3 for Acme Corp")).toBe(WITHHELD);
     expect(presentedPlanPhase("Acme Corp 3")).toBe(WITHHELD);
+    // At most three digits and one letter: the letter is a sub-phase, and a
+    // run of either can spell a name or a figure.
+    expect(presentedPlanPhase("3acmecorp")).toBe(WITHHELD);
+    expect(presentedPlanPhase("1234")).toBe(WITHHELD);
+    expect(presentedPlanPhase("123")).toBe("123");
   });
 
   it("says live or not live, never the frontmatter's own word", () => {
     expect(presentedInitiativeStatus("live")).toBe("live");
     expect(presentedInitiativeStatus("draft for Acme")).toBe("not live");
     expect(presentedInitiativeStatus(null)).toBe("unknown");
+    // Live only when that is all it says: these name the word and deny it.
+    expect(presentedInitiativeStatus("not live yet")).toBe("not live");
+    expect(presentedInitiativeStatus("live for Acme")).toBe("not live");
+    expect(presentedInitiativeStatus(" live ")).toBe("live");
   });
 
   it("shows an ISO date and withholds any other date text", () => {
@@ -663,6 +672,13 @@ describe("values shown verbatim only in a shape that names no one", () => {
       WITHHELD
     );
     expect(presentedInitiativeDate("Acme Corp 2026-12-01")).toBe(WITHHELD);
+    // Nor does a time at the end clear free text between the two.
+    expect(presentedInitiativeDate("2026-12-01 for Acme Corp 09:00")).toBe(
+      WITHHELD
+    );
+    expect(presentedInitiativeDate("2026-12-01 09:00")).toBe(
+      "2026-12-01 09:00"
+    );
     expect(presentedInitiativeDate(null)).toBeNull();
   });
 });

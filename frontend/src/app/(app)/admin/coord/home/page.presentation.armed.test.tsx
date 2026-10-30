@@ -1,17 +1,23 @@
 /**
- * /admin/coord/home's no-leak guarantee, entered at the page, importing only
+ * /admin/coord/home's question carriers, entered at the page, importing only
  * the page and the presentation test helper (plan
  * `2026-10-23-console-presentation-spaces` Phase 2).
  *
- * `page.presentation.test.tsx` is the page's full proof, but it imports the
- * lens's own modules (`_lib/homeLens`, `_components/HomeLens`, its fixture), so
- * reverting the lens fails it at compile, which says nothing about the
- * guarantee. This file imports none of them and carries its body inline, so
- * with the lens reverted it still compiles, renders, and fails on the assertion
- * below: a question's own text on the screen. That is what lets
- * `arming-record.sh prove` arm a lens symbol with `enters_via: CoordHomePage`.
- * Keep it free of imports from the lens, or it stops being able to read red by
- * assertion.
+ * It observes one needs-you question: its fork, recommendation, consequence and
+ * options. It observes nothing else on the page, no degradation, repository,
+ * unit, initiative or tenant, so it is not the page's no-leak proof.
+ * `page.presentation.test.tsx` is, but it imports the lens's own modules
+ * (`_lib/homeLens`, `_components/HomeLens`, its fixture), so reverting the lens
+ * fails it at compile, which says nothing about the guarantee. This file imports
+ * none of them and carries its body inline, so with the lens reverted it still
+ * compiles, renders, and fails on the assertion below: a question's own text on
+ * the screen.
+ *
+ * That is what lets `arming-record.sh prove` arm `needsDescriptor` with
+ * `enters_via: CoordHomePage`, and that symbol only. The prover's revert is
+ * PR-wide, so declaring this test for any other lens symbol would read ARMED
+ * while observing nothing about it. Keep it free of imports from the lens, or
+ * it stops being able to read red by assertion.
  */
 
 import { describe, expect, it, vi } from "vitest";
