@@ -637,10 +637,12 @@ describe("/admin/coord/spawns?present=1", () => {
     const pathsNote = screen.getByTestId("coord-spawns-paths-note").textContent;
     expect(pathsNote).toContain(OTHER_RUNNER_STARTS);
     // Measured: nothing writes these starts to the list this page reads, so the
-    // sentence must not send a reader looking for them there.
+    // sentence must not send a reader looking for them there. It stops at this
+    // page and that list: the Runner Drain page does show a session's origin.
     expect(pathsNote).toContain(
-      "those have no line here, and this console reads no record of them."
+      "those starts have no line on this page, and the list of spawn requests does not record them."
     );
+    expect(pathsNote).not.toMatch(/this console reads no record/);
     expect(pathsNote).not.toMatch(/appear under spawn requests/);
     const unclassified = screen.getByTestId(
       "coord-spawns-paths-unclassified"

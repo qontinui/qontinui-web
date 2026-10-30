@@ -436,7 +436,7 @@ export function matrixCountsText(c: MatrixCounts): string {
 
 /** What the matrix leaves out: starts a machine makes that have no switch here. */
 export const OTHER_RUNNER_STARTS =
-  "A machine also starts sessions for its own looping agents and workflows, and when it resumes after a restart; those have no line here, and this console reads no record of them.";
+  "A machine also starts sessions for its own looping agents and workflows, and when it resumes after a restart; those starts have no line on this page, and the list of spawn requests does not record them.";
 
 /** Served rows this build could not classify: never counted as anything. */
 function unclassifiedText(names: readonly string[], presenting: boolean) {

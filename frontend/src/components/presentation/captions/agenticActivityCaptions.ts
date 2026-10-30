@@ -28,7 +28,8 @@ export const AGENTIC_ACTIVITY_CAPTIONS = {
   "agentic-activity.spawn-paths": {
     title: "Spawn paths",
     // Not "every path": a runner's looping agents, workflows and restart resumes
-    // have no line (the section's note says so, and their requests are listed).
+    // have no line, and the list of spawn requests does not record them (the
+    // section's note says both).
     oneLiner: copy`The paths this console knows of that start an ${term("agent_session", "agent session")}, with every switch this page can read that controls each: where the switch is set, at what scope, and whether it is enforced.`,
     // True against coord: every registry row seeds `default_enabled: true`
     // (the spawn contract), while the next-step and red-main dispatch arms
