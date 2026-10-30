@@ -10,7 +10,8 @@ What they pin:
 1. The commit is absent from a shallow sibling before the step and readable after
    it, with HEAD and the working tree where they were.
 2. A commit already present costs no fetch, and neither does a working file
-   already at the pinned digest.
+   already at the pinned digest, whose output says the commit was not checked.
+   A working file that is missing, or the second file off its digest, is fetched.
 3. A file at another digest, a commit the remote will not serve, a missing sibling
    and a malformed pin each exit non-zero and name what was wrong.
 4. The live manifest runs the step before both frontend test steps, the script's
@@ -130,6 +131,20 @@ def layout(tmp_path: Path) -> _Layout:
     return _Layout(tmp_path)
 
 
+def _reclone_tip(layout: _Layout, tmp_path: Path) -> None:
+    """Make the sibling a depth-1 clone of the origin's current tip."""
+    shutil.rmtree(layout.sibling)
+    _git(
+        tmp_path,
+        "clone",
+        "-q",
+        "--depth",
+        "1",
+        layout.origin.as_uri(),
+        str(layout.sibling),
+    )
+
+
 def test_it_fetches_the_pinned_commit_into_a_shallow_sibling(layout: _Layout) -> None:
     assert layout.tip != layout.pinned
     assert _git(layout.sibling, "rev-parse", "--is-shallow-repository") == "true"
@@ -189,21 +204,64 @@ def test_a_working_file_at_the_pinned_digest_costs_no_fetch(
     assert "in the working tree" in done.stdout
 
 
+def test_the_working_file_arm_does_not_claim_to_have_checked_the_commit(
+    layout: _Layout, tmp_path: Path
+) -> None:
+    layout._commit(layout.old_contract, layout.old_nouns)
+    _reclone_tip(layout, tmp_path)
+    # A commit that exists nowhere: this arm cannot know, and must not say it did.
+    bad_ref = "1" * 40
+    layout.pin(ref=bad_ref)
+
+    done = layout.run()
+
+    assert done.returncode == 0, done.stderr
+    assert f"{bad_ref}:" not in done.stdout
+    assert f"commit {bad_ref} not checked" in done.stdout
+
+
+def test_a_working_file_missing_at_the_tip_is_fetched(
+    layout: _Layout, tmp_path: Path
+) -> None:
+    # Renamed past the pin: the file is gone from the sibling's tip.
+    (layout.origin / CONTRACT).unlink()
+    _git(layout.origin, "add", "-A")
+    _git(layout.origin, "commit", "-q", "-m", "rename the contract away")
+    _reclone_tip(layout, tmp_path)
+    assert not (layout.sibling / CONTRACT).exists()
+    assert not layout.has_pinned_file()
+
+    done = layout.run()
+
+    assert done.returncode == 0, done.stderr
+    assert layout.has_pinned_file()
+    assert f"{layout.pinned}:{CONTRACT} fetched" in done.stdout
+
+
+def test_the_second_file_off_its_digest_is_still_fetched(
+    layout: _Layout, tmp_path: Path
+) -> None:
+    # The tip holds the pinned contract, which is read first, and edited nouns.
+    layout._commit(layout.old_contract, "pinned = 'edited'\n")
+    _reclone_tip(layout, tmp_path)
+    assert (layout.sibling / NOUNS).read_text() == "pinned = 'edited'\n"
+
+    done = layout.run()
+
+    assert done.returncode == 0, done.stderr
+    assert f"{CONTRACT} in the working tree" in done.stdout
+    assert f"{layout.pinned}:{NOUNS} fetched" in done.stdout
+    assert _git(layout.sibling, "show", f"{layout.pinned}:{NOUNS}") == (
+        layout.old_nouns.strip()
+    )
+
+
 def test_one_file_off_its_digest_is_still_fetched(
     layout: _Layout, tmp_path: Path
 ) -> None:
     # The tip holds the pinned vocabulary but an edited contract.
     layout._commit('{"pinned":"edited"}\n', layout.old_nouns)
-    shutil.rmtree(layout.sibling)
-    _git(
-        tmp_path,
-        "clone",
-        "-q",
-        "--depth",
-        "1",
-        layout.origin.as_uri(),
-        str(layout.sibling),
-    )
+    _reclone_tip(layout, tmp_path)
 
     done = layout.run()
 
