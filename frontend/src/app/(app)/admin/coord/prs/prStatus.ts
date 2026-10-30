@@ -68,7 +68,7 @@ import type { PrMergeStatus } from "@/services/admin-dev-service";
  * | `queued` | `none` | `queued` | In coord's queue. |
  * | `ci-pending` | `none` | `checks-pending` | CI is still running. **The original bug was painting this red**; it needs nobody. |
  * | `draft` | `none` | `draft` | Intentionally parked by its author. |
- * | `behind-base` | `waiting` | `needs-rebase` | BEHIND is the PR's ONLY block (any other block gets its own token, and `prPipeline` renders that as `behind-held-*`). Coord's BEHIND freshen MAY bring it current; whether it will is not served yet — UNKNOWN, not a promise. Amber, not red: no author move is known to be owed. |
+ * | `behind-base` | `waiting` | `needs-rebase` | BEHIND, and no other block coord knows of — which includes a verdict coord never evaluated (any other known block gets its own token, and `prPipeline` renders that as `behind-held-*`). Coord's BEHIND freshen MAY bring it current; whether it will is not served yet — UNKNOWN, not a promise. Amber, not red: no author move is known to be owed. |
  * | `awaiting-specialist-review` | `waiting` | (escalation arm) | The specialist review is dispatched; a verdict is coming back. That is a nameable clearer, which is what amber requires. |
  * | `conflicts` | `author` | `conflict` / `not-mergeable` | A real merge conflict. Only a human resolves it. |
  * | `ci-failed` | `author` | `checks-failing` | A check reported failure. **The other half of the original bug** — this is the state that genuinely needs a push. |
@@ -140,11 +140,14 @@ export const PR_MERGE_STATUS_CLASS: Record<PrMergeStatus, string> = {
   draft: "bg-transparent text-muted-foreground border-border border-dashed",
   // INERT, the same calm `queued` gets: nothing is owed on this PR.
   "landed-open": INERT,
-  "behind-base": WAITING_AMBER,
+  // UNKNOWN_AMBER: whether coord's freshen will act is not served yet, so the
+  // self-clearing amber would draw a promise nothing observed.
+  "behind-base": UNKNOWN_AMBER,
   "awaiting-specialist-review": WAITING_AMBER,
   // A CI red coord exonerates the author from. Coord's own freshen MAY clear
-  // it (update the branch, re-run CI); whether it will is not served yet.
-  "ci-failed-stale-base": WAITING_AMBER,
+  // it (update the branch, re-run CI); whether it will is not served yet, so
+  // it sits at the ignorance floor rather than the self-clearing amber.
+  "ci-failed-stale-base": UNKNOWN_AMBER,
   conflicts: AUTHOR_RED,
   "ci-failed": AUTHOR_RED,
   "required-checks-missing": AUTHOR_RED,

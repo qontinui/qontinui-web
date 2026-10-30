@@ -46,6 +46,11 @@ import {
   withDwellEvidence,
 } from "./prPipeline";
 import { PR_ATTENTION_BY_MERGE_STATUS } from "@/app/(app)/admin/coord/prs/prStatus";
+import {
+  AUTHOR_RED,
+  STATUS_BADGE_CLASS,
+} from "@/components/console/statusRow";
+import type { PrMergeStatus } from "@/services/admin-dev-service";
 
 const NOW = new Date("2026-07-15T12:00:00Z").getTime();
 
@@ -929,6 +934,7 @@ describe("escalateStaleWaiting — dwell caps expire every waiting promise", () 
     "needs-rebase-stale": "Behind (stalled)",
     "blocked-stale": "Blocked (stalled)",
     "conflict-stranded": "Conflict (stranded)",
+    "behind-held-stale": "Behind main — held (stalled)",
   };
 
   /** A hand-built waiting status of the given kind (unit-level fixture). */
@@ -936,8 +942,9 @@ describe("escalateStaleWaiting — dwell caps expire every waiting promise", () 
     return { kind, label: "x", reason: "y", attention: "waiting" };
   }
 
-  it("covers exactly the three waiting kinds", () => {
+  it("covers exactly the four waiting kinds", () => {
     expect(ESCALATABLE.sort()).toEqual([
+      "behind-held-waiting",
       "blocked",
       "conflict-deferred",
       "needs-rebase",
@@ -1650,6 +1657,19 @@ describe("ATTENTION_BY_KIND — the color/attention contract", () => {
         [
           pr({
             merge_state_status: "BEHIND",
+            last_activity_secs: 3 * 24 * 60 * 60,
+          }),
+        ],
+        []
+      )[0],
+    },
+    {
+      what: "behind-held-stale",
+      row: buildPipelineRows(
+        [
+          pr({
+            merge_state_status: "BEHIND",
+            merge_status: "predicate-blocked",
             last_activity_secs: 3 * 24 * 60 * 60,
           }),
         ],
@@ -2743,5 +2763,124 @@ describe("BEHIND reads merge_status — no unobserved 'no action needed'", () =>
       );
       expect(status.reason).not.toMatch(PROMISE);
     }
+  });
+});
+
+// Review follow-up (W9): every coord token on a BEHIND row, table-driven.
+describe("BEHIND × every PrMergeStatus — attention, palette, no promise", () => {
+  const PROMISE = /no action needed|in the train|auto-rebase/i;
+  const TOKENS = Object.keys(PR_ATTENTION_BY_MERGE_STATUS) as PrMergeStatus[];
+  const statusOf = (
+    overrides: Partial<PrRow>,
+    economics: Record<string, MergeEconomics> = {}
+  ) => buildPipelineRows([pr(overrides)], [], economics)[0].status;
+
+  it.each(TOKENS)("BEHIND + %s", (token) => {
+    const status = statusOf({ merge_state_status: "BEHIND", merge_status: token });
+    expect(ATTENTION_BY_KIND[status.kind]).toBe(status.attention);
+    const cls = STATUS_BADGE_CLASS[status.kind];
+    if (status.attention === "author") expect(cls).toBe(AUTHOR_RED);
+    else if (status.attention === "waiting") expect(cls).toMatch(/^bg-amber-/);
+    else expect(cls).not.toMatch(/^bg-(red|amber)-/);
+    expect(status.reason).not.toMatch(PROMISE);
+  });
+
+  it("ci-failed → held, author red, from the prStatus table", () => {
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "ci-failed",
+      blocking_summary: "test failed",
+    });
+    expect(status.kind).toBe("behind-held-author");
+    expect(status.attention).toBe(PR_ATTENTION_BY_MERGE_STATUS["ci-failed"]);
+    expect(status.reason).toBe(
+      "behind main — coord updates it only once this clears: test failed"
+    );
+  });
+
+  it("conflicts → the conflict arm, not a hold (short CI → red)", () => {
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "conflicts",
+    });
+    expect(status.kind).toBe("not-mergeable");
+    expect(status.attention).toBe("author");
+  });
+
+  it("conflicts on a long-CI repo deep in queue → conflict-deferred", () => {
+    const RUNNER = "qontinui/qontinui-runner";
+    const econ = {
+      [RUNNER]: { candidate_ci_p90_secs: 4 * 60 * 60, queue_depth: 9 },
+    };
+    for (const overrides of [
+      { merge_status: "conflicts" },
+      { mergeable: false },
+    ] as Partial<PrRow>[]) {
+      const status = statusOf(
+        { repo: RUNNER, merge_state_status: "BEHIND", ...overrides },
+        econ
+      );
+      expect(status.kind).toBe("conflict-deferred");
+      expect(status.attention).toBe("waiting");
+    }
+  });
+
+  it("unknown → the UNKNOWN needs-rebase row, not a hold", () => {
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "unknown",
+    });
+    expect(status.kind).toBe("needs-rebase");
+    expect(status.reason).toBe(
+      "behind main — whether coord will update it is UNKNOWN"
+    );
+  });
+
+  it("awaiting-specialist-review → held-waiting", () => {
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "awaiting-specialist-review",
+    });
+    expect(status.kind).toBe("behind-held-waiting");
+    expect(status.attention).toBe("waiting");
+  });
+
+  it("draft token on an open PR → UNKNOWN row; landed-open → merged", () => {
+    expect(
+      statusOf({ merge_state_status: "BEHIND", merge_status: "draft" }).kind
+    ).toBe("needs-rebase");
+    expect(
+      statusOf({ merge_state_status: "BEHIND", merge_status: "landed-open" })
+        .kind
+    ).toBe("merged");
+  });
+
+  it("held-waiting escalates to behind-held-stale past its dwell cap", () => {
+    const young = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "predicate-blocked",
+      last_activity_secs: 60 * 60,
+    });
+    expect(young.kind).toBe("behind-held-waiting");
+    expect(young.dwellEvidence).toBe("measured");
+    const old = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "predicate-blocked",
+      last_activity_secs: 3 * 24 * 60 * 60,
+    });
+    expect(old.kind).toBe("behind-held-stale");
+    expect(old.attention).toBe("author");
+    expect(STATUS_BADGE_CLASS[old.kind]).toBe(AUTHOR_RED);
+    expect(old.reason).not.toMatch(PROMISE);
+  });
+
+  it("redacts secrets in coord's blocking_summary", () => {
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "predicate-blocked",
+      blocking_summary:
+        "git fetch https://x-access-token:ghs_abcdefghijklmnopqrstuvwxyz0123456789@github.com/o/r failed",
+    });
+    expect(status.reason).not.toContain("ghs_abcdefghijklmnopqrstuvwxyz0123456789");
   });
 });
