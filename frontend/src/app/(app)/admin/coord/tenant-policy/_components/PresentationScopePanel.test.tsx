@@ -46,6 +46,7 @@ import {
 } from "@/components/presentation";
 import { PresentationScopeConflict } from "@/lib/api/presentationScope";
 import { BackendError } from "@/lib/errors/backend-error-message";
+import { absoluteTime } from "@/components/console";
 import { PresentationScopePanel } from "./PresentationScopePanel";
 
 const TENANT = "00000000-0000-0000-0000-00000000000a";
@@ -163,6 +164,77 @@ describe("PresentationScopePanel — reading", () => {
     expect(
       await screen.findByTestId("presentation-scope-unknown")
     ).toHaveTextContent("could not be read (HTTP 502)");
+    expect(screen.queryByTestId("presentation-scope-form")).toBeNull();
+  });
+
+  it("says who last saved the stored half, and when", async () => {
+    renderPanel();
+    const line = await screen.findByTestId("presentation-scope-last-saved");
+    expect(line.textContent).toMatch(
+      /^Last saved by admin@example\.test, (just now|\d+[smhd] ago)\.$/
+    );
+    // The exact instant is one hover away, not lost to the relative reading.
+    expect(line.querySelector("span")).toHaveAttribute(
+      "title",
+      absoluteTime("2026-10-23T12:00:00Z")
+    );
+  });
+
+  it("says so when the writer of the stored half can no longer be named", async () => {
+    load.mockResolvedValue(record({}, { updated_by: null }));
+    renderPanel();
+    expect(
+      await screen.findByTestId("presentation-scope-last-saved")
+    ).toHaveTextContent(/^Last saved by an unknown user, /);
+  });
+
+  it("says nothing has been saved, naming nobody, when no row is stored", async () => {
+    load.mockResolvedValue(
+      record({}, { version: 0, updated_at: null, updated_by: null })
+    );
+    renderPanel();
+    expect(
+      await screen.findByTestId("presentation-scope-last-saved")
+    ).toHaveTextContent(
+      /^Nothing has been saved for this project, so the defaults apply\.$/
+    );
+  });
+
+  it("claims nothing about what is stored now when the latest read failed", async () => {
+    renderPanel();
+    await screen.findByTestId("presentation-scope-last-saved");
+    load.mockRejectedValueOnce(new Error("HTTP 504"));
+    await act(async () => {
+      await store.reload();
+    });
+    expect(
+      screen.getByTestId("presentation-scope-last-saved").textContent
+    ).toMatch(/^As of the last read, last saved by admin@example\.test, /);
+  });
+
+  it("does not say the defaults apply when the latest read failed", async () => {
+    load.mockResolvedValue(
+      record({}, { version: 0, updated_at: null, updated_by: null })
+    );
+    renderPanel();
+    await screen.findByTestId("presentation-scope-last-saved");
+    load.mockRejectedValueOnce(new Error("HTTP 504"));
+    await act(async () => {
+      await store.reload();
+    });
+    expect(
+      screen.getByTestId("presentation-scope-last-saved")
+    ).toHaveTextContent(
+      /^As of the last read, nothing had been saved for this project\.$/
+    );
+  });
+
+  it("shows a member who may not edit who last saved it too", async () => {
+    load.mockResolvedValue(record({ can_edit: false }));
+    renderPanel();
+    expect(
+      await screen.findByTestId("presentation-scope-last-saved")
+    ).toHaveTextContent("admin@example.test");
     expect(screen.queryByTestId("presentation-scope-form")).toBeNull();
   });
 });
