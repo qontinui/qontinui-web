@@ -606,6 +606,38 @@ describe("coord needs_me wire at 4907c36ff", () => {
     expect(decisionDomainLabel("unclassified")).toBe("unclassified");
   });
 
+  describe("an initiative's typed status and dates", () => {
+    const initiative = (fields: Record<string, unknown>) =>
+      parseProjectState({
+        on_track: {
+          state: "read",
+          initiative: { state: "read", alignment: "read", ...fields },
+        },
+      })!.onTrack.initiative!;
+
+    it.each([
+      ["empty", ""],
+      ["spaces", "   "],
+      ["tabs and a newline", "\t\n "],
+    ])("reads %s as no value, like an absent one", (_case, blank) => {
+      const i = initiative({ status: blank, starts: blank, ends: blank });
+      expect(i.status).toBeNull();
+      expect(i.starts).toBeNull();
+      expect(i.ends).toBeNull();
+    });
+
+    it("keeps what a person typed, verbatim", () => {
+      const i = initiative({
+        status: "draft",
+        starts: "2026-10-01",
+        ends: " when Acme Corp signs ",
+      });
+      expect(i.status).toBe("draft");
+      expect(i.starts).toBe("2026-10-01");
+      expect(i.ends).toBe(" when Acme Corp signs ");
+    });
+  });
+
   it("reads initiative attribution only when alignment is read", () => {
     const linked = parseProjectState({
       on_track: {
