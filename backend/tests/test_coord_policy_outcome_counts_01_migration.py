@@ -88,7 +88,7 @@ _REVISION_FILENAME = "coord_policy_outcome_counts_01_rollup.py"
 
 # Pinned as a literal, not read back from the module, so a re-point of
 # down_revision is a deliberate two-file change.
-_PARENT_REVISION_ID = "journey_04_explorations_stop_detail_any_stop"
+_PARENT_REVISION_ID = "merge_capture_01"
 
 _SCHEMA = "coord"
 _COUNTS = "policy_outcome_counts"
