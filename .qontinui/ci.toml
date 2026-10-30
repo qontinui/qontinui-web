@@ -421,8 +421,9 @@ name = "fetch-pinned-schemas-commits"
 # vocabulary (pinned)" composite actions, which it cannot run: see gap 8 in this
 # file's header. Without it the suite's `git show <ref>:<path>` fallback finds
 # nothing in the depth-1 sibling. A bare `python` and `git` as for the repo-wide
-# gates, run from the repo root because the script finds `../qontinui-schemas`
-# from there, plus an HTTPS fetch of the public schemas repo.
+# gates, plus an HTTPS fetch of the public schemas repo when a working file is
+# not at its pinned digest. The script resolves `../qontinui-schemas` from its
+# own location, so it does not depend on the working directory.
 command = ["python", "scripts/ci/fetch_pinned_schemas_commits.py"]
 
 [[steps]]
