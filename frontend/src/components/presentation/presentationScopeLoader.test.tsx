@@ -219,6 +219,60 @@ describe("the store", () => {
     expect(r.store.getSnapshot().state.status).toBe("error");
   });
 
+  it("a failure stands while its retry is in flight, until a read answers", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    r.calls[0].reject(new Error("HTTP 503"));
+    await flush();
+    r.clock.t += 15_000;
+    r.store.ensureFresh();
+    expect(r.load).toHaveBeenCalledTimes(2);
+    expect(r.store.msUntilRecheck()).toBeNull();
+    expect(r.store.getSnapshot().state).toEqual({
+      status: "error",
+      reason: "HTTP 503",
+    });
+    r.calls[1].reject(new Error("HTTP 502"));
+    await flush();
+    expect(r.store.getSnapshot().state).toEqual({
+      status: "error",
+      reason: "HTTP 502",
+    });
+    r.clock.t += 15_000;
+    r.store.ensureFresh();
+    r.calls[2].resolve(record());
+    await flush();
+    expect(r.store.getSnapshot().state.status).toBe("ready");
+  });
+
+  it("first-party owners unknown stands while the record is read again", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    r.calls[0].resolve(
+      record({
+        first_party_owners: null,
+        first_party_owners_unknown_reason: "coord_unreachable",
+      })
+    );
+    await flush();
+    r.clock.t += 60_000;
+    r.store.ensureFresh();
+    expect(r.load).toHaveBeenCalledTimes(2);
+    expect(r.store.getSnapshot().state.status).toBe("error");
+  });
+
+  it("does not carry one project's failure over to another", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    r.calls[0].reject(new Error("HTTP 503"));
+    await flush();
+    r.selection.value = "project-b";
+    r.store.ensureFresh();
+    expect(r.load).toHaveBeenCalledTimes(2);
+    expect(r.store.getSnapshot().state).toEqual({ status: "loading" });
+    expect(r.store.getSnapshot().failure).toBeNull();
+  });
+
   it("accept holds a save's answer at once and discards a read in flight", async () => {
     const r = rig();
     r.store.ensureFresh();
@@ -432,6 +486,25 @@ describe("usePresentationScope", () => {
     expect(screen.getByTestId("scope")).toHaveTextContent("loading");
     await flush();
     expect(r.load).toHaveBeenCalledTimes(2);
+  });
+
+  it("serves loading, not another project's failure, with its retry still in flight", async () => {
+    const r = rig();
+    r.store.ensureFresh();
+    r.calls[0].reject(new Error("HTTP 503"));
+    await flush();
+    r.clock.t += 15_000;
+    r.store.ensureFresh();
+    r.selection.value = "project-b";
+    render(
+      <FixedPresentationMode presenting>
+        <ScopeProbe store={r.store} />
+      </FixedPresentationMode>
+    );
+    // The store still holds A's failure, and B has not been asked yet.
+    expect(r.store.getSnapshot().state.status).toBe("error");
+    expect(r.load).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("scope")).toHaveTextContent("loading");
   });
 
   it("re-reads on its own once the scope ages out while presenting", async () => {

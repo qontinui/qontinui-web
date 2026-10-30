@@ -39,6 +39,9 @@
  * - **A stale read** — when the latest read failed while an earlier one is
  *   held, the lists are labelled as the last read, not as in force:
  *   presentation mode withholds every title until a read succeeds.
+ * - **Last saved** — who last replaced the stored half and when, for every
+ *   member the read serves it to, so a term that appeared or vanished has an
+ *   author to ask. Under a stale read it says it is the last read's answer.
  *
  * It reads and writes through the lens's own scope store
  * (`defaultPresentationScopeStore`), so a save is in force in this tab at
@@ -54,7 +57,12 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Loader2, Presentation } from "lucide-react";
-import { RefreshButton, UNKNOWN_AMBER } from "@/components/console";
+import {
+  RefreshButton,
+  UNKNOWN_AMBER,
+  absoluteTime,
+  relativeTime,
+} from "@/components/console";
 import {
   OperatorOnly,
   defaultPresentationScopeStore,
@@ -315,6 +323,10 @@ function ScopePanel({
           )}
           <InForce record={record} current={staleFailure === null} />
           <Defaults record={record} />
+          <LastSaved
+            configured={record.configured}
+            current={staleFailure === null}
+          />
           {setAside && (
             <Notice testId="presentation-scope-set-aside">
               An unsaved edit made for another project is set aside: the active
@@ -359,6 +371,46 @@ function ScopePanel({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Who last replaced the stored half, and when. Version 0 is the read's own
+ * "no row"; a saved row whose writer has no user any more serves `updated_by`
+ * null, which says only that the page cannot name them. When the latest read
+ * failed (`current` false) this is what an earlier read returned, so it claims
+ * nothing about what is stored now.
+ */
+function LastSaved({
+  configured,
+  current,
+}: {
+  configured: PresentationScopeRecord["configured"];
+  current: boolean;
+}) {
+  const { version, updated_at: at, updated_by: by } = configured;
+  return (
+    <p
+      className="text-xs text-muted-foreground"
+      data-testid="presentation-scope-last-saved"
+    >
+      {version === 0 ? (
+        current ? (
+          "Nothing has been saved for this project, so the defaults apply."
+        ) : (
+          "As of the last read, nothing had been saved for this project."
+        )
+      ) : (
+        <>
+          {current ? "Last saved by" : "As of the last read, last saved by"}{" "}
+          {by ?? "an unknown user"},{" "}
+          <span title={absoluteTime(at)}>
+            {relativeTime(at, { absent: "at an unknown time" })}
+          </span>
+          .
+        </>
+      )}
+    </p>
   );
 }
 
