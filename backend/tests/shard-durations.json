@@ -104,6 +104,7 @@
   "tests/test_coord_pdclaims_02_claim_lifecycle_migration.py": 20.6,
   "tests/test_coord_pgss_ext_01_migration.py": 5.4,
   "tests/test_coord_plan_pr_citations_3a_backfill_migration.py": 10.3,
+  "tests/test_coord_policy_outcome_counts_01_migration.py": 60.0,
   "tests/test_coord_pr_files_head_sha_01_migration.py": 10.3,
   "tests/test_coord_pr_holds_01_migration.py": 27.1,
   "tests/test_coord_pr_state_observed_at_01_migration.py": 19.8,
