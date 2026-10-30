@@ -30,7 +30,10 @@
  * (`SwitchWrite`); the gate then compares the read that follows with it and
  * says whether coord reads back what was asked, or contradicts it
  * ({@link withWrite}). A write whose outcome coord could not confirm, or whose
- * read-back failed, makes the gate UNKNOWN, whatever was retained.
+ * read-back failed, makes the gate UNKNOWN, whatever was retained, until a read
+ * answers. The mark belongs to the read that settled the write
+ * (`SwitchWrite.settledState`): a later read that differs is a later change,
+ * said as one, never a read-back that contradicts the write.
  *
  * ## UNKNOWN names its source
  *
@@ -106,6 +109,84 @@ export interface SwitchWrite {
   readbackError: string | null;
   /** `written`: the write's own outcome was unknown; the value is a later read's. */
   outcomeUnknown?: boolean;
+  /**
+   * The value, in the gate's vocabulary, of the read this write settled on:
+   * `written` — the read-back; `refused` — what coord held when it refused.
+   * `null` or absent when no value was read. A cell that differs from it is
+   * showing a LATER read, and says nothing about this write.
+   */
+  settledState?: string | null;
+}
+
+/**
+ * How a finished write ended, for a caller that cannot see the matrix (a UI
+ * Bridge action): the same read-back the cell shows, never the request.
+ *
+ * - `read_back` — coord read back what was asked.
+ * - `contradicted` — coord read back something else.
+ * - `refused` — coord refused it.
+ * - `unknown` — no read says what coord holds now.
+ */
+export type SwitchWriteOutcome =
+  | "read_back"
+  | "contradicted"
+  | "refused"
+  | "unknown";
+
+export interface SwitchWriteResult {
+  outcome: SwitchWriteOutcome;
+  asked: string;
+  /** What the settling read gave, in the gate's vocabulary. */
+  readBack: string | null;
+  /** Why it is not `read_back`, in the operator's words. */
+  message: string | null;
+}
+
+/** A finished write's outcome, from what it recorded. */
+export function switchWriteResult(write: SwitchWrite): SwitchWriteResult {
+  const { asked } = write;
+  const readBack = write.settledState ?? null;
+  if (write.phase === "refused") {
+    return {
+      outcome: "refused",
+      asked,
+      readBack: null,
+      message: `coord refused the change to ${asked}: ${write.error ?? "no reason given"}`,
+    };
+  }
+  if (write.phase !== "written") {
+    return {
+      outcome: "unknown",
+      asked,
+      readBack: null,
+      message: `the change to ${asked} has not settled`,
+    };
+  }
+  if (write.readbackError !== null) {
+    return {
+      outcome: "unknown",
+      asked,
+      readBack: null,
+      message: `reading back the change to ${asked} failed: ${write.readbackError}`,
+    };
+  }
+  if (readBack === null) {
+    return {
+      outcome: "unknown",
+      asked,
+      readBack: null,
+      message: `the read made after the change to ${asked} serves no value for this switch`,
+    };
+  }
+  if (readBack !== asked) {
+    return {
+      outcome: "contradicted",
+      asked,
+      readBack,
+      message: `asked for ${asked}; coord reads back ${readBack}`,
+    };
+  }
+  return { outcome: "read_back", asked, readBack, message: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +240,12 @@ export type GateWrite =
       door: "next_step";
       domain: string;
       level: AutonomyLevel;
+      /**
+       * The level is coord's built-in default, with no policy row behind it
+       * (`autonomy_level_source: code_fallback`): choosing that same level
+       * still writes something, the row that makes it take effect.
+       */
+      builtInDefault: boolean;
     }
   | {
       door: "auto_fix_pr";
@@ -226,10 +313,24 @@ function unknownAfterWrite(
   };
 }
 
+/** The cell is showing a read later than the one the write settled on. */
+function changedSince(cell: GateCell, write: SwitchWrite): boolean {
+  return (
+    write.settledState !== undefined &&
+    write.settledState !== null &&
+    cell.state !== write.settledState
+  );
+}
+
 /**
  * Stamp a write's outcome onto the cell its read produced. While presenting
  * the value is coord's alone — no note about an operator's request — but an
  * outcome that leaves the value unknown is UNKNOWN in both modes.
+ *
+ * The mark is about the read that settled the write, and lasts while later
+ * reads give the same value. Once one differs the value has moved since: a
+ * refusal's note goes, and a read-back's mark becomes a note saying so, in the
+ * cell's own tone. Nothing about that later value contradicts this write.
  */
 export function withWrite(
   cell: GateCell,
@@ -249,7 +350,7 @@ export function withWrite(
         presenting
       );
     case "refused":
-      return presenting
+      return presenting || changedSince(cell, write)
         ? cell
         : {
             ...cell,
@@ -258,7 +359,9 @@ export function withWrite(
     case "written":
       break;
   }
-  if (write.readbackError !== null) {
+  // Until a read answers. The read that failed left its source stale or
+  // unknown; once a later read succeeds, that read is what is compared.
+  if (write.readbackError !== null && (cell.stale || cell.tone === "unknown")) {
     return unknownAfterWrite(
       `Written (${asked}), but reading it back failed: ${write.readbackError}. What coord resolves is unknown until the next read.`,
       "Written, but reading it back failed — UNKNOWN until the next read.",
@@ -266,14 +369,21 @@ export function withWrite(
     );
   }
   if (cell.tone === "unknown" || presenting) return cell;
+  if (changedSince(cell, write)) {
+    return {
+      ...cell,
+      writeNote: `Changed since your write: coord read back ${askedText(write.settledState as string)} after it, and a later read differs.`,
+    };
+  }
   const matches = cell.state === write.asked;
   return {
     ...cell,
     tone: matches ? cell.tone : "contradiction",
     readBack: { asked: write.asked, askedText: asked, matches },
-    writeNote: write.outcomeUnknown
-      ? "Coord could not confirm the write itself; this is a read made after it."
-      : cell.writeNote,
+    writeNote:
+      write.outcomeUnknown || write.readbackError !== null
+        ? "Coord could not confirm the write itself; this is a read made after it."
+        : cell.writeNote,
   };
 }
 

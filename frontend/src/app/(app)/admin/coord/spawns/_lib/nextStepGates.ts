@@ -143,7 +143,12 @@ export function autonomyGate(
     effective: withWrite(value, write, levelText, presenting),
     write:
       d && canEdit
-        ? { door: "next_step", domain, level: d.autonomy_level }
+        ? {
+            door: "next_step",
+            domain,
+            level: d.autonomy_level,
+            builtInDefault: d.autonomy_level_source === "code_fallback",
+          }
         : null,
     readOnly: !d
       ? presenting

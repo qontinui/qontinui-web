@@ -22,7 +22,15 @@
  *    show coord's answer or re-read, compared with the ask. A dial write coord
  *    refuses says so with no read-back; one it could not confirm is UNKNOWN
  *    until the re-read answers, and then that read is compared.
- * 5. **Machines** — aliased by nobody in operator mode (real names), with the
+ * 5. **A registry or next-step write that timed out is not a refusal** — the
+ *    backend's 504 and the client's own timeout read UNKNOWN until a re-read
+ *    answers, and that read is compared; a 502 (nothing was sent) is refused.
+ * 6. **A level coord only defaults to can be recorded** — the active level of
+ *    a `code_fallback` domain stays a live button, and a recorded one does not.
+ * 7. **The read-back mark belongs to the read that settled the write** — a
+ *    later read that differs is a change since, not a contradiction; a refusal's
+ *    note goes with it; a failed read-back is UNKNOWN only until a read answers.
+ * 8. **Machines** — aliased by nobody in operator mode (real names), with the
  *    in-flight UNKNOWN stated once for the list.
  */
 
@@ -45,8 +53,10 @@ vi.mock("sonner", () => ({
 
 let routes: SpawnsRoutes = defaultSpawnsRoutes();
 const requests: Array<{ url: string; method: string; body: unknown }> = [];
-/** While set, a GET of the merge settings waits for it before answering. */
-let holdMergeRead: Promise<void> | null = null;
+/** While set, a GET of a URL containing `match` waits before answering. */
+let holdRead: { match: string; until: Promise<void> } | null = null;
+/** While set, a write of this method rejects as the client's own timeout does. */
+let timeOutMethod: string | null = null;
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
@@ -58,12 +68,11 @@ vi.mock("@/services/service-factory", () => ({
         body:
           typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
       });
-      if (
-        holdMergeRead &&
-        method === "GET" &&
-        url.includes("/pr-merge/settings")
-      ) {
-        await holdMergeRead;
+      if (holdRead && method === "GET" && url.includes(holdRead.match)) {
+        await holdRead.until;
+      }
+      if (timeOutMethod === method) {
+        throw new Error(`Request timeout - ${method} ${url}`);
       }
       return answerSpawnsRequest(routes, url, init);
     },
@@ -130,8 +139,47 @@ async function click(el: HTMLElement) {
 beforeEach(() => {
   requests.length = 0;
   routes = defaultSpawnsRoutes();
-  holdMergeRead = null;
+  holdRead = null;
+  timeOutMethod = null;
 });
+
+/** Hold every GET of `match` until the returned function is called. */
+function holdReads(match: string): () => Promise<void> {
+  let release: () => void = () => {};
+  holdRead = {
+    match,
+    until: new Promise((r) => {
+      release = r;
+    }),
+  };
+  return async () => {
+    await act(async () => {
+      release();
+    });
+    holdRead = null;
+    await settle();
+  };
+}
+
+async function refreshPage() {
+  await click(screen.getByTestId("coord-spawns-refresh"));
+}
+
+function effectiveOf(gateKey: string): HTMLElement {
+  return within(gate(gateKey)).getByTestId("coord-spawns-gate-effective");
+}
+
+function readBackOf(gateKey: string): HTMLElement | null {
+  return within(gate(gateKey)).queryByTestId(
+    "coord-spawns-gate-effective-readback"
+  );
+}
+
+function writeNoteOf(gateKey: string): HTMLElement | null {
+  return within(gate(gateKey)).queryByTestId(
+    "coord-spawns-gate-effective-write-note"
+  );
+}
 
 describe("the spawn-path matrix — what coord serves", () => {
   it("draws one line per path with its switch, scope, enforcement, coord's value and the other switches", async () => {
@@ -500,10 +548,7 @@ describe("the spawn-path matrix — writes show coord's read-back", () => {
         written: null,
       },
     });
-    let release: () => void = () => {};
-    holdMergeRead = new Promise((r) => {
-      release = r;
-    });
+    const release = holdReads("/pr-merge/settings");
     routes.merge = () => ({
       body: mergeSettingsBody({
         tenant: false,
@@ -527,12 +572,21 @@ describe("the spawn-path matrix — writes show coord's read-back", () => {
         "coord-spawns-gate-effective-write-note"
       ).textContent
     ).toContain("Outcome unknown");
+    // The switch is busy until the read-back lands: no second write races it.
+    for (const choice of ["default", "on"]) {
+      expect(
+        screen
+          .getByTestId(`coord-spawns-path-fixer-dial-${choice}`)
+          .getAttribute("aria-disabled")
+      ).toBe("true");
+    }
 
-    await act(async () => {
-      release();
-    });
-    holdMergeRead = null;
-    await settle();
+    await release();
+    expect(
+      screen
+        .getByTestId("coord-spawns-path-fixer-dial-on")
+        .getAttribute("aria-disabled")
+    ).toBeNull();
     const g = gate("dial:auto_fix_pr");
     expect(
       within(g).getByTestId("coord-spawns-gate-effective").textContent
@@ -609,5 +663,300 @@ describe("the spawn-path matrix — writes show coord's read-back", () => {
         .getByTestId("coord-spawns-gate-effective-readback")
         .getAttribute("data-readback")
     ).toBe("matches");
+  });
+});
+
+describe("a registry or next-step write that timed out is not a refusal", () => {
+  it("reads a registry PUT 504 as UNKNOWN until its re-read answers, then compares that read", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    routes.putRegistry = () => ({
+      status: 504,
+      body: { detail: "timeout waiting for coord" },
+    });
+    // The write landed: only a re-read can tell.
+    routes.defaults = () => ({
+      body: defaultsBody({ merge_shepherd: { default_enabled: false } }),
+    });
+    const release = holdReads("/agent-registry/admin/registry");
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("UNKNOWN");
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toContain(
+      "Outcome unknown"
+    );
+    expect(readBackOf("registry:merge_shepherd")).toBeNull();
+
+    await release();
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("Off");
+    expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
+      "matches"
+    );
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toContain(
+      "could not confirm the write itself"
+    );
+  });
+
+  it("compares a timed-out registry write with a re-read that says it did not land", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    routes.putRegistry = () => ({
+      status: 504,
+      body: { detail: "timeout waiting for coord" },
+    });
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("On");
+    expect(effectiveOf("registry:merge_shepherd").dataset.gateTone).toBe(
+      "contradiction"
+    );
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).not.toContain(
+      "was refused"
+    );
+  });
+
+  it("reads a next-step PUT 504 as UNKNOWN until its re-read answers, then compares that read", async () => {
+    await renderPage();
+    await openPath("red_main_fix_dispatch");
+    routes.putNextStep = () => ({
+      status: 504,
+      body: { detail: "timeout waiting for coord" },
+    });
+    routes.nextStep = () => ({
+      body: nextStepBody({ red_main_fix: { autonomy_level: "guidance_only" } }),
+    });
+    const release = holdReads("/coord/next-step-settings");
+    await click(
+      screen.getByTestId(
+        "coord-spawns-path-autonomy-red_main_fix-guidance_only"
+      )
+    );
+    expect(effectiveOf("autonomy:red_main_fix").textContent).toBe("UNKNOWN");
+    expect(writeNoteOf("autonomy:red_main_fix")?.textContent).toContain(
+      "Outcome unknown"
+    );
+
+    await release();
+    expect(effectiveOf("autonomy:red_main_fix").dataset.gateState).toBe(
+      "guidance_only"
+    );
+    expect(readBackOf("autonomy:red_main_fix")?.dataset.readback).toBe(
+      "matches"
+    );
+  });
+
+  it("reads the client's own timeout on a registry PUT as unconfirmed, and re-reads", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    timeOutMethod = "PUT";
+    routes.defaults = () => ({
+      body: defaultsBody({ merge_shepherd: { default_enabled: false } }),
+    });
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("Off");
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toContain(
+      "could not confirm the write itself"
+    );
+  });
+
+  it("stays a refusal when nothing was sent (502)", async () => {
+    await renderPage();
+    await openPath("red_main_fix_dispatch");
+    routes.putNextStep = () => ({
+      status: 502,
+      body: { detail: "coord is not reachable" },
+    });
+    await click(
+      screen.getByTestId(
+        "coord-spawns-path-autonomy-red_main_fix-guidance_only"
+      )
+    );
+    expect(writeNoteOf("autonomy:red_main_fix")?.textContent).toContain(
+      "was refused"
+    );
+    expect(readBackOf("autonomy:red_main_fix")).toBeNull();
+  });
+});
+
+describe("the autonomy control records a level coord only defaults to", () => {
+  const fallback = () =>
+    nextStepBody({
+      red_main_fix: {
+        autonomy_level: "guidance_only",
+        autonomy_level_source: "code_fallback",
+        effective_state: "not_effective",
+      },
+    });
+
+  it("keeps the built-in level's button live, says what it does, and sends the PUT", async () => {
+    routes.nextStep = () => ({ body: fallback() });
+    routes.putNextStep = () => ({
+      body: nextStepBody({
+        red_main_fix: {
+          autonomy_level: "guidance_only",
+          autonomy_level_source: "policy_row",
+          effective_state: "not_effective",
+        },
+      }),
+    });
+    await renderPage();
+    await openPath("red_main_fix_dispatch");
+    const button = screen.getByTestId(
+      "coord-spawns-path-autonomy-red_main_fix-guidance_only"
+    ) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(button.textContent).toBe(
+      "Guidance only (built-in default; choose to record it)"
+    );
+
+    await click(button);
+    const put = requests.find((r) => r.method === "PUT");
+    expect(put?.body).toEqual({
+      domains: [
+        { decision_domain: "red_main_fix", autonomy_level: "guidance_only" },
+      ],
+    });
+    expect(readBackOf("autonomy:red_main_fix")?.dataset.readback).toBe(
+      "matches"
+    );
+    // Now a policy row holds it, so choosing it again would write nothing.
+    const recorded = screen.getByTestId(
+      "coord-spawns-path-autonomy-red_main_fix-guidance_only"
+    ) as HTMLButtonElement;
+    expect(recorded.disabled).toBe(true);
+    expect(recorded.textContent).toBe("Guidance only");
+  });
+
+  it("does not offer a level a policy row already holds", async () => {
+    await renderPage();
+    await openPath("red_main_fix_dispatch");
+    const button = screen.getByTestId(
+      "coord-spawns-path-autonomy-red_main_fix-auto_decide"
+    ) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    await click(button);
+    expect(requests.some((r) => r.method === "PUT")).toBe(false);
+  });
+});
+
+describe("the read-back mark belongs to the read that settled the write", () => {
+  async function writeOffThatReadsBack() {
+    await renderPage();
+    await openPath("merge_shepherd");
+    routes.defaults = () => ({
+      body: defaultsBody({ merge_shepherd: { default_enabled: false } }),
+    });
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
+      "matches"
+    );
+  }
+
+  it("keeps the mark while later reads give the same value", async () => {
+    await writeOffThatReadsBack();
+    await refreshPage();
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("Off");
+    expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
+      "matches"
+    );
+  });
+
+  it("says a later change is a change since, never that coord reads the write back otherwise", async () => {
+    await writeOffThatReadsBack();
+    // Someone switches the default back on elsewhere.
+    routes.defaults = () => ({ body: defaultsBody() });
+    await refreshPage();
+    const effective = effectiveOf("registry:merge_shepherd");
+    expect(effective.textContent).toBe("On");
+    expect(effective.dataset.gateTone).toBe("known");
+    expect(readBackOf("registry:merge_shepherd")).toBeNull();
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toBe(
+      "Changed since your write: coord read back off after it, and a later read differs."
+    );
+  });
+
+  it("keeps a contradiction red while coord still reads the value that contradicted it", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    await refreshPage();
+    expect(effectiveOf("registry:merge_shepherd").dataset.gateTone).toBe(
+      "contradiction"
+    );
+  });
+
+  it("drops a refusal's note once the value has moved, and keeps it until then", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    routes.putRegistry = () => ({
+      status: 403,
+      body: { detail: "not_coord_tenant_admin" },
+    });
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    await refreshPage();
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toContain(
+      "was refused"
+    );
+    routes.defaults = () => ({
+      body: defaultsBody({ merge_shepherd: { default_enabled: false } }),
+    });
+    await refreshPage();
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("Off");
+    expect(writeNoteOf("registry:merge_shepherd")).toBeNull();
+  });
+
+  it("marks a dial and a knob write's later change the same way", async () => {
+    await renderPage();
+    await openPath("red_main_fix_dispatch");
+    routes.merge = () => ({
+      body: mergeSettingsBody(undefined, { auto_fix_red_main: false }),
+    });
+    await click(screen.getByTestId("coord-spawns-path-red-main-knob-off"));
+    expect(readBackOf("knob:auto_fix_red_main")?.dataset.readback).toBe(
+      "matches"
+    );
+    routes.merge = () => ({
+      body: mergeSettingsBody(undefined, { auto_fix_red_main: true }),
+    });
+    await refreshPage();
+    expect(effectiveOf("knob:auto_fix_red_main").dataset.gateTone).toBe(
+      "known"
+    );
+    expect(readBackOf("knob:auto_fix_red_main")).toBeNull();
+    expect(writeNoteOf("knob:auto_fix_red_main")?.textContent).toContain(
+      "Changed since your write"
+    );
+  });
+
+  it("is UNKNOWN after a failed read-back only until a read answers, which is then compared", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    routes.defaults = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("UNKNOWN");
+    routes.defaults = () => ({
+      body: defaultsBody({ merge_shepherd: { default_enabled: false } }),
+    });
+    await refreshPage();
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("Off");
+    expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
+      "matches"
+    );
   });
 });

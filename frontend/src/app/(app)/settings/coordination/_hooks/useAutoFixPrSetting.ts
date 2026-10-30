@@ -15,8 +15,14 @@ import {
   tenantFromChoice,
 } from "./auto-fix-pr";
 
-/** How a re-read of the merge settings ended. */
-export type AutoFixPrReread = { ok: true } | { ok: false; error: string };
+/**
+ * How a re-read of the merge settings ended; `ok` carries the profile it read
+ * (`null` when coord answered with none), so a caller comparing a write with
+ * its read-back compares with that read, not with a later one.
+ */
+export type AutoFixPrReread =
+  | { ok: true; profile: EffectiveProfile | null }
+  | { ok: false; error: string };
 
 /**
  * What a dial write did, as far as coord said. The caller shows coord's
@@ -107,7 +113,7 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
         setState(readAutoFixPr(data?.profile));
         setProfile(data?.profile ?? null);
       }
-      return { ok: true };
+      return { ok: true, profile: data?.profile ?? null };
     } catch (err) {
       const message = errorText(err, "Failed to load merge settings");
       if (current(t)) {
