@@ -298,6 +298,20 @@ def test_up_down_up_restores_the_view_exactly(at_parent: tuple[Engine, str]) -> 
                 "UPDATE, DELETE ON TABLES FROM coord_tenant, coord_tenant_preflight"
             )
         )
+        # The revoke acts on the CURRENT role's defaults. If the harness ever runs
+        # this engine as a different role from alembic, it would do nothing.
+        remaining = conn.execute(
+            text(
+                """
+                SELECT count(*) FROM pg_default_acl d
+                JOIN pg_namespace n ON n.oid = d.defaclnamespace
+                WHERE n.nspname = 'coord' AND d.defaclobjtype = 'r'
+                  AND (d.defaclacl::text LIKE '%coord_tenant=%'
+                       OR d.defaclacl::text LIKE '%coord_tenant_preflight=%')
+                """
+            )
+        ).scalar_one()
+    assert remaining == 0, "the default-privilege revoke did not take effect"
 
     run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
     assert column_info(engine, _TABLE, "changed_at") is None
