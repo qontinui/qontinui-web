@@ -32,12 +32,13 @@ export type AutoFixPrReread =
  * - `saved` — coord's PATCH answer READ BACK the value sent; the hook now
  *   holds that answer.
  * - `refused` — a failure read as definite (a 4xx, an explicit
- *   `written: false`, a 502): nothing changed as far as coord said, and the
- *   hook keeps what it read before.
+ *   `written: false`, the proxy's own connect-failure 502): nothing changed as
+ *   far as coord said, and the hook keeps what it read before.
  * - `unconfirmed` — whether the write landed is unknown: coord could not
- *   confirm its commit (`written: null`), the request timed out or its answer
- *   was lost after it may have been processed, or a 2xx answer did not read
- *   back the value sent.
+ *   confirm its commit (`written: null`), the answer was a 5xx that proves
+ *   nothing, the request timed out or its answer was lost after it may have been
+ *   processed, or a 2xx answer did not read back the value sent (a source of
+ *   `unknown` reads back nothing, whatever its tenant field says).
  *   The hook re-reads what coord serves, and `reread` settles when that read
  *   does — until then the dial's value is UNKNOWN.
  * - `busy` — another write from this hook was still in flight; nothing was
@@ -54,7 +55,7 @@ export interface UseAutoFixPrSettingReturn {
   saving: boolean;
   /** Load failure message — the dial is then UNKNOWN, never on. */
   error: string | null;
-  /** `null` when loaded but the coord build does not serve the fields. */
+  /** `null` when loaded with no well-formed dial (`autoFixPrAbsence` says why). */
   state: AutoFixPrState | null;
   /**
    * The tenant-level merge profile the dial was read from — the same read,
@@ -79,8 +80,9 @@ function errorText(err: unknown, fallback: string): string {
  * blur which write failed.
  *
  * A write counts as saved only when coord's response READS BACK the value that
- * was sent. A 2xx whose profile lacks the dial, or carries a different tenant
- * value, is an unconfirmed write and is reported as one.
+ * was sent. A 2xx whose profile lacks the dial, says coord could not read it, or
+ * carries a different tenant value, is an unconfirmed write and is reported as
+ * one.
  *
  * Every answer — a load, or a write's own answer — is ordered by one ticket
  * counter: a load issued before a write resolved cannot paint the pre-write
@@ -162,7 +164,11 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
       try {
         const data = await patchTenantAutoFixPr(sent);
         const next = readAutoFixPr(data?.profile);
-        if (next === null || next.tenant !== sent) {
+        if (
+          next === null ||
+          next.source === "unknown" ||
+          next.tenant !== sent
+        ) {
           toast.error(
             "Coord accepted the request but did not confirm the fixer setting — reloading."
           );

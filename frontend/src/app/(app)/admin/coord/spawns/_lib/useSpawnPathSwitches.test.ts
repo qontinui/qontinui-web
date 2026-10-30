@@ -32,7 +32,11 @@ vi.mock("sonner", () => ({
 }));
 
 import { HttpClient } from "@/services/http-client";
-import { defaultsBody, effectiveBody } from "../__fixtures__/spawnPaths";
+import {
+  defaultsBody,
+  effectiveBody,
+  mergeSettingsBody,
+} from "../__fixtures__/spawnPaths";
 import { NO_CONNECTION_MESSAGE } from "@/services/http-client";
 import { WRITE_IN_FLIGHT, useSpawnPathSwitches } from "./useSpawnPathSwitches";
 
@@ -177,6 +181,50 @@ describe("useSpawnPathSwitches", () => {
       phase: "written",
       outcomeUnknown: true,
       settledState: "off",
+    });
+  });
+
+  it("does not answer a lost dial write as read back when the re-read's source is unknown", async () => {
+    let unreadable = false;
+    answer = async (path, method) => {
+      if (method === "PATCH") throw new TypeError("Failed to fetch");
+      if (path === "/api/v1/operations/pr-merge/settings") {
+        return json(
+          unreadable
+            ? mergeSettingsBody({
+                tenant: null,
+                resolved: false,
+                source: "unknown",
+              })
+            : mergeSettingsBody({
+                tenant: false,
+                resolved: false,
+                source: "tenant",
+              })
+        );
+      }
+      if (path === "/api/v1/agent-registry/admin/registry") {
+        return json(defaultsBody());
+      }
+      if (path === "/api/v1/agent-registry") return json(effectiveBody());
+      return json({ error: "not in this test" }, 404);
+    };
+    const { result } = renderHook(() => useSpawnPathSwitches());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    unreadable = true;
+    let outcome: unknown;
+    await act(async () => {
+      // `null` in the tenant field is what Default asks for, and is not what
+      // this read says: coord could not read the column.
+      outcome = await result.current.setFixerDial("default");
+    });
+    expect(outcome).toMatchObject({ outcome: "unknown", readBack: null });
+    expect(result.current.writes["dial:auto_fix_pr"]).toMatchObject({
+      phase: "written",
+      outcomeUnknown: true,
+      settledState: null,
     });
   });
 

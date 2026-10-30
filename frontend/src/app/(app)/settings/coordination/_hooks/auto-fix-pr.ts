@@ -17,13 +17,13 @@
  * Coord resolves, not this file — including what the default is. The rule is:
  * an explicit OFF at any scope wins; otherwise an explicit ON; otherwise the
  * default. This file renders what coord decided. The one thing it adds is
- * refusing to render an `unknown` source as on: served policy
- * `agent-spawn-authorization` v11 says an unreadable preference never
- * resolves permissive.
+ * refusing to render an `unknown` source as any value. Coord's own answer then
+ * is the last value it read, or off when it holds none (served policy
+ * `agent-spawn-authorization` v11: an unreadable preference never resolves
+ * permissive), and this read cannot tell which, so it is neither on nor off here.
  */
 
-import { httpStatusOf } from "@/components/admin/coord/httpStatus";
-import { NO_CONNECTION_MESSAGE } from "@/services/http-client";
+import { isWriteFailureUnknown } from "@/components/admin/coord/writeOutcome";
 
 export type AutoFixPrSource = "default" | "tenant" | "repo" | "unknown";
 
@@ -33,10 +33,18 @@ export type AutoFixPrChoice = "default" | "on" | "off";
 export interface AutoFixPrState {
   /** Raw `tenant_merge_settings.auto_fix_pr`: NULL = follow the default. */
   tenant: boolean | null;
-  /** Coord's resolved value at tenant level. */
+  /**
+   * Coord's resolved value at tenant level. Always `false` while `source` is
+   * `unknown`, and never shown then: nothing is claimed about the value.
+   */
   effective: boolean;
   /** The layer that decided `effective`. */
   source: AutoFixPrSource;
+  /**
+   * The `unknown` is this page's: coord answered outside the contract, and did
+   * not say it could not read the preference.
+   */
+  offContract?: true;
 }
 
 const KNOWN_SOURCES: readonly AutoFixPrSource[] = [
@@ -53,8 +61,8 @@ const KNOWN_SOURCES: readonly AutoFixPrSource[] = [
  * coord build does not serve the fields yet, or a field has a shape outside
  * the contract. That is "not settable here", which the UI must say instead of
  * inventing a value. A source string outside the contract, or a missing
- * resolved boolean, is read as `unknown`, never as whatever `auto_fix_pr`
- * claims.
+ * resolved boolean, is read as `unknown` and marked `offContract`, never as
+ * whatever `auto_fix_pr` claims.
  */
 export function readAutoFixPr(profile: unknown): AutoFixPrState | null {
   if (profile === null || typeof profile !== "object") return null;
@@ -68,36 +76,51 @@ export function readAutoFixPr(profile: unknown): AutoFixPrState | null {
     return null;
   }
   const rawSource = p.auto_fix_pr_source;
-  let source: AutoFixPrSource =
-    typeof rawSource === "string" &&
-    (KNOWN_SOURCES as readonly string[]).includes(rawSource)
-      ? (rawSource as AutoFixPrSource)
-      : "unknown";
-  if (typeof p.auto_fix_pr !== "boolean") source = "unknown";
-  const effective = source === "unknown" ? false : p.auto_fix_pr === true;
-  return { tenant: rawTenant, effective, source };
+  if (rawSource === "unknown") {
+    return { tenant: rawTenant, effective: false, source: "unknown" };
+  }
+  if (
+    typeof rawSource !== "string" ||
+    !(KNOWN_SOURCES as readonly string[]).includes(rawSource) ||
+    typeof p.auto_fix_pr !== "boolean"
+  ) {
+    return {
+      tenant: rawTenant,
+      effective: false,
+      source: "unknown",
+      offContract: true,
+    };
+  }
+  return {
+    tenant: rawTenant,
+    effective: p.auto_fix_pr,
+    source: rawSource as AutoFixPrSource,
+  };
+}
+
+/** Why {@link readAutoFixPr} found no dial in a profile. */
+export type AutoFixPrAbsence = "no_profile" | "not_served" | "malformed";
+
+export function autoFixPrAbsence(profile: unknown): AutoFixPrAbsence {
+  if (profile === null || typeof profile !== "object") return "no_profile";
+  const served =
+    "auto_fix_pr_source" in profile && "auto_fix_pr_tenant" in profile;
+  return served ? "malformed" : "not_served";
 }
 
 /**
  * Classify a failed PATCH: did the write POSSIBLY land?
  *
- * Two kinds of failure leave the outcome unknown, and both must be reported
- * that way — never as saved, and never as a clean failure that invites a
- * blind retry. The caller reloads and shows what coord actually serves.
+ * A failure that leaves the outcome open must be reported that way — never as
+ * saved, and never as a clean failure that invites a blind retry. The caller
+ * reloads and shows what coord actually serves.
  *
- * 1. coord refuses with 503
- *    `{error: "auto_fix_pr_column_unavailable", cause, written}`, and
- *    `written` is null (`cause: "commit_unconfirmed"`): coord cannot tell
- *    whether the commit landed. An explicit `written: false` (or `true`) is a
- *    definite answer and is NOT unconfirmed.
- * 2. The request timed out after it may have been processed. That is either the
- *    web proxy's 504 "timeout waiting for coord", or HttpClient's own abort
- *    ("Request timeout - …").
- *
- * A 502 is read as a clean failure. The proxy's own 502 (coord unreachable)
- * means nothing was sent; one from coord or a gateway in front of it passes
- * through looking the same. For a failure with no status at all, see
- * {@link isUnconfirmedFailure}.
+ * Coord can say so itself: it refuses with 503
+ * `{error: "auto_fix_pr_column_unavailable", cause, written}`, where
+ * `written: null` (`cause: "commit_unconfirmed"`) means it cannot tell whether
+ * the commit landed, and an explicit `written: false` (or `true`) is a definite
+ * answer and is NOT unconfirmed. Without that, the status decides, by the rule
+ * every coord write shares ({@link isWriteFailureUnknown}).
  *
  * What the browser sees: the proxy raises `HTTPException(detail=<coord body
  * text>)`, and the backend's error handler wraps it as
@@ -105,32 +128,29 @@ export function readAutoFixPr(profile: unknown): AutoFixPrState | null {
  * throws `PATCH <url> failed: <status> - <that envelope>`. So coord's body
  * arrives JSON-escaped inside the message, and this reads the message text.
  */
-export function isUnconfirmedWrite(errorMessage: string): boolean {
-  const match = errorMessage.match(/\\?"written\\?"\s*:\s*(null|true|false)/);
-  if (match) return match[1] === "null";
-  if (/commit_unconfirmed/.test(errorMessage)) return true;
-  if (/ failed: 504 - /.test(errorMessage)) return true;
-  return /^Request timeout/.test(errorMessage);
-}
-
-/**
- * {@link isUnconfirmedWrite} for what a write's call actually threw, which also
- * covers a failure that carries no HTTP status at all. A fetch that rejected
- * says nothing about whether the request reached the server and only its answer
- * was lost, and a 2xx whose body would not parse did reach it, so neither is a
- * refusal: `null` from `httpStatusOf` must not fall into a calm arm. The one
- * statusless failure kept as a refusal is the browser reporting it is offline.
- */
 export function isUnconfirmedFailure(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
-  if (isUnconfirmedWrite(message)) return true;
-  if (httpStatusOf(err) !== null) return false;
-  return message !== NO_CONNECTION_MESSAGE;
+  const written = message.match(/\\?"written\\?"\s*:\s*(null|true|false)/);
+  if (written) return written[1] === "null";
+  if (/commit_unconfirmed/.test(message)) return true;
+  return isWriteFailureUnknown(err);
 }
 
 export function choiceFromTenant(tenant: boolean | null): AutoFixPrChoice {
   if (tenant === null) return "default";
   return tenant ? "on" : "off";
+}
+
+/**
+ * The position coord's answer holds the dial at, or `null` when it does not say.
+ * Coord's `auto_fix_pr_tenant: null` means "not set" OR "not readable", and only
+ * the source separates them, so an `unknown` source is no position at all.
+ */
+export function dialChoice(
+  state: AutoFixPrState | null
+): AutoFixPrChoice | null {
+  if (state === null || state.source === "unknown") return null;
+  return choiceFromTenant(state.tenant);
 }
 
 /** The PATCH value for a choice — `null` is "clear the override". */
@@ -140,31 +160,33 @@ export function tenantFromChoice(choice: AutoFixPrChoice): boolean | null {
 }
 
 export interface TenantSummary {
-  /** "On" / "Off" / "Unknown (treated as off)". */
+  /** "On" / "Off" / "Unknown". */
   value: string;
   tone: "on" | "off" | "unknown";
-  /** Where the value came from, as a sentence fragment. */
-  from: string;
+  /** Where the value came from, or why there is none, as a sentence fragment. */
+  detail: string;
 }
 
 export function tenantSummary(state: AutoFixPrState): TenantSummary {
   if (state.source === "unknown") {
     return {
-      value: "Unknown (treated as off)",
+      value: "Unknown",
       tone: "unknown",
-      from: "coord could not read this preference",
+      detail: state.offContract
+        ? "coord's answer for this preference is not one this page can read"
+        : "coord could not read this preference",
     };
   }
   const onOff = state.effective ? "on" : "off";
-  const from =
+  const detail =
     state.source === "default"
-      ? `the default (${onOff})`
+      ? `from the default (${onOff})`
       : state.source === "tenant"
-        ? "this tenant's setting"
-        : "a repo's .qontinui/config.yml";
+        ? "from this tenant's setting"
+        : "from a repo's .qontinui/config.yml";
   return {
     value: state.effective ? "On" : "Off",
     tone: state.effective ? "on" : "off",
-    from,
+    detail,
   };
 }

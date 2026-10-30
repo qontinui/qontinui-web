@@ -36,6 +36,7 @@ import { Bot, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import {
   AgentPrefError,
+  isWriteOutcomeUnknown,
   listAgentRegistry,
   putAgentPref,
   type AgentDisposition,
@@ -248,9 +249,29 @@ export default function AgentsSettingsPage() {
         }));
         // The picker asks for a choice that cannot be saved by this account.
         closePicker(agentName);
+      } else if (isWriteOutcomeUnknown(err)) {
+        // The change may have landed, so "failed" beside the old value would be
+        // a claim nobody can make: only a re-read can say.
+        const unknown = `${agentName}: whether this change was saved is unknown (${
+          err instanceof Error ? err.message : String(err)
+        }).`;
+        const rows = await refresh().catch(() => null);
+        if (rows === null) {
+          toast.error(
+            `${unknown} The re-read failed too, so what is shown may be out of date.`
+          );
+        } else {
+          closePicker(agentName);
+          const read = rows.find((r) => r.agent_name === agentName);
+          toast.error(
+            read
+              ? `${unknown} A read made after it says: ${recordedLine(read)}.`
+              : `${unknown} A read made after it lists no such agent.`
+          );
+        }
       } else {
-        // Everything left is a transport or server failure — genuinely
-        // transient, and a toast is the right weight for it.
+        // Everything left is an answer about the request, or a browser that is
+        // offline and sent nothing, and a toast is the right weight for it.
         toast.error(
           err instanceof Error ? err.message : "Failed to save preference"
         );

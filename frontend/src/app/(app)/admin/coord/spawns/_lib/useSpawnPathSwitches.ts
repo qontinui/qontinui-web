@@ -34,10 +34,9 @@
  *   over it. A failed re-read of the defaults is UNKNOWN.
  * - `PUT /coord/next-step-settings` (`putNextStepSettings`): coord answers its
  *   authoritative state after the write, applied as a read.
- * - On either PUT, a failure that leaves the outcome open (the backend's 504,
- *   which it documents as "coord may well have committed, and only a re-read
- *   can tell", the client's own timeout, or a failure with no HTTP status) is
- *   not a refusal: it is UNKNOWN until a re-read settles it, like the two below.
+ * - On either PUT, a failure that leaves the outcome open
+ *   (`isWriteOutcomeUnknown`) is not a refusal: it is UNKNOWN until a re-read
+ *   settles it, like the two below.
  * - `PATCH /pr-merge/settings {auto_fix_pr}` (the dial hook's `setChoice`):
  *   `saved` is coord's answer reading back what was sent; `refused` keeps
  *   coord's value and says so; `unconfirmed` is UNKNOWN until the hook's
@@ -62,6 +61,7 @@ import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollE
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import {
   AgentPrefError,
+  isWriteOutcomeUnknown,
   listAdminAgentRegistry,
   listAgentRegistry,
   putAgentRegistryDefaults,
@@ -83,12 +83,13 @@ import {
   type AutoFixPrReread,
 } from "@/app/(app)/settings/coordination/_hooks/useAutoFixPrSetting";
 import {
-  choiceFromTenant,
+  dialChoice,
   isUnconfirmedFailure,
   readAutoFixPr,
   type AutoFixPrChoice,
 } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
 import { useRepoFollowupDials } from "@/app/(app)/admin/coord/agent-registry/_hooks/useRepoFollowupDials";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   switchWriteResult,
   type FollowupRead,
@@ -167,27 +168,10 @@ function switchWriteErrorText(err: unknown): string {
 export const WRITE_IN_FLIGHT =
   "A write to this switch is still in flight; wait for its read-back.";
 
-/**
- * Whether a failed registry or next-step PUT may still have landed. Both doors
- * answer 504 when the request may have been sent and they hold no usable answer
- * (a timeout, an answer lost in transit, a 2xx body that is not JSON), and a
- * client timeout or a failure with no HTTP status is the same state. An offline
- * browser is taken as not having sent it.
- *
- * Every other status is shown as a refusal, which for a 502 is a reading, not a
- * proof. A door's own 502 means no connection was made (the registry door also
- * answers one for a coord that does not serve the route), but a 502 from coord
- * or from a gateway in front of it passes through unchanged, and whether a
- * gateway can answer one after forwarding the PUT has not been established.
- */
-function writeMayHaveLanded(err: unknown): boolean {
-  if (err instanceof AgentPrefError) return err.status === 504;
-  return isUnconfirmedFailure(err);
-}
-
 function unconfirmedReason(err: unknown): string {
-  return err instanceof AgentPrefError
-    ? `coord's answer did not arrive (HTTP ${err.status}), so it may have landed`
+  const status = err instanceof AgentPrefError ? err.status : httpStatusOf(err);
+  return status !== null
+    ? `no usable answer from coord (HTTP ${status}), so it may have landed`
     : switchReadErrorText(err);
 }
 
@@ -218,8 +202,7 @@ function autonomyState(
 }
 
 function dialState(profile: EffectiveProfile | null): string | null {
-  const dial = readAutoFixPr(profile);
-  return dial === null ? null : choiceFromTenant(dial.tenant);
+  return dialChoice(readAutoFixPr(profile));
 }
 
 function redMainState(profile: EffectiveProfile | null): string | null {
@@ -398,9 +381,12 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
 
   // A write whose read-back failed, or answered with no value for this switch,
   // settles on the first read to give one: the read the cell stops being UNKNOWN
-  // on. Without this nothing would ever mark a later read as later, and another
-  // operator's change would read as coord contradicting this write. A kept value
-  // (a stale part, a dial with no answer) settles nothing.
+  // on. The record says that read is later (`settledLater`), so the cell says so,
+  // and a read after it that differs is a change since. That first read is still
+  // compared with the ask, since no earlier read says whether the write landed:
+  // if another operator changed the switch before it, it shows as a contradiction,
+  // with the note saying it is a later read. A kept value (a stale part, a dial
+  // with no answer) settles nothing.
   const answeredDefaults =
     parts.defaults.error === null ? parts.defaults.data : null;
   const answeredNextStep =
@@ -426,7 +412,9 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
       const next = { ...prev };
       for (const { key, write, state } of settled) {
         // Only the record this read was compared with: a newer write replaces it.
-        if (prev[key] === write) next[key] = { ...write, settledState: state };
+        if (prev[key] === write) {
+          next[key] = { ...write, settledState: state, settledLater: true };
+        }
       }
       return next;
     });
@@ -512,7 +500,7 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
             default_enabled: enabled,
           });
         } catch (err) {
-          if (writeMayHaveLanded(err)) {
+          if (isWriteOutcomeUnknown(err)) {
             return settleUnconfirmed(
               key,
               asked,
@@ -572,7 +560,7 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
             { decision_domain: domain, autonomy_level: level },
           ]);
         } catch (err) {
-          if (writeMayHaveLanded(err)) {
+          if (isWriteOutcomeUnknown(err)) {
             return settleUnconfirmed(
               key,
               level,
@@ -670,19 +658,18 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
         try {
           await patchTenantAutoFixRedMain(enabled);
         } catch (err) {
-          const message = switchReadErrorText(err);
           if (isUnconfirmedFailure(err)) {
             return settleUnconfirmed(
               key,
               asked,
-              message,
+              unconfirmedReason(err),
               reloadDial().then((r) => mergeReread(r, redMainState))
             );
           }
           return finish(key, {
             asked,
             phase: "refused",
-            error: message,
+            error: switchReadErrorText(err),
             readbackError: null,
             settledState: redMainState(latest.current.profile),
           });

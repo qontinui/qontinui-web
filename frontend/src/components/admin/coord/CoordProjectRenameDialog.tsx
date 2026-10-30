@@ -54,6 +54,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { renameTenant, TenantRenameError } from "@/lib/api/operations/tenants";
+import { isOutcomeUnknownStatus } from "./writeOutcome";
 import type {
   HomeGroupMigration,
   TenantRenameRequest,
@@ -200,25 +201,14 @@ export function renameErrorMessage(err: unknown): string {
     : `Could not rename the project (${err.status}).`;
 }
 
-/** The web proxy's exact detail for a connect failure — the one 5xx that
- *  proves coord never saw the request (`_proxy_coord_patch`). */
-export const PROXY_NOT_REACHABLE_DETAIL = "coord is not reachable";
-
 /**
- * A failure after which the rename may or may not have been applied.
- *
- * 500, 503 and 504 are unknown: coord's own 5xx, an intermediary's, or the
- * proxy's timeout / lost answer can all follow a commit. A 502 is "not
- * applied" ONLY when it is the proxy's own connect failure, recognised by its
- * exact detail — a 502 from a load balancer in front of the web backend, or
- * one coord forwarded, carries no such proof and is unknown too.
+ * A failure after which the rename may or may not have been applied: the rule
+ * every coord write shares ({@link isOutcomeUnknownStatus}).
  */
 export function isRenameOutcomeUnknown(err: unknown): boolean {
   // Anything that is not an HTTP answer — the request may already have gone.
   if (!(err instanceof TenantRenameError)) return true;
-  if (err.status === 502) return err.detail !== PROXY_NOT_REACHABLE_DETAIL;
-  // Every other 5xx, including a CDN's 520/524: none of them is a refusal.
-  return err.status >= 500;
+  return isOutcomeUnknownStatus(err.status, err.detail);
 }
 
 /**
