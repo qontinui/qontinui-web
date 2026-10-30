@@ -119,7 +119,7 @@ async function observedReconcile(): Promise<HTMLElement> {
 const UNKNOWN =
   "Observed: UNKNOWN — no auto-publisher pass recorded on the serving coord";
 const RECONCILE_UNKNOWN =
-  "Observed reconcile: UNKNOWN — no recovery reconcile recorded on the serving coord";
+  "Observed reconcile: UNKNOWN — coord served no reading of the recovery reconcile";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -578,7 +578,7 @@ describe("the observed recovery reconcile, per worker status", () => {
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
-      "Observed reconcile: clean within the last day, next run not due — recovery:not_due"
+      "Observed reconcile: no errors counted at this replica's last daily run — recovery:not_due"
     );
     expect(line).toHaveAttribute("data-observed-tone", "nominal");
   });
@@ -588,7 +588,7 @@ describe("the observed recovery reconcile, per worker status", () => {
       reconcileStatus({
         status: "alive",
         nominal: false,
-        reason: "body_in_flight",
+        reason: "a_future_reason",
         last_tick_at: minutesAgo(1),
         last_work_tick_at: null,
         last_decision_code: "recovery:not_due",
@@ -600,7 +600,73 @@ describe("the observed recovery reconcile, per worker status", () => {
     expect(line).toHaveTextContent(
       "Observed reconcile: loop alive, last tick did no reconcile — recovery:not_due"
     );
-    expect(line).toHaveTextContent("body_in_flight");
+    expect(line).toHaveTextContent("a_future_reason");
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
+  it("the resting code from a coord that serves no nominal: not taken as healthy", async () => {
+    statusGet.mockResolvedValue(
+      reconcileStatus({
+        status: "alive",
+        last_tick_at: minutesAgo(1),
+        last_work_tick_at: null,
+        last_decision_code: "recovery:not_due",
+      })
+    );
+    render(<Harness />);
+
+    const line = await observedReconcile();
+    expect(line).toHaveTextContent(
+      "Observed reconcile: loop alive, last tick did no reconcile — recovery:not_due"
+    );
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
+  it.each(["not_due", "due_staggered"])(
+    "a new lease term's %s: names the wait in the quiet tone, for the reconcile and the pass",
+    async (code) => {
+      const waiting = {
+        status: "alive",
+        nominal: true,
+        reason: null,
+        last_tick_at: minutesAgo(1),
+        last_work_tick_at: null,
+        last_decision_code: code,
+      };
+      statusGet.mockResolvedValue(
+        status({ pass: waiting, recovery_reconcile: waiting })
+      );
+      render(<Harness />);
+
+      const line = await observedReconcile();
+      expect(line).toHaveTextContent(
+        `Observed reconcile: waiting out a leader change — ${code}`
+      );
+      expect(line).toHaveAttribute("data-observed-tone", "nominal");
+      expect(observedNow()).toHaveTextContent(
+        `Observed: waiting out a leader change — ${code}`
+      );
+      expect(observedNow()).toHaveAttribute("data-observed-tone", "nominal");
+    }
+  );
+
+  it("a new lease term's wait that coord calls unhealthy: flagged", async () => {
+    statusGet.mockResolvedValue(
+      reconcileStatus({
+        status: "alive",
+        nominal: false,
+        reason: "a_future_reason",
+        last_tick_at: minutesAgo(1),
+        last_work_tick_at: null,
+        last_decision_code: "due_staggered",
+      })
+    );
+    render(<Harness />);
+
+    const line = await observedReconcile();
+    expect(line).toHaveTextContent(
+      "Observed reconcile: loop alive, last tick did no reconcile — due_staggered"
+    );
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
@@ -639,7 +705,7 @@ describe("the observed recovery reconcile, per worker status", () => {
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
-      "Observed reconcile: loop alive, no reconcile recorded yet"
+      "Observed reconcile: loop alive, no reconcile recorded for the current leader"
     );
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
@@ -687,7 +753,7 @@ describe("the observed recovery reconcile, per worker status", () => {
       "Observed reconcile: running but failing (last decision: recovery:not_due_after_errors)"
     );
     expect(line).toHaveTextContent("the coord log names the tenants");
-    expect(line).not.toHaveTextContent(/clean within/);
+    expect(line).not.toHaveTextContent(/no errors counted/);
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
@@ -708,13 +774,84 @@ describe("the observed recovery reconcile, per worker status", () => {
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
-      "Observed reconcile: running but failing — the reconcile errors on every attempt"
+      "Observed reconcile: running but failing — its last attempt errored"
+    );
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
+  it("reconciled with errors: reads failing with the code, never a healthy last run", async () => {
+    statusGet.mockResolvedValue(
+      reconcileStatus({
+        status: "erroring",
+        unknown_reason:
+          "`prompt_document_auto_publish.recovery_reconcile` is running but reported a failure (recovery:reconciled_with_errors): the last recovery reconcile counted per-tenant errors",
+        nominal: false,
+        reason: "last_pass_failed",
+        last_tick_at: minutesAgo(1),
+        last_work_tick_at: minutesAgo(1),
+        last_decision_code: "recovery:reconciled_with_errors",
+      })
+    );
+    render(<Harness />);
+
+    const line = await observedReconcile();
+    expect(line).toHaveTextContent(
+      "Observed reconcile: running but failing (last decision: recovery:reconciled_with_errors)"
+    );
+    expect(line).not.toHaveTextContent(/last ran/);
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+  });
+
+  it("alive and nominal on the ledger's tick_error: the failed body is never the healthy tone", async () => {
+    // A holder that stopped writing is left out of coord's erroring verdict, so
+    // this shape is served `alive`, `nominal: true`.
+    statusGet.mockResolvedValue(
+      reconcileStatus({
+        status: "alive",
+        nominal: true,
+        reason: null,
+        last_tick_at: minutesAgo(0),
+        last_work_tick_at: minutesAgo(10),
+        last_decision_code: "tick_error",
+      })
+    );
+    render(<Harness />);
+
+    const line = await observedReconcile();
+    expect(line).toHaveTextContent(
+      "Observed reconcile: last ran 10m ago — tick_error"
     );
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
   it.each(["stale", "dead"] as const)(
-    "%s: says since when",
+    '%s with the holder still inside its body: says so, never "since" a follower\'s tick',
+    async (workerStatus) => {
+      statusGet.mockResolvedValue(
+        reconcileStatus({
+          status: workerStatus,
+          nominal: false,
+          reason: "body_in_flight",
+          // The freshest row is a follower's; the holder's code is its last one.
+          last_tick_at: minutesAgo(0),
+          last_work_tick_at: null,
+          last_decision_code: "recovery:not_due",
+        })
+      );
+      render(<Harness />);
+
+      const line = await observedReconcile();
+      expect(line).toHaveTextContent(
+        `Observed reconcile: ${workerStatus} — the body is still running, past its bound`
+      );
+      expect(line).toHaveTextContent("(body_in_flight)");
+      expect(line).not.toHaveTextContent(/since/);
+      expect(line).toHaveAttribute("data-observed-tone", "attention");
+    }
+  );
+
+  it.each(["stale", "dead"] as const)(
+    "%s: says since when, even over the resting code",
     async (workerStatus) => {
       statusGet.mockResolvedValue(
         reconcileStatus({
@@ -723,7 +860,7 @@ describe("the observed recovery reconcile, per worker status", () => {
           reason: workerStatus,
           last_tick_at: minutesAgo(120),
           last_work_tick_at: null,
-          last_decision_code: null,
+          last_decision_code: "recovery:not_due",
         })
       );
       render(<Harness />);

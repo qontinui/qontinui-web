@@ -55,15 +55,38 @@ export const OBSERVED_UNKNOWN_TEXT =
   "Observed: UNKNOWN — no auto-publisher pass recorded on the serving coord";
 
 export const OBSERVED_RECONCILE_UNKNOWN_TEXT =
-  "Observed reconcile: UNKNOWN — no recovery reconcile recorded on the serving coord";
+  "Observed reconcile: UNKNOWN — coord served no reading of the recovery reconcile";
+
+/**
+ * Coord's `reason` for a stale or dead worker whose lease holder is still inside
+ * its body (`worker_ledger::BODY_IN_FLIGHT`): the loop is not gone, it is stuck
+ * in the work, and a follower's tick keeps `last_tick_at` fresh meanwhile.
+ */
+export const BODY_IN_FLIGHT = "body_in_flight";
 
 /**
  * Coord's idle code for a recovery tick whose daily reconcile is not due, and
- * whose last one returned with no errors (`TICK_RECOVERY_NOT_DUE`; after errors
- * coord serves `erroring` instead). The memory behind it lives in the process
- * and starts empty, so the code is only ever written after a clean reconcile.
+ * whose last one on THIS replica counted no errors (`TICK_RECOVERY_NOT_DUE`).
+ *
+ * That memory lives in each process, so this says nothing about a reconcile
+ * another replica ran during a lease handover, and "no errors" is coord's count:
+ * a reconcile that skipped every document counts none. The sentence claims no
+ * more than that, and never that the fleet is reconciled.
  */
 export const RECONCILE_NOT_DUE_CODE = "recovery:not_due";
+
+/**
+ * The idle codes the ledger's leader loop itself records while a new lease term
+ * waits for its first decision (`worker_ledger::cadence` `NOT_DUE`,
+ * `DUE_STAGGERED`). About twelve leader changes a day make this an ordinary
+ * state. It can briefly stand in for a worker's own code, a failure included,
+ * until the worker's next tick, at most one interval away, so the sentence names
+ * the wait and claims nothing about the work.
+ */
+export const LEADER_WAIT_CODES: readonly string[] = [
+  "not_due",
+  "due_staggered",
+];
 
 /** The per-worker words of the sentences `describeObserved` builds. */
 interface WorkerWording {
@@ -74,9 +97,9 @@ interface WorkerWording {
   leaseSubject: string;
   /** An idle tick with a code: the tick ran and did no work. */
   idleTick: string;
-  /** An idle tick with no code: nothing has run yet. */
+  /** An idle tick with no code: the lease holder has no row to read. */
   neverRan: string;
-  /** Coord's `tick_error`: the body errors every time it runs. */
+  /** Coord's `tick_error`: the body's latest run errored. */
   bodyErrors: string;
   noReplica: string;
   unknownText: string;
@@ -104,15 +127,15 @@ const RECONCILE_WORDING: WorkerWording = {
   lastRun: "last ran",
   leaseSubject: "the reconcile",
   idleTick: "last tick did no reconcile",
-  neverRan: "no reconcile recorded yet",
-  bodyErrors: "the reconcile errors on every attempt",
+  neverRan: "no reconcile recorded for the current leader",
+  bodyErrors: "its last attempt errored",
   noReplica: "no live replica is running the recovery reconcile",
   unknownText: OBSERVED_RECONCILE_UNKNOWN_TEXT,
-  // The ledger keeps only each row's latest outcome, so for about 23 hours of
-  // every day `last_work_tick_at` is null on a healthy reconcile.
+  // The ledger keeps only each row's latest outcome, so for nearly all of every
+  // day `last_work_tick_at` is null on a healthy reconcile.
   resting: {
     code: RECONCILE_NOT_DUE_CODE,
-    text: "clean within the last day, next run not due",
+    text: "no errors counted at this replica's last daily run",
   },
 };
 
@@ -137,20 +160,25 @@ function describeObserved(
       // No body execution on the holder's latest tick. With a code, the tick
       // DID run and deliberately did no work — every skip (`skip:switch_off`
       // when the operator turned it off) is an idle tick — so "nothing ever
-      // ran" would be false. Without one, nothing it was built to do has
-      // happened yet. Neither is nominal, unless the code is this worker's
-      // named resting state and coord agrees it is healthy.
+      // ran" would be false. Without one, the lease holder has no row to read.
+      // Neither is nominal, unless coord positively says the loop is healthy
+      // (`nominal: true`, so an older coord serving none never qualifies) and
+      // the code is one this console can name as an ordinary wait.
       if (!worker.last_work_tick_at) {
         const code = worker.last_decision_code;
-        if (
-          words.resting &&
-          code === words.resting.code &&
-          worker.nominal !== false
-        ) {
-          return {
-            text: `${label}: ${words.resting.text} — ${code}`,
-            tone: "nominal",
-          };
+        if (code && worker.nominal === true) {
+          if (code === words.resting?.code) {
+            return {
+              text: `${label}: ${words.resting.text} — ${code}`,
+              tone: "nominal",
+            };
+          }
+          if (LEADER_WAIT_CODES.includes(code)) {
+            return {
+              text: `${label}: waiting out a leader change — ${code}`,
+              tone: "nominal",
+            };
+          }
         }
         return {
           text: code
@@ -174,7 +202,11 @@ function describeObserved(
       // Coord's own `nominal: false` outranks a parseable time: an `alive`
       // loop coord calls unhealthy never renders in the healthy tone, and its
       // reason is shown. (Absent from an older coord, which reads as before.)
-      const unhealthy = worker.nominal === false;
+      // `tick_error` is a failed body whatever coord's rollup concluded: a
+      // replica that stopped writing is left out of its erroring verdict.
+      const unhealthy =
+        worker.nominal === false ||
+        worker.last_decision_code === ERROR_TICK_CODE;
       return {
         text: `${label}: ${words.lastRun} ${when} — ${code}`,
         tone: parseable && !unhealthy ? "nominal" : "attention",
@@ -210,6 +242,16 @@ function describeObserved(
     }
     case "stale":
     case "dead": {
+      // The holder is still inside its body, so "since" a follower's fresh tick
+      // would read as a loop that just stopped. Coord built this reason to tell
+      // a body stuck in the work from a loop that is gone.
+      if (worker.reason === BODY_IN_FLIGHT) {
+        return {
+          text: `${label}: ${worker.status} — the body is still running, past its bound`,
+          tone: "attention",
+          reason: worker.reason,
+        };
+      }
       // The last tick of any kind is the honest "since" for a loop that
       // stopped ticking. Absolute in the text ("stale since 3m ago" reads
       // wrong), relative in the tooltip.
