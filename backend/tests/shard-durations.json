@@ -334,6 +334,7 @@
   "tests/test_operations_verification_metrics_proxy.py": 13.6,
   "tests/test_oplog_age_idx_01_migration.py": 9.9,
   "tests/test_ops_split_transform.py": 1.4,
+  "tests/test_ops_tasks_01_coord_ops_tasks_migration.py": 1.0,
   "tests/test_organization_service.py": 0.3,
   "tests/test_overlord_01_interventions_migration.py": 9.6,
   "tests/test_overview_authoring.py": 9.8,
