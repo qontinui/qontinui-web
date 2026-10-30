@@ -52,6 +52,7 @@ import { MachineRow, RunRow, WorkTypeRow } from "./_components/rows";
 import { seriesColorMap } from "./_components/charts";
 import {
   RUN_FILTERS,
+  RUN_INITIATORS,
   SESSION_LOAD_WINDOWS,
   backfilledOnlyBuckets,
   completeGrowthDays,
@@ -59,6 +60,7 @@ import {
   fleetAvailable,
   fleetAvailableText,
   growthTrend,
+  initiatorLabel,
   machineLines,
   matchesRunFilter,
   runFilterCounts,
@@ -125,6 +127,7 @@ export default function CoordSessionLoadPage() {
   const [windowId, setWindowId] = useState<SessionLoadWindow>("7d");
   const [workTypeFilter, setWorkTypeFilter] = useState<string | null>(null);
   const [deviceFilter, setDeviceFilter] = useState<string | null>(null);
+  const [initiatorFilter, setInitiatorFilter] = useState<string | null>(null);
   const [runFilter, setRunFilter] = useState<RunFilter>("all");
   const [expandedType, setExpandedType] = useState<string | null>(null);
   const [expandedMachine, setExpandedMachine] = useState<string | null>(null);
@@ -135,6 +138,7 @@ export default function CoordSessionLoadPage() {
     windowId,
     workType: workTypeFilter,
     device: deviceFilter,
+    initiator: initiatorFilter,
   });
 
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -223,6 +227,8 @@ export default function CoordSessionLoadPage() {
   }) => {
     if (filter.workType !== undefined) setWorkTypeFilter(filter.workType);
     if (filter.device !== undefined) setDeviceFilter(filter.device);
+    // The row drilled from counts every initiator, so its runs must too.
+    setInitiatorFilter(null);
     setRunFilter("all");
     setExpandedRun(null);
     if (typeof document !== "undefined") {
@@ -574,6 +580,29 @@ export default function CoordSessionLoadPage() {
                   {deviceFilter.slice(0, 8)}
                 </SelectItem>
               )}
+            </SelectContent>
+          </Select>
+          <Select
+            value={initiatorFilter ?? ALL}
+            onValueChange={(v) => {
+              setInitiatorFilter(v === ALL ? null : v);
+              setExpandedRun(null);
+            }}
+          >
+            <SelectTrigger
+              className="h-8 w-[180px] text-xs"
+              aria-label="Initiator"
+              data-testid="coord-session-load-runs-initiator"
+            >
+              <SelectValue placeholder="initiator" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>every initiator</SelectItem>
+              {RUN_INITIATORS.map((i) => (
+                <SelectItem key={i} value={i}>
+                  {initiatorLabel(i)}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

@@ -567,6 +567,14 @@ export function initiatorLabel(initiator: string): string {
   return INITIATOR_LABEL[initiator] ?? initiator;
 }
 
+/** The values of `coord.session_runs.initiator`'s CHECK, for the run filter. */
+export const RUN_INITIATORS = [
+  "operator",
+  "coord",
+  "runner_local",
+  "unknown",
+] as const;
+
 const END_REASON_LABEL: Record<string, string> = {
   exited: "the session exited",
   poll_dead: "the liveness poll found it gone",
@@ -663,6 +671,8 @@ export interface WorkTypeLine {
   wallP50: number | null;
   wallP90: number | null;
   wallSamples: number | null;
+  activeP50: number | null;
+  activeSamples: number | null;
   slotHours: number | null;
   held: HeldShare;
   inferred: number | null;
@@ -711,6 +721,8 @@ export function workTypeLines(stats: StatsWire): WorkTypeLine[] {
       wallP50: finite(g.wall_seconds?.p50),
       wallP90: finite(g.wall_seconds?.p90),
       wallSamples: finite(g.wall_seconds?.samples),
+      activeP50: finite(g.active_seconds?.p50),
+      activeSamples: finite(g.active_seconds?.samples),
       slotHours,
       held: heldShare(g, slotHours),
       inferred: finite(g.inferred_count),
@@ -733,6 +745,18 @@ export function wallTimeText(line: WorkTypeLine): string {
     line.wallSamples === null
       ? ""
       : ` (${plural(line.wallSamples, "observed end")})`
+  }`;
+}
+
+/** `median 5 min (7 runs measured)`, or why it is unknown — never a 0. */
+export function activeTimeText(line: WorkTypeLine): string {
+  if (line.activeSamples === 0) {
+    return "unknown — no run of this type has reported its active time";
+  }
+  return `median ${formatSeconds(line.activeP50)}${
+    line.activeSamples === null
+      ? ""
+      : ` (${plural(line.activeSamples, "run")} measured)`
   }`;
 }
 
@@ -1254,6 +1278,13 @@ export interface MachineSlice {
   slotHours: number;
 }
 
+/** One work type's own highest open-run count on a machine over the window. */
+export interface MachineTypePeak {
+  workType: string;
+  label: string;
+  peak: number;
+}
+
 export interface MachineLine {
   deviceId: string;
   name: string;
@@ -1270,6 +1301,14 @@ export interface MachineLine {
   /** Total peak open runs per series bucket, oldest first. */
   peaks: SparkPoint[];
   peaksUpperBound: boolean;
+  /**
+   * Each work type's own peak, highest first. Types can peak at different
+   * moments, so these never add up to the machine's peak and are never summed.
+   * coord's raw buckets omit a type with no open run, so empty beside a peak
+   * of 0 means none was open at a whole minute of the window (its grid misses a
+   * shorter run); empty beside any other peak means the types were unreadable.
+   */
+  typePeaks: MachineTypePeak[];
   /** Slot-hours by work type over the window, most first; `null` when unread. */
   slices: MachineSlice[] | null;
 }
@@ -1342,6 +1381,26 @@ function machineStatus(
   }
 }
 
+function machineTypePeaks(
+  series: readonly ConcurrencyBucketWire[]
+): MachineTypePeak[] {
+  const byType = new Map<string, number>();
+  for (const bucket of series) {
+    for (const [wt, v] of Object.entries(bucket.by_work_type ?? {})) {
+      const peak = finite(v?.peak);
+      if (peak === null || peak <= 0) continue;
+      byType.set(wt, Math.max(byType.get(wt) ?? 0, peak));
+    }
+  }
+  return [...byType.entries()]
+    .map(([workType, peak]) => ({
+      workType,
+      label: workTypeLabel(workType),
+      peak,
+    }))
+    .sort((a, b) => b.peak - a.peak || a.label.localeCompare(b.label));
+}
+
 /**
  * One line per machine that ran a session in the window. `perDeviceTypes` is
  * the stats read grouped by `device,work_type` (or `null` when it did not
@@ -1400,6 +1459,7 @@ export function machineLines(
         peaksUpperBound: series.some(
           (b) => b.total?.total_peak_is_upper_bound === true
         ),
+        typePeaks: machineTypePeaks(series),
         slices: perDeviceTypes
           ? (slicesByDevice.get(d.device_id) ?? []).sort(
               (a, b) => b.slotHours - a.slotHours
@@ -1533,6 +1593,81 @@ export function runWallText(run: SessionRunWire, nowMs: number): string {
   return "wall time unknown";
 }
 
+/**
+ * `finished 20 min ago, still holding its slot` for a run that declared itself
+ * finished and has not ended, else `null`. coord's
+ * `held_after_finish_seconds` stays null until the end, so without this the
+ * waste D4 exists to show is invisible while it is still reclaimable.
+ */
+export function runHeldOpenText(
+  run: Pick<SessionRunWire, "finished_at" | "ended_at">,
+  nowMs: number
+): string | null {
+  if (!run.finished_at || run.ended_at) return null;
+  const finished = Date.parse(run.finished_at);
+  if (!Number.isFinite(finished)) return null;
+  return `finished ${formatDuration(Math.max(0, (nowMs - finished) / 1000))} ago, still holding its slot`;
+}
+
+/** coord's `SKEW_TOLERANCE_SECS`: past this magnitude its ingest flags the event. */
+export const CLOCK_SKEW_TOLERANCE_SECS = 600;
+
+export interface RunFlag {
+  key: string;
+  label: string;
+  detail: string;
+}
+
+/** What makes a run's own facts less than trustworthy, each said in words. */
+export function runFlags(run: SessionRunWire): RunFlag[] {
+  const flags: RunFlag[] = [];
+  if (run.bind_origin === "reconciled") {
+    flags.push({
+      key: "reconciled",
+      label: "reconciled id",
+      detail:
+        "The runner reconciled this run's session id, so it may name a foreign session.",
+    });
+  }
+  const skew = finite(run.clock_skew_seconds);
+  if (skew !== null && Math.abs(skew) > CLOCK_SKEW_TOLERANCE_SECS) {
+    const size = formatDuration(Math.abs(skew));
+    flags.push({
+      key: "clock_skew",
+      label: `clock skew ${size}`,
+      detail:
+        skew > 0
+          ? `coord received this run's latest event ${size} after the event's own timestamp: a runner clock running behind, or an outbox replay after an outage. Its times may be off.`
+          : `coord received this run's latest event ${size} before the event's own timestamp: a runner clock running ahead. Its times may be off.`,
+    });
+  }
+  return flags;
+}
+
+/**
+ * The facts a run was classified from and its remaining timestamps, as
+ * `key=value` — what makes an `unknown` work type diagnosable from the row.
+ */
+export function runRawFacts(run: SessionRunWire): string {
+  const facts: ReadonlyArray<readonly [string, unknown]> = [
+    ["classifier_version", run.classifier_version],
+    ["spawn_origin", run.spawn_origin],
+    ["spawn_kind", run.spawn_kind],
+    ["dispatch_source", run.dispatch_source],
+    ["diagnosis_kind", run.diagnosis_kind],
+    ["gate_registered_by", run.gate_registered_by],
+    ["bind_origin", run.bind_origin],
+    ["first_turn_at", run.first_turn_at],
+    ["finished_at", run.finished_at],
+    ["last_seen_at", run.last_seen_at],
+    ["clock_skew_seconds", run.clock_skew_seconds],
+  ];
+  return facts
+    .filter(([, v]) => v !== null && v !== undefined && v !== "")
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(" ");
+}
+
 export interface RunLink {
   key: string;
   label: string;
@@ -1559,12 +1694,28 @@ export function runLinks(run: SessionRunWire): RunLink[] {
       id: run.spawn_request_id,
     });
   }
-  if (run.coord_session_id) {
+  // The Claude session id comes first because every run carries it, while
+  // `coord_session_id` is optional; `/sessions/[key]` resolves either.
+  // `bind_origin` says how the CLAUDE id was bound, so a reconciled one may
+  // open someone else's session and its link has to say so.
+  const sessionKey = run.claude_code_session_id || run.coord_session_id;
+  if (sessionKey) {
     links.push({
       key: "session",
-      label: "Open the session",
-      href: `/sessions/${encodeURIComponent(run.coord_session_id)}`,
-      id: run.coord_session_id,
+      label:
+        run.claude_code_session_id && run.bind_origin === "reconciled"
+          ? "Open the session this id names (reconciled, may be foreign)"
+          : "Open the session",
+      href: `/sessions/${encodeURIComponent(sessionKey)}`,
+      id: sessionKey,
+    });
+  }
+  if (run.agent_id) {
+    links.push({
+      key: "agent",
+      label: "Open the agent",
+      href: `/admin/coord/agents/${encodeURIComponent(run.agent_id)}`,
+      id: run.agent_id,
     });
   }
   if (run.work_unit_slug) {
