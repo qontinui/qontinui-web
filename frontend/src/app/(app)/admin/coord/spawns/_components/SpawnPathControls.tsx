@@ -180,7 +180,7 @@ export function AutonomySwitch({
     <SegmentedWrite<AutonomyLevel>
       id={`coord-spawns-path-autonomy-${domain}`}
       label={`Set the autonomy level that governs "${pathLabel}"`}
-      description={`Writes the tenant's autonomy level for decision domain ${domain} (PUT /coord/next-step-settings) and applies coord's answer, which is its state after the write. Params: {"value": "always_escalate" | "guidance_only" | "auto_decide"}.`}
+      description={`Writes the tenant's autonomy level for decision domain ${domain} (PUT /coord/next-step-settings) and applies coord's answer, which is its state after the write. Params: {"value": "always_escalate" | "guidance_only" | "auto_decide"}. Settles after the read-back: resolves with it, and rejects unless coord read back what was asked, naming the outcome. The matrix shows what coord reads back.`}
       options={AUTONOMY_LEVELS.map((l) => ({
         value: l,
         label:
@@ -210,7 +210,7 @@ export function FixerDialSwitch({
     <SegmentedWrite<AutoFixPrChoice>
       id="coord-spawns-path-fixer-dial"
       label='Set the tenant dial "Spawn fixer sessions for stuck PRs"'
-      description='Writes the tenant column auto_fix_pr through the merge settings (PATCH /pr-merge/settings); "default" clears the override. The dial counts as saved only when coord reads back the value sent, and reloads otherwise. Params: {"value": "default" | "on" | "off"}.'
+      description='Writes the tenant column auto_fix_pr through the merge settings (PATCH /pr-merge/settings); "default" clears the override. The dial counts as saved only when coord reads back the value sent, and reloads otherwise. Params: {"value": "default" | "on" | "off"}. Settles after the read-back: resolves with it, and rejects unless coord read back what was asked, naming the outcome. The matrix shows what coord reads back.'
       options={[
         { value: "default", label: "Default" },
         { value: "on", label: "On" },
