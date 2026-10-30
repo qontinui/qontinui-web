@@ -287,6 +287,42 @@ describe("descriptors — built from fixed fields, never from the text", () => {
     }
   );
 
+  it("dates a degradation's subject as it dates the row: onset while open, and when it cleared once cleared", () => {
+    const cleared = "2026-10-20T09:00:00Z";
+    const d = degradation({
+      subject: { kind: "service", name: "rds:db", id: "rds:db" },
+      onset_observed_at: AT,
+      resolved_at: cleared,
+    });
+    expect(subjectDescriptor(d, "degrading").at).toBe(AT);
+    expect(subjectDescriptor(d, "declared").at).toBe(AT);
+    expect(subjectDescriptor(d, "cleared").at).toBe(cleared);
+    // No onset served stays unknown, whatever else the row is dated by.
+    expect(
+      subjectDescriptor(
+        degradation({ subject: { kind: "service", name: "x", id: "x" } }),
+        "degrading"
+      ).at
+    ).toBeNull();
+  });
+
+  it("dates a named unit by its last recorded change, then its first in-progress time, and otherwise leaves it unknown", () => {
+    const unit = list(["s"]).units[0]!;
+    const changed = "2026-10-19T08:00:00Z";
+    for (const kind of ["stalled", "waitingOnGate"] as const) {
+      expect(
+        namedUnitDescriptor(
+          { ...unit, lastRecordedChangeAt: changed, firstInProgressAt: AT },
+          kind
+        ).at
+      ).toBe(changed);
+      expect(
+        namedUnitDescriptor({ ...unit, firstInProgressAt: AT }, kind).at
+      ).toBe(AT);
+      expect(namedUnitDescriptor(unit, kind).at).toBeNull();
+    }
+  });
+
   it("words a named unit by its list, and a reason by its status", () => {
     const u = list(["s"]).units[0]!;
     expect(namedUnitDescriptor(u, "stalled").status).toBe("no recorded change");
@@ -478,6 +514,34 @@ describe("namedUnitRepos — a unit's repositories are bounded, or withheld", ()
     expect(hidden("u")).toBeNull();
   });
 
+  // A unit named under first-party repositories alone would show, so these go
+  // through the `unbounded` set: the slug IS in `named`, by its first-party
+  // group, and the other group's naming it must still win.
+  it.each([
+    [
+      "a group of an unknown kind",
+      group("x", list(["both"]), list([]), "unknown"),
+    ],
+    [
+      "a group with no repository",
+      group(null, list(["both"]), list([]), "repo"),
+    ],
+    ["the unattributed group", group(null, list(["both"]))],
+  ])(
+    "withholds a unit a first-party group names when %s names it too",
+    (_name, other) => {
+      const firstParty = group("qontinui/web", list(["both", "only-web"]));
+      for (const groups of [
+        [firstParty, other],
+        [other, firstParty],
+      ]) {
+        const reposOf = namedUnitRepos(groups, "stalled");
+        expect(reposOf("both")).toBeNull();
+        expect(reposOf("only-web")).toEqual(["qontinui/web"]);
+      }
+    }
+  );
+
   it("withholds everything when coord served no groups, and a slug no group names", () => {
     expect(namedUnitRepos(null, "stalled")("u")).toBeNull();
     expect(
@@ -491,6 +555,9 @@ describe("values shown verbatim only in a shape that names no one", () => {
     expect(presentedPlanPhase("3")).toBe("3");
     expect(presentedPlanPhase(" 12b ")).toBe("12b");
     expect(presentedPlanPhase("the Acme phase")).toBe(WITHHELD);
+    // The whole value must have the shape: a number at either end clears nothing.
+    expect(presentedPlanPhase("3 for Acme Corp")).toBe(WITHHELD);
+    expect(presentedPlanPhase("Acme Corp 3")).toBe(WITHHELD);
   });
 
   it("says live or not live, never the frontmatter's own word", () => {
@@ -505,6 +572,14 @@ describe("values shown verbatim only in a shape that names no one", () => {
       "2026-10-31T09:00:00Z"
     );
     expect(presentedInitiativeDate("when Acme signs")).toBe(WITHHELD);
+    // The whole value must have the shape: a date at either end clears nothing.
+    expect(presentedInitiativeDate("2026-12-01 when Acme Corp signs")).toBe(
+      WITHHELD
+    );
+    expect(presentedInitiativeDate("2026-12-01T09:00:00Z for Acme Corp")).toBe(
+      WITHHELD
+    );
+    expect(presentedInitiativeDate("Acme Corp 2026-12-01")).toBe(WITHHELD);
     expect(presentedInitiativeDate(null)).toBeNull();
   });
 });

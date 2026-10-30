@@ -85,9 +85,12 @@ import {
   TENANT_ID,
   TENANT_NAME,
   UNLABELLED_FEED_SOURCE,
+  completeWaitingListsBody,
   firstDecisionAnsweredBody,
   fullBody,
+  initiativeBody,
   noLiveInitiativeBody,
+  unitAlsoInUnknownGroupBody,
   unreadBlocksBody,
   unservedDecisionsBody,
 } from "./__fixtures__/presentationFixture";
@@ -722,6 +725,69 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     ).toHaveTextContent(/^Current initiativeStatus not live · from 2026-10-01/);
     expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
     expect(leakedIdentifiers()).toEqual([]);
+  });
+
+  it("on track: a start date a person typed is withheld unless it is a date", async () => {
+    const view = await renderPresenting(
+      initiativeBody({ starts: "when Acme Corp signs" })
+    );
+    expect(
+      screen.getByTestId("coord-home.on-track.initiative")
+    ).toHaveTextContent(/Status live · from withheld · ends withheld/);
+    expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+    expect(leakedIdentifiers()).toEqual([]);
+  });
+
+  it.each([
+    ["null", { ends: null }],
+    ["absent", { ends: undefined }],
+  ])(
+    "on track: an initiative end date that is %s reads unknown, not withheld",
+    async (_spelling, fields) => {
+      const view = await renderPresenting(initiativeBody(fields));
+      expect(
+        screen.getByTestId("coord-home.on-track.initiative")
+      ).toHaveTextContent(/Status live · from 2026-10-01 · ends unknown ·/);
+      expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+      expect(leakedIdentifiers()).toEqual([]);
+    }
+  );
+
+  it("on track: a unit also named by a group of an unknown kind is withheld, though the scope clears the repository that names it", async () => {
+    const view = await renderPresenting(unitAlsoInUnknownGroupBody());
+    const own = expandRow(
+      screen.getByTestId("coord-home.on-track"),
+      FIRST_PARTY_REPO
+    );
+    expect(own).toHaveTextContent(/Work unit · area unknown · no recorded/);
+    expect(
+      own.querySelector(
+        '[data-testid^="coord-home.on-track.named."] [data-redacted="false"]'
+      )
+    ).toBeNull();
+    expectPresentationSafe(view, {
+      forbidden: [...MUST_NOT_APPEAR, FIRST_PARTY_UNIT_TITLE],
+    });
+    expect(document.body.textContent).not.toContain(FIRST_PARTY_UNIT_TITLE);
+  });
+
+  it("on track: a waiting unit is named once no waiting list can hide it", async () => {
+    const view = await renderPresenting(completeWaitingListsBody());
+    const own = expandRow(
+      screen.getByTestId("coord-home.on-track"),
+      FIRST_PARTY_REPO
+    );
+    const waiting = within(own).getByTestId(
+      "coord-home.on-track.named.waiting_on_condition"
+    );
+    const name = waiting.querySelector('[data-redacted="false"]');
+    expect(name).toHaveTextContent(HIDDEN_UNIT_TITLE);
+    expect(name!.closest("[data-lens-link]")).not.toBeNull();
+    // The list it is cleared from, and only that one: the foreign repository's
+    // own waiting unit stays withheld.
+    expectPresentationSafe(view, {
+      forbidden: MUST_NOT_APPEAR.filter((n) => n !== HIDDEN_UNIT_TITLE),
+    });
   });
 
   it("correct: the row and its why; coord's reason token is not rendered", async () => {

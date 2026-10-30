@@ -51,7 +51,8 @@ export const FIRST_PARTY_UNIT_SLUG = "2026-09-05-overview-copy";
 export const SHARED_UNIT_TITLE = "Shared rollout across two repositories";
 /**
  * Named only under the first-party repository, but the foreign repository's
- * list of the same kind was cut short and may hide it: withheld.
+ * list of the same kind was cut short and may hide it: withheld, until that
+ * list is complete ({@link completeWaitingListsBody}).
  */
 export const HIDDEN_UNIT_TITLE = "Web release gate wait";
 /** A first-party headline the scope clears, so it shows while presenting. */
@@ -660,6 +661,71 @@ export function firstDecisionAnsweredBody() {
       total: body.needs_me.total - 1,
       by_domain: { operator_gate: 1, [UNNAMED_DOMAIN]: 1 },
       items: body.needs_me.items.slice(1),
+    },
+  };
+}
+
+/** {@link fullBody} with the initiative's own fields replaced. */
+export function initiativeBody(fields: Record<string, unknown>) {
+  const body = fullBody();
+  return {
+    ...body,
+    on_track: {
+      ...body.on_track,
+      initiative: { ...body.on_track.initiative, ...fields },
+    },
+  };
+}
+
+/**
+ * The unit only the first-party repository names, also named by a group whose
+ * repository this page cannot recognise. That group cannot bound it, so the
+ * title the scope otherwise clears is withheld.
+ */
+export function unitAlsoInUnknownGroupBody() {
+  const body = fullBody();
+  return {
+    ...body,
+    on_track: {
+      ...body.on_track,
+      groups: [
+        ...body.on_track.groups,
+        {
+          key: "acme-area",
+          kind: "acme_area",
+          row_count: 1,
+          classes: CLASSES,
+          named: {
+            stalled: {
+              units: [unit(FIRST_PARTY_UNIT_SLUG, FIRST_PARTY_UNIT_TITLE)],
+              omitted: 0,
+            },
+            waiting_on_gate: { units: [], omitted: 0 },
+          },
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * The foreign repository's waiting list complete, so it can hide nothing: the
+ * first-party repository's waiting unit belongs to that repository alone, and
+ * the title {@link HIDDEN_UNIT_TITLE} names is cleared.
+ */
+export function completeWaitingListsBody() {
+  const body = fullBody();
+  return {
+    ...body,
+    on_track: {
+      ...body.on_track,
+      groups: body.on_track.groups.map((g) => ({
+        ...g,
+        named: {
+          ...g.named,
+          waiting_on_gate: { ...g.named.waiting_on_gate, omitted: 0 },
+        },
+      })),
     },
   };
 }
