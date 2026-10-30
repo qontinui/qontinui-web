@@ -20,8 +20,9 @@
  *    auto-publisher of this tenant's to observe.
  * 5. **The reconcile rests healthy on one idle code of its own.** It does its work
  *    once a day and the ledger keeps only the latest outcome, so `recovery:not_due`
- *    with no work tick is its ordinary state. Any other idle code does not read
- *    healthy, and coord's `recovery:not_due_after_errors` reads failing all day.
+ *    with no work tick is its ordinary state. Beside the ledger's own `not_due`,
+ *    no other idle code reads healthy, and coord's
+ *    `recovery:not_due_after_errors` reads failing all day.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";

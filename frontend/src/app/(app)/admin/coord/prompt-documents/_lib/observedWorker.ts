@@ -80,8 +80,8 @@ export const RECONCILE_NOT_DUE_CODE = "recovery:not_due";
  * starts on a process that has already run this worker (`worker_ledger::cadence`
  * `NOT_DUE`). About twelve leader changes a day make this an ordinary state. It
  * can briefly stand in for a worker's own code, a failure included, until the
- * worker's next tick, at most one interval away, so the sentence names the wait
- * and claims nothing about the work.
+ * worker's next run returns (at most one interval to that run, plus the run), so
+ * the sentence names the wait and claims nothing about the work.
  *
  * True of a worker under coord's 900 s durable-cadence floor, as both of these
  * are at 600 s; above it the same code is an ordinary between-runs reading.
