@@ -1,14 +1,15 @@
 # Console UI Style Guide
 
-**Version:** 0.2.4 (Phase 1 — §3 filled in from the shipped primitives; §3.3
+**Version:** 0.2.5 (Phase 1 — §3 filled in from the shipped primitives; §3.3
 records the patterns the first post-guide page had to add; §3.4 records the
 alerts page's retirement and the Dev Ops Conditions panel; §3.5 records the computers console; §3.6 the CI dashboard; §3.7 adds the
-share primitives)
-**Last Updated:** 2026-10-01
+share primitives; §6.5 adds the presentation lens)
+**Last Updated:** 2026-10-24
 **Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`; §3.3 from
 `2026-08-20-fleet-served-agent-skills.md` Phase 3; §3.4 from
 `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` Phase 8;
-§3.7 from `2026-08-27-operator-touch-read-and-surface` Phase C3
+§3.7 from `2026-08-27-operator-touch-read-and-surface` Phase C3; §6.5 from
+`2026-10-23-console-presentation-spaces` Phase 1
 
 The style of `/admin/coord/pipeline` — the merge Pipeline tab — written down, so
 the other 29 console routes can be moved onto it and the next operator surface can
@@ -1292,8 +1293,8 @@ same table. Every module doc cites its rule number and links this file.
 
 | Component | Rule(s) | Props | Notes |
 |---|---|---|---|
-| `HealthStrip` | R1 | `{ level, headline, detail?, badges?, className?, "data-testid"? }` where `badges: { key, label, tone?, onClick?, title?, "data-testid"? }[]` and `tone: "default" \| "muted" \| "attention"` | Takes the **already-derived** verdict. It cannot fetch, so R1's "never a second fetch" is structural. A badge with an `onClick` becomes a real `<button>` wrapping the badge in `display:contents`. |
-| `StatCluster` | R1 | `{ stats, className?, "data-testid"? }` where `stats: { key, label, value, tone?, title?, onClick?, "data-testid"? }[]` and `tone: "default" \| "success" \| "warning" \| "attention" \| "muted"` | The count-cluster form of the same opening, for a table page with no single traffic-light verdict. `value: null` renders `–`, never `0`. First adopted by `/gates` (Wave 4, where `SummaryCards`' testids were ported); also the Dev Ops Conditions panel's two breakdown rows (§3.4). Count its consumers with a grep, not from this cell. |
+| `HealthStrip` | R1 | `{ level, headline, detail?, badges?, className?, "data-testid"? }` where `badges: { key, label, tone?, onClick?, navigationOnly?, title?, "data-testid"? }[]` and `tone: "default" \| "muted" \| "waiting" \| "attention"` | Takes the **already-derived** verdict. It cannot fetch, so R1's "never a second fetch" is structural. A badge with an `onClick` becomes a real `<button>` wrapping the badge in `display:contents`. `navigationOnly` is the caller's CLAIM that the press only filters, jumps or opens a view, and marks that button `NAVIGATION_ONLY_PROPS` (§6.5); leave it unset for anything that writes. |
+| `StatCluster` | R1 | `{ stats, className?, "data-testid"? }` where `stats: { key, label, value, tone?, title?, onClick?, navigationOnly?, "data-testid"? }[]` and `tone: "default" \| "success" \| "warning" \| "attention" \| "muted"` | The count-cluster form of the same opening, for a table page with no single traffic-light verdict. `value: null` renders `–`, never `0`. First adopted by `/gates` (Wave 4, where `SummaryCards`' testids were ported); also the Dev Ops Conditions panel's two breakdown rows (§3.4). Count its consumers with a grep, not from this cell. `navigationOnly` is the same claim as `HealthStrip`'s. |
 | `RecordRow` | R2, R4 | `{ identity, label, status?, reason?, time?, accent?, expanded, onToggle, children?, rowKey?, className?, "data-testid"?, reasonTestId? }` | Slot ORDER is fixed by the primitive, not the caller. `status` and `time` are `ReactNode` slots so each surface renders its own `<StatusBadge palette={…}>` without the row knowing a kind union. `accent` is the string from `rowAccentClass(status)`. The whole line is one `<button>` — R5 has to be keyboard-reachable. `children` render below the row, only while expanded. |
 | `RecordDetail` | R5 | `{ why?, problems?, actions?, history?, raw?, className?, "data-testid"? }` | Five slots in that order, each a bare fragment, so the panel's `space-y-3` spaces real content and an absent slot leaves no gap. Shares the row's border (`border-t-0 rounded-b-md`). Not a slide-over (D2). |
 | `RecordList` | R2, R5 | `{ items, itemKey, renderRow, loaded?, skeletonRows?, empty?, className? }` &plus; a `RecordListExpansion` **union**: either neither of `{expandedKey, onExpandedKeyChange}` or **both** | The loading / empty / rows trichotomy is ONE decision, so it is one component. Unloaded renders skeletons, never an empty list. `empty` is the caller's, because an honest empty state names *which* question came back empty. One open at a time. Expansion state is internal unless hoisted, and the hoisting props are a UNION so supplying one without the other is a type error rather than a silently-ignored prop. |
@@ -1302,6 +1303,7 @@ same table. Every module doc cites its rule number and links this file.
 | `RefreshButton` | §6.4 (no numbered rule) | `{ onRefresh, label, title, className?, "data-testid"? }` where `onRefresh: () => Promise<unknown> \| void` | The icon-only "re-read now" control. **`label` and `title` are required, not defaulted**: `label` is the accessible name (an icon has none), and `title` names what the press does AND its effect — "returns to the first page", "also refreshes itself every 10 s" — without repeating the label, since it is announced as the description right after the name. **Busy belongs to the press**: the button is busy for exactly as long as the promise ITS click returned is out, so a page's poll — which usually calls the same fetch function — has no path to the state and cannot make it pulse every interval. Busy is `aria-busy` + `aria-disabled` with presses ignored, never the real `disabled` attribute (same reasoning as `FilterChips`' `all` chip: it would blur the button out from under the keyboard user who just pressed it). A rejected read ends busy too — the failure is the page's to render (R6). Added by plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves` after 18 of 28 `/admin/coord/*` files rendering `RefreshCw` were found carrying no `aria-label`; adopted on `/plans` first, then `/spawn` (the sibling page sharing `derivePlansHealth` and the same fetch/poll-lock shape), 16 are still open. |
 | `GlossaryTerm` | supports R8 | `{ id, children?, className?, "data-testid"? }` where `id: GlossaryTerm` (the generated union from `@qontinui/shared-types/glossary`) | R8 keeps INTERNAL vocabulary off a primary surface; the product's OWN vocabulary (gate, work unit, claim, merge train…) stays, and this is how it explains itself. The tooltip is `GLOSSARY[id].short` **byte for byte**, from the table generated out of the schemas `glossary/terms.toml` by the same generator as the Rust table coord and the runner serve — **compiled in, never fetched**, so a term explains itself when coord is unreachable. `id` is the union, so a misspelt id is a compile error; `GlossaryTerm.test.tsx` also scans every literal `id` in `src/`. The trigger is focusable (the definition is not hover-only) and carries its own `TooltipProvider`. Pass `children` when the surface's wording differs from the display name ("gates", a column header). First adopted (plan `2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists` C3) on the `/admin/coord/*` column headers and empty states that use a roster term — `/gates` (Gate, Continuation, both empty states), `/work-units`, `/findings`, `/gate-clearance`, `/git-ops`, `/policies` (Tenant), `/prompt-documents`; count its consumers with a grep. **Wrap a word only where the glossary definition is what the column means**: `/members`' "Grant tier" (a role grant) and the design-policies "Policy" column (UX policy rows) were deliberately NOT wrapped, because `tier` and `policy` define other things. |
 | `BackendErrorMessage` | supports R3, R8 | `{ error, className?, "data-testid"? }` where `error` is what the surface caught (a `BackendError` from `backendError(res)`, any `Error`) or the `BackendErrorReading` it kept in state | The one renderer for a backend refusal (plan `2026-09-20-the-published-product-works-without-knowing-a-development-environment-exists` D3). A body carrying the `Refusal` envelope (`body.refusal`) renders `Refusal::render()`'s sentence (mirrored in `lib/errors/refusal.ts`), a link for `open_page` (app paths and `https:` URLs only — never `http:` or a `javascript:` target) or a copyable command for `run_command`, its `detail` BESIDE the sentence, and each cited term through `GlossaryTerm`; it is stamped `data-refusal="structured"`. A cited term id this build's glossary does not define (a newer producer) is shown on the surface as the raw id, marked `data-glossary-unrecognised` and titled "Not in this version's glossary". Only an envelope at a STRUCTURAL position (`body.refusal`, `body.detail.refusal`, the body itself) gets the affordances: one relayed inside a string `detail` / `message` may echo caller input, so it renders its sentence only, with no link, copy button or terms, stamped `data-refusal="from-text"`. **Every other body renders exactly its pre-contract sentence**, stamped `data-refusal="unstructured"`, which is what lets a scenario count the refusals an operator still meets without a next action. Adopted on `/members`' five section-level read failures. |
+| `NAVIGATION_ONLY_PROPS` / `NAVIGATION_ONLY_ATTRIBUTE` | supports the presentation lens (§6.5) | spread `{...NAVIGATION_ONLY_PROPS}` onto a control | The marker of a control whose press changes only what is DISPLAYED, so it stays live in presentation mode. `FilterTabs`, `FilterChips` and `RefreshButton` carry it on every control by construction; `HealthStrip` and `StatCluster` only where the caller says `navigationOnly`. It is a claim the code makes about its own control, and §6.5 says which controls may make it. |
 | `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx` (D3). Phase 1's re-export shim at the old path is **deleted**: its seven callers were repointed at this barrel in Phase 1's post-merge follow-up. The re-export in `operations/index.ts` stays — that is the barrel, not the shim. |
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
 | `time.ts` | supports R2 | `relativeTime(iso, { absent?, now? }?)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime` as a binding, so the options parameter travels to its **23** importers and none of them changed. **`absent`** (default `"never"`) is rendered for a timestamp that is missing *or unparseable* — an unparseable one is not `"just now"`, which is reserved for a genuinely negative delta (clock skew). **`now`** (default `Date.now()`) makes a caller's test deterministic. Both exist because their absence was what kept five private copies alive; see §3.1. |
@@ -1574,6 +1576,123 @@ records three things rather than shipping them silently:
 | **A measuring surface paints nothing red** | `session-load/_lib/sessionLoadStatus.ts` (`MACHINE_ATTENTION_BY_KIND`, `RUN_ATTENTION_BY_KIND`) | The page measures load; admission and placement act on it. So no machine or run is the operator's move now: over budget is amber (it clears as runs end), and a silent machine, an unpublished budget and an inferred end are the ignorance floor (`UNKNOWN_AMBER`). The strip follows: amber at most. | R3 says what each hue promises; it does not say a whole surface may legitimately have no red. Writing it down stops the next measuring page reaching for red on "big". |
 | **A sparkline in a row's time slot** | `session-load/_components/charts.tsx` (`Sparkline`, `StackedBar`) | Inline SVG, not Recharts: a responsive container inside a one-line R2 row has nothing to measure. Each carries its numbers in an accessible name (and a `data-points` count), series colours come from `@/config/theme` and are never a red or an amber, and an empty series says "no history" in words — never a flat line at zero. | The two console charts recorded in §3.8 are full-width panels. A row-sized glyph needed its own statement of what it may and may not imply. |
 | **An extrapolation is labelled as one, and withheld on short history** | `sessionLoadStatus.ts` (`growthTrend`, `trendText`) | The crossing date is a least-squares line over the last 7 COMPLETE UTC days, and the sentence names the method and the dates. It is withheld, with the reason, when fewer than 7 complete days are recorded or any machine began recording inside the window (its arrival would read as growth). Days before recording began hold only backfilled runs and are not drawn — not drawn as zeros. | R6's dash rule covers a value nobody fetched; a projected value is a different claim, and its honesty is in saying how it was made. |
+
+### 3.10 The UI Bridge dashboard — recorded under §6.4
+
+`/admin/coord/ui-bridge` (plan `2026-10-23-console-presentation-spaces`
+Phase 6) composes `HealthStrip`, `CollapsiblePanel`, `StatCluster`,
+`ShareList`, `FilterTabs`, `RecordList`/`RecordRow`/`RecordDetail`,
+`StatusBadge`, `RowTime`, `RefreshButton` and `BackendErrorMessage`, with the
+presentation primitives over them (`Caption`, `Provenance`, `RedactedText`,
+`MachineName`, `OperatorOnly`), and registers four palettes in
+`CONSOLE_PALETTES` — an action's declared effect, a page-health result, an
+occlusion verdict and an app's cross-registry presence, each in its own
+`*Status.ts` module under `ui-bridge/_lib/`. It adds no primitive. Ten things
+are recorded rather than shipped silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **Declared classes are calm; only the undeclared is amber** | `ui-bridge/_lib/componentEffectStatus.ts` | `read`, `write` and `destructive` render on `INERT` and differ in their words; an action that declares NO effect is `undeclared` on `UNKNOWN_AMBER`, counted on the strip, filterable, and never shown as a read (served policy `testing` `an-actions-safety-class-is-declared-not-re-derived`). Nothing the runner sends is dropped from that count: an entry in a component's `actions` that is not an action object counts as undeclared, and a component entry that is not an object, or whose `actions` is not an array, is unreadable — so every count is a floor (`≥N` on the strip) and the strip cannot say every action declares its effect. | R3 says colour encodes who must act. This records the consequence for a safety class: a declared `destructive` is a fact about the control, not an alarm, and painting it red would spend red on a word. The one thing nobody can act on without its author is the missing declaration — R3's ignorance floor. |
+| **A panel-level UNKNOWN that names the producer's build** | `ui-bridge/_lib/relaySource.ts`, `_components/SourceUnknown.tsx` | A panel whose read did not answer renders the UNKNOWN badge on `UNKNOWN_AMBER` and ONE sentence: not carried by this runner's relay (naming the runner build read from its own `/health`, and whether any build carries the route yet), withheld by the project's egress switch (the runner's own sentence), or the relay's reason with the request id on a raw-id line (R5). Two reads failing alike say it once. | R6 covers a count (`–`); §3.5 and §3.6 cover a field. This is the panel-level form, and its sentence has to tell the reader what would change the answer — "rebuild this runner" for an old build, "not served by any build yet" for a route no allowlist carries. |
+| **A list says whose entries it holds, in the producer's own words — and UNKNOWN when the producer is silent** | `ui-bridge/_lib/componentEffectStatus.ts` (`readWrapperDisclosure`, `wrapperDisclosureText`), `_components/ComponentActionsPanel.tsx` (`WrapperDisclosureLine`) | Over the relay the component list is the runner's own registry. The runner says so in `data.wrapperComponents` (`withheld`), and the panel prints that beside the counts with a provenance chip, so wrapper apps are never implied to have been asked. `included` is worded as the merge it is. An absent field (an older build) or any other value is UNKNOWN: amber, the chip's time UNKNOWN, the value it sent never quoted, and never worded as either answer. | R6 covers a count that was not fetched, and the panel-level UNKNOWN above covers a read that failed. This is a read that SUCCEEDED but whose statement of its own source is missing or unreadable: the figures stand, and the claim about where they came from does not. |
+| **A reading no relay can serve yet is a standing UNKNOWN, and nothing is asked** | `ui-bridge/_lib/occlusionStatus.ts` (`OCCLUSION_NOT_RELAYED`), `ui-bridge/_lib/useUiBridgeDashboard.ts` (`occlusionReadOf`), `ui-bridge/_lib/relayReads.ts` (`isRelayed`), `_components/PageHealthPanel.tsx` | The occlusion row has no source the relay serves: page health's report carries no `occlusionDataObserved`, and the only route that does (`POST /ui-bridge/control/visibility`) is on no runner's allow-list. While the route's carriage is `never` the page does not ask for it. Once page health is run the row reads UNKNOWN — "the visibility sweep is not available over the relay yet", and that unknown is not clear — with its provenance (the sweep as source, the time UNKNOWN), and no answer from any runner, to any route, can turn it into a verdict; a page-health body that happens to carry the field is never read. The strip names it, so it stays amber after a run. | The panel-level UNKNOWN above describes a read that was asked and did not answer, and it names the runner's build. This row's read is not asked, so no build, 403 or timeout is involved and none can change it. Flipping the carriage to `dashboard` — in the same change as the runner's handler review, egress gate and allow-list entry (coord finding `99796499`, plan `2026-10-23-console-presentation-spaces` Phase 6 amendment 2026-10-24) — is what makes the page ask; `page.sweepRelayed.test.tsx` pins what it then does. |
+| **On-demand reads behind navigation-only buttons** | `_components/LiveSnapshotPanel.tsx`, `_components/PageHealthPanel.tsx` | A read that drives the runner's live window (the snapshot and page health) runs only from its own outline `size="sm"` button, carrying `NAVIGATION_ONLY_PROPS`, and only for the runner it was asked for; until then the panel says it has not run and why. Switching runners ends the request (`ui-bridge/_lib/useOnDemandRequest.ts`): coming back to a runner shows its panels as not run, neither re-running the read (its query is `staleTime: 0`, so re-enabling it would) nor showing the earlier answer as this visit's. The occlusion sweep would be one of them, but no relay carries it, so it is not asked at all (the row above). | `RefreshButton` re-reads what a page already holds. These are first reads with a cost on the producer, so they are never fired implicitly — and they stay live in presentation mode because pressing one changes no setting, session, file or app state. The navigation-only mark is a claim, so the claim is stated exactly: page health always, and the snapshot when nothing is registered yet, make the runner re-read its window's elements, which rebuilds the webview's in-memory discovery cache from the live page; each button's `title` says that rather than "nothing changes". |
+| **An occupancy heatmap** | `_components/PageHealthPanel.tsx` (`Heatmap`) | The runner's 20×20 `#`/`.` grid as 0.5 rem cells — `bg-foreground/50` where an element sits, `bg-card` where none does, 1 px `bg-border` gaps — `role="img"`, its label stating how many cells are filled. | No primitive draws a grid. It is neutral by construction — a measurement of the whole screen, never an attention hue — the same rule `ShareBar` holds. It moves to `console/` when a second surface needs it. |
+| **A free-text field that only changes the view** | `_components/SpecGraphPanel.tsx` | The app-id field (the registries' ids as a `datalist`) carries `NAVIGATION_ONLY_PROPS` and sits inside `OperatorOnly`; the placeholder shows the app being displayed through `RedactedText`. | The marker is true — typing changes only what is shown — but the field's VALUE is free text that may name another client (D3.3), so while presenting the page shows the redacted name instead of the input. |
+| **A reason that quotes the outside world is the operator's** | `ui-bridge/_lib/relaySource.ts` (`quotes`, `issueStatusWord`, `noRunnerReason`), `_components/SourceUnknown.tsx` (`withheldStatus`) | A failed read's cause QUOTES on every arm but one — a stale pairing's device id, the runner's own refusal (its `app-not-found` names the app id typed), a transport error's request path, a status detail the page has never seen; only the relay's "runner not connected" is explained in fixed sentences. A quoting reason, and the page's own sentence that quotes a typed id ("not a valid app id"), renders through `RedactedText` bound to NO repository: verbatim for the operator, always withheld while presenting in favour of `Reason · … · <status word>`, the UNKNOWN badge kept. While presenting, a no-runner reason is the target's fixed phrase, never the dispatch refusal's sentence, which names the runner the operator picked; and the web backend's own refusal (`BackendErrorMessage`) is `OperatorOnly`, as is a failed read's request id line (`SourceUnknown`): the relay mints it as a UUID, an internal identifier the lens never shows. | D3.3 is written for titles and names. Error text is where a device id or a client's name reaches a lens page without anyone deciding to show it, so the rule is applied there as an allow-list of the one fixed arm — a new or reworded failure fails closed. No repository can clear a quoting reason: what it quotes is not the subject's own text (a reason about the runner's own app can still name a device). |
+| **A total over a source that did not answer is a floor** | `ui-bridge/_lib/appRegistryStatus.ts` (`appTotalOf`) | The app total across the web and runner registries is exact only when both answered; with one unread it is `≥N` — the spelling `ci/_lib/ciDashboardStatus.ts` uses for its refused-job floor — titled with the registry that was not read; a floor of zero, or neither registry answering, is `–`. The strip, the panel's counts and its collapsed summary read the same total. | R6 covers a count that was not fetched (`–`). This is a count that WAS fetched from one of its two sources: neither `0` nor the answered side's count is true of it, and while no relay carries the runner's own app list, it is a floor on every runner (and while presenting neither registry is read — the next row — so it is `–`). |
+| **A read that is not partitioned by project is made only for staff, and never while presenting** | `ui-bridge/_lib/useUiBridgeDashboard.ts` (`webRegistryAccessOf`, `useFleetAppsRead`, `useRunnerAppListRead`, `appRegistryReadsOf`), `ui-bridge/_lib/appRegistryStatus.ts` (`RegistryRead`, `WEB_REGISTRY_NOT_IN_LENS`, `WEB_REGISTRY_STAFF_ONLY`, `RUNNER_APP_LIST_NOT_IN_LENS`) | The web's `GET /api/v1/fleet/apps` returns every row of `project.apps` to an active platform admin and refuses anyone else 403 (`require_admin`), and a runner on the shared database lists that same table from its own `GET /apps`. A menu entry cannot keep a viewer from the web read — any signed-in member can open the URL, and the leaf's `coordAdminOnly` (`coordNavModel.ts`) only decides who the menu offers the page to — so the page decides it in one place (`webRegistryAccessOf`): staff only (`is_superuser`, the population the route admits; anyone else would only be refused), and nobody while presenting. A viewer who is not staff reads the web half as a `not-read` UNKNOWN that says why. While presenting, neither query is active (the web read has no function, `skipToken`; the runner list's hook is handed no device), and Refresh re-reads only active queries — which is also what leaves unasked the runner list an operator-mode render already ran, cached with its function and watched by nothing. Each half is a `not-read` read the panel renders as UNKNOWN with its reason in plain words; a value already in the cache is not shown either. | D3.4 says a lens page fetches only the acting organisation's data; it does not say what a page shows for a read it declines. Hiding the panel would hide the reason, and showing an operator-mode value already read would be the same leak one step later, so the half reads UNKNOWN and says why. |
+
+While presenting, every panel is held open (`CollapsiblePanel` `forceOpen`): a
+collapsed section would hide its caption and figures from the audience. Each
+panel's title is read from its caption entry, so the console header and the
+presentation headline cannot name a section two ways. The strip's figures carry
+their provenance too: while presenting, one `Provenance` chip per read behind
+them — the component registry, the runner's health, and the two app registries
+— sits on the line under the strip, beside the runner it reads.
+
+
+### 3.11 The Dev Ops presentation layer — recorded under §6.4
+
+`/admin/coord/devops` in presentation mode (plan
+`2026-10-23-console-presentation-spaces` Phase 7) is rendered through the
+presentation lens end to end — the same route and reads,
+captions on, provenance on, density down, write controls unmounted, machines
+aliased, free text redacted. It composes the lens's primitives
+(`components/presentation/`: `Caption`, `Provenance`, `OperatorOnly`,
+`RedactedText`, `MachineName` / `useMachineAliaser`) and the console's, and it
+added two primitives to the lens — `HeadlineFigures` and `SectionCaption` —
+recorded in the first two rows below; the lens itself is §6.5. The page renders
+in presentation mode because it is registered in `PRESENTATION_READY_ROUTES`
+(`presentationReadiness.ts`) on the strength of `page.presentation.test.tsx`,
+the run-proven page test §6.5 describes. **Operator mode is unchanged**: every pattern below renders nothing,
+or the original, outside presentation mode, so §5's budgets are still measured
+on the operator console. Eight things are recorded rather than shipped
+silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **A headline strip, in presentation mode only** | `presentation/HeadlineFigures.tsx`; the page's is `operations/DevOpsHeadlineStrip.tsx` over `operations/devOpsHeadline.ts` | A few figures an evaluator can say aloud ("2 of 3 machines healthy"), above the health strip, at screen-share size. Each is KNOWN — value, a detail line naming what the rest are, and its provenance — or UNKNOWN on `UNKNOWN_AMBER` with the reason, never `0`, a dash or a blank. Each figure decides alone, because its read can fail alone. The derivations are pure and tested without a DOM. | R1 says a page opens with its health strip; this sits above it only while presenting, so R1 still holds for the operator. The strip's mono badge cluster is built for the tenth read of the page today; an evaluator reads it once. |
+| **A section caption with one provenance chip per read** | `presentation/SectionCaption.tsx` | A section opens with its registry caption and one `Provenance` chip per read its numbers come from, stated once for the section the way a column header serves a column — the machine list names six (runner inventory, coord fleet health, CI-runner mirror, disk telemetry, drain states, device status). | R9 keeps chrome off the operator surface, and R2 dates each record; neither says how a whole section states where its numbers came from. A chip per cell would be a dozen identical chips (served policy `ux-priorities` `repeated-chrome-must-earn-its-space-by-varying`). |
+| **A read is dated only by its answers** | `useFleetHealth`, `useFleetDispatchRoles`, `useFleetDrain` (`asOfMs`, through `operations/servedAsOf.ts`), `FleetOverview`'s inventory as-of, `devOpsHeadline.ts` `latestInstant` | A body that states when it was true is dated by that (coord's `as_of` on fleet health, drain and dispatch roles, validated and never later than the answer's arrival; the CI mirror's `as_of`; fault-to-visibility's `computed_at`); a body with no timestamp is dated when the answer arrived; a body that dates its rows (disk telemetry's `observed_at`, device status's `updated_at`) is dated by its newest row. Each is stamped on an answer ONLY. A read that has not answered is dated UNKNOWN; so is one whose latest poll failed where its section shows nothing from it (drain, roles, the audit feed), while a section that keeps showing the last answer's rows, and says they are last-known, keeps that answer's date (fleet health, resource samples, worktree slots). A headline figure is UNKNOWN on a failed latest poll either way. A refresh loop's own clock is never an as-of: it ticks when the read fails. | R2's time slot dates one record. A section-level as-of is new, and the shape that made it necessary — an "updated 2 s ago" over a read that just failed — is the `silent-empty-is-unknown` failure in a time slot. |
+| **Positions, not names, for what can name a machine** | `MachineCard` ("Runner 2", "Volume 1"), `FleetResourceStrip` ("instance 1", and the disk figure without its mount), `CiRunPanel` ("service 1"), `CiRunnerBadge` (routing labels and a count) | Machines read as their session alias everywhere (`MachineName` / `useMachineAliaser`, fed every identifier the row holds so one machine is one letter on every panel). What is not a machine but can name one — a runner's name, a lane instance's `<runner>/<repo>`, a volume's mount or label, a per-machine runner label — reads as its position or a count, or is left out where the figure beside it already says what the reader needs (a sample's disk mount beside its free-space figure). | D3.3 lists machine identities and free text; a mount point or a label someone typed is neither, and can carry a person's or a client's name. Over-redaction costs a position, never a fact. |
+| **A failed read says it failed, in fixed words** | `operations/presentedFailure.ts` | For the operator, a panel shows its read's own failure text. In presentation mode the panel still says the read failed — the UNKNOWN floor holds — and the reason is replaced by fixed words, because `GET <url> failed …`, coord's error body and coord's own `reason` can carry a resource key or name a machine. Applied ONCE by whoever owns the read: the page for the reads it owns, a panel for its own. | R6's dash rule and R3's ignorance floor say what to render for an unmeasured value; neither says what to do with an error string nobody wrote for an outsider. |
+| **One shell, one guard per hidden thing** | `DeviceDrainControl.tsx` | The drain block is the same shell in both modes. The lever and its consent dialog are inside `OperatorOnly`, and that is the only thing that unmounts them; the target line (coord hostname, device id) has its own guard; the presented state line carries no actor and no reason; the block's testid becomes `device-drain-status`. | A component that returns a separate presented branch early leaves its `OperatorOnly` unreachable: a guard no test can turn red. One guard per hidden thing is what makes "remove it and a test goes red" true for each. |
+| **An allowlist, not a blocklist, for values shown verbatim** | `OperatorAuditPanel.tsx` (`PresentedAuditRow`), `operations/auditPresentation.ts` (`VERBATIM_BLAST_KEYS`, `auditScope`) | The presented audit feed says what happened and when in fixed words. A blast-radius value is shown as it is only when its key is vouched for as coord's fixed vocabulary, a time or a number; repositories, scopes (coord's `tenant` / `repo:<owner>/<name>`), devices, tenants and people each have a redacting arm, and a key added later without one is withheld. | D3's "a blocklist alone fails open", applied to a key list: a default arm that shows every value it does not recognise shows coord's `repo:` scope — a partner's repository — the first time a kill switch is pulled on one. |
+| **Coord's vocabulary stays with the operator** | `presentedAuditActionLabel` (`auditPresentation.ts`), `presentedUnknownReason` (`runnerReportStatus.ts`), the audit feed's presented nil-operator cell (`OperatorAuditPanel.tsx`), the device-status tile's connection line (`DeviceStatusTile.tsx`), the roles lane table, the Conditions panel's labels and titles (`FleetConditionsPanel.tsx` over `fleetConditions.ts`), `faultToVisibilityBadge`'s `plainKinds`; guarded by the page test's `ENGINEERING_VOCABULARY` scan | While presenting, nothing the page shows — its text behind every disclosure, every `title`, every `aria-label` — is a coord token (`closed_by_role`), an action id or family (`pr_merge.kill_switch`, `fleet.*`), a variable, a table, a route or the transport a list updates over (`WS`): each is said in words, or not said. Where the console holds a closed table — an audit action's label and family, an unknown report's reason — a value the table does not know reads in fixed words ("A recorded change", "no report arrived for this machine"), never as itself. A role lane's state, a slowest fault kind, and a condition domain or setting kind the Conditions panel has no label for are coord's own closed vocabularies, which name no machine and no person: they read as coord's word with its underscores (and, for a domain or a setting kind, its hyphens) replaced by spaces ("closed by role"). The operator keeps every token, because to the operator it is a filter term and a fact. The resource strip's hover cards, which explain each figure's formula in coord's column names, are left as evidence one hover down, and the scan does not read them. | R8 keeps internal vocabulary off a primary surface; an evaluator reads every surface as primary, and `audience_profile/external-evaluator` names "internal status words shown without translation" as something it will not tolerate. |
+
+### 3.12 The presentation tour — recorded under §6.4
+
+`/admin/coord/tour` and the tour bar (plan
+`2026-10-23-console-presentation-spaces` D5, Phase 8) walk the lens surfaces in
+presentation mode. Each stop is the surface's own route (`LENS_SURFACES`, in
+that order), opened with `?present=1&tour=1`: never embedded, re-rendered or
+forked. The page composes the lens's primitives (`Caption`, with the new
+`untitled` option recorded below) and the console's (`Badge` on `INERT`,
+`buttonVariants`); the bar lives in the lens itself
+(`components/presentation/tour/`), mounted once by `PresentationLens`. The page
+renders in presentation mode because it is registered in
+`PRESENTATION_READY_ROUTES` on the strength of `tour/page.presentation.test.tsx`,
+the run-proven page test §6.5 describes. Nine things are recorded rather than
+shipped silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **Chrome the lens owns, and the height that comes with it** | `presentation/PresentationLens.tsx`, `presentation/tour/TourBar.tsx`, both lens layouts' roots | The tour bar is mounted ONCE, by `PresentationLens`, above the layout and outside its `PresentationPage` gate: a withheld stop keeps its bar, and pressing the bar never unmounts it (the toggle's rule, §6.5). It takes a row, so the lens is a column (`flex h-full flex-col`: the bar, then the layout in the space left) and a lens layout's root fills it (`h-full`). A root fixed at `h-[calc(100vh-44px)]` under a bar would overflow the shell's `overflow-hidden` `<main>` and cut the bottom off every scroll area. In operator mode the bar renders nothing and the layout fills `<main>`. | R9 governs a page's own chrome. This is chrome of the lens, shared by two trees, so it can live in neither layout. |
+| **A sequence whose reach is the readiness registry** | `presentation/tour/tourModel.ts` (`tourStops`, `tourView`, `tourHref`) | The tour keeps no list of its own. Its stops are `LENS_SURFACES`, titled from the caption registry, and a stop is reachable only where `lensLinkTarget` lets its page be presented. A stop that is not stays in its place on the page and in the strip, labelled "Not yet presentable", and is never linked; previous and next skip it. A page joins the tour by itself the day its phase registers it. | `LensLink` (§6.5) withholds ONE link. A sequence also has to keep the withheld member visible in its place, or its order and count would change silently in front of the audience. |
+| **Position derived, never stored** | `tourView` | The current stop is the page on screen: the path, normalised, EXACTLY a stop's route. A page below a stop's route (a detail page) is "off the tour route", because readiness is exact and that page is withheld under any bar that called it the stop. The one thing remembered is the last presentable stop shown, as the way back from off the route. | A stored position can disagree with the page under it; a derived one cannot. Served policy `ux-priorities` `a-status-signal-must-observe-the-state-it-names`, applied to "you are here". |
+| **A count that names its population** | `TourBar` (`TourPosition`), `TOUR_LABELS` in `captions/tourCaptions.ts` | "Stop k of N" counts the presentable stops. While any stop is not presentable the bar says how many more there are, beside the count ("Stop 2 of 3 · 2 more are not yet presentable"), because the strip under it shows all of them. The strip carries no numbers, so no stop has two. | Served policy `ux-priorities` `a-label-names-one-referent-and-a-quantity-names-its-unit`: a bare "of 3" above a strip of five reads either way. |
+| **A control with nowhere to go is disabled, and says why** | `tour/TourStepControl.tsx` | With a target, previous and next are tour links, each declaring its arrow key (`aria-keyshortcuts`). Without one, each is a DISABLED button whose accessible name begins with its visible word and says why ("Previous: this is the first stop"). It is never a dead link, and it makes no UI Bridge registration. Next at the last stop leads back to the tour's start. | R6's dash rule covers a count nobody read. This is its control form: say there is nothing there, never imply a way on. |
+| **Keys that never take one the page is using** | `tour/tourKeys.ts`, `tour/useTourKeys.ts` | ArrowLeft and ArrowRight follow the previous and next LINK on screen, so a key goes exactly where the control says. They act only when nothing handled the press first, no modifier is held, it is not a repeat or a composition, and focus is not in an editable control or a composite widget (the twin's tabs move on the arrows themselves). The window listener exists only while the bar renders. | No console surface bound a global key before. |
+| **Tab-scoped state, never a preference** | `tour/tourStore.ts` | "On the tour" belongs to the tab: sessionStorage mirrored in memory, every access guarded. The `?tour=1` marker every tour link carries sets it, and End tour clears it and drops the marker from the URL. It never touches localStorage, and `?present=0` turns the bar off whatever it says. | It follows the pattern of the mode store's tab half (§6.5), in a store and a sessionStorage key of its own (`qontinui.presentation-tour`), for a second fact. The viewer-convenience half is deliberately not followed: a tour is never remembered for the next tab. |
+| **Two calm states, told apart in words** | `tour/_components/TourStopList.tsx`, `tour/TourProgress.tsx` | "Ready to present" is `INERT`. "Not yet presentable" is `INERT` with the dashed edge `draft` uses: provisional, not wrong. Neither is anyone's move now, so neither is red or amber. The stop on screen takes the toggle's active treatment (`bg-primary`), and a key under the list explains each state that occurs. | R3 assigns hues by whose move it is; this records that a known, self-describing state the audience is shown takes no attention hue at all. |
+| **A caption whose title is already on screen** | `Caption` `untitled`; `TourStart.tsx`, `TourStopList.tsx` | The start link's text is `tour.start`'s title, and each state badge's text is its caption's title, so their sentences render `untitled` beneath them: one entry, one title on screen. A stop that is not presentable shows its page caption `brief`, because why its content matters would describe content the tour does not show (the rule `PresentationPage`'s placeholder follows). | §6.5's captions always lead with their title. A control or a badge that IS the title would repeat it. |
+
+Every tour control that does something is navigation-only, and says so twice.
+On screen it is a link that keeps the presentation, or End tour, the one
+enabled button, which carries `NAVIGATION_ONLY_PROPS` and changes only what the
+tab shows. To the UI Bridge it registers where it renders with one custom
+action declared `effect: "read"`: a link's action follows the anchor itself,
+and End tour's does what pressing it does. A previous or next with nowhere to
+go does nothing: it is a disabled button that makes no registration (the row
+"A control with nowhere to go is disabled, and says why"). The bar does not
+repeat a stop's one sentence: the stop page renders its own `<surface>.page`
+caption, and that IS the stop's sentence.
+
+### 3.13 The session-flow console — recorded under §6.4
+
+`/admin/coord/overlord/flow` (plan
+`2026-10-23-the-overlord-keeps-no-record-of-session-flow-so-its-development-runs-on-anecdote`
+Phase 4) composes `HealthStrip`, `StatCluster`, `RecordList`/`RecordRow`/
+`RecordDetail`, `RowTime`, `CollapsiblePanel` and `RefreshButton`. It declares
+no attention table (its rows are not classified, so `RecordRow`'s `attention`
+is ABSENT, not `"none"`), and records two things rather than shipping them
+silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **Metric tiles are headed `StatCluster`s, not a tile component** | `overlord/flow/page.tsx` (`MetricTile`) | Each metric (time-to-close, nudge → progress, nudge → finished, latest UNKNOWN share) is an `h2` + one `<StatCluster>` + a one-line explanation, two per row from `sm` up. Every value is one of THREE things (`overlordFlowStatus.ts`): a measured number; coord's explicit `null`, rendered as the words `no data` with a `title` saying why nothing was measurable; or unknown (field absent, read failed), rendered as `–`. | R6 says an unfetched count is `–`. This page also receives a value coord ANSWERED as not measurable (a median over no closed session, a rate over no nudge), and rendering that as `–` would call an answer unknown, while `0` would claim a measurement. A bordered tile per metric would be a new card shape (§6.4); the cluster already is the console's count vocabulary. |
+| **A categorical series palette, validated, in `config/theme.ts`** | `chartCategorical` (`config/theme.ts`), used by `overlord/flow/_components/VerdictHistogramChart.tsx` | The console's first multi-series stacked chart: one bar per triage pass, three verdicts on fixed categorical slots (a slot follows the verdict, never its rank), every other verdict folded into a neutral "other", UNKNOWN in muted grey, and the full per-pass breakdown in the tooltip and an `sr-only` table. Built like §3.8's count chart otherwise. | `colors.brand.*` fails as a categorical set on the console's dark surfaces (slate blue vs muted violet: ΔE 11.9 normal, 5.9 deutan), so a chart that needs more than one identity hue needs slots that pass. The slots are identity, never severity — they are not R3 families and must not be read as such. |
 
 ---
 
@@ -1863,6 +1982,303 @@ If a page genuinely needs something this guide does not cover, that is a real
 finding and the guide is wrong — extend it, add the primitive, and cite the rule
 number from the new component's module doc. What is not allowed is shipping the new
 shape silently and leaving the next author to guess which of the two is the pattern.
+
+### 6.5 Presentation density — the presentation lens, recorded under §6.4
+
+Plan `2026-10-23-console-presentation-spaces` lets the operator console double as
+a live showcase for an external evaluator (`audience_profile/external-evaluator`).
+It does so as a **lens**, never a fork: the same routes and the same data hooks,
+rendered with captions on, provenance on, density down, controls off and redaction
+on. The lens is an **authorized extension of this guide**: in presentation mode,
+and only there, a lens page may depart from R1, R9 and §5 in the ways this section
+lists. In operator mode every rule above holds unchanged. The pieces live in
+`frontend/src/components/presentation/` (one barrel), composing `components/console/`.
+
+**Entry, and where it applies.**
+
+- The mode is per browser, never per tenant: `?present=1|0` on the URL wins, then
+  the tab's last choice, then the viewer's remembered setting (localStorage, a
+  convenience — a tab that opens presenting on it keeps presenting), then off.
+  The `PresentationModeToggle` flips it; while presenting it is the
+  "Presentation mode" chip. It lives in the lens layout's own chrome — the
+  console's header, the digital twin's lens bar — OUTSIDE the page gate below,
+  never in a page body, which its own press would unmount. A mode not yet
+  resolved (a server or hydration render) counts as presenting, so every guard
+  fails closed.
+- A link to another lens page carries the presentation while presenting
+  (`usePresentationHref`: `?present=1` on its URL), so one opened in a new tab —
+  which starts with no tab choice of its own — still presents. The page check
+  below fails a lens link that does not (`presentation-dropping-link`), so a page
+  added later cannot forget it. A link whose destination may not be
+  presentable goes through `LensLink` (its decision is `lensLinkTarget`, both in
+  the presentation barrel): while presenting, a destination outside the lens
+  trees, or a lens page not yet in `PRESENTATION_READY_ROUTES`, renders as plain
+  text (`data-lens-link="unlinked"`) — never a click that leaves the lens or
+  lands on "Shown in the operator view only" — and the link returns by itself
+  the day its destination is registered.
+- The tour (`/admin/coord/tour`, §3.12) walks the lens surfaces while
+  presenting. Its bar is the lens's own chrome, mounted once by
+  `PresentationLens` outside the page gate, and it renders only while
+  presenting on the tour (`?tour=1`, then the tab's state). Operator mode and
+  `?present=0` never show it. Because the bar takes a row, the lens owns the
+  height: a lens layout's root fills the lens (`h-full`) instead of fixing its
+  own.
+- It applies on the lens trees (`LENS_TREES`: `/admin/coord`, `/digital-twin`) and
+  to the app shell beside them (`PresentationShell`, in `app/(app)/layout.tsx`):
+  while presenting, the sidebar names only the active project, aliases the runner,
+  hides the account menu, search and project creation, and offers only entries
+  inside a lens tree. Elsewhere there is no presentation mode at all.
+- **A lens page is withheld until it is proven safe.** `PresentationPage`, around
+  every lens layout's page body, renders the page in presentation mode only when
+  its route is in `PRESENTATION_READY_ROUTES`; every other lens page renders its
+  surface caption and "Shown in the operator view only" instead — over-withholding
+  costs a placeholder, a page shown before it is safe costs a write control in
+  front of a client. Register a page **in the same PR** as its page test (below).
+  Whether that test proves the page is read from the **run**, not from its source
+  (`src/test/readinessEvidence.ts`). The page check records, on the test that is
+  running, which render it read; whether the route's own page component was
+  mounted there under a presenting lens, rendering something and all of it inside
+  the element the check read; whether check (b) read that render's own UI Bridge
+  registry; and what it found. The registry's own test arms the requirement by a
+  declaration on itself, made when its file is collected, so it holds wherever
+  that file lives and a skip of that test (`it.skip`, a `describe.skip` around
+  it) turns nothing off, and a run it armed (`npm run test`, so CI) fails unless
+  that same run ran the proof, and in it a
+  test that **finished passed** — not skipped at run time from wherever, not
+  failed, not concurrent — holds a render whose last such check found no
+  violation through that registry. A render whose last check found a violation,
+  in any test of the proof however it ended, refuses the route: the run's own
+  evidence outweighs a clean check elsewhere (a check polled with `waitFor`
+  counts by its last attempt). A proof filtered out of that run is UNKNOWN,
+  which fails it; a run the test did not arm (one that leaves it out by file, or
+  a `-t` filter that skips it) claims nothing. The run's log names each route it
+  proved and the test that proved it.
+  Beyond its reach: a proof that writes the record itself, or mocks or edits the
+  checker, its reporter, the registry's test (deleting its arming test
+  included), `setup.ts` or the vitest config; a
+  proof that mocks a module the page renders — a child component (a
+  `DeviceDrainControl` stubbed to render nothing), a lens primitive — so the
+  render is not production's, since only the page module itself is checked to
+  be the real one (mock data sources only: the API client, the hooks that fetch,
+  the router); and the state the proof checks the page in, which is the proof's
+  to choose (a fixture that never loads data proves the empty page). The
+  console's landing redirect (`/admin/coord`, one sentence) is registered from
+  the start: a withheld page never mounts, so it would never redirect.
+
+**Captions before data** (the departure from R1 and R9). `Caption` renders a page's
+or a panel's `{ title, oneLiner, whyItMatters }` ahead of its data: in presentation
+mode the title at screen-share size (`text-2xl` / `text-xl` / `text-lg` for levels
+1–3), the one-liner at `text-base` and why it matters at `text-sm`, which is up to
+three lines of chrome above R1's health strip. That is the point of the lens — an
+evaluator does not share the vocabulary, and the caption is the translation — and
+it is why it is confined to presentation mode: in operator mode a caption renders
+nothing (or, `persistent`, the title and one-liner at the console's sizes, for a
+page whose own heading is its caption; or, `untitled`, its sentences alone, beneath
+the control or badge whose text is its title, §3.12). Copy lives in ONE registry composed of one
+file per lens surface (`captions/`); product terms in it go through `GlossaryTerm`
+via `term(...)`, never as plain text (the registry's test fails a glossary term's
+name left plain, singular or plural — a synonym, such as "machine" for a device,
+it cannot see); and every sentence is a claim about the product, so it is checked
+against the code like any other claim. A withheld page's placeholder shows its
+caption's title and one-liner only (`Caption brief`), never why its content
+matters, since that content is off screen.
+
+**Provenance beside every figure.** `Provenance` is the chip `source: … · as of …`
+beside each number a lens page shows. An unknown source or time renders `UNKNOWN`
+on R3's ignorance-floor amber (`UNKNOWN_AMBER`), never a blank. The age advances on
+one shared 15-second tick; below a minute it says "under a minute ago" rather than a
+seconds count the tick would leave behind; and a render with no client clock (server,
+hydration) states the instant in UTC to the minute, so the HTML and the first client
+render agree.
+
+**A kept reading, and two reads of one thing.** R6's stale arm holds on a lens
+surface too, in both modes. A reading kept after its latest read failed (react-query
+keeps a query's data when a refetch fails) is named as the last read. The failure
+leads, the reading is introduced as the last one read, it is never headed "Live", and
+its own staleness is worded as of when it was read ("its data was 30s stale when
+read"). An age that was not served is UNKNOWN, never "live": a missing
+`staleness_seconds` means a live answer only on coord's DriftVerdict, and the admin
+outbound door's envelope is not one. That door has no answer-level age. Each bucket
+carries its own, and its drift class is its worst (first) bucket's. So the web backend
+serves that bucket's age (`digital_twin.py` `_class_bucket_age`), and every sentence
+that shows it names the bucket: "its worst bucket's data was 12s stale when read" in
+the drawer, after "classified", and "worst bucket 12s stale when read" on the matrix
+cell, whose title says the bucket is the one its drift class comes from. On the Twin
+map the Staleness detail begins "the oldest of N answering readings", beside which
+"worst" would read as "oldest". Coord orders the buckets by drift severity, then by
+the share of budget left, never by age, so another bucket may be older. The map
+therefore names the bucket by what makes it that one: "outbound's reading is dated
+by the bucket its drift class comes from" (`digital-twin/_lib/status-presentation.ts`
+`readingAge`, `datesWorstBucket`, `CLASS_BUCKET`). With no age served (no bucket
+observed, or a backend that predates carrying it) all three read UNKNOWN with the
+reason "no age was served for this reading". That reason is true whichever half
+deploys first, and blames no one.
+
+Where a kept reading's dot goes depends on what carries it:
+
+- **A panel that states a verdict on one reading** draws the dot on the ignorance
+  floor, because the dot says what is true now. The sub-space drawer's Status reads
+  "Last answer: Live" on the amber ring.
+- **A list of rows under a page notice** keeps R6's row arm instead. The Completeness
+  matrix's and the Lifecycle view's cells keep their last answer's hue and label.
+  `CoordUnreachableBanner` above them says they show the probe's last answer, not a
+  current reading. In operator mode it says the cells "fall back to their last
+  status". While presenting it says "the live statuses below are not a current
+  reading". The drawer covers that notice, so it says so itself.
+- **The Twin map** has a notice of its own above its cards, worded for the map
+  (`TwinMapHeldNotice`), in both modes. Its live-probed part rows keep R6's row arm
+  under it. Its probe figures, which draw no dot, keep the last answer's values. The
+  notice names both as that answer, and only for the twins whose figures the answer
+  decides (`digital-twin/_lib/twin-aspects.ts` `probeFedAspects`). Under coord's
+  catalog those are the twins with a part it declares. A twin with none shows its
+  probe figures as UNKNOWN because nothing in it is probed live, whatever coord
+  answered or refused and whether or not the probe holds a reading, as the Lifecycle
+  view says of a stage nothing probes. The catalog says that, not the answer, so the
+  notice never calls those figures that answer. With the catalog unread, the
+  manifest's `snapshot` rows and the rows the answer has a cell for are the
+  live-probed ones (`resolve.ts`), so the answer decides every twin's figures, even
+  that a twin has no live-probed part, and the notice names every twin. Under a
+  catalog that declares no intent row it reads "the Observed, Coverage and Staleness
+  figures of the environment twin and the process twin, and the statuses of the
+  live-probed parts below, are its last answer, not a current reading", and a
+  `Provenance` chip dates it. With no twin to name, nothing on the map is the
+  probe's answer, and there is no notice. A probe holding no reading at all needs no
+  notice there either: every probe figure of a twin with a live-probed part, and
+  every live part, is then UNKNOWN with the reason.
+  An answer in which coord refused every reading is an answer, but no observer was
+  read in it. The other views replace themselves with the access notice; the map
+  keeps its cards, and both its probe figures and its live parts say UNKNOWN, naming
+  that refusal, in both modes (`digital-twin/_lib/probe-read.ts` `probeReadOf`). A
+  part never reads "Restricted" then: that status's meaning is a refusal of one
+  sub-space, the others unaffected, which is false of an answer that refused them
+  all.
+  The map's Staleness figure is worded as of the read ("15m stale when read"), since
+  in operator mode no chip dates it.
+- **A figure with no notice above it** keeps no reading. On the Twin map the Honesty
+  figure (coord's twin self-check) and the UI Bridge app twin's Observed and Coverage
+  figures (the runner's app registry and its model of its own interface) stand alone.
+  Nothing on their card could name a kept answer as the last one, so a read whose
+  latest attempt failed makes its figure UNKNOWN, dated by that attempt: "the
+  runner's app registry could not be read (HTTP 503)". That holds even where
+  react-query keeps an earlier answer beside the failure
+  (`digital-twin/_lib/twin-aspects.ts` `runnerAnswer`,
+  `digital-twin/_lib/twin-fidelity.ts` `readFidelity`). A read with no answer, no
+  failure and none in flight is not worded as a failure: "no read of the runner's
+  app registry has answered: this browser is offline". The UI Bridge tab reads the
+  same runner reads the same way. Its App field's suggestions and its graph counts
+  are the runner's only while their latest read answered
+  (`digital-twin/_components/UiBridgePanel.tsx`). Its live snapshot is a capture,
+  not a count, read only when Capture asks: never by a mount, a runner switch or a
+  reconnect (`digital-twin/_hooks/useUiBridge.ts` `useRunnerSnapshot`). What the
+  card says of it follows that read's own state, which react-query keeps for the
+  runner across mounts, never a flag of the mount that asked, so it says the same
+  after the operator leaves the tab and comes back. A capture carries the time it
+  was taken and a failed attempt the time it failed, each on a `persistent`
+  `Provenance` chip, and one kept after a re-capture failed stays under the failure,
+  introduced as "As last captured, before that failure:".
+
+Where one panel shows two reads of one thing, every line about a read says which read
+it is about. It does so by name ("Coord's live probe's latest read failed", "This
+drawer's own read of the live verdict failed") or by pointing back at the line before
+it ("As last read, before that failure:"). A reading names its read as the source of
+its own `Provenance` chip, and that chip dates it, `persistent` because nothing else
+in the panel does. The sub-space drawer's Status is the page probe's answer, and its
+Summary the drawer's own read (`digital-twin/_lib/drawer-status.ts`,
+`drawer-reading.ts`). Every state of both reads that can occur, in both modes, is a
+row of `SubspaceDetail.matrix.test.tsx`, including the outbound door's real answer,
+with its worst bucket's age served and without. That file's docblock names the
+combinations it leaves out because they cannot occur.
+
+**Density down.** Presentation mode never adds a record row to a page: what it changes
+is which of the page's own elements render, and how large a caption is. A headline
+strip (`HeadlineFigures`, §3.11) is one such element: a page may render it only while
+presenting, above its health strip, which departs from R1 the way a caption does. A
+page does not grow a second presentation layout.
+
+**Controls off.** Every control that writes renders inside `OperatorOnly` — not
+hidden, unmounted, so its UI Bridge registration goes with it; a `placeholder` that
+stands in must itself be navigation-only. What may stay live is a control marked
+`NAVIGATION_ONLY_PROPS`, and the mark is a **claim**: only a control whose press
+changes nothing but what this browser displays may make it — a filter, a refresh, a
+link-like jump, a tab or view switch, a disclosure of read-only detail. Never a
+control that writes, and never one that opens a menu or a dialog whose items can
+write; a `combobox` (the UI kit's `Select`) is a choice, so it needs the claim on its
+trigger and may make it only when every option is view-only. `FilterTabs`,
+`FilterChips`, `RefreshButton`, the presentation toggle and the sidebar's navigation
+entries carry the mark by construction; `HealthStrip` and `StatCluster` carry it only
+where the caller passes `navigationOnly`.
+
+The one exception is **the presenter's own safety controls** — a CLOSED list,
+`PRESENTER_SAFETY_CONTROLS` in `components/console/presenterSafety.ts`, each control
+carrying `presenterSafetyProps(<name>)`: Stop on the "AI co-pilot is active" banner,
+Stop on the UI Bridge recording indicator, and the session-expiry dialog's two
+buttons (continue, sign out). Each acts on THIS screen or THIS presenter's session,
+and taking it away would leave the presenter unable to stop something happening in
+front of the audience, so presentation mode keeps it, and the toggle's title says
+so. Nothing else joins the list by a marker: `expectPresentationSafe` fails a marker
+naming anything the list does not hold. A control that only belongs to the account
+is not a safety control — the co-pilot banner's "Disable for this account" is inside
+`OperatorOnly`, and so are the shell's beta banner and offline sync queue.
+
+**Redaction on.**
+
+- `RedactedText` / `useRedactor`: free text (a plan, PR, session or finding title)
+  renders only when every repository it belongs to has a first-party owner and it
+  holds none of the confidential terms; otherwise the descriptor
+  `kind · area · status · age`, with `withheld` for a field that may name someone
+  the scope cannot clear. An unknown scope withholds everything. The two lists are
+  tenant data, edited in operator mode on `/admin/coord/tenant-policy`.
+- `MachineName` / `useMachineName` / `useMachineAliaser`: a machine renders as
+  `Machine A`, `B`… — one letter per computer for the session, on every panel,
+  however each panel identifies it (device id, hostname); two letters that turn out
+  to be one machine merge to the earlier.
+- `CostFigure` is the only component that renders a per-task cost, always beside
+  "list-price equivalent, not your bill", and in presentation mode never — a
+  descriptor instead. `costRenders.test.ts` (over `src/test/costRenderScan.ts`)
+  scans every module under `src/` a lens page and its shell can load — a
+  component wherever it lives, and the `lib/`, `hooks/`, `services/`, `stores/`
+  and `data/` modules beside it (a type-only import loads no code and is not
+  followed) — and fails on the shapes it knows: a money-named value, key or
+  import (a destructured key and an aliased import included), an `Intl` currency
+  format however `NumberFormat` is reached, a currency symbol or code glued to a
+  value (in text, a string child, a template, a concatenation, or an element of
+  its own, across any whitespace — `&nbsp;` and the other character references
+  included — or `{" "}` spacer, and in every branch of a conditional or `&&`
+  child), a currency code value beside one, a literal figure or the label — and
+  any way of reaching a CURRENCY FORMATTER from anywhere under `src/`: an export
+  (a function, a class or a value such as a `NumberFormat` instance) whose code
+  formats a currency or glues a symbol, or reads one that does, under every name
+  its module exports it by — through a barrel's `export *` or `export { … }
+  from`, an export list, or as the default. Named, default and namespace imports
+  of one (`ns.formatCurrency`, or the namespace handed on whole), re-exports, and
+  a literal `import()` of its module all fail (`src/test/currencyFormatters.ts`).
+  So a helper that formats a cost, or hands one to a page under a name that does
+  not say money, fails in its own module, and the finding names the chain of
+  loads from the lens page. What is past the scan is what is not in `src/`: a
+  figure from the backend, a package or the composed build's cloud overlay. The
+  rendered-page check below catches one that carries a symbol or a code; a bare
+  number under a name that does not say money is caught by neither, which is why
+  a cost field is always named as one (`cost_usd`).
+
+**The test every presentation-ready page carries.** A presentation-mode render of the
+real page with `renderInPresentationMode` and `expectPresentationSafe(view, {
+captions, forbidden })` (`src/test/presentation.tsx`): no enabled control that is
+not navigation-only, no link to a lens page without `?present=1`, no write or
+undeclared UI Bridge registration, no cost, every
+listed caption, no email address or UUID, and none of the `forbidden` strings — the
+real hostnames, device ids and other parties' names the fixture holds. The check
+also fails a view that is not on the screen when it runs — unmounted, cleaned up,
+rendered detached, or rendering nothing but the helper's own sentinel (a wrapper
+that drops its children, an `OperatorOnly` around the whole render) — because over
+nothing every other check passes; and a UI Bridge registry the render does not
+register with (`unread-registry`): a view assembled from two renders, or a render
+that mounts a `UIBridgeProvider` of its own in its `wrapper` or in the page. Render
+the page itself, with its fixture's data loaded; keep the view mounted until the
+check has run; leave the provider to the helper; and keep what the page portals
+(a dialog, a toast) inside the element the check reads — a page that renders any
+of its output outside it is not proven. A `<title>` React hoists into the head is
+such output: a page that renders one is read with `baseElement:
+document.documentElement`.
 
 ---
 

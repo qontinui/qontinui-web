@@ -24,11 +24,27 @@
  *
  * Navigation between console pages is the app sidebar's Coord, Sessions and
  * Fleet sections (built from `components/admin/coord/coordNavModel.ts`).
+ *
+ * Every console page is under the presentation lens: `PresentationLens` (plan
+ * `2026-10-23-console-presentation-spaces` D1, D2) gives the whole console
+ * the tab's presentation mode and the tenant's redaction scope, and the
+ * header's `PresentationModeToggle` flips it — or `?present=1` on any console
+ * URL. The mode changes only what the pages RENDER (captions on, controls off,
+ * redaction on); it is not an access decision, and the paragraph above about
+ * who may view still holds. In presentation mode a page's body renders only
+ * when the page is registered as presentation-ready (`PresentationPage`);
+ * every other console page is withheld behind its caption, so a page nobody
+ * converted cannot show its controls to an audience.
  */
 
 import { Activity } from "lucide-react";
 import CoordNav from "@/components/admin/coord/CoordNav";
 import RedMainBanner from "@/components/admin/coord/RedMainBanner";
+import {
+  PresentationLens,
+  PresentationModeToggle,
+  PresentationPage,
+} from "@/components/presentation";
 
 export default function CoordLayout({
   children,
@@ -41,30 +57,40 @@ export default function CoordLayout({
   // Mutation controls within each page gate on `isCoordAdmin` (read from
   // useAuth) so non-admin "Developer"-tier members see read-only views.
   return (
-    <div
-      data-testid="coord-layout"
-      className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
-    >
-      {/* One chrome row: title + the status row (crumb and live badges). The
-          console's page links live in the app sidebar, and the project
-          (tenant) selector moved there too. The h1 keeps its exact text:
-          e2e + page specs assert it by role/name. */}
-      <header className="flex items-center gap-2 flex-wrap px-3 sm:px-6 py-2 border-b border-border bg-card shrink-0">
-        <Activity className="h-4 w-4 text-muted-foreground shrink-0" />
-        <h1 className="text-sm font-semibold whitespace-nowrap">
-          Coord operator console
-        </h1>
-        <div className="mx-1 sm:mx-2 h-5 w-px bg-border hidden sm:block" aria-hidden />
-        <CoordNav />
-      </header>
+    <PresentationLens>
+      <div
+        data-testid="coord-layout"
+        className="h-full flex flex-col bg-background overflow-hidden"
+      >
+        {/* One chrome row: title + the status row (crumb and live badges). The
+            console's page links live in the app sidebar, and the project
+            (tenant) selector moved there too. The h1 keeps its exact text:
+            e2e + page specs assert it by role/name. The presentation toggle
+            sits at the row's far end; while presenting it is the
+            "Presentation mode" chip. */}
+        <header className="flex items-center gap-2 flex-wrap px-3 sm:px-6 py-2 border-b border-border bg-card shrink-0">
+          <Activity className="h-4 w-4 text-muted-foreground shrink-0" />
+          <h1 className="text-sm font-semibold whitespace-nowrap">
+            Coord operator console
+          </h1>
+          <div
+            className="mx-1 sm:mx-2 h-5 w-px bg-border hidden sm:block"
+            aria-hidden
+          />
+          <CoordNav />
+          <PresentationModeToggle className="ml-auto" />
+        </header>
 
-      {/* Red-main banner (plan 2026-07-06-coord-red-main-…, Phase 1
-          D2): one persistent, non-dismissable row per repo whose main CI is
-          red, driven solely by the coord `red_main:<repo>` alert rows.
-          Mounted in the layout so it shows on EVERY coord console page. */}
-      <RedMainBanner />
+        {/* Red-main banner (plan 2026-07-06-coord-red-main-…, Phase 1
+            D2): one persistent, non-dismissable row per repo whose main CI is
+            red, driven solely by the coord `red_main:<repo>` alert rows.
+            Mounted in the layout so it shows on EVERY coord console page. */}
+        <RedMainBanner />
 
-      <main className="flex-1 overflow-y-auto">{children}</main>
-    </div>
+        <main className="flex-1 overflow-y-auto">
+          <PresentationPage>{children}</PresentationPage>
+        </main>
+      </div>
+    </PresentationLens>
   );
 }

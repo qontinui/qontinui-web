@@ -10,7 +10,8 @@
  * The groups are persona-shaped (developer / merge maintainer / fleet
  * operator), carried over unchanged from the console's own dropdown nav:
  *
- *   Pipeline · Pull Requests · Gates · Notifications · Action items   ← direct
+ *   Pipeline · Pull Requests · Gates · Notifications · Action items ·
+ *   Tour                                                               ← direct
  *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
  *             Operator Touches /
@@ -21,15 +22,15 @@
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
  *             Policy Edit Review / Taste Inbox
- *   Dev Ops ▸ Overview / CI / Computers† / Spawns† / Session load† / Trees° /
- *             Launch session° /
- *             Runner Drain° / Test Targets° / Migrations° / Deploys° /
- *             Releases° / Git Ops° / Federation° / Memory° / Onboarding° /
- *             Onboarding Status°
+ *   Dev Ops ▸ Overview / CI / UI Bridge‡ / Computers† / Spawns† /
+ *             Session load† / Trees° / Launch session° / Runner Drain° /
+ *             Test Targets° / Migrations° / Deploys° / Releases° / Git Ops° /
+ *             Federation° / Memory° / Onboarding° / Onboarding Status°
  *   Access ▸  Members / Agent Registry
  *
  *   (° = operator-only; † = coord tenant admin of the active tenant, the same
- *   gate as the page's proxies)
+ *   gate as the page's proxies; ‡ = that same menu gate with no proxy gate
+ *   behind it — the page guards its own reads, see the leaf)
  *
  * `Spawns` (every spawn coord was asked to place, where it went and how it
  * ended) and `Launch session` (the launcher at `/admin/coord/spawn`) are two
@@ -53,6 +54,7 @@
 import {
   Activity,
   Anchor,
+  AppWindow,
   BadgeCheck,
   Bell,
   BellRing,
@@ -91,6 +93,7 @@ import {
   Puzzle,
   RotateCcw,
   Rocket,
+  Route,
   Scale,
   ScrollText,
   SearchCheck,
@@ -101,6 +104,7 @@ import {
   Stethoscope,
   Timer,
   UserCog,
+  Waves,
   Workflow,
 } from "lucide-react";
 
@@ -218,6 +222,21 @@ export const DIRECT_TABS: NavLeaf[] = [
     label: "Action items",
     icon: BellRing,
     testId: "coord-nav-action-items",
+  },
+  {
+    // Sixth direct tab by argued exception — not a daily destination, but
+    // the presenter's way in (plan `2026-10-23-console-presentation-spaces`
+    // Phase 8). It is opened at the start of a presentation, often with the
+    // audience already watching, so it must be one click from anywhere in
+    // the console, presenting or not: as a group leaf it would mean opening a
+    // section on screen to find it. It is in the lens tree, so the sidebar
+    // keeps it while presenting (`presentationNav.ts`), and it is
+    // member-visible: the page reads nothing, and the stops it leads to guard
+    // their own reads.
+    href: "/admin/coord/tour",
+    label: "Tour",
+    icon: Route,
+    testId: "coord-nav-tour",
   },
 ];
 
@@ -374,6 +393,19 @@ export const GROUPS: NavGroup[] = [
         label: "Unfinished Sessions",
         icon: RotateCcw,
         testId: "coord-nav-unfinished",
+      },
+      {
+        // Beside Unfinished Sessions deliberately: both are about whether
+        // sessions reach the end of their work. This one is the overlord's
+        // own scorecard — time from a stop to its close, what a nudge led to,
+        // which sessions sat unchanged pass after pass — read from coord's
+        // per-pass triage ledger. Plan
+        // `2026-10-23-the-overlord-keeps-no-record-of-session-flow-so-its-development-runs-on-anecdote`,
+        // Phase 4.
+        href: "/admin/coord/overlord/flow",
+        label: "Session Flow",
+        icon: Waves,
+        testId: "coord-nav-overlord-flow",
       },
       {
         // Sits beside Agents deliberately: Agents is the per-agent registry,
@@ -581,6 +613,38 @@ export const GROUPS: NavGroup[] = [
         label: "CI",
         icon: BadgeCheck,
         testId: "coord-nav-ci",
+      },
+      {
+        // Plan `2026-10-23-console-presentation-spaces` Phase 6: the UI Bridge
+        // dashboard — the app registry, each app's screens and states, a live
+        // element snapshot, the runner's SDK and trust posture, its component
+        // actions with their declared effects, and page health. A group leaf
+        // rather than a sixth direct tab: it is a page opened to inspect or
+        // to present (it is lens surface 4 of the tour), not a daily
+        // destination.
+        //
+        // `coordAdminOnly` decides who the MENU offers the page to: a coord
+        // admin of the active tenant, or a superuser. Unlike Computers and
+        // Spawns below, no proxy behind this page carries the matching gate,
+        // and any signed-in member can open its URL (`admin/coord/layout.tsx`
+        // lets every signed-in member view the console's pages). So the flag
+        // guards no data, and the page guards its reads itself. Its runner
+        // reads go over the relay, which serves only a runner the viewer owns
+        // (it refuses any other device). Its web app registry read, `GET
+        // /api/v1/fleet/apps`, is not partitioned by project: `list_apps`
+        // (`fleet_targets.py`) answers an active platform admin with every
+        // row of `project.apps` and refuses anyone else 403
+        // (`require_admin`). So the page makes that read only for staff
+        // (`is_superuser`, the population the route admits, and the gate
+        // Test Targets — the route's other reader — has here) and never
+        // while presenting; every other viewer's half is a labelled UNKNOWN
+        // that says why it was not read, instead of showing a refusal
+        // (`useUiBridgeDashboard.ts` `webRegistryAccessOf`).
+        href: "/admin/coord/ui-bridge",
+        label: "UI Bridge",
+        icon: AppWindow,
+        testId: "coord-nav-ui-bridge",
+        coordAdminOnly: true,
       },
       {
         // Plan `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-

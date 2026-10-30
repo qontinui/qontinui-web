@@ -907,8 +907,8 @@ jobs:
       #
       # Analyzer exit-code contract (the gate contract, identical for both modes):
       #   0 = ok / passed (analyze: ran, or no finding at/above --fail-on)
-      #   2 = GATE FAILED (analyze: finding at/above --fail-on; assert: an
-      #       assertion failed)            -> any_gate2
+      #   2 = GATE FAILED (analyze: finding at/above --fail-on, or a BLOCKED
+      #       analyzer; assert: an assertion failed)  -> any_gate2
       #   1 = usage/IO/parse error (CI INFRA error) on a PRESENT snapshot/frame
       #                                    -> any_infra
       # Plus, OUTSIDE the analyzer contract:

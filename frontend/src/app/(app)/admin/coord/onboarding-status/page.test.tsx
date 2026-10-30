@@ -35,8 +35,31 @@ vi.mock("@/services/service-factory", () => ({
 vi.mock("@/components/operations/OnboardingDoctor", () => ({
   OnboardingDoctor: () => null,
 }));
-vi.mock("@/components/operations/ConnectedOrgs", () => ({
-  ConnectedOrgs: () => null,
+// ConnectedOrgs records the `bindingsVersion` it was rendered with and how
+// often it MOUNTED; RepoTenantBindings exposes its `onChanged` as a button —
+// enough to pin the page's wiring between the two without their reads.
+const cards = vi.hoisted(() => ({
+  orgVersions: [] as Array<number | undefined>,
+  orgMounts: 0,
+}));
+vi.mock("@/components/operations/ConnectedOrgs", async () => {
+  const { useEffect } = await import("react");
+  return {
+    ConnectedOrgs: ({ bindingsVersion }: { bindingsVersion?: number }) => {
+      cards.orgVersions.push(bindingsVersion);
+      useEffect(() => {
+        cards.orgMounts += 1;
+      }, []);
+      return null;
+    },
+  };
+});
+vi.mock("@/components/operations/RepoTenantBindings", () => ({
+  RepoTenantBindings: ({ onChanged }: { onChanged?: () => void }) => (
+    <button data-testid="mock-bindings-changed" onClick={() => onChanged?.()}>
+      changed
+    </button>
+  ),
 }));
 
 import OnboardingStatusPage from "./page";
@@ -77,6 +100,8 @@ function mintBody(): Record<string, unknown> {
 
 beforeEach(() => {
   fetchMock.mockReset();
+  cards.orgVersions = [];
+  cards.orgMounts = 0;
   sessionStorage.clear();
   mockSearchParams = new URLSearchParams();
   Object.defineProperty(window, "location", {
@@ -856,5 +881,21 @@ describe("P2 runner-native hand-off", () => {
     expect(screen.queryByTestId("onboarding-claim-handoff")).toBeNull();
     expect(window.location.href).toBe("https://qontinui.io/");
     expect(claimBody().bind_only).toBeUndefined();
+  });
+});
+
+describe("a binding write re-reads the connected orgs", () => {
+  it("bumps ConnectedOrgs' bindingsVersion on each change, without remounting it", async () => {
+    render(<OnboardingStatusPage />);
+    const changed = await screen.findByTestId("mock-bindings-changed");
+    expect(cards.orgVersions.at(-1)).toBe(0);
+
+    await userEvent.click(changed);
+    await waitFor(() => expect(cards.orgVersions.at(-1)).toBe(1));
+    await userEvent.click(changed);
+    await waitFor(() => expect(cards.orgVersions.at(-1)).toBe(2));
+    // Re-rendered with the new version, never remounted (a remount would kill
+    // an in-flight enroll poll).
+    expect(cards.orgMounts).toBe(1);
   });
 });

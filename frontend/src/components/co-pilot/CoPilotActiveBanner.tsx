@@ -15,6 +15,16 @@
  *     opt-out it promises (a new tab would be live again) — whatever holds
  *     THIS tab open. Stop still revokes for the session.
  *
+ * # In presentation mode
+ *
+ * The banner stays: it tells the presenter the AI is driving THIS screen, and
+ * Stop is one of the presenter's own safety controls (`presenterSafety.ts`,
+ * the closed list presentation mode keeps live). "Disable for this account"
+ * is not: it is a durable write to the account's preference, which an
+ * audience has no business seeing and the presenter does not need to stop the
+ * co-pilot, so it renders inside `OperatorOnly` (plan
+ * `2026-10-23-console-presentation-spaces` D3.2).
+ *
  * # data-bridge-invisible="true" (interactive subtree only)
  *
  * The INTERACTIVE banner subtree (Stop / Disable buttons) is wrapped in
@@ -58,6 +68,8 @@
 
 import { Fragment, useMemo } from "react";
 import { Bot, X } from "lucide-react";
+import { presenterSafetyProps } from "@/components/console/presenterSafety";
+import { OperatorOnly } from "@/components/presentation/OperatorOnly";
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
 import { useCoPilotActivity } from "@/hooks/useCoPilotActivity";
@@ -185,41 +197,44 @@ export function CoPilotActiveBanner() {
         style={{ zIndex: 9999 }}
         className="fixed top-0 left-0 right-0 bg-amber-950 text-amber-100 border-b border-amber-800 shadow-lg"
       >
-      <div className="flex items-center justify-between gap-4 px-4 py-2 text-sm">
-        <div className="flex items-center gap-2 min-w-0">
-          <Bot className="size-4 shrink-0" aria-hidden />
-          <span className="font-medium">AI co-pilot is active</span>
-          {ago && (
-            <span
-              className="text-amber-200/70"
-              data-testid="co-pilot-active-banner-ago"
-            >
-              (last action {ago})
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          {showAccountOptOut && (
+        <div className="flex items-center justify-between gap-4 px-4 py-2 text-sm">
+          <div className="flex items-center gap-2 min-w-0">
+            <Bot className="size-4 shrink-0" aria-hidden />
+            <span className="font-medium">AI co-pilot is active</span>
+            {ago && (
+              <span
+                className="text-amber-200/70"
+                data-testid="co-pilot-active-banner-ago"
+              >
+                (last action {ago})
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {showAccountOptOut && (
+              <OperatorOnly>
+                <button
+                  type="button"
+                  onClick={handleDisableForAccount}
+                  className="text-xs underline underline-offset-2 hover:text-white"
+                  data-testid="co-pilot-active-banner-disable-account"
+                >
+                  Disable for this account
+                </button>
+              </OperatorOnly>
+            )}
             <button
+              {...presenterSafetyProps("co-pilot-stop")}
               type="button"
-              onClick={handleDisableForAccount}
-              className="text-xs underline underline-offset-2 hover:text-white"
-              data-testid="co-pilot-active-banner-disable-account"
+              onClick={handleStop}
+              className="inline-flex items-center gap-1 rounded-md bg-amber-700/60 hover:bg-amber-700 px-3 py-1 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+              data-testid="co-pilot-active-banner-stop"
             >
-              Disable for this account
+              <X className="size-3.5" aria-hidden />
+              Stop
             </button>
-          )}
-          <button
-            type="button"
-            onClick={handleStop}
-            className="inline-flex items-center gap-1 rounded-md bg-amber-700/60 hover:bg-amber-700 px-3 py-1 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-            data-testid="co-pilot-active-banner-stop"
-          >
-            <X className="size-3.5" aria-hidden />
-            Stop
-          </button>
+          </div>
         </div>
-      </div>
       </div>
     </Fragment>
   );

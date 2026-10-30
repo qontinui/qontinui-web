@@ -22,6 +22,16 @@
  * stopped (§D9). Coord's typed refusals render as sentences; `last_open_lane`
  * offers an explicit Force, `no_agent_host` does not (it is a fact about the
  * machine, not a judgement Force could override).
+ *
+ * ## Presentation mode (plan `2026-10-23-console-presentation-spaces` Phase 7)
+ *
+ * The section opens with its caption and the roles read's as-of. Each machine
+ * reads as its alias — in its row, in its detail, and in its row key, which a
+ * list writes into `data-row-key` and which is coord's `device:`/`host:`
+ * machine key otherwise. Who set a role or drained a lane, and why, is not
+ * shown (an operator's identity and free text, D3.3); neither is the raw-id
+ * line. Every write — the role buttons, the suggestion, the by-host form and
+ * the confirm dialog — sits inside `OperatorOnly` (D3.2).
  */
 
 import { useCallback, useState } from "react";
@@ -59,6 +69,15 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
+import {
+  OperatorOnly,
+  SectionCaption,
+  useMachineAliaser,
+  usePresentationMode,
+  type MachineIdentity,
+} from "@/components/presentation";
+import { DEVOPS_SOURCES } from "./devOpsHeadline";
+import { FAILURE_SENTENCE_WITHHELD } from "./presentedFailure";
 import {
   DISPATCH_ROLES,
   LANES,
@@ -125,7 +144,17 @@ function laneSummary(m: RoleMachine, maybeCut: boolean): string {
     .replaceAll("_", " ");
 }
 
+/**
+ * Every identifier a role row carries, for its presentation alias. The served
+ * `name` is passed as the display name only: it may be an operator's label,
+ * and a label never links two machines (`machineAliases.ts`).
+ */
+function roleIdentity(m: RoleMachine): MachineIdentity {
+  return { deviceId: m.deviceId, hostname: m.ciHostName, displayName: m.name };
+}
+
 function DrainText({ lane }: { lane: LaneView }) {
+  const { presenting } = usePresentationMode();
   switch (lane.drain.state) {
     case "none":
       return <>not drained</>;
@@ -134,8 +163,12 @@ function DrainText({ lane }: { lane: LaneView }) {
         <>
           drained
           {lane.drain.until ? ` until ${absoluteTime(lane.drain.until)}` : ""}
-          {lane.drain.drainedBy ? ` by ${lane.drain.drainedBy}` : ""}
-          {lane.drain.reason ? ` (${lane.drain.reason})` : ""}
+          {/* Who drained it and why are an operator's identity and free
+              text — not shown to an outsider (D3.3). */}
+          {!presenting && lane.drain.drainedBy
+            ? ` by ${lane.drain.drainedBy}`
+            : ""}
+          {!presenting && lane.drain.reason ? ` (${lane.drain.reason})` : ""}
         </>
       );
     case "partial":
@@ -181,6 +214,10 @@ function NotRegisteredBadge({
  * closed even when this tenant assigned Workhorse.
  */
 function LanesTable({ m, maybeCut }: { m: RoleMachine; maybeCut: boolean }) {
+  // Coord's effective state is a token (`closed_by_role`): the operator reads
+  // it verbatim, an outsider in words — the same spelling the row's summary
+  // line already uses (`laneSummary`).
+  const { presenting } = usePresentationMode();
   return (
     <Table className="text-xs" data-testid="fleet-roles-lanes">
       <TableHeader>
@@ -219,15 +256,19 @@ function LanesTable({ m, maybeCut }: { m: RoleMachine; maybeCut: boolean }) {
                   <DrainText lane={lane} />
                 )}
               </TableCell>
-              <TableCell className="font-mono">
+              <TableCell className={presenting ? undefined : "font-mono"}>
                 {na ? (
                   "n/a"
                 ) : lane === null ? (
                   "not served"
                 ) : lane.effective === "not_registered" ? (
                   <NotRegisteredBadge maybeCut={maybeCut} />
+                ) : lane.effective === null ? (
+                  "not served"
+                ) : presenting ? (
+                  lane.effective.replaceAll("_", " ")
                 ) : (
-                  (lane.effective ?? "not served")
+                  lane.effective
                 )}
               </TableCell>
             </TableRow>
@@ -286,7 +327,9 @@ function RoleButtons({
 }
 
 export function FleetRolesSection() {
-  const { read, refresh } = useFleetDispatchRoles();
+  const { read, asOfMs, refresh } = useFleetDispatchRoles();
+  const { presenting } = usePresentationMode();
+  const machineName = useMachineAliaser();
   const [pending, setPending] = useState<PendingChange | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -435,433 +478,475 @@ export function FleetRolesSection() {
     ) : null;
 
   return (
-    <CollapsiblePanel
-      title="Roles"
-      icon={<Server className="h-4 w-4" />}
-      summary={summary}
-      storageKey="coord-devops-roles"
-      data-testid="fleet-roles"
-      data-ui-bridge-id="fleet-roles"
-    >
-      <p className="mb-2 text-xs text-muted-foreground break-words">
-        What kind of work coord may send each machine. Workhorse takes CI and
-        agent sessions; Bench takes nothing; CI node takes CI only. A role is
-        standing and separate from a drain, which is a temporary hold.
-      </p>
+    <>
+      <SectionCaption
+        id="dev-ops.roles"
+        sources={[
+          {
+            source: DEVOPS_SOURCES.dispatchRoles,
+            // Only a KNOWN read is dated: an unknown one is UNKNOWN as of
+            // nothing, whatever the last good read was.
+            asOf: read.state === "known" ? asOfMs : null,
+          },
+        ]}
+      />
+      <CollapsiblePanel
+        title="Roles"
+        icon={<Server className="h-4 w-4" />}
+        summary={summary}
+        storageKey="coord-devops-roles"
+        data-testid="fleet-roles"
+        data-ui-bridge-id="fleet-roles"
+      >
+        <p className="mb-2 text-xs text-muted-foreground break-words">
+          What kind of work coord may send each machine. Workhorse takes CI and
+          agent sessions; Bench takes nothing; CI node takes CI only. A role is
+          standing and separate from a drain, which is a temporary hold.
+        </p>
 
-      {read.state === "unknown" ? (
-        <div
-          className="rounded-md border border-dashed border-amber-500/50 bg-amber-500/5 px-2 py-1.5"
-          role="status"
-          data-testid="fleet-roles-unknown"
-        >
-          <div className="flex items-center gap-1.5">
-            <HelpCircle className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-500" />
-            <span className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-500">
-              Roles unknown
-            </span>
-          </div>
-          <p className="mt-1 text-[11px] break-words text-muted-foreground">
-            {read.reason} No machine is shown as unassigned, because that would
-            claim it behaves as a Workhorse.
-          </p>
-        </div>
-      ) : (
-        <RecordList
-          items={read.state === "known" ? read.machines : []}
-          loaded={read.state === "known"}
-          itemKey={(m) => m.key}
-          empty={
-            <p className="text-xs text-muted-foreground">
-              Coord lists no machines for this tenant
-              {read.state === "known" && (read.omitted ?? 0) > 0
-                ? ` (${read.omitted} not seen recently are left out of its read)`
-                : ""}
-              .
-            </p>
-          }
-          renderRow={(m, { expanded, onToggle }) => (
-            <RecordRow
-              identity={m.name}
-              label={describeRole(m)}
-              status={
-                !m.registered ? (
-                  <NotRegisteredBadge
-                    testId="fleet-roles-row-not-registered"
-                    maybeCut={
-                      read.state === "known" && read.rosterTruncated === true
-                    }
-                  />
-                ) : m.role === null && m.suggestion ? (
-                  <Badge
-                    variant="secondary"
-                    className="text-[10px] shrink-0"
-                    data-testid="fleet-roles-suggestion"
-                  >
-                    suggested: {ROLE_LABEL[m.suggestion.role]}
-                  </Badge>
-                ) : undefined
-              }
-              reason={laneSummary(
-                m,
-                read.state === "known" && read.rosterTruncated === true
-              )}
-              attention={m.unrecognisedRole !== null ? "waiting" : undefined}
-              expanded={expanded}
-              onToggle={onToggle}
-              data-testid="fleet-roles-row"
-            >
-              <RecordDetail
-                why={
-                  <div className="space-y-1 text-xs">
-                    <p className="break-words">
-                      <span className="font-medium">{describeRole(m)}</span>
-                      {m.role !== null && m.updatedAt
-                        ? ` — set ${absoluteTime(m.updatedAt)}${
-                            m.updatedBy ? ` by ${m.updatedBy}` : ""
-                          }${m.reason ? `: ${m.reason}` : ""}`
-                        : ""}
-                    </p>
-                    {m.role === null && m.suggestion && (
-                      <p className="break-words text-muted-foreground">
-                        Suggested {ROLE_LABEL[m.suggestion.role]}
-                        {m.suggestion.memTotalBytes !== null
-                          ? ` from ${formatGiB(m.suggestion.memTotalBytes)} RAM`
-                          : ""}
-                        .
-                      </p>
-                    )}
-                    {m.hostOnly &&
-                      m.registered &&
-                      m.role !== null &&
-                      !ROLE_OPENS[m.role].ci && (
-                        <p
-                          className="break-words text-muted-foreground"
-                          data-testid="fleet-roles-github-runner-warning"
-                        >
-                          This role closes CI for coord, but GitHub runner
-                          services registered under this host still receive
-                          GitHub jobs: label removal does not follow the role
-                          yet.
-                        </p>
-                      )}
-                    {m.sessionsBeforeChange !== null &&
-                      m.sessionsBeforeChange > 0 && (
-                        <p className="break-words text-amber-600 dark:text-amber-500">
-                          Up to {m.sessionsBeforeChange} live session
-                          {m.sessionsBeforeChange === 1 ? "" : "s"} started
-                          before this role was set — not safe to rebuild yet.
-                        </p>
-                      )}
-                    {!m.hostOnly &&
-                      read.state === "known" &&
-                      read.machines.some(
-                        (h) =>
-                          h.hostOnly &&
-                          h.role !== null &&
-                          h.name.toLowerCase() === m.name.toLowerCase()
-                      ) && (
-                        <p
-                          className="break-words text-muted-foreground"
-                          data-testid="fleet-roles-host-row-twin"
-                        >
-                          A CI-host role is also set under the name {m.name}; it
-                          governs GitHub runner registrations only and does not
-                          reach this runner — set this row too.
-                        </p>
-                      )}
-                    {m.sessionsUnknown && (
-                      <p className="break-words text-amber-600 dark:text-amber-500">
-                        Coord could not count the live sessions on this machine
-                        — do not assume it is safe to rebuild.
-                      </p>
-                    )}
-                    {m.sessionsStartUnrecorded !== null &&
-                      m.sessionsStartUnrecorded > 0 && (
-                        <p className="break-words text-amber-600 dark:text-amber-500">
-                          {m.sessionsStartUnrecorded} live session
-                          {m.sessionsStartUnrecorded === 1 ? "" : "s"} with no
-                          recorded start — not safe to rebuild yet.
-                        </p>
-                      )}
-                  </div>
-                }
-                problems={
-                  <LanesTable
-                    m={m}
-                    maybeCut={
-                      read.state === "known" && read.rosterTruncated === true
-                    }
-                  />
-                }
-                actions={
-                  <CoordAdminOnly fallback={<ReadOnlyNotice />}>
-                    <div className="space-y-1.5">
-                      <RoleButtons m={m} onPick={pickFor(m)} />
-                      {m.role === null && m.suggestion && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => pickFor(m)(m.suggestion!.role)}
-                          data-testid="fleet-roles-accept-suggestion"
-                        >
-                          Accept suggestion: {ROLE_LABEL[m.suggestion.role]}
-                        </Button>
-                      )}
-                    </div>
-                  </CoordAdminOnly>
-                }
-                raw={
-                  <span className="font-mono text-[11px] text-muted-foreground break-all">
-                    {m.deviceId
-                      ? `device ${m.deviceId}`
-                      : `host ${m.ciHostName}`}
-                    {m.version !== null ? ` · role v${m.version}` : ""}
-                  </span>
-                }
-              />
-            </RecordRow>
-          )}
-        />
-      )}
-
-      {read.state === "known" && read.notice !== null && (
-        <p
-          className="mt-2 text-[11px] text-amber-600 dark:text-amber-500 break-words"
-          data-testid="fleet-roles-notice"
-        >
-          {read.notice}
-        </p>
-      )}
-      {read.state === "known" && read.rosterTruncated === true && (
-        <p
-          className="mt-2 text-[11px] text-amber-600 dark:text-amber-500 break-words"
-          role="status"
-          data-testid="fleet-roles-truncated"
-        >
-          Coord&apos;s device read reached its row cap, so this list may be
-          incomplete: the least-recently-seen device rows may have been cut. A
-          machine whose rows were cut can show as not registered even if it is,
-          and a CI host can show fewer registrations than it has.
-        </p>
-      )}
-      {read.state === "known" && read.rosterTruncated === null && (
-        <p
-          className="mt-2 text-[11px] text-muted-foreground break-words"
-          data-testid="fleet-roles-truncation-unreported"
-        >
-          Coord does not report whether this read was cut at its row cap.
-        </p>
-      )}
-      {read.state === "known" &&
-        ((read.omitted ?? 0) > 0 || (read.unidentifiable ?? 0) > 0) && (
-          <p
-            className="mt-2 text-[11px] text-muted-foreground break-words"
-            data-testid="fleet-roles-omitted"
+        {read.state === "unknown" ? (
+          <div
+            className="rounded-md border border-dashed border-amber-500/50 bg-amber-500/5 px-2 py-1.5"
+            role="status"
+            data-testid="fleet-roles-unknown"
           >
-            {(read.omitted ?? 0) > 0
-              ? `${read.omitted} machine${read.omitted === 1 ? "" : "s"} not seen recently ${
-                  read.omitted === 1 ? "is" : "are"
-                } not listed (coord leaves them out of this read). `
-              : ""}
-            {(read.unidentifiable ?? 0) > 0
-              ? `${read.unidentifiable} CI runner registration${
-                  read.unidentifiable === 1 ? "" : "s"
-                } could not be named.`
-              : ""}
-          </p>
+            <div className="flex items-center gap-1.5">
+              <HelpCircle className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-500" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-500">
+                Roles unknown
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] break-words text-muted-foreground">
+              {/* The reason quotes coord's own text, which can name a machine;
+                  an outsider reads that the read failed, in fixed words. */}
+              {presenting ? FAILURE_SENTENCE_WITHHELD : read.reason} No machine
+              is shown as unassigned, because that would claim it behaves as a
+              Workhorse.
+            </p>
+          </div>
+        ) : (
+          <RecordList
+            items={read.state === "known" ? read.machines : []}
+            loaded={read.state === "known"}
+            // The list writes its key into `data-row-key`, and coord's machine
+            // key IS `device:<id>` / `host:<name>` — so an outsider's rows are
+            // keyed by position instead (D3.3).
+            itemKey={(m, index) => (presenting ? `machine-${index}` : m.key)}
+            empty={
+              <p className="text-xs text-muted-foreground">
+                Coord lists no machines for this tenant
+                {read.state === "known" && (read.omitted ?? 0) > 0
+                  ? ` (${read.omitted} not seen recently are left out of its read)`
+                  : ""}
+                .
+              </p>
+            }
+            renderRow={(m, { expanded, onToggle }) => (
+              <RecordRow
+                identity={machineName(roleIdentity(m), m.name)}
+                label={describeRole(m)}
+                status={
+                  !m.registered ? (
+                    <NotRegisteredBadge
+                      testId="fleet-roles-row-not-registered"
+                      maybeCut={
+                        read.state === "known" && read.rosterTruncated === true
+                      }
+                    />
+                  ) : m.role === null && m.suggestion ? (
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] shrink-0"
+                      data-testid="fleet-roles-suggestion"
+                    >
+                      suggested: {ROLE_LABEL[m.suggestion.role]}
+                    </Badge>
+                  ) : undefined
+                }
+                reason={laneSummary(
+                  m,
+                  read.state === "known" && read.rosterTruncated === true
+                )}
+                attention={m.unrecognisedRole !== null ? "waiting" : undefined}
+                expanded={expanded}
+                onToggle={onToggle}
+                data-testid="fleet-roles-row"
+              >
+                <RecordDetail
+                  why={
+                    <div className="space-y-1 text-xs">
+                      <p className="break-words">
+                        <span className="font-medium">{describeRole(m)}</span>
+                        {m.role !== null && m.updatedAt
+                          ? ` — set ${absoluteTime(m.updatedAt)}${
+                              // Who set it and why: an operator's identity and
+                              // free text, not shown to an outsider (D3.3).
+                              !presenting && m.updatedBy
+                                ? ` by ${m.updatedBy}`
+                                : ""
+                            }${!presenting && m.reason ? `: ${m.reason}` : ""}`
+                          : ""}
+                      </p>
+                      {m.role === null && m.suggestion && (
+                        <p className="break-words text-muted-foreground">
+                          Suggested {ROLE_LABEL[m.suggestion.role]}
+                          {m.suggestion.memTotalBytes !== null
+                            ? ` from ${formatGiB(m.suggestion.memTotalBytes)} RAM`
+                            : ""}
+                          .
+                        </p>
+                      )}
+                      {m.hostOnly &&
+                        m.registered &&
+                        m.role !== null &&
+                        !ROLE_OPENS[m.role].ci && (
+                          <p
+                            className="break-words text-muted-foreground"
+                            data-testid="fleet-roles-github-runner-warning"
+                          >
+                            This role closes CI for coord, but GitHub runner
+                            services registered under this host still receive
+                            GitHub jobs: label removal does not follow the role
+                            yet.
+                          </p>
+                        )}
+                      {m.sessionsBeforeChange !== null &&
+                        m.sessionsBeforeChange > 0 && (
+                          <p className="break-words text-amber-600 dark:text-amber-500">
+                            Up to {m.sessionsBeforeChange} live session
+                            {m.sessionsBeforeChange === 1 ? "" : "s"} started
+                            before this role was set — not safe to rebuild yet.
+                          </p>
+                        )}
+                      {!m.hostOnly &&
+                        read.state === "known" &&
+                        read.machines.some(
+                          (h) =>
+                            h.hostOnly &&
+                            h.role !== null &&
+                            h.name.toLowerCase() === m.name.toLowerCase()
+                        ) && (
+                          <p
+                            className="break-words text-muted-foreground"
+                            data-testid="fleet-roles-host-row-twin"
+                          >
+                            A CI-host role is also set under{" "}
+                            {presenting
+                              ? "this machine's name"
+                              : `the name ${m.name}`}
+                            ; it governs GitHub runner registrations only and
+                            does not reach this runner — set this row too.
+                          </p>
+                        )}
+                      {m.sessionsUnknown && (
+                        <p className="break-words text-amber-600 dark:text-amber-500">
+                          Coord could not count the live sessions on this
+                          machine — do not assume it is safe to rebuild.
+                        </p>
+                      )}
+                      {m.sessionsStartUnrecorded !== null &&
+                        m.sessionsStartUnrecorded > 0 && (
+                          <p className="break-words text-amber-600 dark:text-amber-500">
+                            {m.sessionsStartUnrecorded} live session
+                            {m.sessionsStartUnrecorded === 1 ? "" : "s"} with no
+                            recorded start — not safe to rebuild yet.
+                          </p>
+                        )}
+                    </div>
+                  }
+                  problems={
+                    <LanesTable
+                      m={m}
+                      maybeCut={
+                        read.state === "known" && read.rosterTruncated === true
+                      }
+                    />
+                  }
+                  actions={
+                    // Setting a role is a write: never mounted in presentation
+                    // mode (D3.2).
+                    <OperatorOnly>
+                      <CoordAdminOnly fallback={<ReadOnlyNotice />}>
+                        <div className="space-y-1.5">
+                          <RoleButtons m={m} onPick={pickFor(m)} />
+                          {m.role === null && m.suggestion && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => pickFor(m)(m.suggestion!.role)}
+                              data-testid="fleet-roles-accept-suggestion"
+                            >
+                              Accept suggestion: {ROLE_LABEL[m.suggestion.role]}
+                            </Button>
+                          )}
+                        </div>
+                      </CoordAdminOnly>
+                    </OperatorOnly>
+                  }
+                  raw={
+                    // The device id or host name — the operator's handle on
+                    // the row, an identifier an outsider may not see (D3.3).
+                    presenting ? undefined : (
+                      <span className="font-mono text-[11px] text-muted-foreground break-all">
+                        {m.deviceId
+                          ? `device ${m.deviceId}`
+                          : `host ${m.ciHostName}`}
+                        {m.version !== null ? ` · role v${m.version}` : ""}
+                      </span>
+                    )
+                  }
+                />
+              </RecordRow>
+            )}
+          />
         )}
 
-      <CoordAdminOnly>
-        <div
-          className="mt-3 space-y-1.5 border-t border-border pt-3"
-          data-testid="fleet-roles-by-host"
-        >
-          <Label htmlFor="fleet-roles-host" className="text-xs">
-            Assign a role by host name (a machine coord does not list yet)
-          </Label>
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              id="fleet-roles-host"
-              className="h-8 w-48"
-              placeholder="e.g. dell-2020"
-              value={hostName}
-              onChange={(e) => setHostName(e.target.value)}
-              data-testid="fleet-roles-host-input"
-            />
-            <div className="flex gap-1" role="group" aria-label="Role for host">
-              {(["ci_node", "bench"] as const).map((r) => (
-                <Button
-                  key={r}
-                  type="button"
-                  size="sm"
-                  variant={hostRole === r ? "default" : "outline"}
-                  aria-pressed={hostRole === r}
-                  onClick={() => setHostRole(r)}
-                  data-testid={`fleet-roles-host-role-${r}`}
-                >
-                  {ROLE_LABEL[r]}
-                </Button>
-              ))}
-            </div>
-            <Button
-              size="sm"
-              disabled={hostError !== null}
-              onClick={() =>
-                open({
-                  name: hostName.trim(),
-                  deviceId: null,
-                  ciHostName: hostName.trim(),
-                  from: null,
-                  to: hostRole,
-                  hostOnly: true,
-                })
-              }
-              data-testid="fleet-roles-host-open"
-            >
-              Assign…
-            </Button>
-          </div>
-          {hostName.trim() !== "" && hostError !== null && (
+        {read.state === "known" && read.notice !== null && (
+          <p
+            className="mt-2 text-[11px] text-amber-600 dark:text-amber-500 break-words"
+            data-testid="fleet-roles-notice"
+          >
+            {read.notice}
+          </p>
+        )}
+        {read.state === "known" && read.rosterTruncated === true && (
+          <p
+            className="mt-2 text-[11px] text-amber-600 dark:text-amber-500 break-words"
+            role="status"
+            data-testid="fleet-roles-truncated"
+          >
+            Coord&apos;s device read reached its row cap, so this list may be
+            incomplete: the least-recently-seen device rows may have been cut. A
+            machine whose rows were cut can show as not registered even if it
+            is, and a CI host can show fewer registrations than it has.
+          </p>
+        )}
+        {read.state === "known" && read.rosterTruncated === null && (
+          <p
+            className="mt-2 text-[11px] text-muted-foreground break-words"
+            data-testid="fleet-roles-truncation-unreported"
+          >
+            Coord does not report whether this read was cut at its row cap.
+          </p>
+        )}
+        {read.state === "known" &&
+          ((read.omitted ?? 0) > 0 || (read.unidentifiable ?? 0) > 0) && (
             <p
-              className="text-[11px] text-muted-foreground break-words"
-              data-testid="fleet-roles-host-error"
+              className="mt-2 text-[11px] text-muted-foreground break-words"
+              data-testid="fleet-roles-omitted"
             >
-              {hostError}
+              {(read.omitted ?? 0) > 0
+                ? `${read.omitted} machine${read.omitted === 1 ? "" : "s"} not seen recently ${
+                    read.omitted === 1 ? "is" : "are"
+                  } not listed (coord leaves them out of this read). `
+                : ""}
+              {(read.unidentifiable ?? 0) > 0
+                ? `${read.unidentifiable} CI runner registration${
+                    read.unidentifiable === 1 ? "" : "s"
+                  } could not be named.`
+                : ""}
             </p>
           )}
-          <p className="text-[11px] text-muted-foreground break-words">
-            For a CI host with no workstation runner (Workhorse is not possible
-            there). The role applies when a GitHub self-hosted runner registers
-            under that name; until then the row reads &ldquo;assigned, not yet
-            registered&rdquo;. It does NOT reach a qontinui runner on that
-            machine: that registers as its own row, whose role must be set
-            there.
-          </p>
-        </div>
-      </CoordAdminOnly>
 
-      <Dialog
-        open={pending !== null}
-        onOpenChange={(o) => {
-          if (!o && !busy) close();
-        }}
-      >
-        <DialogContent data-testid="fleet-roles-dialog">
-          <DialogHeader>
-            <DialogTitle>
-              {pending
-                ? `Make ${pending.name} a ${ROLE_LABEL[pending.to]}?`
-                : ""}
-            </DialogTitle>
-            <DialogDescription asChild>
-              <div className="space-y-2 text-sm">
-                {pending && (
-                  <p
-                    className="break-words font-medium text-foreground"
-                    data-testid="fleet-roles-effect"
-                  >
-                    {describeRoleEffect(
-                      pending.name,
-                      pending.from,
-                      pending.to,
-                      pending.hostOnly,
-                      pending.servedRoleLayer
-                    )}
-                  </p>
-                )}
-                <p className="break-words">
-                  This changes what coord sends next. Work already running on
-                  the machine is not stopped.
+        {/* Assigning a role by host name, and the confirm dialog every role
+          write passes through, are writes: operator-only (D3.2). */}
+        <OperatorOnly>
+          <CoordAdminOnly>
+            <div
+              className="mt-3 space-y-1.5 border-t border-border pt-3"
+              data-testid="fleet-roles-by-host"
+            >
+              <Label htmlFor="fleet-roles-host" className="text-xs">
+                Assign a role by host name (a machine coord does not list yet)
+              </Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  id="fleet-roles-host"
+                  className="h-8 w-48"
+                  placeholder="e.g. dell-2020"
+                  value={hostName}
+                  onChange={(e) => setHostName(e.target.value)}
+                  data-testid="fleet-roles-host-input"
+                />
+                <div
+                  className="flex gap-1"
+                  role="group"
+                  aria-label="Role for host"
+                >
+                  {(["ci_node", "bench"] as const).map((r) => (
+                    <Button
+                      key={r}
+                      type="button"
+                      size="sm"
+                      variant={hostRole === r ? "default" : "outline"}
+                      aria-pressed={hostRole === r}
+                      onClick={() => setHostRole(r)}
+                      data-testid={`fleet-roles-host-role-${r}`}
+                    >
+                      {ROLE_LABEL[r]}
+                    </Button>
+                  ))}
+                </div>
+                <Button
+                  size="sm"
+                  disabled={hostError !== null}
+                  onClick={() =>
+                    open({
+                      name: hostName.trim(),
+                      deviceId: null,
+                      ciHostName: hostName.trim(),
+                      from: null,
+                      to: hostRole,
+                      hostOnly: true,
+                    })
+                  }
+                  data-testid="fleet-roles-host-open"
+                >
+                  Assign…
+                </Button>
+              </div>
+              {hostName.trim() !== "" && hostError !== null && (
+                <p
+                  className="text-[11px] text-muted-foreground break-words"
+                  data-testid="fleet-roles-host-error"
+                >
+                  {hostError}
                 </p>
-                {pending &&
-                  pending.deviceId !== null &&
-                  !ROLE_OPENS[pending.to].ci && (
+              )}
+              <p className="text-[11px] text-muted-foreground break-words">
+                For a CI host with no workstation runner (Workhorse is not
+                possible there). The role applies when a GitHub self-hosted
+                runner registers under that name; until then the row reads
+                &ldquo;assigned, not yet registered&rdquo;. It does NOT reach a
+                qontinui runner on that machine: that registers as its own row,
+                whose role must be set there.
+              </p>
+            </div>
+          </CoordAdminOnly>
+
+          <Dialog
+            open={pending !== null}
+            onOpenChange={(o) => {
+              if (!o && !busy) close();
+            }}
+          >
+            <DialogContent data-testid="fleet-roles-dialog">
+              <DialogHeader>
+                <DialogTitle>
+                  {pending
+                    ? `Make ${pending.name} a ${ROLE_LABEL[pending.to]}?`
+                    : ""}
+                </DialogTitle>
+                <DialogDescription asChild>
+                  <div className="space-y-2 text-sm">
+                    {pending && (
+                      <p
+                        className="break-words font-medium text-foreground"
+                        data-testid="fleet-roles-effect"
+                      >
+                        {describeRoleEffect(
+                          pending.name,
+                          pending.from,
+                          pending.to,
+                          pending.hostOnly,
+                          pending.servedRoleLayer
+                        )}
+                      </p>
+                    )}
+                    <p className="break-words">
+                      This changes what coord sends next. Work already running
+                      on the machine is not stopped.
+                    </p>
+                    {pending &&
+                      pending.deviceId !== null &&
+                      !ROLE_OPENS[pending.to].ci && (
+                        <p
+                          className="break-words"
+                          data-testid="fleet-roles-linked-hosts-note"
+                        >
+                          This sets the workstation only. Its GitHub runner
+                          hosts are listed here as separate machines under the
+                          runner name (e.g. msi-wsl — the device list shows it
+                          as gh-runner-msi-wsl) and keep their own role — set
+                          them too if this machine should take no CI.
+                        </p>
+                      )}
                     <p
                       className="break-words"
-                      data-testid="fleet-roles-linked-hosts-note"
+                      data-testid="fleet-roles-not-yet-applied"
                     >
-                      This sets the workstation only. Its GitHub runner hosts
-                      are listed here as separate machines under the runner name
-                      (e.g. msi-wsl — the device list shows it as
-                      gh-runner-msi-wsl) and keep their own role — set them too
-                      if this machine should take no CI.
+                      Not automatic yet: GitHub runner routing labels and the
+                      CI-node switch do not follow the role. GitHub may still
+                      route jobs to a machine whose role closes CI.
                     </p>
-                  )}
-                <p
-                  className="break-words"
-                  data-testid="fleet-roles-not-yet-applied"
-                >
-                  Not automatic yet: GitHub runner routing labels and the
-                  CI-node switch do not follow the role. GitHub may still route
-                  jobs to a machine whose role closes CI.
-                </p>
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="fleet-roles-reason">Reason (required)</Label>
+                <Textarea
+                  id="fleet-roles-reason"
+                  rows={2}
+                  value={reason}
+                  disabled={busy}
+                  placeholder="e.g. remote box, CI only"
+                  onChange={(e) => setReason(e.target.value)}
+                  data-testid="fleet-roles-reason"
+                />
               </div>
-            </DialogDescription>
-          </DialogHeader>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="fleet-roles-reason">Reason (required)</Label>
-            <Textarea
-              id="fleet-roles-reason"
-              rows={2}
-              value={reason}
-              disabled={busy}
-              placeholder="e.g. remote box, CI only"
-              onChange={(e) => setReason(e.target.value)}
-              data-testid="fleet-roles-reason"
-            />
-          </div>
+              {refusal && (
+                <p
+                  className="text-xs break-words text-red-600 dark:text-red-400"
+                  role="alert"
+                  data-testid="fleet-roles-refusal"
+                  data-refusal={refusal.kind}
+                >
+                  {refusal.message}
+                </p>
+              )}
 
-          {refusal && (
-            <p
-              className="text-xs break-words text-red-600 dark:text-red-400"
-              role="alert"
-              data-testid="fleet-roles-refusal"
-              data-refusal={refusal.kind}
-            >
-              {refusal.message}
-            </p>
-          )}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={busy}
-              onClick={close}
-              data-testid="fleet-roles-cancel"
-            >
-              Cancel
-            </Button>
-            {refusal?.kind === "last_open_lane" ? (
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={busy || reason.trim() === ""}
-                onClick={() => void submit(true)}
-                data-testid="fleet-roles-force"
-              >
-                Force — apply anyway
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                disabled={
-                  busy ||
-                  reason.trim() === "" ||
-                  refusal?.kind === "no_agent_host" ||
-                  refusal?.kind === "not_admin"
-                }
-                onClick={() => void submit(false)}
-                data-testid="fleet-roles-submit"
-              >
-                Set role
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </CollapsiblePanel>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={close}
+                  data-testid="fleet-roles-cancel"
+                >
+                  Cancel
+                </Button>
+                {refusal?.kind === "last_open_lane" ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={busy || reason.trim() === ""}
+                    onClick={() => void submit(true)}
+                    data-testid="fleet-roles-force"
+                  >
+                    Force — apply anyway
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    disabled={
+                      busy ||
+                      reason.trim() === "" ||
+                      refusal?.kind === "no_agent_host" ||
+                      refusal?.kind === "not_admin"
+                    }
+                    onClick={() => void submit(false)}
+                    data-testid="fleet-roles-submit"
+                  >
+                    Set role
+                  </Button>
+                )}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </OperatorOnly>
+      </CollapsiblePanel>
+    </>
   );
 }
