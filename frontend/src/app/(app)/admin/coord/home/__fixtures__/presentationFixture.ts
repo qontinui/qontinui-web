@@ -96,11 +96,16 @@ export const ROUTE_UNAVAILABLE_BODY =
 export const PROXY_TIMEOUT_REFUSAL_BODY =
   '{"error":"GATEWAY_TIMEOUT","message":"timeout waiting for coord","refusal":{"code":"upstream_timeout","detail":"timeout waiting for coord","discriminator":"coord_timeout","glossary_terms":["coord"],"next_action":{"kind":"retry_later"},"observed_at":"2026-10-27T16:27:56.834400+00:00","source":"web_backend"},"timestamp":1793118476.83,"path":"https://api.globex.internal/project-state"}';
 
-/** `does_not_know` sources the page's table does not label (coord's successor). */
-export const UNLABELLED_ALERTS_SOURCE =
+/** `does_not_know` sources coord serves, each labelled in the page's table. */
+export const ALERT_VISIBILITY_SOURCE =
   "coord.alerts visibility (operator-plane kinds this caller can be served)";
-export const UNLABELLED_HEADROOM_SOURCE =
-  "fleet_health resource headroom (live machines)";
+export const HEADROOM_SOURCE = "fleet_health resource headroom (live machines)";
+
+/** Sources the page's table does not label: what coord may add without it. */
+export const UNLABELLED_FEED_SOURCE =
+  "coord.example_feed visibility (kinds this caller can be served)";
+export const UNLABELLED_LANE_SOURCE =
+  "fleet_health example_lane (live machines)";
 
 /** The redaction scope: our owner is first-party; two clients are confidential. */
 export const SCOPE: PresentationScopeState = {
@@ -146,10 +151,15 @@ export const MUST_NOT_APPEAR: readonly string[] = [
   "quarterly board pack",
   // A service named like a first-party repository: still not a repository.
   FIRST_PARTY_SHAPED_SERVICE,
-  // Sources the page's table does not label: coord's identifiers, humanised
-  // for the operator, never shown while presenting.
+  // Coord's identifiers for the sources the table labels, in their raw titles.
   "coord.alerts",
   "resource headroom",
+  // Sources the page's table does not label: coord's identifiers, humanised
+  // for the operator, never shown while presenting.
+  "example_feed",
+  "example feed",
+  "example_lane",
+  "example lane",
   // Coord's own tokens: row ids, source ids, reason and response tokens.
   "alert:",
   "train_health",
@@ -554,12 +564,11 @@ export function fullBody(overrides: Record<string, unknown> = {}) {
         state: "not_implemented",
         exclusion_reason: "the door is not built for globex yet",
       },
-      // Two sources coord's successor serves that the page's table does not
-      // label (qontinui-coord project_state.rs ALERT_VISIBILITY_SOURCE and
-      // HEADROOM_SOURCE): for the operator they read as coord's identifiers;
-      // presenting, in fixed words. Their reasons name a kind and a machine.
+      // Two sources the page's table labels (qontinui-coord project_state.rs
+      // ALERT_VISIBILITY_SOURCE and HEADROOM_SOURCE). Their reasons name a kind
+      // and a machine, so a reason is withheld even under a label that shows.
       {
-        source: UNLABELLED_ALERTS_SOURCE,
+        source: ALERT_VISIBILITY_SOURCE,
         state: "read",
         as_of: ago(2),
         rows_considered: 9,
@@ -568,12 +577,28 @@ export function fullBody(overrides: Record<string, unknown> = {}) {
           "an operator-plane kind is served only when its rows can reach this caller; hidden: globex_vault_expiry (repo)",
       },
       {
-        source: UNLABELLED_HEADROOM_SOURCE,
+        source: HEADROOM_SOURCE,
         state: "read",
         as_of: ago(2),
         rows_considered: 3,
         rows_excluded: 1,
         exclusion_reason: `a live machine with no resource sample inside the lookback is not measured; not measured: ${HOST_DRAINED}`,
+      },
+      // Two sources the table does not label: for the operator they read as
+      // coord's identifiers; presenting, in fixed words.
+      {
+        source: UNLABELLED_FEED_SOURCE,
+        state: "read",
+        as_of: ago(2),
+        rows_considered: 4,
+        rows_excluded: 0,
+      },
+      {
+        source: UNLABELLED_LANE_SOURCE,
+        state: "read",
+        as_of: ago(2),
+        rows_considered: 2,
+        rows_excluded: 0,
       },
     ],
     ...overrides,

@@ -270,6 +270,23 @@ describe("descriptors — built from fixed fields, never from the text", () => {
     ).toBe("Subject");
   });
 
+  // `describeRedacted` trims the kind during render, so a function or an object
+  // here would throw and take the presented page down.
+  it.each(["constructor", "toString", "hasOwnProperty", "__proto__"])(
+    "reads a subject kind spelled %s as a subject, and describes it",
+    (key) => {
+      const d = degradation({ subject: { kind: key, name: "x", id: "x" } });
+      const descriptor = subjectDescriptor(d, "degrading");
+      expect(descriptor.kind).toBe("Subject");
+      expect(
+        describeRedacted(descriptor, {
+          status: "ready",
+          scope: { firstPartyOwners: [], confidentialTerms: [] },
+        })
+      ).toMatch(/^Subject · /);
+    }
+  );
+
   it("words a named unit by its list, and a reason by its status", () => {
     const u = list(["s"]).units[0]!;
     expect(namedUnitDescriptor(u, "stalled").status).toBe("no recorded change");
@@ -343,6 +360,19 @@ describe("presentedDecisionDomains — the table's words, or fixed words", () =>
     ).toEqual([`${UNNAMED_DECISION_KINDS} 7`]);
   });
 
+  it("folds a count keyed __proto__, read off the wire, as a kind not named here", () => {
+    // `JSON.parse`, as the wire does: an object literal would set the prototype.
+    const needsMe = JSON.parse(
+      '{"state":"read","total":4,"items":[],"by_domain":{"__proto__":3,"pr_fix":1}}'
+    ) as unknown;
+    const byDomain = parseProjectState({ needs_me: needsMe })!.needsMe
+      .byDomain!;
+    expect(presentedDecisionDomains(byDomain)).toEqual([
+      "fixing a pull request 1",
+      `${UNNAMED_DECISION_KIND} 3`,
+    ]);
+  });
+
   it("is empty for no kinds", () => {
     expect(presentedDecisionDomains({})).toEqual([]);
   });
@@ -366,8 +396,7 @@ describe("presentedSourceLabel — the table's words, or fixed words", () => {
 
   it("words any other source in fixed words, never as coord's identifier", () => {
     for (const source of [
-      "coord.alerts visibility (operator-plane kinds this caller can be served)",
-      "fleet_health resource headroom (live machines)",
+      "coord.example_feed visibility (kinds this caller can be served)",
       "acme_partner_feed",
       // Keys Object.prototype carries are not the table's.
       "constructor",

@@ -39,6 +39,7 @@ import {
   decisionDomainLabel,
   isKnownDecisionDomain,
   isLabelledSource,
+  ownEntry,
   isWatcherSource,
   planeLabel,
   sourceLabel,
@@ -274,7 +275,9 @@ export function subjectDescriptor(
   kind: DegradationRowKind
 ): RedactionDescriptor {
   return {
-    kind: (d.subjectKind && SUBJECT_KIND_WORD[d.subjectKind]) || "Subject",
+    kind:
+      (d.subjectKind && ownEntry(SUBJECT_KIND_WORD, d.subjectKind)) ||
+      "Subject",
     area: planeLabel(d.plane),
     status: kind,
     at: degradationAt(d, kind),
@@ -402,12 +405,11 @@ export const UNLABELLED_SOURCE = "A source this view has no name for";
  * A `does_not_know` row's label while presenting. The page's table labels the
  * sources it knows, and a watcher's row is named by the areas it feeds
  * (`sourceLabel`); for any OTHER source the operator's label is coord's own
- * identifier with its underscores spaced — "Coord.alerts visibility
- * (operator-plane kinds this caller can be served)" — internal vocabulary an
- * evaluator does not share, from a list coord grows without this page. So
- * while presenting such a row reads in fixed words: an allowlist, the rule
- * style guide §3.11 gives a value the console's table does not know. The row
- * is kept, with its state, read time and bound: the source is still counted
+ * identifier with its underscores spaced: internal vocabulary an evaluator
+ * does not share, from a list coord grows without this page. So while
+ * presenting such a row reads in fixed words: an allowlist, the rule style
+ * guide §3.11 gives a value the console's table does not know. The row is
+ * kept, with its state, read time and bound: the source is still counted
  * among what the view does or does not know.
  */
 export function presentedSourceLabel(

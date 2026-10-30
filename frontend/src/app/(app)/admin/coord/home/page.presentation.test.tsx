@@ -84,7 +84,7 @@ import {
   SHARED_UNIT_TITLE,
   TENANT_ID,
   TENANT_NAME,
-  UNLABELLED_ALERTS_SOURCE,
+  UNLABELLED_FEED_SOURCE,
   firstDecisionAnsweredBody,
   fullBody,
   noLiveInitiativeBody,
@@ -271,7 +271,7 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
     );
     expect(screen.getAllByTestId("coord-home.on-track.group")).toHaveLength(4);
     expect(screen.getAllByTestId("coord-home.does-not-know.row")).toHaveLength(
-      6
+      8
     );
     expect(
       document.querySelectorAll('[data-redacted="true"]').length
@@ -753,7 +753,14 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     // A source the page's table does not label reads in fixed words, not as
     // coord's identifier; its row, state and figures are kept.
     expect(within(region).getAllByText(UNLABELLED_SOURCE)).toHaveLength(2);
-    expect(region.textContent).not.toMatch(/coord\.alerts|resource headroom/i);
+    expect(region.textContent).not.toMatch(
+      /coord\.alerts|resource headroom|example.feed|example.lane/i
+    );
+    // A source the table does label keeps its words while presenting.
+    expect(region).toHaveTextContent(
+      "Which infrastructure alerts the operator can be shown"
+    );
+    expect(region).toHaveTextContent("Spare capacity on live machines");
     const detail = expandRow(region, "Work units");
     expect(detail).toHaveTextContent(/Why excluded: Reason · excluded · /);
     expect(detail.querySelector("[data-console-raw]")).toBeNull();
@@ -1118,13 +1125,18 @@ describe("/admin/coord/home for the operator — the console is unchanged", () =
     // A source the page's table does not label reads as coord's identifier
     // for the operator, exactly as #1999 renders it.
     expect(screen.getByTestId("coord-home.does-not-know")).toHaveTextContent(
-      "Coord.alerts visibility (operator-plane kinds this caller can be served)"
+      "Coord.example feed visibility (kinds this caller can be served)"
+    );
+    // A source the table labels reads in its words for the operator too, its
+    // raw id in the row's title.
+    expect(screen.getByTestId("coord-home.does-not-know")).toHaveTextContent(
+      "Which infrastructure alerts the operator can be shown"
     );
     expect(
       screen.getByTestId("coord-home.does-not-know").textContent
     ).not.toContain(UNLABELLED_SOURCE);
     expect(
-      document.querySelector(`[title="${UNLABELLED_ALERTS_SOURCE}"]`)
+      document.querySelector(`[title="${UNLABELLED_FEED_SOURCE}"]`)
     ).not.toBeNull();
     // The operator's row keys are the page's own.
     expect(

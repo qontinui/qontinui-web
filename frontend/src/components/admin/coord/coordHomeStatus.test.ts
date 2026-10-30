@@ -54,6 +54,9 @@ import {
   windowLabel,
   type BlockState,
   type HomeBlock,
+  isKnownDecisionDomain,
+  isLabelledSource,
+  planeLabel,
 } from "./coordHomeStatus";
 
 const CLASSES = Object.fromEntries(UNIT_CLASSES.map((c) => [c, 1]));
@@ -1113,7 +1116,15 @@ describe("round-8 review — R8 for what the view does not know", () => {
       "Pull requests the work units cite",
     ],
     ["coord.alerts (operator-plane kinds)", "Infrastructure alerts"],
+    [
+      "coord.alerts visibility (operator-plane kinds this caller can be served)",
+      "Which infrastructure alerts the operator can be shown",
+    ],
     ["fleet_health roster", "Machines in the fleet"],
+    [
+      "fleet_health resource headroom (live machines)",
+      "Spare capacity on live machines",
+    ],
     ["train_health (per authority repo)", "Merge train health, per repository"],
     [
       "infra_health_observations (cloud, latest per resource)",
@@ -1507,5 +1518,71 @@ describe("round-2 review — what a named unit's age, a subject and a failed rea
     const text = projectStateErrorText(err);
     expect(text).toBe(want);
     expect(text).not.toMatch(/\.$/);
+  });
+});
+
+describe("a served key spelled like an Object.prototype member", () => {
+  // Coord serves these keys as strings, and its `needs_me` work
+  // (qontinui-coord#3053 and its successor) parses some of them out of
+  // caller-controlled text, so nothing stops one being spelled `constructor`.
+  // Each lookup owes its fallback, never what the prototype carries.
+  const PROTOTYPE_KEYS = [
+    "constructor",
+    "toString",
+    "hasOwnProperty",
+    "__proto__",
+  ];
+
+  it.each(PROTOTYPE_KEYS)(
+    "%s is not a decision kind the table names",
+    (key) => {
+      expect(decisionDomainLabel(key)).toBe(key.replace(/_/g, " "));
+      expect(isKnownDecisionDomain(key)).toBe(false);
+    }
+  );
+
+  it.each(PROTOTYPE_KEYS)("%s is not a plane the table names", (key) => {
+    expect(planeLabel(key)).toBe(key.replace(/_/g, " "));
+  });
+
+  it.each(PROTOTYPE_KEYS)("%s is not a source the table labels", (key) => {
+    const spaced = key.replace(/_/g, " ");
+    expect(sourceLabel(key)).toBe(
+      spaced.charAt(0).toUpperCase() + spaced.slice(1)
+    );
+    expect(isLabelledSource(key)).toBe(false);
+  });
+
+  it.each(PROTOTYPE_KEYS)("%s is not a watcher reason or state", (key) => {
+    expect(watcherReasonWords(key)).toBe("state unknown");
+    expect(watcherReasonWords(null, key)).toBe("state unknown");
+    // A known state still words a reason the table does not hold.
+    expect(watcherReasonWords(key, "stale")).toBe("stale");
+  });
+
+  it.each(PROTOTYPE_KEYS)(
+    "%s is not a degradation source with words",
+    (key) => {
+      const body = parseProjectState({
+        degradations: { state: "read", partial: true, planes: [] },
+        does_not_know: [{ source: key, state: "could_not_read" }],
+      })!;
+      expect(degradationsGapPhrase(body.degradations, body.doesNotKnow)).toBe(
+        "a source feeding it was not fully read, or a watcher feeding it is not fresh"
+      );
+    }
+  );
+
+  it("keeps a decision count keyed __proto__, as its own entry", () => {
+    // `JSON.parse`, as the wire does: an object literal would set the prototype.
+    const raw = JSON.parse(
+      '{"state":"read","total":4,"items":[],"by_domain":{"__proto__":3,"pr_fix":1}}'
+    ) as unknown;
+    const byDomain = parseProjectState({ needs_me: raw })!.needsMe.byDomain!;
+    expect(Object.entries(byDomain)).toEqual([
+      ["__proto__", 3],
+      ["pr_fix", 1],
+    ]);
+    expect(Object.getPrototypeOf(byDomain)).toBe(Object.prototype);
   });
 });

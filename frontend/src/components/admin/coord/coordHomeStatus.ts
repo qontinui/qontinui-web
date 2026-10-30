@@ -574,13 +574,17 @@ export function parseOptions(raw: unknown): string[] | null {
 function parseByDomain(raw: unknown): Record<string, number> | null {
   const o = obj(raw);
   if (!o) return null;
-  const out: Record<string, number> = {};
+  const counts: [string, number][] = [];
   for (const [k, v] of Object.entries(o)) {
     const n = num(v);
     if (n === null) return null;
-    out[k] = n;
+    counts.push([k, n]);
   }
-  return out;
+  // `fromEntries` defines each key as the map's own. Assigning `out[k]` loses a
+  // count keyed `__proto__`, and nothing rules that key out: coord's `needs_me`
+  // work (qontinui-coord#3053 and its successor) parses these keys out of
+  // question text.
+  return Object.fromEntries(counts);
 }
 
 function parseNeedsMe(raw: unknown): NeedsMeView {
@@ -850,6 +854,22 @@ const WATCHER_STATE_WORDS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * `table[key]` when the table itself holds `key`. Every key these tables are
+ * read with is a string coord served, so a bare `table[key]` answers
+ * `constructor`, `toString` or `__proto__` with what `Object.prototype`
+ * carries: a function or an object where the caller's fallback was owed, which
+ * would then render as source text or "[object Object]".
+ */
+export function ownEntry(
+  table: Readonly<Record<string, string>>,
+  key: string
+): string | undefined {
+  return Object.prototype.hasOwnProperty.call(table, key)
+    ? table[key]
+    : undefined;
+}
+
+/**
  * One watcher's reason in plain words. A known reason token wins; with none,
  * the watcher's own state is worded (`stale` ⇒ "stale"); "state unknown" only
  * when neither is known.
@@ -859,8 +879,8 @@ export function watcherReasonWords(
   state: string | null = null
 ): string {
   return (
-    (reason && WATCHER_REASON_WORDS[reason]) ||
-    (state && WATCHER_STATE_WORDS[state]) ||
+    (reason && ownEntry(WATCHER_REASON_WORDS, reason)) ||
+    (state && ownEntry(WATCHER_STATE_WORDS, state)) ||
     "state unknown"
   );
 }
@@ -916,7 +936,7 @@ const DECISION_DOMAIN_LABEL: Readonly<Record<string, string>> = {
 };
 
 export function decisionDomainLabel(domain: string): string {
-  return DECISION_DOMAIN_LABEL[domain] ?? domain.replace(/_/g, " ");
+  return ownEntry(DECISION_DOMAIN_LABEL, domain) ?? domain.replace(/_/g, " ");
 }
 
 /**
@@ -928,7 +948,7 @@ export function decisionDomainLabel(domain: string): string {
  * (`_lib/homeLens.ts` `presentedDecisionDomains`).
  */
 export function isKnownDecisionDomain(domain: string): boolean {
-  return Object.prototype.hasOwnProperty.call(DECISION_DOMAIN_LABEL, domain);
+  return ownEntry(DECISION_DOMAIN_LABEL, domain) !== undefined;
 }
 
 export interface DegradationsView {
@@ -980,7 +1000,7 @@ const PLANE_LABEL: Readonly<Record<string, string>> = {
 
 export function planeLabel(plane: string | null): string {
   if (!plane) return "unclassified";
-  return PLANE_LABEL[plane] ?? plane.replace(/_/g, " ");
+  return ownEntry(PLANE_LABEL, plane) ?? plane.replace(/_/g, " ");
 }
 
 /**
@@ -1085,7 +1105,7 @@ export function degradationsGapPhrase(
   const partial = [
     ...new Set(
       (sources ?? []).flatMap((s) => {
-        const words = DEGRADATION_SOURCE_WORDS[s.source];
+        const words = ownEntry(DEGRADATION_SOURCE_WORDS, s.source);
         return words !== undefined && PARTIAL_SOURCE_STATES.has(s.state)
           ? [words]
           : [];
@@ -1180,7 +1200,11 @@ const SOURCE_LABEL: Readonly<Record<string, string>> = {
   "work_unit_pr_citations (cited PR state)":
     "Pull requests the work units cite",
   "coord.alerts (operator-plane kinds)": "Infrastructure alerts",
+  "coord.alerts visibility (operator-plane kinds this caller can be served)":
+    "Which infrastructure alerts the operator can be shown",
   "fleet_health roster": "Machines in the fleet",
+  "fleet_health resource headroom (live machines)":
+    "Spare capacity on live machines",
   "train_health (per authority repo)": "Merge train health, per repository",
   "infra_health_observations (cloud, latest per resource)":
     "Cloud service health",
@@ -1216,7 +1240,7 @@ export function isWatcherSource(source: string): boolean {
  * fixed words instead (`_lib/homeLens.ts` `presentedSourceLabel`).
  */
 export function isLabelledSource(source: string): boolean {
-  return Object.prototype.hasOwnProperty.call(SOURCE_LABEL, source);
+  return ownEntry(SOURCE_LABEL, source) !== undefined;
 }
 
 /** Underscores spaced and the first letter capitalised. */
@@ -1236,7 +1260,7 @@ export function sourceLabel(
   source: string,
   planes: PlaneView[] | null = null
 ): string {
-  const known = SOURCE_LABEL[source];
+  const known = ownEntry(SOURCE_LABEL, source);
   if (known) return known;
   if (isWatcherSource(source)) {
     const name = source.slice(WATCHER_SOURCE_PREFIX.length);
