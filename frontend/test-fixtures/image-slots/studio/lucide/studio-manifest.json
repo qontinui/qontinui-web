@@ -1,0 +1,24 @@
+{
+  "generated_by": "qontinui-studio",
+  "slots": {
+    "sessions.avatar": {
+      "ai_generated": false,
+      "binding": {
+        "ai_generated": false,
+        "asset_sha256": "0bbdb7dab4732d11d00c4b360c36e4294d9a6bb0ee2e59d274487a11912662db",
+        "source": "selected",
+        "spec_sha256": "21d1e584cd7860d3bcf33aefe13773ea0d70cc4559c659555ef9b695c274f273"
+      },
+      "files": {},
+      "lucide": {
+        "component": "CircleUser",
+        "icon": "circle-user",
+        "package": "lucide-react"
+      },
+      "route": "lucide",
+      "sha256": {},
+      "slot_id": "sessions.avatar",
+      "slot_spec_sha256": "21d1e584cd7860d3bcf33aefe13773ea0d70cc4559c659555ef9b695c274f273"
+    }
+  }
+}

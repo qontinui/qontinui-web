@@ -7,10 +7,14 @@ Provides a unified interface for file storage supporting:
 - MinIO (for development with S3-compatible storage)
 """
 
+import hashlib
 import io
+import re
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Final
+from uuid import UUID
 
 import structlog
 from botocore.exceptions import ClientError
@@ -27,9 +31,48 @@ __all__ = [
     "StorageBackend",
     "S3Backend",
     "LocalBackend",
+    "ContentAddressedObject",
     "ObjectStorageService",
+    "content_addressed_key",
     "object_storage",
 ]
+
+#: A key prefix: lower-case path segments, no ``..``, no leading or trailing
+#: slash — so a content-addressed key can never escape its prefix.
+_CONTENT_PREFIX_RE: Final = re.compile(
+    r"\A[a-z0-9][a-z0-9_-]*(?:/[a-z0-9][a-z0-9_-]*)*\Z"
+)
+#: An extension: a dot and a short lower-case alphanumeric suffix.
+_CONTENT_EXT_RE: Final = re.compile(r"\A\.[a-z0-9]{1,10}\Z")
+
+
+@dataclass(frozen=True)
+class ContentAddressedObject:
+    """The outcome of :meth:`ObjectStorageService.put_content_addressed`."""
+
+    key: str
+    sha256: str
+    size: int
+    #: False when an identical object was already stored at ``key`` and the
+    #: write was skipped.
+    written: bool
+
+
+def content_addressed_key(prefix: str, tenant_id: UUID, sha256: str, ext: str) -> str:
+    """``{prefix}/{tenant_id}/sha256/{h[:2]}/{h}{ext}``.
+
+    The tenant is part of the key, so the same bytes held by two tenants are
+    two objects: one tenant's erasure can never break the other's asset, and a
+    write cannot reveal whether another tenant already holds the image. The
+    two-character fan-out keeps any one key "directory" small.
+    """
+    if not _CONTENT_PREFIX_RE.match(prefix):
+        raise ValueError(f"invalid content-addressed prefix {prefix!r}")
+    if not _CONTENT_EXT_RE.match(ext):
+        raise ValueError(f"invalid content-addressed extension {ext!r}")
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise ValueError("sha256 must be 64 lower-case hex characters")
+    return f"{prefix}/{tenant_id}/sha256/{sha256[:2]}/{sha256}{ext}"
 
 
 class ObjectStorageService:
@@ -117,6 +160,56 @@ class ObjectStorageService:
     def get_file_metadata(self, key: str) -> dict:
         """Get file metadata."""
         return self.backend.get_file_metadata(key)
+
+    def put_content_addressed(
+        self,
+        data: bytes,
+        ext: str,
+        prefix: str,
+        *,
+        tenant_id: UUID,
+        content_type: str | None = None,
+    ) -> ContentAddressedObject:
+        """Store ``data`` under the key its own SHA-256 names, idempotently.
+
+        The hash is computed HERE, from the bytes — a caller never supplies
+        it — and the key is :func:`content_addressed_key`. ``ext`` and
+        ``content_type`` must come from the bytes too (the caller sniffs
+        them; this method only refuses a malformed ``ext``).
+
+        Idempotent through :meth:`file_exists`: when an object is already
+        stored at the key with the same size, nothing is written (the key
+        already names these exact bytes). Every backend's write is atomic —
+        S3's PUT, and the local backend's temp-file-then-``os.replace`` — so an
+        in-flight write by a concurrent upload is never visible at the key,
+        and two concurrent uploads of the same bytes both write the same
+        bytes. An object at the key with a DIFFERENT size is therefore damage
+        from outside this method (a file written before writes were atomic, a
+        hand edit, a truncated restore): it is overwritten and the repair is
+        logged. Works on every backend, because it uses only the
+        :class:`StorageBackend` contract.
+        """
+        sha256 = hashlib.sha256(data).hexdigest()
+        key = content_addressed_key(prefix, tenant_id, sha256, ext)
+        if self.file_exists(key):
+            stored_size = self.get_file_metadata(key).get("size")
+            if stored_size == len(data):
+                return ContentAddressedObject(
+                    key=key, sha256=sha256, size=len(data), written=False
+                )
+            logger.warning(
+                "content_addressed_object_repaired",
+                key=key,
+                stored_size=stored_size,
+                expected_size=len(data),
+            )
+        self.backend.upload_file(
+            file_obj=io.BytesIO(data), key=key, content_type=content_type
+        )
+        logger.info("content_addressed_object_written", key=key, size=len(data))
+        return ContentAddressedObject(
+            key=key, sha256=sha256, size=len(data), written=True
+        )
 
     def upload_from_path(
         self,

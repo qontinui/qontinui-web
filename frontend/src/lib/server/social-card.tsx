@@ -44,7 +44,7 @@ export const SOCIAL_CARD_SIZE = { width: 1200, height: 630 } as const;
 export const SOCIAL_CARD_CONTENT_TYPE = "image/png";
 
 export const SOCIAL_CARD_ALT =
-  "Qontinui — open-source AI development platform. A desktop app that orchestrates AI coding sessions with automated feedback loops, verification, and error monitoring.";
+  "Qontinui — open-source software factory. A fleet of AI agents that plans, implements, tests and lands changes on your own codebase.";
 
 /** `public/q-logo.png`'s own pixel size; the card never scales the mark up. */
 const MARK = { path: "public/q-logo.png", width: 152, height: 177 } as const;
@@ -153,7 +153,7 @@ export async function renderSocialCard(): Promise<ImageResponse> {
                   color: colors.text.secondary,
                 }}
               >
-                {evenlySpaced("Open-source AI development platform")}
+                {evenlySpaced("Open-source software factory")}
               </div>
             </div>
           </div>
@@ -168,7 +168,7 @@ export async function renderSocialCard(): Promise<ImageResponse> {
             }}
           >
             {evenlySpaced(
-              "A desktop app that orchestrates AI coding sessions with automated feedback loops, verification, and error monitoring."
+              "A fleet of AI agents that plans, implements, tests and lands changes on your own codebase, against a digital twin of your development process."
             )}
           </div>
         </div>

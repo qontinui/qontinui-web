@@ -24,11 +24,14 @@ import {
   type FleetWriteAck,
 } from "@/lib/api/operations/coordFleet";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { servedAsOfMs } from "./servedAsOf";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import {
   parseDispatchRoles,
+  parseEffectsNotApplied,
   type DispatchRole,
   type DispatchRolesRead,
+  type EffectNotApplied,
 } from "./fleetDispatchRoles";
 
 export const FLEET_DISPATCH_ROLES_POLL_MS = 30_000;
@@ -37,18 +40,30 @@ const LOADING: DispatchRolesRead = { state: "loading" };
 
 export interface UseFleetDispatchRolesResult {
   read: DispatchRolesRead;
+  /**
+   * When the last `known` read was true, or `null` before there has been one:
+   * coord's own `as_of` on the body (`dispatch_role_routes.rs`
+   * `DispatchRolesResponse`), else the moment the answer arrived
+   * (`servedAsOfMs`). The presentation lens's provenance chip dates the roles
+   * by it (plan `2026-10-23-console-presentation-spaces` Phase 7). An
+   * `unknown` read never moves it.
+   */
+  asOfMs: number | null;
   refresh: () => Promise<void>;
 }
 
 export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
   const [read, setRead] = useState<DispatchRolesRead>(LOADING);
+  const [asOfMs, setAsOfMs] = useState<number | null>(null);
 
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: DispatchRolesRead;
+    // When this answer was true; read only if it parses `known`.
+    let answeredAsOf: number | null = null;
     try {
-      next = parseDispatchRoles(
-        await fetchFleetDispatchRoles(COORD_DASHBOARD_POLL_OPTIONS)
-      );
+      const body = await fetchFleetDispatchRoles(COORD_DASHBOARD_POLL_OPTIONS);
+      answeredAsOf = servedAsOfMs(body, Date.now());
+      next = parseDispatchRoles(body);
     } catch (err) {
       const status = httpStatusOf(err);
       if (status === 404) {
@@ -80,11 +95,15 @@ export function useFleetDispatchRoles(): UseFleetDispatchRolesResult {
         };
       }
     }
-    if (isCurrent()) setRead(next);
+    if (!isCurrent()) return;
+    setRead(next);
+    if (next.state === "known" && answeredAsOf !== null) {
+      setAsOfMs(answeredAsOf);
+    }
   }, []);
 
   const { refresh } = useSingleFlightPoll(poll, FLEET_DISPATCH_ROLES_POLL_MS);
-  return { read, refresh };
+  return { read, asOfMs, refresh };
 }
 
 export type RoleWriteResult =
@@ -92,8 +111,17 @@ export type RoleWriteResult =
       ok: true;
       /** Coord's `changed`: `false` when the machine already had this role. */
       changed: boolean;
-      /** Coord's `live_sessions_on_machine`, when served. */
-      liveSessions: number | null;
+      /**
+       * Coord's `live_sessions_on_machine`: a count, `"unknown"` when coord
+       * served `null` (not measured — a CI-host write, or an unreadable count;
+       * never 0), or `undefined` when the field was not served.
+       */
+      liveSessions: number | "unknown" | undefined;
+      /**
+       * Coord's `effects_not_applied` — what this build of coord did NOT do
+       * for the change. `null` when not served (never read as "none").
+       */
+      notApplied: EffectNotApplied[] | null;
     }
   | { ok: false; status: number | null; body: string };
 
@@ -136,11 +164,16 @@ export async function putDispatchRole(input: {
   // A success with an unreadable body (`null`) still succeeded; `changed`
   // stays true, the reading that does not claim a no-op happened.
   let changed = true;
-  let liveSessions: number | null = null;
+  let liveSessions: number | "unknown" | undefined = undefined;
+  let notApplied: EffectNotApplied[] | null = null;
   if (payload !== null && typeof payload === "object") {
     if (typeof payload.changed === "boolean") changed = payload.changed;
     if (typeof payload.live_sessions_on_machine === "number")
       liveSessions = payload.live_sessions_on_machine;
+    else if ("live_sessions_on_machine" in payload)
+      // `null` (or a shape we do not know) is NOT MEASURED — never 0.
+      liveSessions = "unknown";
+    notApplied = parseEffectsNotApplied(payload.effects_not_applied);
   }
-  return { ok: true, changed, liveSessions };
+  return { ok: true, changed, liveSessions, notApplied };
 }

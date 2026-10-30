@@ -105,6 +105,21 @@ import {
   FINDING_AUTHOR_GLYPH_RETENTIONS,
   FINDING_RETENTION_CLASS,
 } from "@/app/(app)/admin/coord/findings/_lib/findingStatus";
+// The dossier list — plan `2026-10-03-dossier-query-door-filters-sort-cursor`
+// Phase 5. Same shape as findings: a `*Status.ts` in a `_lib/` beside its route.
+import {
+  DOSSIER_ATTENTION_BY_REMEDIATION,
+  DOSSIER_AUTHOR_GLYPH_REMEDIATIONS,
+  DOSSIER_REMEDIATION_CLASS,
+} from "@/app/(app)/admin/coord/dossiers/_lib/dossierStatus";
+// The operator-touch aggregate — plan
+// `2026-08-27-operator-touch-read-and-surface` Phase C3. Same shape as
+// findings: a `*Status.ts` in a `_lib/` beside its own route.
+import {
+  TOUCH_ATTENTION_BY_KIND,
+  TOUCH_AUTHOR_GLYPH_KINDS,
+  TOUCH_KIND_CLASS,
+} from "@/app/(app)/admin/coord/operator-touches/_lib/operatorTouchStatus";
 // Plan `2026-09-06-decision-policy-rows-are-operator-only-to-create` Phase 3a —
 // the v2 decision-domain editor. Same shape as gate-clearance: a `*Status.ts`
 // beside its own route.
@@ -209,6 +224,48 @@ import {
   SERVICE_AUTHOR_GLYPH_KINDS,
   SERVICE_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/computers/_lib/computerStatus";
+// The UI Bridge dashboard — plan `2026-10-23-console-presentation-spaces`
+// Phase 6. Four tables in four modules: an action's declared effect, a page
+// health result, an occlusion verdict, and an app's cross-registry presence.
+import {
+  EFFECT_ATTENTION_BY_KIND,
+  EFFECT_AUTHOR_GLYPH_KINDS,
+  EFFECT_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/ui-bridge/_lib/componentEffectStatus";
+import {
+  PAGE_HEALTH_ATTENTION_BY_KIND,
+  PAGE_HEALTH_AUTHOR_GLYPH_KINDS,
+  PAGE_HEALTH_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/ui-bridge/_lib/pageHealthStatus";
+import {
+  OCCLUSION_ATTENTION_BY_KIND,
+  OCCLUSION_AUTHOR_GLYPH_KINDS,
+  OCCLUSION_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/ui-bridge/_lib/occlusionStatus";
+import {
+  APP_PRESENCE_ATTENTION_BY_KIND,
+  APP_PRESENCE_AUTHOR_GLYPH_KINDS,
+  APP_PRESENCE_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/ui-bridge/_lib/appRegistryStatus";
+// The spawn ledger — plan
+// `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration`
+// Phase 5. Its shared kinds take the gate-continuation table's own entries.
+import {
+  SPAWN_ATTENTION_BY_KIND,
+  SPAWN_AUTHOR_GLYPH_KINDS,
+  SPAWN_KIND_CLASS,
+} from "@/app/(app)/admin/coord/spawns/_lib/spawnStatus";
+// Session load — plan
+// `2026-10-23-session-duration-by-work-type-and-per-device-session-load`
+// Phase 5. Two tables: a machine's load against its budget, and one run.
+import {
+  MACHINE_ATTENTION_BY_KIND,
+  MACHINE_AUTHOR_GLYPH_KINDS,
+  MACHINE_KIND_CLASS,
+  RUN_ATTENTION_BY_KIND,
+  RUN_AUTHOR_GLYPH_KINDS,
+  RUN_KIND_CLASS,
+} from "@/app/(app)/admin/coord/session-load/_lib/sessionLoadStatus";
 // GitHub-hosted CI on the Dev Ops ▸ CI page — plan
 // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` Phase 3.
 import {
@@ -221,6 +278,13 @@ import {
   MODEL_ACCESS_AUTHOR_GLYPH_KINDS,
   MODEL_ACCESS_BADGE_CLASS,
 } from "@/app/(app)/admin/coord/ci/_lib/ciModelAccessStatus";
+// Image generation's per-repo overrides (tenant policy) — plan
+// `2026-10-13-image-generation-and-visual-judgment` Phase 12.
+import {
+  IMAGE_GENERATION_ATTENTION_BY_KIND,
+  IMAGE_GENERATION_AUTHOR_GLYPH_KINDS,
+  IMAGE_GENERATION_BADGE_CLASS,
+} from "@/app/(app)/admin/coord/tenant-policy/_lib/imageGenerationStatus";
 // Per-repo follow-up dials (agent registry) — plan
 // `2026-09-01-post-merge-followup-spawn-is-repo-and-content-blind` Phase 4b.
 import {
@@ -253,6 +317,13 @@ import {
 } from "@/components/operations/domainCostStatus";
 // Operator action items — plan
 // `2026-10-12-operator-action-items-pushed-to-the-phone` Phase 3.
+// The PR hold control — plan `2026-10-04-coord-pr-hold-without-github-drafts`
+// Phase 4.
+import {
+  PR_HOLD_ATTENTION_BY_KIND,
+  PR_HOLD_AUTHOR_GLYPH_KINDS,
+  PR_HOLD_BADGE_CLASS,
+} from "@/components/operations/prHoldStatus";
 import {
   ACTION_ITEM_ATTENTION_BY_KIND,
   ACTION_ITEM_AUTHOR_GLYPH_KINDS,
@@ -280,12 +351,41 @@ export interface ConsoleSurface {
  */
 export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   {
+    surface: "PR hold control (/admin/coord/prs, /admin/coord/pipeline)",
+    module: "components/operations/prHoldStatus.ts",
+    attentionByKind: PR_HOLD_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: PR_HOLD_BADGE_CLASS,
+      authorGlyphKinds: PR_HOLD_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
     surface: "findings (/admin/coord/findings)",
     module: "app/(app)/admin/coord/findings/_lib/findingStatus.ts",
     attentionByKind: FINDING_ATTENTION_BY_RETENTION,
     palette: {
       badgeClass: FINDING_RETENTION_CLASS,
       authorGlyphKinds: FINDING_AUTHOR_GLYPH_RETENTIONS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "dossiers (/admin/coord/dossiers)",
+    module: "app/(app)/admin/coord/dossiers/_lib/dossierStatus.ts",
+    attentionByKind: DOSSIER_ATTENTION_BY_REMEDIATION,
+    palette: {
+      badgeClass: DOSSIER_REMEDIATION_CLASS,
+      authorGlyphKinds:
+        DOSSIER_AUTHOR_GLYPH_REMEDIATIONS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "operator touches (/admin/coord/operator-touches)",
+    module:
+      "app/(app)/admin/coord/operator-touches/_lib/operatorTouchStatus.ts",
+    attentionByKind: TOUCH_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: TOUCH_KIND_CLASS,
+      authorGlyphKinds: TOUCH_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {
@@ -646,6 +746,81 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
       authorGlyphKinds: SERVICE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
+  // --- the UI Bridge dashboard ---------------------------------------------
+  {
+    // The three declared classes are calm — a declaration is a fact, not a
+    // fault — and only an UNDECLARED action is amber, the ignorance floor.
+    surface: "component action effects (/admin/coord/ui-bridge)",
+    module: "app/(app)/admin/coord/ui-bridge/_lib/componentEffectStatus.ts",
+    attentionByKind: EFFECT_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: EFFECT_BADGE_CLASS,
+      authorGlyphKinds: EFFECT_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "page health (/admin/coord/ui-bridge)",
+    module: "app/(app)/admin/coord/ui-bridge/_lib/pageHealthStatus.ts",
+    attentionByKind: PAGE_HEALTH_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: PAGE_HEALTH_BADGE_CLASS,
+      authorGlyphKinds: PAGE_HEALTH_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // `clear` only with occlusion data observed; a clear sweep that observed
+    // none is `unknown`, amber, never calm. Today the row is `unknown` on
+    // every runner: no relay carries the sweep, so it is not asked for.
+    surface: "occlusion (/admin/coord/ui-bridge)",
+    module: "app/(app)/admin/coord/ui-bridge/_lib/occlusionStatus.ts",
+    attentionByKind: OCCLUSION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: OCCLUSION_BADGE_CLASS,
+      authorGlyphKinds: OCCLUSION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "app registry presence (/admin/coord/ui-bridge)",
+    module: "app/(app)/admin/coord/ui-bridge/_lib/appRegistryStatus.ts",
+    attentionByKind: APP_PRESENCE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: APP_PRESENCE_BADGE_CLASS,
+      authorGlyphKinds: APP_PRESENCE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- the spawn ledger --------------------------------------------------
+  {
+    // The gates page's continuation vocabulary plus the two ledger-only
+    // states (`queued`, `superseded`), so both surfaces paint a shared word
+    // the same way.
+    surface: "spawn requests (/admin/coord/spawns)",
+    module: "app/(app)/admin/coord/spawns/_lib/spawnStatus.ts",
+    attentionByKind: SPAWN_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SPAWN_KIND_CLASS,
+      authorGlyphKinds: SPAWN_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- session load -----------------------------------------------------
+  {
+    // Nothing is red on this surface: it measures load, and admission acts.
+    surface: "session-load machines (/admin/coord/session-load)",
+    module: "app/(app)/admin/coord/session-load/_lib/sessionLoadStatus.ts",
+    attentionByKind: MACHINE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: MACHINE_KIND_CLASS,
+      authorGlyphKinds: MACHINE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "session runs (/admin/coord/session-load)",
+    module: "app/(app)/admin/coord/session-load/_lib/sessionLoadStatus.ts",
+    attentionByKind: RUN_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: RUN_KIND_CLASS,
+      authorGlyphKinds: RUN_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
   // --- GitHub-hosted CI (Dev Ops) ----------------------------------------
   {
     surface: "GitHub-hosted CI (/admin/coord/ci)",
@@ -666,6 +841,19 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: MODEL_ACCESS_BADGE_CLASS,
       authorGlyphKinds: MODEL_ACCESS_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- image generation's per-repo overrides (tenant policy) -------------
+  {
+    // A level in effect (`off` included) is a setting somebody chose, so
+    // calm; only a level this console cannot read is amber.
+    surface: "image generation repo overrides (/admin/coord/tenant-policy)",
+    module: "app/(app)/admin/coord/tenant-policy/_lib/imageGenerationStatus.ts",
+    attentionByKind: IMAGE_GENERATION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: IMAGE_GENERATION_BADGE_CLASS,
+      authorGlyphKinds:
+        IMAGE_GENERATION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- per-repo follow-up dials (agent registry) -------------------------

@@ -2,19 +2,19 @@
   "version": "1.0",
   "id": "digital-twin",
   "name": "Digital Twin Explorer",
-  "description": "The /digital-twin Explorer — four tabs (Completeness, the default; Lifecycle; Delivery; UI Bridge) over a 57-row manifest taxonomy of the twin of the software-development process: the completeness matrix + the cell-detail interactive flow + the Lifecycle-tab stage pipeline + the Delivery-tab verdict lookup (coord#634/web#587, hardened by web#609/#612/#614, UI-Bridge-instrumented by web#617 and later changes for the Delivery card and the Lifecycle tab). ci-bot is a superuser so the authed page renders. Route stubs make the page deterministic without live coord: GET /api/v1/digital-twin/subspaces (the probe of the 11 snapshot sub-spaces the backend's _PROBEABLE_SUBSPACES lists, restricted:false) sets the cells' credibility/status for both the matrix and the Lifecycle view, GET /api/v1/digital-twin/subspace/schema/raw returns a DriftVerdict so the Schema drawer's 'Show raw data' toggle (gated on isSnapshot && verdict) renders, and GET /api/v1/digital-twin/delivery/verdict answers the Delivery lookup. Assertions target the web#617 useUIElement ids (digital-twin-tab-*, digital-twin-cell-*, digital-twin-show-raw), which resolve against the UI-Bridge registry the matcher reads; the page titles ('Digital Twin', 'Ask the Twin') resolve via the wrapper's content-discovery pass (provider.tsx contentDiscovery enabled). STRUCTURE NOTE: spec-ci's structural lane evaluates every state against the INITIAL render, so only initially-present states are declared (shell + matrix). Tab switches, the Lifecycle pipeline (digital-twin-stage-<stage>, cells digital-twin-stage-<stage>-cell-<id> — stage-scoped because a row shows under every stage it observes) and the cell -> drawer -> raw-verdict interaction are transitions with activateStates:[] whose waitAfter conditions are the pass condition. Radix Tabs unmounts inactive content, so every tab-switch transition switches back to Completeness before it ends, and all of them run BEFORE the drawer transition (the drawer is a modal Dialog that would block a tab click and needs the matrix mounted). CI runs with NO connected runner, so Ask-the-Twin and the UI Bridge tab show their 'Connect a runner' empty states — their runner-only input ids (ask-the-twin-*, ui-bridge-*) do NOT mount and are NOT asserted; no transition here needs a runner. Read-only; structural.",
+  "description": "The /digital-twin Explorer — five tabs (Twin map, the default; Completeness; Lifecycle; Delivery; UI Bridge) over a 59-row manifest taxonomy of the twin of the software-development process. The Twin map (plan 2026-10-23-console-presentation-spaces Phase 5) is the initial render: one aspect card per twin aspect (environment, process, intent, UI Bridge app twin — each card's toggle registered as digital-twin-aspect-<id>) with its fidelity and the plans moving it; a toggle opens the aspect's parts and plans (digital-twin-aspect-detail). The Completeness matrix + cell-detail drawer (coord#634/web#587, hardened by web#609/#612/#614, UI-Bridge-instrumented by web#617), the Lifecycle-tab stage pipeline and the Delivery-tab verdict lookup are one click away. ci-bot is a superuser so the authed page renders. Route stubs make the page deterministic without live coord: GET /api/v1/digital-twin/catalog (coord's served catalog: the 18 sub-spaces it declares probeable — 17 snapshot:true rows plus the envelope-shaped admin outbound door — and three it does not, so the page joins the manifest to it) and GET /api/v1/digital-twin/subspaces (the probe of exactly those 18, restricted:false; worktree, train_activity, merge_economics and secrets_broker are report doors and read 'served') set the statuses for the Twin map, the matrix and the Lifecycle view; GET /api/v1/digital-twin/subspace/twin_fidelity/raw answers 404 (coord serves no twin_fidelity probe yet), so the self-fidelity header and every aspect's honesty figure read UNKNOWN; GET /api/v1/digital-twin/subspace/schema/raw returns a DriftVerdict so the Schema drawer's 'Show raw data' toggle (gated on readsRaw && verdict) renders; GET /api/v1/digital-twin/delivery/verdict answers the Delivery lookup; and GET /api/v1/operations/plans (the work-unit list the Twin map walks: one page, next_cursor null) answers seven FIXTURE work units — two of the manifest's explicit plan slugs and units whose metadata.area a manifest row maps — so every aspect resolves plans with live statuses (the explicit slug it leaves out, secrets_broker's, reads 'Not a work unit' on this complete read). Assertions target useUIElement ids (digital-twin-tab-*, digital-twin-aspect-*, digital-twin-cell-*, digital-twin-show-raw), which resolve against the UI-Bridge registry the matcher reads; the page title ('Digital Twin') resolves via the wrapper's content-discovery pass (provider.tsx contentDiscovery enabled). STRUCTURE NOTE: spec-ci's structural lane evaluates every state against the INITIAL render, so only initially-present states are declared (shell + Twin map). Opening an aspect, the tab switches, the Lifecycle pipeline (digital-twin-stage-<stage>, cells digital-twin-stage-<stage>-cell-<id> — stage-scoped because a row shows under every stage it observes) and the Completeness cell -> drawer -> raw-verdict interaction are transitions with activateStates:[] whose waitAfter conditions are the pass condition. Radix Tabs unmounts inactive content, so every tab-switch transition switches back to the Twin map before it ends, and all of them run BEFORE the drawer transition (the drawer is a modal Dialog that would block a tab click; that transition opens Completeness itself). CI runs with NO connected runner, so the UI Bridge app twin's figures read UNKNOWN (no runner) and the UI Bridge tab shows its 'Connect a runner' state; the Ask-the-Twin and UI Bridge runner-only input ids (ask-the-twin-*, ui-bridge-*) do NOT mount and are NOT asserted; no transition here needs a runner. Read-only; structural.",
   "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
   "metadata": {
     "tags": ["coord", "digital-twin", "twin", "route-stub", "ui-bridge-instrumented"],
     "extraSettleMs": 3000,
-    "settleUntilPresent": [{ "id": "digital-twin-cell-schema" }],
+    "settleUntilPresent": [{ "id": "digital-twin-aspect-environment" }],
     "routeStubs": [
       {
         "urlPattern": "**/api/v1/digital-twin/subspaces",
         "status": 200,
         "contentType": "application/json",
         "body": {
-          "probed": 11,
+          "probed": 18,
           "restricted": false,
           "subspaces": [
             { "id": "release", "status": "partial", "tool": "coord_query_release_state", "metrics": { "coverage": 0.9, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "ecs_describe_tasks", "drift_class": "none" } },
@@ -26,10 +26,54 @@
             { "id": "deps", "status": "blind", "tool": "coord_query_dependency_state", "metrics": { "coverage": 0.0, "credibility": 0.0, "posterior": 0.0, "staleness_seconds": null, "provenance": "dependency_observer:unconfigured", "drift_class": "unknown" } },
             { "id": "route_serving", "status": "implemented", "tool": "coord_query_route_serving_drift", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "coord_manifest", "drift_class": "none" } },
             { "id": "client_telemetry", "status": "partial", "tool": "coord_query_client_telemetry_drift", "metrics": { "coverage": 0.6, "credibility": 0.7, "posterior": 0.7, "staleness_seconds": null, "provenance": "served_bundle_observer", "drift_class": "none" } },
-            { "id": "worktree", "status": "partial", "tool": "coord_list_worktrees", "metrics": { "coverage": 0.5, "credibility": 0.7, "posterior": 0.7, "staleness_seconds": null, "provenance": "worktree_observer", "drift_class": "none" } },
-            { "id": "memory", "status": "implemented", "tool": "coord_query_memory_state", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "coord_memory_observations", "drift_class": "none" } }
+            { "id": "worktree", "status": "served", "tool": "coord_list_worktrees", "door_shape": "report" },
+            { "id": "memory", "status": "implemented", "tool": "coord_query_memory_state", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "coord_memory_observations", "drift_class": "none" } },
+            { "id": "workers", "status": "implemented", "tool": "coord_query_workers", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "worker_ledger", "drift_class": "none" } },
+            { "id": "train_activity", "status": "served", "tool": "coord_query_train_activity", "door_shape": "report" },
+            { "id": "merge_economics", "status": "served", "tool": "coord_query_merge_economics", "door_shape": "report" },
+            { "id": "webhook_pulse", "status": "implemented", "tool": "coord_query_webhook_pulse", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "webhook_pulse", "drift_class": "none" } },
+            { "id": "scheduler_trace", "status": "implemented", "tool": "coord_query_scheduler_trace", "metrics": { "coverage": 1.0, "credibility": 0.9, "posterior": 0.9, "staleness_seconds": null, "provenance": "scheduler_trace", "drift_class": "none" } },
+            { "id": "outbound", "status": "partial", "door_shape": "envelope", "metrics": { "coverage": 0.6, "credibility": 0.9, "posterior": null, "staleness_seconds": null, "provenance": "outbound_budget_observations", "drift_class": "none" } },
+            { "id": "secrets_broker", "status": "served", "tool": "coord_query_secrets_broker", "door_shape": "report" }
           ]
         }
+      },
+      {
+        "urlPattern": "**/api/v1/digital-twin/catalog",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "total": 21,
+          "entries": [
+            {"id": "release", "subspace": "release", "symbol": "Ξ_Release", "twin": "environment", "stages": ["release"], "description": "Per-surface release/deploy freshness (ecs / vercel / npm / github_releases — the runner installer publish) — is a given commit/tag live?", "query_tool": "coord_query_release_state", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/release/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "migration", "subspace": "schema", "symbol": "Ξ_Schema", "twin": "environment", "stages": ["release"], "description": "Alembic migration head vs applied revisions; coord.* schema table-set reconciliation.", "query_tool": "coord_query_migration_state", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/schema/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "infra", "subspace": "infra", "symbol": "Ξ_Infra", "twin": "environment", "stages": ["release", "operate"], "description": "Declared-vs-actual infrastructure drift (task definitions, service state).", "query_tool": "coord_query_infra_drift", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/infra/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "infra_health", "subspace": "infra_health", "symbol": "Ξ_InfraHealth", "twin": "environment", "stages": ["operate"], "description": "Live availability + performance (declared-SLO-vs-live-metric) drift.", "query_tool": "coord_query_infra_health_drift", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/infra_health/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "config", "subspace": "config", "symbol": "Ξ_Config", "twin": "environment", "stages": ["release", "operate"], "description": "Composed effective feature-flag / config state (armed-but-inert verdicts).", "query_tool": "coord_query_config_state", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/config/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "health", "subspace": "health", "symbol": "Ξ_Health", "twin": "environment", "stages": ["release", "operate"], "description": "Per-surface runtime self-health (the killer-query companion to is_commit_live).", "query_tool": "coord_query_health", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/health/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "dependency", "subspace": "deps", "symbol": "Ξ_Dep", "twin": "environment", "stages": ["implement", "release"], "description": "Cross-repo dependency state — versions, install/publish safety inputs.", "query_tool": "coord_query_dependency_state", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/deps/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "route_serving", "subspace": "route_serving", "symbol": "Ξ_RouteServing", "twin": "environment", "stages": ["release", "operate"], "description": "Declared-vs-actual route-serving drift (route manifest vs a live edge probe).", "query_tool": "coord_query_route_serving_drift", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/route_serving/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "client_telemetry", "subspace": "client_telemetry", "symbol": "Ξ_ClientTelemetry", "twin": "environment", "stages": ["verify", "operate"], "description": "Per-surface client-telemetry 4-invariant drift (the prod-browser boundary).", "query_tool": "coord_query_client_telemetry_drift", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/client_telemetry/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "memory", "subspace": "memory", "symbol": "Ξ_Memory", "twin": "process", "stages": ["learn"], "description": "Per-tenant agentic-memory store state — rows, bytes, embedding coverage, quota.", "query_tool": "coord_query_memory_state", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "tenant", "door": "/coord/twin/memory/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "worktree", "subspace": "worktree", "symbol": "Ξ_Worktree", "twin": "process", "stages": ["implement"], "description": "Live worktree disk census per device — git identity, dirtiness, the target/ and node_modules/ space sinks, build-target provenance and declared-vs-undeclared counts. Bound to the caller: a device reads its own, an operator its tenant's.", "query_tool": "coord_list_worktrees", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "tenant", "door": "/coord/twin/worktree/verdict", "door_shape": "report", "observed": null},
+            {"id": "workers", "subspace": "workers", "symbol": "Ξ_Workers", "twin": "process", "stages": ["operate"], "description": "Background-worker loop liveness: last tick, outcome, decision code and error streak per (worker, replica), rolled up fleet-true to alive / stale / dead / not_leader_here. Answers \"is worker X frozen?\" directly instead of inferring it from missing log lines.", "query_tool": "coord_query_workers", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "coord_internal", "door": "/coord/twin/workers/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "train_activity", "subspace": "train_activity", "symbol": "Ξ_MergeTrain", "twin": "process", "stages": ["integrate"], "description": "FLEET-WIDE merge-train enumeration — one row per coord-authority repo, INCLUDING repos with NO merge proposals, which every other train read structurally omits (/pr-merge/health joins the proposal tables and is TenantId-gated; train_health above needs a repo you already suspect). Ask THIS first to find the repo, then train_health for its physics. Per repo: authority (canonical_repos vs tenant_repos, which differ and are checked by different routes), activity_kind, open / open-non-draft PR counts, a verdict_histogram keyed on classify_merge_status's own tokens, and `triage` — of whose six values TWO are alarms, both built on a positive statement rather than an absence: `idle_unserved` (coord judges a PR landable and has accepted nothing) and `halted` (the merge scheduler has recorded a SUSTAINED tenant_ci_fleet_offline run for this repo — its pre-push gate kept refusing the repo's candidates; since qontinui-coord#1869 no configured path closes that gate and the default 48 h trace ring holds no older row, so a live run means the gate closed again, a coord defect to investigate; served with the run itself in `halt_run`). Counts are null, never 0, when unmeasured.", "query_tool": "coord_query_train_activity", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/train_activity/verdict", "door_shape": "report", "observed": null},
+            {"id": "merge_economics", "subspace": "merge_economics", "symbol": "Ξ_MergeEconomics", "twin": "process", "stages": ["integrate", "learn"], "description": "Per-repo merge economics — candidate-CI duration (T), land rate (λ), λ·T pressure, waste (CI minutes per land), a data-driven stuck-PR threshold, and arming_coverage (how many landed PRs carried an arming record for the head that landed).", "query_tool": "coord_query_merge_economics", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/merge_economics/verdict", "door_shape": "report", "observed": null},
+            {"id": "webhook_pulse", "subspace": "webhook_pulse", "symbol": "Ξ_WebhookPulse", "twin": "process", "stages": ["operate"], "description": "Is GitHub still DELIVERING webhooks? Per-(repo, event_type) counters + last_received_at, with a `gap` verdict when a CI-bearing event type goes silent while the repo has fresh (stale-orphan-filtered) in-flight CI — the lost-webhook wedge class, made queryable instead of inferred from missing log lines.", "query_tool": "coord_query_webhook_pulse", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/webhook_pulse/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "scheduler_trace", "subspace": "scheduler_trace", "symbol": "Ξ_SchedulerTrace", "twin": "process", "stages": ["integrate"], "description": "Merge-scheduler decision traces — what each tick/land outcome DECIDED and why (landed / waiting_ci / deferred:<reason> / budget_backoff:<surface> / tick_error:<class> / tick_degraded:<n>). Ask this instead of inferring a freeze from log silence.", "query_tool": "coord_query_scheduler_trace", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "system_tenant", "door": "/coord/twin/scheduler_trace/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "outbound", "subspace": "outbound", "symbol": "Ξ_Outbound", "twin": "process", "stages": ["operate"], "description": "Ξ_Outbound — coord's OWN outbound-dependency budget/health (GitHub quota burn, cool-down, stale-serve doom-loop). 'Is coord burning its quota?' in one query.", "query_tool": "coord_query_outbound_budget", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": false, "access": null, "door": "/admin/coord/outbound-budget", "door_shape": "envelope", "observed": null},
+            {"id": "secrets_broker", "subspace": "secrets_broker", "symbol": "Ξ_SecretsBroker", "twin": "process", "stages": ["operate"], "description": "Secrets broker — the op catalog, credential inventory with rotation_due, the principal exposure matrix, recent ops grouped by agent session, mints, and pending operator actions. References, metadata and keyed fingerprints; value-shaped residual refused at coord ingest.", "query_tool": "coord_query_secrets_broker", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": true, "access": "tenant", "door": "/coord/twin/secrets_broker/verdict", "door_shape": "report", "observed": null},
+            {"id": "delivery", "subspace": "delivery", "symbol": "Ξ_Delivery", "twin": "process", "stages": ["integrate", "release"], "description": "Has a work unit actually landed? work-unit ⋈ per-PR merged-state ⋈ deploy.", "query_tool": "coord_query_delivery", "kind": "snapshot", "declared_status": "live", "params": ["force_refresh", "plan_slug", "pr", "repo", "work_unit_slug"], "snapshot": false, "access": "tenant", "door": "/coord/twin/delivery/verdict", "door_shape": "verdict_wrapper", "observed": null},
+            {"id": "ci", "subspace": "ci", "symbol": "Ξ_CI", "twin": "process", "stages": ["verify", "integrate"], "description": "Live CI state for a repo/PR (rollup, required-check status, no-reap gate). `ref` DEFAULTS TO 'main', so this is also the live per-repo read for \"is main red right now?\" — it recomputes against the Actions API rather than reading coord.ci_baselines, which makes it the way to RESOLVE a main verdict coord reports as unknown. One repo per call; for the fleet-wide per-repo green/red/unknown enumeration use coord_diagnose's `main_ci` component.", "query_tool": "coord_query_ci_state", "kind": "parameterized", "declared_status": "live", "params": ["pr_number", "ref", "repo"], "snapshot": false, "access": null, "door": null, "door_shape": null, "observed": null},
+            {"id": "twin_fidelity", "subspace": "twin_fidelity", "symbol": "Ξ_TwinFidelity", "twin": "process", "stages": ["learn"], "description": "Self-fidelity report — where the twin's model diverges from reality.", "query_tool": "coord_query_twin_fidelity", "kind": "snapshot", "declared_status": "live", "params": [], "snapshot": false, "access": null, "door": null, "door_shape": null, "observed": null}
+          ]
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/digital-twin/subspace/twin_fidelity/raw",
+        "status": 404,
+        "contentType": "application/json",
+        "body": { "detail": "{\"error\":\"no_snapshot_tool_for_subspace\",\"subspace\":\"twin_fidelity\"}" }
       },
       {
         "urlPattern": "**/api/v1/digital-twin/subspace/schema/raw",
@@ -85,6 +129,27 @@
             }
           }
         }
+      },
+      {
+        "urlPattern": "**/api/v1/operations/plans**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "work_units": [
+            { "id": "00000000-0000-4000-8000-000000000001", "slug": "2026-10-11-process-twin-event-log-and-flow-metrics", "title": "Process twin: one event log of the factory, flow metrics and conformance", "status": "in_progress", "authored_at": "2026-10-11T00:00:00Z", "created_at": "2026-10-11T00:00:00Z", "updated_at": "2026-10-11T00:00:00Z", "first_shipped_at": null, "metadata": { "area": "digital-twin", "source_path": "qontinui-dev-notes/plans/2026-10-11-process-twin-event-log-and-flow-metrics.md" } },
+            { "id": "00000000-0000-4000-8000-000000000002", "slug": "2026-10-11-local-cloud-as-twin-substrate", "title": "The digital twin observes, rehearses and measures itself in the local cloud", "status": "in_progress", "authored_at": "2026-10-11T00:00:00Z", "created_at": "2026-10-11T00:00:00Z", "updated_at": "2026-10-11T00:00:00Z", "first_shipped_at": null, "metadata": { "area": "digital-twin", "source_path": "qontinui-dev-notes/plans/2026-10-11-local-cloud-as-twin-substrate.md" } },
+            { "id": "00000000-0000-4000-8000-000000000003", "slug": "2026-10-05-fixture-ci-rollup-answers-whether-main-is-red", "title": "Fixture: the CI rollup answers whether main is red", "status": "in_progress", "authored_at": "2026-10-05T00:00:00Z", "created_at": "2026-10-05T00:00:00Z", "updated_at": "2026-10-05T00:00:00Z", "first_shipped_at": null, "metadata": { "area": "coord-ci-twin", "source_path": "qontinui-dev-notes/plans/2026-10-05-fixture-ci-rollup-answers-whether-main-is-red.md" } },
+            { "id": "00000000-0000-4000-8000-000000000004", "slug": "2026-10-03-fixture-ui-bridge-occlusion-sees-canvas-text", "title": "Fixture: the occlusion sweep sees canvas-painted text", "status": "in_progress", "authored_at": "2026-10-03T00:00:00Z", "created_at": "2026-10-03T00:00:00Z", "updated_at": "2026-10-03T00:00:00Z", "first_shipped_at": null, "metadata": { "area": "ui-bridge", "source_path": "qontinui-dev-notes/plans/2026-10-03-fixture-ui-bridge-occlusion-sees-canvas-text.md" } },
+            { "id": "00000000-0000-4000-8000-000000000005", "slug": "2026-10-01-fixture-intent-claims-are-re-verdicted", "title": "Fixture: intent document claims are re-verdicted", "status": "blocked", "authored_at": "2026-10-01T00:00:00Z", "created_at": "2026-10-01T00:00:00Z", "updated_at": "2026-10-01T00:00:00Z", "first_shipped_at": null, "metadata": { "area": "prompt-documents", "source_path": "qontinui-dev-notes/plans/2026-10-01-fixture-intent-claims-are-re-verdicted.md" } },
+            { "id": "00000000-0000-4000-8000-000000000006", "slug": "2026-09-20-fixture-migration-head-drift-is-alerted", "title": "Fixture: a migration head drift is alerted", "status": "vetted", "authored_at": "2026-09-20T00:00:00Z", "created_at": "2026-09-20T00:00:00Z", "updated_at": "2026-09-20T00:00:00Z", "first_shipped_at": null, "metadata": { "area": "database-migrations", "source_path": "qontinui-dev-notes/plans/2026-09-20-fixture-migration-head-drift-is-alerted.md" } },
+            { "id": "00000000-0000-4000-8000-000000000007", "slug": "2026-09-12-fixture-merge-train-stuck-threshold", "title": "Fixture: the merge train's stuck threshold follows its economics", "status": "shipped", "authored_at": "2026-09-12T00:00:00Z", "created_at": "2026-09-12T00:00:00Z", "updated_at": "2026-09-12T00:00:00Z", "first_shipped_at": "2026-09-12T12:00:00Z", "metadata": { "area": "coord-merge-train", "source_path": "qontinui-dev-notes/plans/2026-09-12-fixture-merge-train-stuck-threshold.md" } }
+          ],
+          "limit": 500,
+          "offset": 0,
+          "count": 7,
+          "order": "authored_desc",
+          "next_cursor": null
+        }
       }
     ]
   },
@@ -92,7 +157,7 @@
     {
       "id": "digital-twin-shell",
       "name": "Explorer shell + tabs",
-      "description": "The /digital-twin chrome that renders on the default Completeness tab: the page title, the four tab triggers (Completeness / Lifecycle / Delivery / UI Bridge — registered via useUIElement ids; the Lifecycle trigger's assertion is appended last so the earlier assertion indices stay stable), and the 'Ask the Twin' section heading (which renders in both the runner and no-runner branches — in CI there is no runner, so its input/submit controls do not mount and are not asserted). Identifies the page mounted, authenticated, not redirected.",
+      "description": "The /digital-twin chrome that renders on the default Twin map tab: the page title and the five tab triggers (Twin map / Completeness / Lifecycle / Delivery / UI Bridge — registered via useUIElement ids; the Lifecycle and Twin map triggers' assertions are appended last so the earlier assertion ids stay stable). The 'Ask the Twin' heading lives on the Completeness tab, which is no longer the initial render, so it is not asserted here. Identifies the page mounted, authenticated, not redirected.",
       "isInitial": true,
       "assertions": [
         {
@@ -140,17 +205,6 @@
           "enabled": true
         },
         {
-          "id": "digital-twin-shell-elem-4",
-          "description": "'Ask the Twin' section heading (h2; renders in both the runner and no-runner branches). Resolves via content-discovery.",
-          "category": "element-presence",
-          "severity": "warning",
-          "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "role": "heading", "text": "Ask the Twin" }, "label": "Ask the Twin heading" },
-          "source": "ai-generated",
-          "reviewed": false,
-          "enabled": true
-        },
-        {
           "id": "digital-twin-shell-elem-5",
           "description": "Lifecycle tab trigger (id digital-twin-tab-lifecycle) — the second tab, the stage pipeline of the twin of the software-development process.",
           "category": "navigation",
@@ -160,44 +214,66 @@
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
+        },
+        {
+          "id": "digital-twin-shell-elem-6",
+          "description": "Twin map tab trigger (id digital-twin-tab-twin-map) — the default tab, the plain-language landing view (plan 2026-10-23-console-presentation-spaces Phase 5).",
+          "category": "navigation",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "digital-twin-tab-twin-map" }, "label": "Twin map tab" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
         }
       ],
       "provenance": { "source": "ai-generated" }
     },
     {
-      "id": "digital-twin-matrix",
-      "name": "Completeness matrix cells",
-      "description": "The sub-space cells the matrix renders from the 57-row manifest taxonomy (the matrix denominator), joined with the stubbed GET /subspaces probe for live status. Each cell is registered with a web#617 useUIElement id digital-twin-cell-<manifestId>; this state asserts a representative set across status classes: schema (snapshot, implemented — the drawer-transition target), infra (snapshot, implemented), deps (snapshot, the 'blind' class). settleUntilPresent waits for digital-twin-cell-schema to register before the matcher snapshots, dodging the probe/render load race.",
+      "id": "digital-twin-twin-map",
+      "name": "Twin map aspect cards",
+      "description": "The Twin map's aspect cards — the initial render. One card per aspect of the twin, each with its fidelity (observed, coverage, staleness, honesty), the plans moving it counted by live status, and a navigation-only toggle registered as digital-twin-aspect-<id> (environment, process, intent, ui-bridge). settleUntilPresent waits for digital-twin-aspect-environment to register before the matcher snapshots.",
       "assertions": [
         {
-          "id": "digital-twin-matrix-elem-0",
-          "description": "Schema sub-space cell (id digital-twin-cell-schema) — the drawer-transition target.",
+          "id": "digital-twin-twin-map-elem-0",
+          "description": "Environment twin card toggle (id digital-twin-aspect-environment).",
           "category": "data-display",
           "severity": "critical",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "digital-twin-cell-schema" }, "label": "Schema cell" },
+          "target": { "type": "search", "criteria": { "id": "digital-twin-aspect-environment" }, "label": "Environment twin" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "digital-twin-matrix-elem-1",
-          "description": "Infra sub-space cell (id digital-twin-cell-infra).",
+          "id": "digital-twin-twin-map-elem-1",
+          "description": "Process twin card toggle (id digital-twin-aspect-process) — the open-aspect transition's target.",
           "category": "data-display",
           "severity": "critical",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "digital-twin-cell-infra" }, "label": "Infra cell" },
+          "target": { "type": "search", "criteria": { "id": "digital-twin-aspect-process" }, "label": "Process twin" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
         },
         {
-          "id": "digital-twin-matrix-elem-2",
-          "description": "Deps sub-space cell (id digital-twin-cell-deps) — the 'blind' status class.",
+          "id": "digital-twin-twin-map-elem-2",
+          "description": "Intent twin card toggle (id digital-twin-aspect-intent).",
           "category": "data-display",
           "severity": "warning",
           "assertionType": "exists",
-          "target": { "type": "search", "criteria": { "id": "digital-twin-cell-deps" }, "label": "Deps cell" },
+          "target": { "type": "search", "criteria": { "id": "digital-twin-aspect-intent" }, "label": "Intent twin" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "digital-twin-twin-map-elem-3",
+          "description": "UI Bridge app twin card toggle (id digital-twin-aspect-ui-bridge) — its figures read UNKNOWN in CI (no runner).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "digital-twin-aspect-ui-bridge" }, "label": "UI Bridge app twin" },
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
@@ -208,9 +284,26 @@
   ],
   "transitions": [
     {
+      "id": "digital-twin-aspect-open",
+      "name": "Twin map: open an aspect, see its parts and plans",
+      "description": "Behavioral READ of the Twin map (plan 2026-10-23-console-presentation-spaces Phase 5): click the Process twin card's toggle (id digital-twin-aspect-process) -> the aspect's drill-down mounts (id digital-twin-aspect-detail) with its parts and the plans moving it, each plan with its status as the stubbed GET /api/v1/operations/plans reports it (a plan the stub does not carry, as secrets_broker's, reads 'Not a work unit') and a link to /admin/coord/work-units/<slug>. The pass condition is the drill-down appearing. activateStates is empty; the transition passes iff the click executes and the waitAfter resolves. Runs FIRST, on the initial render; the tab switches that follow unmount it. Needs no connected runner.",
+      "fromStates": ["digital-twin-twin-map"],
+      "activateStates": [],
+      "exitStates": [],
+      "effect": "read",
+      "actions": [
+        {
+          "type": "click",
+          "target": { "id": "digital-twin-aspect-process" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-aspect-detail" }, "timeout": 10000 }
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    },
+    {
       "id": "digital-twin-delivery-lookup",
       "name": "Delivery tab: switch, look up a work-unit, read the verdict",
-      "description": "Behavioral READ of the Delivery tab (shipped by plan 2026-06-15-twin-delivery-verdict-completion-view): (1) click the Delivery tab trigger (id digital-twin-tab-delivery) -> the DeliveryVerdictCard mounts, asserted by its lookup input (id digital-twin-delivery-input) appearing; (2) type a work-unit slug into that input; (3) click 'Look up' (id digital-twin-delivery-submit) -> the stubbed GET /digital-twin/delivery/verdict resolves and the verdict block renders, asserted by its 'Show raw data' toggle (id digital-twin-delivery-show-raw, gated on verdict && summary) appearing; (4) switch back to the Completeness tab (id digital-twin-tab-completeness) so the matrix remounts for the open-drawer transition that follows (Radix Tabs unmounts inactive content). The DeliveryVerdictCard controls were instrumented with stable useUIElement ids in this same change (they previously had none). activateStates is empty; the transition passes iff every action executes and each waitAfter resolves. The type action's idle waitAfter lets React flush so the submit button is enabled before the click. Runs FIRST (and restores Completeness) so it does not collide with the modal Dialog the open-drawer transition opens. Needs no connected runner (delivery is coord-backed and stubbed here).",
+      "description": "Behavioral READ of the Delivery tab (shipped by plan 2026-06-15-twin-delivery-verdict-completion-view): (1) click the Delivery tab trigger (id digital-twin-tab-delivery) -> the DeliveryVerdictCard mounts, asserted by its lookup input (id digital-twin-delivery-input) appearing; (2) type a work-unit slug into that input; (3) click 'Look up' (id digital-twin-delivery-submit) -> the stubbed GET /digital-twin/delivery/verdict resolves and the verdict block renders, asserted by its 'Show raw data' toggle (id digital-twin-delivery-show-raw, gated on verdict && summary) appearing; (4) switch back to the Twin map tab (id digital-twin-tab-twin-map), the page's default view, before the transitions that follow (Radix Tabs unmounts inactive content). The DeliveryVerdictCard controls were instrumented with stable useUIElement ids in this same change (they previously had none). activateStates is empty; the transition passes iff every action executes and each waitAfter resolves. The type action's idle waitAfter lets React flush so the submit button is enabled before the click. Runs after the open-aspect transition (and restores the Twin map) so it does not collide with the modal Dialog the open-drawer transition opens. Needs no connected runner (delivery is coord-backed and stubbed here).",
       "fromStates": ["digital-twin-shell"],
       "activateStates": [],
       "exitStates": [],
@@ -234,8 +327,8 @@
         },
         {
           "type": "click",
-          "target": { "id": "digital-twin-tab-completeness" },
-          "waitAfter": { "type": "element", "query": { "id": "digital-twin-cell-schema" }, "timeout": 10000 }
+          "target": { "id": "digital-twin-tab-twin-map" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-aspect-environment" }, "timeout": 10000 }
         }
       ],
       "provenance": { "source": "ai-generated" }
@@ -243,7 +336,7 @@
     {
       "id": "digital-twin-lifecycle-view",
       "name": "Lifecycle tab: switch, see the stage pipeline, switch back",
-      "description": "Behavioral READ of the Lifecycle tab (the twin of the software-development process laid over intent → plan → implement → verify → integrate → release → operate → learn): (1) click the Lifecycle tab trigger (id digital-twin-tab-lifecycle) -> LifecycleView mounts one section per stage, each registered with a useUIElement id digital-twin-stage-<stage>; the pass condition is the Verify stage section (id digital-twin-stage-verify) appearing. The sections render from the checked-in manifest joined with the stubbed GET /subspaces probe, so they mount whatever the probe answers (only a restricted:true probe would replace them with the access notice; the stub sends restricted:false). Cells in this view carry stage-scoped ids (digital-twin-stage-<stage>-cell-<id>) because a row shows under every stage it observes, and the matrix's digital-twin-cell-<id> ids are unmounted while this tab is open. (2) switch back to the Completeness tab (id digital-twin-tab-completeness) so the matrix remounts for the open-drawer transition that follows (Radix Tabs unmounts inactive content), asserted by digital-twin-cell-schema reappearing. activateStates is empty; the transition passes iff every action executes and each waitAfter resolves. Runs after the Delivery lookup and BEFORE the open-drawer transition, so it never collides with the modal Dialog that transition opens. Needs no connected runner (the probe is coord-backed and stubbed here).",
+      "description": "Behavioral READ of the Lifecycle tab (the twin of the software-development process laid over intent → plan → implement → verify → integrate → release → operate → learn): (1) click the Lifecycle tab trigger (id digital-twin-tab-lifecycle) -> LifecycleView mounts one section per stage, each registered with a useUIElement id digital-twin-stage-<stage>; the pass condition is the Verify stage section (id digital-twin-stage-verify) appearing. The sections render from the checked-in manifest joined with the stubbed GET /subspaces probe, so they mount whatever the probe answers (only a restricted:true probe would replace them with the access notice; the stub sends restricted:false). Cells in this view carry stage-scoped ids (digital-twin-stage-<stage>-cell-<id>) because a row shows under every stage it observes, and the matrix's digital-twin-cell-<id> ids are unmounted while this tab is open. (2) switch back to the Twin map tab (id digital-twin-tab-twin-map), the page's default view (Radix Tabs unmounts inactive content), asserted by digital-twin-aspect-environment reappearing. activateStates is empty; the transition passes iff every action executes and each waitAfter resolves. Runs after the Delivery lookup and BEFORE the open-drawer transition, so it never collides with the modal Dialog that transition opens. Needs no connected runner (the probe is coord-backed and stubbed here).",
       "fromStates": ["digital-twin-shell"],
       "activateStates": [],
       "exitStates": [],
@@ -256,21 +349,26 @@
         },
         {
           "type": "click",
-          "target": { "id": "digital-twin-tab-completeness" },
-          "waitAfter": { "type": "element", "query": { "id": "digital-twin-cell-schema" }, "timeout": 10000 }
+          "target": { "id": "digital-twin-tab-twin-map" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-aspect-environment" }, "timeout": 10000 }
         }
       ],
       "provenance": { "source": "ai-generated" }
     },
     {
       "id": "digital-twin-open-drawer",
-      "name": "Open the Schema sub-space drawer (cell click)",
-      "description": "Behavioral READ: click the Schema sub-space cell (id digital-twin-cell-schema). The detail Dialog opens; because schema is query_kind 'snapshot' and the stubbed GET /subspace/schema/raw returns a verdict, the 'Show raw data' toggle (id digital-twin-show-raw, gated on isSnapshot && verdict) renders. The waitAfter on that toggle appearing is the pass condition — proving the cell -> drawer -> raw-verdict flow works end-to-end. activateStates is empty (the structural lane only models the initial render), so this transition passes iff the click executes without error AND show-raw appears within the timeout. Needs no connected runner (the matrix + drawer are coord-backed and stubbed here).",
-      "fromStates": ["digital-twin-matrix"],
+      "name": "Open the Completeness tab, then the Schema sub-space drawer (cell click)",
+      "description": "Behavioral READ: (1) click the Completeness tab trigger (id digital-twin-tab-completeness) -> the matrix mounts, asserted by the Schema sub-space cell (id digital-twin-cell-schema) appearing; (2) click that cell. The detail Dialog opens; because schema is query_kind 'snapshot' and the stubbed GET /subspace/schema/raw returns a verdict, the 'Show raw data' toggle (id digital-twin-show-raw, gated on readsRaw && verdict) renders. The waitAfter on that toggle appearing is the pass condition — proving the cell -> drawer -> raw-verdict flow works end-to-end. activateStates is empty (the structural lane only models the initial render), so this transition passes iff the clicks execute without error AND show-raw appears within the timeout. Runs LAST: the drawer is a modal Dialog. Needs no connected runner (the matrix + drawer are coord-backed and stubbed here).",
+      "fromStates": ["digital-twin-shell"],
       "activateStates": [],
       "exitStates": [],
       "effect": "read",
       "actions": [
+        {
+          "type": "click",
+          "target": { "id": "digital-twin-tab-completeness" },
+          "waitAfter": { "type": "element", "query": { "id": "digital-twin-cell-schema" }, "timeout": 10000 }
+        },
         {
           "type": "click",
           "target": { "id": "digital-twin-cell-schema" },

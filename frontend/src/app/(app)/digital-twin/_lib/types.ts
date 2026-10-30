@@ -9,9 +9,12 @@
 
 /**
  * How this page can read a sub-space:
- *  - `snapshot` — live-probed here, through coord's twin verdict route (the
- *    backend probes exactly `_PROBEABLE_SUBSPACES` in
- *    `backend/app/api/v1/endpoints/digital_twin.py`).
+ *  - `snapshot` — a row this page expects coord to declare probeable. The
+ *    backend probes exactly what coord's served catalog declares
+ *    (`backend/app/api/v1/endpoints/digital_twin.py` `_declared_probes`), and
+ *    `resolve.ts` joins the manifest to that catalog by id: a `snapshot` row
+ *    coord does not declare renders `not-served`, and a row coord declares is
+ *    live-probed whatever its `query_kind`.
  *  - `parameterized` — a coord tool answers it (with or without arguments),
  *    but this page does not probe it. The row's `ask_via` says where on this
  *    page it can be asked: Ask the Twin, the Delivery tab, or nowhere (coord
@@ -83,6 +86,15 @@ export interface SubspaceManifestEntry {
   ask_via?: AskVia;
   /** The plan slug that builds a planned / partial row (shown in the drawer). */
   plan?: string | null;
+  /**
+   * The work-unit areas whose plans move this sub-space: values of coord's
+   * canonical steering key `metadata.area` (kebab-case, matched exactly — the
+   * same key coord's `area` list filter reads). The Twin map resolves a
+   * sub-space's plans as its `plan` slug ∪ every work unit whose area is
+   * listed here (`twin-plans.ts`). Absent = no area is mapped; an area here
+   * that no work unit carries is shown as drift, never as "no plans".
+   */
+  areas?: readonly string[];
 }
 
 export interface SubspaceManifest {
@@ -95,18 +107,47 @@ export interface VerdictMetrics {
   coverage: number | null;
   credibility: number | null;
   posterior: number | null;
+  /**
+   * The reading's age when read. For an `envelope` door, its worst bucket's
+   * age — the bucket its drift class comes from (`digital_twin.py`
+   * `_class_bucket_age`); see {@link DoorShape}.
+   */
   staleness_seconds: number | null;
   provenance: string | null;
   drift_class: string | null;
 }
 
-/** A live probe result for one snapshot sub-space, as returned by the backend. */
+/**
+ * How a coord door lays its answer out (coord `twin_probe_door.rs`
+ * `DoorShape`):
+ *  - `verdict_wrapper` — `{subspace, tool, verdict}`, the DriftVerdict under
+ *    `verdict`;
+ *  - `envelope` — some of a DriftVerdict's fields at the top level (the admin
+ *    outbound door's `OutboundBudgetResponse`: `coverage`, `credibility`,
+ *    `provenance`, `drift_class`). It is NOT a DriftVerdict, and has no
+ *    answer-level age: each bucket carries its own, and the class is the
+ *    worst (first) bucket's. The backend serves that bucket's age as the
+ *    reading's `staleness_seconds`, so it dates the worst bucket only, and a
+ *    missing one is no age served, never coord's "fresh live answer"
+ *    (`status-presentation.ts` `readingAge`);
+ *  - `report` — `{subspace, tool, verdict}` where `verdict` is the tool's own
+ *    report, not a DriftVerdict, so it is never graded.
+ */
+export type DoorShape = "verdict_wrapper" | "envelope" | "report";
+
+/** A live probe result for one declared sub-space, as returned by the backend. */
 export interface SubspaceProbe {
   id: string;
+  /**
+   * `served` — coord answered a `report` door: the answer is real, but it is
+   * not a verdict, so it is neither healthy nor broken. `restricted` — coord
+   * refused THIS sub-space to this operator (403).
+   */
   status:
     | "implemented"
     | "partial"
     | "blind"
+    | "served"
     | "error"
     | "no_snapshot_tool"
     | "restricted";
@@ -115,45 +156,81 @@ export interface SubspaceProbe {
   error?: string;
   http_status?: number;
   detail?: unknown;
+  /** The door shape coord declared for this sub-space. */
+  door_shape?: DoorShape | null;
 }
 
 export interface SubspacesProbeResponse {
   subspaces: SubspaceProbe[];
   probed: number;
   /**
-   * True when coord's twin tenant gate denied this operator (home tenant outside
-   * COORD_TWIN_ALLOWED_TENANT_IDS) — the UI shows a friendly access message
-   * instead of an all-error grid.
+   * True only when EVERY probe was refused — coord's coarse twin tenant gate
+   * is armed against this operator — and the views then show the whole-view
+   * access notice. A single refused sub-space marks only its own cell
+   * `restricted`.
    */
   restricted?: boolean;
+  /**
+   * Set when coord, the tenant or coord's catalog could not be read: the cells
+   * are the ids coord last declared, each an `error`, or none at all.
+   */
+  degraded?: boolean;
 }
 
 /**
  * The display status the matrix renders per cell. Combines the live probe
  * (snapshot rows) with the manifest's static status (parameterized / none rows).
  *
- * Only a snapshot row can be `implemented` / `partial` / `blind` / `error` /
- * `probing` / `restricted` — those are probe results. A built row this page
- * does not probe is `interactive` (a coord tool answers it) or `unprobed` (no
- * coord tool): either way a manifest claim, never the live vocabulary.
+ * Only a live-probed row can be `implemented` / `partial` / `blind` /
+ * `served` / `error` / `probing` / `restricted` — those are probe results. A
+ * live-probed row is `unknown` while the probe holds no reading at all (it
+ * failed with nothing held, answered degraded with stand-in cells, or has no
+ * answer, no failure and no read in flight because react-query is holding it
+ * — `probe-read.ts` `probeUnread`): no probe answered for it, so it has no
+ * status to show, and certainly not the `error` of a probe that was made.
+ * It is `unknown` too while coord refuses EVERY reading (`probeReadOf`): its
+ * observer was not read, and a `restricted` row's own meaning — the others
+ * unaffected — would be false. A refusal of some rows only leaves each of
+ * them `restricted`. A built row this page does not probe is `interactive`
+ * (a coord tool answers it) or `unprobed` (no coord tool): either way a
+ * manifest claim, never the live vocabulary. `not-served` is a manifest `snapshot` row coord's catalog
+ * does not declare: the manifest and coord have drifted.
  */
 export type CellStatus =
   | "implemented"
   | "partial"
   | "blind"
+  | "served"
+  | "not-served"
   | "planned"
   | "not-built"
   | "interactive"
   | "unprobed"
   | "error"
   | "probing"
-  | "restricted";
+  | "restricted"
+  | "unknown";
 
 /** A manifest row joined with its resolved display status + any live metrics. */
 export interface ResolvedSubspace extends SubspaceManifestEntry {
   cellStatus: CellStatus;
+  /**
+   * This page live-probes the row: coord's catalog declares it probeable (or,
+   * with no catalog read, the manifest marks it `snapshot` or a probe for it
+   * came back).
+   */
+  liveProbed: boolean;
+  /** The declared door shape of a live-probed row, when known. */
+  doorShape?: DoorShape | null;
   metrics?: VerdictMetrics;
   error?: string;
+  /**
+   * Why an `unknown` row has no reading (`probeUnread`'s reason: "coord's
+   * live probe could not be made: coord could not be reached"; or, while
+   * coord refuses every reading, `probe-read.ts` `RESTRICTED_REASON`);
+   * absent on every other status.
+   */
+  unknownReason?: string;
 }
 
 /**
@@ -287,25 +364,49 @@ export interface DeliveryVerdictResponse {
 }
 
 /**
- * One entry of the coord-owned queryable-surface catalog (coord
- * `twin_catalog::TwinCatalogEntry`). The authoritative, fleet-global index of
- * the `coord_query_*` twin observers — the same surface list the agent Q&A
- * meta-answer expands into its `{{twin-catalog}}` token. Distinct from the
+ * One entry of the coord-owned queryable-surface catalog, as coord SERVES it
+ * (`twin_probe_door.rs` `served_entry`: the hand-declared
+ * `twin_catalog::TwinCatalogEntry` plus every derived field). The
+ * authoritative, fleet-global index of the `coord_query_*` twin observers —
+ * the same surface list the agent Q&A meta-answer expands into its
+ * `{{twin-catalog}}` token — and the list the matrix probes. Distinct from the
  * checked-in taxonomy manifest (which additionally carries the research-roadmap
  * denominator: tier / research_status / observer_module).
  */
 export interface TwinCatalogEntry {
-  /** Stable catalog id (the twin subspace). */
+  /** Stable catalog id. */
   id: string;
+  /** The twin sub-space id — what the manifest names the row by. */
+  subspace: string;
+  /** The sub-space's Ξ name. */
+  symbol: string;
+  twin: TwinPlant;
+  stages: LifecycleStage[];
   description: string;
   /** The MCP tool that queries it (e.g. `coord_query_migration_state`). */
   query_tool: string;
-  /** The tool's salient parameters (empty for a no-arg snapshot). */
-  params: string[];
-  /** `"snapshot"` (no-arg census) or `"parameterized"` (point query). */
-  kind: "snapshot" | "parameterized";
-  /** Availability — `"live"` for a wired observer. */
-  status: string;
+  /**
+   * Derived from the tool's `input_schema`: `"parameterized"` when it has a
+   * required argument, else `"snapshot"`; `null` when coord's registry does not
+   * serve the tool.
+   */
+  kind: "snapshot" | "parameterized" | null;
+  /** What the catalog DECLARES about availability — `"live"` for a wired observer. */
+  declared_status: string;
+  /** The tool's parameter names, from its `input_schema`; `null` when unserved. */
+  params: string[] | null;
+  /** The twin door serves a no-argument read of it. */
+  snapshot: boolean;
+  /** Who may read it on the twin door; `null` when the twin door does not serve it. */
+  access: string | null;
+  /** The HTTP path that answers it, or `null`. */
+  door: string | null;
+  door_shape: DoorShape | null;
+  /**
+   * Whether the twin is actually seeing it, from coord's newest fidelity
+   * report; `null` is UNKNOWN (no report, or the report does not measure it).
+   */
+  observed: boolean | null;
 }
 
 /** The body of GET /api/v1/digital-twin/catalog (coord `/coord/twin/catalog`). */

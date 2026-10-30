@@ -212,9 +212,9 @@ _WRITE_FAMILY: dict[str, Cell] = {
     "read_error": Cell(
         Raises(
             504,
-            "coord's answer was lost in transit (ReadError); "
-            "the change may have been applied, so re-read the current "
-            "state before retrying",
+            "coord's answer was lost in transit (ReadError); the "
+            "outcome is unknown and the change may have been applied, so "
+            "re-read the current state before retrying",
             OPS_TRANSPORT,
         )
     ),
@@ -343,7 +343,22 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     "ops_delete": _DELETE_FAMILY,
     # body= switches the call to client.request("DELETE", ...); same answers.
     "ops_delete_with_body": _DELETE_FAMILY,
-    "ops_verbatim": _VERBATIM_FAMILY,
+    # The helper maps a non-Connect transport error; the open-coded
+    # clone-credential route still lets it escape (P3 latent defect (a),
+    # Phase 5 of the plan in this file's header). Driven as a POST, so the
+    # write arm: the outcome is unknown, re-read first.
+    "ops_verbatim": {
+        **_VERBATIM_FAMILY,
+        "read_error": Cell(
+            Raises(
+                504,
+                "coord's answer was lost in transit (ReadError); the "
+                "outcome is unknown and the change may have been applied, "
+                "so re-read the current state before retrying",
+                OPS_TRANSPORT,
+            )
+        ),
+    },
     "ops_route_clone_credential": _VERBATIM_FAMILY,
     "ops_passthrough": _PASSTHROUGH_FAMILY,
     # The POST arm (``client.post(json=body or {})``); same answer handling.
@@ -993,8 +1008,17 @@ _WIRE_ROWS: list[
         {"params": PARAMS, "json": BODY},
         ("params", "json"),
     ),
-    # The GET arm sends neither params nor json.
-    ("passthrough-get", "ops_passthrough", {}, (_url(),), {}, ()),
+    # The GET arm sends no json, and ``params`` verbatim: ``None`` when the
+    # caller passed no query (httpx puts nothing on the wire for it).
+    ("passthrough-get", "ops_passthrough", {}, (_url(),), {"params": None}, ()),
+    (
+        "passthrough-get_params",
+        "ops_passthrough",
+        {"params": PARAMS},
+        (_url(),),
+        {"params": PARAMS},
+        ("params",),
+    ),
     (
         "passthrough_post-body",
         "ops_passthrough_post",

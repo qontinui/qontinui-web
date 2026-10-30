@@ -18,6 +18,11 @@
  * pipeline while UNMOUNTING the matrix (Radix Tabs unmounts inactive content),
  * so the two views register different ids for the same row and never collide.
  *
+ * The Twin map (the default tab since plan
+ * `2026-10-23-console-presentation-spaces` Phase 5) reads the work-unit list;
+ * its mock answers with the spec's own `/operations/plans` stub, walked to its
+ * one page — exactly what `useTwinWorkUnits` returns for that body.
+ *
  * A jsdom render is not a browser and is not the Spec CI executor; Spec CI's
  * own run stays the authoritative check.
  */
@@ -27,15 +32,21 @@ import { resolve } from "node:path";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SubspacesProbeResponse } from "./_lib/types";
+import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
+import type { WalkOutcome } from "@/app/(app)/admin/coord/work-units/planWalk";
+import type { SubspacesProbeResponse, TwinCatalogResponse } from "./_lib/types";
 
 const state = vi.hoisted(() => ({
+  /** The work-unit walk the Twin map reads (`useTwinWorkUnits`). */
+  workUnits: undefined as unknown,
   probe: {
     data: undefined as SubspacesProbeResponse | undefined,
     isLoading: false,
     isError: false,
     error: null as unknown,
   },
+  /** coord's served catalog — the declaration the matrix joins to. */
+  catalog: undefined as TwinCatalogResponse | undefined,
   /** Raw verdict bodies by sub-space id (the drawer's `useSubspaceRaw`). */
   rawById: {} as Record<string, unknown>,
   /** The delivery verdict body a submitted lookup resolves to. */
@@ -44,10 +55,20 @@ const state = vi.hoisted(() => ({
   registry: new Map<string, HTMLElement>(),
   /** Ids registered by two mounted elements at once. */
   duplicates: [] as string[],
+  /** Every draft the page handed the (mocked) Ask the Twin panel. */
+  askDrafts: [] as string[],
 }));
 
 vi.mock("./_hooks/useDigitalTwinSubspaces", () => ({
   useDigitalTwinSubspaces: () => state.probe,
+}));
+vi.mock("./_hooks/useTwinCatalog", () => ({
+  useTwinCatalog: () => ({
+    data: state.catalog,
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
 }));
 vi.mock("./_hooks/useSubspaceRaw", () => ({
   useSubspaceRaw: (id: string | null, enabled: boolean) => ({
@@ -57,6 +78,35 @@ vi.mock("./_hooks/useSubspaceRaw", () => ({
     error: null,
   }),
 }));
+vi.mock("./_hooks/useTwinWorkUnits", () => ({
+  useTwinWorkUnits: () => ({
+    data: state.workUnits,
+    isLoading: false,
+    isError: false,
+    error: null,
+    dataUpdatedAt: Date.parse("2026-10-23T12:00:00Z"),
+    errorUpdatedAt: 0,
+  }),
+}));
+// Spec CI runs with no connected runner, so the app twin has no device.
+vi.mock("./_hooks/useAppTwin", () => {
+  const idle = {
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    dataUpdatedAt: 0,
+    errorUpdatedAt: 0,
+  };
+  return {
+    useAppTwin: () => ({
+      deviceId: null,
+      online: true,
+      apps: idle,
+      graph: idle,
+    }),
+  };
+});
 vi.mock("./_hooks/useDeliveryVerdict", () => ({
   useDeliveryVerdict: (slug: string) => ({
     data: slug.trim() ? state.delivery : undefined,
@@ -85,7 +135,12 @@ vi.mock("@qontinui/ui-bridge/react", () => ({
 // and the runner-only Ask the Twin and UI Bridge panels (Spec CI runs with no
 // connected runner).
 vi.mock("./_components/TwinCatalog", () => ({ TwinCatalog: () => null }));
-vi.mock("./_components/AskTheTwin", () => ({ AskTheTwin: () => null }));
+vi.mock("./_components/AskTheTwin", () => ({
+  AskTheTwin: ({ draft }: { draft?: string | null }) => {
+    if (draft) state.askDrafts.push(draft);
+    return null;
+  },
+}));
 vi.mock("./_components/UiBridgePanel", () => ({ UiBridgePanel: () => null }));
 
 import DigitalTwinPage from "./page";
@@ -172,23 +227,64 @@ beforeEach(() => {
     isError: false,
     error: null,
   };
+  state.catalog = stubBody(
+    "**/api/v1/digital-twin/catalog"
+  ) as TwinCatalogResponse;
   state.rawById = {
     schema: stubBody("**/api/v1/digital-twin/subspace/schema/raw"),
   };
   state.delivery = stubBody("**/api/v1/digital-twin/delivery/verdict**");
+  // One page with no next_cursor: the walk reads it and stops, complete.
+  const plans = stubBody("**/api/v1/operations/plans**") as {
+    work_units: CoordPlanRow[];
+    next_cursor: unknown;
+  };
+  expect(plans.next_cursor).toBeNull();
+  state.workUnits = {
+    kind: "complete",
+    rows: plans.work_units,
+    bodySignal: null,
+    pages: 1,
+  } satisfies WalkOutcome;
   state.registry.clear();
   state.duplicates = [];
+  state.askDrafts = [];
 });
 
+/** The matrix cell ids mounted right now (`digital-twin-cell-<id>`). */
+function mountedMatrixCells(): string[] {
+  return Array.from(state.registry.keys()).filter(
+    (id) => /^digital-twin-cell-/.test(id) && isMounted(id)
+  );
+}
+
 describe("DigitalTwinPage tabs", () => {
-  it("orders the tabs Completeness, Lifecycle, Delivery, UI Bridge", () => {
+  it("orders the tabs Twin map, Completeness, Lifecycle, Delivery, UI Bridge", () => {
     render(<DigitalTwinPage />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual([
+      "Twin map",
       "Completeness",
       "Lifecycle",
       "Delivery",
       "UI Bridge",
     ]);
+  });
+
+  it("opens on the Twin map, with the matrix one click away", async () => {
+    const user = userEvent.setup();
+    render(<DigitalTwinPage />);
+    expect(screen.getByRole("tab", { name: "Twin map" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    expect(isMounted("digital-twin-aspect-environment")).toBe(true);
+    expect(mountedMatrixCells()).toEqual([]);
+
+    await user.click(registered("digital-twin-tab-completeness"));
+    await waitFor(() =>
+      expect(isMounted("digital-twin-cell-schema")).toBe(true)
+    );
+    expect(isMounted("digital-twin-aspect-environment")).toBe(false);
   });
 
   it("registers every id the spec's initial-render states assert", () => {
@@ -200,12 +296,15 @@ describe("DigitalTwinPage tabs", () => {
   });
 
   it("walks every Spec CI transition in spec order, by the spec's own ids", async () => {
-    // The Lifecycle tab's transition is one of them, ahead of the drawer.
+    // Opening an aspect runs first, on the initial render; the Lifecycle
+    // tab's transition is one of the tab switches, all ahead of the drawer.
     const order = SPEC.transitions.map((t) => t.id);
+    expect(order[0]).toBe("digital-twin-aspect-open");
     expect(order).toContain("digital-twin-lifecycle-view");
     expect(order.indexOf("digital-twin-lifecycle-view")).toBeLessThan(
       order.indexOf("digital-twin-open-drawer")
     );
+    expect(order.at(-1)).toBe("digital-twin-open-drawer");
 
     const user = userEvent.setup();
     render(<DigitalTwinPage />);
@@ -224,10 +323,16 @@ describe("DigitalTwinPage tabs", () => {
     const user = userEvent.setup();
     render(<DigitalTwinPage />);
 
+    // The matrix mounts on the Completeness tab: note its cells' ids.
+    await user.click(registered("digital-twin-tab-completeness"));
+    await waitFor(() =>
+      expect(isMounted("digital-twin-cell-schema")).toBe(true)
+    );
+    const matrixIds = mountedMatrixCells();
+    expect(matrixIds.length).toBeGreaterThan(0);
+
     // The transition's first action switches to the Lifecycle tab.
     await perform(user, lifecycle.actions[0]!);
-    const matrixIds = initialRenderIds("digital-twin-matrix");
-    expect(matrixIds.length).toBeGreaterThan(0);
     for (const id of matrixIds) {
       // The matrix cell is gone, and its row is present under stage-scoped ids.
       expect(isMounted(id), id).toBe(false);
@@ -238,5 +343,88 @@ describe("DigitalTwinPage tabs", () => {
       expect(scoped.length, row).toBeGreaterThan(0);
     }
     expect(state.duplicates).toEqual([]);
+  });
+});
+
+describe("DigitalTwinPage drawer navigation", () => {
+  it("opens Completeness with a question for an Ask-the-Twin row, from the Lifecycle tab", async () => {
+    const user = userEvent.setup();
+    render(<DigitalTwinPage />);
+
+    await user.click(registered("digital-twin-tab-lifecycle"));
+    const gatesCell = await waitFor(() => {
+      const id = Array.from(state.registry.keys()).find((key) =>
+        /^digital-twin-stage-[a-z]+-cell-gates$/.test(key)
+      );
+      expect(id).toBeDefined();
+      return registered(id!);
+    });
+    await user.click(gatesCell);
+    await user.click(registered("digital-twin-drawer-ask"));
+
+    // The drawer closed, the matrix is back, and the question was handed over.
+    await waitFor(() =>
+      expect(isMounted("digital-twin-cell-schema")).toBe(true)
+    );
+    expect(isMounted("digital-twin-drawer-ask")).toBe(false);
+    expect(state.askDrafts.at(-1)).toMatch(/gates sub-space/);
+    expect(state.askDrafts.at(-1)).toMatch(/coord_/);
+    expect(state.duplicates).toEqual([]);
+  });
+
+  it("opens the Delivery tab for the delivery row", async () => {
+    const user = userEvent.setup();
+    render(<DigitalTwinPage />);
+
+    await user.click(registered("digital-twin-tab-completeness"));
+    await user.click(
+      await waitFor(() => registered("digital-twin-cell-delivery"))
+    );
+    expect(isMounted("digital-twin-drawer-ask")).toBe(false);
+    await user.click(registered("digital-twin-drawer-open-delivery"));
+
+    await waitFor(() =>
+      expect(isMounted("digital-twin-delivery-input")).toBe(true)
+    );
+    expect(state.askDrafts).toEqual([]);
+  });
+
+  it("offers no action for a row this page cannot ask, or a live-probed one", async () => {
+    const user = userEvent.setup();
+    render(<DigitalTwinPage />);
+
+    await user.click(registered("digital-twin-tab-completeness"));
+    await waitFor(() =>
+      expect(isMounted("digital-twin-cell-schema")).toBe(true)
+    );
+    for (const id of ["ast", "schema"]) {
+      await user.click(registered(`digital-twin-cell-${id}`));
+      await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+      expect(isMounted("digital-twin-drawer-ask"), id).toBe(false);
+      expect(isMounted("digital-twin-drawer-open-delivery"), id).toBe(false);
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    }
+  });
+});
+
+describe("DigitalTwinPage title — the presentation lens (plan 2026-10-23-console-presentation-spaces)", () => {
+  it("is its caption: the heading Spec CI asserts, and the one-liner, for the operator", () => {
+    render(<DigitalTwinPage />);
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Digital Twin" })
+    ).toBeInTheDocument();
+    const caption = document.querySelector(
+      '[data-presentation-caption="digital-twin.page"]'
+    );
+    expect(caption).not.toBeNull();
+    expect(
+      caption?.querySelector('[data-caption-part="one-liner"]')
+    ).not.toBeNull();
+    expect(
+      caption?.querySelector('[data-caption-part="why-it-matters"]')
+    ).toBeNull();
+    // No lens is mounted above a bare page render, so there is no toggle.
+    expect(screen.queryByText("Presentation mode")).not.toBeInTheDocument();
   });
 });

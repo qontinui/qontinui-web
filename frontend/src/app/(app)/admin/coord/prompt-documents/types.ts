@@ -1765,6 +1765,63 @@ export interface AutoPublishStatusResponse {
   /** The two waits, in seconds, as coord has them compiled. */
   quiet_period_loosening_seconds?: number;
   quiet_period_other_seconds?: number;
+  /**
+   * What coord's worker ledger OBSERVED of the two auto-publish loops on the
+   * serving coord (plan `2026-10-17-auto-publish-lands-via-coord-2290-adoption`
+   * D5 / Phase 4). The switch above says what the worker is ALLOWED to do; this
+   * says whether anything is actually doing it.
+   *
+   * Optional: a coord older than that plan's Phase 3 does not serve it, and
+   * `undefined` renders UNKNOWN — never as a healthy loop.
+   */
+  worker?: {
+    /** The leader-gated publication pass. */
+    pass?: AutoPublishWorkerObservation;
+    /** The daily recovery reconcile. */
+    recovery_reconcile?: AutoPublishWorkerObservation;
+  };
+}
+
+/**
+ * A worker's liveness as coord's ledger classifies it. A string coord adds
+ * later is not in this union and renders UNKNOWN, so the type stays honest
+ * about what this build can name.
+ */
+export type AutoPublishWorkerStatus =
+  | "alive"
+  | "erroring"
+  | "stale"
+  | "dead"
+  | "not_leader_here"
+  | "unknown";
+
+/** One worker's observation, from the auto-publish status read. */
+export interface AutoPublishWorkerObservation {
+  status: AutoPublishWorkerStatus | (string & {});
+  /**
+   * Why the status is `unknown` or `erroring` — coord's own sentence. `null`
+   * (or absent, from an older coord) for every other status.
+   */
+  unknown_reason?: string | null;
+  /**
+   * The ledger's last tick of ANY kind. A follower's `follower_skip` refreshes
+   * it, so it is NEVER evidence that a pass ran — only the stale/dead "since".
+   */
+  last_tick_at?: string | null;
+  /** The last time the loop body actually executed — the only "last pass". */
+  last_work_tick_at?: string | null;
+  /** Coord's decision code for that tick (`ran:published`, `skip:switch_off`, …), verbatim. */
+  last_decision_code?: string | null;
+  /**
+   * Coord's own verdict on whether the loop is healthy. `false` whenever
+   * anything is wrong, an `alive` loop included (absent from an older coord).
+   */
+  nominal?: boolean;
+  /**
+   * Why `nominal` is false — the ledger rollup's reason (`stale`,
+   * `error_streak`, …), `last_pass_failed`, or `lease_holder_unknown`.
+   */
+  reason?: string | null;
 }
 
 // ------------------- the kill switch (`policy_auto_publish`) -------------------
@@ -1783,7 +1840,8 @@ export const POLICY_AUTO_PUBLISH_DOMAIN = "policy_auto_publish";
 
 /** The levels. Mirrors coord's `PolicyAutoPublishLevel::ALL`, most restrictive first. */
 export const POLICY_AUTO_PUBLISH_LEVELS = ["off", "on"] as const;
-export type PolicyAutoPublishLevel = (typeof POLICY_AUTO_PUBLISH_LEVELS)[number];
+export type PolicyAutoPublishLevel =
+  (typeof POLICY_AUTO_PUBLISH_LEVELS)[number];
 
 /**
  * What coord applies when NO row matches — `on`, deliberately NOT the

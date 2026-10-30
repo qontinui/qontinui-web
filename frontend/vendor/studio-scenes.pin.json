@@ -1,0 +1,9 @@
+{
+  "package": "@qontinui/studio-scenes",
+  "tarball": "qontinui-studio-scenes-0.1.0.tgz",
+  "sha256": "7318d7ac52005efc1d53f4504e2827f06695edf0074c7fe9b7f474054d3a55ee",
+  "studio_repo": "https://github.com/qontinui/qontinui-studio",
+  "studio_commit": "afe0e8db245544f3584dd301500ae05ff2beb19a",
+  "built_with": "node 24.19.0, npm 11.17.0: cd scenes && pnpm install --frozen-lockfile && pnpm browser:ensure && pnpm embed:pack",
+  "public_copies": ["public/studio/fonts/", "public/studio/posters/"]
+}

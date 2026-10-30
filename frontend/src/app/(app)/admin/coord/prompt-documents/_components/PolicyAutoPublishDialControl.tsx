@@ -16,13 +16,44 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertTriangle, Send } from "lucide-react";
 import { usePolicyAutoPublishPolicy } from "../_hooks/usePolicyAutoPublishPolicy";
+import type { PublishAllState } from "../_hooks/usePublishAll";
+import { describeObservedPass } from "../_lib/observedWorker";
 import {
+  type AutoPublishWorkerObservation,
   POLICY_AUTO_PUBLISH_CONFIRMED_LEVELS,
   POLICY_AUTO_PUBLISH_DEFAULT_LEVEL,
   POLICY_AUTO_PUBLISH_LEVEL_HELP,
   POLICY_AUTO_PUBLISH_SELECTABLE_LEVELS,
   type PolicyAutoPublishLevel,
 } from "../types";
+
+/** What the page's auto-publish status read observed of the publication pass. */
+export interface AutoPublishObserved {
+  /** True once the status read has answered or failed. */
+  settled: boolean;
+  /** The `usePublishAll` latch read `not_system_tenant` / `not_proxied`. */
+  unavailable: boolean;
+  /** `worker.pass` from that read; `undefined` is UNKNOWN. */
+  pass: AutoPublishWorkerObservation | undefined;
+}
+
+/**
+ * The dial's observation, built from the page's ONE `usePublishAll` read.
+ * The page and the tests both go through this, so the wiring under test is the
+ * wiring that ships.
+ */
+export function observedFromPublishAll(
+  state: Pick<PublishAllState, "statusSettled" | "unavailable" | "worker">
+): AutoPublishObserved {
+  return {
+    settled: state.statusSettled,
+    // The existing, deliberately silent latch: outside the system tenant (or
+    // before the route is proxied) the auto-publisher is not this tenant's, so
+    // the dial shows no observation at all.
+    unavailable: state.unavailable !== null,
+    pass: state.worker?.pass,
+  };
+}
 
 /**
  * The per-tenant dial for automatic publishing.
@@ -68,9 +99,23 @@ import {
  * - **Which scope band answered**, so a write that will stay overridden is not
  *   mistaken for a broken dial.
  * - **A failed read-back is UNKNOWN**, not the level that was written.
+ *
+ * ## "In force" is permission; "Observed" is what happened
+ *
+ * Plan `2026-10-17-auto-publish-lands-via-coord-2290-adoption` D5 / Phase 4.
+ * The level says what the worker MAY do, and a bare "In force: on" over a loop
+ * no replica runs looks exactly like a working one. So beside it the dial
+ * states what coord's worker ledger observed of the publication pass, read off
+ * the page's ONE auto-publish status read (the list's badges come from the
+ * same response). See `../_lib/observedWorker.ts` for the sentence per status.
+ * It renders nothing when the page has not wired the observation, before the
+ * first read settles, and under the existing silent latch
+ * (`not_system_tenant` / `not_proxied`): outside the system tenant there is no
+ * auto-publisher of this tenant's to observe.
  */
 export function PolicyAutoPublishDialControl({
   onLevelChanged,
+  observed,
 }: {
   /**
    * Called after a write FROM THIS CONTROL lands, so the page can re-take the
@@ -79,6 +124,11 @@ export function PolicyAutoPublishDialControl({
    * system-scope row) is not seen until the page reloads.
    */
   onLevelChanged?: () => void;
+  /**
+   * What coord observed of the publication pass. Omitted, the dial shows no
+   * observation line (it is mounted outside the page that owns the read).
+   */
+  observed?: AutoPublishObserved;
 } = {}) {
   const {
     policy,
@@ -105,6 +155,11 @@ export function PolicyAutoPublishDialControl({
   };
 
   const canEdit = policy?.can_edit ?? false;
+
+  const observedReading =
+    observed && observed.settled && !observed.unavailable
+      ? describeObservedPass(observed.pass)
+      : null;
 
   // Coord resolves most-specific-first (repo < tenant < system). A `repo` row
   // winning is the one case where a tenant write lands and changes nothing;
@@ -249,6 +304,32 @@ export function PolicyAutoPublishDialControl({
             </span>
           )}
         </div>
+      ) : null}
+
+      {observedReading ? (
+        <p
+          className={
+            observedReading.tone === "nominal"
+              ? "text-sm text-muted-foreground"
+              : "text-sm text-amber-700 dark:text-amber-400"
+          }
+          data-testid="policy-auto-publish-observed"
+          data-observed-tone={observedReading.tone}
+          title={observedReading.title}
+        >
+          {observedReading.tone === "nominal" ? null : (
+            <AlertTriangle
+              className="mr-1 inline size-4 align-text-bottom"
+              aria-hidden
+            />
+          )}
+          {observedReading.text}
+          {observedReading.reason ? (
+            <span className="ml-1 text-xs text-muted-foreground">
+              ({observedReading.reason})
+            </span>
+          ) : null}
+        </p>
       ) : null}
 
       {/* A NARROWER row is winning, and this control only writes the tenant band. */}

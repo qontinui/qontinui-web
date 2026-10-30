@@ -243,11 +243,29 @@ _FORWARDED_TO_COORD: dict[str, str] = {
 # selection degrades to home) before using it for anything local, such as a
 # cache key. They also forward it to coord.
 _VALIDATED_LOCALLY: dict[str, str] = {
+    "app.api.v1.endpoints.overlord_labels": (
+        "never forwards the client's raw value: it sends the tenant "
+        "require_coord_tenant_admin resolved, which is membership-checked "
+        "against the caller's coord operator roles"
+    ),
     "app.api.v1.endpoints.admin_dev": (
         "_capture_bearer_best_effort matches the selection against identity.tenants"
     ),
     "app.api.v1.endpoints.digital_twin": (
         "subspaces keys its cache on _effective_tenant_id(identity, header)"
+    ),
+    "app.api.v1.endpoints.taste": (
+        "reads it only for get_can_label's _effective_tenant_roles, which "
+        "matches it against identity.tenants (a non-member selection degrades "
+        "to home); every row is scoped by the tenant get_memory_tenant / "
+        "require_coord_tenant_admin_target resolve, never by the raw value"
+    ),
+    "app.api.v1.endpoints.presentation": (
+        "reads it only through _effective_tenant_id / _effective_tenant_roles, "
+        "which match it against identity.tenants (a non-member selection "
+        "degrades to home); every row is keyed on that resolved tenant, and "
+        "operations' _tenant_headers forwards the header to coord's "
+        "/pr-merge/repos read"
     ),
 }
 
@@ -408,8 +426,9 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({"/api/v1/dispatch/status/{app_id}"}),
     ),
     "app.api.v1.endpoints.fleet_targets": (
-        "device-owner scoped reads and the project.apps config edit; only the "
-        "designation PUT/DELETE resolve a tenant (they forward it to coord's "
+        "device-owner scoped reads and the platform-admin-only project.apps "
+        "config read/edit (project.apps is not partitioned by tenant yet); only "
+        "the designation PUT/DELETE resolve a tenant (they forward it to coord's "
         "binding-checked test-targets writer)",
         frozenset(
             {

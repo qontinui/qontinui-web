@@ -47,6 +47,8 @@ vi.mock("@/services/service-factory", () => ({
 
 import CoordNav from "./CoordNav";
 import { DIRECT_TABS, GROUPS } from "./coordNavModel";
+import { FixedPresentationMode } from "@/components/presentation";
+import { findPresentationViolations } from "@/test/presentation";
 
 describe("CoordNav", () => {
   beforeEach(() => {
@@ -1124,5 +1126,89 @@ describe("CoordNav", () => {
         vi.useRealTimers();
       }
     });
+  });
+});
+
+describe("CoordNav in the presentation lens (plan 2026-10-23-console-presentation-spaces)", () => {
+  /** Notifications unread, and a fleet with one machine refusing work. */
+  function routeBusy() {
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (u.startsWith("/api/v1/operations/notifications")) {
+        return Promise.resolve({ notifications: [], unread_count: 7 });
+      }
+      if (u.includes("fleet/health")) {
+        return Promise.resolve({
+          devices: [{ device_id: "d-1", hostname: "msi", state: "degraded" }],
+        });
+      }
+      if (u.includes("fleet/resource-samples")) {
+        return Promise.resolve({ latest: [], history: [] });
+      }
+      return Promise.resolve({});
+    });
+  }
+
+  beforeEach(() => {
+    httpGet.mockReset();
+    routeBusy();
+    pathname = "/admin/coord/devops";
+  });
+
+  it("carries the presentation on both links, so one opened in a new tab still presents", () => {
+    render(
+      <FixedPresentationMode presenting>
+        <CoordNav />
+      </FixedPresentationMode>
+    );
+    expect(
+      screen.getByTestId("coord-nav-notifications").getAttribute("href")
+    ).toBe("/admin/coord/notifications?present=1");
+    expect(
+      screen.getByTestId("coord-nav-devops-alarm").getAttribute("href")
+    ).toBe("/admin/coord/devops?present=1");
+  });
+
+  it("drops the operator's triage counts, keeping only the navigation", async () => {
+    render(
+      <FixedPresentationMode presenting>
+        <CoordNav />
+      </FixedPresentationMode>
+    );
+    // Let both polls land before asserting their counts stay off screen.
+    await waitFor(() =>
+      expect(
+        httpGet.mock.calls.some(([u]) => String(u).includes("fleet/health"))
+      ).toBe(true)
+    );
+    await act(async () => {});
+    expect(screen.queryByTestId("coord-nav-notifications-badge")).toBeNull();
+    expect(screen.queryByTestId("coord-nav-devops-unhealthy-badge")).toBeNull();
+    expect(
+      findPresentationViolations({
+        baseElement: document.body,
+        uiBridge: {
+          unobservable:
+            "the header row registers nothing with the UI Bridge; its links are checked as DOM",
+        },
+      })
+    ).toEqual([]);
+  });
+
+  it("is the operator's row, counts and plain links, outside presentation mode", async () => {
+    render(
+      <FixedPresentationMode presenting={false}>
+        <CoordNav />
+      </FixedPresentationMode>
+    );
+    expect(
+      await screen.findByTestId("coord-nav-notifications-badge")
+    ).toHaveTextContent("7");
+    expect(
+      await screen.findByTestId("coord-nav-devops-unhealthy-badge")
+    ).toHaveTextContent("1 unhealthy");
+    expect(
+      screen.getByTestId("coord-nav-notifications").getAttribute("href")
+    ).toBe("/admin/coord/notifications");
   });
 });

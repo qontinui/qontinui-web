@@ -759,6 +759,7 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/operations/fleet",
     "https://api.test/api/v1/admin-dev/overview",
     "https://api.test/api/v1/admin/agent-sessions",
+    "https://api.test/api/v1/admin/coord/overlord/labels",
     // Project Overview. Every `overview.*` row is keyed on the active tenant
     // and the backend resolves it from this header ALONE, so a missing entry
     // here silently serves (and writes) the operator's home project under
@@ -783,6 +784,13 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/design-policies",
     "https://api.test/api/v1/digital-twin/subspaces",
     "https://api.test/api/v1/memory/records",
+    // The image store: rows and object keys are the active tenant's.
+    "https://api.test/api/v1/image-assets",
+    "https://api.test/api/v1/image-assets/slot-candidates?repo=qontinui-web&slot_id=home.hero",
+    `https://api.test/api/v1/image-assets/${"a".repeat(64)}`,
+    // The taste inbox: its queue and labels are the active tenant's.
+    "https://api.test/api/v1/taste/inbox?limit=5",
+    "https://api.test/api/v1/taste/pairs/00000000-0000-0000-0000-000000000001/label",
     "https://api.test/api/v1/plan-library/candidates",
     "https://api.test/api/v1/session-repository/unfinished",
     // Test-host designation writes: coord binding-checks the device against
@@ -791,6 +799,9 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/fleet/test-targets/dev-1/web",
     "https://api.test/api/v1/build-records/products",
     "https://api.test/api/v1/build-records/my-product/publish",
+    // The presentation scope: its row is the selected project's, so a missing
+    // entry would redact a presentation of one project by another's lists.
+    "https://api.test/api/v1/presentation/scope",
   ];
 
   for (const url of SCOPED_URLS) {

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
+import { OperatorOnly } from "@/components/presentation";
 import { useDispatchTarget } from "@/contexts/active-runner-context";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 
@@ -66,7 +67,54 @@ function busyHint(
   return "Connecting to your runner…";
 }
 
-export function AskTheTwin() {
+interface AskTheTwinProps {
+  /**
+   * A question handed over from elsewhere on the page (the sub-space drawer's
+   * "Ask the Twin about this"). It is typed into the box, NOT asked: the
+   * operator reviews and submits it. `onDraftApplied` fires once it is in.
+   */
+  draft?: string | null;
+  onDraftApplied?: () => void;
+}
+
+/**
+ * What presentation mode shows in Ask the Twin's place: what the panel is
+ * for, and nothing an outsider could press or read from a conversation.
+ */
+function AskTheTwinPresented() {
+  return (
+    <section
+      data-testid="ask-the-twin-presented"
+      className="rounded-lg border border-border bg-card p-4"
+    >
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold">
+        <MessageSquare className="size-4" /> Ask the Twin
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        An operator can ask the twin a question here and an agent session
+        answers it from the same readings; questions and answers are not shown
+        in presentation mode.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * Ask the Twin, inside the presentation lens's write boundary (plan
+ * `2026-10-23-console-presentation-spaces` D3.2): asking starts an AI session
+ * on a runner, so the whole panel — its input, its Ask button, its chat
+ * socket and any conversation — is `OperatorOnly`, unmounted in presentation
+ * mode rather than hidden.
+ */
+export function AskTheTwin(props: AskTheTwinProps = {}) {
+  return (
+    <OperatorOnly placeholder={<AskTheTwinPresented />}>
+      <AskTheTwinPanel {...props} />
+    </OperatorOnly>
+  );
+}
+
+function AskTheTwinPanel({ draft, onDraftApplied }: AskTheTwinProps) {
   // Asking starts a NEW AI session, so it goes only where new work may go:
   // the user's explicit choice or coord's resolved pick — never a read
   // fallback. Otherwise coord's outcome is shown.
@@ -76,6 +124,22 @@ export function AskTheTwin() {
   const [input, setInput] = useState("");
   const [queued, setQueued] = useState<string | null>(null);
   const hasSessionRef = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Set when a handed-over draft is typed in; the effect after that commit
+  // focuses the box if it is mounted, and either way clears it — so focus
+  // never jumps here later (e.g. when a runner connects minutes after).
+  const [focusDraft, setFocusDraft] = useState(false);
+  // Read through a ref so a parent passing a fresh callback each render does
+  // not re-run the effect and retype the draft over the operator's edits.
+  const onDraftAppliedRef = useRef(onDraftApplied);
+  onDraftAppliedRef.current = onDraftApplied;
+
+  useEffect(() => {
+    if (!draft) return;
+    setInput(draft);
+    setFocusDraft(true);
+    onDraftAppliedRef.current?.();
+  }, [draft]);
   const sentCountRef = useRef(0);
 
   const {
@@ -175,17 +239,19 @@ export function AskTheTwin() {
     setInput("");
   }, [input, busy]);
 
-  // UI Bridge: stable ids so automation can type a question + submit it.
-  const { ref: inputRef } = useUIElement({
-    id: "ask-the-twin-input",
-    label: "Digital Twin question input",
-    type: "input",
-  });
-  const { ref: submitRef } = useUIElement({
-    id: "ask-the-twin-submit",
-    label: "Ask the Twin — submit question",
-    type: "button",
-  });
+  const setTextarea = useCallback((el: HTMLTextAreaElement | null) => {
+    textareaRef.current = el;
+  }, []);
+
+  useEffect(() => {
+    if (!focusDraft) return;
+    const el = textareaRef.current;
+    if (el) {
+      el.focus();
+      el.scrollIntoView?.({ block: "center" });
+    }
+    setFocusDraft(false);
+  }, [focusDraft]);
 
   if (runnerId === null) {
     return (
@@ -197,6 +263,17 @@ export function AskTheTwin() {
           <WifiOff className="size-4" /> No runner can take a new question right
           now.
         </p>
+        {/* Whatever is in the box — typed, or handed over by the drawer — is
+            kept and shown while no runner can take it (for as long as this
+            tab stays mounted), so a handed-over question is not lost unseen. */}
+        {input.trim() && (
+          <p
+            data-testid="ask-the-twin-kept-question"
+            className="mt-1 text-xs text-muted-foreground"
+          >
+            Your question is kept for when one can: “{input.trim()}”
+          </p>
+        )}
         {dispatchTarget.message && (
           <p
             data-testid="ask-the-twin-outcome"
@@ -287,35 +364,13 @@ export function AskTheTwin() {
         </div>
       )}
 
-      <div className="flex items-end gap-2">
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSubmit();
-            }
-          }}
-          rows={2}
-          placeholder="Ask a question about the digital twin…"
-          className="min-h-[2.5rem] flex-1 resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        />
-        <Button
-          ref={submitRef}
-          onClick={handleSubmit}
-          disabled={busy || !input.trim()}
-          className="gap-1.5"
-        >
-          {busy ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Send className="size-4" />
-          )}
-          Ask
-        </Button>
-      </div>
+      <QuestionRow
+        input={input}
+        onInput={setInput}
+        onSubmit={handleSubmit}
+        busy={busy}
+        textareaRef={setTextarea}
+      />
       {busy && (
         <p className="mt-1.5 text-xs text-muted-foreground">
           {busyHint(sessionGone, processing, !!streamingContent)}
@@ -327,5 +382,83 @@ export function AskTheTwin() {
         session, and this page cannot see whether it did.
       </p>
     </section>
+  );
+}
+
+/**
+ * The question box and its Ask button, each registering its UI Bridge id
+ * (stable, so automation can type a question and submit it) where it renders,
+ * and only while it does: they render only once a runner can take a
+ * question.
+ *
+ * A registration with no element on screen is one the SDK goes looking for:
+ * `useUIElement` polls the DOM for it, 3 tries 100 ms apart
+ * (`pollForTaggedElement`), and unmounting does not stop the poll
+ * (`SubspaceDetailActions.tsx` says the same of the drawer's buttons). So
+ * registered in the panel, above its no-runner return, both ids started a
+ * poll on every mount with no runner.
+ */
+function QuestionRow({
+  input,
+  onInput,
+  onSubmit,
+  busy,
+  textareaRef,
+}: {
+  input: string;
+  onInput: (value: string) => void;
+  onSubmit: () => void;
+  busy: boolean;
+  /** The panel's own handle on the box, to focus a handed-over draft. */
+  textareaRef: (el: HTMLTextAreaElement | null) => void;
+}) {
+  const { ref: inputRef } = useUIElement({
+    id: "ask-the-twin-input",
+    label: "Digital Twin question input",
+    type: "input",
+  });
+  const { ref: submitRef } = useUIElement({
+    id: "ask-the-twin-submit",
+    label: "Ask the Twin — submit question",
+    type: "button",
+  });
+  const setTextarea = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      textareaRef(el);
+      inputRef(el);
+    },
+    [textareaRef, inputRef]
+  );
+
+  return (
+    <div className="flex items-end gap-2">
+      <textarea
+        ref={setTextarea}
+        value={input}
+        onChange={(e) => onInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            onSubmit();
+          }
+        }}
+        rows={2}
+        placeholder="Ask a question about the digital twin…"
+        className="min-h-[2.5rem] flex-1 resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      <Button
+        ref={submitRef}
+        onClick={onSubmit}
+        disabled={busy || !input.trim()}
+        className="gap-1.5"
+      >
+        {busy ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <Send className="size-4" />
+        )}
+        Ask
+      </Button>
+    </div>
   );
 }

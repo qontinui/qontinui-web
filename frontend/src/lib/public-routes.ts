@@ -25,6 +25,7 @@ export const PUBLIC_PATHS = [
   "/terms",
   "/acceptable-use",
   "/responsible-use",
+  "/how-it-works",
   // Cognito hosted-UI OAuth landing. It arrives unauthenticated (no token/
   // marker cookie yet) carrying `?code=&state=`; it MUST run the PKCE token
   // exchange in-page rather than being bounced to `/login?next=…`. Exempting
@@ -39,6 +40,12 @@ export const PUBLIC_PREFIXES = [
   "/api",
   "/coord-api",
   "/__ui-bridge__",
+  // Image-slot files (`public/image-slots/`, plan 2026-10-13-image-
+  // generation-and-visual-judgment, Phase 14): the art on public pages, and
+  // what studio's D7 preview fetches, logged out. Gated, a <picture> whose
+  // first <source> is redirected to /login shows NOTHING: the browser does
+  // not fall back to the next source on an error.
+  "/image-slots",
 ];
 
 // The social cards Next serves for the public trees

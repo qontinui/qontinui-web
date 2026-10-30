@@ -15,9 +15,10 @@ const log = createLogger("HttpClient");
  * Read here directly (not via React context — `HttpClient` is a plain class)
  * to attach the `X-Qontinui-Active-Tenant` header to coord-proxy calls so the
  * operator's coord context re-scopes to the chosen tenant. The key MUST match
- * `tenant-context.tsx`'s `STORAGE_KEY`.
+ * `tenant-context.tsx`'s `STORAGE_KEY`. Exported for readers that must key a
+ * cache on the selection a request carries (the presentation scope loader).
  */
-const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
+export const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
 
 /**
  * URL prefixes whose backend handlers proxy to coord with the operator's
@@ -110,6 +111,21 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // today — the coord memory page reads `/api/v1/operations/memory/list` —
   // so this entry is for future callers, which then scope correctly.
   "/api/v1/memory/",
+  // Content-addressed image store — the same `get_memory_tenant` operator
+  // arm: every `web.image_assets` / `web.image_slot_candidates` row and every
+  // object key is scoped by the tenant `get_coord_identity` resolves, so
+  // without the header a multi-tenant operator would read (and upload into)
+  // the home project's images under another project's name. Its first
+  // dashboard caller is the taste inbox (plan
+  // 2026-10-13-image-generation-and-visual-judgment, Phases 13 and 23).
+  "/api/v1/image-assets",
+  // The taste inbox — the same `get_memory_tenant` operator arm for the queue
+  // read and the pair push, and `require_coord_tenant_admin_target` for label
+  // writes: every `web.taste_pairs` row is the selected project's, so without
+  // the header a multi-tenant operator would label (and read) the home
+  // project's queue under another project's name. Plan
+  // 2026-10-13-image-generation-and-visual-judgment, Phase 23.
+  "/api/v1/taste/",
   // Plan library — the coord work-unit overlay resolves through
   // `_soft_tenant_id` and forwards the header, so without it the overlay is
   // the home project's while the page claims the selected one.
@@ -132,9 +148,26 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // `/api/v1/public/build-records/…`, which resolves no tenant. Plan
   // 2026-10-09-factory-built-product-portfolio-and-launch-kit, Phase 1.
   "/api/v1/build-records/",
+  // Overlord operator labels — `require_coord_tenant_admin` gates the write, so
+  // admin is checked in the SELECTED project, not the home one. Plan
+  // 2026-10-01-overlord-session-supervisor-classifies-stops-and-absorbs-
+  // avoidable-escalations, Phase 2b.
+  "/api/v1/admin/coord/overlord/",
+  // The presentation scope — `web.presentation_scopes` rows are keyed on the
+  // tenant `_effective_tenant_id` resolves from this header (membership-
+  // validated), and the write is `require_coord_tenant_admin_target`. Without
+  // it a multi-tenant operator presenting another project would redact by the
+  // HOME project's first-party owners and confidential terms. Plan
+  // 2026-10-23-console-presentation-spaces, Phase 1.
+  "/api/v1/presentation/",
 ];
 
-function readActiveTenantId(): string | null {
+/**
+ * The active-tenant selection exactly as a request built now would carry it in
+ * `X-Qontinui-Active-Tenant` (or `null`: none, no `window`, or unreadable
+ * storage — the backend then resolves the caller's home tenant).
+ */
+export function readActiveTenantId(): string | null {
   if (typeof window === "undefined") return null;
   try {
     return localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY);

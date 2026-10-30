@@ -366,7 +366,7 @@ export function volumesFetchFromFailure(
     return {
       state: "unavailable",
       reason:
-        `The fleet-volumes read failed: ${deadlineText(verdict.budgetMs)}. ` +
+        `The fleet-volumes read failed: ${deadlineText(verdict.budgetMs, verdict.loader)}. ` +
         "No disk was measured by it, so every machine's disk is UNKNOWN.",
     };
   }

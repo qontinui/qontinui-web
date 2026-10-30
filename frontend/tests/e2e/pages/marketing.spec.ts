@@ -117,26 +117,13 @@ test.describe("Homepage (/)", () => {
     await expect(githubButton).toBeVisible({ timeout: 10000 });
   });
 
-  test("shows How It Works section", async ({ page }) => {
+  test("shows the How the factory works section", async ({ page }) => {
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
-      page.getByRole("heading", { name: "How It Works" })
+      page.getByRole("heading", { name: "How the factory works" })
     ).toBeVisible({ timeout: 10000 });
-
-    // Verify the three step headings. Use heading role + exact match because
-    // "Run" alone matches "Qontinui Runner", "running application", etc.,
-    // and Playwright's getByText is strict-mode by default.
-    await expect(
-      page.getByRole("heading", { name: "Configure", exact: true })
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Build", exact: true })
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Run", exact: true })
-    ).toBeVisible();
   });
 });
 

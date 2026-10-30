@@ -81,6 +81,7 @@ import {
   deriveForkHealth,
   describeContentFork,
   describeKindFork,
+  kindForkKey,
   orderVariants,
   orphanVariantIds,
   shortDigest,
@@ -474,7 +475,7 @@ export default function CoordPlanForksPage() {
         </p>
         <RecordList
           items={census?.kindForks ?? []}
-          itemKey={(g) => `${g.slug}:${g.source_repo ?? "no-repo"}`}
+          itemKey={kindForkKey}
           loaded={loaded || readFailed}
           skeletonRows={2}
           empty={

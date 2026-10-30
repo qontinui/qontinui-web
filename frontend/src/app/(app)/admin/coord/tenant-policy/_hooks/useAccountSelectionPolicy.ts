@@ -10,7 +10,8 @@ import {
 
 /**
  * The `account_selection_mode` fleet-policy dial
- * (`off` | `manual` | `least_usage` | `highest_expected_usage`).
+ * (`off` | `manual` | `least_usage` | `highest_expected_usage` |
+ * `weighted_random` | `alternating_handoff`).
  *
  * Plan
  * `2026-10-01-fleet-account-selection-effective-mode-visibility-and-pin-safe-saves`
@@ -26,7 +27,7 @@ import {
  *   is "no fleet opinion" whatever level string rides along, so `displayLevel`
  *   is `off` and `isDefaulted` says nobody chose it.
  * * **An unrecognised level is UNKNOWN, never a known level.** A row whose
- *   level is none of the four is not mapped onto any of them: `displayLevel`
+ *   level is none of the six is not mapped onto any of them: `displayLevel`
  *   is `null` and `unrecognizedLevel` carries the raw string so the UI can
  *   name the row to fix. (Runners built from the plan read such a row as no
  *   fleet opinion, but a runner this console cannot see may differ, so the
@@ -66,7 +67,7 @@ export function useAccountSelectionPolicy() {
     displayLevel,
     /** True when no row exists, so `displayLevel` is the no-row `off`. */
     isDefaulted,
-    /** The raw served level when it is none of the four known ones. */
+    /** The raw served level when it is none of the six known ones. */
     unrecognizedLevel,
   };
 }

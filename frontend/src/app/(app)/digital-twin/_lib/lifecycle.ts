@@ -185,21 +185,11 @@ export function rowsForStage<T extends Pick<SubspaceManifestEntry, "stages">>(
 /**
  * How much of a set of rows the twin observes, and how credibly. Every row
  * lands in exactly one bucket, so
- * `probed + restricted + manifestBuilt + planned + notBuilt === total`.
+ * `probed + manifestBuilt + planned + notBuilt === total`.
  */
 export interface CoverageCounts {
-  /**
-   * Snapshot rows — the only rows this page live-probes — that coord did NOT
-   * refuse. The denominator of every live count.
-   */
+  /** Live-probed rows (`liveProbed`) — the only rows with a live verdict. */
   probed: number;
-  /**
-   * Snapshot rows coord refused for this tenant (cell status `restricted`):
-   * an access decision, not a silent observer, so they sit outside `probed`
-   * rather than reading as "probed, not answering" (once qontinui-coord#3128 lands, coord refuses the
-   * SystemTenant sub-spaces per cell to a non-system tenant).
-   */
-  restricted: number;
   /** Of `probed`: rows ANSWERING (implemented or partial cell status). */
   live: number;
   /**
@@ -209,7 +199,27 @@ export interface CoverageCounts {
    */
   pending: number;
   /**
-   * Non-snapshot rows the manifest claims are built (implemented or partial).
+   * Of `probed`: rows coord answered with its own report (cell status
+   * `served`) — an answer, but not a verdict, so neither answering-healthy nor
+   * silent.
+   */
+  served: number;
+  /**
+   * Of `probed`: rows coord refused to this operator (cell status
+   * `restricted` — a Qontinui-internal sub-space, or an admin-only door).
+   * Not silent: the observer was never this operator's to read.
+   */
+  restricted: number;
+  /**
+   * Of `probed`: rows with no reading at all (cell status `unknown` — the
+   * probe failed with nothing held, or answered degraded). Neither answering
+   * nor silent: nothing was read, so a view shows UNKNOWN, never a count of
+   * them as observers that did not answer.
+   */
+  unknown: number;
+  /**
+   * Rows not live-probed that the manifest claims are built (implemented or
+   * partial).
    * A claim, not a live verdict.
    */
   manifestBuilt: number;
@@ -218,20 +228,31 @@ export interface CoverageCounts {
    * `interactive`) — not all of them from Ask the Twin (see `ask_via`).
    */
   interactive: number;
-  /** Non-snapshot rows on the roadmap (research status `planned`). */
+  /** Rows not live-probed on the roadmap (research status `planned`). */
   planned: number;
-  /** Non-snapshot rows with no observer yet (research status `not-yet`). */
+  /** Rows not live-probed with no observer yet (research status `not-yet`). */
   notBuilt: number;
   total: number;
+}
+
+/**
+ * Of `probed`: the rows that could answer THIS operator with a verdict — not a
+ * report (`served`) and not refused (`restricted`). The denominator of
+ * "live-probed, answering".
+ */
+export function gradedOf(c: CoverageCounts): number {
+  return c.probed - c.served - c.restricted;
 }
 
 /** Count the coverage buckets of `rows` (see {@link CoverageCounts}). */
 export function coverageOf(rows: readonly ResolvedSubspace[]): CoverageCounts {
   const counts: CoverageCounts = {
     probed: 0,
-    restricted: 0,
     live: 0,
     pending: 0,
+    served: 0,
+    restricted: 0,
+    unknown: 0,
     manifestBuilt: 0,
     interactive: 0,
     planned: 0,
@@ -239,14 +260,18 @@ export function coverageOf(rows: readonly ResolvedSubspace[]): CoverageCounts {
     total: rows.length,
   };
   for (const r of rows) {
-    if (r.query_kind === "snapshot" && r.cellStatus === "restricted") {
-      counts.restricted += 1;
-    } else if (r.query_kind === "snapshot") {
+    if (r.liveProbed) {
       counts.probed += 1;
       if (r.cellStatus === "implemented" || r.cellStatus === "partial") {
         counts.live += 1;
       } else if (r.cellStatus === "probing") {
         counts.pending += 1;
+      } else if (r.cellStatus === "served") {
+        counts.served += 1;
+      } else if (r.cellStatus === "restricted") {
+        counts.restricted += 1;
+      } else if (r.cellStatus === "unknown") {
+        counts.unknown += 1;
       }
     } else if (claimsBuilt(r.research_status)) {
       counts.manifestBuilt += 1;

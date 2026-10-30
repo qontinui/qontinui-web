@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { describePendingInstallationFailure } from "@/lib/onboarding-pending";
 
@@ -29,6 +29,7 @@ const {
   fetchOnboardingDoctor,
   fetchPendingInstallation,
   fetchPreconditionStatus,
+  fetchRepoTenantBindings,
   mintConnectStateToken,
   restoreRepo,
   startDevicePairing,
@@ -331,6 +332,42 @@ describe("fetchPendingInstallation", () => {
       kind: "unknown",
       message:
         "couldn't check with coord (Request timeout - backend may be starting up. Please try again.)",
+    });
+  });
+});
+
+describe("fetchRepoTenantBindings", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("GETs the bindings, idempotent, never retrying coord's deliberate 503", async () => {
+    const body = { bindings: [], measured_at: "2026-10-24T08:00:00Z" };
+    fetchMock.mockResolvedValueOnce(answer(body));
+    await expect(fetchRepoTenantBindings()).resolves.toEqual(body);
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/pr-merge/onboarding/repo-bindings",
+      { method: "GET", idempotent: true, noRetryStatuses: [503] },
+    ]);
+  });
+
+  it("merges a caller's no-retry statuses instead of replacing them", async () => {
+    fetchMock.mockResolvedValueOnce(
+      answer({ bindings: [], measured_at: "2026-10-24T08:00:00Z" })
+    );
+    await fetchRepoTenantBindings({ noRetryStatuses: [429] });
+    expect(fetchMock.mock.calls[0]![1]).toEqual({
+      method: "GET",
+      idempotent: true,
+      noRetryStatuses: [429, 503],
+    });
+    // A caller that already names 503 gets it once.
+    fetchMock.mockResolvedValueOnce(
+      answer({ bindings: [], measured_at: "2026-10-24T08:00:00Z" })
+    );
+    await fetchRepoTenantBindings({ noRetryStatuses: [503] });
+    expect(fetchMock.mock.calls[1]![1]).toMatchObject({
+      noRetryStatuses: [503],
     });
   });
 });

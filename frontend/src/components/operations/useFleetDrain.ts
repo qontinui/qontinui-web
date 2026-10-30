@@ -46,6 +46,7 @@ import {
   type FleetWriteAck,
 } from "@/lib/api/operations/coordFleet";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { servedAsOfMs } from "./servedAsOf";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { parseFleetDrain, type FleetDrainRead } from "./fleetDrain";
 
@@ -59,12 +60,23 @@ const LOADING: FleetDrainRead = { state: "loading" };
 
 export interface UseFleetDrainResult {
   read: FleetDrainRead;
+  /**
+   * When the last `ok` read was true, or `null` before there has been one:
+   * coord's own `as_of` on the drain body (`fleet_drain.rs`
+   * `DrainReadResponse` — expiry is evaluated on read, so a rendered row is
+   * true as of that instant), else the moment the answer arrived
+   * (`servedAsOfMs`). The presentation lens's provenance chip dates the drain
+   * states by it (plan `2026-10-23-console-presentation-spaces` Phase 7). An
+   * `unknown` read never moves it.
+   */
+  asOfMs: number | null;
   /** Force a re-read. Wired to the control so a write is visible at once. */
   refresh: () => Promise<void>;
 }
 
 export function useFleetDrain(): UseFleetDrainResult {
   const [read, setRead] = useState<FleetDrainRead>(LOADING);
+  const [asOfMs, setAsOfMs] = useState<number | null>(null);
 
   // Single-flight, no retries (plan
   // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5). The
@@ -72,10 +84,12 @@ export function useFleetDrain(): UseFleetDrainResult {
   // poll is in flight runs once, right after it, so the write is visible.
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: FleetDrainRead;
+    // When this answer was true; read only if it parses `ok`.
+    let answeredAsOf: number | null = null;
     try {
-      next = parseFleetDrain(
-        await fetchFleetDrain(COORD_DASHBOARD_POLL_OPTIONS)
-      );
+      const body = await fetchFleetDrain(COORD_DASHBOARD_POLL_OPTIONS);
+      answeredAsOf = servedAsOfMs(body, Date.now());
+      next = parseFleetDrain(body);
     } catch (err) {
       const status = httpStatusOf(err);
       if (status === 404) {
@@ -109,12 +123,14 @@ export function useFleetDrain(): UseFleetDrainResult {
         };
       }
     }
-    if (isCurrent()) setRead(next);
+    if (!isCurrent()) return;
+    setRead(next);
+    if (next.state === "ok" && answeredAsOf !== null) setAsOfMs(answeredAsOf);
   }, []);
 
   const { refresh } = useSingleFlightPoll(poll, FLEET_DRAIN_POLL_MS);
 
-  return { read, refresh };
+  return { read, asOfMs, refresh };
 }
 
 /** The outcome of a drain/undrain write, as the control renders it. */

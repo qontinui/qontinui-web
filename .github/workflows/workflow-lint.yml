@@ -18,23 +18,22 @@
 #   There is deliberately NO `push: main` trigger: coord reads a failing push
 #   run on main as main-red and holds the train.
 #
-# ADVISORY until >= 5 observed runs with zero unexplained reds (plan Phase
-# 1.5), then promote to a required check. Advisory is STEP-level
-# `continue-on-error: true`, never job-level: a job-level continue-on-error
-# lets the RUN conclude success but still publishes the job's CHECK RUN with
-# conclusion=failure, and coord's candidate classifier reads check runs, so it
-# would see red and hold the train. Evidence: qontinui-runner run 33284989396
-# concluded success while its continue-on-error job's check run 99186538561
-# reads conclusion=failure (`gh api repos/qontinui/qontinui-runner/check-runs/
-# 99186538561 --jq .conclusion`, verified 2026-10-04).
+# REQUIRED (promoted 2026-10-17, plan Phase 1.5): the tool steps below are
+# BLOCKING -- a zizmor or actionlint finding, a failed tool install and a
+# checkout or arch failure all red the check. Promotion evidence: the 12 most
+# recent completed runs of this workflow after qontinui-web#1897 (re-pin of
+# dtolnay/rust-toolchain + the DRIFT class) landed (2026-10-14T14:57Z) all
+# completed with zero failed steps and zero `##[error]` / "Process completed
+# with exit code" lines in their job logs.
 #
-# Every step is advisory that way, each with its own timeout-minutes. What
-# CANNOT be made advisory, and so can still red the check: the runner-side
-# "Set up job" phase, losing the runner mid-job, cancellation, and the
-# job-level timeout-minutes backstop -- which is set above the sum of the step
-# timeouts so it should never fire first.
+# Only the final always() summary step keeps STEP-level
+# `continue-on-error: true` (never job-level: a job-level one still publishes
+# the CHECK RUN as conclusion=failure, which coord's candidate classifier
+# reads -- qontinui-runner check run 99186538561, verified 2026-10-04). What
+# can red the check regardless: the runner-side "Set up job" phase, losing the
+# runner mid-job, cancellation, and the job-level timeout-minutes backstop.
 #
-# DRIFT (non-blocking even once promoted): zizmor's `ref-version-mismatch`
+# DRIFT (non-blocking): zizmor's `ref-version-mismatch`
 # audit judges a pinned `uses:` comment against where an UPSTREAM tag points
 # NOW, so it can go red on an unchanged workflow tree the moment an action's
 # maintainer moves a tag (observed 2026-10-09: dtolnay/rust-toolchain moved
@@ -42,22 +41,42 @@
 # an unrelated upstream push can turn red holds the whole train (plan D2), so
 # a finding of an audit in DRIFT_AUDITS is reported as DRIFT(n) (annotated as
 # a warning, never failing the step) ONLY when a line identical to the flagged
-# source line already exists in the BASE version of that file (the PR's base
-# sha, or the default branch for a candidate/dispatch run) -- so the pin is not
-# new, and only the upstream moved. The same audit on a line this change
+# source line already exists in the BASE version of that file -- so the pin is
+# not new, and only the upstream moved. The same audit on a line this change
 # added or edited (a pin whose sha is not the release its comment claims), or
 # one whose base could not be read, counts as FINDINGS. The scheduled org scan
 # is where upstream drift is acted on. Every other audit, including the online
 # known-vulnerable-actions and impostor-commit, counts as FINDINGS.
 #
-# VISIBILITY while the check stays green: each finding is a workflow-command
+# THE BASE, on a pull_request run, is the FIRST PARENT of the checked-out
+# merge commit (`HEAD^1`): the base-branch tip the PR head was merged onto to
+# make the very tree zizmor scans. It is never
+# `github.event.pull_request.base.sha`. On a PR that is behind its base that
+# sha is the stale merge base, while the checkout is the merge ref -- the PR
+# head merged onto the CURRENT base -- so every pin main has gained since the
+# branch point is present in the checkout and absent from the stale base, and
+# read as introduced by the PR. Measured 2026-10-24 on qontinui-web#1689 (merge
+# base bc3f44d0, 2026-10-05): style-gate.yml's dtolnay/rust-toolchain pin,
+# added to main in 27f18555 on 2026-10-14, went FINDINGS the moment upstream
+# moved `v1`, and coord refused the PR as ci-failed. `HEAD^1` rather than the
+# live branch tip: it is the exact tree the checkout was merged onto, so a line
+# is DRIFT iff the PR did not bring it, and a re-run (which reuses the same
+# merge commit) gets the same answer even after main moves again. The checkout
+# fetches depth 2 for it. A checkout that is not a two-parent merge whose
+# second parent is the PR head leaves no base, and every DRIFT_AUDITS finding
+# is then blocking (fail closed). A candidate/dispatch run uses the default
+# branch, by name, as before. Same defect class as migration-reversal.yml (plan
+# 2026-10-24-migration-reversal-overlays-onto-stale-pr-base-not-base-tip);
+# this one is plan 2026-10-24-workflow-lint-drift-judged-against-stale-pr-base,
+# tested by backend/tests/test_workflow_lint_drift.py.
+#
+# VISIBILITY: each finding is a workflow-command
 # annotation (::error for a finding, ::warning for DRIFT) on the run and the
-# PR diff, the failing step is marked failed in the job log, and the run's
+# PR diff, the failing step reds the check, and the run's
 # step summary gets exactly one line per tool:
 #   - zizmor: PASS | DRIFT(n) | FINDINGS(n) | ERROR (...)
 #   - actionlint: PASS | FINDINGS(n) | ERROR (...)
-# so Phase 1.5's ">= 5 observed runs, zero unexplained reds" is countable from
-# the run summaries. The final always() step is the SOLE writer of those
+# The final always() step is the SOLE writer of those
 # lines: every other step only sets step outputs (`verdict=` / `reason=`), so
 # a step killed at any point yields exactly one ERROR (...) line per tool, never
 # zero and never two.
@@ -122,14 +141,15 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         id: checkout
-        continue-on-error: true  # advisory; see header
         timeout-minutes: 2
         with:
           persist-credentials: false
+          # The merge commit plus its parents: HEAD^1 is the DRIFT base on a
+          # pull_request run (see header).
+          fetch-depth: 2
       - name: Check host architecture (release tarballs below are x86_64)
         id: arch
         if: steps.checkout.outcome == 'success'
-        continue-on-error: true  # advisory; see header
         timeout-minutes: 1
         run: |
           arch="$(uname -m)"
@@ -142,7 +162,6 @@ jobs:
       - name: Install zizmor and actionlint (pinned, sha256-verified, host-cached)
         id: install
         if: steps.arch.outcome == 'success'
-        continue-on-error: true  # advisory; see header
         # Cold fetch worst case: per tarball 2 attempts x 240 s + 5 s delay,
         # 2 tarballs = 970 s, under this 18 min bound. A warm host-cache hit
         # is a local copy + sha256 check.
@@ -203,15 +222,17 @@ jobs:
       - name: zizmor
         id: zizmor
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        continue-on-error: true  # advisory; see header
         timeout-minutes: 3
         env:
           # Online audits (impostor-commit, known-vulnerable-actions) read
           # public action repos; the job token is read-only.
           GH_TOKEN: ${{ github.token }}
-          # Base for the DRIFT test (see header): the PR's base sha, else the
-          # default branch (merge-candidate pushes, workflow_dispatch).
-          DRIFT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          # Inputs of the DRIFT base (see header), resolved in the run body:
+          # HEAD^1 on a pull_request run, verified against the PR head; the
+          # default branch otherwise (merge-candidate pushes, workflow_dispatch).
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         # One `--format json` run drives both the verdict and the annotations:
         # each finding not in DRIFT_AUDITS becomes an ::error annotation and
         # counts as FINDINGS; each DRIFT_AUDITS finding becomes a ::warning
@@ -227,8 +248,9 @@ jobs:
         # DRIFT test: the finding's source line (cut from this checkout at
         # zizmor's byte offset, and required to contain the flagged version
         # text) must occur verbatim in DRIFT_BASE_REF's copy of the same file, fetched
-        # read-only from the contents API with the job token; a fetch failure
-        # makes the finding blocking (fail closed).
+        # read-only from the contents API ($GITHUB_API_URL, which the runner
+        # sets) with the job token; a fetch failure makes the finding blocking
+        # (fail closed).
         # `--cache-dir` under $RUNNER_TEMP (wiped per job): the public-pool
         # runners are PERSISTENT services, so zizmor's default HTTP cache
         # (~/.cache/zizmor of the runner user) is shared by every job on the
@@ -236,6 +258,20 @@ jobs:
         # online audits (impostor-commit, known-vulnerable-actions) of later
         # runs. A cold cache costs only the few action lookups this repo makes.
         run: |
+          DRIFT_BASE_REF=""
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            first="$(git rev-parse --verify -q 'HEAD^1^{commit}' || true)"
+            second="$(git rev-parse --verify -q 'HEAD^2^{commit}' || true)"
+            if [[ "$first" =~ ^[0-9a-f]{40}$ && -n "$second" && "$second" == "$PR_HEAD_SHA" ]]; then
+              DRIFT_BASE_REF="$first"
+            else
+              echo "::warning::workflow-lint: the checkout is not the PR's merge commit (HEAD^1=${first:-none} HEAD^2=${second:-none}), so there is no DRIFT base and every ${DRIFT_AUDITS} finding is blocking"
+            fi
+          else
+            DRIFT_BASE_REF="$DEFAULT_BRANCH"
+          fi
+          export DRIFT_BASE_REF
+          echo "DRIFT base: ${DRIFT_BASE_REF:-none}"
           mapfile -t files < <(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | sort)
           mapfile -t -O "${#files[@]}" files < <(find .github/actions -type f \( -name 'action.yml' -o -name 'action.yaml' \) | sort)
           files+=(.github/dependabot.yml)
@@ -261,7 +297,10 @@ jobs:
           def base_lines(path):
               if path not in base_cache:
                   try:
-                      url = "https://api.github.com/repos/%s/contents/%s?ref=%s" % (
+                      if not os.environ.get("DRIFT_BASE_REF"):
+                          raise ValueError("no DRIFT base")  # fail closed
+                      url = "%s/repos/%s/contents/%s?ref=%s" % (
+                          os.environ.get("GITHUB_API_URL") or "https://api.github.com",
                           os.environ["GITHUB_REPOSITORY"], urllib.parse.quote(path),
                           urllib.parse.quote(os.environ["DRIFT_BASE_REF"], safe=""))
                       req = urllib.request.Request(url, headers={
@@ -331,7 +370,6 @@ jobs:
       - name: actionlint
         id: actionlint
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        continue-on-error: true  # advisory; see header
         timeout-minutes: 2
         # `-shellcheck=` / `-pyflakes=` disable the external-linter integrations:
         # CI must not depend on whatever shellcheck/pyflakes each self-hosted
@@ -372,7 +410,7 @@ jobs:
       # using the failing step's own `reason=` when it managed to set one.
       - name: Record verdicts
         if: always()
-        continue-on-error: true  # advisory; see header
+        continue-on-error: true  # the summary line never decides the check
         timeout-minutes: 1
         env:
           CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}

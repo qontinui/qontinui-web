@@ -62,19 +62,25 @@
  *   so there is no palette to enrol in `console/attention.test.ts`.
  */
 
-import { useState } from "react";
 import { NotebookText } from "lucide-react";
 import { KindAuthorshipTierControl } from "./_components/KindAuthorshipTierControl";
-import { PolicyAutoPublishDialControl } from "./_components/PolicyAutoPublishDialControl";
+import {
+  observedFromPublishAll,
+  PolicyAutoPublishDialControl,
+} from "./_components/PolicyAutoPublishDialControl";
 import { PolicyUpstreamDialControl } from "./_components/PolicyUpstreamDialControl";
 import { PolicyWriteDialControl } from "./_components/PolicyWriteDialControl";
 import { PromptDocumentList } from "./_components/PromptDocumentList";
+import { usePublishAll } from "./_hooks/usePublishAll";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
 
 export default function PromptDocumentsPage() {
-  // Bumped when the D5 switch is written, so the list re-reads the status its
-  // auto-publish badges are drawn from.
-  const [autoPublishRefreshKey, setAutoPublishRefreshKey] = useState(0);
+  // ONE auto-publish status read for the whole page (plan
+  // `2026-10-17-auto-publish-lands-via-coord-2290-adoption` Phase 4): the
+  // list's badges and the dial's observed worker are two readings of the same
+  // response, so they must not come from two fetches that can disagree. A
+  // write to the D5 switch re-takes it, because the badges key on the switch.
+  const publishAllState = usePublishAll();
   return (
     <div className="p-3 sm:p-6 space-y-8" data-testid="prompt-documents-page">
       {/* R9 — no page <h1>: `coord/layout.tsx` already renders the console
@@ -102,7 +108,7 @@ export default function PromptDocumentsPage() {
         </span>
       </p>
 
-      <PromptDocumentList autoPublishRefreshKey={autoPublishRefreshKey} />
+      <PromptDocumentList publishAllState={publishAllState} />
 
       {/*
         The tenant-wide autonomy dial sits with the per-document write-access
@@ -150,7 +156,8 @@ export default function PromptDocumentsPage() {
       */}
       <div className="border-t border-border pt-8">
         <PolicyAutoPublishDialControl
-          onLevelChanged={() => setAutoPublishRefreshKey((k) => k + 1)}
+          onLevelChanged={() => void publishAllState.reload()}
+          observed={observedFromPublishAll(publishAllState)}
         />
       </div>
 

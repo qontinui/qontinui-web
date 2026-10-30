@@ -1,0 +1,102 @@
+{
+  "generated_by": "qontinui-studio",
+  "slots": {
+    "marketing.og": {
+      "ai_generated": true,
+      "asset_uid": "compile-web-marketing--og-20261009T120000-v0-0",
+      "batch_id": "compile-web-marketing--og-20261009T120000",
+      "binding": {
+        "ai_generated": true,
+        "asset_sha256": "903d10b0fd11b70368851b607f98a353fb74c24a6c3dc1813a60e6a97a3bdb90",
+        "imagery_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "recipe_sha256": "63a472260ed069dd2807e554e3acf23345aeb44fccc8f2ac22fed77a03242ecf",
+        "source": "generated",
+        "spec_sha256": "8a45c3ef70f5a5bf60dfa803964e4bf30fd2c48d22727c31c0a46ce8db0f0d17"
+      },
+      "digital_source_type": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+      "files": {
+        "png": "marketing.og.png"
+      },
+      "label": "AI-generated image",
+      "licence": {
+        "commercial_use": "yes",
+        "source": "https://example.test/tos#commercial",
+        "tos_reviewed": "2026-10-09"
+      },
+      "model": "fake-v1",
+      "pick": {
+        "asset_sha256": "903d10b0fd11b70368851b607f98a353fb74c24a6c3dc1813a60e6a97a3bdb90",
+        "index": 0,
+        "model": "fake-v1",
+        "of": 2,
+        "pick": "unjudged (Phase 20 not landed)",
+        "provider": "fake"
+      },
+      "provenance": {
+        "png": {
+          "ai_generated": true,
+          "batch_id": "compile-web-marketing--og-20261009T120000",
+          "brief_id": "compile-web-marketing--og",
+          "c2pa": {
+            "reason": "no C2PA signing credential is configured; the IPTC marker is the mandatory part",
+            "signed": false
+          },
+          "created_at": "2026-10-09T12:00:05+00:00",
+          "digital_source_type": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+          "file": {
+            "derived_from": "903d10b0fd11b70368851b607f98a353fb74c24a6c3dc1813a60e6a97a3bdb90",
+            "name": "compile-web-marketing--og-20261009T120000-v0-0--web--marketing.png",
+            "role": "derivative",
+            "sha256": "b1eadb5bd13d1719039d6fbf50abdfbcd3e84ead7e26b9e90fa15a1bcc85e91a",
+            "transform": {
+              "focal": [
+                0.5,
+                0.5
+              ],
+              "format": "png",
+              "height": 630,
+              "remove_background": false,
+              "site": "web",
+              "slot": "marketing.og",
+              "width": 1200
+            }
+          },
+          "job_id": "compile-web-marketing--og-20261009T120000-v0",
+          "model": "fake-v1",
+          "negative_prompt": null,
+          "prompt": "Show a calm automation run so a visitor reads that it takes work off their hands. Depict: a laptop showing a workflow canvas. The image carries no text. Place the subject in the middle centre of the frame, wholly inside that area, so every crop keeps it. It is shown on a dark page.\n\nAvoid: third-party logos, text, letters, words",
+          "provider": {
+            "adapter": "fake",
+            "id": "fake",
+            "name": "Fake generator"
+          },
+          "recipe": null,
+          "references": [],
+          "schema": "qontinui-studio/provenance/v1",
+          "seed": null,
+          "terms": {
+            "automation_allowed": "yes",
+            "commercial_use": "yes",
+            "commercial_use_source": "https://example.test/tos#commercial",
+            "operator_override": null,
+            "provider": "fake",
+            "provider_name": "Fake generator",
+            "tos_reviewed": "2026-10-09",
+            "watermark": "none",
+            "watermark_visible": false
+          }
+        }
+      },
+      "provider": "fake",
+      "published_at": "2026-10-09T12:00:05+00:00",
+      "recipe": "illustration",
+      "route": "diffusion",
+      "sha256": {
+        "png": "b1eadb5bd13d1719039d6fbf50abdfbcd3e84ead7e26b9e90fa15a1bcc85e91a"
+      },
+      "slot_id": "marketing.og",
+      "slot_spec_sha256": "8a45c3ef70f5a5bf60dfa803964e4bf30fd2c48d22727c31c0a46ce8db0f0d17",
+      "watermark": "none"
+    }
+  }
+}

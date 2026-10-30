@@ -158,6 +158,7 @@ vi.mock("sonner", () => ({
 }));
 
 import CoordDevOpsPage from "./page";
+import { FixedPresentationMode } from "@/components/presentation";
 import * as fleetResources from "@/components/operations/fleetResources";
 import {
   DeviceCrossLinks,
@@ -2927,5 +2928,54 @@ describe("/admin/coord/devops — the operations-ratchet readout", () => {
       expect(body("/fleet/health")).toEqual(health);
       expect(body("/alerts/fault-to-visibility")).toEqual(f2v);
     }
+  });
+});
+
+describe("/admin/coord/devops — the presentation lens (plan 2026-10-23-console-presentation-spaces Phase 1)", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    routerPush.mockReset();
+    deviceStatusRows.clear();
+    window.localStorage.clear();
+  });
+
+  it("leads with its caption — captions before data — in presentation mode", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+
+    render(
+      <FixedPresentationMode presenting>
+        <CoordDevOpsPage />
+      </FixedPresentationMode>
+    );
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    const caption = document.querySelector(
+      '[data-presentation-caption="dev-ops.page"]'
+    );
+    expect(caption).not.toBeNull();
+    expect(
+      caption!.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      within(caption as HTMLElement).getByRole("heading")
+    ).toHaveTextContent("Dev Ops");
+  });
+
+  it("renders no caption for the operator, so the page still opens with its strip (R1)", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await screen.findByTestId("coord-devops-health-strip");
+    expect(document.querySelector("[data-presentation-caption]")).toBeNull();
   });
 });
