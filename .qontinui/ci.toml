@@ -167,11 +167,12 @@
 #    The executor's sibling is a depth-1 clone of one commit, chosen for the
 #    backend's path dependency, so the second half alone would find nothing once
 #    schemas moved past a pin, and every web PR here would go red until someone
-#    bumped it. The `fetch-pinned-schemas-commits` step closes that: it fetches
-#    the pinned commits into the sibling and checks the digests. It is the one
-#    step here with no workflow twin of the same name, and a failure of it is a
-#    red naming the commit, not a vacuous green. Its bytes are the pin's in both
-#    lanes; only the route to them differs.
+#    bumped it. The `fetch-pinned-schemas-commits` step closes that: it checks
+#    each working file against its pin's digest and, for one that is off it,
+#    fetches the pinned commit into the sibling and checks the digest there. It
+#    is the one step here with no workflow twin of the same name, and a failure of
+#    it is a red naming the commit, not a vacuous green. Its bytes are the pin's in
+#    both lanes; only the route to them differs.
 # ===========================================================================
 
 version = 1

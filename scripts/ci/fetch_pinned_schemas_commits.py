@@ -26,7 +26,11 @@ HEAD nor the working tree, so the backend's path dependency is unaffected.
 
 A working file already at the pinned digest needs nothing: the suite reads that
 file first, so no fetch runs and a brief network failure cannot redden a dispatch
-whose tests would pass.
+whose tests would pass. That arm therefore does not check the pin's ``ref``: only
+a fetch can prove a commit exists (``git ls-remote`` lists refs, not arbitrary
+commits), and a network failure there would redden exactly that dispatch. It says
+so in its output, and a bad ``ref`` fails here once the working file moves off the
+digest, or on the Actions lane's checkout at that ref.
 
 Silence is never success: a commit that cannot be had, or whose file has another
 digest, exits 1 and names it; a pin or sibling that cannot be read exits 2.
@@ -117,7 +121,10 @@ def working_file_is_pinned(sibling: Path, path: str, sha256: str) -> bool:
 def ensure_pinned(sibling: Path, ref: str, path: str, sha256: str) -> str:
     """Make the pinned bytes readable in ``sibling``; say how they were had."""
     if working_file_is_pinned(sibling, path, sha256):
-        return "in the working tree"
+        return (
+            f"{path} in the working tree, sha256 {sha256} verified; "
+            f"commit {ref} not checked, since the suite reads this file."
+        )
     blob = f"{ref}:{path}"
     shown = git(sibling, "show", blob)
     fetched = shown.returncode != 0
@@ -130,7 +137,8 @@ def ensure_pinned(sibling: Path, ref: str, path: str, sha256: str) -> str:
     got = hashlib.sha256(shown.stdout).hexdigest()
     if got != sha256:
         raise UnavailableError(f"{blob} has sha256 {got}; the pin says {sha256}")
-    return "fetched" if fetched else "already present"
+    how = "fetched" if fetched else "already present"
+    return f"{blob} {how}, sha256 {sha256} verified."
 
 
 def run(repo_root: Path, sibling: Path) -> None:
@@ -138,8 +146,7 @@ def run(repo_root: Path, sibling: Path) -> None:
         raise CannotRunError(f"{sibling} is not a git checkout")
     for pin_file, table, path in PINS:
         ref, sha256 = read_pin(repo_root / pin_file, table)
-        how = ensure_pinned(sibling, ref, path, sha256)
-        print(f"{pin_file}: {ref}:{path} {how}, sha256 {sha256} verified.")
+        print(f"{pin_file}: {ensure_pinned(sibling, ref, path, sha256)}")
 
 
 def main(argv: list[str] | None = None) -> int:
