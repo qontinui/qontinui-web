@@ -161,7 +161,10 @@ Idempotency posture
 ``CREATE TABLE IF NOT EXISTS``; the backfill is ``ON CONFLICT (session_id) DO
 UPDATE SET bytes = EXCLUDED.bytes`` (re-seats every counter to the recomputed
 truth, i.e. a repair — and, against a live coord, lossy in exactly the way
-``coord_tenant_warm_bytes_01`` describes); a ``DELETE`` then removes every
+``coord_tenant_warm_bytes_01`` describes; the orphan ``DELETE`` below is lossy
+the same way, since its ``NOT EXISTS`` reads its own snapshot and can remove a
+counter a concurrent append just incremented — coord's Phase 2.4 startup
+reconcile repairs both); a ``DELETE`` then removes every
 counter row whose session holds no ``coord.session_output`` rows any more (the
 backfill's ``GROUP BY`` never reaches those, and a missing row already means
 zero); a ``DO $$ … IF NOT EXISTS … $$`` guard attaches the CHECK when the table
@@ -287,17 +290,22 @@ def upgrade() -> None:
         #    under READ COMMITTED instead of failing the FK check. The
         #    lock sits at the OUTER level, where there is no GROUP BY
         #    (Postgres forbids a locking clause beside GROUP BY at one
-        #    level). SUM(integer) is already bigint, so no cast is needed.
+        #    level). The aggregate is a MATERIALIZED CTE so the row locks
+        #    are taken only after the whole scan finishes, whatever plan
+        #    the planner picks (a streaming GroupAggregate would otherwise
+        #    hold them across the 1.1 GB scan and block coord's FOR UPDATE
+        #    close/revive paths). SUM(integer) is already bigint.
         # ------------------------------------------------------------
         op.execute(
             """
             INSERT INTO coord.session_warm_bytes (session_id, bytes)
-            SELECT a.session_id, a.bytes
-            FROM (
+            WITH a AS MATERIALIZED (
                 SELECT o.session_id, SUM(o.compressed_size) AS bytes
                 FROM coord.session_output o
                 GROUP BY o.session_id
-            ) a
+            )
+            SELECT a.session_id, a.bytes
+            FROM a
             JOIN coord.sessions s ON s.id = a.session_id
             FOR KEY SHARE OF s
             ON CONFLICT (session_id) DO UPDATE SET bytes = EXCLUDED.bytes

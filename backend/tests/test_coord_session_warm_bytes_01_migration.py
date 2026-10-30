@@ -122,6 +122,9 @@ def test_the_backfill_runs_outside_the_ddl_transaction_and_before_the_check() ->
     assert create < backfill < orphans < add_check
     # Lock-and-skip: a session pruned mid-scan must drop out, not abort.
     assert "FOR KEY SHARE OF s" in (calls[backfill].sql or "")
+    # The aggregate is materialized so row locks are taken only after the
+    # full scan, independent of the plan the planner picks.
+    assert "AS MATERIALIZED" in (calls[backfill].sql or "")
 
 
 # ---------------------------------------------------------------------------
