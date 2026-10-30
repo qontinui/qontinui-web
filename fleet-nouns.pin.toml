@@ -12,7 +12,8 @@
 #     `dev_ports` + `supervisor_dependency`.
 #
 # Why a pin and not schemas `main`: a vocabulary edit there would otherwise
-# redden every PR here; at a pin, a red can only come from THIS repo's change.
+# redden every PR here; at a pin, a red comes from THIS repo's change or from the
+# pinned bytes being unreachable, which names itself.
 # CI fetches the file at `ref` by a sparse checkout
 # (.github/actions/fleet-nouns-vocab) and both consumers refuse a file whose
 # digest differs from `sha256`. Locally they read
