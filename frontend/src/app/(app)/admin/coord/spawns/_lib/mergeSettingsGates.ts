@@ -96,7 +96,10 @@ export function fixerDialGate(
   if (unread !== null) {
     effective =
       read.error !== null && !presenting
-        ? { ...unread, title: `${unread.title} Unknown is treated as off.` }
+        ? {
+            ...unread,
+            title: `${unread.title} Whether coord starts PR fixers right now is unknown.`,
+          }
         : unread;
   } else if (read.dial === null) {
     effective = unknownCell(

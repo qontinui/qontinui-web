@@ -35,7 +35,7 @@ import {
 import type { AutonomyLevel } from "@/lib/api/operations/coordSettings";
 import type { AutoFixPrChoice } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
 import { cn } from "@/lib/utils";
-import type { MatrixGate } from "../_lib/spawnPathGates";
+import type { MatrixGate, SwitchWriteResult } from "../_lib/spawnPathGates";
 import type {
   MatrixCounts,
   MatrixRow,
@@ -58,10 +58,16 @@ import {
 
 /** The writes a control may call — the switches hook's setters. */
 export interface MatrixWriters {
-  setRegistryDefault: (agentName: string, enabled: boolean) => Promise<void>;
-  setAutonomyLevel: (domain: string, level: AutonomyLevel) => Promise<void>;
-  setFixerDial: (choice: AutoFixPrChoice) => Promise<void>;
-  setRedMainKnob: (enabled: boolean) => Promise<void>;
+  setRegistryDefault: (
+    agentName: string,
+    enabled: boolean
+  ) => Promise<SwitchWriteResult>;
+  setAutonomyLevel: (
+    domain: string,
+    level: AutonomyLevel
+  ) => Promise<SwitchWriteResult>;
+  setFixerDial: (choice: AutoFixPrChoice) => Promise<SwitchWriteResult>;
+  setRedMainKnob: (enabled: boolean) => Promise<SwitchWriteResult>;
   /** Gate keys with a write in flight or re-reading. */
   busy: ReadonlySet<string>;
 }
@@ -145,6 +151,7 @@ function GateControl({
             domain={write.domain}
             pathLabel={row.label}
             level={write.level}
+            builtInDefault={write.builtInDefault}
             busy={busy}
             onSet={writers.setAutonomyLevel}
           />

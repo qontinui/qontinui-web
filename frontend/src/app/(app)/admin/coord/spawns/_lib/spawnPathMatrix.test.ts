@@ -901,6 +901,27 @@ describe("last spawned — UNKNOWN unless the ledger names the path, and only wh
   });
 });
 
+describe("the PR fixer dial when the merge settings could not be read", () => {
+  it("says this page's failed read leaves it unknown, and claims nothing treats it as off", () => {
+    const m = deriveSpawnPathMatrix(
+      inputs({
+        mergeSettings: {
+          loading: false,
+          error: "GET /api/v1/operations/pr-merge/settings failed: 502",
+          dial: null,
+          profile: null,
+        },
+      })
+    );
+    const { effective } = gateOf(m, "pr_fix_dispatch", "dial:auto_fix_pr");
+    expect(effective.state).toBe("unknown");
+    expect(effective.title).toContain(
+      "Whether coord starts PR fixers right now is unknown."
+    );
+    expect(effective.title).not.toContain("treated as off");
+  });
+});
+
 describe("after a write, the read-back", () => {
   const write = (w: Partial<SwitchWrite>): SwitchWrite => ({
     asked: "off",
@@ -965,13 +986,12 @@ describe("after a write, the read-back", () => {
     expect(cell.readBack?.matches).toBe(false);
   });
 
-  it("is UNKNOWN when the write landed but reading it back failed", () => {
+  it("is UNKNOWN when the write landed but reading it back failed, until a read answers", () => {
+    const writes = {
+      "registry:merge_shepherd": write({ readbackError: "HTTP 503" }),
+    };
     const m = deriveSpawnPathMatrix(
-      inputs({
-        writes: {
-          "registry:merge_shepherd": write({ readbackError: "HTTP 503" }),
-        },
-      })
+      inputs({ defaults: failed("HTTP 503", defaultsBody().agents), writes })
     );
     const cell = gateOf(
       m,
@@ -980,6 +1000,15 @@ describe("after a write, the read-back", () => {
     ).effective;
     expect(cell.state).toBe("unknown");
     expect(cell.title).toContain("reading it back failed");
+    // The next read answered: that read is what is compared.
+    const later = gateOf(
+      deriveSpawnPathMatrix(inputs({ writes })),
+      "merge_shepherd",
+      "registry:merge_shepherd"
+    ).effective;
+    expect(later.state).toBe("on");
+    expect(later.readBack?.matches).toBe(false);
+    expect(later.writeNote).toContain("a read made after it");
   });
 
   it("is UNKNOWN while a write coord could not confirm is re-read, then compares that read", () => {

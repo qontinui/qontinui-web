@@ -34,6 +34,10 @@
  *   over it. A failed re-read of the defaults is UNKNOWN.
  * - `PUT /coord/next-step-settings` (`putNextStepSettings`): coord answers its
  *   authoritative state after the write, applied as a read.
+ * - On either PUT, a failure that leaves the outcome open (the backend's 504,
+ *   which it documents as "coord may well have committed, and only a re-read
+ *   can tell", or the client's own timeout) is not a refusal: it is UNKNOWN
+ *   until a re-read settles it, like the two below.
  * - `PATCH /pr-merge/settings {auto_fix_pr}` (the dial hook's `setChoice`):
  *   `saved` is coord's answer reading back what was sent; `refused` keeps
  *   coord's value and says so; `unconfirmed` is UNKNOWN until the hook's
@@ -44,6 +48,11 @@
  *
  * One write per switch at a time: a second write to a switch whose first has
  * not read back is refused with an error, never raced.
+ *
+ * Each setter resolves with how the write ended (`SwitchWriteResult`), for a
+ * caller that cannot see the matrix; it records the value of the read it
+ * settled on, so a later read that differs is not taken for this write's
+ * read-back.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -64,21 +73,28 @@ import {
   type AutonomyLevel,
   type NextStepSettings,
 } from "@/lib/api/operations/coordSettings";
-import { patchTenantAutoFixRedMain } from "@/lib/api/operations/prMerge";
+import {
+  patchTenantAutoFixRedMain,
+  type EffectiveProfile,
+} from "@/lib/api/operations/prMerge";
 import {
   useAutoFixPrSetting,
   type AutoFixPrReread,
 } from "@/app/(app)/settings/coordination/_hooks/useAutoFixPrSetting";
 import {
+  choiceFromTenant,
   isUnconfirmedWrite,
+  readAutoFixPr,
   type AutoFixPrChoice,
 } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
 import { useRepoFollowupDials } from "@/app/(app)/admin/coord/agent-registry/_hooks/useRepoFollowupDials";
-import type {
-  FollowupRead,
-  MergeSettingsRead,
-  ReadPart,
-  SwitchWrite,
+import {
+  switchWriteResult,
+  type FollowupRead,
+  type MergeSettingsRead,
+  type ReadPart,
+  type SwitchWrite,
+  type SwitchWriteResult,
 } from "./spawnPathGates";
 
 /** Switches change by an operator's action; a minute catches another operator's. */
@@ -138,9 +154,76 @@ function settlePart<T>(
   return { ...prev, loading: false };
 }
 
+/** Why coord refused a write, in the operator's words. */
+function switchWriteErrorText(err: unknown): string {
+  if (err instanceof AgentPrefError && err.status === 403) {
+    return "only a coord tenant admin of the active project may change it (HTTP 403)";
+  }
+  return switchReadErrorText(err);
+}
+
 /** The refusal a second write to a switch gets while its first is reading back. */
 export const WRITE_IN_FLIGHT =
   "A write to this switch is still in flight; wait for its read-back.";
+
+/**
+ * Whether a failed registry or next-step PUT may still have landed. The
+ * backend's write proxies answer 504 when coord may have committed and only a
+ * re-read can tell, and a client timeout is the same state; a 502 means nothing
+ * was sent, and any other answer is coord's own refusal.
+ */
+function writeMayHaveLanded(err: unknown): boolean {
+  if (err instanceof AgentPrefError) return err.status === 504;
+  return isUnconfirmedWrite(switchReadErrorText(err));
+}
+
+function unconfirmedReason(err: unknown): string {
+  return err instanceof AgentPrefError
+    ? `the request timed out waiting for coord (HTTP ${err.status}), so it may have landed`
+    : switchReadErrorText(err);
+}
+
+/** A re-read after a write: the value it gave the switch, or why it failed. */
+type SwitchReread =
+  | { ok: true; state: string | null }
+  | { ok: false; error: string };
+
+function onOff(value: unknown): string | null {
+  return typeof value === "boolean" ? (value ? "on" : "off") : null;
+}
+
+function registryState(
+  rows: readonly AdminAgentRegistryRow[] | null,
+  agentName: string
+): string | null {
+  return onOff(rows?.find((r) => r.agent_name === agentName)?.default_enabled);
+}
+
+function autonomyState(
+  settings: NextStepSettings | null,
+  domain: string
+): string | null {
+  return (
+    settings?.domains.find((d) => d.decision_domain === domain)
+      ?.autonomy_level ?? null
+  );
+}
+
+function dialState(profile: EffectiveProfile | null): string | null {
+  const dial = readAutoFixPr(profile);
+  return dial === null ? null : choiceFromTenant(dial.tenant);
+}
+
+function redMainState(profile: EffectiveProfile | null): string | null {
+  return onOff(profile?.auto_fix_red_main);
+}
+
+function mergeReread(
+  read: AutoFixPrReread,
+  stateOf: (profile: EffectiveProfile | null) => string | null
+): SwitchReread {
+  return read.ok ? { ok: true, state: stateOf(read.profile) } : read;
+}
 
 export interface SpawnPathSwitches {
   effective: ReadPart<AgentRegistryEntry[]>;
@@ -155,10 +238,16 @@ export interface SpawnPathSwitches {
   writes: Readonly<Record<string, SwitchWrite>>;
   /** Re-read every source now. */
   refresh: () => Promise<void>;
-  setRegistryDefault: (agentName: string, enabled: boolean) => Promise<void>;
-  setAutonomyLevel: (domain: string, level: AutonomyLevel) => Promise<void>;
-  setFixerDial: (choice: AutoFixPrChoice) => Promise<void>;
-  setRedMainKnob: (enabled: boolean) => Promise<void>;
+  setRegistryDefault: (
+    agentName: string,
+    enabled: boolean
+  ) => Promise<SwitchWriteResult>;
+  setAutonomyLevel: (
+    domain: string,
+    level: AutonomyLevel
+  ) => Promise<SwitchWriteResult>;
+  setFixerDial: (choice: AutoFixPrChoice) => Promise<SwitchWriteResult>;
+  setRedMainKnob: (enabled: boolean) => Promise<SwitchWriteResult>;
 }
 
 export function useSpawnPathSwitches(): SpawnPathSwitches {
@@ -256,22 +345,87 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
     await Promise.all([refreshReads(), reloadFollowup(), reloadDial()]);
   }, [refreshReads, reloadFollowup, reloadDial]);
 
+  // What the reads hold now, for a setter whose write coord refused: the value
+  // it stays on. Updated after each commit, read only from event handlers.
+  const latest = useRef<{
+    defaults: AdminAgentRegistryRow[] | null;
+    nextStep: NextStepSettings | null;
+    profile: EffectiveProfile | null;
+  }>({ defaults: null, nextStep: null, profile: null });
+  useEffect(() => {
+    latest.current = {
+      defaults: parts.defaults.data,
+      nextStep: parts.nextStep.data,
+      profile: dial.profile,
+    };
+  }, [parts.defaults.data, parts.nextStep.data, dial.profile]);
+
   const record = useCallback((key: string, write: SwitchWrite) => {
     setWrites((prev) => ({ ...prev, [key]: write }));
   }, []);
 
+  /** Record how a write ended, and answer it to the caller. */
+  const finish = useCallback(
+    (key: string, write: SwitchWrite): SwitchWriteResult => {
+      record(key, write);
+      return switchWriteResult(write);
+    },
+    [record]
+  );
+
   /** Run one write to `key`, refusing a second while the first reads back. */
   const exclusive = useCallback(
-    async (key: string, run: () => Promise<void>) => {
+    async (
+      key: string,
+      run: () => Promise<SwitchWriteResult>
+    ): Promise<SwitchWriteResult> => {
       if (inFlight.current.has(key)) throw new Error(WRITE_IN_FLIGHT);
       inFlight.current.add(key);
       try {
-        await run();
+        return await run();
       } finally {
         inFlight.current.delete(key);
       }
     },
     []
+  );
+
+  /** A write that came back with no answer: UNKNOWN until `reread` settles it. */
+  const settleUnconfirmed = useCallback(
+    async (
+      key: string,
+      asked: string,
+      reason: string,
+      reread: Promise<SwitchReread>
+    ): Promise<SwitchWriteResult> => {
+      record(key, {
+        asked,
+        phase: "unconfirmed",
+        error: reason,
+        readbackError: null,
+      });
+      const r = await reread;
+      return finish(key, {
+        asked,
+        phase: "written",
+        error: null,
+        readbackError: r.ok ? null : r.error,
+        settledState: r.ok ? r.state : null,
+        outcomeUnknown: true,
+      });
+    },
+    [finish, record]
+  );
+
+  /** The tenant defaults, re-read AFTER a write: what coord enforces. */
+  const rereadDefaults = useCallback(
+    async (agentName: string): Promise<SwitchReread> => {
+      const { defaults } = await readRegistry();
+      return defaults.status === "fulfilled"
+        ? { ok: true, state: registryState(defaults.value, agentName) }
+        : { ok: false, error: switchReadErrorText(defaults.reason) };
+    },
+    [readRegistry]
   );
 
   const setRegistryDefault = useCallback(
@@ -290,29 +444,48 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
             default_enabled: enabled,
           });
         } catch (err) {
-          record(key, {
+          if (writeMayHaveLanded(err)) {
+            return settleUnconfirmed(
+              key,
+              asked,
+              unconfirmedReason(err),
+              rereadDefaults(agentName)
+            );
+          }
+          return finish(key, {
             asked,
             phase: "refused",
-            error: switchReadErrorText(err),
+            error: switchWriteErrorText(err),
             readbackError: null,
+            settledState: registryState(latest.current.defaults, agentName),
           });
-          return;
         }
-        // The read-back: the tenant default (what coord enforces), re-read
-        // AFTER the write landed.
-        const { defaults } = await readRegistry();
-        record(key, {
+        const r = await rereadDefaults(agentName);
+        return finish(key, {
           asked,
           phase: "written",
           error: null,
-          readbackError:
-            defaults.status === "rejected"
-              ? switchReadErrorText(defaults.reason)
-              : null,
+          readbackError: r.ok ? null : r.error,
+          settledState: r.ok ? r.state : null,
         });
       });
     },
-    [exclusive, readRegistry, record]
+    [exclusive, finish, record, rereadDefaults, settleUnconfirmed]
+  );
+
+  /** The next-step settings, re-read after a write coord did not answer. */
+  const rereadNextStep = useCallback(
+    async (domain: string): Promise<SwitchReread> => {
+      const ticket = seqs.current.nextStep.issue();
+      const [read] = await Promise.allSettled([
+        fetchNextStepSettings(COORD_DASHBOARD_POLL_OPTIONS),
+      ]);
+      apply("nextStep", ticket, read);
+      return read.status === "fulfilled"
+        ? { ok: true, state: autonomyState(read.value, domain) }
+        : { ok: false, error: switchReadErrorText(read.reason) };
+    },
+    [apply]
   );
 
   const setAutonomyLevel = useCallback(
@@ -331,53 +504,36 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
             { decision_domain: domain, autonomy_level: level },
           ]);
         } catch (err) {
-          record(key, {
+          if (writeMayHaveLanded(err)) {
+            return settleUnconfirmed(
+              key,
+              level,
+              unconfirmedReason(err),
+              rereadNextStep(domain)
+            );
+          }
+          return finish(key, {
             asked: level,
             phase: "refused",
-            error: switchReadErrorText(err),
+            error: switchWriteErrorText(err),
             readbackError: null,
+            settledState: autonomyState(latest.current.nextStep, domain),
           });
-          return;
         }
         // Coord's PUT answers its authoritative state after the write: applied
         // as a read, ticketed now so an older poll cannot paint over it.
         const ticket = seqs.current.nextStep.issue();
         apply("nextStep", ticket, { status: "fulfilled", value: answered });
-        record(key, {
+        return finish(key, {
           asked: level,
           phase: "written",
           error: null,
           readbackError: null,
+          settledState: autonomyState(answered, domain),
         });
       });
     },
-    [apply, exclusive, record]
-  );
-
-  /** Record a write whose outcome is unknown, then the re-read that settles it. */
-  const settleUnconfirmed = useCallback(
-    async (
-      key: string,
-      asked: string,
-      reason: string,
-      reread: Promise<AutoFixPrReread>
-    ) => {
-      record(key, {
-        asked,
-        phase: "unconfirmed",
-        error: reason,
-        readbackError: null,
-      });
-      const r = await reread;
-      record(key, {
-        asked,
-        phase: "written",
-        error: null,
-        readbackError: r.ok ? null : r.error,
-        outcomeUnknown: true,
-      });
-    },
-    [record]
+    [apply, exclusive, finish, record, rereadNextStep, settleUnconfirmed]
   );
 
   const { setChoice } = dial;
@@ -395,42 +551,41 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
         switch (outcome.kind) {
           case "saved":
             // The hook applied coord's answer, which read back what was sent.
-            record(key, {
+            return finish(key, {
               asked: choice,
               phase: "written",
               error: null,
               readbackError: null,
+              settledState: choice,
             });
-            return;
           case "refused":
-            record(key, {
+            return finish(key, {
               asked: choice,
               phase: "refused",
               error: outcome.message,
               readbackError: null,
+              settledState: dialState(latest.current.profile),
             });
-            return;
           case "unconfirmed":
-            await settleUnconfirmed(
+            return settleUnconfirmed(
               key,
               choice,
               outcome.reason,
-              outcome.reread
+              outcome.reread.then((r) => mergeReread(r, dialState))
             );
-            return;
           case "busy":
             // Nothing was sent: the hook's own write is still in flight.
-            record(key, {
+            return finish(key, {
               asked: choice,
               phase: "refused",
               error: WRITE_IN_FLIGHT,
               readbackError: null,
+              settledState: dialState(latest.current.profile),
             });
-            return;
         }
       });
     },
-    [exclusive, record, setChoice, settleUnconfirmed]
+    [exclusive, finish, record, setChoice, settleUnconfirmed]
   );
 
   const setRedMainKnob = useCallback(
@@ -449,28 +604,33 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
         } catch (err) {
           const message = switchReadErrorText(err);
           if (isUnconfirmedWrite(message)) {
-            await settleUnconfirmed(key, asked, message, reloadDial());
-            return;
+            return settleUnconfirmed(
+              key,
+              asked,
+              message,
+              reloadDial().then((r) => mergeReread(r, redMainState))
+            );
           }
-          record(key, {
+          return finish(key, {
             asked,
             phase: "refused",
             error: message,
             readbackError: null,
+            settledState: redMainState(latest.current.profile),
           });
-          return;
         }
         // The read-back: the merge settings, re-read AFTER the write landed.
-        const r = await reloadDial();
-        record(key, {
+        const r = mergeReread(await reloadDial(), redMainState);
+        return finish(key, {
           asked,
           phase: "written",
           error: null,
           readbackError: r.ok ? null : r.error,
+          settledState: r.ok ? r.state : null,
         });
       });
     },
-    [exclusive, record, reloadDial, settleUnconfirmed]
+    [exclusive, finish, record, reloadDial, settleUnconfirmed]
   );
 
   const mergeSettings = useMemo<MergeSettingsRead>(

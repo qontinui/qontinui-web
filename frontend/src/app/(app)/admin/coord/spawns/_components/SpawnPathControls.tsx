@@ -8,9 +8,12 @@
  * `2026-10-23-console-presentation-spaces` D3.2): in presentation mode it is
  * not mounted, so neither its button nor its UI Bridge registration — whose
  * custom action declares `effect: "write"` — exists in front of an audience.
- * Each registers where it renders and only while it does (`useUIElement`),
- * and its action resolves once the write's READ-BACK has landed, so an
- * automated caller reads coord's answer, not its own request.
+ * Each registers where it renders and only while it does (`useUIElement`).
+ * Its action settles once the write's READ-BACK has landed, and with what that
+ * read said: it resolves with the `SwitchWriteResult` only when coord read back
+ * what was asked, and rejects naming the outcome when coord refused it, read
+ * back something else, or no read says — so an automated caller never takes a
+ * refused write for a success.
  *
  * A control that cannot be offered is not rendered disabled with no word: the
  * matrix shows the gate's `readOnly` reason instead. A second write to a
@@ -27,6 +30,7 @@ import type { AutonomyLevel } from "@/lib/api/operations/coordSettings";
 import type { AutoFixPrChoice } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
 import { cn } from "@/lib/utils";
 import { AUTONOMY_LEVELS, AUTONOMY_LEVEL_LABEL } from "../_lib/nextStepGates";
+import type { SwitchWriteResult } from "../_lib/spawnPathGates";
 
 /** One option of a segmented write control. */
 interface Segment<V extends string> {
@@ -40,6 +44,7 @@ function SegmentedWrite<V extends string>({
   description,
   options,
   current,
+  currentRecordable = false,
   busy,
   onSelect,
 }: {
@@ -48,8 +53,10 @@ function SegmentedWrite<V extends string>({
   description: string;
   options: readonly Segment<V>[];
   current: V;
+  /** Choosing the current value still writes something (see `builtInDefault`). */
+  currentRecordable?: boolean;
   busy: boolean;
-  onSelect: (value: V) => Promise<void>;
+  onSelect: (value: V) => Promise<SwitchWriteResult>;
 }) {
   const { ref } = useUIElement({
     id,
@@ -70,8 +77,11 @@ function SegmentedWrite<V extends string>({
               `value must be one of ${options.map((o) => o.value).join(", ")}`
             );
           }
-          await onSelect(match.value);
-          return true;
+          const result = await onSelect(match.value);
+          if (result.outcome !== "read_back") {
+            throw new Error(`${result.outcome}: ${result.message}`);
+          }
+          return result;
         },
       },
     },
@@ -86,15 +96,16 @@ function SegmentedWrite<V extends string>({
     >
       {options.map((o, i) => {
         const active = o.value === current;
+        const inert = active && !currentRecordable;
         return (
           <button
             key={o.value}
             type="button"
             aria-pressed={active}
             aria-disabled={busy || undefined}
-            disabled={active}
+            disabled={inert}
             onClick={() => {
-              if (busy || active) return;
+              if (busy || inert) return;
               onSelect(o.value).catch(() => {
                 // Refused only while this switch's first write reads back;
                 // that write's outcome is what the matrix shows.
@@ -130,7 +141,7 @@ export function RegistrySwitch({
   pathLabel: string;
   current: boolean;
   busy: boolean;
-  onSet: (agentName: string, enabled: boolean) => Promise<void>;
+  onSet: (agentName: string, enabled: boolean) => Promise<SwitchWriteResult>;
 }) {
   return (
     <SegmentedWrite<"on" | "off">
@@ -153,14 +164,17 @@ export function AutonomySwitch({
   domain,
   pathLabel,
   level,
+  builtInDefault,
   busy,
   onSet,
 }: {
   domain: string;
   pathLabel: string;
   level: AutonomyLevel;
+  /** `level` is coord's built-in default: no policy row records it yet. */
+  builtInDefault: boolean;
   busy: boolean;
-  onSet: (domain: string, level: AutonomyLevel) => Promise<void>;
+  onSet: (domain: string, level: AutonomyLevel) => Promise<SwitchWriteResult>;
 }) {
   return (
     <SegmentedWrite<AutonomyLevel>
@@ -169,9 +183,13 @@ export function AutonomySwitch({
       description={`Writes the tenant's autonomy level for decision domain ${domain} (PUT /coord/next-step-settings) and applies coord's answer, which is its state after the write. Params: {"value": "always_escalate" | "guidance_only" | "auto_decide"}.`}
       options={AUTONOMY_LEVELS.map((l) => ({
         value: l,
-        label: AUTONOMY_LEVEL_LABEL[l],
+        label:
+          builtInDefault && l === level
+            ? `${AUTONOMY_LEVEL_LABEL[l]} (built-in default; choose to record it)`
+            : AUTONOMY_LEVEL_LABEL[l],
       }))}
       current={level}
+      currentRecordable={builtInDefault}
       busy={busy}
       onSelect={(v) => onSet(domain, v)}
     />
@@ -186,7 +204,7 @@ export function FixerDialSwitch({
 }: {
   choice: AutoFixPrChoice;
   busy: boolean;
-  onSet: (choice: AutoFixPrChoice) => Promise<void>;
+  onSet: (choice: AutoFixPrChoice) => Promise<SwitchWriteResult>;
 }) {
   return (
     <SegmentedWrite<AutoFixPrChoice>
@@ -213,7 +231,7 @@ export function RedMainKnobSwitch({
 }: {
   current: boolean;
   busy: boolean;
-  onSet: (enabled: boolean) => Promise<void>;
+  onSet: (enabled: boolean) => Promise<SwitchWriteResult>;
 }) {
   return (
     <SegmentedWrite<"on" | "off">
