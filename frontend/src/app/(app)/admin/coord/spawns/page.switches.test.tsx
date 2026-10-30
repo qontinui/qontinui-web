@@ -29,7 +29,8 @@
  *    a `code_fallback` domain stays a live button, and a recorded one does not.
  * 7. **The read-back mark belongs to the read that settled the write** — a
  *    later read that differs is a change since, not a contradiction; a refusal's
- *    note goes with it; a failed read-back is UNKNOWN only until a read answers.
+ *    note goes with it; a failed read-back is UNKNOWN only until a read
+ *    answers, and that first answer is the read that settled the write.
  * 8. **Machines** — aliased by nobody in operator mode (real names), with the
  *    in-flight UNKNOWN stated once for the list.
  */
@@ -948,7 +949,7 @@ describe("the read-back mark belongs to the read that settled the write", () => 
     );
   });
 
-  it("is UNKNOWN after a failed read-back only until a read answers, which is then compared", async () => {
+  it("is UNKNOWN after a failed read-back only until a read answers; that read settles the write, and a later change is a change since", async () => {
     await renderPage();
     await openPath("merge_shepherd");
     routes.defaults = () => ({
@@ -958,7 +959,12 @@ describe("the read-back mark belongs to the read that settled the write", () => 
     await click(
       screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
     );
+    // Step 1: the PUT answered and its re-read failed.
     expect(effectiveOf("registry:merge_shepherd").textContent).toBe("UNKNOWN");
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toContain(
+      "reading it back failed"
+    );
+    // Step 2: the first read that answers is compared with the ask.
     routes.defaults = () => ({
       body: defaultsBody({ merge_shepherd: { default_enabled: false } }),
     });
@@ -966,6 +972,103 @@ describe("the read-back mark belongs to the read that settled the write", () => 
     expect(effectiveOf("registry:merge_shepherd").textContent).toBe("Off");
     expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
       "matches"
+    );
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toBe(
+      "The write was answered, but its read-back failed; this is a later read."
+    );
+    // Step 3: another operator switches it on. That is a change since this
+    // write, never coord reading the write back otherwise.
+    routes.defaults = () => ({ body: defaultsBody() });
+    await refreshPage();
+    const effective = effectiveOf("registry:merge_shepherd");
+    expect(effective.textContent).toBe("On");
+    expect(effective.dataset.gateTone).toBe("known");
+    expect(readBackOf("registry:merge_shepherd")).toBeNull();
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toBe(
+      "Changed since your write: coord read back off after it, and a later read differs."
+    );
+  });
+
+  it("does not take a kept value for the settling read while the read-back's own failure stands", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    routes.defaults = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    // A second failed read: the kept pre-write value settles nothing.
+    await refreshPage();
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("UNKNOWN");
+    routes.defaults = () => ({
+      body: defaultsBody({ merge_shepherd: { default_enabled: false } }),
+    });
+    await refreshPage();
+    expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
+      "matches"
+    );
+    routes.defaults = () => ({ body: defaultsBody() });
+    await refreshPage();
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toBe(
+      "Changed since your write: coord read back off after it, and a later read differs."
+    );
+  });
+
+  it("says a read that later fails is stale, not that this write's read-back failed", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    routes.defaults = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    routes.defaults = () => ({
+      body: defaultsBody({ merge_shepherd: { default_enabled: false } }),
+    });
+    await refreshPage();
+    // Settled by that read. The next poll failing says nothing about the write.
+    routes.defaults = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await refreshPage();
+    const effective = effectiveOf("registry:merge_shepherd");
+    expect(effective.textContent).toContain("Off");
+    expect(effective.textContent).toContain("(stale)");
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).not.toContain(
+      "reading it back failed"
+    );
+  });
+
+  it("settles a knob write the same way when its read-back failed", async () => {
+    await renderPage();
+    await openPath("red_main_fix_dispatch");
+    routes.merge = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await click(screen.getByTestId("coord-spawns-path-red-main-knob-off"));
+    expect(effectiveOf("knob:auto_fix_red_main").textContent).toBe("UNKNOWN");
+    routes.merge = () => ({
+      body: mergeSettingsBody(undefined, { auto_fix_red_main: false }),
+    });
+    await refreshPage();
+    expect(readBackOf("knob:auto_fix_red_main")?.dataset.readback).toBe(
+      "matches"
+    );
+    routes.merge = () => ({
+      body: mergeSettingsBody(undefined, { auto_fix_red_main: true }),
+    });
+    await refreshPage();
+    expect(effectiveOf("knob:auto_fix_red_main").dataset.gateTone).toBe(
+      "known"
+    );
+    expect(writeNoteOf("knob:auto_fix_red_main")?.textContent).toContain(
+      "Changed since your write"
     );
   });
 });

@@ -111,7 +111,8 @@ export interface SwitchWrite {
   outcomeUnknown?: boolean;
   /**
    * The value, in the gate's vocabulary, of the read this write settled on:
-   * `written` — the read-back; `refused` — what coord held when it refused.
+   * `written` — the read-back, or, when that failed, the first read to answer
+   * after it (the hook latches it); `refused` — what coord held when it refused.
    * `null` or absent when no value was read. A cell that differs from it is
    * showing a LATER read, and says nothing about this write.
    */
@@ -360,8 +361,14 @@ export function withWrite(
       break;
   }
   // Until a read answers. The read that failed left its source stale or
-  // unknown; once a later read succeeds, that read is what is compared.
-  if (write.readbackError !== null && (cell.stale || cell.tone === "unknown")) {
+  // unknown; the first read to answer is what is compared, and the hook latches
+  // it as `settledState`. Past that the read-back HAS answered, so a read that
+  // fails later is that read's staleness, not this write's failure.
+  if (
+    write.readbackError !== null &&
+    (write.settledState === undefined || write.settledState === null) &&
+    (cell.stale || cell.tone === "unknown")
+  ) {
     return unknownAfterWrite(
       `Written (${asked}), but reading it back failed: ${write.readbackError}. What coord resolves is unknown until the next read.`,
       "Written, but reading it back failed — UNKNOWN until the next read.",
@@ -380,9 +387,10 @@ export function withWrite(
     ...cell,
     tone: matches ? cell.tone : "contradiction",
     readBack: { asked: write.asked, askedText: asked, matches },
-    writeNote:
-      write.outcomeUnknown || write.readbackError !== null
-        ? "Coord could not confirm the write itself; this is a read made after it."
+    writeNote: write.outcomeUnknown
+      ? "Coord could not confirm the write itself; this is a read made after it."
+      : write.readbackError !== null
+        ? "The write was answered, but its read-back failed; this is a later read."
         : cell.writeNote,
   };
 }

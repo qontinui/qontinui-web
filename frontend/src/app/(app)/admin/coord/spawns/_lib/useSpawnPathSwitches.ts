@@ -52,7 +52,8 @@
  * Each setter resolves with how the write ended (`SwitchWriteResult`), for a
  * caller that cannot see the matrix; it records the value of the read it
  * settled on, so a later read that differs is not taken for this write's
- * read-back.
+ * read-back. When the read-back itself failed, the first read to answer after
+ * it is the one the write settles on.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -218,6 +219,30 @@ function redMainState(profile: EffectiveProfile | null): string | null {
   return onOff(profile?.auto_fix_red_main);
 }
 
+/** What the reads now answered give one switch, by its write key. */
+function stateOfSwitch(
+  key: string,
+  reads: {
+    defaults: readonly AdminAgentRegistryRow[] | null;
+    nextStep: NextStepSettings | null;
+    profile: EffectiveProfile | null;
+  }
+): string | null {
+  const [door, name = ""] = key.split(/:(.*)/s);
+  switch (door) {
+    case "registry":
+      return registryState(reads.defaults, name);
+    case "autonomy":
+      return autonomyState(reads.nextStep, name);
+    case "dial":
+      return dialState(reads.profile);
+    case "knob":
+      return redMainState(reads.profile);
+    default:
+      return null;
+  }
+}
+
 function mergeReread(
   read: AutoFixPrReread,
   stateOf: (profile: EffectiveProfile | null) => string | null
@@ -363,6 +388,43 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
   const record = useCallback((key: string, write: SwitchWrite) => {
     setWrites((prev) => ({ ...prev, [key]: write }));
   }, []);
+
+  // A write whose read-back failed settles on the first read that answers: the
+  // read the cell stops being UNKNOWN on. Without this nothing would ever mark a
+  // later read as later, and another operator's change would read as coord
+  // contradicting this write. A kept value (a stale part, a dial with no answer)
+  // settles nothing.
+  const answeredDefaults =
+    parts.defaults.error === null ? parts.defaults.data : null;
+  const answeredNextStep =
+    parts.nextStep.error === null ? parts.nextStep.data : null;
+  const answeredProfile = mergeAnswered ? dial.profile : null;
+  useEffect(() => {
+    const settled = Object.entries(writes).flatMap(([key, write]) => {
+      if (
+        write.phase !== "written" ||
+        write.readbackError === null ||
+        (write.settledState !== undefined && write.settledState !== null)
+      ) {
+        return [];
+      }
+      const state = stateOfSwitch(key, {
+        defaults: answeredDefaults,
+        nextStep: answeredNextStep,
+        profile: answeredProfile,
+      });
+      return state === null ? [] : [{ key, write, state }];
+    });
+    if (settled.length === 0) return;
+    setWrites((prev) => {
+      const next = { ...prev };
+      for (const { key, write, state } of settled) {
+        // Only the record this read was compared with: a newer write replaces it.
+        if (prev[key] === write) next[key] = { ...write, settledState: state };
+      }
+      return next;
+    });
+  }, [writes, answeredDefaults, answeredNextStep, answeredProfile]);
 
   /** Record how a write ended, and answer it to the caller. */
   const finish = useCallback(
