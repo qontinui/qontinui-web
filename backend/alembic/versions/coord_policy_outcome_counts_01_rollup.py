@@ -128,6 +128,15 @@ holds ACCESS EXCLUSIVE on the base table, which already waits for any seeder
 transaction that has read the base table to end. It uses DELETE rather than
 TRUNCATE on the rollup tables so it takes no ACCESS EXCLUSIVE on them.
 
+## Windowed readers stay exact
+
+Hourly buckets alone cannot answer the windowed reader, whose predicate is
+second-exact (``outcome_labeled_at >= now() - N days``). coord sums the
+buckets of full hours strictly after the hour of the cutoff from this rollup,
+and adds a raw count of the base rows labeled in ``[cutoff, the next hour
+boundary)`` through ``ix_proclog_policy_rule_resolutions_outcome_labeled_at``,
+which is at most one hour of labels. The windowed count therefore stays exact.
+
 ## No CHECK on n
 
 ``n`` has no ``CHECK (n >= 0)``. The triggers go live before coord has seeded
@@ -158,8 +167,13 @@ before it upserts. Class id ``774177001`` is reserved for this rollup, and the
 key is computed in SQL with exactly that expression on both sides. The trigger
 takes the lock SHARED, so concurrent labelers of one hot key do not serialize
 on it; they serialize only on the rollup row itself, via ``ON CONFLICT DO
-UPDATE``, and each statement upserts in one fixed key order, so two of them
-cannot deadlock on rollup rows. The coord seeder (and reconcile) take the SAME
+UPDATE``. Each statement upserts in one fixed key order, so two STATEMENTS
+cannot deadlock on rollup rows. That holds per statement, not per transaction:
+it relies on every label and labeled-row delete writer staying a
+single-statement transaction, as all of them are today. A writer that labels
+or deletes rows of different keys in two statements of one transaction can
+meet another doing the reverse, and PostgreSQL then detects the deadlock and
+aborts one of them. Keep those writers single-statement. The coord seeder (and reconcile) take the SAME
 lock EXCLUSIVE, then in a later statement (a fresh READ COMMITTED snapshot)
 recount the key from the base table, delete the key rollup rows, insert the
 truth and record the key in ``_seeded``, all in one transaction. A labeling
@@ -230,8 +244,12 @@ nothing references them.
 
 ``DROP TRIGGER`` takes ``ACCESS EXCLUSIVE``, which DOES conflict with the
 count reads, and one of those is almost always in flight. So the downgrade
-first replaces the function body with ``RETURN NULL`` (no base-table lock at
-all), which makes the triggers inert at once, and only then drops the four
+first, in ONE transaction, replaces the function body with ``RETURN NULL`` (no
+base-table lock at all, which makes the triggers inert at once) AND revokes
+all trust in the rollup: it empties ``_seeded`` and clears
+``seed_state.full_pass_completed_at``. The two must commit together: a rollup
+that stopped counting while still marked seeded would be served to coord as
+the truth if the trigger drops below then failed. Only then does it drop the four
 triggers with ``lock_timeout = '200ms'`` and up to 100 attempts with the same
 capped backoff (about 210 s worst case), then drops the function and the three
 tables. Everything runs inside an autocommit block.
@@ -350,7 +368,13 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.policy_outcome_counts_seed_state IS
-            'Singleton. full_pass_completed_at is set by the coord seeder when one complete pass over every labeled (decision_domain, surface) key has finished, and cleared by a TRUNCATE of coord.policy_rule_resolutions. A reader not scoped to one key uses the rollup only when it is set.'
+            'Singleton, inserted by the migration. full_pass_completed_at is set by the coord seeder when one complete pass over every labeled (decision_domain, surface) key has finished, and cleared by a TRUNCATE of coord.policy_rule_resolutions or by the migration downgrade. A reader not scoped to one key uses the rollup only when it is set; an absent row reads as not seeded.'
+        """
+    )
+    op.execute(
+        """
+        INSERT INTO coord.policy_outcome_counts_seed_state DEFAULT VALUES
+        ON CONFLICT DO NOTHING
         """
     )
 
@@ -508,9 +532,9 @@ def upgrade() -> None:
                 DO $retry$
                 DECLARE
                     attempt integer := 0;
-                    max_attempts integer := coalesce(
+                    max_attempts integer := greatest(coalesce(
                         nullif(current_setting('qontinui.policy_outcome_counts_ddl_attempts', true), '')::integer,
-                        40);
+                        40), 1);
                 BEGIN
                     LOOP
                         attempt := attempt + 1;
@@ -554,19 +578,27 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Neutralise the function, drop the triggers (bounded retry), then the rest."""
     with op.get_context().autocommit_block():
-        # Takes no lock on the base table and makes every trigger inert at once,
-        # so nothing depends on how long the trigger drops below have to wait.
+        # ONE transaction: the function goes inert (no lock on the base table)
+        # and every trust marker is revoked together, so a later failure of the
+        # trigger drops cannot leave an inert rollup that still reads as seeded.
         op.execute(
             """
-            CREATE OR REPLACE FUNCTION coord.policy_outcome_counts_apply()
-            RETURNS trigger
-            LANGUAGE plpgsql
-            SET search_path = pg_catalog, coord
-            AS $fn$
+            DO $neutralise$
             BEGIN
-                RETURN NULL;
+                CREATE OR REPLACE FUNCTION coord.policy_outcome_counts_apply()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                SET search_path = pg_catalog, coord
+                AS $fn$
+                BEGIN
+                    RETURN NULL;
+                END
+                $fn$;
+                DELETE FROM coord.policy_outcome_counts_seeded;
+                UPDATE coord.policy_outcome_counts_seed_state
+                   SET full_pass_completed_at = NULL;
             END
-            $fn$
+            $neutralise$
             """
         )
         # DROP TRIGGER takes ACCESS EXCLUSIVE, which conflicts with the count
@@ -578,9 +610,9 @@ def downgrade() -> None:
                 DO $retry$
                 DECLARE
                     attempt integer := 0;
-                    max_attempts integer := coalesce(
+                    max_attempts integer := greatest(coalesce(
                         nullif(current_setting('qontinui.policy_outcome_counts_ddl_attempts', true), '')::integer,
-                        100);
+                        100), 1);
                 BEGIN
                     LOOP
                         attempt := attempt + 1;
