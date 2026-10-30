@@ -287,6 +287,18 @@ def test_up_down_up_restores_the_view_exactly(at_parent: tuple[Engine, str]) -> 
     run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
     assert _dependents(engine) == [], "the downgrade would refuse on a dependent"
 
+    # coordrls_01's default privileges would grant the re-created view by
+    # themselves here, because one role runs every revision in this database. In
+    # production the migrating role may not be the one that declared them, so
+    # revoke them to make the downgrade's explicit GRANT the only source of the ACL.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER DEFAULT PRIVILEGES IN SCHEMA coord REVOKE SELECT, INSERT, "
+                "UPDATE, DELETE ON TABLES FROM coord_tenant, coord_tenant_preflight"
+            )
+        )
+
     run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
     assert column_info(engine, _TABLE, "changed_at") is None
     assert _view_columns(engine) == _PRE_REVISION_VIEW_COLUMNS
