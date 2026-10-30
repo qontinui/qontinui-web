@@ -1,7 +1,7 @@
 """census dir_created_at 01 — coord.worktree_census birth time of the observed directory
 
 Revision ID: census_dir_created_at_01
-Revises: leader_worker_runs_01
+Revises: slice_tel_01
 Create Date: 2026-10-14
 
 Phase 2a of plan
@@ -61,7 +61,7 @@ revision: str = "census_dir_created_at_01"
 # this branch feeds deploy-coord.yml's drift gate) is line-scoped, so a
 # formatter-wrapped `down_revision = (\n "..."\n)` yields no parent at all and
 # counts as a second head — see plan_library_06_scan_root_slug_census.py.
-down_revision: str | Sequence[str] | None = "leader_worker_runs_01"
+down_revision: str | Sequence[str] | None = "slice_tel_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

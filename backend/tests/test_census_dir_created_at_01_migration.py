@@ -54,7 +54,7 @@ from tests._alembic_harness import (
 # `test_the_pinned_parent_matches_the_revisions_down_revision` below enforces
 # it.
 _REVISION_ID = "census_dir_created_at_01"
-_PARENT_REVISION_ID = "leader_worker_runs_01"
+_PARENT_REVISION_ID = "slice_tel_01"
 _REVISION_FILENAME = "census_dir_created_at_01_worktree_census_dir_created_at.py"
 
 _TABLE = "worktree_census"
