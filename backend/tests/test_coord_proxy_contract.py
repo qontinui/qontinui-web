@@ -365,8 +365,11 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     "ops_passthrough_post": _PASSTHROUGH_FAMILY,
     "agent_registry_coord_request": {
         **_transport(),
-        # httpx.RequestError arm: ReadError → 502, not an escape.
-        "read_error": Cell(Raises(502, NOT_REACHABLE)),
+        # httpx.RequestError arm: a ReadError may follow a sent request, so it
+        # is a 504 like ``_proxy_coord_write``'s; a 502 says nothing was sent.
+        "read_error": Cell(
+            Raises(504, "coord's answer was lost in transit (ReadError)")
+        ),
         "coord_404_empty": Cell(Raises(404, "")),
         "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
         "coord_500_html": Cell(Raises(500, _HTML_BODY)),

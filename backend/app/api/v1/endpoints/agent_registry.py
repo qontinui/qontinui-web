@@ -133,6 +133,18 @@ async def get_registry_user(request: Request) -> User:
     return user
 
 
+def _answer_lost_detail(method: str, exc_name: str) -> str:
+    """What a 504 says when a transport failure lost coord's answer. Only a
+    write has anything to re-read before retrying."""
+    detail = f"coord's answer was lost in transit ({exc_name})"
+    if method.upper() == "GET":
+        return detail
+    return (
+        f"{detail}; the change may have been applied, so re-read the current "
+        "state before retrying"
+    )
+
+
 async def _coord_request(
     method: str,
     path: str,
@@ -147,6 +159,20 @@ async def _coord_request(
     coord's 422 error codes (``disposition_required`` /
     ``invalid_disposition``) reach the frontend intact rather than as an
     opaque string.
+
+    The transport statuses say whether coord may have acted, on the same split
+    as ``operations._proxy_coord_write``, because a caller of a write door
+    decides from them whether the write may have landed:
+
+    * ``ConnectError`` → **502**: no connection was made, so coord never saw the
+      request. The only arm that says nothing changed.
+    * a timeout, or any OTHER transport failure after the request may have been
+      sent (``ReadError``, ``RemoteProtocolError``) → **504**: coord may have
+      committed, and only a re-read can tell.
+
+    Unlike that helper this one does not yet handle a 2xx whose body is not
+    JSON: the ``ValueError`` escapes. ``test_coord_proxy_contract.py`` records
+    it as a known defect for its plan's Phase 5.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(None)
@@ -165,10 +191,17 @@ async def _coord_request(
             ) from exc
         except httpx.RequestError as exc:
             # Any other transport failure (ReadError, RemoteProtocolError,
-            # ...) — coord unreachable rather than an application error.
+            # ...): the request may already have been sent, so coord's answer
+            # is lost rather than coord being unreachable.
+            logger.warning(
+                "coord_answer_lost",
+                method=method,
+                path=path,
+                exc_type=type(exc).__name__,
+            )
             raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="coord is not reachable",
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=_answer_lost_detail(method, type(exc).__name__),
             ) from exc
     if resp.status_code >= 400:
         detail: Any

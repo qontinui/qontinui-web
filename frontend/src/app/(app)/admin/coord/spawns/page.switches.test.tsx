@@ -22,9 +22,10 @@
  *    show coord's answer or re-read, compared with the ask. A dial write coord
  *    refuses says so with no read-back; one it could not confirm is UNKNOWN
  *    until the re-read answers, and then that read is compared.
- * 5. **A registry or next-step write that timed out is not a refusal** — the
- *    backend's 504 and the client's own timeout read UNKNOWN until a re-read
- *    answers, and that read is compared; a 502 (nothing was sent) is refused.
+ * 5. **A write that lost its answer is not a refusal** — the backend's 504, the
+ *    client's own timeout and a thrown non-HTTP failure read UNKNOWN until a
+ *    re-read answers, and that read is compared; a 502 (no connection was made)
+ *    and an offline browser are refused.
  * 6. **A level coord only defaults to can be recorded** — the active level of
  *    a `code_fallback` domain stays a live button, and a recorded one does not.
  * 7. **The read-back mark belongs to the read that settled the write** — a
@@ -58,6 +59,8 @@ const requests: Array<{ url: string; method: string; body: unknown }> = [];
 let holdRead: { match: string; until: Promise<void> } | null = null;
 /** While set, a write of this method rejects as the client's own timeout does. */
 let timeOutMethod: string | null = null;
+/** While set, a write of this method rejects with this error, as the client does. */
+let throwOnWrite: { method: string; error: Error } | null = null;
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
@@ -75,6 +78,7 @@ vi.mock("@/services/service-factory", () => ({
       if (timeOutMethod === method) {
         throw new Error(`Request timeout - ${method} ${url}`);
       }
+      if (throwOnWrite?.method === method) throw throwOnWrite.error;
       return answerSpawnsRequest(routes, url, init);
     },
   },
@@ -92,6 +96,7 @@ import {
   mergeSettingsBody,
   nextStepBody,
 } from "./__fixtures__/spawnPaths";
+import { NO_CONNECTION_MESSAGE } from "@/services/http-client";
 import { OTHER_RUNNER_STARTS } from "./_components/SpawnPathMatrix";
 import CoordSpawnsPage from "./page";
 
@@ -143,6 +148,7 @@ beforeEach(() => {
   routes = defaultSpawnsRoutes();
   holdRead = null;
   timeOutMethod = null;
+  throwOnWrite = null;
 });
 
 /** Hold every GET of `match` until the returned function is called. */
@@ -676,7 +682,7 @@ describe("the spawn-path matrix — writes show coord's read-back", () => {
   });
 });
 
-describe("a registry or next-step write that timed out is not a refusal", () => {
+describe("a write that lost its answer is not a refusal", () => {
   it("reads a registry PUT 504 as UNKNOWN until its re-read answers, then compares that read", async () => {
     await renderPage();
     await openPath("merge_shepherd");
@@ -771,6 +777,109 @@ describe("a registry or next-step write that timed out is not a refusal", () => 
     expect(writeNoteOf("registry:merge_shepherd")?.textContent).toContain(
       "could not confirm the write itself"
     );
+  });
+
+  it("reads a registry PUT that threw as UNKNOWN until its re-read answers, then compares that read", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    throwOnWrite = { method: "PUT", error: new TypeError("Failed to fetch") };
+    // The write landed; only its answer was lost.
+    routes.defaults = () => ({
+      body: defaultsBody({ merge_shepherd: { default_enabled: false } }),
+    });
+    const release = holdReads("agent-registry/admin/registry");
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("UNKNOWN");
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toContain(
+      "Outcome unknown"
+    );
+    expect(
+      effectiveOf("registry:merge_shepherd").getAttribute("title")
+    ).toContain(
+      "could not confirm whether your change to off landed (Failed to fetch)"
+    );
+    await release();
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("Off");
+    expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
+      "matches"
+    );
+    const note = writeNoteOf("registry:merge_shepherd")?.textContent;
+    expect(note).toContain("could not confirm the write itself");
+    expect(note).not.toContain("refused");
+  });
+
+  it("compares a registry PUT that threw with a re-read that says it did not land", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    throwOnWrite = { method: "PUT", error: new TypeError("Failed to fetch") };
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("On");
+    expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
+      "contradicts"
+    );
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).not.toContain(
+      "refused"
+    );
+  });
+
+  it("reads a next-step PUT and a knob PATCH that threw as unconfirmed too", async () => {
+    await renderPage();
+    await openPath("red_main_fix_dispatch");
+    throwOnWrite = { method: "PUT", error: new TypeError("Failed to fetch") };
+    await click(
+      screen.getByTestId(
+        "coord-spawns-path-autonomy-red_main_fix-guidance_only"
+      )
+    );
+    expect(writeNoteOf("autonomy:red_main_fix")?.textContent).not.toContain(
+      "refused"
+    );
+    throwOnWrite = { method: "PATCH", error: new TypeError("Failed to fetch") };
+    routes.merge = () => ({
+      body: mergeSettingsBody(undefined, { auto_fix_red_main: false }),
+    });
+    await click(screen.getByTestId("coord-spawns-path-red-main-knob-off"));
+    expect(readBackOf("knob:auto_fix_red_main")?.dataset.readback).toBe(
+      "matches"
+    );
+    expect(writeNoteOf("knob:auto_fix_red_main")?.textContent).toContain(
+      "could not confirm the write itself"
+    );
+  });
+
+  it("reads a dial PATCH that threw as unconfirmed, and re-reads", async () => {
+    await renderPage();
+    await openPath("pr_fix_dispatch");
+    throwOnWrite = { method: "PATCH", error: new TypeError("Failed to fetch") };
+    routes.merge = () => ({
+      body: mergeSettingsBody({
+        tenant: false,
+        resolved: false,
+        source: "tenant",
+      }),
+    });
+    await click(screen.getByTestId("coord-spawns-path-fixer-dial-off"));
+    expect(readBackOf("dial:auto_fix_pr")?.dataset.readback).toBe("matches");
+    expect(writeNoteOf("dial:auto_fix_pr")?.textContent).toContain(
+      "could not confirm the write itself"
+    );
+  });
+
+  it("stays a refusal when the browser is offline", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    throwOnWrite = { method: "PUT", error: new Error(NO_CONNECTION_MESSAGE) };
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toContain(
+      "was refused"
+    );
+    expect(readBackOf("registry:merge_shepherd")).toBeNull();
   });
 
   it("stays a refusal when nothing was sent (502)", async () => {

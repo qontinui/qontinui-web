@@ -296,6 +296,14 @@ export function isRetryableStatus(args: {
 }
 
 /**
+ * What a request rejects with when it failed and the browser reports it is
+ * offline. Exported so a caller deciding whether a write may have landed can
+ * tell this apart from a fetch that failed for a reason nobody can name.
+ */
+export const NO_CONNECTION_MESSAGE =
+  "No internet connection. Please check your network.";
+
+/**
  * Default client-side fetch timeout. Sized to cover an Elastic Beanstalk
  * cold-start (~10-15s) plus normal request latency, but small enough that a
  * truly stuck request fails fast. Per-request `timeoutMs` overrides this.
@@ -829,7 +837,7 @@ export class HttpClient {
       }
 
       if (typeof navigator !== "undefined" && !navigator.onLine) {
-        throw new Error("No internet connection. Please check your network.");
+        throw new Error(NO_CONNECTION_MESSAGE);
       }
 
       throw error;

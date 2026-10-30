@@ -52,6 +52,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -1335,3 +1336,78 @@ class TestTheTenantDefaultWrite:
 
         _, path = mock_req.call_args.args
         assert path == "/coord/agent-registry/odd%20name"
+
+
+class TestTransportStatusesSayWhetherCoordMayHaveActed:
+    """``_coord_request``'s split, the one ``_proxy_coord_write`` documents.
+
+    A 502 from this door means no connection was made, so a caller may report
+    the write as not applied; everything else that lost the answer is a 504,
+    which the agentic-activity page reads as UNKNOWN until a re-read settles it.
+    A ``ReadError`` mapped to 502 here labelled a write that may have landed as
+    refused.
+    """
+
+    @staticmethod
+    def _client_answering(handler):
+        real_client = httpx.AsyncClient
+
+        def build(**kwargs):
+            return real_client(transport=httpx.MockTransport(handler), **kwargs)
+
+        return patch(f"{MODULE}.httpx.AsyncClient", new=build)
+
+    async def _status_of(self, handler, method: str = "PUT"):
+        from app.api.v1.endpoints.agent_registry import _coord_request
+
+        with self._client_answering(handler), pytest.raises(HTTPException) as exc:
+            await _coord_request(method, "/coord/agent-registry/x", json_body={})
+        return exc.value
+
+    @pytest.mark.asyncio
+    async def test_a_connect_error_is_a_502_nothing_was_sent(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("refused", request=request)
+
+        err = await self._status_of(handler)
+        assert err.status_code == 502
+        assert err.detail == "coord is not reachable"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "lost",
+        [httpx.ReadError, httpx.RemoteProtocolError, httpx.WriteError],
+    )
+    async def test_a_transport_failure_after_sending_is_a_504(self, lost) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise lost("cut", request=request)
+
+        err = await self._status_of(handler)
+        assert err.status_code == 504
+        assert lost.__name__ in err.detail
+        assert "may have been applied" in err.detail
+
+    @pytest.mark.asyncio
+    async def test_a_timeout_stays_a_504(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("slow", request=request)
+
+        assert (await self._status_of(handler)).status_code == 504
+
+    @pytest.mark.asyncio
+    async def test_a_lost_read_names_nothing_to_re_read(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadError("cut", request=request)
+
+        err = await self._status_of(handler, method="GET")
+        assert err.status_code == 504
+        assert "may have been applied" not in err.detail
+
+    @pytest.mark.asyncio
+    async def test_coords_own_answer_still_passes_through(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(502, json={"error": "coord_says_so"})
+
+        err = await self._status_of(handler)
+        assert err.status_code == 502
+        assert err.detail == {"error": "coord_says_so"}

@@ -36,8 +36,8 @@
  *   authoritative state after the write, applied as a read.
  * - On either PUT, a failure that leaves the outcome open (the backend's 504,
  *   which it documents as "coord may well have committed, and only a re-read
- *   can tell", or the client's own timeout) is not a refusal: it is UNKNOWN
- *   until a re-read settles it, like the two below.
+ *   can tell", the client's own timeout, or a failure with no HTTP status) is
+ *   not a refusal: it is UNKNOWN until a re-read settles it, like the two below.
  * - `PATCH /pr-merge/settings {auto_fix_pr}` (the dial hook's `setChoice`):
  *   `saved` is coord's answer reading back what was sent; `refused` keeps
  *   coord's value and says so; `unconfirmed` is UNKNOWN until the hook's
@@ -84,7 +84,7 @@ import {
 } from "@/app/(app)/settings/coordination/_hooks/useAutoFixPrSetting";
 import {
   choiceFromTenant,
-  isUnconfirmedWrite,
+  isUnconfirmedFailure,
   readAutoFixPr,
   type AutoFixPrChoice,
 } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
@@ -168,19 +168,20 @@ export const WRITE_IN_FLIGHT =
   "A write to this switch is still in flight; wait for its read-back.";
 
 /**
- * Whether a failed registry or next-step PUT may still have landed. The
- * backend's write proxies answer 504 when coord may have committed and only a
- * re-read can tell, and a client timeout is the same state; a 502 means nothing
- * was sent, and any other answer is coord's own refusal.
+ * Whether a failed registry or next-step PUT may still have landed. Both doors
+ * answer 504 when coord may have committed and only a re-read can tell, and a
+ * client timeout or a failure with no HTTP status is the same state. A 502 from
+ * either door means no connection to coord was made, an offline browser is taken
+ * as not having sent it, and any other answer is coord's own refusal.
  */
 function writeMayHaveLanded(err: unknown): boolean {
   if (err instanceof AgentPrefError) return err.status === 504;
-  return isUnconfirmedWrite(switchReadErrorText(err));
+  return isUnconfirmedFailure(err);
 }
 
 function unconfirmedReason(err: unknown): string {
   return err instanceof AgentPrefError
-    ? `the request timed out waiting for coord (HTTP ${err.status}), so it may have landed`
+    ? `coord's answer did not arrive (HTTP ${err.status}), so it may have landed`
     : switchReadErrorText(err);
 }
 
@@ -665,7 +666,7 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
           await patchTenantAutoFixRedMain(enabled);
         } catch (err) {
           const message = switchReadErrorText(err);
-          if (isUnconfirmedWrite(message)) {
+          if (isUnconfirmedFailure(err)) {
             return settleUnconfirmed(
               key,
               asked,
