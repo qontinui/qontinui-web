@@ -75,7 +75,9 @@ export function FixerSpawnToggle({
   const summary = state
     ? tenantSummary(state)
     : {
-        value: "Unknown (treated as off)",
+        // This page's own read failing says nothing about what coord does, so
+        // that arm claims nothing about how the value is treated.
+        value: error ? "Unknown" : "Unknown (treated as off)",
         tone: "unknown" as const,
         from: error
           ? "the merge settings could not be loaded"
