@@ -989,11 +989,13 @@ type UnitRepos = Readonly<
  * One named unit. Its title — or its slug when it has none — is free text
  * attributed to every repository it may belong to (`namedUnitRepos`), so
  * while presenting it shows only when all of them are first-party. Its link's
- * URL carries the slug, so a unit whose title is withheld is not linked — not
- * even handed to `LensLink`, which renders plain text today (the unit's page
- * is not presentation-ready) and would render an anchor carrying the slug the
- * day `/admin/coord/work-units/[slug]` is registered. `page.presentation.test`
- * pins that by `data-lens-link`, so the guard is not dormant until then.
+ * URL carries the slug, so a unit is linked only when its name AND its slug
+ * clear the scope: a slug can name a client under a title that does not. A
+ * unit that fails is not even handed to `LensLink`, which renders plain text
+ * today (the unit's page is not presentation-ready) and would render an anchor
+ * carrying the slug the day `/admin/coord/work-units/[slug]` is registered.
+ * The page tests pin that by `data-lens-link`, so the guard is not dormant
+ * until then.
  */
 function NamedUnitItem({
   u,
@@ -1012,7 +1014,10 @@ function NamedUnitItem({
   const text = u.title ?? u.slug;
   const descriptor = namedUnitDescriptor(u, list);
   const linkable =
-    !presenting || redactionVerdict({ text, repo: repos }, scope).show;
+    !presenting ||
+    [text, u.slug].every(
+      (shown) => redactionVerdict({ text: shown, repo: repos }, scope).show
+    );
   const title = redact({ text, repo: repos, descriptor });
   const name = (
     <RedactedText text={text} repo={repos} descriptor={descriptor} />
