@@ -18,7 +18,10 @@
  * mechanical half of that.
  */
 
-import type { GlossaryTerm as GlossaryTermId } from "@qontinui/shared-types/glossary";
+import {
+  glossaryEntry,
+  type GlossaryTerm as GlossaryTermId,
+} from "@qontinui/shared-types/glossary";
 
 /** A product term inside caption copy. `text` is the surface's wording. */
 export interface CaptionTermSegment {
@@ -76,4 +79,19 @@ export function copy(
 /** The segments of caption copy, whichever form it was written in. */
 export function captionSegments(text: CaptionText): readonly CaptionSegment[] {
   return typeof text === "string" ? [text] : text;
+}
+
+/**
+ * Caption copy as plain text, each term as its words on the surface (or the
+ * glossary's name for it) — for an attribute such as a `title`, which cannot
+ * hold a `GlossaryTerm`. Rendered copy goes through `CaptionCopy` instead.
+ */
+export function captionPlainText(text: CaptionText): string {
+  return captionSegments(text)
+    .map((segment) =>
+      typeof segment === "string"
+        ? segment
+        : (segment.text ?? glossaryEntry(segment.term).term)
+    )
+    .join("");
 }

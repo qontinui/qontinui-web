@@ -186,6 +186,10 @@ describe("isGloballyWaivedServerUrl — the presentation scope read", () => {
       "http://localhost:3001/api/v1/presentation/other",
       "http://localhost:3001/api/v1/presentation",
       "http://localhost:3001/api/v1/x?next=/api/v1/presentation/scope",
+      // A longer path under the route, and the same path with a trailing
+      // slash, are other URLs: only `?` or the end may follow the route.
+      "http://localhost:3001/api/v1/presentation/scope/history",
+      "http://localhost:3001/api/v1/presentation/scope/",
     ]) {
       expect(isGloballyWaivedServerUrl(url, 502), url).toBe(false);
     }
@@ -209,6 +213,10 @@ describe("isGloballyWaivedServerUrl — the taste inbox read", () => {
       "http://localhost:3001/api/v1/taste/pairs",
       "http://localhost:3001/api/v1/taste/inboxes",
       "http://localhost:3001/api/v1/x?next=/api/v1/taste/inbox",
+      // A longer path under the inbox route, and the same path with a
+      // trailing slash, are other URLs: only `?` or the end may follow it.
+      "http://localhost:3001/api/v1/taste/inbox/x",
+      "http://localhost:3001/api/v1/taste/inbox/",
     ]) {
       expect(isGloballyWaivedServerUrl(url, 502), url).toBe(false);
     }

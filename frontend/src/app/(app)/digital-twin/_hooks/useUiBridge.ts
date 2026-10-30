@@ -96,7 +96,14 @@ export function useRunnerSpecGraph(deviceId: string | null, appId: string) {
  * (`ui_bridge_request_sync`), not from the app the Spec API reads are about,
  * so the key deliberately has no app id: the App field does not change what
  * this captures. What it captured is whatever `appId` / `page` the snapshot
- * reports. On-demand only (`enabled`) — we never fire it implicitly.
+ * reports.
+ *
+ * On demand only — nothing captures it implicitly. A caller either enables it
+ * per request (the UI Bridge dashboard, `useOnDemandRequest`) or never enables
+ * it and captures with `refetch()` (the digital twin's UI Bridge tab). A
+ * reconnect does not re-capture an enabled one either: with `staleTime: 0`
+ * every capture is stale at once, so react-query's default would read the
+ * runner's window again on every network reconnect.
  */
 export function useRunnerSnapshot(deviceId: string | null, enabled: boolean) {
   return useQuery({
@@ -110,6 +117,7 @@ export function useRunnerSnapshot(deviceId: string | null, enabled: boolean) {
     enabled: enabled && !!deviceId,
     staleTime: 0,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: false,
   });
 }

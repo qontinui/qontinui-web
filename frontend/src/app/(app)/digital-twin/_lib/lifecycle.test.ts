@@ -262,11 +262,11 @@ describe("stageSummary", () => {
     const verify = stageSummary(FIXTURE).verify;
     expect(verify).toEqual({
       probed: 3,
-      restricted: 0,
       live: 2, // implemented + partial answer; blind does not
       pending: 0,
       served: 0,
       restricted: 0,
+      unknown: 0,
       manifestBuilt: 2, // the parameterized and the none row — claims
       interactive: 1,
       planned: 1,
@@ -278,11 +278,11 @@ describe("stageSummary", () => {
   it("counts a stage no row observes as all zeros", () => {
     expect(stageSummary(FIXTURE).intent).toEqual({
       probed: 0,
-      restricted: 0,
       live: 0,
       pending: 0,
       served: 0,
       restricted: 0,
+      unknown: 0,
       manifestBuilt: 0,
       interactive: 0,
       planned: 0,
@@ -316,6 +316,24 @@ describe("stageSummary", () => {
     });
     // Only the report-free, unrefused probes can answer with a verdict.
     expect(gradedOf(counts)).toBe(2);
+  });
+
+  it("counts a row with no reading as unknown — neither answering nor silent", () => {
+    // The probe failed or answered degraded: no row was read.
+    const counts = coverageOf([
+      row("unread_a", ["verify"], "snapshot", "implemented", "unknown"),
+      row("unread_b", ["verify"], "snapshot", "partial", "unknown"),
+      row("claimed", ["verify"], "none", "partial", "unprobed"),
+    ]);
+    expect(counts).toMatchObject({
+      probed: 2,
+      unknown: 2,
+      live: 0,
+      pending: 0,
+      served: 0,
+      restricted: 0,
+      manifestBuilt: 1,
+    });
   });
 
   it("puts every real row of every stage in exactly one bucket", () => {

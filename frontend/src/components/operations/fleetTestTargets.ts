@@ -1,5 +1,7 @@
 /**
- * Readable text for a failed test-host designation write.
+ * Readable outcomes of the fleet routes' refusals: the app-config
+ * platform-admin refusal ({@link isAppConfigAdminRefusal}) and a failed
+ * test-host designation write ({@link designationErrorText}).
  *
  * The designation PUT/DELETE proxy to coord's binding-checked writer, and the
  * backend answers a refusal with a typed envelope carrying operator-facing
@@ -14,8 +16,37 @@
  * text, so nothing is ever hidden.
  */
 
-import { httpBodyOf } from "@/components/admin/coord/httpStatus";
-import { designationRefusalMessage } from "@/lib/api/fleet";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  FleetApiError,
+  designationRefusalMessage,
+  isPlatformAdminRefusal,
+} from "@/lib/api/fleet";
+
+/**
+ * Whether a failed app-config read or write (`GET /fleet/apps`, `PATCH
+ * /fleet/apps/{app_id}`) is the backend's platform-admin refusal — the caller
+ * is signed in but is not a platform admin — rather than a failure.
+ *
+ * Reads both shapes the fleet UI meets: a {@link FleetApiError} from
+ * `lib/api/fleet.ts`, and an `httpClient` rejection
+ * (`GET <url> failed: 403 - <body>`), whose status and body are recovered by
+ * the console's anchored readers. Anything else — another 403's body, an HTML
+ * page, a network error — is not the refusal.
+ */
+export function isAppConfigAdminRefusal(err: unknown): boolean {
+  if (err instanceof FleetApiError) {
+    return isPlatformAdminRefusal(err.status, err.body);
+  }
+  const body = httpBodyOf(err);
+  if (body === null) return false;
+  try {
+    return isPlatformAdminRefusal(httpStatusOf(err), JSON.parse(body));
+  } catch {
+    // Not JSON (an HTML 403 page from a proxy): not the backend's refusal.
+    return false;
+  }
+}
 
 export function designationErrorText(err: unknown): string {
   const body = httpBodyOf(err);

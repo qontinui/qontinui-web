@@ -7,6 +7,11 @@
  *
  * Adapted from the runner's useConstraints hook, using the web frontend's
  * constraints API client which calls through the FastAPI backend proxy.
+ *
+ * The read publishes what it answered (`readState`), because the constraints
+ * routes are for platform admins only and a read can fail: a refusal and a
+ * failure must not render as "no constraints", and a config that was never
+ * read must not be overwritten from an empty editor (see `save`).
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -24,6 +29,7 @@ import {
 import {
   fetchActiveConstraints,
   fetchConstraintConfig,
+  isConstraintsAdminRefusal,
   saveConstraintConfig,
   validateConstraintConfig,
 } from "@/lib/constraints-api";
@@ -31,6 +37,23 @@ import {
 // ============================================================================
 // Types
 // ============================================================================
+
+/**
+ * What the constraints read (`reload`) answered.
+ *
+ * - `pending`: no read has settled yet. A panel shows its loader.
+ * - `read`: the constraints and config are what the runner answered. If a
+ *   later read failed, `readFailure` says why, and what is shown is STALE.
+ * - `admin-only`: REFUSED, the viewer is not a platform admin. Nothing an
+ *   earlier read delivered is kept, and no editor may be offered.
+ * - `unknown`: no read has delivered and one failed. Nothing is known, so the
+ *   empty initial state must not be shown as "no constraints".
+ */
+export type ConstraintsReadState =
+  | "pending"
+  | "read"
+  | "admin-only"
+  | "unknown";
 
 export interface UseConstraintsOptions {
   /** Project path to scope the config to. If omitted, the backend resolves it. */
@@ -50,11 +73,22 @@ export interface UseConstraintsReturn {
   aiConstraints: Constraint[];
   /** Resource limits (local state). */
   resourceLimits: ResourceLimits;
-  /** Whether the local state differs from the last loaded/saved config. */
+  /**
+   * Whether the local state differs from the config last read or saved.
+   * False while nothing was read (`readState` is not `read`): there is no
+   * config for an edit to differ from, and `save` would refuse it anyway.
+   */
   isDirty: boolean;
   /** Whether data is currently loading. */
   loading: boolean;
-  /** Error message, if any. */
+  /** What the latest settled read answered. */
+  readState: ConstraintsReadState;
+  /**
+   * Why the latest read failed: the reason of an `unknown` state, or, beside
+   * `read`, of a stale one. Null while the latest read delivered.
+   */
+  readFailure: string | null;
+  /** Why the latest validate or save failed, if it did. */
   error: string | null;
   /** Path to the constraints.toml file (if one exists). */
   configPath: string | undefined;
@@ -79,7 +113,11 @@ export interface UseConstraintsReturn {
   // Actions
   /** Validate current state without saving. */
   validate: () => Promise<ValidateConfigResponse>;
-  /** Generate TOML, validate, and save via the API. Returns true on success. */
+  /**
+   * Generate TOML, validate, and save via the API. Returns true on success.
+   * Writes nothing unless `readState` is `read`: a config that was never read
+   * would be overwritten with whatever the editor holds.
+   */
   save: () => Promise<boolean>;
   /** Reload constraints and config from the backend. */
   reload: () => Promise<void>;
@@ -99,10 +137,17 @@ export function useConstraints(
   const [resourceLimits, setResourceLimits] = useState<ResourceLimits>({});
   const [configPath, setConfigPath] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
+  const [readState, setReadState] = useState<ConstraintsReadState>("pending");
+  const [readFailure, setReadFailure] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Snapshot of the last saved/loaded state for dirty tracking
-  const savedStateRef = useRef<string>("");
+  // The config last read or saved, serialized, for dirty tracking. Null while
+  // nothing was read. State, not a ref: a save moves it without touching the
+  // constraints, and `isDirty` must be derived again when it does.
+  const [savedState, setSavedState] = useState<string | null>(null);
+  // The issue number of the newest read: only it may settle the state, so a
+  // slower, older read cannot overwrite a newer one's answer.
+  const readSeqRef = useRef(0);
 
   /** Serialize current state to a string for dirty comparison. */
   const serializeState = useCallback(
@@ -129,15 +174,29 @@ export function useConstraints(
   );
 
   const isDirty = useMemo(
-    () => serializeState(constraints, resourceLimits) !== savedStateRef.current,
-    [constraints, resourceLimits, serializeState]
+    () =>
+      savedState !== null &&
+      serializeState(constraints, resourceLimits) !== savedState,
+    [constraints, resourceLimits, savedState, serializeState]
   );
 
   // --------------------------------------------------------------------------
   // Load
   // --------------------------------------------------------------------------
 
+  /** The viewer may not see the constraints: drop them and every edit. */
+  const refuse = useCallback(() => {
+    setConstraints([]);
+    setResourceLimits({});
+    setConfigPath(undefined);
+    setSavedState(null);
+    setReadState("admin-only");
+    setReadFailure(null);
+    setError(null);
+  }, []);
+
   const reload = useCallback(async () => {
+    const seq = ++readSeqRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -145,6 +204,7 @@ export function useConstraints(
         fetchActiveConstraints(projectPath),
         fetchConstraintConfig(projectPath),
       ]);
+      if (seq !== readSeqRef.current) return;
 
       setConstraints(activeConstraints);
       // Schema tightened config.path to `string | null | undefined`; the
@@ -161,15 +221,26 @@ export function useConstraints(
       }
 
       // Snapshot the loaded state
-      savedStateRef.current = serializeState(activeConstraints, limits);
+      setSavedState(serializeState(activeConstraints, limits));
+      setReadState("read");
+      setReadFailure(null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      if (seq !== readSeqRef.current) return;
+      // A refusal is an answer, not a failure: the viewer is not a platform
+      // admin, so nothing is shown and nothing is editable.
+      if (isConstraintsAdminRefusal(err)) {
+        refuse();
+        return;
+      }
       console.error("[useConstraints] reload failed:", err);
-      setError(msg);
+      // Constraints an earlier read delivered stay on screen, labelled stale;
+      // with none, what applies is unknown. Both carry the reason.
+      setReadState((prev) => (prev === "read" ? prev : "unknown"));
+      setReadFailure(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      if (seq === readSeqRef.current) setLoading(false);
     }
-  }, [projectPath, serializeState]);
+  }, [projectPath, serializeState, refuse]);
 
   // Load on mount
   useEffect(() => {
@@ -237,6 +308,13 @@ export function useConstraints(
 
   const save = useCallback(async (): Promise<boolean> => {
     setError(null);
+    if (readState !== "read") {
+      setError(
+        "The constraints were not read, so saving would overwrite the " +
+          "project's config with what this editor holds. Read them first."
+      );
+      return false;
+    }
     try {
       const toml = generateConstraintToml(constraints, resourceLimits);
 
@@ -256,15 +334,28 @@ export function useConstraints(
 
       // Update config path and snapshot
       setConfigPath(result.path);
-      savedStateRef.current = serializeState(constraints, resourceLimits);
+      setSavedState(serializeState(constraints, resourceLimits));
       return true;
     } catch (err) {
+      if (isConstraintsAdminRefusal(err)) {
+        // The viewer is not (or no longer) a platform admin: say so in place
+        // of the editors, and drop the edits with them.
+        refuse();
+        return false;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[useConstraints] save failed:", err);
       setError(msg);
       return false;
     }
-  }, [constraints, resourceLimits, projectPath, serializeState]);
+  }, [
+    constraints,
+    resourceLimits,
+    projectPath,
+    serializeState,
+    readState,
+    refuse,
+  ]);
 
   return {
     constraints,
@@ -274,6 +365,8 @@ export function useConstraints(
     resourceLimits,
     isDirty,
     loading,
+    readState,
+    readFailure,
     error,
     configPath,
 

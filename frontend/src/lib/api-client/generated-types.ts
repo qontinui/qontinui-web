@@ -3803,7 +3803,7 @@ export interface paths {
         };
         /**
          * Get active constraints
-         * @description Proxy to runner: returns active constraints for a project path.
+         * @description Proxy to the co-located runner: the active constraints for a project. Platform admins only.
          */
         get: operations["api_v1_constraints_active_get"];
         put?: never;
@@ -3823,13 +3823,13 @@ export interface paths {
         };
         /**
          * Get constraint config
-         * @description Proxy to runner: returns the constraint TOML config for a project path.
+         * @description Proxy to the co-located runner: the constraint TOML config found from a project path. Platform admins only.
          */
         get: operations["api_v1_constraints_config_get"];
         put?: never;
         /**
          * Write constraint config
-         * @description Proxy to runner: writes a new constraint TOML config.
+         * @description Proxy to the co-located runner: writes a constraint TOML config, whose command checks the runner's workflow loop executes. Platform admins only.
          */
         post: operations["api_v1_constraints_config_post"];
         delete?: never;
@@ -3847,7 +3847,7 @@ export interface paths {
         };
         /**
          * Get constraint results
-         * @description Proxy to runner: returns constraint evaluation results for a task run.
+         * @description Proxy to the co-located runner: constraint evaluation results for a task run. Platform admins only.
          */
         get: operations["api_v1_constraints_results_task_run_id_get"];
         put?: never;
@@ -3869,7 +3869,7 @@ export interface paths {
         put?: never;
         /**
          * Validate constraint config
-         * @description Proxy to runner: validates a TOML config string without writing it.
+         * @description Proxy to the co-located runner: validates a TOML config string without writing it. Platform admins only.
          */
         post: operations["api_v1_constraints_validate_post"];
         delete?: never;
@@ -5024,7 +5024,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5051,7 +5054,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5078,7 +5084,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5105,7 +5114,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5134,7 +5146,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -7548,11 +7563,12 @@ export interface paths {
         };
         /**
          * List Apps
-         * @description List registered apps + their fleet-fresh config.
+         * @description List registered apps + their fleet-fresh config. Platform admins only.
          *
          *     ``project.apps`` is not user-partitioned (it is the runner-local app
          *     registry mirrored on shared Postgres), so this returns every registered
-         *     app — the fleet UI is an operator surface.
+         *     app, build and start commands included — which is why it is gated on
+         *     :func:`require_admin` rather than on any signed-in user.
          */
         get: operations["api_v1_fleet_apps_get"];
         put?: never;
@@ -7578,10 +7594,15 @@ export interface paths {
         head?: never;
         /**
          * Update App Config
-         * @description Edit an app's update strategy + build/start commands.
+         * @description Edit an app's update strategy + build/start commands. Platform admins only.
          *
          *     Fields left ``None`` are unchanged. ``build_command`` / ``start_command``
          *     are cleared by sending a blank value (empty or whitespace-only).
+         *
+         *     Gated on :func:`require_admin`: a stored command is executed by the
+         *     auto-fresh engine on every fleet machine that auto-freshes this app, and
+         *     ``project.apps`` is shared across tenants. The refusal comes from the
+         *     dependency, before this body reads or touches the row.
          */
         patch: operations["api_v1_fleet_apps_app_id_patch"];
         trace?: never;
@@ -10880,6 +10901,89 @@ export interface paths {
          *     verdict, never a default. Error bodies pass through verbatim.
          */
         get: operations["api_v1_operations_coord_operator_touches_constraint_verdict_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/overlord/flow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlord Flow
+         * @description Proxy coord's ``GET /coord/overlord/flow`` (tenant-scoped).
+         *
+         *     Response shape is coord-authored and passed through untouched —
+         *     ``window``, ``truncated``, ``passes_considered``,
+         *     ``full_passes_considered``, ``time_to_close`` (``median_secs`` /
+         *     ``p90_secs`` are ``null`` when ``count == 0``), ``nudge`` (rates ``null``
+         *     when ``nudged == 0``), ``unchanged``, ``unknown_share`` (``share`` ``null``
+         *     over an empty pass), ``verdict_series`` and, with
+         *     ``group_by=overlord_version``, ``groups``. A ``null`` is coord saying
+         *     "not measurable", and must reach the page as ``null`` — never a ``0``.
+         *
+         *     Every parameter is a STRING forwarded unchanged; coord's typed 422/503
+         *     bodies pass through verbatim — see the section note.
+         */
+        get: operations["api_v1_operations_coord_overlord_flow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/overlord/passes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Overlord Passes
+         * @description Proxy coord's ``GET /coord/overlord/passes`` (tenant-scoped list).
+         *
+         *     Answers ``{ok, passes, total_matching, truncated, limit, offset}``, newest
+         *     ``started_at`` first, each pass WITHOUT its rows. Filters are strings
+         *     forwarded unchanged (``scope`` ``full|filtered``, ``mode``
+         *     ``report|act``, ``since`` RFC 3339, ``limit`` ≤ 200 — coord validates);
+         *     error bodies pass through verbatim.
+         */
+        get: operations["api_v1_operations_coord_overlord_passes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/overlord/passes/{pass_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlord Pass
+         * @description Proxy coord's ``GET /coord/overlord/passes/{pass_id}`` (tenant-scoped).
+         *
+         *     Answers ``{ok, pass: {<pass fields>, rows: [...]}}``; a pass absent in the
+         *     caller's tenant is coord's ``404 {"error": "pass_not_found"}``, passed
+         *     through verbatim. ``pass_id`` is typed ``UUID`` because it is spliced into
+         *     the coord URL path — see the section note.
+         */
+        get: operations["api_v1_operations_coord_overlord_passes_pass_id_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -15366,6 +15470,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/pr-merge/onboarding/repo-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pr Merge Onboarding Repo Bindings
+         * @description List the repo-tenant bindings visible to the active tenant.
+         *
+         *     Proxies coord's ``GET /coord/onboarding/repo-bindings[?repo=]``. The 200
+         *     body is ``{"bindings": [...], "measured_at": <rfc3339>}``; each binding
+         *     carries ``caller_side: "bound" | "org"`` — whether the active tenant is the
+         *     tenant the repo is bound TO, or the tenant of the org it was bound AWAY
+         *     from. ``repo`` is forwarded only when supplied. Status + body verbatim.
+         */
+        get: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_get"];
+        put?: never;
+        /**
+         * Post Pr Merge Onboarding Repo Binding
+         * @description Bind a repo to a tenant (or rebind it to another one).
+         *
+         *     Proxies coord's ``POST /coord/onboarding/repo-bindings``. Coord moves the
+         *     repo's ``tenant_repos`` / profile / canonical rows, writes the binding, one
+         *     audit row per affected tenant and an operator notification, and answers
+         *     ``{repo, from_tenant, to_tenant, governed_by: "binding", moved:
+         *     {tenant_repos, profile, canonical}, binding_written, binding_deleted,
+         *     tombstone_cleared, audit_ids, notified, idempotent, enrollment_spawned}``;
+         *     a repeated bind answers ``idempotent: true`` with nothing written.
+         *     ``decision_ref`` is omitted from the wire when absent. Status, body and
+         *     ``Retry-After`` verbatim (``503 schema_settling`` is a bind-only refusal).
+         */
+        post: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_post"];
+        /**
+         * Delete Pr Merge Onboarding Repo Binding
+         * @description Unbind a repo, returning its governance to the org's tenant.
+         *
+         *     Proxies coord's ``DELETE /coord/onboarding/repo-bindings`` with the body
+         *     ``{repo, reason}``. An admin of either the bound tenant (release) or the
+         *     org's tenant (reclaim) may unbind; coord decides. The 200 body has the
+         *     bind response's shape with ``governed_by: "org"`` and ``binding_deleted:
+         *     true``; ``404 binding_not_found`` when there is no binding visible to the
+         *     active tenant. Status + body verbatim.
+         */
+        delete: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/pr-merge/onboarding/repos/{repo}/restore": {
         parameters: {
             query?: never;
@@ -15965,6 +16120,44 @@ export interface paths {
          * @description Deregister a canonical repository.
          */
         delete: operations["api_v1_operations_repos_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/secrets-broker/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Secrets Broker Device
+         * @description Read the tenant's designated secrets-broker device.
+         *
+         *     ``can_edit`` is the operator's admin role in the EFFECTIVE tenant (plus the
+         *     superuser bypass), the same rule ``require_coord_tenant_admin`` applies to
+         *     this door's PUT, which writes through coord's device-only
+         *     ``PUT /coord/fleet-policy/secrets-broker-device`` (coord re-checks admin).
+         *     ``GET /fleet-policy``'s docstring says why ``identity.is_admin`` would be
+         *     wrong.
+         */
+        get: operations["api_v1_operations_secrets_broker_device_get"];
+        /**
+         * Put Secrets Broker Device
+         * @description Designate (or clear) the tenant's secrets-broker device, then READ BACK.
+         *
+         *     Tenant-admin gated web-side; coord re-checks admin and the device's tenant
+         *     binding. The order is: prove the binding, write the device column alone,
+         *     re-read. A failed proof writes nothing; nothing but the device is ever
+         *     sent, so no level is read, carried or overwritten. A coord without the
+         *     route (404/405) is an error, never "written". A failed re-read after a
+         *     landed write is UNKNOWN (``readback_error``), not "applied".
+         */
+        put: operations["api_v1_operations_secrets_broker_device_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -22085,10 +22278,18 @@ export interface paths {
         };
         /**
          * Get Screenshot
-         * @description Serve a screenshot file.
+         * @description Serve one verification screenshot image.
          *
-         *     Attempts to resolve the path locally first (from the .dev-logs directory),
-         *     then falls back to proxying from the runner HTTP API.
+         *     ``path`` is the image's path as the runner recorded it (a leading
+         *     ``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.
+         *     It is served from this workspace's ``.dev-logs`` when this backend runs
+         *     from a checkout and the image is there, and asked of the co-located
+         *     runner otherwise. The runner writes its screenshots into its own
+         *     dev-logs directory, which is this ``.dev-logs`` only where its
+         *     ``dev_logs_dir`` setting says so, and serves none under
+         *     ``/screenshots/`` (qontinui-runner ``5dc3f37f``): at its default, every
+         *     runner screenshot is a 404. So is anything that is not an image file
+         *     under ``.dev-logs``.
          */
         get: operations["api_v1_screenshots_path_get"];
         put?: never;
@@ -46885,6 +47086,32 @@ export interface components {
             viewport_width?: number | null;
         };
         /**
+         * RepoBindRequest
+         * @description Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).
+         *
+         *     ``repo`` is ``owner/name`` (a ``.git`` suffix or a github.com URL is
+         *     accepted too); coord normalizes it to its lowercase key and answers ``400
+         *     invalid_repo`` for anything else. ``target_tenant`` is the tenant uuid the
+         *     repo is bound to; it is a plain string here so a malformed value reaches
+         *     coord and comes back as coord's own ``400 invalid_target_tenant`` rather
+         *     than a web-side validation shape. ``reason`` (required, non-blank — coord
+         *     decides blankness) is recorded on the binding and in the audit rows coord
+         *     writes per affected tenant; ``decision_ref`` is optional free text, and
+         *     coord reads a blank one as absent. Each field is length-capped (see
+         *     ``REPO_BINDING_*_MAX``) no tighter than coord: an over-long value is a
+         *     web-side 422, never forwarded.
+         */
+        RepoBindRequest: {
+            /** Decision Ref */
+            decision_ref?: string | null;
+            /** Reason */
+            reason: string;
+            /** Repo */
+            repo: string;
+            /** Target Tenant */
+            target_tenant: string;
+        };
+        /**
          * RepoCiRow
          * @description One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.
          *
@@ -47021,6 +47248,20 @@ export interface components {
             name: string;
             /** Owner */
             owner: string;
+        };
+        /**
+         * RepoUnbindRequest
+         * @description Body for ``DELETE /pr-merge/onboarding/repo-bindings`` (coord ``UnbindRequest``).
+         *
+         *     Unbinding returns governance to the org's tenant. ``reason`` is required
+         *     and must be non-blank; coord enforces that and records it in the audit.
+         *     Both fields carry the bind body's length caps.
+         */
+        RepoUnbindRequest: {
+            /** Reason */
+            reason: string;
+            /** Repo */
+            repo: string;
         };
         /**
          * ReposApplyDispatchRequest
@@ -47299,7 +47540,10 @@ export interface components {
             hostname: string;
             /** Instance Name */
             instance_name?: string | null;
-            /** Ip */
+            /**
+             * Ip
+             * @description The runner's IPv4 or IPv6 address literal, with no zone id.
+             */
             ip: string;
             /** Lan Reachable */
             lan_reachable?: boolean | null;
@@ -48377,6 +48621,58 @@ export interface components {
              * @description Similarity score (0-1)
              */
             similarity_score: number;
+        };
+        /**
+         * SecretsBrokerDevicePut
+         * @description Closed body for the broker-device write.
+         *
+         *     ``device_id: null`` clears the designation (every broker report is then
+         *     refused). The field is REQUIRED, so an empty body is a 422 rather than a
+         *     silent clear.
+         */
+        SecretsBrokerDevicePut: {
+            /** Device Id */
+            device_id: string | null;
+        };
+        /**
+         * SecretsBrokerDeviceView
+         * @description The tenant's designated secrets-broker device, as coord resolves it.
+         */
+        SecretsBrokerDeviceView: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Device Id */
+            device_id?: string | null;
+            /** Effective Level */
+            effective_level: string;
+            /** Master Enabled */
+            master_enabled: boolean;
+            /** Reported */
+            reported: boolean;
+            /** Resolved Scope */
+            resolved_scope: string;
+        };
+        /**
+         * SecretsBrokerDeviceWriteResult
+         * @description What was written, and, separately, what coord now resolves.
+         *
+         *     ``effective`` is ``None`` with ``readback_error`` set when the write landed
+         *     but the re-read failed. That is UNKNOWN, not "applied".
+         */
+        SecretsBrokerDeviceWriteResult: {
+            effective?: components["schemas"]["SecretsBrokerDeviceView"] | null;
+            /** Ok */
+            ok: boolean;
+            /** Readback Error */
+            readback_error?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+            /** Version */
+            version?: number | null;
+            /** Versioned */
+            versioned?: boolean | null;
+            /** Written Device Id */
+            written_device_id: string | null;
         };
         /**
          * SectionDrift
@@ -62697,9 +62993,9 @@ export interface operations {
     };
     api_v1_constraints_active_get: {
         parameters: {
-            query: {
-                /** @description Absolute path to the project */
-                project_path: string;
+            query?: {
+                /** @description Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root. */
+                project_path?: string | null;
             };
             header?: never;
             path?: never;
@@ -62729,9 +63025,9 @@ export interface operations {
     };
     api_v1_constraints_config_get: {
         parameters: {
-            query: {
-                /** @description Absolute path to the project */
-                project_path: string;
+            query?: {
+                /** @description Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root. */
+                project_path?: string | null;
             };
             header?: never;
             path?: never;
@@ -62800,6 +63096,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
             };
             cookie?: never;
@@ -73686,6 +73983,110 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_coord_overlord_flow_get: {
+        parameters: {
+            query?: {
+                window_hours?: string | null;
+                device_id?: string | null;
+                runner_port?: string | null;
+                unchanged_min_passes?: string | null;
+                nudge_window_passes?: string | null;
+                group_by?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_overlord_passes_get: {
+        parameters: {
+            query?: {
+                device_id?: string | null;
+                runner_port?: string | null;
+                scope?: string | null;
+                mode?: string | null;
+                since?: string | null;
+                limit?: string | null;
+                offset?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_overlord_passes_pass_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pass_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_coord_policies_get: {
         parameters: {
             query?: {
@@ -76003,6 +76404,7 @@ export interface operations {
     api_v1_operations_fleet_runners_runner_id_output_get: {
         parameters: {
             query: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
                 tail_chars?: number;
             };
@@ -76039,6 +76441,7 @@ export interface operations {
     api_v1_operations_fleet_runners_runner_id_workflow_state_get: {
         parameters: {
             query: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
             };
             header?: never;
@@ -78256,6 +78659,104 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_get: {
+        parameters: {
+            query?: {
+                /** @description Narrow the list to one `owner/name` repository. */
+                repo?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoBindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoUnbindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_pr_merge_onboarding_repos_repo_restore_post: {
         parameters: {
             query?: never;
@@ -78957,6 +79458,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_secrets_broker_device_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretsBrokerDeviceView"];
+                };
+            };
+        };
+    };
+    api_v1_operations_secrets_broker_device_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretsBrokerDevicePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretsBrokerDeviceWriteResult"];
                 };
             };
             /** @description Validation Error */

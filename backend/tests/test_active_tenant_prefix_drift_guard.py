@@ -426,8 +426,9 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({"/api/v1/dispatch/status/{app_id}"}),
     ),
     "app.api.v1.endpoints.fleet_targets": (
-        "device-owner scoped reads and the project.apps config edit; only the "
-        "designation PUT/DELETE resolve a tenant (they forward it to coord's "
+        "device-owner scoped reads and the platform-admin-only project.apps "
+        "config read/edit (project.apps is not partitioned by tenant yet); only "
+        "the designation PUT/DELETE resolve a tenant (they forward it to coord's "
         "binding-checked test-targets writer)",
         frozenset(
             {

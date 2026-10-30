@@ -2,7 +2,8 @@
  * `/operations/pr-merge/onboarding/*` and `/operations/coord/devices/pair-start`:
  * connecting a GitHub org (connect-state mint, claim, App config, the keyed
  * pending-installation read), the connected-accounts list with its enroll and
- * restore writes, the onboarding doctor, and the merge-orchestration wizard
+ * restore writes, the per-repo tenant bindings (list, bind, unbind), the
+ * onboarding doctor, and the merge-orchestration wizard
  * (device pairing, preconditions, the async repo audit, accept).
  *
  * Part of the typed `/operations` client (plan
@@ -250,9 +251,32 @@ export interface ConnectedAccount {
   repos: AccountRepo[];
 }
 
-/** `get_pr_merge_onboarding_accounts`'s body. */
+/**
+ * A repo of one of the active tenant's orgs that a per-repo binding governs
+ * from ANOTHER tenant (plan
+ * `2026-10-17-per-repo-tenant-binding-overrides-the-org-tenant`, D8). The
+ * org's row reads "bound to <bound_tenant_slug>" and offers no Re-enroll.
+ */
+export interface BoundAwayRepo {
+  repo: string;
+  bound_tenant_id: string;
+  bound_tenant_slug: string;
+}
+
+/**
+ * `get_pr_merge_onboarding_accounts`'s body. `bound_away` is ABSENT on a coord
+ * that predates the binding plan's Phase 5 — absent means "not reported",
+ * never "none", so a reader renders nothing new for it. A coord that has the
+ * field but could not read the bindings omits it and sends `bindings_error`
+ * instead (coord#3518 `ConnectedOrgsSummary`): the bound-away repos are then
+ * UNKNOWN, and a reader must say so — a bound repo's `tenant_repos` row has
+ * moved to the other tenant, so it is missing from `accounts` too. (Repos
+ * bound TO the active tenant are read from the bindings list door, not here.)
+ */
 export interface AccountsResponse {
   accounts: ConnectedAccount[];
+  bound_away?: BoundAwayRepo[];
+  bindings_error?: string;
 }
 
 /**
@@ -314,6 +338,188 @@ export async function restoreRepo(repo: string): Promise<EnrollSpawned | null> {
     maxRetries: 0,
   });
   return readJson<EnrollSpawned>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+// ----------------------------------------------------------------------------
+// Per-repo tenant bindings — list, bind, unbind
+// (coord-owned contract `GET/POST/DELETE /coord/onboarding/repo-bindings`,
+// plan `2026-10-17-per-repo-tenant-binding-overrides-the-org-tenant` Phase 7)
+// ----------------------------------------------------------------------------
+
+/**
+ * One binding as coord lists it. `repo` is coord's lowercased key.
+ * `caller_side` says which party the ACTIVE tenant is: `"bound"` — the repo is
+ * bound to this tenant; `"org"` — this tenant owns the repo's org and the repo
+ * is bound away from it.
+ */
+export interface RepoTenantBinding {
+  repo: string;
+  tenant_id: string;
+  tenant_slug: string;
+  org_tenant_id: string | null;
+  org_tenant_slug: string | null;
+  bound_by: string;
+  reason: string;
+  decision_ref: string | null;
+  created_at: string;
+  updated_at: string;
+  caller_side: "bound" | "org";
+}
+
+/** `get_pr_merge_onboarding_repo_bindings`'s 200 body. */
+export interface RepoBindingsResponse {
+  bindings: RepoTenantBinding[];
+  measured_at: string;
+}
+
+/** `post_pr_merge_onboarding_repo_binding`'s body (coord `BindRequest`). */
+export interface RepoBindRequest {
+  repo: string;
+  target_tenant: string;
+  reason: string;
+  decision_ref?: string;
+}
+
+/** `delete_pr_merge_onboarding_repo_binding`'s body (coord `UnbindRequest`). */
+export interface RepoUnbindRequest {
+  repo: string;
+  reason: string;
+}
+
+/**
+ * The bind / unbind answer (qontinui-coord#3522 `BindingOutcome`). `repo` is
+ * coord's lowercased key; `from_tenant` governed the repo before the call and
+ * `to_tenant` governs it after. A bind answers `governed_by: "binding"` and
+ * `binding_written`; an unbind answers `governed_by: "org"` (`to_tenant` is the
+ * org's tenant) and `binding_deleted`. A repeated bind is `idempotent: true`
+ * with nothing written, no audit rows and `notified: false`.
+ * `tombstone_cleared`: a target-tenant un-enrollment tombstone was cleared;
+ * `enrollment_spawned`: the per-repo enrollment steps were started for the
+ * target, which the move left with no profile.
+ */
+export interface RepoBindingResult {
+  repo: string;
+  from_tenant: string;
+  to_tenant: string;
+  governed_by: "binding" | "org";
+  moved: { tenant_repos: number; profile: number; canonical: number };
+  binding_written: boolean;
+  binding_deleted: boolean;
+  tombstone_cleared: boolean;
+  audit_ids: string[];
+  notified: boolean;
+  idempotent: boolean;
+  enrollment_spawned: boolean;
+}
+
+/**
+ * A refusal body from the bind door, passed through verbatim by the web proxy:
+ * always `{error, message}` from coord's core, plus the extras its code
+ * carries (qontinui-coord#3522 `BindingError::body`). The operator layer in
+ * front of the core answers `{error, hint}` or `{error, required, held}`
+ * shapes, so every field past `error` is optional here and read defensively.
+ */
+export interface RepoBindingRefusalBody {
+  error: string;
+  message?: string;
+  /** `not_admin_in_both_tenants`: which party's admin check failed. */
+  failed_side?: "governing" | "target";
+  /** `not_admin_in_both_tenants`: that tenant, or `null` when withheld. */
+  failed_tenant?: string | null;
+  /** `in_flight_merge_proposals`. */
+  proposal_ids?: string[];
+  /** `org_unbound`: the GitHub org, and the remedy coord names for it. */
+  org?: string;
+  remedy?: string;
+  /** `schema_settling` (bind only; also the `Retry-After` header). */
+  retry_after_secs?: number;
+  /** `schema_settling`: `null` when coord could not read its census. */
+  live_replicas?: number | null;
+  not_ready_replicas?: number | null;
+  /** `tenant_not_found`. */
+  tenant_id?: string;
+  /** `binding_not_found`. */
+  repo?: string;
+  /** `migration_pending`: the missing `coord.*` object. */
+  missing?: string;
+  /**
+   * `repo_binding_write_failed` from the failure arm before the COMMIT, which
+   * rolled back: coord's positive "nothing was written" marker. Always the
+   * JSON `true` when present, never sent with any other code; its absence on
+   * that code, or any value but `true`, is read as an unknown outcome.
+   */
+  rolled_back?: boolean;
+  /** `operator_principal_required` and the device refusals. */
+  hint?: string;
+  /** The operator `admin` role gate. */
+  required?: string;
+  held?: string[];
+}
+
+/**
+ * `GET /pr-merge/onboarding/repo-bindings` —
+ * `get_pr_merge_onboarding_repo_bindings`. Lists the bindings where the
+ * active tenant is the bound tenant or the org's tenant. `[]` is a MEASURED
+ * empty set; a failed read is a rejection (never an empty list) carrying
+ * coord's typed error body ({@link RepoBindingRefusalBody}) for `httpBodyOf`.
+ * A `503` is not retried: coord answers it deliberately (`migration_pending`,
+ * `coord_db_unavailable`), so a retry chain only delays the UNKNOWN it ends in.
+ */
+export async function fetchRepoTenantBindings(
+  options: HttpOptions = {}
+): Promise<RepoBindingsResponse> {
+  const url = `${OPERATIONS_BASE}/pr-merge/onboarding/repo-bindings`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+    noRetryStatuses: [...new Set([...(options.noRetryStatuses ?? []), 503])],
+  });
+  return readJson<RepoBindingsResponse>(res, `GET ${url}`);
+}
+
+/**
+ * `POST /pr-merge/onboarding/repo-bindings` —
+ * `post_pr_merge_onboarding_repo_binding`. Moves a repo's governance and
+ * writes audit rows plus an operator notification, so it is never re-sent
+ * (`idempotent: false`, `maxRetries: 0`). The 2xx is the fact that matters —
+ * the change landed — so a 2xx whose body does not parse resolves `null`
+ * rather than rejecting (a rejection would render a landed bind as failed).
+ */
+export async function bindRepoTenant(
+  body: RepoBindRequest
+): Promise<RepoBindingResult | null> {
+  const url = `${OPERATIONS_BASE}/pr-merge/onboarding/repo-bindings`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotent: false,
+    maxRetries: 0,
+  });
+  return readJson<RepoBindingResult>(res, `POST ${url}`, {
+    unparseable: "null",
+  });
+}
+
+/**
+ * `DELETE /pr-merge/onboarding/repo-bindings` —
+ * `delete_pr_merge_onboarding_repo_binding`. Returns the repo to its org's
+ * tenant; never re-sent (`idempotent: false`, `maxRetries: 0`); resolves
+ * `null` for a 2xx whose body does not parse, as {@link bindRepoTenant}.
+ */
+export async function unbindRepoTenant(
+  body: RepoUnbindRequest
+): Promise<RepoBindingResult | null> {
+  const url = `${OPERATIONS_BASE}/pr-merge/onboarding/repo-bindings`;
+  const res = await httpClient.fetch(url, {
+    method: "DELETE",
+    body: JSON.stringify(body),
+    idempotent: false,
+    maxRetries: 0,
+  });
+  return readJson<RepoBindingResult>(res, `DELETE ${url}`, {
+    unparseable: "null",
+  });
 }
 
 // ----------------------------------------------------------------------------

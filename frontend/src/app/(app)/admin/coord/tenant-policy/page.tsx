@@ -36,13 +36,20 @@
  *   console's presentation lens redacts by (plan
  *   `2026-10-23-console-presentation-spaces` D3.3), on its own door
  *   (`/api/v1/presentation/scope`, admin-only write) rather than the
- *   fleet-policy one, and never rendered in presentation mode.
+ *   fleet-policy one, and never rendered in presentation mode;
+ * * secrets broker device — the device coord accepts secrets-broker reports
+ *   from (`coord.fleet_runtime_policy.secrets_broker_device_id` on the
+ *   `secrets_broker` domain's tenant row), written through its own
+ *   `PUT /operations/secrets-broker/device` door, which proves the device is
+ *   bound to the tenant first (plan
+ *   `2026-10-20-secrets-broker-agents-act-on-secrets-never-see-them` Phase 3).
  *
  * Authz: like every `/admin/coord` page, any tenant member may VIEW it; the
  * write is gated by coord-tenant admin on the backend
  * (`require_coord_tenant_admin` on the shared `PUT /operations/fleet-policy`
- * door every switch here uses) and again by coord (`rbac::is_tenant_admin`),
- * and only reflected here via `can_edit`.
+ * door every switch here uses; `require_coord_tenant_admin_target` on the
+ * secrets broker device's own door) and again by coord
+ * (`rbac::is_tenant_admin`), and only reflected here via `can_edit`.
  *
  * Deliberately absent: `session_coordination_enabled`, which shares the coord
  * row but is the Phase 10 cutover flag and has no HTTP write door.
@@ -55,6 +62,7 @@ import { ImageGenerationPanel } from "./_components/ImageGenerationPanel";
 import { PermissionAutoAcceptPanel } from "./_components/PermissionAutoAcceptPanel";
 import { PermissionPromptCapturePanel } from "./_components/PermissionPromptCapturePanel";
 import { PresentationScopePanel } from "./_components/PresentationScopePanel";
+import { SecretsBrokerDevicePanel } from "./_components/SecretsBrokerDevicePanel";
 
 export default function TenantPolicyPage() {
   return (
@@ -66,6 +74,7 @@ export default function TenantPolicyPage() {
       <AccountSelectionPanel />
       <ImageGenerationPanel />
       <PresentationScopePanel />
+      <SecretsBrokerDevicePanel />
     </div>
   );
 }

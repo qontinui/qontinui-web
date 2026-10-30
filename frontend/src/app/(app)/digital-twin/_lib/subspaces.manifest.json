@@ -1,6 +1,6 @@
 {
-  "$comment": "Digital Twin sub-space taxonomy — the DENOMINATOR for the completeness matrix and the lifecycle view. It lists the research + coord sub-spaces of the twin of the software-development process as of 2026-10-11 (three coupled twins: environment = the system being built and run; process = work in flight; intent = what the operator wants), including planned and not-yet-built ones so the gap is explicit; it is not every research candidate (qontinui-research open-questions/missing-twin-sub-spaces.md parks more). The live numerator (per-tenant observer status) comes from GET /api/v1/digital-twin/subspaces and is joined by `id`. query_kind: 'snapshot' = a row this page expects coord to DECLARE probeable — the backend probes exactly what coord's served catalog declares (GET /coord/twin/catalog: rows with snapshot:true, plus the envelope-shaped admin outbound door), and the page joins this manifest to that catalog by id, so a 'snapshot' row coord does not declare renders 'Not served by coord' and a row coord declares is live-probed whatever its query_kind (plan 2026-10-11-twin-honesty-and-reachability Phase 9; resolve.ts); 'parameterized' = a coord tool answers it (with or without arguments) but this page does not probe it — its ask_via says where on this page, if anywhere, it can be asked; 'none' = no coord query tool. Statuses on 'none' / 'parameterized' rows are MANIFEST CLAIMS, not live verdicts. stages = the lifecycle stages a row observes (intent, plan, implement, verify, integrate, release, operate, learn); plan = the qontinui-dev-notes plan slug that builds a planned / partial row; ask_via (parameterized rows only) = where on this page the row's coord tool can be asked — 'ask-the-twin', 'delivery-tab' or 'not-on-this-page' (Ask the Twin runs on the runner's device credential, so it reaches only the tools coord grants a device session: agent_tool_access.rs device_default_allow_set). Every coord_query_tool was re-verified to exist on qontinui-coord origin/main on 2026-10-11. research_doc paths are qontinui-research paths, checked on its origin/master on 2026-10-11 except three: theory/process-twin.md, theory/intent-twin.md and theory/interventional-twin.md arrive in the companion qontinui-research PR, as the two 2026-10-11 plan slugs arrive in the companion qontinui-dev-notes PR. Keep coord_query_tool / observer_module in sync with coord src.",
-  "version": "2.1.0",
+  "$comment": "Digital Twin sub-space taxonomy — the DENOMINATOR for the completeness matrix and the lifecycle view. It lists the research + coord sub-spaces of the twin of the software-development process as of 2026-10-11 (three coupled twins: environment = the system being built and run; process = work in flight; intent = what the operator wants), including planned and not-yet-built ones so the gap is explicit; it is not every research candidate (qontinui-research open-questions/missing-twin-sub-spaces.md parks more). The live numerator (per-tenant observer status) comes from GET /api/v1/digital-twin/subspaces and is joined by `id`. query_kind: 'snapshot' = a row this page expects coord to DECLARE probeable — the backend probes exactly what coord's served catalog declares (GET /coord/twin/catalog: rows with snapshot:true, plus the envelope-shaped admin outbound door), and the page joins this manifest to that catalog by id, so a 'snapshot' row coord does not declare renders 'Not served by coord' and a row coord declares is live-probed whatever its query_kind (plan 2026-10-11-twin-honesty-and-reachability Phase 9; resolve.ts); 'parameterized' = a coord tool answers it (with or without arguments) but this page does not probe it — its ask_via says where on this page, if anywhere, it can be asked; 'none' = no coord query tool. Statuses on 'none' / 'parameterized' rows are MANIFEST CLAIMS, not live verdicts. stages = the lifecycle stages a row observes (intent, plan, implement, verify, integrate, release, operate, learn); plan = the qontinui-dev-notes plan slug that builds a planned / partial row; ask_via (parameterized rows only) = where on this page the row's coord tool can be asked — 'ask-the-twin', 'delivery-tab' or 'not-on-this-page' (Ask the Twin runs on the runner's device credential, so it reaches only the tools coord grants a device session: agent_tool_access.rs device_default_allow_set). Every coord_query_tool was re-verified to exist on qontinui-coord origin/main on 2026-10-11. research_doc paths are qontinui-research paths, checked on its origin/master on 2026-10-11 except three: theory/process-twin.md, theory/intent-twin.md and theory/interventional-twin.md arrive in the companion qontinui-research PR, as the two 2026-10-11 plan slugs arrive in the companion qontinui-dev-notes PR. Keep coord_query_tool / observer_module in sync with coord src. areas (2.2.0) = the work-unit areas whose plans move the row: values of coord's canonical kebab-case steering key metadata.area, matched exactly (the key coord's GET /coord/work-units?area= filter reads). The Twin map resolves a row's plans as plan ∪ every work unit whose metadata.area is in areas (twin-plans.ts). Each area was read off the tenant's own work units on 2026-10-23 (coord GET /coord/agent-work-units walked in authored order: 5,238 units, 2,354 carrying an area, 149 distinct values) and is mapped only where the fit is evident from the row's purpose and those units' titles; an area no work unit carries any more renders as drift on the Twin map, never as 'no plans'.",
+  "version": "2.2.0",
   "subspaces": [
     {
       "id": "dom",
@@ -14,7 +14,8 @@
       "research_doc": "theory/observation-space.md",
       "query_kind": "none",
       "coord_query_tool": null,
-      "observer_module": "ui-bridge (runner-resident)"
+      "observer_module": "ui-bridge (runner-resident)",
+      "areas": ["ui-bridge"]
     },
     {
       "id": "fs",
@@ -28,7 +29,8 @@
       "research_doc": "theory/observation-space.md",
       "query_kind": "none",
       "coord_query_tool": null,
-      "observer_module": "worktree_observer.rs"
+      "observer_module": "worktree_observer.rs",
+      "areas": ["code-twin"]
     },
     {
       "id": "git",
@@ -43,7 +45,8 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_git_drift",
       "observer_module": "git_observer.rs",
-      "ask_via": "ask-the-twin"
+      "ask_via": "ask-the-twin",
+      "areas": ["coord-git-replication"]
     },
     {
       "id": "proc",
@@ -71,7 +74,8 @@
       "research_doc": "theory/observation-space.md",
       "query_kind": "none",
       "coord_query_tool": null,
-      "observer_module": "coord (internal state)"
+      "observer_module": "coord (internal state)",
+      "areas": ["coord-claims"]
     },
     {
       "id": "ast",
@@ -86,7 +90,8 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_symbol_lookup",
       "observer_module": "code_semantics.rs",
-      "ask_via": "not-on-this-page"
+      "ask_via": "not-on-this-page",
+      "areas": ["code-twin"]
     },
     {
       "id": "type",
@@ -101,7 +106,8 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_typecheck_file",
       "observer_module": "code_semantics (runner LSP sidecar)",
-      "ask_via": "not-on-this-page"
+      "ask_via": "not-on-this-page",
+      "areas": ["code-twin"]
     },
     {
       "id": "ci",
@@ -116,7 +122,8 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_ci_state",
       "observer_module": "ci_observer.rs",
-      "ask_via": "ask-the-twin"
+      "ask_via": "ask-the-twin",
+      "areas": ["ci-baseline", "ci-workflows", "coord-ci-twin", "red-main"]
     },
     {
       "id": "health",
@@ -173,7 +180,8 @@
       "research_doc": "theory/declared-vs-actual.md",
       "query_kind": "snapshot",
       "coord_query_tool": "coord_query_migration_state",
-      "observer_module": "schema_observer.rs"
+      "observer_module": "schema_observer.rs",
+      "areas": ["alembic-graph", "coord-schema", "database-migrations"]
     },
     {
       "id": "infra",
@@ -229,7 +237,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "snapshot",
       "coord_query_tool": "coord_query_release_state",
-      "observer_module": "release_observer.rs"
+      "observer_module": "release_observer.rs",
+      "areas": ["release-and-publish", "web-deploy"]
     },
     {
       "id": "route_serving",
@@ -274,7 +283,13 @@
       "_query_kind_note": "Deliberately NOT auto-probed: coord_query_auth_config exposes Cognito pool wiring / app-clients / tenancy graph — the most recon-sensitive sub-space. coord drops it from the snapshot map (/coord/twin/auth/verdict 404s); coord also withholds coord_query_auth_config from device sessions, so Ask the Twin cannot ask it either (ask_via: not-on-this-page).",
       "coord_query_tool": "coord_query_auth_config",
       "observer_module": "auth_observation_watcher.rs",
-      "ask_via": "not-on-this-page"
+      "ask_via": "not-on-this-page",
+      "areas": [
+        "coord-auth",
+        "coord-gates-and-access",
+        "coord-tenancy",
+        "tenant-binding"
+      ]
     },
     {
       "id": "client_telemetry",
@@ -316,7 +331,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "snapshot",
       "coord_query_tool": "coord_list_worktrees",
-      "observer_module": "worktree_observer.rs"
+      "observer_module": "worktree_observer.rs",
+      "areas": ["agent-worktree", "worktree-allocation", "worktree-lifecycle"]
     },
     {
       "id": "cost",
@@ -325,7 +341,7 @@
       "layer": "coord",
       "twin": "process",
       "stages": ["operate", "learn"],
-      "description": "Claude-account usage windows (5h + weekly) and CI minutes per land; per-task cost (labelled list-price equivalent) is not yet on coord main.",
+      "description": "Claude-account usage windows (5h + weekly) and CI minutes per land; the per-task cost of work is not yet on coord main.",
       "research_status": "partial",
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "parameterized",
@@ -359,7 +375,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "none",
       "coord_query_tool": null,
-      "observer_module": "plan_library (runner + web)"
+      "observer_module": "plan_library (runner + web)",
+      "areas": ["plan-corpus", "plan-library"]
     },
     {
       "id": "memory",
@@ -373,7 +390,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "snapshot",
       "coord_query_tool": "coord_query_memory_state",
-      "observer_module": "memory_observer.rs"
+      "observer_module": "memory_observer.rs",
+      "areas": ["coord-memory"]
     },
     {
       "id": "delivery",
@@ -388,7 +406,8 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_delivery",
       "observer_module": "delivery_view.rs",
-      "ask_via": "delivery-tab"
+      "ask_via": "delivery-tab",
+      "areas": ["work-unit-delivery"]
     },
     {
       "id": "work_units",
@@ -403,7 +422,8 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_work_unit_overview",
       "observer_module": "work_unit_registry.rs",
-      "ask_via": "ask-the-twin"
+      "ask_via": "ask-the-twin",
+      "areas": ["work-units"]
     },
     {
       "id": "gates",
@@ -418,7 +438,13 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_gate_list",
       "observer_module": "gates.rs",
-      "ask_via": "ask-the-twin"
+      "ask_via": "ask-the-twin",
+      "areas": [
+        "coord-gates",
+        "coord-gates-and-access",
+        "gate-continuations",
+        "gates"
+      ]
     },
     {
       "id": "sessions",
@@ -433,7 +459,8 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_orient",
       "observer_module": "agent_status.rs",
-      "ask_via": "ask-the-twin"
+      "ask_via": "ask-the-twin",
+      "areas": ["coord-sessions", "session-lifecycle"]
     },
     {
       "id": "merge_train",
@@ -448,7 +475,8 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_train_health",
       "observer_module": "pr_merge/train_health.rs",
-      "ask_via": "ask-the-twin"
+      "ask_via": "ask-the-twin",
+      "areas": ["coord-merge-train", "merge-engine", "merge-train", "pr-merge"]
     },
     {
       "id": "train_activity",
@@ -462,7 +490,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "snapshot",
       "coord_query_tool": "coord_query_train_activity",
-      "observer_module": "pr_merge/train_activity.rs"
+      "observer_module": "pr_merge/train_activity.rs",
+      "areas": ["coord-merge-train", "merge-train"]
     },
     {
       "id": "merge_economics",
@@ -476,7 +505,8 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "snapshot",
       "coord_query_tool": "coord_query_merge_economics",
-      "observer_module": "pr_merge/economics.rs"
+      "observer_module": "pr_merge/economics.rs",
+      "areas": ["merge-train-throughput"]
     },
     {
       "id": "scheduler_trace",
@@ -532,7 +562,23 @@
       "research_doc": "theory/process-twin.md",
       "query_kind": "snapshot",
       "coord_query_tool": "coord_query_outbound_budget",
-      "observer_module": "outbound_budget_observer.rs"
+      "observer_module": "outbound_budget_observer.rs",
+      "areas": ["coord-outbound-budget"]
+    },
+    {
+      "id": "secrets_broker",
+      "symbol": "Ξ_SecretsBroker",
+      "tier": 2,
+      "layer": "coord",
+      "twin": "process",
+      "stages": ["operate"],
+      "description": "Secrets broker: agent secret ops and mints, credential inventory, rotation due, exposure, operator actions. Value-shaped residual refused at coord ingest.",
+      "research_status": "partial",
+      "research_doc": "theory/process-twin.md",
+      "query_kind": "snapshot",
+      "coord_query_tool": "coord_query_secrets_broker",
+      "observer_module": "secrets_broker.rs",
+      "plan": "2026-10-20-secrets-broker-agents-act-on-secrets-never-see-them"
     },
     {
       "id": "action_expectations",
@@ -577,7 +623,8 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_query_twin_fidelity",
       "observer_module": "twin_fidelity_watcher.rs",
-      "ask_via": "ask-the-twin"
+      "ask_via": "ask-the-twin",
+      "areas": ["digital-twin"]
     },
     {
       "id": "findings",
@@ -592,7 +639,8 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_recent_findings",
       "observer_module": "findings.rs",
-      "ask_via": "ask-the-twin"
+      "ask_via": "ask-the-twin",
+      "areas": ["findings-and-dossiers"]
     },
     {
       "id": "process_log",
@@ -637,7 +685,8 @@
       "query_kind": "parameterized",
       "coord_query_tool": "coord_list_prompt_documents",
       "observer_module": "prompt_documents.rs",
-      "ask_via": "ask-the-twin"
+      "ask_via": "ask-the-twin",
+      "areas": ["coord-prompt-documents", "prompt-documents"]
     },
     {
       "id": "spec_claims",
@@ -666,7 +715,8 @@
       "research_doc": "theory/intent-twin.md",
       "query_kind": "none",
       "coord_query_tool": null,
-      "observer_module": "operator_touches.rs"
+      "observer_module": "operator_touches.rs",
+      "areas": ["operator-escalation", "operator-touch"]
     },
     {
       "id": "metrics",
@@ -695,7 +745,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "none",
       "coord_query_tool": null,
-      "observer_module": "arch_observer.rs (runner)"
+      "observer_module": "arch_observer.rs (runner)",
+      "areas": ["code-twin"]
     },
     {
       "id": "layering",
@@ -709,7 +760,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "none",
       "coord_query_tool": null,
-      "observer_module": "layer_observer.rs (runner)"
+      "observer_module": "layer_observer.rs (runner)",
+      "areas": ["code-twin"]
     },
     {
       "id": "domain",
@@ -723,7 +775,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "none",
       "coord_query_tool": null,
-      "observer_module": "domain_observer.rs (runner)"
+      "observer_module": "domain_observer.rs (runner)",
+      "areas": ["code-twin"]
     },
     {
       "id": "test",
@@ -737,7 +790,8 @@
       "research_doc": "open-questions/missing-twin-sub-spaces.md",
       "query_kind": "none",
       "coord_query_tool": null,
-      "observer_module": null
+      "observer_module": null,
+      "areas": ["ci-flake", "test-flakiness"]
     },
     {
       "id": "data",
@@ -781,7 +835,8 @@
       "query_kind": "none",
       "coord_query_tool": null,
       "observer_module": null,
-      "plan": "2026-10-11-local-cloud-as-twin-substrate"
+      "plan": "2026-10-11-local-cloud-as-twin-substrate",
+      "areas": ["clone-factory"]
     },
     {
       "id": "rehearsal",
@@ -796,7 +851,8 @@
       "query_kind": "none",
       "coord_query_tool": null,
       "observer_module": null,
-      "plan": "2026-10-11-local-cloud-as-twin-substrate"
+      "plan": "2026-10-11-local-cloud-as-twin-substrate",
+      "areas": ["clone-factory"]
     },
     {
       "id": "conformance",
@@ -811,7 +867,8 @@
       "query_kind": "none",
       "coord_query_tool": null,
       "observer_module": null,
-      "plan": "2026-10-11-local-cloud-as-twin-substrate"
+      "plan": "2026-10-11-local-cloud-as-twin-substrate",
+      "areas": ["clone-factory"]
     },
     {
       "id": "authz",

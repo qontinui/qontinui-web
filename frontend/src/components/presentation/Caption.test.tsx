@@ -115,6 +115,25 @@ describe("Caption", () => {
     ).not.toBeNull();
   });
 
+  it("renders an untitled caption's sentences without its title, whose words are already on screen", () => {
+    render(
+      <FixedPresentationMode presenting>
+        <Caption id="tour.start" untitled persistent />
+      </FixedPresentationMode>
+    );
+    const caption = document.querySelector(
+      '[data-presentation-caption="tour.start"]'
+    );
+    expect(caption?.querySelector("h1, h2, h3")).toBeNull();
+    expect(caption).not.toHaveTextContent(CAPTIONS["tour.start"].title);
+    expect(
+      caption?.querySelector('[data-caption-part="one-liner"]')
+    ).not.toBeNull();
+    expect(
+      caption?.querySelector('[data-caption-part="why-it-matters"]')
+    ).not.toBeNull();
+  });
+
   it("renders a brief caption's title and one-liner only, even in presentation mode", () => {
     render(
       <FixedPresentationMode presenting>
