@@ -1131,6 +1131,72 @@ describe("the read-back mark belongs to the read that settled the write", () => 
     );
   });
 
+  it("does not take a kept next-step value for the settling read when a PUT that threw could not be re-read", async () => {
+    await renderPage();
+    await openPath("red_main_fix_dispatch");
+    throwOnWrite = { method: "PUT", error: new TypeError("Failed to fetch") };
+    routes.nextStep = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await click(
+      screen.getByTestId(
+        "coord-spawns-path-autonomy-red_main_fix-guidance_only"
+      )
+    );
+    expect(effectiveOf("autonomy:red_main_fix").textContent).toBe("UNKNOWN");
+    // A second failed read: the kept pre-write level settles nothing.
+    await refreshPage();
+    expect(effectiveOf("autonomy:red_main_fix").textContent).toBe("UNKNOWN");
+    expect(readBackOf("autonomy:red_main_fix")).toBeNull();
+    // The first read to answer is what the write is compared with.
+    routes.nextStep = () => ({
+      body: nextStepBody({ red_main_fix: { autonomy_level: "guidance_only" } }),
+    });
+    await refreshPage();
+    expect(effectiveOf("autonomy:red_main_fix").dataset.gateState).toBe(
+      "guidance_only"
+    );
+    expect(readBackOf("autonomy:red_main_fix")?.dataset.readback).toBe(
+      "matches"
+    );
+  });
+
+  it("settles a read-back that answered without the row on the first read with a value, so a later change is a change since", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    const withoutShepherd = defaultsBody();
+    withoutShepherd.agents = withoutShepherd.agents.filter(
+      (a) => a.agent_name !== "merge_shepherd"
+    );
+    routes.defaults = () => ({ body: withoutShepherd });
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    // Step 1: the read answered and holds no value for this switch.
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("UNKNOWN");
+    // Step 2: the first read with a value is compared with the ask.
+    routes.defaults = () => ({
+      body: defaultsBody({ merge_shepherd: { default_enabled: false } }),
+    });
+    await refreshPage();
+    expect(effectiveOf("registry:merge_shepherd").textContent).toBe("Off");
+    expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
+      "matches"
+    );
+    // Step 3: another operator switches it on. That is a change since this
+    // write, never coord reading the write back otherwise.
+    routes.defaults = () => ({ body: defaultsBody() });
+    await refreshPage();
+    const effective = effectiveOf("registry:merge_shepherd");
+    expect(effective.textContent).toBe("On");
+    expect(effective.dataset.gateTone).toBe("known");
+    expect(readBackOf("registry:merge_shepherd")).toBeNull();
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toBe(
+      "Changed since your write: coord read back off after it, and a later read differs."
+    );
+  });
+
   it("says a read that later fails is stale, not that this write's read-back failed", async () => {
     await renderPage();
     await openPath("merge_shepherd");

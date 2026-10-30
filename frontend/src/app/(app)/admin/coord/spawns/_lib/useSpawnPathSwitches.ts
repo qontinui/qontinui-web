@@ -52,8 +52,8 @@
  * Each setter resolves with how the write ended (`SwitchWriteResult`), for a
  * caller that cannot see the matrix; it records the value of the read it
  * settled on, so a later read that differs is not taken for this write's
- * read-back. When the read-back itself failed, the first read to answer after
- * it is the one the write settles on.
+ * read-back. When the read-back failed or gave no value for the switch, the
+ * first read to give one is what the write settles on.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -396,11 +396,11 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
     setWrites((prev) => ({ ...prev, [key]: write }));
   }, []);
 
-  // A write whose read-back failed settles on the first read that answers: the
-  // read the cell stops being UNKNOWN on. Without this nothing would ever mark a
-  // later read as later, and another operator's change would read as coord
-  // contradicting this write. A kept value (a stale part, a dial with no answer)
-  // settles nothing.
+  // A write whose read-back failed, or answered with no value for this switch,
+  // settles on the first read to give one: the read the cell stops being UNKNOWN
+  // on. Without this nothing would ever mark a later read as later, and another
+  // operator's change would read as coord contradicting this write. A kept value
+  // (a stale part, a dial with no answer) settles nothing.
   const answeredDefaults =
     parts.defaults.error === null ? parts.defaults.data : null;
   const answeredNextStep =
@@ -410,7 +410,6 @@ export function useSpawnPathSwitches(): SpawnPathSwitches {
     const settled = Object.entries(writes).flatMap(([key, write]) => {
       if (
         write.phase !== "written" ||
-        write.readbackError === null ||
         (write.settledState !== undefined && write.settledState !== null)
       ) {
         return [];
