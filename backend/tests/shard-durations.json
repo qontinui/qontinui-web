@@ -118,6 +118,7 @@
   "tests/test_coord_sessev_interact_idx_01_migration.py": 12.9,
   "tests/test_coord_session_census_01_migration.py": 9.4,
   "tests/test_coord_session_substrate_migration.py": 6.9,
+  "tests/test_coord_session_warm_bytes_01_migration.py": 19.6,
   "tests/test_coord_sessions_fleet_idx_01_migration.py": 8.8,
   "tests/test_coord_smckpt_01_success_metric_checkpoint_results_migration.py": 7.5,
   "tests/test_coord_smhist_01_success_metric_history_migration.py": 21.3,
