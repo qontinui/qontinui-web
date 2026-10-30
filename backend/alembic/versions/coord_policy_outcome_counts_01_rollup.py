@@ -123,10 +123,18 @@ runs the same function, whose ``TRUNCATE`` branch empties
 ``policy_outcome_counts`` and ``policy_outcome_counts_seeded`` and sets
 ``seed_state.full_pass_completed_at`` back to NULL. Without it a TRUNCATE of
 the base table (no production code issues one; test suites do) would leave
-every seeded key trusted and wrong. The branch takes no fence lock: TRUNCATE
-holds ACCESS EXCLUSIVE on the base table, which already waits for any seeder
-transaction that has read the base table to end. It uses DELETE rather than
-TRUNCATE on the rollup tables so it takes no ACCESS EXCLUSIVE on them.
+every seeded key trusted and wrong. The branch takes no fence lock. Its
+serialization against the seeder comes from lock ORDER, which is a contract
+with coord: the seeder takes ACCESS SHARE on the base table FIRST, before it
+locks ``seed_state`` (``FOR SHARE``) or writes ``_seeded``. A TRUNCATE holds
+ACCESS EXCLUSIVE on the base table before its trigger runs, so it waits for
+any seeder transaction that already holds that ACCESS SHARE to end, and a
+seeder that starts later waits for the TRUNCATE. A seeder that locked
+``seed_state`` before touching the base table would instead meet the
+TRUNCATE in the opposite order, and PostgreSQL would detect a deadlock and
+abort one of them. The branch clears ``full_pass_completed_at`` before it
+deletes, for the same reason as the downgrade below. It uses DELETE rather
+than TRUNCATE on the rollup tables so it takes no ACCESS EXCLUSIVE on them.
 
 ## Windowed readers stay exact
 
@@ -249,7 +257,17 @@ base-table lock at all, which makes the triggers inert at once) AND revokes
 all trust in the rollup: it empties ``_seeded`` and clears
 ``seed_state.full_pass_completed_at``. The two must commit together: a rollup
 that stopped counting while still marked seeded would be served to coord as
-the truth if the trigger drops below then failed. Only then does it drop the four
+the truth if the trigger drops below then failed.
+
+Inside that transaction the ``seed_state`` UPDATE runs BEFORE the ``_seeded``
+DELETE. Under READ COMMITTED each PL/pgSQL statement takes a fresh snapshot.
+A seeder holding the ``seed_state`` row ``FOR SHARE`` can insert a NEW
+``_seeded`` row; were the DELETE first, its snapshot would not see that
+uncommitted row, the seeder would commit while the UPDATE waited, and a
+trusted ``_seeded`` row would survive over an inert trigger. With the UPDATE
+first it queues behind the seeder ``FOR SHARE`` lock until the seeder commits,
+and the DELETE that follows takes a fresh snapshot that sees the committed
+row. Only then does the downgrade drop the four
 triggers with ``lock_timeout = '200ms'`` and up to 100 attempts with the same
 capped backoff (about 210 s worst case), then drops the function and the three
 tables. Everything runs inside an autocommit block.
@@ -397,10 +415,10 @@ def upgrade() -> None:
                     k record;
                 BEGIN
                     IF TG_OP = 'TRUNCATE' THEN
-                        DELETE FROM coord.policy_outcome_counts;
-                        DELETE FROM coord.policy_outcome_counts_seeded;
                         UPDATE coord.policy_outcome_counts_seed_state
                            SET full_pass_completed_at = NULL;
+                        DELETE FROM coord.policy_outcome_counts;
+                        DELETE FROM coord.policy_outcome_counts_seeded;
                         RETURN NULL;
                     ELSIF TG_OP = 'INSERT' THEN
                         SELECT array_agg(ROW(g.decision_domain, g.surface, g.decision,
@@ -594,9 +612,9 @@ def downgrade() -> None:
                     RETURN NULL;
                 END
                 $fn$;
-                DELETE FROM coord.policy_outcome_counts_seeded;
                 UPDATE coord.policy_outcome_counts_seed_state
                    SET full_pass_completed_at = NULL;
+                DELETE FROM coord.policy_outcome_counts_seeded;
             END
             $neutralise$
             """
