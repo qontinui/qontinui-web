@@ -44,7 +44,7 @@ from tests._alembic_harness import (
 # equal the revision's own `down_revision` — the first test below enforces
 # it. If the alembic head moves before landing, re-point BOTH together.
 _REVISION_ID = "slice_tel_01"
-_PARENT_REVISION_ID = "merge_capture_01"
+_PARENT_REVISION_ID = "ops_tasks_01_coord_ops_tasks"
 _REVISION_FILENAME = "slice_tel_01_slice_memory_and_psi_on_resource_sample.py"
 
 _TABLE = "device_resource_samples"
