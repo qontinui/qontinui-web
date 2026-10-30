@@ -1,7 +1,7 @@
 """coord.policy_outcome_counts — trigger-maintained rollup of labeled resolution counts
 
 Revision ID: coord_policy_outcome_counts_01
-Revises: journey_04_explorations_stop_detail_any_stop
+Revises: merge_capture_01
 Create Date: 2026-10-30
 
 Phase 1 of plan
@@ -256,8 +256,8 @@ tables. Everything runs inside an autocommit block.
 
 ## Head choice
 
-``down_revision`` is ``journey_04_explorations_stop_detail_any_stop``, the
-single head of this worktree when authored. If main has moved before it
+``down_revision`` is ``merge_capture_01``, the
+single head of origin/main when last re-pointed. If main has moved before it
 lands, re-point ``down_revision``, the ``Revises:`` header and
 ``_PARENT_REVISION_ID`` in the migration test at the new single head.
 
@@ -275,7 +275,7 @@ from alembic import op
 # revision identifiers, used by Alembic.
 revision: str = "coord_policy_outcome_counts_01"
 down_revision: str | Sequence[str] | None = (
-    "journey_04_explorations_stop_detail_any_stop"
+    "merge_capture_01"
 )
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
