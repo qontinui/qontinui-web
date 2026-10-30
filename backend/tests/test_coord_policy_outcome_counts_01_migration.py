@@ -293,14 +293,27 @@ def test_downgrade_neutralises_the_function_before_any_trigger_drop() -> None:
         first,
         re.S,
     ), "downgrade() must first replace the function body with RETURN NULL"
-    assert "DELETE FROM coord.policy_outcome_counts_seeded;" in first
-    assert re.search(
+    delete = first.find("DELETE FROM coord.policy_outcome_counts_seeded;")
+    update = re.search(
         r"UPDATE coord\.policy_outcome_counts_seed_state\s+"
         r"SET full_pass_completed_at = NULL;",
         first,
     )
+    assert delete >= 0 and update is not None
+    # The UPDATE queues behind a seeder holding seed_state FOR SHARE, so the
+    # DELETE after it takes a fresh snapshot that sees what that seeder
+    # committed. The other order lets a just-seeded row survive the downgrade.
+    assert update.start() < delete, "seed_state UPDATE must precede the DELETE"
     first_drop = next(i for i, q in enumerate(sqls) if "DROP TRIGGER" in q)
     assert first_drop > 0
+
+
+def test_truncate_branch_clears_full_pass_before_deleting() -> None:
+    up = "\n".join(_sql_literals(_function("upgrade")))
+    branch = up[up.index("IF TG_OP = 'TRUNCATE' THEN") : up.index("ELSIF TG_OP")]
+    update = branch.index("UPDATE coord.policy_outcome_counts_seed_state")
+    assert update < branch.index("DELETE FROM coord.policy_outcome_counts;")
+    assert update < branch.index("DELETE FROM coord.policy_outcome_counts_seeded;")
 
 
 def test_trigger_creation_never_drops_a_trigger() -> None:
