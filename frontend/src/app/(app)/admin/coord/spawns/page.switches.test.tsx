@@ -292,9 +292,15 @@ describe("the spawn-path matrix — what coord serves", () => {
       "may have started more recently"
     );
     expect(
-      within(pathRow("runner_scheduler")).getByTestId("coord-spawns-path-last")
+      within(pathRow("unit_continuation")).getByTestId("coord-spawns-path-last")
         .textContent
     ).toBe("no request in the last 7 days");
+    // What no writer records is UNKNOWN, never that same sentence.
+    expect(
+      within(pathRow("runner_scheduler"))
+        .getByTestId("coord-spawns-path-last")
+        .getAttribute("data-last-spawned")
+    ).toBe("unknown");
     expect(
       within(pr)
         .getByTestId("coord-spawns-path-last")

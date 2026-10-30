@@ -882,13 +882,13 @@ describe("last spawned — UNKNOWN unless the ledger names the path, and only wh
 
   it("says what was measured when nothing started, never 'never' — and only the rows loaded when the list was cut", () => {
     const whole = deriveSpawnPathMatrix(inputs());
-    expect(rowOf(whole, "runner_scheduler").lastSpawned).toEqual({
+    expect(rowOf(whole, "unit_continuation").lastSpawned).toEqual({
       kind: "none",
       text: "no request in the last 7 days",
       stale: false,
     });
     const waiting = rowFx({
-      origin: "scheduler",
+      origin: "unit_continuation",
       spawned_at: null,
       state: "queued",
     });
@@ -901,7 +901,7 @@ describe("last spawned — UNKNOWN unless the ledger names the path, and only wh
         },
       })
     );
-    expect(rowOf(asked, "runner_scheduler").lastSpawned).toEqual({
+    expect(rowOf(asked, "unit_continuation").lastSpawned).toEqual({
       kind: "none",
       text: "2 requests in the last 7 days, none started",
       stale: false,
@@ -915,11 +915,35 @@ describe("last spawned — UNKNOWN unless the ledger names the path, and only wh
         },
       })
     );
-    expect(rowOf(cut, "runner_scheduler").lastSpawned).toEqual({
+    expect(rowOf(cut, "unit_continuation").lastSpawned).toEqual({
       kind: "none",
       text: "no request among the 1 most recent loaded",
       stale: false,
     });
+  });
+
+  it("reads the runner scheduler as UNKNOWN whatever the ledger holds: no writer records its starts", () => {
+    const scheduled = rowFx({
+      origin: "scheduler",
+      spawned_at: "2026-10-21T11:40:00Z",
+    });
+    for (const list of [listFx([]), listFx([scheduled])]) {
+      const cell = rowOf(
+        deriveSpawnPathMatrix(
+          inputs({
+            ledger: { list, issue: null, windowLabel: "last 7 days" },
+          })
+        ),
+        "runner_scheduler"
+      ).lastSpawned;
+      expect(cell.kind).toBe("unknown");
+      expect(cell.kind === "unknown" && cell.reason).toContain(
+        "a machine's scheduled starts are not written to the spawn ledger"
+      );
+      expect(cell.kind === "unknown" && cell.presentedReason).toBe(
+        "When this path last started a session is unknown: the record of spawn requests does not identify this path's starts."
+      );
+    }
   });
 
   it("proves a steward start but not an absence: stewards started from a runner's own window are recorded otherwise", () => {

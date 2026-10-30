@@ -278,7 +278,13 @@ export const UNSERVED_PATHS: readonly UnservedPath[] = [
     label: "Runner scheduler",
     summary: "Sessions a machine starts on a schedule it keeps itself.",
     startedBy: "runner",
-    ledgerOrigin: "scheduler",
+    // `scheduler` is a value the ledger's origin CHECK permits, and that is all
+    // it is: the writers plan 2026-10-21-spawns-outrank-ci-and-builds Phase 2
+    // scopes are coord's own spawn sites, and a runner's local starts are
+    // explicitly not converted into requests. So "no request in the last 7
+    // days" would stand on a path nothing records.
+    ledgerBlind:
+      "a machine's scheduled starts are not written to the spawn ledger, which records what coord was asked to start",
     where: {
       operator:
         "On each runner: every scheduled task is switched on or off in that runner's scheduler.",
