@@ -15,7 +15,7 @@
  *
  * Only the two fields the matrix reads are copied (`agent_name`, `spawn_path`).
  * `spawnPathContract.test.ts` holds this copy to the contract at the commit
- * `spawn-contract.pin.toml` pins, in CI as well as locally: it must hold exactly
+ * `spawn-contract.pin.toml` pins, in every lane as well as locally: it must hold exactly
  * these kinds and seeded classes, so bumping the pin past a new kind fails the
  * test until the matrix knows it. That file is the one record of which commit
  * this copy was taken from.
