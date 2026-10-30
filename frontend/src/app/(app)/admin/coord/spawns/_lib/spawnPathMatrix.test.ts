@@ -1056,7 +1056,11 @@ describe("after a write, the read-back", () => {
     ).effective;
     expect(later.state).toBe("on");
     expect(later.readBack?.matches).toBe(false);
-    expect(later.writeNote).toContain("a read made after it");
+    // The PUT answered: only its read-back failed, so coord is not said to have
+    // left the write unconfirmed.
+    expect(later.writeNote).toBe(
+      "The write was answered, but its read-back failed; this is a later read."
+    );
   });
 
   it("is UNKNOWN while a write coord could not confirm is re-read, then compares that read", () => {
