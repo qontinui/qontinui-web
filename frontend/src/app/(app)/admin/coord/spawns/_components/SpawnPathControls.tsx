@@ -147,7 +147,7 @@ export function RegistrySwitch({
     <SegmentedWrite<"on" | "off">
       id={`coord-spawns-path-switch-${agentName}`}
       label={`Switch "${pathLabel}" on or off for this tenant`}
-      description={`Writes the tenant default of coord's agent registry row ${agentName} (PUT /coord/agent-registry/${agentName}), then re-reads coord's effective row. Params: {"value": "on" | "off"}. Resolves once the read-back has landed; the matrix shows what coord reads back.`}
+      description={`Writes the tenant default of coord's agent registry row ${agentName} (PUT /coord/agent-registry/${agentName}), then re-reads the tenant defaults, which are what coord enforces. Params: {"value": "on" | "off"}. Settles after the read-back: resolves with it, and rejects unless coord read back what was asked, naming the outcome. The matrix shows what coord reads back.`}
       options={[
         { value: "on", label: "On" },
         { value: "off", label: "Off" },
@@ -237,7 +237,7 @@ export function RedMainKnobSwitch({
     <SegmentedWrite<"on" | "off">
       id="coord-spawns-path-red-main-knob"
       label='Set the tenant knob "auto-fix a failing main branch"'
-      description='Writes the tenant column auto_fix_red_main through the merge settings (PATCH /pr-merge/settings, that key only), then re-reads the merge settings. Params: {"value": "on" | "off"}. Resolves once the read-back has landed; the matrix shows what coord reads back.'
+      description='Writes the tenant column auto_fix_red_main through the merge settings (PATCH /pr-merge/settings, that key only), then re-reads the merge settings. Params: {"value": "on" | "off"}. Settles after the read-back: resolves with it, and rejects unless coord read back what was asked, naming the outcome. The matrix shows what coord reads back.'
       options={[
         { value: "on", label: "On" },
         { value: "off", label: "Off" },

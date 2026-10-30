@@ -11,7 +11,11 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
 interface RegisteredElement {
   customActions?: {
-    set?: { effect: string; handler: (p: unknown) => Promise<unknown> };
+    set?: {
+      effect: string;
+      description: string;
+      handler: (p: unknown) => Promise<unknown>;
+    };
   };
 }
 const registered = new Map<string, RegisteredElement>();
@@ -179,6 +183,19 @@ describe("the switches' UI Bridge action settles with coord's answer", () => {
       outcome: "read_back",
       readBack: "off",
     });
+  });
+
+  it("describes to an automated caller what the action re-reads and when it rejects", async () => {
+    await renderAndOpen("merge_shepherd");
+    const registry = registered.get(SHEPHERD)?.customActions?.set?.description;
+    expect(registry).toContain("then re-reads the tenant defaults");
+    expect(registry).not.toContain("effective row");
+    expect(registry).toContain("rejects unless coord read back what was asked");
+    await renderAndOpen("red_main_fix_dispatch");
+    expect(
+      registered.get("coord-spawns-path-red-main-knob")?.customActions?.set
+        ?.description
+    ).toContain("rejects unless coord read back what was asked");
   });
 
   it("says what a value outside the switch's own is, sending nothing", async () => {
