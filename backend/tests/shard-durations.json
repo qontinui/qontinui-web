@@ -426,6 +426,7 @@
   "tests/test_session_repository_export_headers.py": 0.0,
   "tests/test_sessresume_01_migration.py": 10.1,
   "tests/test_shard_headroom.py": 2.5,
+  "tests/test_slice_tel_01_slice_memory_and_psi_on_resource_sample_migration.py": 30.0,
   "tests/test_spawnadm_01_spawn_admission_ledger_migration.py": 10.8,
   "tests/test_state_discovery.py": 0.4,
   "tests/test_strict_query.py": 3.7,
