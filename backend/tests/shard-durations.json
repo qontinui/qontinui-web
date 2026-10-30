@@ -250,6 +250,7 @@
   "tests/test_memory_validation.py": 0.9,
   "tests/test_memrestore_01_migration.py": 11.1,
   "tests/test_memseq_01_migration.py": 9.3,
+  "tests/test_merge_capture_01_migration.py": 19.4,
   "tests/test_mrt_qualify.py": 6.4,
   "tests/test_no_celery_import.py": 3.3,
   "tests/test_no_dead_shadowed_module.py": 0.0,
