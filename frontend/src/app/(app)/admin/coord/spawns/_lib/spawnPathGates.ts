@@ -111,8 +111,9 @@ export interface SwitchWrite {
   outcomeUnknown?: boolean;
   /**
    * The value, in the gate's vocabulary, of the read this write settled on:
-   * `written` — the read-back, or, when that failed, the first read to answer
-   * after it (the hook latches it); `refused` — what coord held when it refused.
+   * `written` — the read-back, or, when that failed or gave no value, the first
+   * read after it to give one (the hook latches it); `refused` — what coord held
+   * when it refused.
    * `null` or absent when no value was read. A cell that differs from it is
    * showing a LATER read, and says nothing about this write.
    */
