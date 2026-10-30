@@ -135,6 +135,13 @@ export const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
   // cap the wait is demonstrably not ending on its own — red.
   "needs-rebase-stale": AUTHOR_RED,
   "blocked-stale": AUTHOR_RED,
+  // BEHIND and held by another predicate block: one kind per attention grade
+  // (prPipeline `behindHeldStatus`), painted as `/admin/coord/prs` paints the
+  // same token family — red for the author's block, the ignorance-floor amber
+  // for a hold whose clearer the row cannot name, CI yellow for running CI.
+  "behind-held-author": AUTHOR_RED,
+  "behind-held-waiting": UNKNOWN_AMBER,
+  "behind-held-none": CI_YELLOW,
   // --- in flight / terminal, nobody is blocked → never red or amber ---------
   "awaiting-ci": CI_YELLOW,
   "checks-pending": CI_YELLOW,
@@ -167,6 +174,7 @@ export const AUTHOR_GLYPH_KINDS: ReadonlySet<UnifiedStatusKind> = new Set([
   "blocked-stale",
   "checks-failing",
   "requirements",
+  "behind-held-author",
 ]);
 
 /**

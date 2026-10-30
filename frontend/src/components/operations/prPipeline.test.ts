@@ -45,6 +45,7 @@ import {
   waitingDwellCapMs,
   withDwellEvidence,
 } from "./prPipeline";
+import { PR_ATTENTION_BY_MERGE_STATUS } from "@/app/(app)/admin/coord/prs/prStatus";
 
 const NOW = new Date("2026-07-15T12:00:00Z").getTime();
 
@@ -552,12 +553,12 @@ describe("statusFromGitHub — attention truth table", () => {
     expect(row.status.attention).toBe("none");
   });
 
-  it("BEHIND → attention 'waiting' (coord auto-rebases), NOT counted", () => {
+  it("BEHIND → attention 'waiting' (coord's freshen UNKNOWN), NOT counted", () => {
     const row = rowFor({ merge_state_status: "BEHIND" });
     expect(row.status.kind).toBe("needs-rebase");
     expect(row.status.attention).toBe("waiting");
     expect(row.status.reason).toBe(
-      "behind main — coord auto-rebases it in the train, no action needed"
+      "behind main — whether coord will update it is UNKNOWN"
     );
     expect(needsAttention({ merge_state_status: "BEHIND" })).toBe(0);
   });
@@ -1555,6 +1556,18 @@ describe("ATTENTION_BY_KIND — the color/attention contract", () => {
       [
         ["CLEAN", { merge_state_status: "CLEAN" }],
         ["BEHIND", { merge_state_status: "BEHIND" }],
+        [
+          "BEHIND held (author)",
+          { merge_state_status: "BEHIND", merge_status: "review-required" },
+        ],
+        [
+          "BEHIND held (waiting)",
+          { merge_state_status: "BEHIND", merge_status: "predicate-blocked" },
+        ],
+        [
+          "BEHIND held (none)",
+          { merge_state_status: "BEHIND", merge_status: "ci-pending" },
+        ],
         ["DIRTY", { merge_state_status: "DIRTY", mergeable: null }],
         ["draft", { pr_state: "draft", merge_state_status: "DRAFT" }],
         ["unknown", { merge_state_status: "UNKNOWN" }],
@@ -2614,5 +2627,121 @@ describe("compareBySubmitted (All PRs ordering)", () => {
     expect(noStamp.mergedAt).toBeNull();
     expect(rowActivityMs(noStamp)).toBe(new Date(ago(3)).getTime());
     expect(rowActivityMs({ ...noStamp, updatedAt: "not-a-date" })).toBe(0);
+  });
+});
+
+// Plan 2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act,
+// Phase 1: a BEHIND (or stale-base) row reads coord's `merge_status` and never
+// promises that coord will bring the branch current.
+describe("BEHIND reads merge_status — no unobserved 'no action needed'", () => {
+  const PROMISE = /no action needed|in the train|auto-rebase/i;
+  const statusOf = (overrides: Partial<PrRow>) =>
+    buildPipelineRows([pr(overrides)], [])[0].status;
+
+  it("BEHIND + a predicate hold (main red) → held, attention from the prStatus table", () => {
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "predicate-blocked",
+      blocking_summary: "main-red: qontinui-web main is red",
+    });
+    expect(status.label).toBe("Behind main — held");
+    expect(status.reason).toBe(
+      "behind main — coord updates it only once this clears: main-red: qontinui-web main is red"
+    );
+    expect(status.attention).toBe(
+      PR_ATTENTION_BY_MERGE_STATUS["predicate-blocked"]
+    );
+    expect(status.kind).toBe("behind-held-waiting");
+    expect(ATTENTION_BY_KIND[status.kind]).toBe(status.attention);
+    expect(status.reason).not.toMatch(PROMISE);
+  });
+
+  it("BEHIND + an author-owned hold → red held row, counted as needing attention", () => {
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "review-required",
+    });
+    expect(status.kind).toBe("behind-held-author");
+    expect(status.attention).toBe(
+      PR_ATTENTION_BY_MERGE_STATUS["review-required"]
+    );
+    expect(status.attention).toBe("author");
+    // No blocking_summary → the token itself names the block.
+    expect(status.reason).toBe(
+      "behind main — coord updates it only once this clears: review-required"
+    );
+  });
+
+  it("BEHIND + an unrecognised token → held at the prStatus ignorance floor", () => {
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "some-future-token",
+    });
+    expect(status.label).toBe("Behind main — held");
+    expect(status.attention).toBe(PR_ATTENTION_BY_MERGE_STATUS.unknown);
+    expect(status.kind).toBe("behind-held-waiting");
+  });
+
+  it("BEHIND + ci-pending → held by running CI, calm", () => {
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "ci-pending",
+    });
+    expect(status.kind).toBe("behind-held-none");
+    expect(status.attention).toBe("none");
+  });
+
+  it("BEHIND + behind-base → UNKNOWN, waiting, never a promise", () => {
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "behind-base",
+    });
+    expect(status.kind).toBe("needs-rebase");
+    expect(status.attention).toBe("waiting");
+    expect(status.reason).toBe(
+      "behind main — whether coord will update it is UNKNOWN"
+    );
+    expect(status.reason).not.toMatch(PROMISE);
+  });
+
+  it("BEHIND + no merge_status (older coord) → UNKNOWN, waiting", () => {
+    const status = statusOf({ merge_state_status: "BEHIND" });
+    expect(status.kind).toBe("needs-rebase");
+    expect(status.attention).toBe("waiting");
+    expect(status.reason).toContain("UNKNOWN");
+    expect(status.reason).not.toMatch(PROMISE);
+  });
+
+  it("BEHIND + no clock → the UNKNOWN row still carries dwellEvidence 'unknown'", () => {
+    const status = statusOf({ merge_state_status: "BEHIND" });
+    expect(status.dwellEvidence).toBe("unknown");
+  });
+
+  it("the UNKNOWN BEHIND row still escalates past its dwell cap", () => {
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: "behind-base",
+      last_activity_secs: 3 * 24 * 60 * 60,
+    });
+    expect(status.kind).toBe("needs-rebase-stale");
+    expect(status.attention).toBe("author");
+    expect(status.reason).not.toMatch(PROMISE);
+  });
+
+  it("ci-failed-stale-base → UNKNOWN (BLOCKED or BEHIND), never a promise", () => {
+    for (const mss of ["BLOCKED", "BEHIND"] as const) {
+      const status = statusOf({
+        merge_state_status: mss,
+        ci_conclusion: "failure",
+        failing_contexts: ["test"],
+        merge_status: "ci-failed-stale-base",
+      });
+      expect(status.kind).toBe("needs-rebase");
+      expect(status.attention).toBe("waiting");
+      expect(status.reason).toBe(
+        "CI red on a stale base — main moved past it; whether coord will freshen it is UNKNOWN"
+      );
+      expect(status.reason).not.toMatch(PROMISE);
+    }
   });
 });
