@@ -192,8 +192,17 @@ describe("the switches' UI Bridge action settles with coord's answer", () => {
     expect(registry).not.toContain("effective row");
     expect(registry).toContain("rejects unless coord read back what was asked");
     await renderAndOpen("red_main_fix_dispatch");
+    for (const id of [
+      "coord-spawns-path-red-main-knob",
+      "coord-spawns-path-autonomy-red_main_fix",
+    ]) {
+      expect(registered.get(id)?.customActions?.set?.description).toContain(
+        "rejects unless coord read back what was asked"
+      );
+    }
+    await renderAndOpen("pr_fix_dispatch");
     expect(
-      registered.get("coord-spawns-path-red-main-knob")?.customActions?.set
+      registered.get("coord-spawns-path-fixer-dial")?.customActions?.set
         ?.description
     ).toContain("rejects unless coord read back what was asked");
   });
