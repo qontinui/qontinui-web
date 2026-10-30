@@ -634,9 +634,14 @@ describe("/admin/coord/spawns?present=1", () => {
     });
     renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
     await settle();
-    expect(screen.getByTestId("coord-spawns-paths-note").textContent).toContain(
-      OTHER_RUNNER_STARTS
+    const pathsNote = screen.getByTestId("coord-spawns-paths-note").textContent;
+    expect(pathsNote).toContain(OTHER_RUNNER_STARTS);
+    // Measured: nothing writes these starts to the list this page reads, so the
+    // sentence must not send a reader looking for them there.
+    expect(pathsNote).toContain(
+      "those have no line here, and this console reads no record of them."
     );
+    expect(pathsNote).not.toMatch(/appear under spawn requests/);
     const unclassified = screen.getByTestId(
       "coord-spawns-paths-unclassified"
     ).textContent;

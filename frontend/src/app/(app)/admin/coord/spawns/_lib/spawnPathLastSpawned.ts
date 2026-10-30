@@ -5,11 +5,12 @@
  *
  * The ledger can answer for a path only where one of its rows NAMES that path
  * and no other: its `origin` column (`gate_continuation`, `unit_continuation`,
- * `steward`, `scheduler`). Every coord fixer, the shepherd and the condition
- * audits share the origin `coord_dispatch`, and a post-merge follow-up is a
- * gate continuation — so for those the cell is UNKNOWN and says the ledger
- * carries no field that names the path. It is never "never", never blank and
- * never 0.
+ * `steward`). Every coord fixer, the shepherd and the condition audits share
+ * the origin `coord_dispatch`, and a post-merge follow-up is a gate continuation
+ * — so for those the cell is UNKNOWN and says the ledger carries no field that
+ * names the path. The same goes for a path with no writer at all (the runner
+ * scheduler): an origin the column permits is not a record anyone writes. It is
+ * never "never", never blank and never 0.
  *
  * What the list measures bounds what a cell may claim. It holds the requests
  * MADE in the window (`requested_at` inside it), so a request made earlier
@@ -93,7 +94,7 @@ export function lastSpawnedCell(
       kind: "unknown",
       reason: `UNKNOWN — ${blind}.`,
       presentedReason:
-        "When this path last started a session is unknown: the record of spawn requests does not say which path made each request.",
+        "When this path last started a session is unknown: the record of spawn requests does not identify this path's starts.",
     };
   }
   const { list, issue } = view;
