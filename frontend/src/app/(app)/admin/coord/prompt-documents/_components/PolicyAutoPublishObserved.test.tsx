@@ -18,7 +18,7 @@
  *    status all read UNKNOWN** — never a healthy loop by default.
  * 4. **The silent latch hides the line**: outside the system tenant there is no
  *    auto-publisher of this tenant's to observe.
- * 5. **The reconcile rests healthy on exactly one idle code.** It does its work
+ * 5. **The reconcile rests healthy on one idle code of its own.** It does its work
  *    once a day and the ledger keeps only the latest outcome, so `recovery:not_due`
  *    with no work tick is its ordinary state. Any other idle code does not read
  *    healthy, and coord's `recovery:not_due_after_errors` reads failing all day.
@@ -119,7 +119,7 @@ async function observedReconcile(): Promise<HTMLElement> {
 const UNKNOWN =
   "Observed: UNKNOWN — no auto-publisher pass recorded on the serving coord";
 const RECONCILE_UNKNOWN =
-  "Observed reconcile: UNKNOWN — coord served no reading of the recovery reconcile";
+  "Observed reconcile: UNKNOWN — coord served no usable reading of the recovery reconcile";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -183,7 +183,7 @@ describe("the observed auto-publisher, per worker status", () => {
     render(<Harness />);
 
     expect(await observed()).toHaveTextContent(
-      "Observed: loop alive, no pass body recorded yet"
+      "Observed: loop alive, no pass body recorded for the current leader"
     );
     // A leader that never ran a body is not nominal.
     expect(await observed()).toHaveAttribute("data-observed-tone", "attention");
@@ -263,7 +263,7 @@ describe("the observed auto-publisher, per worker status", () => {
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
-  it("stale: says stale since the last tick", async () => {
+  it("stale: says stale, and names the time as the freshest tick on any replica", async () => {
     const at = minutesAgo(45);
     statusGet.mockResolvedValue(
       status({
@@ -279,12 +279,12 @@ describe("the observed auto-publisher, per worker status", () => {
 
     const line = await observed();
     expect(line).toHaveTextContent(
-      `Observed: stale since ${new Date(at).toLocaleString()}`
+      `Observed: stale — freshest tick on any replica: ${new Date(at).toLocaleString()}`
     );
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
-  it("dead: says dead since the last tick, or since unknown when there is none", async () => {
+  it("dead: says dead, and the freshest tick is unknown when there is none", async () => {
     statusGet.mockResolvedValue(
       status({
         pass: {
@@ -298,7 +298,9 @@ describe("the observed auto-publisher, per worker status", () => {
     render(<Harness />);
 
     const line = await observed();
-    expect(line).toHaveTextContent("Observed: dead since unknown");
+    expect(line).toHaveTextContent(
+      "Observed: dead — freshest tick on any replica: unknown"
+    );
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
@@ -346,7 +348,7 @@ describe("the observed auto-publisher, per worker status", () => {
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
-  it("erroring on an error streak (the ledger's tick_error): says the body errors, with coord's reason", async () => {
+  it("erroring on an error streak (the ledger's tick_error): says the last run errored, with coord's reason", async () => {
     // The shape coord serves for a body that errors on every tick: the lease
     // holder's row carries the ledger's `tick_error` code.
     const reason =
@@ -366,7 +368,7 @@ describe("the observed auto-publisher, per worker status", () => {
 
     const line = await observed();
     expect(line).toHaveTextContent(
-      "Observed: running but failing — the pass body errors on every tick"
+      "Observed: running but failing — the pass body's last run errored"
     );
     expect(line).not.toHaveTextContent(/last decision/);
     expect(line).toHaveTextContent("has the streak");
@@ -390,7 +392,7 @@ describe("the observed auto-publisher, per worker status", () => {
 
     const line = await observed();
     expect(line).toHaveTextContent("Observed: running but failing");
-    expect(line).not.toHaveTextContent(/body errors|last decision/);
+    expect(line).not.toHaveTextContent(/last run errored|last decision/);
     expect(line).toHaveTextContent("reported a failure (ran:decide_failed)");
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
@@ -560,7 +562,7 @@ describe("the observed recovery reconcile, per worker status", () => {
       "Observed reconcile: last ran 9m ago — recovery:reconciled"
     );
     expect(line).toHaveAttribute("data-observed-tone", "nominal");
-    expect(observedNow()).toHaveTextContent("Observed: dead since");
+    expect(observedNow()).toHaveTextContent("Observed: dead —");
   });
 
   it("not due after a clean run: the resting state reads healthy, with no work tick", async () => {
@@ -578,7 +580,7 @@ describe("the observed recovery reconcile, per worker status", () => {
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
-      "Observed reconcile: no errors counted at this replica's last daily run — recovery:not_due"
+      "Observed reconcile: no errors counted at the lease holder's last daily run — recovery:not_due"
     );
     expect(line).toHaveAttribute("data-observed-tone", "nominal");
   });
@@ -622,33 +624,55 @@ describe("the observed recovery reconcile, per worker status", () => {
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
-  it.each(["not_due", "due_staggered"])(
-    "a new lease term's %s: names the wait in the quiet tone, for the reconcile and the pass",
-    async (code) => {
-      const waiting = {
-        status: "alive",
-        nominal: true,
-        reason: null,
-        last_tick_at: minutesAgo(1),
-        last_work_tick_at: null,
-        last_decision_code: code,
-      };
-      statusGet.mockResolvedValue(
-        status({ pass: waiting, recovery_reconcile: waiting })
-      );
-      render(<Harness />);
+  it("a new lease term's not_due: names the wait in the quiet tone, for the reconcile and the pass", async () => {
+    const waiting = {
+      status: "alive",
+      nominal: true,
+      reason: null,
+      last_tick_at: minutesAgo(1),
+      last_work_tick_at: null,
+      last_decision_code: "not_due",
+    };
+    statusGet.mockResolvedValue(
+      status({ pass: waiting, recovery_reconcile: waiting })
+    );
+    render(<Harness />);
 
-      const line = await observedReconcile();
-      expect(line).toHaveTextContent(
-        `Observed reconcile: waiting out a leader change — ${code}`
-      );
-      expect(line).toHaveAttribute("data-observed-tone", "nominal");
-      expect(observedNow()).toHaveTextContent(
-        `Observed: waiting out a leader change — ${code}`
-      );
-      expect(observedNow()).toHaveAttribute("data-observed-tone", "nominal");
-    }
-  );
+    const line = await observedReconcile();
+    expect(line).toHaveTextContent(
+      "Observed reconcile: waiting out a leader change — not_due"
+    );
+    expect(line).toHaveAttribute("data-observed-tone", "nominal");
+    expect(observedNow()).toHaveTextContent(
+      "Observed: waiting out a leader change — not_due"
+    );
+    expect(observedNow()).toHaveAttribute("data-observed-tone", "nominal");
+  });
+
+  it("due_staggered, served nominal: stays flagged, because a body that panics on every run reads exactly this", async () => {
+    const staggered = {
+      status: "alive",
+      nominal: true,
+      reason: null,
+      last_tick_at: minutesAgo(1),
+      last_work_tick_at: null,
+      last_decision_code: "due_staggered",
+    };
+    statusGet.mockResolvedValue(
+      status({ pass: staggered, recovery_reconcile: staggered })
+    );
+    render(<Harness />);
+
+    const line = await observedReconcile();
+    expect(line).toHaveTextContent(
+      "Observed reconcile: loop alive, last tick did no reconcile — due_staggered"
+    );
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+    expect(observedNow()).toHaveTextContent(
+      "Observed: loop alive, last tick did no pass work — due_staggered"
+    );
+    expect(observedNow()).toHaveAttribute("data-observed-tone", "attention");
+  });
 
   it("a new lease term's wait that coord calls unhealthy: flagged", async () => {
     statusGet.mockResolvedValue(
@@ -658,19 +682,20 @@ describe("the observed recovery reconcile, per worker status", () => {
         reason: "a_future_reason",
         last_tick_at: minutesAgo(1),
         last_work_tick_at: null,
-        last_decision_code: "due_staggered",
+        last_decision_code: "not_due",
       })
     );
     render(<Harness />);
 
     const line = await observedReconcile();
     expect(line).toHaveTextContent(
-      "Observed reconcile: loop alive, last tick did no reconcile — due_staggered"
+      "Observed reconcile: loop alive, last tick did no reconcile — not_due"
     );
+    expect(line).toHaveTextContent("a_future_reason");
     expect(line).toHaveAttribute("data-observed-tone", "attention");
   });
 
-  it("another idle code: never reads healthy", async () => {
+  it("another idle code: not read as healthy", async () => {
     statusGet.mockResolvedValue(
       reconcileStatus({
         status: "alive",
@@ -825,7 +850,7 @@ describe("the observed recovery reconcile, per worker status", () => {
   });
 
   it.each(["stale", "dead"] as const)(
-    '%s with the holder still inside its body: says so, never "since" a follower\'s tick',
+    "%s with the holder still inside its body: says so, never a follower's tick as the time",
     async (workerStatus) => {
       statusGet.mockResolvedValue(
         reconcileStatus({
@@ -845,13 +870,13 @@ describe("the observed recovery reconcile, per worker status", () => {
         `Observed reconcile: ${workerStatus} — the body is still running, past its bound`
       );
       expect(line).toHaveTextContent("(body_in_flight)");
-      expect(line).not.toHaveTextContent(/since/);
+      expect(line).not.toHaveTextContent(/freshest tick/);
       expect(line).toHaveAttribute("data-observed-tone", "attention");
     }
   );
 
   it.each(["stale", "dead"] as const)(
-    "%s: says since when, even over the resting code",
+    "%s: names the freshest tick for what it is, even over the resting code",
     async (workerStatus) => {
       statusGet.mockResolvedValue(
         reconcileStatus({
@@ -867,7 +892,7 @@ describe("the observed recovery reconcile, per worker status", () => {
 
       const line = await observedReconcile();
       expect(line).toHaveTextContent(
-        `Observed reconcile: ${workerStatus} since`
+        `Observed reconcile: ${workerStatus} — freshest tick on any replica:`
       );
       expect(line).toHaveAttribute("data-observed-tone", "attention");
     }
