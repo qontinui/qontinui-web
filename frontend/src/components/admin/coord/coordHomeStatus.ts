@@ -415,9 +415,11 @@ function parseInitiative(raw: unknown): InitiativeView | null {
   const inScopeRaw = arr(o.in_scope);
   return {
     state,
-    status: str(o.status),
-    starts: str(o.starts),
-    ends: str(o.ends),
+    // Frontmatter typed by hand: a blank value says nothing, the same as an
+    // absent one, so it reads as unknown rather than as an empty clause.
+    status: nonBlank(str(o.status)),
+    starts: nonBlank(str(o.starts)),
+    ends: nonBlank(str(o.ends)),
     alignment: str(o.alignment),
     reason: str(o.reason),
     inScope: inScopeRaw
