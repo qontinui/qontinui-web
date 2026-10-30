@@ -14,22 +14,17 @@
  * no row for it.
  *
  * Only the two fields the matrix reads are copied (`agent_name`, `spawn_path`).
- * `spawnPathContract.test.ts` pins this copy to the contract: whenever the
- * qontinui-schemas checkout beside this repository is present it must hold
- * exactly these kinds and seeded classes, so a kind added there fails the
- * test here until the matrix knows it. When that checkout is absent (CI
- * checks out this repository alone) the comparison is reported as skipped,
- * never as passed.
- *
- * Copied at qontinui-schemas `36559574eecc4b6b569b943a11ea0881361fc893`
- * ("feat: declare the registry snapshot age bound in the spawn contract").
+ * `spawnPathContract.test.ts` holds this copy to the contract at the commit
+ * `spawn-contract.pin.toml` pins, in CI as well as locally: it must hold exactly
+ * these kinds and seeded classes, so bumping the pin past a new kind fails the
+ * test until the matrix knows it. That file is the one record of which commit
+ * this copy was taken from.
  */
 
 /** Where this copy came from. */
 export const SPAWN_CONTRACT_SOURCE = {
   repo: "qontinui-schemas",
   path: "rust/src/spawn_authorization.json",
-  commit: "36559574eecc4b6b569b943a11ea0881361fc893",
 } as const;
 
 /** The per-path class names (`spawn_paths`). Each is also a registry key. */

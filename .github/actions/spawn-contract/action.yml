@@ -1,0 +1,65 @@
+name: Spawn contract (pinned)
+description: >-
+  Check out qontinui-schemas/rust/src/spawn_authorization.json at the commit
+  spawn-contract.pin.toml pins (sparse, one file), verify its sha256, and export
+  QONTINUI_SPAWN_CONTRACT_FILE for the one consumer,
+  frontend/src/app/(app)/admin/coord/spawns/_lib/spawnPathContract.test.ts, which
+  also verifies the digest; this step fails first so a broken fetch reads as
+  itself. Requires the qontinui-web checkout to have run first (the pin is read
+  from it). Drift of schemas main from the pin is a separate, advisory, last step
+  in frontend-ci.yml, never part of this action.
+
+runs:
+  using: composite
+  steps:
+    # PINNED, never read at schemas main, for the reason fleet-nouns-vocab gives:
+    # at a pin, a red can only come from this repo's change.
+    - name: Read the spawn contract pin
+      id: pin
+      shell: bash
+      # tomllib, not sed: exactly [spawn_contract].ref / .sha256, so a comment,
+      # a reordered key or a second table cannot be misread as the pin.
+      run: |
+        python3 - "$GITHUB_WORKSPACE/spawn-contract.pin.toml" >> "$GITHUB_OUTPUT" <<'PY'
+        import re, sys, tomllib
+        path = sys.argv[1]
+        with open(path, "rb") as fh:
+            pin = tomllib.load(fh).get("spawn_contract", {})
+        ref, sha = pin.get("ref", ""), pin.get("sha256", "")
+        if not (isinstance(ref, str) and re.fullmatch(r"[0-9a-f]{40}", ref)
+                and isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha)):
+            print(f"::error title=spawn contract pin::{path} must carry [spawn_contract] ref (40 hex) and sha256 (64 hex)", file=sys.stderr)
+            sys.exit(1)
+        print(f"ref={ref}")
+        print(f"sha256={sha}")
+        PY
+
+    # PUBLIC sibling, at the pinned commit; only the contract file is read.
+    - name: Checkout qontinui-schemas spawn_authorization.json (public sibling, pinned ref)
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      with:
+        repository: qontinui/qontinui-schemas
+        ref: ${{ steps.pin.outputs.ref }}
+        path: .sibling/qontinui-schemas-spawn-contract
+        sparse-checkout: rust/src/spawn_authorization.json
+        sparse-checkout-cone-mode: false
+        persist-credentials: false
+
+    - name: Verify the digest and export QONTINUI_SPAWN_CONTRACT_FILE
+      shell: bash
+      env:
+        PIN_REF: ${{ steps.pin.outputs.ref }}
+        PIN_SHA256: ${{ steps.pin.outputs.sha256 }}
+      run: |
+        file="$GITHUB_WORKSPACE/.sibling/qontinui-schemas-spawn-contract/rust/src/spawn_authorization.json"
+        if [ ! -f "$file" ]; then
+          echo "::error title=spawn contract::$file absent after checking out qontinui-schemas at $PIN_REF"
+          exit 1
+        fi
+        got="$(sha256sum "$file" | cut -d' ' -f1)"
+        if [ "$got" != "$PIN_SHA256" ]; then
+          echo "::error title=spawn contract::$file has sha256 $got; spawn-contract.pin.toml pins $PIN_SHA256 at $PIN_REF"
+          exit 1
+        fi
+        echo "spawn_authorization.json at $PIN_REF verified (sha256 $got)."
+        echo "QONTINUI_SPAWN_CONTRACT_FILE=$file" >> "$GITHUB_ENV"
