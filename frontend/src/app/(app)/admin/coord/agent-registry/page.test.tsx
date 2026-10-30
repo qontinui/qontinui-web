@@ -79,9 +79,7 @@ describe("/admin/coord/agent-registry", () => {
 
   it("lists the raw registry rows with their tenant default", async () => {
     render(<CoordAgentRegistryPage />);
-    const rowEl = await screen.findByTestId(
-      "agent-registry-row-code-reviewer"
-    );
+    const rowEl = await screen.findByTestId("agent-registry-row-code-reviewer");
     expect(within(rowEl).getByText("code-reviewer")).toBeInTheDocument();
     expect(within(rowEl).getByText("Off by default")).toBeInTheDocument();
     // `policy_required` is a claim about policy and must be visible.
@@ -99,9 +97,7 @@ describe("/admin/coord/agent-registry", () => {
     );
     expect(badge).toHaveTextContent("4 overrides");
     // The decision-relevant sentence, not just the number.
-    expect(badge.getAttribute("title")).toMatch(
-      /does not reach|contradict/i
-    );
+    expect(badge.getAttribute("title")).toMatch(/does not reach|contradict/i);
   });
 
   it("says so explicitly when nobody has overridden the default", async () => {
@@ -119,9 +115,7 @@ describe("/admin/coord/agent-registry", () => {
     ]);
     render(<CoordAgentRegistryPage />);
 
-    const rowEl = await screen.findByTestId(
-      "agent-registry-row-code-reviewer"
-    );
+    const rowEl = await screen.findByTestId("agent-registry-row-code-reviewer");
     expect(rowEl.getAttribute("data-attention")).toBe("waiting");
     expect(rowEl.className).toContain("border-l-amber-500/80");
     expect(rowEl.className).not.toContain("border-l-red");
@@ -129,9 +123,7 @@ describe("/admin/coord/agent-registry", () => {
 
   it("sends only the minimal body when toggling the default", async () => {
     render(<CoordAgentRegistryPage />);
-    const toggle = await screen.findByLabelText(
-      "Default-enable code-reviewer"
-    );
+    const toggle = await screen.findByLabelText("Default-enable code-reviewer");
     await userEvent.click(toggle);
 
     await waitFor(() => expect(putAgentRegistryDefaults).toHaveBeenCalled());
@@ -146,9 +138,7 @@ describe("/admin/coord/agent-registry", () => {
 
   it("sends the current default_enabled back when editing policy_required", async () => {
     render(<CoordAgentRegistryPage />);
-    await userEvent.click(
-      await screen.findByLabelText("Expand code-reviewer")
-    );
+    await userEvent.click(await screen.findByLabelText("Expand code-reviewer"));
     await userEvent.click(
       screen.getByTestId("agent-registry-toggle-policy-code-reviewer")
     );
@@ -167,7 +157,9 @@ describe("/admin/coord/agent-registry", () => {
       expect(listAdminAgentRegistry).toHaveBeenCalledTimes(1)
     );
     listAdminAgentRegistry.mockResolvedValue([row({ default_enabled: true })]);
-    await userEvent.click(screen.getByLabelText("Default-enable code-reviewer"));
+    await userEvent.click(
+      screen.getByLabelText("Default-enable code-reviewer")
+    );
 
     await waitFor(() =>
       expect(screen.getByText("On by default")).toBeInTheDocument()
@@ -188,6 +180,91 @@ describe("/admin/coord/agent-registry", () => {
     );
   });
 
+  it.each([
+    [504, "timeout waiting for coord"],
+    [503, "busy"],
+    [502, "Bad Gateway"],
+  ])(
+    "a %i leaves the outcome unknown: it says so, and re-reads",
+    async (status, detail) => {
+      putAgentRegistryDefaults.mockRejectedValue(
+        new AgentPrefError(detail, null, status)
+      );
+      render(<CoordAgentRegistryPage />);
+      await waitFor(() =>
+        expect(listAdminAgentRegistry).toHaveBeenCalledTimes(1)
+      );
+      // The toggle landed, though its answer was lost.
+      listAdminAgentRegistry.mockResolvedValue([
+        row({ default_enabled: true }),
+      ]);
+      await userEvent.click(
+        screen.getByLabelText("Default-enable code-reviewer")
+      );
+
+      await waitFor(() =>
+        expect(screen.getByText("On by default")).toBeInTheDocument()
+      );
+      expect(listAdminAgentRegistry).toHaveBeenCalledTimes(2);
+      const error = screen.getByTestId(
+        "agent-registry-save-error-code-reviewer"
+      );
+      await waitFor(() =>
+        expect(error).toHaveTextContent(
+          `Whether this change was applied is unknown (${detail}). What is shown is a read made after it.`
+        )
+      );
+    }
+  );
+
+  it("says what is shown may be out of date when the re-read fails too", async () => {
+    putAgentRegistryDefaults.mockRejectedValue(
+      new AgentPrefError("timeout waiting for coord", null, 504)
+    );
+    render(<CoordAgentRegistryPage />);
+    await waitFor(() =>
+      expect(listAdminAgentRegistry).toHaveBeenCalledTimes(1)
+    );
+    listAdminAgentRegistry.mockRejectedValue(new Error("Failed to fetch"));
+    await userEvent.click(
+      screen.getByLabelText("Default-enable code-reviewer")
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("agent-registry-save-error-code-reviewer")
+      ).toHaveTextContent(
+        "The re-read failed too, so what is shown may be out of date."
+      )
+    );
+  });
+
+  it.each([
+    [400, "bad request"],
+    [502, "coord is not reachable"],
+  ])(
+    "a %i (%s) stays a plain failure, with nothing re-read",
+    async (status, detail) => {
+      putAgentRegistryDefaults.mockRejectedValue(
+        new AgentPrefError(detail, null, status)
+      );
+      render(<CoordAgentRegistryPage />);
+      await waitFor(() =>
+        expect(listAdminAgentRegistry).toHaveBeenCalledTimes(1)
+      );
+      await userEvent.click(
+        screen.getByLabelText("Default-enable code-reviewer")
+      );
+
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("agent-registry-save-error-code-reviewer")
+        ).toHaveTextContent(new RegExp(`^${detail}$`))
+      );
+      expect(listAdminAgentRegistry).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it("a 403 explains the gate instead of rendering an empty registry", async () => {
     listAdminAgentRegistry.mockRejectedValue(
       new AgentPrefError("not_coord_tenant_admin", null, 403)
@@ -201,9 +278,7 @@ describe("/admin/coord/agent-registry", () => {
     );
     // An empty list here would STATE that the tenant has no agents.
     expect(screen.queryByTestId("coord-agent-registry-empty")).toBeNull();
-    expect(
-      screen.getByText(/administrator-only/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/administrator-only/i)).toBeInTheDocument();
   });
 
   it("a non-403 load failure keeps the retry affordance", async () => {
@@ -258,7 +333,11 @@ describe("/admin/coord/agent-registry", () => {
 
   it("the health strip is derived, and reports the contested count", async () => {
     listAdminAgentRegistry.mockResolvedValue([
-      row({ agent_name: "a", pref_count: 2, pref_differs_from_default_count: 2 }),
+      row({
+        agent_name: "a",
+        pref_count: 2,
+        pref_differs_from_default_count: 2,
+      }),
       row({ agent_name: "b", default_enabled: true }),
     ]);
     render(<CoordAgentRegistryPage />);

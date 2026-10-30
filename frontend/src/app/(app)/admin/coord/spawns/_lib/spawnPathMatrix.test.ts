@@ -576,12 +576,71 @@ describe("each switch carries coord's own value", () => {
     expect(a.write).toBeNull();
     const unserved = deriveSpawnPathMatrix(
       inputs({
-        mergeSettings: { ...mergeSettingsRead(), dial: null },
+        mergeSettings: {
+          ...mergeSettingsRead(),
+          dial: null,
+          // An answer that carries none of the dial's fields.
+          profile: { auto_fix_red_main: true } as never,
+        },
       })
     );
     expect(
       gateOf(unserved, "pr_fix_dispatch", "dial:auto_fix_pr").effective.title
     ).toContain("does not serve the auto_fix_pr dial");
+  });
+
+  it("reads coord's own unknown dial as no position, in both modes, claiming nothing about off", () => {
+    const body = mergeSettingsBody({
+      tenant: null,
+      resolved: true,
+      source: "unknown",
+    });
+    const dial = (presenting: boolean) =>
+      gateOf(
+        deriveSpawnPathMatrix(
+          inputs({ mergeSettings: mergeSettingsRead(body), presenting })
+        ),
+        "pr_fix_dispatch",
+        "dial:auto_fix_pr"
+      );
+    const operator = dial(false);
+    expect(operator.effective).toMatchObject({
+      state: "unknown",
+      text: "Unknown",
+      tone: "unknown",
+      title: "Coord could not read this preference.",
+    });
+    expect(operator.write).toEqual({ door: "auto_fix_pr", choice: null });
+    const presented = dial(true);
+    expect(presented.effective.state).toBe("unknown");
+    expect(presented.effective.text).toBe("Unknown");
+    expect(presented.effective.title).toBe(
+      "The project's setting could not be read."
+    );
+  });
+
+  it("reads a malformed dial as unreadable, not as a setting the service does not offer", () => {
+    const body = {
+      tenant_id: "x",
+      profile: {
+        auto_fix_pr_tenant: "false",
+        auto_fix_pr: false,
+        auto_fix_pr_source: "tenant",
+      },
+    };
+    const dial = (presenting: boolean) =>
+      gateOf(
+        deriveSpawnPathMatrix(
+          inputs({
+            mergeSettings: mergeSettingsRead(body as never),
+            presenting,
+          })
+        ),
+        "pr_fix_dispatch",
+        "dial:auto_fix_pr"
+      ).effective;
+    expect(dial(false).title).toContain("not one this page can read");
+    expect(dial(true).title).toBe("The project's setting could not be read.");
   });
 
   it("reads a flag coord did not report as UNKNOWN, not off", () => {

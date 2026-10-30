@@ -52,7 +52,8 @@ function SegmentedWrite<V extends string>({
   label: string;
   description: string;
   options: readonly Segment<V>[];
-  current: V;
+  /** The value coord holds; `null` while that is unknown, so nothing is pressed. */
+  current: V | null;
   /** Choosing the current value still writes something (see `builtInDefault`). */
   currentRecordable?: boolean;
   busy: boolean;
@@ -202,7 +203,7 @@ export function FixerDialSwitch({
   busy,
   onSet,
 }: {
-  choice: AutoFixPrChoice;
+  choice: AutoFixPrChoice | null;
   busy: boolean;
   onSet: (choice: AutoFixPrChoice) => Promise<SwitchWriteResult>;
 }) {

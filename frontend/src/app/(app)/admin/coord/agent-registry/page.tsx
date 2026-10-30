@@ -51,6 +51,7 @@ import {
 } from "@/components/console";
 import {
   AgentPrefError,
+  isWriteOutcomeUnknown,
   listAdminAgentRegistry,
   putAgentRegistryDefaults,
   type AdminAgentRegistryRow,
@@ -157,7 +158,8 @@ function deriveHealth(rows: AdminAgentRegistryRow[]): Health {
     return {
       level: "amber",
       headline: `${contested} default${contested === 1 ? "" : "s"} members have overridden`,
-      detail: "Changing those reaches only members with no recorded preference.",
+      detail:
+        "Changing those reaches only members with no recorded preference.",
       disabledByDefault,
       contested,
     };
@@ -212,7 +214,9 @@ function HealthStrip({
         <Badge
           variant="outline"
           className={`font-mono text-[11px] ${
-            loaded && health.contested > 0 ? "text-amber-200 border-amber-500/35" : ""
+            loaded && health.contested > 0
+              ? "text-amber-200 border-amber-500/35"
+              : ""
           }`}
         >
           overridden {loaded ? health.contested : "–"}
@@ -272,11 +276,13 @@ export default function CoordAgentRegistryPage() {
   );
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
 
-  const refresh = useCallback(async () => {
+  /** Resolves with whether the read answered. */
+  const refresh = useCallback(async (): Promise<boolean> => {
     try {
       setRows(await listAdminAgentRegistry());
       setLoadError(null);
       setForbidden(false);
+      return true;
     } catch (err) {
       // The web tier gates both proxies, so a non-admin lands here with
       // `not_coord_tenant_admin` rather than an opaque coord body. Say what
@@ -289,6 +295,7 @@ export default function CoordAgentRegistryPage() {
         setForbidden(false);
         setLoadError(err instanceof Error ? err.message : String(err));
       }
+      return false;
     } finally {
       setLoaded(true);
     }
@@ -316,10 +323,22 @@ export default function CoordAgentRegistryPage() {
       // in. The same UX-honesty rule /settings/agents follows.
       await refresh();
     } catch (err) {
-      setSaveErrors((prev) => ({
-        ...prev,
-        [name]: err instanceof Error ? err.message : String(err),
-      }));
+      const message = err instanceof Error ? err.message : String(err);
+      const setSaveError = (text: string) =>
+        setSaveErrors((prev) => ({ ...prev, [name]: text }));
+      if (isWriteOutcomeUnknown(err)) {
+        // The change may have landed, so "failed" beside the old value would be
+        // a claim nobody can make: only a re-read can say.
+        const unknown = `Whether this change was applied is unknown (${message}).`;
+        setSaveError(`${unknown} Re-reading what coord serves.`);
+        setSaveError(
+          (await refresh())
+            ? `${unknown} What is shown is a read made after it.`
+            : `${unknown} The re-read failed too, so what is shown may be out of date.`
+        );
+      } else {
+        setSaveError(message);
+      }
     } finally {
       setSavingAgents((prev) => {
         const next = new Set(prev);

@@ -22,10 +22,10 @@
  *    show coord's answer or re-read, compared with the ask. A dial write coord
  *    refuses says so with no read-back; one it could not confirm is UNKNOWN
  *    until the re-read answers, and then that read is compared.
- * 5. **A write that lost its answer is not a refusal** — the backend's 504, the
- *    client's own timeout and a thrown non-HTTP failure read UNKNOWN until a
- *    re-read answers, and that read is compared; a 502 (no connection was made)
- *    and an offline browser are refused.
+ * 5. **A write that lost its answer is not a refusal** — a 5xx that proves
+ *    nothing, the client's own timeout and a thrown non-HTTP failure read UNKNOWN
+ *    until a re-read answers, and that read is compared; the door's own
+ *    connect-failure 502 and an offline browser are refused.
  * 6. **A level coord only defaults to can be recorded** — the active level of
  *    a `code_fallback` domain stays a live button, and a recorded one does not.
  * 7. **The read-back mark belongs to the read that settled the write** — a
@@ -888,13 +888,18 @@ describe("a write that lost its answer is not a refusal", () => {
     expect(readBackOf("registry:merge_shepherd")).toBeNull();
   });
 
-  it("stays a refusal when nothing was sent (502)", async () => {
+  /** The body the backend serves for a door's own connect failure. */
+  const NOT_REACHABLE = {
+    error: "BAD_GATEWAY",
+    message: "coord is not reachable",
+    timestamp: 1,
+    path: "/x",
+  };
+
+  it("stays a refusal when nothing was sent: a next-step PUT's connect-failure 502", async () => {
     await renderPage();
     await openPath("red_main_fix_dispatch");
-    routes.putNextStep = () => ({
-      status: 502,
-      body: { detail: "coord is not reachable" },
-    });
+    routes.putNextStep = () => ({ status: 502, body: NOT_REACHABLE });
     await click(
       screen.getByTestId(
         "coord-spawns-path-autonomy-red_main_fix-guidance_only"
@@ -904,6 +909,272 @@ describe("a write that lost its answer is not a refusal", () => {
       "was refused"
     );
     expect(readBackOf("autonomy:red_main_fix")).toBeNull();
+  });
+
+  it("stays a refusal when nothing was sent: the registry, dial and knob doors' connect-failure 502", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    routes.putRegistry = () => ({ status: 502, body: NOT_REACHABLE });
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toContain(
+      "Your change to off was refused: coord is not reachable."
+    );
+
+    await openPath("pr_fix_dispatch");
+    routes.patchMerge = () => ({ status: 502, body: NOT_REACHABLE });
+    await click(screen.getByTestId("coord-spawns-path-fixer-dial-off"));
+    expect(writeNoteOf("dial:auto_fix_pr")?.textContent).toContain(
+      "was refused"
+    );
+
+    await openPath("red_main_fix_dispatch");
+    await click(screen.getByTestId("coord-spawns-path-red-main-knob-off"));
+    expect(writeNoteOf("knob:auto_fix_red_main")?.textContent).toContain(
+      "was refused"
+    );
+  });
+
+  it.each([
+    ["a 500", 500, { error: "INTERNAL", message: "boom" }],
+    ["a 503", 503, { error: "UNAVAILABLE", message: "busy" }],
+    ["a load balancer's 502", 502, "<html>502 Bad Gateway</html>"],
+    ["coord's own 502", 502, { error: "BAD_GATEWAY", message: "upstream" }],
+  ])(
+    "reads %s on a registry PUT as UNKNOWN until its re-read answers, never as refused",
+    async (_name, status, body) => {
+      await renderPage();
+      await openPath("merge_shepherd");
+      routes.putRegistry = () => ({ status, body });
+      routes.defaults = () => ({
+        body: defaultsBody({ merge_shepherd: { default_enabled: false } }),
+      });
+      const release = holdReads("/agent-registry/admin/registry");
+      await click(
+        screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+      );
+      expect(effectiveOf("registry:merge_shepherd").textContent).toBe(
+        "UNKNOWN"
+      );
+      expect(
+        effectiveOf("registry:merge_shepherd").getAttribute("title")
+      ).toContain(`no usable answer from coord (HTTP ${status})`);
+      await release();
+      expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
+        "matches"
+      );
+      expect(writeNoteOf("registry:merge_shepherd")?.textContent).toContain(
+        "could not confirm the write itself"
+      );
+    }
+  );
+
+  it("says no usable answer arrived on a 504, not that an answer did not arrive", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    routes.putRegistry = () => ({
+      status: 504,
+      body: { message: "coord answered 200 with a body that is not JSON" },
+    });
+    const release = holdReads("/agent-registry/admin/registry");
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    const title = effectiveOf("registry:merge_shepherd").getAttribute("title");
+    expect(title).toContain("no usable answer from coord (HTTP 504)");
+    expect(title).not.toContain("did not arrive");
+    await release();
+  });
+
+  it("reads a 500 on a next-step PUT, and on a dial and a knob PATCH, as open too", async () => {
+    await renderPage();
+    await openPath("red_main_fix_dispatch");
+    routes.putNextStep = () => ({ status: 500, body: { message: "boom" } });
+    await click(
+      screen.getByTestId(
+        "coord-spawns-path-autonomy-red_main_fix-guidance_only"
+      )
+    );
+    expect(writeNoteOf("autonomy:red_main_fix")?.textContent).not.toContain(
+      "refused"
+    );
+    routes.patchMerge = () => ({ status: 500, body: { message: "boom" } });
+    await click(screen.getByTestId("coord-spawns-path-red-main-knob-off"));
+    expect(writeNoteOf("knob:auto_fix_red_main")?.textContent).not.toContain(
+      "refused"
+    );
+    expect(readBackOf("knob:auto_fix_red_main")?.dataset.readback).toBe(
+      "contradicts"
+    );
+    await openPath("pr_fix_dispatch");
+    await click(screen.getByTestId("coord-spawns-path-fixer-dial-off"));
+    expect(writeNoteOf("dial:auto_fix_pr")?.textContent).not.toContain(
+      "refused"
+    );
+    expect(readBackOf("dial:auto_fix_pr")?.dataset.readback).toBe(
+      "contradicts"
+    );
+  });
+
+  it("never says Written when the write's outcome is unknown and the re-read failed", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    throwOnWrite = { method: "PUT", error: new TypeError("Failed to fetch") };
+    routes.defaults = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    const effective = effectiveOf("registry:merge_shepherd");
+    expect(effective.textContent).toBe("UNKNOWN");
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toBe(
+      "Outcome unknown, and the re-read failed — UNKNOWN until the next read."
+    );
+    const title = effective.getAttribute("title") ?? "";
+    expect(title).toContain("Whether your change to off landed is unknown");
+    expect(title).not.toMatch(/written/i);
+  });
+});
+
+describe("a dial whose source is unknown has no position", () => {
+  const unknownDial = () => ({
+    body: mergeSettingsBody({
+      tenant: null,
+      resolved: false,
+      source: "unknown",
+    }),
+  });
+  const dialAsked = (asked: string) =>
+    mergeSettingsBody({
+      tenant: asked === "default" ? null : asked === "on",
+      resolved: asked === "on",
+      source: asked === "default" ? "default" : "tenant",
+    });
+  const pressed = (choice: string) =>
+    screen
+      .getByTestId(`coord-spawns-path-fixer-dial-${choice}`)
+      .getAttribute("aria-pressed");
+
+  it("says Unknown, presses no position, and still offers every one", async () => {
+    routes.merge = unknownDial;
+    await renderPage();
+    await openPath("pr_fix_dispatch");
+    const effective = effectiveOf("dial:auto_fix_pr");
+    expect(effective.textContent).toBe("Unknown");
+    expect(effective.dataset.gateState).toBe("unknown");
+    expect(effective.getAttribute("title")).toBe(
+      "Coord could not read this preference."
+    );
+    for (const choice of ["default", "on", "off"]) {
+      expect(pressed(choice)).toBe("false");
+    }
+    // Not read as already on Default: choosing it sends the write.
+    routes.patchMerge = () => ({ body: dialAsked("default") });
+    await click(screen.getByTestId("coord-spawns-path-fixer-dial-default"));
+    expect(requests.find((r) => r.method === "PATCH")?.body).toEqual({
+      auto_fix_pr: null,
+    });
+    expect(readBackOf("dial:auto_fix_pr")?.dataset.readback).toBe("matches");
+    expect(pressed("default")).toBe("true");
+  });
+
+  it("presses no position while a write's outcome is unknown either", async () => {
+    await renderPage();
+    await openPath("pr_fix_dispatch");
+    expect(pressed("default")).toBe("true");
+    routes.patchMerge = () => ({
+      status: 503,
+      body: { cause: "commit_unconfirmed", written: null },
+    });
+    const release = holdReads("/pr-merge/settings");
+    await click(screen.getByTestId("coord-spawns-path-fixer-dial-off"));
+    for (const choice of ["default", "on", "off"]) {
+      expect(pressed(choice)).toBe("false");
+    }
+    await release();
+  });
+
+  it("a 2xx with no read-back, then no dial, then unknown, then what was asked: matches, with its later-read note", async () => {
+    await renderPage();
+    await openPath("pr_fix_dispatch");
+    routes.patchMerge = () => ({
+      body: { tenant_id: "x", profile: { auto_fix_red_main: true } },
+    });
+    routes.merge = () => ({
+      body: { tenant_id: "x", profile: { auto_fix_red_main: true } },
+    });
+    await click(screen.getByTestId("coord-spawns-path-fixer-dial-off"));
+    expect(effectiveOf("dial:auto_fix_pr").dataset.gateState).toBe("unknown");
+
+    routes.merge = unknownDial;
+    await refreshPage();
+    expect(effectiveOf("dial:auto_fix_pr").dataset.gateState).toBe("unknown");
+    expect(readBackOf("dial:auto_fix_pr")).toBeNull();
+
+    routes.merge = () => ({ body: dialAsked("off") });
+    await refreshPage();
+    expect(effectiveOf("dial:auto_fix_pr").textContent).toBe("Off");
+    expect(readBackOf("dial:auto_fix_pr")?.dataset.readback).toBe("matches");
+    const note = writeNoteOf("dial:auto_fix_pr")?.textContent ?? "";
+    expect(note).toBe(
+      "Coord could not confirm the write itself; this is a read made after it."
+    );
+    expect(note).not.toContain("Changed since");
+  });
+
+  it("a 503 with written: null, then unknown, then what was asked: matches, never changed since", async () => {
+    await renderPage();
+    await openPath("pr_fix_dispatch");
+    routes.patchMerge = () => ({
+      status: 503,
+      body: { cause: "commit_unconfirmed", written: null },
+    });
+    routes.merge = unknownDial;
+    await click(screen.getByTestId("coord-spawns-path-fixer-dial-off"));
+    expect(effectiveOf("dial:auto_fix_pr").textContent).toBe("Unknown");
+    routes.merge = () => ({ body: dialAsked("off") });
+    await refreshPage();
+    expect(readBackOf("dial:auto_fix_pr")?.dataset.readback).toBe("matches");
+    expect(writeNoteOf("dial:auto_fix_pr")?.textContent).not.toContain(
+      "Changed since"
+    );
+  });
+
+  it("says a refused write leaves it unknown, not that Unknown is what coord reads", async () => {
+    routes.merge = unknownDial;
+    await renderPage();
+    await openPath("pr_fix_dispatch");
+    routes.patchMerge = () => ({
+      status: 403,
+      body: { error: "FORBIDDEN", message: "not_coord_tenant_admin" },
+    });
+    await click(screen.getByTestId("coord-spawns-path-fixer-dial-off"));
+    const note = writeNoteOf("dial:auto_fix_pr")?.textContent ?? "";
+    expect(note).toContain("was refused");
+    expect(note).toContain("What coord holds is unknown.");
+    expect(note).not.toContain("The value shown is what coord reads.");
+  });
+
+  it("does not call a malformed dial not served yet", async () => {
+    routes.merge = () => ({
+      body: {
+        tenant_id: "x",
+        profile: {
+          auto_fix_pr_tenant: "false",
+          auto_fix_pr: false,
+          auto_fix_pr_source: "tenant",
+          auto_fix_red_main: true,
+        },
+      },
+    });
+    await renderPage();
+    await openPath("pr_fix_dispatch");
+    const title = effectiveOf("dial:auto_fix_pr").getAttribute("title") ?? "";
+    expect(title).toContain("not one this page can read");
+    expect(title).not.toContain("does not serve");
   });
 });
 
@@ -1100,7 +1371,7 @@ describe("the read-back mark belongs to the read that settled the write", () => 
     expect(effective.dataset.gateTone).toBe("known");
     expect(readBackOf("registry:merge_shepherd")).toBeNull();
     expect(writeNoteOf("registry:merge_shepherd")?.textContent).toBe(
-      "Changed since your write: coord read back off after it, and a later read differs."
+      "Changed since your write: a read made after it gave off, and a later read differs."
     );
   });
 
@@ -1127,7 +1398,7 @@ describe("the read-back mark belongs to the read that settled the write", () => 
     routes.defaults = () => ({ body: defaultsBody() });
     await refreshPage();
     expect(writeNoteOf("registry:merge_shepherd")?.textContent).toBe(
-      "Changed since your write: coord read back off after it, and a later read differs."
+      "Changed since your write: a read made after it gave off, and a later read differs."
     );
   });
 
@@ -1193,7 +1464,30 @@ describe("the read-back mark belongs to the read that settled the write", () => 
     expect(effective.dataset.gateTone).toBe("known");
     expect(readBackOf("registry:merge_shepherd")).toBeNull();
     expect(writeNoteOf("registry:merge_shepherd")?.textContent).toBe(
-      "Changed since your write: coord read back off after it, and a later read differs."
+      "Changed since your write: a read made after it gave off, and a later read differs."
+    );
+  });
+
+  it("gives the first read with a value after a no-row read-back the same later-read note as after a failed one", async () => {
+    await renderPage();
+    await openPath("merge_shepherd");
+    const withoutShepherd = defaultsBody();
+    withoutShepherd.agents = withoutShepherd.agents.filter(
+      (a) => a.agent_name !== "merge_shepherd"
+    );
+    routes.defaults = () => ({ body: withoutShepherd });
+    await click(
+      screen.getByTestId("coord-spawns-path-switch-merge_shepherd-off")
+    );
+    // That first read differs from the ask: maybe another operator's change, so
+    // it may not read as the write's own read-back.
+    routes.defaults = () => ({ body: defaultsBody() });
+    await refreshPage();
+    expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
+      "contradicts"
+    );
+    expect(writeNoteOf("registry:merge_shepherd")?.textContent).toBe(
+      "The write was answered, but its read-back gave no value for this switch; this is a later read."
     );
   });
 

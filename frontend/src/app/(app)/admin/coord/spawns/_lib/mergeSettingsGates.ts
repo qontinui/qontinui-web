@@ -25,7 +25,8 @@
  */
 
 import {
-  choiceFromTenant,
+  autoFixPrAbsence,
+  dialChoice,
   tenantSummary,
   type AutoFixPrChoice,
   type AutoFixPrSource,
@@ -102,24 +103,30 @@ export function fixerDialGate(
           }
         : unread;
   } else if (read.dial === null) {
+    const malformed = autoFixPrAbsence(read.profile) === "malformed";
     effective = unknownCell(
       "UNKNOWN",
       presenting
-        ? "The coordination service does not offer this setting yet."
-        : "This coord does not serve the auto_fix_pr dial yet, so it is not settable here."
+        ? malformed
+          ? "The project's setting could not be read."
+          : "The coordination service does not offer this setting yet."
+        : malformed
+          ? "This coord's answer for the auto_fix_pr dial is not one this page can read, so it is not settable here."
+          : "This coord does not serve the auto_fix_pr dial yet, so it is not settable here."
     );
   } else {
     const summary = tenantSummary(read.dial);
     effective = {
-      state: choiceFromTenant(read.dial.tenant),
+      state: dialChoice(read.dial) ?? "unknown",
       text: summary.value,
       title: presenting
         ? PRESENTED_DIAL_SOURCE[read.dial.source]
-        : `From ${summary.from}.`,
+        : `${summary.detail.charAt(0).toUpperCase()}${summary.detail.slice(1)}.`,
       tone: summary.tone === "unknown" ? "unknown" : "known",
       stale: false,
     };
   }
+  const shown = withWrite(effective, write, askedText, presenting);
   return {
     key: "dial:auto_fix_pr",
     title: "Fixer dial for stuck PRs",
@@ -137,11 +144,16 @@ export function fixerDialGate(
         ? "No fixer starts for a stuck pull request while it resolves off."
         : "Coord starts no PR fixer while the dial resolves off.",
     },
-    effective: withWrite(effective, write, askedText, presenting),
+    effective: shown,
+    // Still settable while the value is unknown, with no position selected:
+    // what a write left unknown is not the position the last read held.
     write:
       read.dial === null || read.error !== null
         ? null
-        : { door: "auto_fix_pr", choice: choiceFromTenant(read.dial.tenant) },
+        : {
+            door: "auto_fix_pr",
+            choice: shown.state === "unknown" ? null : dialChoice(read.dial),
+          },
     readOnly:
       read.dial === null || read.error !== null
         ? presenting

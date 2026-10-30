@@ -77,7 +77,7 @@ export interface MergeSettingsRead {
   loading: boolean;
   /** The latest read's failure: the dial and the profile are then UNKNOWN. */
   error: string | null;
-  /** `null` when loaded but this coord does not serve the dial. */
+  /** `null` when loaded with no well-formed dial (`autoFixPrAbsence` says why). */
   dial: AutoFixPrState | null;
   /** `null` before an answer, and after a failed read. */
   profile: EffectiveProfile | null;
@@ -118,6 +118,11 @@ export interface SwitchWrite {
    * showing a LATER read, and says nothing about this write.
    */
   settledState?: string | null;
+  /**
+   * `settledState` is from a read after the read-back, which failed or gave no
+   * value (the hook's latch): a value read later, not coord reading the write back.
+   */
+  settledLater?: boolean;
 }
 
 /**
@@ -169,7 +174,9 @@ export function switchWriteResult(write: SwitchWrite): SwitchWriteResult {
       outcome: "unknown",
       asked,
       readBack: null,
-      message: `reading back the change to ${asked} failed: ${write.readbackError}`,
+      message: write.outcomeUnknown
+        ? `whether the change to ${asked} landed is unknown, and reading what coord serves failed: ${write.readbackError}`
+        : `reading back the change to ${asked} failed: ${write.readbackError}`,
     };
   }
   if (readBack === null) {
@@ -251,7 +258,8 @@ export type GateWrite =
     }
   | {
       door: "auto_fix_pr";
-      choice: AutoFixPrChoice;
+      /** The position coord holds it at; `null` while that is unknown. */
+      choice: AutoFixPrChoice | null;
     }
   | {
       door: "auto_fix_red_main";
@@ -356,7 +364,11 @@ export function withWrite(
         ? cell
         : {
             ...cell,
-            writeNote: `Your change to ${asked} was refused: ${write.error ?? "no reason given"}. The value shown is what coord reads.`,
+            writeNote: `Your change to ${asked} was refused: ${write.error ?? "no reason given"}. ${
+              cell.tone === "unknown"
+                ? "What coord holds is unknown."
+                : "The value shown is what coord reads."
+            }`,
           };
     case "written":
       break;
@@ -370,17 +382,28 @@ export function withWrite(
     (write.settledState === undefined || write.settledState === null) &&
     (cell.stale || cell.tone === "unknown")
   ) {
-    return unknownAfterWrite(
-      `Written (${asked}), but reading it back failed: ${write.readbackError}. What coord resolves is unknown until the next read.`,
-      "Written, but reading it back failed — UNKNOWN until the next read.",
-      presenting
-    );
+    return write.outcomeUnknown
+      ? unknownAfterWrite(
+          `Whether your change to ${asked} landed is unknown, and reading what coord serves failed: ${write.readbackError}. What coord resolves is unknown until the next read.`,
+          "Outcome unknown, and the re-read failed — UNKNOWN until the next read.",
+          presenting
+        )
+      : unknownAfterWrite(
+          `Written (${asked}), but reading it back failed: ${write.readbackError}. What coord resolves is unknown until the next read.`,
+          "Written, but reading it back failed — UNKNOWN until the next read.",
+          presenting
+        );
   }
   if (cell.tone === "unknown" || presenting) return cell;
   if (changedSince(cell, write)) {
+    const settled = askedText(write.settledState as string);
+    const howSettled =
+      write.settledLater || write.outcomeUnknown
+        ? `a read made after it gave ${settled}`
+        : `coord read back ${settled} after it`;
     return {
       ...cell,
-      writeNote: `Changed since your write: coord read back ${askedText(write.settledState as string)} after it, and a later read differs.`,
+      writeNote: `Changed since your write: ${howSettled}, and a later read differs.`,
     };
   }
   const matches = cell.state === write.asked;
@@ -392,7 +415,9 @@ export function withWrite(
       ? "Coord could not confirm the write itself; this is a read made after it."
       : write.readbackError !== null
         ? "The write was answered, but its read-back failed; this is a later read."
-        : cell.writeNote,
+        : write.settledLater
+          ? "The write was answered, but its read-back gave no value for this switch; this is a later read."
+          : cell.writeNote,
   };
 }
 

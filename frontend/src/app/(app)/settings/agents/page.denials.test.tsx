@@ -90,9 +90,7 @@ describe("/settings/agents — account-level refusals", () => {
   });
 
   it("a plain 403 renders the permissions state, not a toast", async () => {
-    putAgentPref.mockRejectedValue(
-      new AgentPrefError("Forbidden", null, 403)
-    );
+    putAgentPref.mockRejectedValue(new AgentPrefError("Forbidden", null, 403));
 
     await renderAndToggle();
 
@@ -146,9 +144,7 @@ describe("/settings/agents — account-level refusals", () => {
         screen.getByTestId("agent-pref-denied-not-provisioned")
       ).toBeInTheDocument()
     );
-    expect(
-      screen.queryByTestId("agent-pref-denied-not-authorized")
-    ).toBeNull();
+    expect(screen.queryByTestId("agent-pref-denied-not-authorized")).toBeNull();
   });
 
   it("the switch still shows the SERVER's state after a refusal", async () => {
@@ -174,11 +170,73 @@ describe("/settings/agents — account-level refusals", () => {
     await renderAndToggle();
 
     await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(screen.queryByTestId("agent-pref-denied-not-authorized")).toBeNull();
     expect(
-      screen.queryByTestId("agent-pref-denied-not-authorized")
+      screen.queryByTestId("agent-pref-denied-not-provisioned")
     ).toBeNull();
-    expect(screen.queryByTestId("agent-pref-denied-not-provisioned")).toBeNull();
   });
+
+  it.each([
+    [504, "timeout waiting for coord"],
+    [500, "boom"],
+    [502, "Bad Gateway"],
+  ])(
+    "a %i leaves the outcome unknown: it re-reads, says so and shows the read",
+    async (status, detail) => {
+      putAgentPref.mockRejectedValue(new AgentPrefError(detail, null, status));
+      render(<AgentsSettingsPage />);
+      const toggle = await screen.findByLabelText<HTMLInputElement>(
+        "Toggle code-reviewer"
+      );
+      expect(toggle.checked).toBe(false);
+      // The preference landed, though its answer was lost.
+      listAgentRegistry.mockResolvedValue([
+        entry({ enabled: true, source: "user_pref" }),
+      ]);
+      await userEvent.click(toggle);
+
+      await waitFor(() => expect(toastError).toHaveBeenCalled());
+      expect(listAgentRegistry).toHaveBeenCalledTimes(2);
+      const said = toastError.mock.calls[0]?.[0];
+      expect(said).toContain(
+        `code-reviewer: whether this change was saved is unknown (${detail}).`
+      );
+      expect(said).toContain("A read made after it says: Recorded preference");
+      expect(toastSuccess).not.toHaveBeenCalled();
+      expect(
+        screen.getByLabelText<HTMLInputElement>("Toggle code-reviewer").checked
+      ).toBe(true);
+    }
+  );
+
+  it("says what is shown may be out of date when that re-read fails too", async () => {
+    putAgentPref.mockRejectedValue(
+      new AgentPrefError("timeout waiting for coord", null, 504)
+    );
+    render(<AgentsSettingsPage />);
+    const toggle = await screen.findByLabelText("Toggle code-reviewer");
+    listAgentRegistry.mockRejectedValue(new Error("Failed to fetch"));
+    await userEvent.click(toggle);
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastError.mock.calls[0]?.[0]).toContain(
+      "The re-read failed too, so what is shown may be out of date."
+    );
+  });
+
+  it.each([
+    [400, "bad request"],
+    [502, "coord is not reachable"],
+  ])(
+    "a %i (%s) stays a plain failure, with nothing re-read",
+    async (status, detail) => {
+      putAgentPref.mockRejectedValue(new AgentPrefError(detail, null, status));
+      await renderAndToggle();
+
+      await waitFor(() => expect(toastError).toHaveBeenCalledWith(detail));
+      expect(listAgentRegistry).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it("a later successful save clears the standing explanation", async () => {
     putAgentPref.mockRejectedValueOnce(

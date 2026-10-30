@@ -20,6 +20,10 @@
 import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
+import {
+  isOutcomeUnknownStatus,
+  isWriteFailureUnknown,
+} from "@/components/admin/coord/writeOutcome";
 
 const AGENT_REGISTRY_API = `${ApiConfig.API_BASE_URL}/api/v1/agent-registry`;
 
@@ -104,20 +108,35 @@ function extractErrorCode(body: unknown): AgentPrefErrorCode | null {
   return null;
 }
 
+/** The reason in an error body: FastAPI's own `{detail}`, or what the backend's
+ *  error handler serves in production, `{error, message, timestamp, path}`. */
 function extractMessage(body: unknown, fallback: string): string {
-  if (typeof body === "object" && body !== null && "detail" in body) {
-    const detail = (body as { detail: unknown }).detail;
-    if (typeof detail === "string") return detail;
-    if (
-      typeof detail === "object" &&
-      detail !== null &&
-      "message" in detail &&
-      typeof (detail as { message: unknown }).message === "string"
-    ) {
-      return (detail as { message: string }).message;
-    }
+  if (typeof body !== "object" || body === null) return fallback;
+  const { detail, message } = body as { detail?: unknown; message?: unknown };
+  if (typeof detail === "string") return detail;
+  if (
+    typeof detail === "object" &&
+    detail !== null &&
+    "message" in detail &&
+    typeof (detail as { message: unknown }).message === "string"
+  ) {
+    return (detail as { message: string }).message;
   }
-  return fallback;
+  return typeof message === "string" ? message : fallback;
+}
+
+/**
+ * Whether a failed write may still have landed, so the caller must re-read
+ * before saying anything about it: the rule every coord write shares
+ * (`writeOutcome.ts`), over what this client or `httpClient` throws. A 4xx is a
+ * refusal, and so is a door's own connect-failure 502. Any other 5xx proves
+ * nothing, a client timeout or a failure with no HTTP status is the same state,
+ * and an offline browser is taken as not having sent it.
+ */
+export function isWriteOutcomeUnknown(err: unknown): boolean {
+  return err instanceof AgentPrefError
+    ? isOutcomeUnknownStatus(err.status, err.message)
+    : isWriteFailureUnknown(err);
 }
 
 async function handleResponse<T>(
