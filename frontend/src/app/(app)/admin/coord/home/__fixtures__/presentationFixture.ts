@@ -730,6 +730,89 @@ export function completeWaitingListsBody() {
   };
 }
 
+/** An open degradation of an uneventful kind, with `fields` replaced. */
+function openRow(id: string, fields: Record<string, unknown>) {
+  return {
+    id,
+    plane: "cloud_service",
+    subject: { kind: "service", name: "a-service", id: "a-service" },
+    headline: "A cloud service is hard-down",
+    onset_observed_at: ago(45),
+    last_seen_at: ago(1),
+    age_secs: 2700,
+    auto_remediation: null,
+    drill: null,
+    declared: false,
+    ...fields,
+  };
+}
+
+/**
+ * A service coord names with an id but no name. The id is a raw identifier, so
+ * it has nothing to stand in for the name.
+ */
+export const NAMELESS_SUBJECT_ID = "rds:acme-prod";
+export function namelessSubjectBody() {
+  return fullBody({
+    degradations: {
+      state: "read",
+      headline: "degraded",
+      open: [
+        openRow("alert:90", {
+          subject: { kind: "service", id: NAMELESS_SUBJECT_ID, name: null },
+        }),
+      ],
+      declared: [],
+      recently_cleared: [],
+      planes: {},
+    },
+  });
+}
+
+/** Planes the page's table does not name: one with a client's name, one without. */
+export const CLIENT_PLANE = "acme corp vpn";
+export const UNNAMED_PLANE = "partner_a_tunnel";
+export const OFF_TABLE_WATCHER = "tunnel_watcher";
+
+/**
+ * Off-table planes in every place a plane reaches: a degradation's row, the gap
+ * sentence (one plane with a watcher, one without), the watcher lines and a
+ * watcher source's label. Beside them, one plane the table does name.
+ */
+export function offTablePlanesBody() {
+  return fullBody({
+    degradations: {
+      state: "stale",
+      headline: "unknown",
+      open: [
+        openRow("alert:91", { plane: CLIENT_PLANE }),
+        openRow("alert:92", { plane: UNNAMED_PLANE }),
+        openRow("alert:93", { plane: "runner" }),
+      ],
+      declared: [],
+      recently_cleared: [],
+      planes: {
+        [CLIENT_PLANE]: { fresh: false, watchers: [] },
+        [UNNAMED_PLANE]: {
+          fresh: false,
+          watchers: [
+            { name: OFF_TABLE_WATCHER, state: "stale", as_of: ago(9) },
+          ],
+        },
+        runner: { fresh: true, watchers: [] },
+      },
+    },
+    does_not_know: [
+      {
+        source: `watcher:${OFF_TABLE_WATCHER}`,
+        state: "stale",
+        as_of: ago(9),
+        error: "no_successful_tick",
+      },
+    ],
+  });
+}
+
 /** Coord counted decisions for the operator but served none of them. */
 export function unservedDecisionsBody() {
   return fullBody({

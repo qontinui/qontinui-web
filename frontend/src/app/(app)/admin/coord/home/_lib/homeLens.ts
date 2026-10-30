@@ -11,8 +11,9 @@
  * with a structured descriptor built here, from the item's own fixed fields
  * (`kind · area · status · age`, leaving out a field its kind does not have),
  * never from its text. A value the page reads against one of its own tables
- * — a decision kind parsed out of question text, a does-not-know source —
- * shows only when the table names it, and in fixed words otherwise;
+ * — a decision kind parsed out of question text, a does-not-know source, a
+ * degradation's area — shows only when the table names it, and in fixed words
+ * otherwise;
  * a failed read is explained in the page's fixed words where its arm has
  * some, and withheld otherwise; and a row's key is an alias of the operator's.
  *
@@ -38,6 +39,7 @@ import {
   PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
   decisionDomainLabel,
   isKnownDecisionDomain,
+  isKnownPlane,
   isLabelledSource,
   ownEntry,
   isWatcherSource,
@@ -248,6 +250,18 @@ function degradationAt(
   return kind === "cleared" ? d.resolvedAt : d.onsetObservedAt;
 }
 
+/**
+ * A degradation's area while presenting: the table's words, or `withheld`.
+ * For any other plane the operator's label is coord's own key with its
+ * underscores spaced (`planeLabel`, pinned for the operator by
+ * `coordHomeStatus.test.ts`), and coord's list of planes grows without this
+ * page, so an allowlist: a plane shows only when the table names it. No plane
+ * at all keeps `planeLabel`'s "unclassified", which is the page's own word.
+ */
+export function presentedPlaneLabel(plane: string | null): string {
+  return !plane || isKnownPlane(plane) ? planeLabel(plane) : WITHHELD;
+}
+
 /** A degradation headline's descriptor: its area and its row's status. */
 export function degradationDescriptor(
   d: DegradationView,
@@ -255,7 +269,7 @@ export function degradationDescriptor(
 ): RedactionDescriptor {
   return {
     kind: "Degradation",
-    area: planeLabel(d.plane),
+    area: presentedPlaneLabel(d.plane),
     status: kind,
     at: degradationAt(d, kind),
   };
@@ -278,7 +292,7 @@ export function subjectDescriptor(
     kind:
       (d.subjectKind && ownEntry(SUBJECT_KIND_WORD, d.subjectKind)) ||
       "Subject",
-    area: planeLabel(d.plane),
+    area: presentedPlaneLabel(d.plane),
     status: kind,
     at: degradationAt(d, kind),
   };
@@ -404,7 +418,8 @@ export const UNLABELLED_SOURCE = "A source this view has no name for";
 /**
  * A `does_not_know` row's label while presenting. The page's table labels the
  * sources it knows, and a watcher's row is named by the areas it feeds
- * (`sourceLabel`); for any OTHER source the operator's label is coord's own
+ * (`sourceLabel`, each area as {@link presentedPlaneLabel} words it); for any
+ * OTHER source the operator's label is coord's own
  * identifier with its underscores spaced: internal vocabulary an evaluator
  * does not share, from a list coord grows without this page. So while
  * presenting such a row reads in fixed words: an allowlist, the rule style
@@ -417,7 +432,7 @@ export function presentedSourceLabel(
   planes: PlaneView[] | null
 ): string {
   return isLabelledSource(source) || isWatcherSource(source)
-    ? sourceLabel(source, planes)
+    ? sourceLabel(source, planes, presentedPlaneLabel)
     : UNLABELLED_SOURCE;
 }
 

@@ -55,6 +55,7 @@ import {
   type BlockState,
   type HomeBlock,
   isKnownDecisionDomain,
+  isKnownPlane,
   isLabelledSource,
   planeLabel,
 } from "./coordHomeStatus";
@@ -848,6 +849,26 @@ describe("round-8 review — the partial and unread captions say what is true", 
     expect(phrase).toBe("not every watcher is fresh (merge train)");
   });
 
+  it("words each area through the label it is given, each once", () => {
+    const masked = () => "withheld";
+    const phrase = degradationsGapPhrase(
+      deg({
+        state: "stale",
+        planes: {
+          merge_train: STALE_MERGE_TRAIN.merge_train,
+          build_capacity: STALE_MERGE_TRAIN.merge_train,
+          disk: { fresh: false, watchers: [] },
+          coord_itself: { fresh: false, watchers: [] },
+        },
+      }),
+      null,
+      masked
+    );
+    expect(phrase).toBe(
+      "not every watcher is fresh (withheld); the withheld reading could not be taken"
+    );
+  });
+
   it("names every watched plane served as not fresh, and none served fresh or unstated", () => {
     const phrase = degradationsGapPhrase(
       deg({
@@ -1231,6 +1252,13 @@ describe("round-8 review — R8 for what the view does not know", () => {
     expect(sourceLabel(source, planes)).toBe("Watcher feeding Degrading");
   });
 
+  it("words a watcher row's areas through the label it is given, each once", () => {
+    const masked = () => "withheld";
+    expect(sourceLabel("watcher:health_ledger", PLANES, masked)).toBe(
+      "Watcher feeding withheld"
+    );
+  });
+
   it("spaces a source it has no label for, as it does an unknown domain", () => {
     expect(sourceLabel("deploy_freshness_feed")).toBe("Deploy freshness feed");
   });
@@ -1575,6 +1603,15 @@ describe("a served key spelled like an Object.prototype member", () => {
 
   it.each(PROTOTYPE_KEYS)("%s is not a plane the table names", (key) => {
     expect(planeLabel(key)).toBe(key.replace(/_/g, " "));
+    expect(isKnownPlane(key)).toBe(false);
+  });
+
+  it("names a plane the table holds, and calls no plane unclassified", () => {
+    expect(isKnownPlane("merge_train")).toBe(true);
+    expect(isKnownPlane("merge train")).toBe(false);
+    expect(planeLabel("merge_train")).toBe("merge train");
+    expect(planeLabel(null)).toBe("unclassified");
+    expect(planeLabel("")).toBe("unclassified");
   });
 
   it.each(PROTOTYPE_KEYS)("%s is not a source the table labels", (key) => {

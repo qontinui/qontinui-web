@@ -43,6 +43,7 @@ import {
   presentedInitiativeDate,
   presentedInitiativeStatus,
   presentedPlanPhase,
+  presentedPlaneLabel,
   presentedSourceLabel,
   reasonDescriptor,
   regionSources,
@@ -414,6 +415,60 @@ describe("presentedDecisionDomains — the table's words, or fixed words", () =>
   });
 });
 
+describe("presentedPlaneLabel — the table's words, or withheld", () => {
+  it.each([
+    ["runner", "runner"],
+    ["disk", "disk"],
+    ["merge_train", "merge train"],
+    ["credential", "credential"],
+    ["build_capacity", "build capacity"],
+    ["cloud_service", "cloud service"],
+    ["coord_itself", "coord"],
+  ])("words %s as the table does", (plane, words) => {
+    expect(presentedPlaneLabel(plane)).toBe(words);
+  });
+
+  it.each([
+    "acme corp vpn",
+    "acme_corp_vpn",
+    // Names no confidential term: the table is what withholds it.
+    "partner_a_tunnel",
+    // Keys Object.prototype carries are not the table's.
+    "constructor",
+    "toString",
+    "__proto__",
+  ])("withholds %s, which the table does not name", (plane) => {
+    expect(presentedPlaneLabel(plane)).toBe(WITHHELD);
+  });
+
+  it.each([[null], [""]])("keeps the page's own word for %j", (plane) => {
+    expect(presentedPlaneLabel(plane)).toBe("unclassified");
+  });
+
+  it("reads as an area withheld in both of a degradation's descriptors", () => {
+    const d = degradation({
+      id: "alert:1",
+      plane: "partner_a_tunnel",
+      subject: { kind: "service", name: "tunnel-1", id: "tunnel-1" },
+      headline: "A tunnel is down",
+      onset_observed_at: AT,
+    });
+    const scope = {
+      status: "ready",
+      scope: { firstPartyOwners: ["qontinui"], confidentialTerms: [] },
+    } as const;
+    for (const [descriptor, kind] of [
+      [degradationDescriptor(d, "degrading"), "Degradation"],
+      [subjectDescriptor(d, "degrading"), "Service"],
+    ] as const) {
+      expect(descriptor.area).toBe(WITHHELD);
+      expect(describeRedacted(descriptor, scope)).toMatch(
+        new RegExp(`^${kind} · area withheld · degrading · `)
+      );
+    }
+  });
+});
+
 describe("presentedSourceLabel — the table's words, or fixed words", () => {
   it("labels a source the table knows, and a watcher by the area it feeds", () => {
     expect(presentedSourceLabel("work_units", null)).toBe("Work units");
@@ -427,6 +482,34 @@ describe("presentedSourceLabel — the table's words, or fixed words", () => {
     })!.degradations.planes;
     expect(presentedSourceLabel("watcher:w1", planes)).toBe(
       "Watcher feeding runner"
+    );
+  });
+
+  it("never names an area the table does not name, in a watcher's label", () => {
+    const planes = parseProjectState({
+      degradations: {
+        state: "read",
+        planes: {
+          runner: { fresh: false, watchers: [{ name: "w1", state: "stale" }] },
+          partner_a_tunnel: {
+            fresh: false,
+            watchers: [
+              { name: "w1", state: "stale" },
+              { name: "w2", state: "stale" },
+            ],
+          },
+          acme_corp_vpn: {
+            fresh: false,
+            watchers: [{ name: "w2", state: "stale" }],
+          },
+        },
+      },
+    })!.degradations.planes;
+    expect(presentedSourceLabel("watcher:w1", planes)).toBe(
+      "Watcher feeding runner, withheld"
+    );
+    expect(presentedSourceLabel("watcher:w2", planes)).toBe(
+      "Watcher feeding withheld"
     );
   });
 
