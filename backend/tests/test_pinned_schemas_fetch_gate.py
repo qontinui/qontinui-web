@@ -9,7 +9,8 @@ What they pin:
 
 1. The commit is absent from a shallow sibling before the step and readable after
    it, with HEAD and the working tree where they were.
-2. A commit already present costs no fetch.
+2. A commit already present costs no fetch, and neither does a working file
+   already at the pinned digest.
 3. A file at another digest, a commit the remote will not serve, a missing sibling
    and a malformed pin each exit non-zero and name what was wrong.
 4. The live manifest runs the step before both frontend test steps, the script's
@@ -161,6 +162,56 @@ def test_a_commit_already_present_costs_no_fetch(layout: _Layout) -> None:
 
     assert done.returncode == 0, done.stderr
     assert "already present" in done.stdout
+
+
+def test_a_working_file_at_the_pinned_digest_costs_no_fetch(
+    layout: _Layout, tmp_path: Path
+) -> None:
+    # Schemas moved past the pin without touching either file: the sibling's tip
+    # holds the pinned bytes, and the pinned commit is not in its depth-1 history.
+    layout._commit(layout.old_contract, layout.old_nouns)
+    shutil.rmtree(layout.sibling)
+    _git(
+        tmp_path,
+        "clone",
+        "-q",
+        "--depth",
+        "1",
+        layout.origin.as_uri(),
+        str(layout.sibling),
+    )
+    _git(layout.sibling, "remote", "remove", "origin")
+
+    done = layout.run()
+
+    assert done.returncode == 0, done.stderr
+    assert not layout.has_pinned_file()
+    assert "in the working tree" in done.stdout
+
+
+def test_one_file_off_its_digest_is_still_fetched(
+    layout: _Layout, tmp_path: Path
+) -> None:
+    # The tip holds the pinned vocabulary but an edited contract.
+    layout._commit('{"pinned":"edited"}\n', layout.old_nouns)
+    shutil.rmtree(layout.sibling)
+    _git(
+        tmp_path,
+        "clone",
+        "-q",
+        "--depth",
+        "1",
+        layout.origin.as_uri(),
+        str(layout.sibling),
+    )
+
+    done = layout.run()
+
+    assert done.returncode == 0, done.stderr
+    assert layout.has_pinned_file()
+    assert "spawn-contract.pin.toml" in done.stdout
+    assert "fetched" in done.stdout
+    assert "in the working tree" in done.stdout
 
 
 def test_it_leaves_a_full_clone_unshallowed(layout: _Layout, tmp_path: Path) -> None:
