@@ -56,7 +56,6 @@ import logging
 import re
 import sys
 import threading
-import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -270,7 +269,11 @@ def test_trigger_ddl_is_bounded_retried_and_reset() -> None:
         assert "EXCEPTION WHEN lock_not_available" in trig[0]
         assert re.search(r"IF attempt >= max_attempts THEN\s+RAISE;", trig[0])
         assert f"'{_ATTEMPTS_GUC}', true), '')::integer,\n" in trig[0]
-        assert re.search(rf"::integer,\s+{default_attempts}\);", trig[0]), fn
+        assert re.search(
+            rf"greatest\(coalesce\(\s+nullif\(.*?::integer,\s+{default_attempts}\), 1\);",
+            trig[0],
+            re.S,
+        ), fn
         assert "pg_sleep(least(0.1 * attempt, 2.0))" in trig[0]
         assert sqls.index(set_timeout) < sqls.index(trig[0])
 
@@ -280,12 +283,22 @@ def test_downgrade_neutralises_the_function_before_any_trigger_drop() -> None:
         c.sql or ""
         for c in upgrade_execute_calls(_revision_path(), function="downgrade")
     ]
+    # One literal, so one transaction: the function goes inert and every trust
+    # marker is revoked together, before any trigger drop is attempted.
+    first = sqls[0]
+    assert first.lstrip().startswith("DO $neutralise$"), first[:60]
     assert re.search(
         r"CREATE OR REPLACE FUNCTION coord\.policy_outcome_counts_apply\(\).*"
         r"BEGIN\s+RETURN NULL;\s+END",
-        sqls[0],
+        first,
         re.S,
     ), "downgrade() must first replace the function body with RETURN NULL"
+    assert "DELETE FROM coord.policy_outcome_counts_seeded;" in first
+    assert re.search(
+        r"UPDATE coord\.policy_outcome_counts_seed_state\s+"
+        r"SET full_pass_completed_at = NULL;",
+        first,
+    )
     first_drop = next(i for i, q in enumerate(sqls) if "DROP TRIGGER" in q)
     assert first_drop > 0
 
@@ -326,7 +339,9 @@ def _reset(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(text("TRUNCATE coord.policy_rule_resolutions"))
         conn.execute(text(f"TRUNCATE coord.{_COUNTS}, coord.{_SEEDED}"))
-        conn.execute(text(f"DELETE FROM coord.{_SEED_STATE}"))
+        conn.execute(
+            text(f"UPDATE coord.{_SEED_STATE} SET full_pass_completed_at = NULL")
+        )
 
 
 def _insert_sql(rows: int = 1) -> str:
@@ -924,10 +939,7 @@ def test_truncate_empties_the_rollup_and_unseeds(migrated: Engine) -> None:
             )
         )
         conn.execute(
-            text(
-                f"INSERT INTO coord.{_SEED_STATE} (full_pass_completed_at)"
-                " VALUES (now())"
-            )
+            text(f"UPDATE coord.{_SEED_STATE} SET full_pass_completed_at = now()")
         )
     assert _counts(engine) == {_key("confirmed", None): 3}
 
@@ -983,14 +995,26 @@ def _function_exists(engine: Engine) -> bool:
     )
 
 
+def _seed_state_rows(engine: Engine) -> list[tuple[object, ...]]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(f"SELECT id, full_pass_completed_at FROM coord.{_SEED_STATE}")
+        ).all()
+    return [tuple(r) for r in rows]
+
+
 @contextlib.contextmanager
-def _holding(engine: Engine, sql: str, seconds: float) -> Iterator[None]:
+def _holding(engine: Engine, sql: str, seconds: float) -> Iterator[threading.Event]:
     """Run ``sql`` in an open transaction on another thread for ``seconds``.
 
-    Yields once the statement has run (so its lock is held), and always joins
-    the thread on the way out, whatever the body raised.
+    Yields once the statement has run (so its lock is held). The hold ends
+    after ``seconds`` or when the body exits, whichever is first: a test that
+    expects the DDL to GIVE UP holds long enough that in-process alembic
+    startup can never outlast the hold, and is released as soon as alembic
+    returns. Always joins the thread on the way out, whatever the body raised.
     """
     holding = threading.Event()
+    release = threading.Event()
     errors: list[BaseException] = []
 
     def hold() -> None:
@@ -999,7 +1023,7 @@ def _holding(engine: Engine, sql: str, seconds: float) -> Iterator[None]:
                 tx = conn.begin()
                 conn.execute(text(sql))
                 holding.set()
-                time.sleep(seconds)
+                release.wait(seconds)
                 tx.commit()
         except BaseException as exc:  # surfaced by the join below
             errors.append(exc)
@@ -1010,9 +1034,12 @@ def _holding(engine: Engine, sql: str, seconds: float) -> Iterator[None]:
     try:
         assert holding.wait(30), "the lock holder never started"
         assert not errors, errors
-        yield
+        yield release
     finally:
-        holder.join(60)
+        # A body that waited for the hold to end has nothing left to release;
+        # one that expected a give-up must not wait out the full hold.
+        release.set()
+        holder.join(seconds + 30)
     assert not holder.is_alive(), "the lock holder thread did not finish"
     assert not errors, errors
 
@@ -1083,12 +1110,12 @@ def test_upgrade_retries_a_held_lock_and_gives_up_at_its_budget() -> None:
         run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
         db_name = engine.url.database
 
-        # Budget exhausted: two attempts of 500 ms against a 4 s hold fail, the
+        # Budget exhausted: two attempts of 500 ms against a held lock fail, the
         # error is the lock timeout, and no trigger is left half-created.
         with engine.begin() as conn:
             conn.execute(text(f'ALTER DATABASE "{db_name}" SET {_ATTEMPTS_GUC} = 2'))
         try:
-            with _captured_notices() as sink, _holding(engine, _WRITER, 4):
+            with _captured_notices() as sink, _holding(engine, _WRITER, 60):
                 proc = run_alembic(
                     backend_root(),
                     db_url,
@@ -1103,18 +1130,69 @@ def test_upgrade_retries_a_held_lock_and_gives_up_at_its_budget() -> None:
         assert len(_retry_notices(sink)) == 1, sink
         assert _trigger_count(engine) == 0
 
-        # Default budget: a 2.5 s hold outlasts several 500 ms attempts, and the
-        # DDL lands after the writer commits. The notices prove it retried.
-        with _captured_notices() as sink, _holding(engine, _WRITER, 2.5):
+        # Default budget: an 8 s hold (longer than in-process alembic startup)
+        # outlasts several 500 ms attempts, and the DDL lands after the writer
+        # commits. The notices prove it retried.
+        with _captured_notices() as sink, _holding(engine, _WRITER, 8):
             run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         retries = _retry_notices(sink)
         assert len(retries) >= 2, sink
         assert "attempt 1," in retries[0]
         assert _trigger_count(engine) == 4
 
+        # Downgrade that FAILS at the trigger drops (budget 1, reader held past
+        # it): the function is already inert and trust is already revoked,
+        # together, so coord can never read the stopped rollup as seeded.
+        with engine.begin() as conn:
+            _insert(conn, [{"category": "confirmed", "labeled_at": None}])
+            conn.execute(
+                text(
+                    f"""
+                    INSERT INTO coord.{_SEEDED} (decision_domain, surface, seeded_at)
+                    VALUES ('route_serving_safety', 'ok', now())
+                    """
+                )
+            )
+            conn.execute(
+                text(f"UPDATE coord.{_SEED_STATE} SET full_pass_completed_at = now()")
+            )
+        assert _counts(engine) == {_key("confirmed", None): 1}
+        with engine.begin() as conn:
+            conn.execute(text(f'ALTER DATABASE "{db_name}" SET {_ATTEMPTS_GUC} = 1'))
+        try:
+            with _holding(engine, _READER, 60):
+                proc = run_alembic(
+                    backend_root(),
+                    db_url,
+                    "downgrade",
+                    _PARENT_REVISION_ID,
+                    expect_success=False,
+                )
+        finally:
+            with engine.begin() as conn:
+                conn.execute(text(f'ALTER DATABASE "{db_name}" RESET {_ATTEMPTS_GUC}'))
+        assert "lock timeout" in proc.stderr, proc.stderr[-2000:]
+        assert _trigger_count(engine) == 4, "the drops failed, so triggers remain"
+        seeded = scalar(
+            engine,
+            f"SELECT count(*) FROM coord.{_SEEDED}"
+            " WHERE decision_domain = 'route_serving_safety'",
+        )
+        assert seeded == 0, "trust in per-key seeding must already be revoked"
+        state = scalar(
+            engine,
+            f"SELECT full_pass_completed_at IS NULL FROM coord.{_SEED_STATE}",
+        )
+        assert state is True, "trust in the full pass must already be revoked"
+        with engine.begin() as conn:
+            _insert(conn, [{"category": "confirmed", "labeled_at": None}])
+        assert _counts(engine) == {_key("confirmed", None): 1}, (
+            "the remaining triggers must be inert"
+        )
+
         # Downgrade against a long reader: the function is neutralised with no
         # base-table lock, then the ACCESS EXCLUSIVE drops retry at 200 ms.
-        with _captured_notices() as sink, _holding(engine, _READER, 1.5):
+        with _captured_notices() as sink, _holding(engine, _READER, 8):
             run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
         assert len(_retry_notices(sink)) >= 2, sink
         assert _trigger_count(engine) == 0
@@ -1126,6 +1204,9 @@ def test_idempotence_and_round_trip() -> None:
     with ephemeral_database(admin_database_url(), "poc01_rt") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert _trigger_count(engine) == 4
+        assert _seed_state_rows(engine) == [(True, None)], (
+            "upgrade inserts the singleton, unseeded"
+        )
 
         # Down: no residue.
         run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
@@ -1141,6 +1222,7 @@ def test_idempotence_and_round_trip() -> None:
         run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert _trigger_count(engine) == 4, "a re-run must not add triggers"
+        assert _seed_state_rows(engine) == [(True, None)], "still one singleton"
         assert _counts(engine) == {_key("confirmed", None): 1}, (
             "a re-run must not disturb existing rollup rows"
         )
