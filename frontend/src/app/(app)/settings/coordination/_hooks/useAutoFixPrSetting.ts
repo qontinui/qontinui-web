@@ -31,9 +31,9 @@ export type AutoFixPrReread =
  *
  * - `saved` — coord's PATCH answer READ BACK the value sent; the hook now
  *   holds that answer.
- * - `refused` — a definite failure (a 4xx, an explicit `written: false`, a
- *   502 before anything was sent): nothing changed as far as coord said, and
- *   the hook keeps what it read before.
+ * - `refused` — a failure read as definite (a 4xx, an explicit
+ *   `written: false`, a 502): nothing changed as far as coord said, and the
+ *   hook keeps what it read before.
  * - `unconfirmed` — whether the write landed is unknown: coord could not
  *   confirm its commit (`written: null`), the request timed out or its answer
  *   was lost after it may have been processed, or a 2xx answer did not read

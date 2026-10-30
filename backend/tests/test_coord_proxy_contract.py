@@ -374,9 +374,16 @@ EXPECTED: dict[str, dict[str, Cell]] = {
         "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
         "coord_500_html": Cell(Raises(500, _HTML_BODY)),
         "ok_200_json": Cell(Returns(_OK_DICT)),
-        "ok_200_empty": _NOT_JSON_ESCAPES,
-        "no_content_204": _NOT_JSON_ESCAPES,
-        "ok_200_text": _NOT_JSON_ESCAPES,
+        # A 2xx with no usable body is a 504 as well: coord may have committed.
+        "ok_200_empty": Cell(
+            Raises(504, "coord answered 200 with a body that is not JSON")
+        ),
+        "no_content_204": Cell(
+            Raises(504, "coord answered 204 with a body that is not JSON")
+        ),
+        "ok_200_text": Cell(
+            Raises(504, "coord answered 200 with a body that is not JSON")
+        ),
     },
     # The private copies raise PLAIN HTTPException on transport failure —
     # same status and detail as operations' CoordTransportUnavailable.

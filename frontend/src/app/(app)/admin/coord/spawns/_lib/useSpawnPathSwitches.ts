@@ -169,10 +169,16 @@ export const WRITE_IN_FLIGHT =
 
 /**
  * Whether a failed registry or next-step PUT may still have landed. Both doors
- * answer 504 when coord may have committed and only a re-read can tell, and a
- * client timeout or a failure with no HTTP status is the same state. A 502 from
- * either door means no connection to coord was made, an offline browser is taken
- * as not having sent it, and any other answer is coord's own refusal.
+ * answer 504 when the request may have been sent and they hold no usable answer
+ * (a timeout, an answer lost in transit, a 2xx body that is not JSON), and a
+ * client timeout or a failure with no HTTP status is the same state. An offline
+ * browser is taken as not having sent it.
+ *
+ * Every other status is shown as a refusal, which for a 502 is a reading, not a
+ * proof. A door's own 502 means no connection was made (the registry door also
+ * answers one for a coord that does not serve the route), but a 502 from coord
+ * or from a gateway in front of it passes through unchanged, and whether a
+ * gateway can answer one after forwarding the PUT has not been established.
  */
 function writeMayHaveLanded(err: unknown): boolean {
   if (err instanceof AgentPrefError) return err.status === 504;
