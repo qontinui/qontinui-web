@@ -133,15 +133,14 @@ async def get_registry_user(request: Request) -> User:
     return user
 
 
-def _answer_lost_detail(method: str, exc_name: str) -> str:
-    """What a 504 says when a transport failure lost coord's answer. Only a
-    write has anything to re-read before retrying."""
-    detail = f"coord's answer was lost in transit ({exc_name})"
+def _answer_lost_detail(method: str, what_happened: str) -> str:
+    """What a 504 says when there is no usable answer from coord. Only a write
+    has anything to re-read before retrying."""
     if method.upper() == "GET":
-        return detail
+        return what_happened
     return (
-        f"{detail}; the change may have been applied, so re-read the current "
-        "state before retrying"
+        f"{what_happened}; the change may have been applied, so re-read the "
+        "current state before retrying"
     )
 
 
@@ -166,13 +165,12 @@ async def _coord_request(
 
     * ``ConnectError`` → **502**: no connection was made, so coord never saw the
       request. The only arm that says nothing changed.
-    * a timeout, or any OTHER transport failure after the request may have been
-      sent (``ReadError``, ``RemoteProtocolError``) → **504**: coord may have
-      committed, and only a re-read can tell.
+    * a timeout, any OTHER transport failure after the request may have been
+      sent (``ReadError``, ``RemoteProtocolError``), or a 2xx whose body is not
+      JSON → **504**: coord may have committed, and only a re-read can tell.
 
-    Unlike that helper this one does not yet handle a 2xx whose body is not
-    JSON: the ``ValueError`` escapes. ``test_coord_proxy_contract.py`` records
-    it as a known defect for its plan's Phase 5.
+    Unlike that helper this one has no ``None`` arm: an empty 2xx or a 204 reads
+    as a body that is not JSON, so it is a 504 as well.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(None)
@@ -201,7 +199,10 @@ async def _coord_request(
             )
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=_answer_lost_detail(method, type(exc).__name__),
+                detail=_answer_lost_detail(
+                    method,
+                    f"coord's answer was lost in transit ({type(exc).__name__})",
+                ),
             ) from exc
     if resp.status_code >= 400:
         detail: Any
@@ -210,7 +211,23 @@ async def _coord_request(
         except ValueError:
             detail = resp.text
         raise HTTPException(status_code=resp.status_code, detail=detail)
-    return resp.json()
+    try:
+        return resp.json()
+    except ValueError as exc:
+        logger.warning(
+            "coord_answer_lost",
+            method=method,
+            path=path,
+            exc_type=type(exc).__name__,
+            status=resp.status_code,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=_answer_lost_detail(
+                method,
+                f"coord answered {resp.status_code} with a body that is not JSON",
+            ),
+        ) from exc
 
 
 async def _coord_request_deploy_order_aware(

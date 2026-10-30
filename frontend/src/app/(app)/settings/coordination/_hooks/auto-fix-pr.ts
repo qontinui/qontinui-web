@@ -94,8 +94,10 @@ export function readAutoFixPr(profile: unknown): AutoFixPrState | null {
  *    web proxy's 504 "timeout waiting for coord", or HttpClient's own abort
  *    ("Request timeout - …").
  *
- * A 502 (coord unreachable) is a clean failure, because nothing was sent. For
- * a failure with no status at all, see {@link isUnconfirmedFailure}.
+ * A 502 is read as a clean failure. The proxy's own 502 (coord unreachable)
+ * means nothing was sent; one from coord or a gateway in front of it passes
+ * through looking the same. For a failure with no status at all, see
+ * {@link isUnconfirmedFailure}.
  *
  * What the browser sees: the proxy raises `HTTPException(detail=<coord body
  * text>)`, and the backend's error handler wraps it as

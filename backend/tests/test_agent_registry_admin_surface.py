@@ -1341,11 +1341,12 @@ class TestTheTenantDefaultWrite:
 class TestTransportStatusesSayWhetherCoordMayHaveActed:
     """``_coord_request``'s split, the one ``_proxy_coord_write`` documents.
 
-    A 502 from this door means no connection was made, so a caller may report
-    the write as not applied; everything else that lost the answer is a 504,
-    which the agentic-activity page reads as UNKNOWN until a re-read settles it.
-    A ``ReadError`` mapped to 502 here labelled a write that may have landed as
-    refused.
+    A ``ConnectError`` is this door's own 502: no connection was made, so a
+    caller may report the write as not applied. Coord's own 502 also passes
+    through, so the status alone does not prove that. Everything else that left
+    no usable answer is a 504, which the agentic-activity page reads as UNKNOWN
+    until a re-read settles it. A ``ReadError`` mapped to 502 here labelled a
+    write that may have landed as refused.
     """
 
     @staticmethod
@@ -1398,6 +1399,25 @@ class TestTransportStatusesSayWhetherCoordMayHaveActed:
     async def test_a_lost_read_names_nothing_to_re_read(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ReadError("cut", request=request)
+
+        err = await self._status_of(handler, method="GET")
+        assert err.status_code == 504
+        assert "may have been applied" not in err.detail
+
+    @pytest.mark.asyncio
+    async def test_a_2xx_that_is_not_json_is_a_504(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="<html>from a proxy</html>")
+
+        err = await self._status_of(handler)
+        assert err.status_code == 504
+        assert "200 with a body that is not JSON" in err.detail
+        assert "may have been applied" in err.detail
+
+    @pytest.mark.asyncio
+    async def test_a_2xx_read_that_is_not_json_names_nothing_to_re_read(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="<html>from a proxy</html>")
 
         err = await self._status_of(handler, method="GET")
         assert err.status_code == 504
