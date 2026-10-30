@@ -28,13 +28,11 @@ does THIS session hold?" with::
     FROM coord.session_output WHERE session_id = $1
 
 The predecessor plan recorded that as "bounded by one session; not the hot
-cost". Sessions now carry 20k–131k warm chunks, and on 2026-10-30 Performance
-Insights put this statement at **1.23 AAS, the #2 statement** on the prod RDS
-(``db.m6g.xlarge``, 4 vCPU): ``coord.session_output`` held 4.56 M live rows /
-1.1 GB of heap across 401 sessions, took ~10.8 chunk inserts/s, and one
-``EXPLAIN (ANALYZE, BUFFERS)`` of the SUM for the 131k-chunk session read
-``shared read=82325`` (~643 MB) in 322 ms. The cost is O(chunks in the
-session) per chunk appended. This revision creates the counter that replaces
+cost". That no longer holds: sessions now carry tens of thousands of warm
+chunks, and the statement is among the top database-load statements on prod
+(measured 2026-10-30 via Performance Insights and ``EXPLAIN (ANALYZE,
+BUFFERS)``; figures in plan ``2026-10-30-coord-session-output-per-session-warm-sum-scans-the-session-on-every-chunk``). The cost is O(chunks in the session) per chunk
+appended. This revision creates the counter that replaces
 the per-chunk SUM and seeds it from the current true SUM.
 
 What lands
@@ -63,9 +61,9 @@ points 1–3), keyed by session instead of tenant:
    a bare ``UPDATE``** clamped with ``GREATEST(0, …)``, which can never create a
    row and therefore can never write a negative one. Why decrements must not be
    upserts is spelled out in ``coord_tenant_warm_bytes_01`` point 3.
-2. **``bytes`` is a signed ``BIGINT``.** ``compressed_size`` is ``INTEGER`` and prod's
-   warm total is already 902 MB; a sum of many ``INTEGER``s is widened on
-   principle, whatever one session holds today.
+2. **``bytes`` is a signed ``BIGINT``.** ``compressed_size`` is ``INTEGER``; a sum
+   of many ``INTEGER``s is widened on principle, whatever one session holds
+   today.
 3. **``CHECK (bytes >= 0)``**, named ``session_warm_bytes_bytes_nonnegative``,
    is the backstop against an unclamped writer; the clamp-bite drift signal is
    the primary detector (same reasoning as the tenant counter).
@@ -85,10 +83,12 @@ lock on ``coord.sessions``, and ``env.py`` runs a whole upgrade batch in ONE
 transaction, so that lock is held until the batch commits. SHARE ROW EXCLUSIVE
 conflicts with ROW EXCLUSIVE — every ``INSERT``/``UPDATE``/``DELETE`` on
 ``coord.sessions``: session registration, heartbeats, status writes, the prune.
-An inline backfill would hold it for the whole 4.56 M-row / 1.1 GB scan,
+An inline backfill would hold it for the whole ``coord.session_output`` scan
+(millions of rows, over a GB of heap — measured 2026-10-30, see plan ``2026-10-30-coord-session-output-per-session-warm-sum-scans-the-session-on-every-chunk``),
 blocking every one of those for its duration. The predecessor got away with an
 inline backfill because its lock was on the cold ``coord.tenants`` table and its
-scan was 894k rows (~1.4 s); neither holds here.
+scan was far smaller (``coord_tenant_warm_bytes_01``'s own measurement); neither
+holds here.
 
 So the upgrade is two parts:
 
@@ -99,20 +99,28 @@ So the upgrade is two parts:
   transaction — releasing the ``coord.sessions`` lock — and each statement in it
   then commits on its own. The backfill ``INSERT`` takes only ACCESS SHARE on
   ``coord.session_output`` (conflicts with nothing but ACCESS EXCLUSIVE, so
-  coord keeps appending throughout) plus a per-row FK check (``FOR KEY SHARE`` on
-  each referenced ``coord.sessions`` row, which conflicts only with a DELETE or a
-  key update of that one session).
+  coord keeps appending throughout) and ``FOR KEY SHARE`` on each
+  ``coord.sessions`` row it seeds, which conflicts only with a DELETE or a key
+  update of that one session — not with heartbeats or status ``UPDATE``s, which
+  take ``FOR NO KEY UPDATE``.
+
+  **Entering the block commits EVERY revision that ran before this one in the
+  same ``alembic upgrade`` batch**, not just this revision's DDL — env.py runs
+  the batch in one transaction, and ``autocommit_block`` commits it. A failure
+  in the backfill therefore cannot roll those earlier revisions back. Apply this
+  revision in its OWN migrator run (``alembic upgrade
+  coord_session_warm_bytes_01`` with nothing else pending) so that a failure
+  here leaves no unrelated revision half-applied around it.
 
 Timeouts inside the autocommit block. ``SET LOCAL`` is a no-op outside a
 transaction block, so the block uses a SESSION-level ``SET lock_timeout =
 '3s'``; ``env.py``'s ``_reset_revision_settings`` hook issues ``RESET
 lock_timeout`` after this revision, so it does not reach later revisions.
-``lock_timeout`` also bounds row-lock waits, so the FK check fails fast rather
-than queueing behind a prune. **No ``statement_timeout`` is set**: the backfill
-is one whole-table scan (~1.1 GB heap; the measured 643 MB per-session SUM read
-took 322 ms, so the full scan should be well under a minute, but a cold disk at
-the 3000-IOPS ceiling can stretch it) and a bound tight enough to matter could
-kill a scan that would have finished. The migrator connection's own default
+``lock_timeout`` also bounds the ``FOR KEY SHARE`` row-lock waits, so the
+backfill fails fast rather than queueing behind a long prune transaction.
+**No ``statement_timeout`` is set**: the backfill is one whole-table scan,
+expected to finish in about a minute but stretchable by a cold, IOPS-bound disk,
+and a bound tight enough to matter could kill a scan that would have finished. The migrator connection's own default
 governs, the same posture as ``coord_iops_idx_01``'s multi-minute
 ``CONCURRENTLY`` builds.
 
@@ -122,13 +130,18 @@ Consequences, stated rather than discovered:
   ``alembic_version`` is written after ``upgrade()`` returns, so a re-run
   re-enters this revision: ``CREATE TABLE IF NOT EXISTS`` no-ops and the
   backfill runs again. Safe because every step is idempotent (below).
-* **A session pruned between the backfill's scan and its FK check aborts the
-  backfill** with a foreign-key violation. Loud, not silent; re-run the
-  migration. Same for a lock wait over 3 s.
+* **A session pruned mid-backfill is SKIPPED, not fatal.** The backfill joins
+  ``coord.sessions`` and locks each joined row ``FOR KEY SHARE``. Under READ
+  COMMITTED, a session deleted after the scan's snapshot makes that row lock
+  re-check the row, find it gone, and drop it from the result, so no counter row
+  is written for it and no FK violation can arise (verified on Postgres 16
+  against a concurrent ``DELETE``). The one remaining abort is a row-lock wait
+  over 3 s (a prune transaction holding a session row that long): loud, and
+  re-running the migration is safe.
 * **The seed starts rotting immediately.** Between this backfill and the Phase 2
   coord build actually SERVING, the old build keeps inserting into and deleting
   from ``coord.session_output`` without maintaining this counter (the
-  predecessor's equivalent window carried ~94 MB of drift). Under-counting makes
+  predecessor's equivalent window carried measurable drift). Under-counting makes
   the 10 MiB per-session FIFO trip late; over-counting makes it flush/evict
   early. **Only Phase 2.4's startup reconcile repairs this window** — it is why
   2.4 ships in the SAME coord change as 2.1–2.3. A coord deploy can be debounced
@@ -148,15 +161,21 @@ Idempotency posture
 ``CREATE TABLE IF NOT EXISTS``; the backfill is ``ON CONFLICT (session_id) DO
 UPDATE SET bytes = EXCLUDED.bytes`` (re-seats every counter to the recomputed
 truth, i.e. a repair — and, against a live coord, lossy in exactly the way
-``coord_tenant_warm_bytes_01`` describes); a ``DO $$ … IF NOT EXISTS … $$``
-guard attaches the CHECK when the table pre-existed without it.
+``coord_tenant_warm_bytes_01`` describes); a ``DELETE`` then removes every
+counter row whose session holds no ``coord.session_output`` rows any more (the
+backfill's ``GROUP BY`` never reaches those, and a missing row already means
+zero); a ``DO $$ … IF NOT EXISTS … $$`` guard attaches the CHECK when the table
+pre-existed without it.
 
-**Statement order is load-bearing: the backfill runs BEFORE the constraint
-guard**, for the predecessor's reason: ``ADD CONSTRAINT … CHECK`` validates
-existing rows, so adding it first would make the re-run that repairs a
-NEGATIVE counter abort before reaching the backfill. On a fresh install the
-inline CHECK is already in force and the seed satisfies it (a ``SUM()`` of
-``NOT NULL`` non-negative ``INTEGER``s). As with the tenant counter, the guard
+**Statement order is load-bearing: the backfill and the orphan ``DELETE`` run
+BEFORE the constraint guard**, for the predecessor's reason: ``ADD CONSTRAINT …
+CHECK`` validates existing rows, so adding it first would make the re-run that
+repairs a NEGATIVE counter abort before reaching the repair. On a fresh install
+the inline CHECK is already in force while the seed is written. The schema does
+NOT guarantee the seed is non-negative: ``compressed_size`` is ``INTEGER NOT
+NULL`` with no CHECK of its own. What guarantees it is coord's writer, which
+stores the byte length of a compressed payload. A negative value written out of
+band would make the seed fail the CHECK, loudly. As with the tenant counter, the guard
 covers the CHECK only — the PK, the FK and the column types have no equivalent
 guard against an out-of-band table of the same name.
 
@@ -249,7 +268,7 @@ def upgrade() -> None:
     with op.get_context().autocommit_block():
         # SET LOCAL is a no-op without a transaction block, so this is a
         # session-level SET; env.py's _reset_revision_settings RESETs it
-        # after this revision. It also bounds the FK check's row-lock waits.
+        # after this revision. It also bounds the FOR KEY SHARE row-lock waits.
         # No statement_timeout on purpose: docstring, "Timeouts".
         op.execute("SET lock_timeout = '3s'")
 
@@ -263,16 +282,41 @@ def upgrade() -> None:
         #    meant to repair a NEGATIVE counter would otherwise abort
         #    before reaching this repair.
         #
-        #    A session pruned mid-scan aborts this with an FK violation
-        #    (loud; re-run — DO UPDATE makes the re-run a re-seat).
+        #    Lock-and-skip: the join to coord.sessions with FOR KEY SHARE
+        #    OF s means a session pruned mid-scan drops out of the result
+        #    under READ COMMITTED instead of failing the FK check. The
+        #    lock sits at the OUTER level, where there is no GROUP BY
+        #    (Postgres forbids a locking clause beside GROUP BY at one
+        #    level). SUM(integer) is already bigint, so no cast is needed.
         # ------------------------------------------------------------
         op.execute(
             """
             INSERT INTO coord.session_warm_bytes (session_id, bytes)
-            SELECT o.session_id, SUM(o.compressed_size)::bigint
-            FROM coord.session_output o
-            GROUP BY o.session_id
+            SELECT a.session_id, a.bytes
+            FROM (
+                SELECT o.session_id, SUM(o.compressed_size) AS bytes
+                FROM coord.session_output o
+                GROUP BY o.session_id
+            ) a
+            JOIN coord.sessions s ON s.id = a.session_id
+            FOR KEY SHARE OF s
             ON CONFLICT (session_id) DO UPDATE SET bytes = EXCLUDED.bytes
+            """
+        )
+
+        # ------------------------------------------------------------
+        # 3b. Re-seat orphans: on a re-run, a counter row whose session
+        #     holds no output rows any more is outside the backfill's
+        #     GROUP BY and would keep its stale value. A missing row
+        #     means zero, so delete it. Also before the CHECK guard.
+        # ------------------------------------------------------------
+        op.execute(
+            """
+            DELETE FROM coord.session_warm_bytes w
+            WHERE NOT EXISTS (
+                SELECT 1 FROM coord.session_output o
+                WHERE o.session_id = w.session_id
+            )
             """
         )
 

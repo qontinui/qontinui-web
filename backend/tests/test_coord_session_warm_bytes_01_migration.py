@@ -21,6 +21,9 @@ Cases covered
 4. **A re-run re-seats a drifted counter** (``DO UPDATE``, not ``DO NOTHING``).
 5. **A re-run repairs a NEGATIVE counter** — backfill before the CHECK guard.
 6. **Downgrade / re-upgrade** — the seed is re-derivable.
+7. **A re-run deletes an orphan counter** — a row whose session holds no
+   output rows any more is outside the backfill's ``GROUP BY``; absence means
+   zero, so the re-run removes it rather than leaving a stale value.
 
 Guards needing no database (never skip) pin the parent revision, the backfill
 running OUTSIDE the DDL transaction, and the backfill-before-CHECK order.
@@ -106,6 +109,7 @@ def test_the_backfill_runs_outside_the_ddl_transaction_and_before_the_check() ->
 
     create = index_of("CREATE TABLE IF NOT EXISTS coord.session_warm_bytes")
     backfill = index_of("INSERT INTO coord.session_warm_bytes")
+    orphans = index_of("DELETE FROM coord.session_warm_bytes w")
     add_check = index_of(f"ADD CONSTRAINT {_CHECK_NAME}")
 
     assert not calls[create].in_autocommit_block, "the DDL belongs in the batch txn"
@@ -114,7 +118,10 @@ def test_the_backfill_runs_outside_the_ddl_transaction_and_before_the_check() ->
         "the DDL transaction (and its coord.sessions lock) has committed"
     )
     assert calls[add_check].in_autocommit_block
-    assert create < backfill < add_check
+    assert calls[orphans].in_autocommit_block
+    assert create < backfill < orphans < add_check
+    # Lock-and-skip: a session pruned mid-scan must drop out, not abort.
+    assert "FOR KEY SHARE OF s" in (calls[backfill].sql or "")
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +252,23 @@ def test_coord_session_warm_bytes_01_backfills_cascades_and_downgrades() -> None
 
         # -- 2. no output rows -> NO row, not a zero ----------------------
         assert _counter(engine, sessions["s3"]) is None
+
+        # -- 7. a re-run deletes an orphan counter (s3 has no output) ----
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO coord.session_warm_bytes (session_id, bytes) "
+                    "VALUES (:s, 77)"
+                ),
+                {"s": sessions["s3"]},
+            )
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        assert _counter(engine, sessions["s3"]) is None, (
+            "a counter row whose session holds no output rows must be removed "
+            "on re-run — absence means zero"
+        )
+        assert _counter(engine, sessions["s1"]) == _EXPECT_S1
 
         # -- 4. a re-run re-seats a drifted counter -----------------------
         with engine.begin() as conn:
