@@ -13,7 +13,7 @@ import re
 from tests._alembic_harness import backend_root
 
 _FILENAME = "ops_tasks_01_coord_ops_tasks.py"
-_PARENT = "journey_04_explorations_stop_detail_any_stop"
+_PARENT = "merge_capture_01"
 _COLUMNS = (
     "id",
     "tenant_id",

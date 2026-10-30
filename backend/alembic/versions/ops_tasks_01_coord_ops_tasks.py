@@ -1,7 +1,7 @@
 """coord.ops_tasks - the ledger of coord-dispatched remote ops tasks (D4 lane)
 
 Revision ID: ops_tasks_01_coord_ops_tasks
-Revises: journey_04_explorations_stop_detail_any_stop
+Revises: merge_capture_01
 Create Date: 2026-10-30
 
 Phase 4 step 1 of plan
@@ -44,7 +44,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ops_tasks_01_coord_ops_tasks"
-down_revision: str | Sequence[str] | None = "journey_04_explorations_stop_detail_any_stop"
+down_revision: str | Sequence[str] | None = "merge_capture_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
