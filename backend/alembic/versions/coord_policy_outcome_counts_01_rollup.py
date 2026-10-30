@@ -267,7 +267,27 @@ uncommitted row, the seeder would commit while the UPDATE waited, and a
 trusted ``_seeded`` row would survive over an inert trigger. With the UPDATE
 first it queues behind the seeder ``FOR SHARE`` lock until the seeder commits,
 and the DELETE that follows takes a fresh snapshot that sees the committed
-row. Only then does the downgrade drop the four
+row.
+
+The reorder covers a seeder already holding the row; a seeder that takes
+``FOR SHARE`` after this transaction commits is fenced by coord's side of the
+contract instead: every coord transaction that writes a trust marker
+(``_seeded`` or ``full_pass_completed_at``) first takes ``ACCESS SHARE`` on
+``coord.policy_rule_resolutions``, then ``seed_state`` ``FOR SHARE`` (held for
+that one per-key transaction only, never across a whole pass, so this UPDATE
+never waits for more than one key's recount), then verifies in a later
+statement that maintenance is live -- the singleton row exists, this
+function's body is the real one (it takes ``pg_advisory_xact_lock_shared``),
+and all four triggers exist and fire (``tgenabled IN ('O','A')``) -- and
+writes no marker otherwise. A neutralised function fails that check, so a
+failed downgrade cannot be re-trusted by a later seeder or reconcile.
+
+Coord's windowed readers read the rollup buckets and the raw partial cutoff
+hour in ONE statement (one snapshot), with the boundary computed exactly as
+the trigger computes it, ``date_trunc('hour', cutoff AT TIME ZONE 'UTC')``,
+so a label committed between two reads is neither double-counted nor missed.
+
+Only then does the downgrade drop the four
 triggers with ``lock_timeout = '200ms'`` and up to 100 attempts with the same
 capped backoff (about 210 s worst case), then drops the function and the three
 tables. Everything runs inside an autocommit block.
