@@ -457,7 +457,7 @@ export function spawnIssueTextFor(
 const ORIGIN_LABEL: Record<string, string> = {
   gate_continuation: "gate continuation",
   unit_continuation: "work-unit continuation",
-  coord_dispatch: "coord dispatch",
+  coord_dispatch: "coordination service dispatch",
   looping_agent: "looping agent",
   steward: "steward",
   respawn: "respawn",
@@ -761,7 +761,7 @@ function pendingStatus(row: SpawnRowWire, nowMs: number): RowStatus<SpawnKind> {
     return status(
       "unknown",
       `${word} — age unreadable`,
-      "coord's request time could not be read, so how long it has waited is unknown"
+      "the request time could not be read, so how long it has waited is unknown"
     );
   }
   const waitedText = formatDuration(waited / 1000);
@@ -794,7 +794,7 @@ function pendingStatus(row: SpawnRowWire, nowMs: number): RowStatus<SpawnKind> {
       return status(
         "queued",
         "Queued",
-        `coord has held it for ${waitedText}; no machine chosen yet`
+        `held for ${waitedText}; no machine chosen yet`
       );
     case "dispatched":
       return status(
@@ -806,7 +806,7 @@ function pendingStatus(row: SpawnRowWire, nowMs: number): RowStatus<SpawnKind> {
       return status(
         "deferred",
         "Deferred",
-        `a runner pushed it back${deferrals}; coord will place it again`
+        `a runner pushed it back${deferrals}; it will be placed again`
       );
   }
 }
@@ -874,21 +874,21 @@ export function deriveSpawnStatus(
             "unknown",
             "Started · outcome unreadable",
             quote
-              ? `coord reported an outcome this page has no reading for: ${row.session_outcome}`
-              : "coord reported an outcome this page has no reading for"
+              ? `an outcome this page has no reading for was reported: ${row.session_outcome}`
+              : "an outcome this page has no reading for was reported"
           );
       }
     case "failed":
       return status(
         "spawn_failed",
         "Failed to start",
-        reasonOr("no session opened; coord recorded no reason")
+        reasonOr("no session opened; no reason was recorded")
       );
     case "expired":
       return status(
         "expired",
         "Expired",
-        reasonOr("coord gave up placing it; nothing will start it now")
+        reasonOr("placing it was given up; nothing will start it now")
       );
     case "cancelled":
       return status(
@@ -907,8 +907,8 @@ export function deriveSpawnStatus(
         "unknown",
         "Unknown state",
         quote
-          ? `coord reported a state this page has no reading for: ${row.state}`
-          : "coord reported a state this page has no reading for"
+          ? `a state this page has no reading for was reported: ${row.state}`
+          : "a state this page has no reading for was reported"
       );
   }
 }
@@ -1097,7 +1097,7 @@ export function spawnFilterEmptyText(
   const when = options.stale ? " at the last good read" : "";
   switch (filter) {
     case "all":
-      return `Coord recorded no spawn request ${where}, and none older was waiting${when}.`;
+      return `No spawn request was recorded ${where}, and none older was waiting${when}.`;
     case "queued":
       return `No request was waiting to start${when} — none queued, dispatched or deferred, of any age.`;
     case "failed":
@@ -1115,9 +1115,9 @@ export function spawnFilterUnknownText(
   windowLabel: string,
   reads: SpawnReadsAnswered
 ): string {
-  const listUnread = `Coord's list of the requests in the ${windowLabel} could not be read`;
+  const listUnread = `The list of the requests in the ${windowLabel} could not be read`;
   const pendingUnread =
-    "Coord's list of the requests still waiting could not be read";
+    "The list of the requests still waiting could not be read";
   switch (filter) {
     case "queued":
       return `${pendingUnread} — which requests are waiting is unknown, not none.`;
@@ -1198,14 +1198,18 @@ export interface SpawnsHealth {
   verdict: "red" | "amber" | "green" | "unknown" | "stale";
 }
 
-function headlineForIssue(issue: SpawnReadIssue): string {
+function headlineForIssue(issue: SpawnReadIssue, presenting: boolean): string {
   switch (issue.kind) {
     case "ledger_not_deployed":
       return "Spawn ledger not deployed yet";
     case "forbidden":
-      return "Coord tenant admins only";
+      return presenting
+        ? "Project administrators only"
+        : "Coord tenant admins only";
     case "route_unavailable":
-      return "Coord does not serve the spawn ledger yet";
+      return presenting
+        ? "The spawn ledger is not offered yet"
+        : "Coord does not serve the spawn ledger yet";
     default:
       return "Spawn statistics unknown";
   }
@@ -1356,7 +1360,7 @@ export function deriveSpawnsHealth(input: SpawnsHealthInput): SpawnsHealth {
         headline: clauses.join("; "),
         detail:
           issue === null
-            ? `Aggregates over the ${spec.label} appear once coord answers.`
+            ? `Aggregates over the ${spec.label} appear once the ledger answers.`
             : spawnIssueTextFor(
                 issue,
                 "every aggregate on this strip",
@@ -1370,14 +1374,14 @@ export function deriveSpawnsHealth(input: SpawnsHealthInput): SpawnsHealth {
       return {
         level: "amber",
         headline: "Reading the spawn ledger…",
-        detail: `Aggregates over the ${spec.label} appear once coord answers.`,
+        detail: `Aggregates over the ${spec.label} appear once the ledger answers.`,
         badges: [],
         verdict: "unknown",
       };
     }
     return {
       level: "amber",
-      headline: headlineForIssue(issue),
+      headline: headlineForIssue(issue, input.presenting ?? false),
       detail: spawnIssueTextFor(
         issue,
         "every aggregate on this strip",
@@ -1431,7 +1435,7 @@ export function deriveSpawnsHealth(input: SpawnsHealthInput): SpawnsHealth {
           ? "waiting"
           : "default",
       title:
-        "From the first moment coord tried to place a request to the moment its session started, over the requests that started.",
+        "From the first attempt to place a request to the moment its session started, over the requests that started.",
       "data-testid": "coord-spawns-time-to-spawn",
     },
     {

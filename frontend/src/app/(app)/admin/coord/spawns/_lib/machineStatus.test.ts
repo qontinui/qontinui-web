@@ -13,6 +13,7 @@ import { ROLES_KNOWN } from "../__fixtures__/spawnsRoutes";
 import { concurrencyBody, drainBody } from "../__fixtures__/spawnPaths";
 import {
   IN_FLIGHT_UNKNOWN,
+  machineListStale,
   machineListUnknown,
   machineStatusLines,
   type MachineStatusInput,
@@ -179,7 +180,67 @@ describe("machineStatusLines", () => {
   });
 });
 
+describe("a failed refresh of the roster", () => {
+  const failure = "GET /fleet/health failed: 502 at http://10.0.0.5:8080";
+
+  it("keeps the last good list, says it is stale above it, and marks every line", () => {
+    const stale = input({ devicesError: failure });
+    const lines = machineStatusLines(stale);
+    expect(lines?.map((l) => l.key)).toEqual([DEVICE_A, DEVICE_B]);
+    expect(lines?.every((l) => l.stale)).toBe(true);
+    expect(machineListStale(stale)).toBe(
+      `The latest refresh of the fleet roster failed (${failure}), so this list is from the last good read: a machine added or removed since then is not reflected.`
+    );
+  });
+
+  it("says nothing while the list is current, or when there is no list to be stale", () => {
+    const current = input();
+    expect(machineStatusLines(current)?.some((l) => l.stale)).toBe(false);
+    expect(machineListStale(current)).toBeNull();
+    expect(
+      machineListStale(input({ devices: null, devicesError: failure }))
+    ).toBeNull();
+  });
+
+  it("withholds the failure's own text while presenting", () => {
+    const note = machineListStale(
+      input({ devicesError: failure, presenting: true })
+    );
+    expect(note).toContain("this list is from the last good read");
+    expect(note).not.toContain("10.0.0.5");
+    expect(note).not.toContain("/fleet/health");
+  });
+});
+
 describe("in presentation mode", () => {
+  it("says a silent machine's unknown count without the session-load page's own words", () => {
+    const sessions = {
+      issue: null,
+      data: concurrencyBody({
+        devices: [
+          {
+            ...concurrencyBody().devices[0]!,
+            heartbeat_age_seconds: null,
+            open_now: null,
+          },
+        ],
+      }),
+    };
+    const operator = lineOf(
+      machineStatusLines(input({ sessions })),
+      DEVICE_A
+    ).sessions;
+    expect(operator.title).toContain("coord has no heartbeat");
+    const presented = lineOf(
+      machineStatusLines(input({ sessions, presenting: true })),
+      DEVICE_A
+    ).sessions;
+    expect(presented.text).toBe("UNKNOWN");
+    expect(presented.title).toBe(
+      "This machine has not reported recently, so how many sessions it has open now is unknown."
+    );
+  });
+
   it("carries no drain reason, actor or failure text", () => {
     const lines = machineStatusLines(
       input({

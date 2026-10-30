@@ -835,7 +835,7 @@ describe("filter tabs", () => {
         pending: true,
       })
     ).toBe(
-      "Coord's list of the requests in the last 7 days could not be read — which of them failed to start is unknown, not none."
+      "The list of the requests in the last 7 days could not be read — which of them failed to start is unknown, not none."
     );
   });
 

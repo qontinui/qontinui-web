@@ -53,8 +53,7 @@ function devicesText(row: SpawnRowWire, naming: DeviceNaming): string {
 
 function devicesTitle(row: SpawnRowWire, naming: DeviceNaming): string {
   const devices = rowDevices(row);
-  if (devices.length === 0)
-    return "coord has not chosen a device for this request";
+  if (devices.length === 0) return "no device has been chosen for this request";
   return devices
     .map(
       (d) =>
@@ -108,7 +107,7 @@ function Timeline({
       </p>
       {events.length === 0 ? (
         <p className="text-xs text-muted-foreground italic m-0">
-          Coord recorded no events for this request.
+          No events were recorded for this request.
         </p>
       ) : (
         <ol className="space-y-0.5 text-xs">

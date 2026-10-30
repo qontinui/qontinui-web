@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * The spawn-path matrix — every way a session gets started without someone
- * asking, one line per path (plan `2026-10-23-console-presentation-spaces`
- * Phase 4).
+ * The spawn-path matrix — the paths this console knows of that start a
+ * session, one line per path (plan `2026-10-23-console-presentation-spaces`
+ * Phase 4): those coord serves or starts, a person's launcher among them, and
+ * the runner-local paths the plan names. A runner's other automatic starts have
+ * no line, and the section's note says so.
  *
  * A path's line shows its PRIMARY switch — a coord path's own agent-registry
  * row, the post-merge follow-up's per-repository scope, a runner path's
@@ -432,6 +434,19 @@ export function matrixCountsText(c: MatrixCounts): string {
   return `${said.slice(0, -1).join(", ")} and ${said[said.length - 1]}`;
 }
 
+/** What the matrix leaves out: starts a machine makes that have no switch here. */
+export const OTHER_RUNNER_STARTS =
+  "A machine also starts sessions for its own looping agents and workflows, and when it resumes after a restart; those have no line here, and appear under spawn requests by where they came from.";
+
+/** Served rows this build could not classify: never counted as anything. */
+function unclassifiedText(names: readonly string[], presenting: boolean) {
+  const n = names.length;
+  const rows = `${n} further registry row${n === 1 ? "" : "s"}`;
+  return presenting
+    ? `${rows} could not be classified as a spawn path or an agent role, so ${n === 1 ? "it has" : "they have"} no line here.`
+    : `${rows} could not be classified as a spawn path or an agent role, so ${n === 1 ? "it has" : "they have"} no line here: ${names.join(", ")}.`;
+}
+
 export function SpawnPathMatrixSection({
   matrix,
   writers,
@@ -472,10 +487,18 @@ export function SpawnPathMatrixSection({
       >
         {countsText}. This page does not combine a path&apos;s switches into one
         verdict: for the paths it starts, the coordination service refuses a
-        spawn when the path&apos;s own switch or its class switch is off.
+        spawn when the path&apos;s agent registry switch or its class switch is
+        off, and every other switch says on its own line whether it is enforced.{" "}
+        {OTHER_RUNNER_STARTS}
         {!presenting && matrix.roleRows !== null && matrix.roleRows > 0
           ? ` ${matrix.roleRows} further registry row${matrix.roleRows === 1 ? " is an agent role" : "s are agent roles"} that sessions call on, not spawn paths; they are set on the agent registry page.`
           : ""}
+        {matrix.unclassified.length > 0 && (
+          <span data-testid="coord-spawns-paths-unclassified">
+            {" "}
+            {unclassifiedText(matrix.unclassified, presenting)}
+          </span>
+        )}
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm" data-testid="coord-spawns-path-table">

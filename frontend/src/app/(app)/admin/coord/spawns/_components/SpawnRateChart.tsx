@@ -95,7 +95,7 @@ export function SpawnRateChart({
           className="text-sm text-muted-foreground italic"
           data-testid="coord-spawns-rate-chart-unknown"
         >
-          No request list from coord — the hourly rates are unknown, not zero.
+          No request list was read — the hourly rates are unknown, not zero.
         </p>
       ) : (
         <div className="space-y-1">
@@ -186,7 +186,7 @@ export function SpawnRateChart({
             data-testid="coord-spawns-rate-caption"
           >
             {series.partial
-              ? `Drawn from ${hourLabel(series.fromMs)} only: coord returned the ${shown ?? "?"} most recent of ${total ?? "an unknown number of"} requests in the ${windowLabel}, so earlier hours are not drawn — they are not zero.`
+              ? `Drawn from ${hourLabel(series.fromMs)} only: the read returned the ${shown ?? "?"} most recent of ${total ?? "an unknown number of"} requests in the ${windowLabel}, so earlier hours are not drawn — they are not zero.`
               : `Every UTC hour of the ${windowLabel}.`}{" "}
             Requested per hour is the optimal rate — every request started on
             its first attempt. The started line counts only requests made in

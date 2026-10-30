@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * /admin/coord/spawns — agentic activity: every path that starts an agent
- * session on its own and the switch that governs it, the machines those
- * sessions run on, and every spawn coord was asked to place — where it went,
- * how long it waited, and how it ended.
+ * /admin/coord/spawns — agentic activity: the spawn paths this console knows
+ * of and the switches that govern them, the machines sessions run on, and every
+ * spawn coord was asked to place — where it went, how long it waited, and how
+ * it ended.
  *
  * Plan `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration`
  * Phase 5 built the ledger half; its D7 defines every number there. Reads
@@ -21,7 +21,8 @@
  * - **Spawn paths** (`SpawnPathMatrixSection`, derived by `spawnPathMatrix.ts`
  *   from `useSpawnPathSwitches`): one row per spawn path — coord's served
  *   registry kinds and class switches, the post-merge follow-up, and the
- *   runner-local paths coord cannot see — with each switch this console can
+ *   runner-local paths the plan names (a runner's other automatic starts have
+ *   no row, and the section says so) — with each switch this console can
  *   read that governs it (its registry row, its class row, a fixer's
  *   merge-settings dial or knob, a dispatch arm's autonomy level and fleet
  *   flag), its scope, whether it is enforced, coord's own value for it (for a
@@ -116,7 +117,11 @@ import { MachineStatusSection } from "./_components/MachineStatusSection";
 import { SpawnPathMatrixSection } from "./_components/SpawnPathMatrix";
 import { SpawnRateChart } from "./_components/SpawnRateChart";
 import { SpawnRow } from "./_components/SpawnRow";
-import { machineListUnknown, machineStatusLines } from "./_lib/machineStatus";
+import {
+  machineListStale,
+  machineListUnknown,
+  machineStatusLines,
+} from "./_lib/machineStatus";
 import { deriveSpawnPathMatrix } from "./_lib/spawnPathMatrix";
 import {
   SPAWN_FILTERS,
@@ -318,6 +323,7 @@ export default function CoordSpawnsPage() {
     return {
       lines: machineStatusLines(input),
       unknown: machineListUnknown(input),
+      stale: machineListStale(input),
     };
   }, [
     fleet.data,
@@ -376,7 +382,7 @@ export default function CoordSpawnsPage() {
         <RefreshButton
           onRefresh={refreshAll}
           label="Refresh agentic activity"
-          title={`Re-reads the spawn ledger, the switches, the machines and their sessions from coord now; the page also refreshes itself (the ledger every ${SPAWNS_POLL_MS / 1000} s)`}
+          title={`Re-reads the spawn ledger, the switches, the machines and their sessions now; the page also refreshes itself (the ledger every ${SPAWNS_POLL_MS / 1000} s)`}
           data-testid="coord-spawns-refresh"
         />
         {/* The window picker is the operator's: a closed Radix Select keeps
@@ -418,8 +424,8 @@ export default function CoordSpawnsPage() {
           </Select>
         </OperatorOnly>
         <p className="text-xs text-muted-foreground m-0">
-          Time to spawn runs from the first moment coord tried to place a
-          request to the moment its session started.
+          Time to spawn runs from the first attempt to place a request to the
+          moment its session started.
         </p>
         <LensLink
           href={SESSION_LOAD_HREF}
@@ -507,6 +513,7 @@ export default function CoordSpawnsPage() {
       <MachineStatusSection
         lines={machines.lines}
         listUnknown={machines.unknown}
+        listStale={machines.stale}
         presenting={presenting}
         sources={[
           { source: SPAWNS_SOURCES.fleetHealth, asOf: fleet.asOfMs },
@@ -544,7 +551,7 @@ export default function CoordSpawnsPage() {
           Spawns placed per device in the {spec.label}, each line with its
           dispatch role, its time-to-spawn p50 and how many started, were
           refused and were deferred. Each device&apos;s current reserve and
-          ceilings: not served yet — coord publishes them once the spawn reserve
+          ceilings: not served yet — they are published once the spawn reserve
           ships.
           {roleNote}
         </p>
@@ -553,7 +560,7 @@ export default function CoordSpawnsPage() {
             className="text-sm text-muted-foreground italic"
             data-testid="coord-spawns-devices-unknown"
           >
-            No per-device figures from coord — where spawns were placed is
+            No per-device figures were read — where spawns were placed is
             unknown, not nowhere.
           </p>
         ) : (
@@ -567,7 +574,7 @@ export default function CoordSpawnsPage() {
                 className="text-sm text-muted-foreground"
                 data-testid="coord-spawns-devices-empty"
               >
-                Coord placed no spawn on any device in the {spec.label}
+                No spawn was placed on any device in the {spec.label}
                 {ledger.stats.issue ? " at the last good read" : ""}.
               </p>
             }
@@ -617,7 +624,7 @@ export default function CoordSpawnsPage() {
                 ? ` Plus the ${pending.items.length} oldest of ${pending.total ?? "an unknown number of"} requests still waiting, whatever their age.`
                 : ` Plus every request still waiting, whatever its age (${pending.items.length}).`}
             {unreadableRows > 0
-              ? ` ${unreadableRows} row${unreadableRows === 1 ? "" : "s"} coord sent could not be read and ${unreadableRows === 1 ? "is" : "are"} not listed.`
+              ? ` ${unreadableRows} row${unreadableRows === 1 ? "" : "s"} in the answer could not be read and ${unreadableRows === 1 ? "is" : "are"} not listed.`
               : ""}
           </p>
         )}

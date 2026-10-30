@@ -91,6 +91,7 @@ import {
   mergeSettingsBody,
   nextStepBody,
 } from "./__fixtures__/spawnPaths";
+import { OTHER_RUNNER_STARTS } from "./_components/SpawnPathMatrix";
 import CoordSpawnsPage from "./page";
 
 async function settle() {
@@ -195,6 +196,14 @@ describe("the spawn-path matrix — what coord serves", () => {
     await renderPage();
     // What the matrix lists, counted by kind — person-started and class
     // switches are not counted as paths the system starts on its own.
+    const note = screen.getByTestId("coord-spawns-paths-note").textContent;
+    // It says what it covers, and limits the refusal to the switches that refuse.
+    expect(note).toContain(OTHER_RUNNER_STARTS);
+    expect(note).toContain(
+      "the coordination service refuses a spawn when the path's agent registry switch or its class switch is off, and every other switch says on its own line whether it is enforced."
+    );
+    expect(note).not.toContain("own switch or its class switch");
+    expect(screen.queryByTestId("coord-spawns-paths-unclassified")).toBeNull();
     expect(screen.getByTestId("coord-spawns-paths-note").textContent).toContain(
       "11 paths the coordination service starts on its own, 1 path a person starts from the console, 2 class switches that each govern many paths at once and 3 paths each machine starts on its own."
     );

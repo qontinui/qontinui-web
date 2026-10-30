@@ -22,9 +22,9 @@
  *     control would be, every gate's Note says why there is none;
  *  3. a failed read still says UNKNOWN, in fixed words; a path reads the
  *     tenant default coord enforces, never the presenter's own preference;
- *     and no presented sentence in the matrix or the machine list calls the
- *     service "coord" (provenance chips name their source, as on every lens
- *     page);
+ *     and no presented word on the whole page — text, `title` or `aria-label`,
+ *     across the empty, failed, stale and unusual arms — calls the service
+ *     "coord" (provenance chips name their source, as on every lens page);
  *  4. the operator console is unchanged: the same fixtures in operator mode
  *     show the real names, the controls and the launcher — so their absence
  *     above is the lens's doing, not an empty render;
@@ -76,13 +76,21 @@ import {
   rowFx,
   statsFx,
 } from "./__fixtures__/coordSpawns";
-import { drainBody, effectiveBody } from "./__fixtures__/spawnPaths";
+import {
+  concurrencyBody,
+  drainBody,
+  effectiveBody,
+  effectiveFx,
+} from "./__fixtures__/spawnPaths";
 import {
   isPresentationReady,
   sessionMachineAliases,
   type CaptionKey,
 } from "@/components/presentation";
-import { CONTROL_PRESENTED_NOTE } from "./_components/SpawnPathMatrix";
+import {
+  CONTROL_PRESENTED_NOTE,
+  OTHER_RUNNER_STARTS,
+} from "./_components/SpawnPathMatrix";
 import CoordSpawnsPage from "./page";
 
 /** Every caption the page carries. */
@@ -256,6 +264,85 @@ function presentedWords(testId: string): string {
   return [section.textContent ?? "", ...titles].join("\n");
 }
 
+/** What the audience reads on the whole page, chips aside. */
+function pageWords(): string {
+  const page = document.body.cloneNode(true) as HTMLElement;
+  for (const chip of page.querySelectorAll("[data-provenance]")) chip.remove();
+  const attrs = [...page.querySelectorAll("[title], [aria-label]")].flatMap(
+    (el) => [
+      el.getAttribute("title") ?? "",
+      el.getAttribute("aria-label") ?? "",
+    ]
+  );
+  return [page.textContent ?? "", ...attrs].join("\n");
+}
+
+function expectNoServiceToken() {
+  expect(pageWords()).not.toMatch(/\bcoord\b/i);
+}
+
+async function openEverything() {
+  const toggles = () => screen.getAllByTestId("coord-spawns-path-toggle");
+  for (let i = 0; i < toggles().length; i += 1) {
+    await act(async () => {
+      fireEvent.click(toggles()[i]!);
+    });
+  }
+  const rows = () => screen.queryAllByTestId("coord-spawn-row");
+  for (let i = 0; i < rows().length; i += 1) {
+    await act(async () => {
+      fireEvent.click(within(rows()[i]!).getAllByRole("button")[0]!);
+    });
+  }
+  await settle();
+}
+
+/** Every state with nothing recorded about why, on an unassigned device. */
+function unusualRows() {
+  const bare = {
+    spawned_at: null,
+    session_outcome: null,
+    session_outcome_at: null,
+    wait_seconds: null,
+    terminal_reason: null,
+    claude_code_session_id: null,
+    claude_account: null,
+    current_device_id: null,
+    spawned_device_id: null,
+    origin: "coord_dispatch",
+  } as const;
+  // The fixture's request times are days old, which reads as stuck; these
+  // reach the sentences of a request that is still in time.
+  const justNow = {
+    requested_at: new Date(Date.now() - 60_000).toISOString(),
+    updated_at: new Date(Date.now() - 30_000).toISOString(),
+  };
+  return [
+    rowFx({ ...bare, ...justNow, state: "queued", first_dispatched_at: null }),
+    rowFx({ ...bare, ...justNow, state: "dispatched" }),
+    rowFx({ ...bare, ...justNow, state: "deferred", deferrals: 1 }),
+    rowFx({ ...bare, state: "queued", first_dispatched_at: null }),
+    rowFx({ ...bare, state: "queued", requested_at: "not-a-date" }),
+    rowFx({ ...bare, state: "dispatched", deferrals: 0 }),
+    rowFx({ ...bare, state: "deferred", deferrals: 2 }),
+    rowFx({ ...bare, state: "failed" }),
+    rowFx({ ...bare, state: "expired" }),
+    rowFx({ ...bare, state: "cancelled" }),
+    rowFx({ ...bare, state: "superseded" }),
+    rowFx({ ...bare, state: "held_by_a_new_build" }),
+    rowFx({
+      state: "spawned",
+      origin: "coord_dispatch",
+      session_outcome: "unknown",
+    }),
+    rowFx({
+      state: "spawned",
+      origin: "coord_dispatch",
+      session_outcome: "reaped_by_a_new_build",
+    }),
+  ];
+}
+
 beforeEach(() => {
   routes = presentationRoutes();
   sessionMachineAliases.reset();
@@ -395,6 +482,177 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(within(gate).queryByRole("button")).toBeNull();
   });
 
+  describe("never calls the service 'coord', anywhere on the page", () => {
+    it("with a silent machine, one the role read misses, no per-device figures, and rows with nothing recorded, behind every disclosure", async () => {
+      const rows = unusualRows();
+      routes.roles = () => ({
+        body: {
+          state: "known",
+          machines: [
+            {
+              device_id: DEVICE_A,
+              name: HOST_A,
+              role: { dispatch_role: "workhorse" },
+              registration: "registered",
+            },
+          ],
+        },
+      });
+      routes.concurrency = () => ({
+        body: concurrencyBody({
+          devices: [
+            {
+              ...concurrencyBody().devices[0]!,
+              heartbeat_age_seconds: null,
+              open_now: null,
+            },
+            { ...concurrencyBody().devices[0]!, device_id: DEVICE_B },
+          ],
+        }),
+      });
+      routes.stats = () => ({ body: statsFx({}, { per_device: [] }) });
+      routes.list = () => ({
+        body: listFx([...rows, { id: 1 } as never], {
+          truncated: true,
+          total: 900,
+        }),
+      });
+      routes.detail = (id) => ({
+        body: detailFx(rows.find((r) => r.id === id)!, []),
+      });
+      renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
+      await settle();
+      expect(screen.getAllByTestId("coord-spawn-row").length).toBe(rows.length);
+      expect(pageWords()).toContain("The role read does not list this machine");
+      expect(pageWords()).toContain("This machine has not reported recently");
+      expect(pageWords()).toContain("as the session run record counts them");
+      expect(pageWords()).toContain("held for");
+      expect(pageWords()).toContain("it will be placed again");
+      expect(pageWords()).toContain("1 row in the answer could not be read");
+      expectNoServiceToken();
+      await openEverything();
+      expect(pageWords()).toContain("No events were recorded");
+      expectNoServiceToken();
+    });
+
+    it("when the role read says its device list was cut short", async () => {
+      routes.roles = () => ({
+        body: { state: "known", machines: [], roster_truncated: true },
+      });
+      renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
+      await settle();
+      expect(pageWords()).toContain("reported its device list as cut short");
+      expectNoServiceToken();
+    });
+
+    it("with an empty roster and an empty ledger", async () => {
+      routes.fleet = () => ({ body: { devices: [] } });
+      routes.list = () => ({ body: listFx([]) });
+      renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
+      await settle();
+      expect(pageWords()).toContain("The fleet roster lists no machine.");
+      expect(pageWords()).toContain("No spawn request was recorded");
+      expectNoServiceToken();
+    });
+
+    it.each([
+      [
+        "refused",
+        {
+          status: 403,
+          body: { error: "FORBIDDEN", message: "not_coord_tenant_admin" },
+        },
+        "Project administrators only",
+      ],
+      [
+        "not served",
+        { status: 404, body: { error: "no_such_route" } },
+        "The spawn ledger is not offered yet",
+      ],
+      ["failed", { status: 502, body: { detail: "upstream" } }, ""],
+    ])("when the ledger read is %s", async (_arm, answer, headline) => {
+      routes.stats = () => answer;
+      routes.list = () => answer;
+      routes.pending = () => answer;
+      routes.fleet = () => ({ status: 502, body: { detail: "upstream" } });
+      routes.roles = () => ({ status: 502, body: { detail: "upstream" } });
+      renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
+      await settle();
+      expect(screen.getByTestId("coord-spawns-health").textContent).toContain(
+        headline
+      );
+      expect(screen.getByTestId("coord-spawns-list-unknown")).toBeTruthy();
+      expectNoServiceToken();
+    });
+  });
+
+  it("says a failed roster refresh keeps the last good list, in fixed words", async () => {
+    renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
+    await settle();
+    expect(screen.queryByTestId("coord-spawns-machines-stale")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-machine-stale")).toBeNull();
+
+    routes.fleet = () => ({
+      status: 502,
+      body: { detail: `coord unreachable at ${FAILED_URL}` },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-spawns-refresh"));
+    });
+    await settle();
+
+    expect(screen.getAllByTestId("coord-spawns-machine")).toHaveLength(2);
+    const note = screen.getByTestId("coord-spawns-machines-stale").textContent;
+    expect(note).toContain("this list is from the last good read");
+    expect(note).not.toContain("10.0.0.5");
+    expect(note).toContain("reason withheld");
+    expect(screen.getAllByTestId("coord-spawns-machine-stale")).toHaveLength(2);
+    // The name stays the machine's alias alone: the mark is beside it.
+    expect(
+      screen
+        .getAllByTestId("coord-spawns-machine-name")
+        .map((n) => n.textContent)
+    ).toEqual(["Machine A", "Machine B"]);
+    expectNoServiceToken();
+
+    routes.fleet = presentationRoutes().fleet;
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-spawns-refresh"));
+    });
+    await settle();
+    expect(screen.queryByTestId("coord-spawns-machines-stale")).toBeNull();
+  });
+
+  it("names what the matrix leaves out, and lists a row it cannot classify without its name", async () => {
+    routes.effective = () => ({
+      body: {
+        agents: [
+          ...effectiveBody().agents,
+          effectiveFx("secret_inline_kind", "in_session_subagent"),
+        ],
+      },
+    });
+    renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
+    await settle();
+    expect(screen.getByTestId("coord-spawns-paths-note").textContent).toContain(
+      OTHER_RUNNER_STARTS
+    );
+    const unclassified = screen.getByTestId(
+      "coord-spawns-paths-unclassified"
+    ).textContent;
+    expect(unclassified).toContain("1 further registry row");
+    expect(unclassified).not.toContain("secret_inline_kind");
+    // The part alone: a caption's textContent runs its title into this line.
+    const oneLiner = (id: string) =>
+      document.querySelector(
+        `[data-presentation-caption="${id}"] [data-caption-part="one-liner"]`
+      )?.textContent;
+    expect(oneLiner("agentic-activity.page")).toMatch(/^The paths that start/);
+    expect(oneLiner("agentic-activity.spawn-paths")).toMatch(
+      /^The paths this console knows of/
+    );
+  });
+
   it("still says a failed read is UNKNOWN, in fixed words", async () => {
     renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
     await settle();
@@ -458,6 +716,40 @@ describe("/admin/coord/spawns?present=1", () => {
 });
 
 describe("/admin/coord/spawns for the operator — the same fixtures", () => {
+  it("names a registry row it cannot classify, and does not call it a role", async () => {
+    routes.effective = () => ({
+      body: {
+        agents: [
+          ...effectiveBody().agents,
+          effectiveFx("new_inline_kind", "in_session_subagent"),
+        ],
+      },
+    });
+    render(<CoordSpawnsPage />);
+    await settle();
+    expect(
+      screen.getByTestId("coord-spawns-paths-unclassified").textContent
+    ).toContain("no line here: new_inline_kind.");
+  });
+
+  it("says a failed roster refresh's own failure above the kept list", async () => {
+    render(<CoordSpawnsPage />);
+    await settle();
+    routes.fleet = () => ({
+      status: 502,
+      body: { detail: `coord unreachable at ${FAILED_URL}` },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("coord-spawns-refresh"));
+    });
+    await settle();
+    expect(screen.getAllByTestId("coord-spawns-machine")).toHaveLength(2);
+    expect(
+      screen.getByTestId("coord-spawns-machines-stale").textContent
+    ).toContain("this list is from the last good read");
+    expect(screen.getAllByTestId("coord-spawns-machine-stale")).toHaveLength(2);
+  });
+
   it("shows the real names, the switches and the launcher the lens withholds", async () => {
     render(<CoordSpawnsPage />);
     await settle();
