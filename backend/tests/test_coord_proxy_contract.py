@@ -375,12 +375,8 @@ EXPECTED: dict[str, dict[str, Cell]] = {
         "coord_500_html": Cell(Raises(500, _HTML_BODY)),
         "ok_200_json": Cell(Returns(_OK_DICT)),
         # A 2xx with no usable body is a 504 as well: coord may have committed.
-        "ok_200_empty": Cell(
-            Raises(504, "coord answered 200 with a body that is not JSON")
-        ),
-        "no_content_204": Cell(
-            Raises(504, "coord answered 204 with a body that is not JSON")
-        ),
+        "ok_200_empty": Cell(Raises(504, "coord answered 200 with no body")),
+        "no_content_204": Cell(Raises(504, "coord answered 204 with no body")),
         "ok_200_text": Cell(
             Raises(504, "coord answered 200 with a body that is not JSON")
         ),

@@ -1424,6 +1424,35 @@ class TestTransportStatusesSayWhetherCoordMayHaveActed:
         assert "may have been applied" not in err.detail
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("answer", "words"),
+        [
+            (httpx.Response(204), "204 with no body"),
+            (httpx.Response(200), "200 with no body"),
+            (
+                httpx.Response(302, headers={"location": "/elsewhere"}, text="<html>"),
+                "302 with a redirect this door does not follow",
+            ),
+            # A redirect is no answer even when its body happens to parse.
+            (
+                httpx.Response(302, headers={"location": "/elsewhere"}, json={}),
+                "302 with a redirect this door does not follow",
+            ),
+        ],
+    )
+    async def test_an_answer_with_nothing_usable_is_a_504_saying_what_came(
+        self, answer: httpx.Response, words: str
+    ) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return answer
+
+        err = await self._status_of(handler)
+        assert err.status_code == 504
+        assert words in err.detail
+        assert "not JSON" not in err.detail
+        assert "may have been applied" in err.detail
+
+    @pytest.mark.asyncio
     async def test_coords_own_answer_still_passes_through(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(502, json={"error": "coord_says_so"})
