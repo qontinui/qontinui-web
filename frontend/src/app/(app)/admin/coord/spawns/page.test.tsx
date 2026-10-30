@@ -361,7 +361,7 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
       "No spawn was requested in the last 7 days, and none is waiting"
     );
     expect(screen.getByTestId("coord-spawns-list-empty").textContent).toBe(
-      "Coord recorded no spawn request in the last 7 days, and none older was waiting."
+      "No spawn request was recorded in the last 7 days, and none older was waiting."
     );
     expect(screen.queryByTestId("coord-spawns-list-unknown")).toBeNull();
     expect(screen.getByTestId("coord-spawns-devices-empty")).toBeTruthy();
@@ -469,7 +469,7 @@ describe("/admin/coord/spawns — the failure arms", () => {
     fireEvent.click(screen.getByTestId("coord-spawns-filter-failed"));
     expect(screen.queryByTestId("coord-spawns-list-empty")).toBeNull();
     expect(screen.getByTestId("coord-spawns-list-unknown").textContent).toBe(
-      "Coord's list of the requests in the last 7 days could not be read — which of them failed to start is unknown, not none."
+      "The list of the requests in the last 7 days could not be read — which of them failed to start is unknown, not none."
     );
 
     // The waiting read DID answer, so the Queued tab still lists its row.

@@ -26,6 +26,12 @@
  * the column says so — once for the list and in each line's title — rather
  * than rendering a 0 or a blank.
  *
+ * ## A failed roster refresh keeps the list, and says so
+ *
+ * The roster's last good answer stays on screen, because a failed read says
+ * nothing about the fleet; {@link machineListStale} says it is stale above the
+ * list, and each line carries the mark.
+ *
  * ## Sessions open now is UNKNOWN unless coord counted it
  *
  * It is coord's `open_now`, and only for a machine that is registered and
@@ -67,6 +73,8 @@ export interface MachineStatusLine {
   /** The coord device id. */
   key: string;
   identity: MachineIdentity;
+  /** The line is from the roster's last good read: its latest refresh failed. */
+  stale: boolean;
   drain: MachineCell;
   role: MachineCell;
   inFlight: MachineCell;
@@ -169,8 +177,8 @@ function roleCell(
     return unknown(
       "role UNKNOWN",
       read.rosterTruncated === true
-        ? "Coord's role read does not list this machine, and it reported its device list as cut short — the machine may have been cut."
-        : "Coord's role read does not list this machine."
+        ? "The role read does not list this machine, and it reported its device list as cut short — the machine may have been cut."
+        : "The role read does not list this machine."
     );
   }
   return {
@@ -211,7 +219,12 @@ function sessionsCell(
     );
   }
   if (line.openNow === null) {
-    return unknown("UNKNOWN", line.status.reason);
+    return unknown(
+      "UNKNOWN",
+      presenting
+        ? "This machine has not reported recently, so how many sessions it has open now is unknown."
+        : line.status.reason
+    );
   }
   const staleNote = stale
     ? presenting
@@ -221,7 +234,7 @@ function sessionsCell(
   return {
     state: "known",
     text: `${line.openNow} open now${stale ? " (stale)" : ""}`,
-    title: `${line.openNow} session${line.openNow === 1 ? "" : "s"} open on this machine, as coord's run record counts them${staleNote}.`,
+    title: `${line.openNow} session${line.openNow === 1 ? "" : "s"} open on this machine, as the session run record counts them${staleNote}.`,
     unknown: stale,
   };
 }
@@ -234,6 +247,7 @@ export function machineStatusLines(
   return input.devices.map((d) => ({
     key: d.device_id,
     identity: { deviceId: d.device_id, hostname: d.hostname ?? null },
+    stale: input.devicesError !== null,
     drain: drainCell(input.drain, d.device_id, input.nowMs, input.presenting),
     role: roleCell(input.roles, d.device_id, input.presenting),
     inFlight: unknown(
@@ -258,4 +272,16 @@ export function machineListUnknown(
   if (input.devices !== null) return null;
   if (input.devicesError === null) return "Reading the fleet roster…";
   return `The fleet roster could not be read (${presentedFailureReason(input.devicesError, input.presenting)}), so which machines exist is unknown — not none.`;
+}
+
+/**
+ * Why the list shown is not the roster as it is now, or `null` when it is: a
+ * failed refresh keeps the last good list (a failed read says nothing about
+ * the fleet), and a machine added or removed since is not on it.
+ */
+export function machineListStale(
+  input: Pick<MachineStatusInput, "devices" | "devicesError" | "presenting">
+): string | null {
+  if (input.devices === null || input.devicesError === null) return null;
+  return `The latest refresh of the fleet roster failed (${presentedFailureReason(input.devicesError, input.presenting)}), so this list is from the last good read: a machine added or removed since then is not reflected.`;
 }

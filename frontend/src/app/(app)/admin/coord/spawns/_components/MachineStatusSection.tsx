@@ -64,12 +64,15 @@ function CellValue({ cell, testId }: { cell: MachineCell; testId: string }) {
 export function MachineStatusSection({
   lines,
   listUnknown,
+  listStale,
   presenting,
   sources,
 }: {
   /** `null` while the roster is unknown — `listUnknown` says why. */
   lines: MachineStatusLine[] | null;
   listUnknown: string | null;
+  /** The list is the last good read: why, or `null` when it is current. */
+  listStale: string | null;
   presenting: boolean;
   sources: readonly SectionSource[];
 }) {
@@ -98,6 +101,15 @@ export function MachineStatusSection({
         In flight against ceiling, and the reasons work was held: UNKNOWN —{" "}
         {presenting ? IN_FLIGHT_UNKNOWN.presented : IN_FLIGHT_UNKNOWN.operator}
       </p>
+      {listStale && (
+        <p
+          className="text-sm text-amber-200 m-0"
+          role="status"
+          data-testid="coord-spawns-machines-stale"
+        >
+          {listStale}
+        </p>
+      )}
       {lines === null ? (
         <p
           className="text-sm text-muted-foreground italic"
@@ -110,7 +122,7 @@ export function MachineStatusSection({
           className="text-sm text-muted-foreground"
           data-testid="coord-spawns-machines-empty"
         >
-          Coord&apos;s fleet roster lists no machine.
+          The fleet roster lists no machine.
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -142,6 +154,19 @@ export function MachineStatusSection({
                       identity={line.identity}
                       data-testid="coord-spawns-machine-name"
                     />
+                    {line.stale && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "ml-1.5 text-[10px] font-medium",
+                          UNKNOWN_AMBER
+                        )}
+                        title="From the last good read of the fleet roster."
+                        data-testid="coord-spawns-machine-stale"
+                      >
+                        stale
+                      </Badge>
+                    )}
                   </td>
                   <td className="py-1.5 pr-3">
                     <CellValue

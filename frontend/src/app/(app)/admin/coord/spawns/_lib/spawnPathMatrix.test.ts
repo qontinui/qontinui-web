@@ -49,7 +49,11 @@ import type { RepoDialReading } from "@/app/(app)/admin/coord/agent-registry/_li
 import { SEEDED_CLASS_ROWS, SPAWN_KIND_SEEDS } from "./spawnPathContract";
 import { UNSERVED_PATHS } from "./spawnPathCatalog";
 import type { ReadPart, SwitchWrite } from "./spawnPathGates";
-import { deriveSpawnPathMatrix, type MatrixInputs } from "./spawnPathMatrix";
+import {
+  classifyServedRow,
+  deriveSpawnPathMatrix,
+  type MatrixInputs,
+} from "./spawnPathMatrix";
 
 const NOW_MS = Date.parse(AS_OF);
 
@@ -171,6 +175,50 @@ describe("rows come from what coord serves", () => {
     );
     expect(m.rows.some((r) => r.key === "helper-role")).toBe(false);
     expect(m.roleRows).toBe(2);
+  });
+
+  it("does not count a row it cannot classify as an agent role, and names it", () => {
+    const agents = [
+      ...effectiveBody().agents,
+      // A new kind on the in-session class: snake_case, so not a role's name.
+      effectiveFx("new_inline_kind", "in_session_subagent"),
+      // A hyphenated name on a class no role is ever on.
+      effectiveFx("fanout-thing", "parallel_fanout"),
+      effectiveFx("no-path-at-all", null as unknown as string),
+    ];
+    const m = deriveSpawnPathMatrix(inputs({ effective: ok(agents) }));
+    expect(m.roleRows).toBe(1);
+    expect(m.unclassified).toEqual([
+      "fanout-thing",
+      "new_inline_kind",
+      "no-path-at-all",
+    ]);
+    for (const name of m.unclassified) {
+      expect(m.rows.some((r) => r.key === name)).toBe(false);
+    }
+  });
+
+  it("classifies a served row: a contract name or a standing kind is a path, a hyphenated in-session name a role", () => {
+    expect(classifyServedRow("pr_fix_dispatch", "standing_continuation")).toBe(
+      "path"
+    );
+    expect(classifyServedRow("operator_spawn", "in_session_subagent")).toBe(
+      "path"
+    );
+    expect(classifyServedRow("parallel_fanout", "parallel_fanout")).toBe(
+      "path"
+    );
+    expect(classifyServedRow("brand-new", "standing_continuation")).toBe(
+      "path"
+    );
+    expect(classifyServedRow("code-reviewer", "in_session_subagent")).toBe(
+      "role"
+    );
+    expect(classifyServedRow("reviewer", "in_session_subagent")).toBe("role");
+    expect(classifyServedRow("new_inline_kind", "in_session_subagent")).toBe(
+      "unclassified"
+    );
+    expect(classifyServedRow("code-reviewer", null)).toBe("unclassified");
   });
 
   it("keeps every contract row when neither registry read answered, each value UNKNOWN naming the read", () => {

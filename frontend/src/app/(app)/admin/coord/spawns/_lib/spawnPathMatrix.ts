@@ -10,7 +10,9 @@
  *    path is `standing_continuation` — a session coord starts on its own,
  *    which is how a kind newer than this build's copy of the contract still
  *    gets its row. Agent ROLE rows (`code-reviewer` …) are Agent-tool roles,
- *    not paths: counted, and left to the agent registry page.
+ *    not paths: counted, and left to the agent registry page. A row that is
+ *    neither (`classifyServedRow`) is not assumed to be either: it is listed
+ *    by name, so a new kind cannot pass as a role.
  * 2. **Contract.** A contract kind or seeded class that no read served (an
  *    older coord, or a read that failed): its row stays, and every value on it
  *    is UNKNOWN with the reason — a missing path is never silently absent.
@@ -119,6 +121,8 @@ export interface SpawnPathMatrix {
    * neither registry read has answered.
    */
   roleRows: number | null;
+  /** Served registry rows that are neither a known path nor an agent role. */
+  unclassified: string[];
 }
 
 /**
@@ -156,16 +160,28 @@ function rank(row: MatrixRow): number {
   return 1000;
 }
 
-/** Whether a served registry row is a spawn path rather than an agent role. */
-export function isSpawnPathRow(
+/**
+ * What a served registry row is. Coord's table holds three vocabularies
+ * (`agent_registry.rs`): spawn kinds and class rows, which are snake_case and
+ * which this copy of the contract knows, and agent ROLES, named after
+ * `.claude/agents/*.md` and "always `spawn_path = in_session_subagent`". A row
+ * outside the copy with any other shape — a new inline kind, a row on another
+ * class — is a thing this build cannot classify, and is said to be one.
+ */
+export function classifyServedRow(
   name: string,
   spawnPath: string | null
-): boolean {
-  return (
+): "path" | "role" | "unclassified" {
+  if (
     kindSeed(name) !== undefined ||
     isSpawnClass(name) ||
     spawnPath === "standing_continuation"
-  );
+  ) {
+    return "path";
+  }
+  return spawnPath === "in_session_subagent" && !name.includes("_")
+    ? "role"
+    : "unclassified";
 }
 
 /** Every served name, with the spawn path a read gave it. */
@@ -333,13 +349,17 @@ export function deriveSpawnPathMatrix(inputs: MatrixInputs): SpawnPathMatrix {
   const rows: MatrixRow[] = [];
   const seen = new Set<string>();
   let roleRows = 0;
+  const unclassified: string[] = [];
   for (const [name, spawnPath] of served) {
-    if (!isSpawnPathRow(name, spawnPath)) {
+    const kind = classifyServedRow(name, spawnPath);
+    if (kind === "role") {
       roleRows += 1;
-      continue;
+    } else if (kind === "unclassified") {
+      unclassified.push(name);
+    } else {
+      rows.push(coordRow(name, spawnPath, "served", inputs));
+      seen.add(name);
     }
-    rows.push(coordRow(name, spawnPath, "served", inputs));
-    seen.add(name);
   }
   for (const seed of SPAWN_KIND_SEEDS) {
     if (seen.has(seed.agentName)) continue;
@@ -363,5 +383,6 @@ export function deriveSpawnPathMatrix(inputs: MatrixInputs): SpawnPathMatrix {
     rows,
     counts: countRows(rows),
     roleRows: answered ? roleRows : null,
+    unclassified: unclassified.sort(),
   };
 }

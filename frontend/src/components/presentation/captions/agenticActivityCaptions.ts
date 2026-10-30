@@ -22,12 +22,14 @@ export const AGENTIC_ACTIVITY_CAPTIONS = {
     // their switches (the matrix — the system's own paths, and the console's
     // launcher, which a person uses), the machines that host the sessions,
     // and the record of every request (the ledger, which holds both kinds).
-    oneLiner: copy`Every way an ${term("agent_session", "agent session")} gets started — by the system on its own, or by a person from the console — with the switches that control each, the machines those sessions run on, and every session the ${term("coord", "coordination service")} was asked to start.`,
+    oneLiner: copy`The paths that start an ${term("agent_session", "agent session")} — by the system on its own, or by a person from the console — with the switches that control each, the machines those sessions run on, and every session the ${term("coord", "coordination service")} was asked to start.`,
     whyItMatters: copy`Each automatic path can be switched off by the people it acts for, so the page shows what each switch reads, which machines are taking new work and how every request ended — and anything it could not read is shown as ${term("unknown")}, never as on or as none.`,
   },
   "agentic-activity.spawn-paths": {
     title: "Spawn paths",
-    oneLiner: copy`Each path by which an ${term("agent_session", "agent session")} starts, with every switch this page can read that controls it: where the switch is set, at what scope, and whether it is enforced.`,
+    // Not "every path": a runner's looping agents, workflows and restart resumes
+    // have no line (the section's note says so, and their requests are listed).
+    oneLiner: copy`The paths this console knows of that start an ${term("agent_session", "agent session")}, with every switch this page can read that controls each: where the switch is set, at what scope, and whether it is enforced.`,
     // True against coord: every registry row seeds `default_enabled: true`
     // (the spawn contract), while the next-step and red-main dispatch arms
     // ship dormant — their fleet flags are "Default OFF" (`next_step.rs`) and
