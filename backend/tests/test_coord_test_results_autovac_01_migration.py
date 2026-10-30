@@ -26,7 +26,7 @@ from tests._alembic_harness import (
     run_alembic,
 )
 
-_PARENT_REVISION_ID = "journey_04_explorations_stop_detail_any_stop"
+_PARENT_REVISION_ID = "coord_session_warm_bytes_01"
 _AUTOVAC_REVISION_ID = "coord_test_results_autovac_01"
 
 
