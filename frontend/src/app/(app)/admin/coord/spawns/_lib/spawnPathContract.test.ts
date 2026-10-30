@@ -7,10 +7,12 @@
  * 1. **The copy is the contract.** `spawn_authorization.json` at the commit
  *    `spawn-contract.pin.toml` pins must hold exactly the kinds and seeded
  *    classes `spawnPathContract.ts` copies — so a bump past a new kind fails
- *    HERE until the matrix knows it. CI fetches that file
- *    (`.github/actions/spawn-contract`); locally it comes from the
- *    qontinui-schemas checkout beside this repository. There is no third
- *    outcome: a file that cannot be had at the pinned digest is RED.
+ *    HERE until the matrix knows it. GitHub Actions fetches that file
+ *    (`.github/actions/spawn-contract`); elsewhere it comes from the
+ *    qontinui-schemas checkout beside this repository, into which the ci_node
+ *    lane first fetches the pinned commit
+ *    (`scripts/ci/fetch_pinned_schemas_commits.py`). There is no third outcome:
+ *    a file that cannot be had at the pinned digest is RED.
  * 2. **The hand list holds only what nothing serves.** No hand-kept row may
  *    carry a served kind's or class's name: it would shadow, or duplicate, the
  *    row coord serves.
@@ -120,7 +122,7 @@ function resolveContract(
     });
   } catch {
     throw new Error(
-      `${blob} could not be read from ${SIBLING_REPO}: run \`git -C ../${SPAWN_CONTRACT_SOURCE.repo} fetch\`, or check it out beside this repository. spawn-contract.pin.toml pins ${pin.sha256}`
+      `${blob} could not be read from ${SIBLING_REPO}: from the repository root run \`python scripts/ci/fetch_pinned_schemas_commits.py\`, which fetches the pinned commit into the sibling, or check ${SPAWN_CONTRACT_SOURCE.repo} out beside this repository. spawn-contract.pin.toml pins ${pin.sha256}`
     );
   }
   return atDigest(bytes, blob);
@@ -159,6 +161,15 @@ describe("the matrix's copy of the spawn contract", () => {
       expect(() => resolveContract(env, pin)).toThrow(got);
       expect(() => resolveContract(env, pin)).toThrow(pin.sha256);
     }
+  });
+
+  it("names the cure when the pinned commit is not in the sibling's objects", () => {
+    // A plain `git fetch` does not cure this in a depth-1 sibling: the commit a
+    // pin names is usually not a tip. So the message must name what does.
+    const absent = { ref: "0".repeat(40), sha256: "0".repeat(64) };
+    expect(() => resolveContract({}, absent)).toThrow(
+      "scripts/ci/fetch_pinned_schemas_commits.py"
+    );
   });
 
   it("is red under CI when the fetched file is missing, with no fallback to a sibling", () => {

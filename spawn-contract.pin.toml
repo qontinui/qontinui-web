@@ -8,21 +8,25 @@
 # of the contract at it.
 #
 # Why a pin and not schemas `main`: a contract edit there would otherwise redden
-# every PR here; at a pin, a red can only come from THIS repo's change, and the
-# bump is the reviewed step that adopts the edit. The frontend-ci advisory step
-# warns when schemas main has moved past this pin.
+# every PR here; at a pin, a red comes from THIS repo's change or from the pinned
+# bytes being unreachable, which names itself, and the bump is the reviewed step
+# that adopts the edit. The frontend-ci advisory step warns when schemas main has
+# moved past this pin.
 #
-# CI fetches the file at `ref` by a sparse checkout
+# GitHub Actions fetches the file at `ref` by a sparse checkout
 # (.github/actions/spawn-contract) and the test refuses a file whose digest
-# differs from `sha256`. Locally it reads
+# differs from `sha256`. Elsewhere it reads
 # `../qontinui-schemas/rust/src/spawn_authorization.json` with the same digest
 # check; when that sibling is absent or at another commit it reads the pinned
 # blob with `git -C ../qontinui-schemas show <ref>:<path>` (digest-checked too).
-# So locally it is red only when the pinned commit is absent from the sibling's
-# objects, or there is no sibling (`git -C ../qontinui-schemas fetch`, or a
-# checkout beside this repository, fixes that). Under CI ($GITHUB_ACTIONS) or
-# with the $QONTINUI_SPAWN_CONTRACT_FILE override there is no fallback: that file
-# at the pinned digest, or red naming both digests. It is never skipped.
+# So there it is red only when the pinned commit is absent from the sibling's
+# objects, or there is no sibling. The coord ci_node lane's sibling is a depth-1
+# clone, so its `fetch-pinned-schemas-commits` step runs
+# scripts/ci/fetch_pinned_schemas_commits.py first; run that script by hand for
+# the same cure, or check qontinui-schemas out beside this repository. Under
+# $GITHUB_ACTIONS or with the $QONTINUI_SPAWN_CONTRACT_FILE override there is no
+# fallback: that file at the pinned digest, or red naming both digests. It is
+# never skipped.
 #
 # To bump: set `ref` to the new schemas commit and `sha256` to
 # `git -C ../qontinui-schemas show <ref>:rust/src/spawn_authorization.json | sha256sum`,

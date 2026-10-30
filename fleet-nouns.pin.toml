@@ -20,7 +20,9 @@
 # sibling is absent or at another commit they read the pinned blob with
 # `git -C ../qontinui-schemas show <ref>:fleet-nouns.toml` (digest-checked too).
 # So locally it is red only when the pinned commit is absent from the
-# sibling's objects (`git -C ../qontinui-schemas fetch` fixes that). Under CI
+# sibling's objects; scripts/ci/fetch_pinned_schemas_commits.py fixes that, and
+# the coord ci_node lane, whose sibling is a depth-1 clone, runs it as a step
+# before its frontend tests. Under CI
 # ($GITHUB_ACTIONS) or with the $QONTINUI_FLEET_NOUNS_FILE override there is no
 # fallback: that file at the pinned digest, or red naming both digests — never
 # a silent scan with different classes.

@@ -13,7 +13,7 @@ runs:
   using: composite
   steps:
     # PINNED, never read at schemas main, for the reason fleet-nouns-vocab gives:
-    # at a pin, a red can only come from this repo's change.
+    # at a pin, a schemas edit cannot redden a PR here.
     - name: Read the spawn contract pin
       id: pin
       shell: bash
