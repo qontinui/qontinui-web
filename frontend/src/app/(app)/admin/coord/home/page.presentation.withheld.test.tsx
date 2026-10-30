@@ -22,6 +22,7 @@ import {
 } from "@/test/presentation";
 import {
   CLIENT_PLANE,
+  FIRST_PARTY_REPO,
   MUST_NOT_APPEAR,
   NAMELESS_SUBJECT_ID,
   OFF_TABLE_WATCHER,
@@ -30,6 +31,7 @@ import {
   fullBody,
   namelessSubjectBody,
   offTablePlanesBody,
+  oneGroupBody,
 } from "./__fixtures__/presentationFixture";
 import {
   checkBehindEveryDisclosure,
@@ -123,6 +125,116 @@ describe("a degradation's subject with an id and no name", () => {
         "coord-home.degrading.raw"
       )
     ).toHaveTextContent(`subject ${NAMELESS_SUBJECT_ID}`);
+  });
+});
+
+describe("a work unit's link, whose URL carries its slug", () => {
+  /** The first-party repository's row opened, and its one unit's name. */
+  function unitName() {
+    const own = expandRow(
+      screen.getByTestId("coord-home.on-track"),
+      FIRST_PARTY_REPO
+    );
+    const name = own.querySelector(
+      '[data-testid^="coord-home.on-track.named."] [data-redacted]'
+    );
+    if (!name) throw new Error("no unit named");
+    return name;
+  }
+
+  it("is not linked when its title names a client, whatever its slug", async () => {
+    const view = await renderPresenting(
+      oneGroupBody(FIRST_PARTY_REPO, [
+        { slug: "2026-10-01-rollout", title: "Acme Corp rollout" },
+      ])
+    );
+    const name = unitName();
+    expect(name).toHaveAttribute("data-redacted", "true");
+    expect(name.closest("[data-lens-link]")).toBeNull();
+    expect(html()).not.toContain("2026-10-01-rollout");
+    expectPresentationSafe(view, { forbidden: ["acme"] });
+  });
+
+  it("is not linked when its slug names a client, though its title shows", async () => {
+    const view = await renderPresenting(
+      oneGroupBody(FIRST_PARTY_REPO, [
+        { slug: "2026-10-01-acme-rollout", title: "Overview copy pass" },
+      ])
+    );
+    const name = unitName();
+    expect(name).toHaveAttribute("data-redacted", "false");
+    expect(name).toHaveTextContent("Overview copy pass");
+    expect(name.closest("[data-lens-link]")).toBeNull();
+    expect(html()).not.toContain("acme-rollout");
+    expectPresentationSafe(view, { forbidden: ["acme"] });
+  });
+
+  it("is handed to the lens's link when the scope clears both", async () => {
+    await renderPresenting(
+      oneGroupBody(FIRST_PARTY_REPO, [
+        { slug: "2026-10-01-rollout", title: "Overview copy pass" },
+      ])
+    );
+    expect(unitName().closest("[data-lens-link]")).not.toBeNull();
+  });
+
+  it("names an untitled unit by its slug when the scope clears it", async () => {
+    await renderPresenting(
+      oneGroupBody(FIRST_PARTY_REPO, [
+        { slug: "2026-10-01-rollout", title: null },
+      ])
+    );
+    const name = unitName();
+    expect(name).toHaveAttribute("data-redacted", "false");
+    expect(name).toHaveTextContent("2026-10-01-rollout");
+    expect(name.closest("[data-lens-link]")).not.toBeNull();
+  });
+
+  it("withholds an untitled unit whose slug names a client, and does not link it", async () => {
+    const view = await renderPresenting(
+      oneGroupBody(FIRST_PARTY_REPO, [
+        { slug: "2026-10-01-acme-rollout", title: null },
+      ])
+    );
+    const name = unitName();
+    expect(name).toHaveAttribute("data-redacted", "true");
+    expect(name.closest("[data-lens-link]")).toBeNull();
+    expectPresentationSafe(view, { forbidden: ["acme"] });
+  });
+
+  it("(control) the operator's link names and opens every one of them", async () => {
+    await renderOperator(
+      oneGroupBody(FIRST_PARTY_REPO, [
+        { slug: "2026-10-01-acme-rollout", title: null },
+      ])
+    );
+    const own = expandRow(
+      screen.getByTestId("coord-home.on-track"),
+      FIRST_PARTY_REPO
+    );
+    expect(
+      within(own).getByRole("link", { name: "2026-10-01-acme-rollout" })
+    ).toHaveAttribute(
+      "href",
+      "/admin/coord/work-units/2026-10-01-acme-rollout"
+    );
+  });
+});
+
+describe("a first-party repository whose name carries a confidential term", () => {
+  const REPO = "qontinui/acme-portal";
+
+  it("is a descriptor on its row and 'this repository' in its detail", async () => {
+    const view = await renderPresenting(
+      oneGroupBody(REPO, [{ slug: "2026-10-01-rollout", title: "A pass" }])
+    );
+    const region = screen.getByTestId("coord-home.on-track");
+    const row = expandRow(region, /^Repository/);
+    expect(row).toHaveTextContent("Work units that name this repository.");
+    checkBehindEveryDisclosure(() => {
+      expectPresentationSafe(view, { forbidden: [REPO, "acme"] });
+      expect(html()).not.toContain("acme");
+    });
   });
 });
 

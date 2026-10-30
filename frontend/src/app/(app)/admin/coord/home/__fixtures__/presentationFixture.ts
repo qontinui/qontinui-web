@@ -730,6 +730,38 @@ export function completeWaitingListsBody() {
   };
 }
 
+/**
+ * One repository group naming `units` as its stalled list, every list complete,
+ * so the repository alone decides what the scope clears.
+ */
+export function oneGroupBody(
+  repo: string,
+  units: readonly { slug: string; title: string | null }[]
+) {
+  const body = fullBody();
+  return {
+    ...body,
+    on_track: {
+      ...body.on_track,
+      groups: [
+        {
+          key: repo,
+          kind: "repo",
+          row_count: units.length,
+          classes: CLASSES,
+          named: {
+            stalled: {
+              units: units.map((u) => unit(u.slug, u.title)),
+              omitted: 0,
+            },
+            waiting_on_gate: { units: [], omitted: 0 },
+          },
+        },
+      ],
+    },
+  };
+}
+
 /** An open degradation of an uneventful kind, with `fields` replaced. */
 function openRow(id: string, fields: Record<string, unknown>) {
   return {
