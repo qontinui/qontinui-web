@@ -760,7 +760,22 @@ def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
     TOP LEVEL of the response, so every ``coord_*`` field, ``code`` and
     ``hint`` reach a client. (A dict without ``error`` is spread the same way
     now; it used to be flattened to ``message: str(detail)``, a Python repr.)
+
+    A coord 5xx is relayed as its status and a fixed sentence only, as the
+    pair-code redeem and ``fleet_targets._reraise_coord_refusal`` do: its text
+    can carry SQL or connection-pool context, so it stays in the server log
+    (both callers log ``resp.text[:500]`` before raising). A 4xx is coord's
+    refusal of this pairing, and its body says why, so it is relayed.
     """
+    if resp.status_code >= 500:
+        return {
+            "error": ErrorCode.BAD_GATEWAY.value,
+            "coord_status": resp.status_code,
+            "message": (
+                f"Coord failed to complete pairing (HTTP {resp.status_code}). "
+                "Retry; if it persists, check coord."
+            ),
+        }
     detail: dict[str, Any] = {
         "error": ErrorCode.BAD_GATEWAY.value,
         "coord_status": resp.status_code,
