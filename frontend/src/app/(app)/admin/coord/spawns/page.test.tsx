@@ -327,6 +327,26 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     );
   });
 
+  it("names a single device with a placement in the singular", async () => {
+    const good = statsFx();
+    routes.stats = () => ({
+      body: statsFx(
+        {},
+        {
+          per_device: [
+            good.per_device[0]!,
+            { ...good.per_device[1]!, placed: 0, started: 0 },
+          ],
+        }
+      ),
+    });
+    await renderPage();
+    expect(countOf("devices")).toBe("1");
+    expect(screen.getByTestId("coord-spawns-count-devices").textContent).toBe(
+      "1device with a placement"
+    );
+  });
+
   it("renders an empty window as a measured empty, with zero counts", async () => {
     routes.stats = () => ({
       body: statsFx(
