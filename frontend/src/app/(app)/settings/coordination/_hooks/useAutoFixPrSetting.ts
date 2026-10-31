@@ -64,6 +64,12 @@ export interface UseAutoFixPrSettingReturn {
    * answer and after a failed read (UNKNOWN, never a stale profile).
    */
   profile: EffectiveProfile | null;
+  /**
+   * True from a write whose outcome is open until the re-read it started has
+   * settled: what `state` holds is then the PRE-write value, which a control
+   * must not show as the position.
+   */
+  unconfirmed: boolean;
   setChoice: (choice: AutoFixPrChoice) => Promise<AutoFixPrWriteOutcome>;
   /** Re-read the merge settings; settles when that read (or a newer one) does. */
   reload: () => Promise<AutoFixPrReread>;
@@ -95,6 +101,7 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<AutoFixPrState | null>(null);
   const [profile, setProfile] = useState<EffectiveProfile | null>(null);
+  const [unconfirmed, setUnconfirmed] = useState(false);
   const savingRef = useRef(false);
   /** The newest ticket issued; only an answer holding it may apply. */
   const ticket = useRef(0);
@@ -154,6 +161,14 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
 
   const reload = useCallback(() => load(), [load]);
 
+  /** An open outcome's re-read: the position is unknown until it settles. */
+  const rereadUnconfirmed = useCallback((): Promise<AutoFixPrReread> => {
+    setUnconfirmed(true);
+    return load().finally(() => {
+      if (mounted.current) setUnconfirmed(false);
+    });
+  }, [load]);
+
   const setChoice = useCallback(
     async (choice: AutoFixPrChoice): Promise<AutoFixPrWriteOutcome> => {
       // One write at a time: a second click while a PATCH is in flight is
@@ -176,7 +191,7 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
           return {
             kind: "unconfirmed",
             reason: "coord's answer did not read back the value sent",
-            reread: load(),
+            reread: rereadUnconfirmed(),
           };
         }
         // Coord's answer after the write: it outranks any load still in
@@ -200,7 +215,7 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
           return {
             kind: "unconfirmed",
             reason: outcomeUnknownReason(err),
-            reread: load(),
+            reread: rereadUnconfirmed(),
           };
         }
         toast.error(message);
@@ -210,8 +225,17 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
         setSaving(false);
       }
     },
-    [load]
+    [rereadUnconfirmed]
   );
 
-  return { loading, saving, error, state, profile, setChoice, reload };
+  return {
+    loading,
+    saving,
+    error,
+    state,
+    profile,
+    unconfirmed,
+    setChoice,
+    reload,
+  };
 }
