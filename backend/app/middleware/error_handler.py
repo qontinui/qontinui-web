@@ -81,6 +81,27 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+def _detail_message(detail: Any, status_code: int) -> str:
+    """The prose ``message`` for an HTTPException detail — never a repr.
+
+    A string detail is the message. A dict detail (coord's error bodies, which
+    the proxies forward as ``detail``) gives its string ``message``, else its
+    string ``error``: coord's registry 500s carry only
+    ``{"error": "failed to upsert agent registry row"}``, and ``str()`` of that
+    dict used to reach the operator as ``{'error': '...'}``. Anything else
+    (a list, a dict with neither field) names the status rather than printing
+    Python's rendering of the value.
+    """
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, dict):
+        for key in ("message", "error"):
+            value = detail.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return f"HTTP {status_code} with no message"
+
+
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Handle HTTP exceptions with standardized format"""
     # A refusal raised through `app.core.refusal.refusal_error`: the same
@@ -101,13 +122,13 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     detail_value: Any = exc.detail
     if isinstance(detail_value, dict) and "error" in detail_value:
         error_code = detail_value["error"]
-        message = detail_value.get("message", str(detail_value))
+        message = _detail_message(detail_value, exc.status_code)
         metadata: dict[str, Any] = {
             k: v for k, v in detail_value.items() if k not in ["error", "message"]
         }
     else:
         error_code = get_default_error_code(exc.status_code).value
-        message = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        message = _detail_message(detail_value, exc.status_code)
         metadata = {}
 
     content = {
