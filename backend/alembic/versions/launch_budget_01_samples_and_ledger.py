@@ -19,15 +19,21 @@ per ``(tenant_id, device_id, account_label)``, upserted on every runner report,
 so it only ever knows the latest reading. A cost rate (usage rise per agent-hour)
 needs the rise BETWEEN readings. This table is the append-only series of the
 same feed. coord's existing ``POST /coord/claude-accounts/usage`` ingest appends
-one row per non-error account (plan Phase 3); no new route writes here. The
+one row per reported account (plan Phase 3); no new route writes here. The
 snapshot table is left exactly as it is.
 
-* Figures are PERCENT, nullable. A NULL is UNKNOWN (not reported, or the probe
-  failed), never 0. This mirrors ``coord.prepaid_balances`` and avoids the
+* ``session_pct`` / ``weekly_pct`` are PERCENT (the runner wire sends
+  fractions; the ingest multiplies by 100), nullable. A NULL is UNKNOWN (not
+  reported, or the probe failed), never 0.
+* A failed probe is still a row: ``error = true`` with every figure NULL. It is
+  not a reading, but its ``status`` (a provider ``rejected``) is the
+  ``provider_rejected`` HOLD signal, exactly as the shipped helper keeps it. This mirrors ``coord.prepaid_balances`` and avoids the
   ``NOT NULL DEFAULT 0`` defect that ``coord_prepaid_balances_01`` documents for
   ``claude_account_usage.weekly_utilization``.
 * ``model_limits`` keeps the per-model weekly caps verbatim (the shipped helper's
-  ``model_budget`` HOLD reads them). It is pinned to a JSON array.
+  ``model_budget`` HOLD reads them). It is pinned to a JSON array. Each entry's
+  ``utilization`` stays a FRACTION as the runner sent it; only the two top-level
+  figures are converted.
 * ``account_hash`` is the cross-device account identity introduced by
   ``coord_claude_acct_usage_04`` (SHA-256 of ``oauthAccount.accountUuid``).
   NULL means none was readable. Two NULL rows are never the same account, so the
@@ -160,6 +166,8 @@ def upgrade() -> None:
             status            TEXT NULL,
             created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT ck_launch_ledger_status_only_when_finished
+                CHECK (status IS NULL OR finished_at IS NOT NULL),
             CONSTRAINT ck_launch_ledger_label_nonblank
                 CHECK (btrim(label) <> ''),
             CONSTRAINT ck_launch_ledger_launcher_nonblank
@@ -171,7 +179,7 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE INDEX IF NOT EXISTS ix_launch_ledger_open
-            ON coord.launch_ledger (tenant_id, account_hash, account_label)
+            ON coord.launch_ledger (tenant_id, account_hash, device_id, account_label)
             WHERE finished_at IS NULL
         """
     )
@@ -195,13 +203,25 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.account_usage_samples IS
-            'Append-only history of per-account Claude usage readings, one row per non-error account per runner report through POST /coord/claude-accounts/usage. coord.claude_account_usage holds only the latest reading per device and account; this is the series a cost rate is learned from. Kept 31 days by a coord sweep. Plan 2026-10-29-launch-budget-is-a-coord-answer-not-a-per-box-script.'
+            'Append-only history of per-account Claude usage readings, one row per reported account per runner report through POST /coord/claude-accounts/usage. coord.claude_account_usage holds only the latest reading per device and account; this is the series a cost rate is learned from. Kept 31 days by a coord sweep. Plan 2026-10-29-launch-budget-is-a-coord-answer-not-a-per-box-script.'
         """
     )
     op.execute(
         """
         COMMENT ON COLUMN coord.account_usage_samples.session_pct IS
             'Five-hour session window used, in PERCENT. NULL = not reported (a probe-only source carries no session figure), never zero.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.account_usage_samples.weekly_pct IS
+            'Seven-day window used, in PERCENT (the runner wire sends a fraction; the ingest multiplies by 100). NULL = not reported or the probe failed, never zero.'
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.account_usage_samples.error IS
+            'true = the probe failed: every figure is NULL and the row is not a reading, but its status (e.g. rejected) still holds launches.'
         """
     )
     op.execute(
@@ -213,7 +233,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.account_usage_samples.model_limits IS
-            'Per-model weekly caps as the runner reported them: an array of {model, utilization, resets_at}. Read by the model_budget HOLD.'
+            'Per-model weekly caps as the runner reported them: an array of {model, utilization, resets_at}, utilization a FRACTION as reported. Read by the model_budget HOLD.'
         """
     )
     op.execute(
@@ -243,16 +263,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop both tables and their indexes."""
-    op.execute("DROP INDEX IF EXISTS coord.ix_launch_ledger_open_session")
-    op.execute("DROP INDEX IF EXISTS coord.ix_launch_ledger_work_type_launched")
-    op.execute("DROP INDEX IF EXISTS coord.ix_launch_ledger_open")
+    """Drop both tables; their indexes and constraints go with them."""
     op.execute("DROP TABLE IF EXISTS coord.launch_ledger")
-    op.execute("DROP INDEX IF EXISTS coord.ix_account_usage_samples_sampled")
-    op.execute(
-        "DROP INDEX IF EXISTS coord.ix_account_usage_samples_device_label_sampled"
-    )
-    op.execute(
-        "DROP INDEX IF EXISTS coord.ix_account_usage_samples_tenant_hash_sampled"
-    )
     op.execute("DROP TABLE IF EXISTS coord.account_usage_samples")
