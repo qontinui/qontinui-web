@@ -82,14 +82,26 @@ function batchRefusalReason(reasons: unknown): string | undefined {
 /** The relayed coord refusal fields `pairConfirmErrorMessage` reads. */
 interface CoordRefusal {
   coord_status?: unknown;
+  /** The backend's own sentence; for a coord 5xx, its fixed retry advice. */
+  message?: unknown;
   coord_code?: unknown;
   coord_hint?: unknown;
   coord_skip_reasons?: unknown;
 }
 
-/** Message for a relayed coord pairing refusal. */
+/**
+ * Message for a relayed coord pairing answer. A coord 5xx is a coord-side
+ * failure, not a refusal: the backend relays only its status and a fixed
+ * sentence saying to retry (`_coord_refusal_detail` in `devices.py`), and
+ * that sentence is what the user reads.
+ */
 function coordRefusalMessage(refusal: CoordRefusal): string {
   const coordStatus = refusal.coord_status;
+  if (typeof coordStatus === "number" && coordStatus >= 500) {
+    return typeof refusal.message === "string" && refusal.message
+      ? refusal.message
+      : `Coord failed to complete pairing (HTTP ${coordStatus}). Retry; if it persists, check coord.`;
+  }
   let code = typeof refusal.coord_code === "string" ? refusal.coord_code : "";
   if (code === "no_tenant_authorized") {
     // The batch code says nothing about WHY; the per-tenant reasons do.
@@ -115,7 +127,10 @@ function coordRefusalMessage(refusal: CoordRefusal): string {
   return message;
 }
 
-function isCoordRefusal(value: unknown): value is CoordRefusal {
+/** A body carrying `coord_status` is a relayed coord answer. */
+function isCoordRefusal(
+  value: unknown
+): value is CoordRefusal & { coord_status: unknown } {
   return (
     !!value &&
     typeof value === "object" &&
