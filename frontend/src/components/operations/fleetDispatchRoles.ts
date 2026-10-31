@@ -518,14 +518,18 @@ export function describeRoleWriteError(
       ? parsed.detail
       : null);
   // Coord puts its prose in `detail` (a string inside the refusal object).
-  // The deployed web error handler splices a dict refusal to the TOP level and
-  // fills `message` with the dict's Python repr when it has no `message` of
-  // its own (`middleware/error_handler.py`), so `message` is used only when it
-  // is not that repr.
+  // The deployed web error handler splices a dict refusal to the TOP level and,
+  // when it has no `message` of its own, fills `message` with the dict's
+  // `error` — the code itself (`_detail_message` in
+  // `middleware/error_handler.py`; an older handler put the dict's Python repr
+  // there). So `message` is coord's prose only when it is neither the code
+  // nor a repr; otherwise the code would be printed twice.
   const message = inner ? str(inner.message) : null;
   const coordMsg = inner
     ? (str(inner.detail) ??
-      (message && !message.trimStart().startsWith("{") ? message : null))
+      (message && message !== code && !message.trimStart().startsWith("{")
+        ? message
+        : null))
     : null;
 
   if (code === "last_open_lane") {

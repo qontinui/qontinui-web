@@ -32,7 +32,9 @@ export type LensLinkProps = Omit<
  * registered presentation-ready) it is plain text (`data-lens-link=
  * "unlinked"`), never an anchor: no click leaves the lens or lands on "Shown
  * in the operator view only". Operator mode, and a render with no lens above
- * it, are untouched.
+ * it, keep their href untouched. Either arm carries `data-lens-link`
+ * (`"linked"` on the anchor), so a test asking "was this handed to LensLink?"
+ * holds the day a destination is registered and the text becomes an anchor.
  *
  * The page check fails a lens link that drops the presentation
  * (`presentation-dropping-link`, `src/test/presentation.tsx`), and a page's
@@ -62,7 +64,13 @@ export function LensLink({
     );
   }
   return (
-    <Link href={target} className={className} data-testid={testId} {...props}>
+    <Link
+      href={target}
+      className={className}
+      data-testid={testId}
+      data-lens-link="linked"
+      {...props}
+    >
       {children}
     </Link>
   );

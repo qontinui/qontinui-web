@@ -24,6 +24,7 @@ const {
   fetchTenantSettings,
   fireKillSwitch,
   patchRepoProfile,
+  patchTenantAutoFixRedMain,
   patchTenantSettings,
   setMergeEnabled,
 } = await import("./prMerge");
@@ -89,6 +90,22 @@ describe("prMerge", () => {
       (e: unknown) => e
     );
     expect(httpStatusOf(err)).toBe(500);
+  });
+
+  it("patchTenantAutoFixRedMain PATCHes that one knob and nothing else, never re-sent on a 5xx", async () => {
+    fetchMock.mockResolvedValueOnce(answer({ tenant_id: "t-1" }));
+    await patchTenantAutoFixRedMain(false);
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/pr-merge/settings",
+      {
+        method: "PATCH",
+        body: '{"auto_fix_red_main":false}',
+        idempotent: false,
+      },
+    ]);
+    fetchMock.mockResolvedValueOnce(new Response("boom", { status: 403 }));
+    const err = await patchTenantAutoFixRedMain(true).catch((e: unknown) => e);
+    expect(httpStatusOf(err)).toBe(403);
   });
 
   it("fetchTenantRepos GETs /pr-merge/repos, declared idempotent, and parses the body", async () => {

@@ -28,6 +28,7 @@
  * | `RedactedText`, `useRedactor`, `PresentationScopeProvider` | free text only when provably first-party (D3.3); fails closed while the scope is unknown |
  * | `usePresentationScope`, `defaultPresentationScopeStore` | the tenant's scope, read from `GET /api/v1/presentation/scope` only while presenting — the lens's one read (D3.4) |
  * | `MachineName`, `useMachineName`, `useMachineAliaser` | "Machine A, B…" — one alias per machine across every panel and page (D3.3) |
+ * | `useDeviceOrdinals` | a device's first-seen number, to tell apart two devices that share a machine's letter |
  * | `CostFigure` | the only component that may render a per-task cost; never in presentation mode (D3.1) |
  * | `NAVIGATION_ONLY_PROPS` | marks a control whose press only changes what is displayed (D3.2) |
  * | `presenterSafetyProps`, `PRESENTER_SAFETY_CONTROLS` | marks one of the presenter's own safety controls — the closed list of controls besides navigation that presentation mode keeps live (D3.2) |
@@ -238,6 +239,7 @@ export type {
 } from "./presentationScopeLoader";
 
 export {
+  PROJECT_NAME_DESCRIPTOR,
   WITHHELD,
   containsConfidentialTerm,
   describeRedacted,
@@ -247,6 +249,7 @@ export {
 } from "./redaction";
 export type {
   RedactionDescriptor,
+  RedactionDescriptorField,
   RedactionInput,
   RedactionReason,
   RedactionVerdict,
@@ -273,6 +276,7 @@ export {
   MachineName,
   SERVER_MACHINE_ALIAS,
   UNKNOWN_MACHINE_NAME,
+  useDeviceOrdinals,
   useMachineAliaser,
   useMachineName,
 } from "./MachineName";

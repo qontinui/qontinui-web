@@ -71,7 +71,16 @@ from app.core.evidence_posture import (
 #: * ``PATCH /plan-library/edges/{edge_id}`` — the edge verbs (#1459);
 #: * ``POST /session-repository`` [identity] — this plan;
 #: * ``POST /testing/runs``, ``…/deficiencies``, ``…/screenshots`` — this plan.
-GAP_COUNT_PIN = 7
+#:
+#: Three more when every overview write began admitting a device JWT
+#: (2026-10-07, plan ``2026-10-07-agents-publish-documents-to-the-project-overview``):
+#:
+#: * ``DELETE /overview/pages/{record_id}`` [what a re-create loses] — the
+#:   version history, owned by that plan;
+#: * ``DELETE /overview/estimates/{record_id}`` [what a re-create loses] — the
+#:   phase progress and ids, this plan;
+#: * ``DELETE /overview/files/{record_id}`` — the stored bytes, this plan.
+GAP_COUNT_PIN = 10
 
 #: The number of declared closed fields whose schema serves no ``enum``.
 #: Same ratchet rules. At landing: ``POST /events/workflow`` ``event_type``;
@@ -554,3 +563,24 @@ def test_declared_closed_fields_equal_the_body_schema_enums(
                 f"{key}: {name} now serves an enum — move it to closed_fields "
                 "and lower UNSERVED_CLOSED_FIELD_PIN"
             )
+
+
+def test_a_device_refused_cost_row_matches_the_refusal_table() -> None:
+    """The cost-ledger rows are ``Read`` only because their rule refuses a
+    device every write. Tie the posture to that table, so dropping a rule
+    from ``DEVICE_WRITE_REFUSALS`` cannot leave a false ``Read`` behind."""
+    from app.overview.permissions import DEVICE_WRITE_REFUSALS
+    from app.overview.registry import REGISTRY
+
+    refused_paths = {
+        f"/api/v1/overview/{spec.path}"
+        for spec in REGISTRY.values()
+        if spec.permission in DEVICE_WRITE_REFUSALS
+    }
+    for path in (
+        "/api/v1/overview/cost-categories",
+        "/api/v1/overview/recurring-costs",
+        "/api/v1/overview/cost-entries",
+    ):
+        assert path in refused_paths, path
+        assert isinstance(ROUTE_POSTURE[("POST", path)], Read), path

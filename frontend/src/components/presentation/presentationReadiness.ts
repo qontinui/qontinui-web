@@ -87,9 +87,24 @@ export const LENS_TREES: readonly string[] = ["/admin/coord", "/digital-twin"];
  * test. The one page Phase 1 registers is the console's landing redirect,
  * which shows one sentence: withheld, it would never mount and so never
  * redirect, and every presenting tab sent to `/admin/coord` would stop there.
+ *
+ * Agentic activity (`/admin/coord/spawns`, Phase 4) is safe to present —
+ * `spawns/page.presentation.test.tsx` still renders it presenting and checks it
+ * — but is NOT registered: coord does not serve the spawn ledger yet, so
+ * presented it would show no activity at all, which cannot answer an
+ * evaluator's "is it real?" (UX pass, 2026-10-30). Withheld, it reads "not
+ * prepared for presentation" and the tour lists its stop unlinked. Register it
+ * here, with that proof, once the ledger is served.
  */
 export const PRESENTATION_READY_ROUTES: readonly PresentationReadyRoute[] = [
   { route: "/admin/coord", provenBy: "app/(app)/admin/coord/page.test.tsx" },
+  // The coordination overview (plan Phase 2): the one-screen page's
+  // presentation-mode render, over fixtures feeding every free-text carrier
+  // it can show, in every state its regions render.
+  {
+    route: "/admin/coord/home",
+    provenBy: "app/(app)/admin/coord/home/page.presentation.test.tsx",
+  },
   {
     route: "/admin/coord/ui-bridge",
     provenBy: "app/(app)/admin/coord/ui-bridge/page.presentation.test.tsx",

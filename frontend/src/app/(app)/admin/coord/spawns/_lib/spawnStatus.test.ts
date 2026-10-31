@@ -58,9 +58,13 @@ import {
   spawnFilterCounts,
   spawnFilterEmptyText,
   spawnFilterUnknownText,
+  spawnIssueText,
+  spawnIssueTextFor,
   timeToSpawnText,
+  type DeviceNaming,
   type DeviceRoles,
   type SpawnKind,
+  type SpawnReadIssue,
 } from "./spawnStatus";
 
 const NOW = Date.parse(AS_OF);
@@ -70,6 +74,13 @@ const ROLES: DeviceRoles = {
   kind: "known",
   byDevice: new Map([[DEVICE_A, "Workhorse"]]),
 };
+/** The operator's naming: the roster's hostnames, ids in titles. */
+const operatorNaming = (
+  roster: ReadonlyArray<{ device_id: string; hostname?: string }>
+): DeviceNaming => ({
+  nameOf: (id) => deviceName(id, roster),
+  showIds: true,
+});
 
 describe("deriveSpawnStatus — the continuation vocabulary", () => {
   it("reads only a finished session as success", () => {
@@ -228,6 +239,23 @@ describe("reading a body", () => {
     });
     expect(readSpawnStats(statsFx(), "7d").kind).toBe("ok");
   });
+
+  it("refuses a stats body with no per-device list, which would read as nothing placed", () => {
+    const { per_device: _dropped, ...noPerDevice } = statsFx();
+    for (const body of [
+      noPerDevice,
+      statsFx({}, { per_device: null as never }),
+      statsFx({}, { per_device: {} as never }),
+    ]) {
+      expect(readSpawnStats(body, "7d")).toEqual({
+        kind: "issue",
+        issue: { kind: "malformed" },
+      });
+    }
+    expect(readSpawnStats(statsFx({}, { per_device: [] }), "7d").kind).toBe(
+      "ok"
+    );
+  });
 });
 
 describe("classifySpawnError", () => {
@@ -271,6 +299,45 @@ describe("classifySpawnError", () => {
     const issue = classifySpawnError(err(502, '{"detail":"Bad gateway"}'));
     expect(issue.kind).toBe("error");
     expect(issue.kind === "error" && issue.message).not.toContain("GET /api");
+  });
+});
+
+describe("spawnIssueTextFor — a ledger issue in front of an outsider", () => {
+  const SECRET = "http://10.0.0.5:8080/coord says schema_missing";
+  const ISSUES: SpawnReadIssue[] = [
+    { kind: "ledger_not_deployed", reason: SECRET },
+    { kind: "route_unavailable" },
+    { kind: "route_disabled" },
+    { kind: "forbidden" },
+    { kind: "tenant_not_resolved" },
+    { kind: "not_found" },
+    { kind: "deadline", budgetMs: 2500 },
+    { kind: "window_mismatch", asked: "7d", answered: "24h" },
+    { kind: "malformed" },
+    { kind: "error", message: `GET ${SECRET} failed: 502` },
+  ];
+
+  it("says every kind in fixed words while presenting: no failure text, no reason token, never 'coord'", () => {
+    for (const issue of ISSUES) {
+      const text = spawnIssueTextFor(
+        issue,
+        "which spawns were requested",
+        true
+      );
+      expect(text, issue.kind).not.toContain("10.0.0.5");
+      expect(text, issue.kind).not.toContain("schema_missing");
+      expect(text, issue.kind).not.toMatch(/\bcoord\b/i);
+      expect(text.length, issue.kind).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the operator's own words — the reason and the failure — outside presentation", () => {
+    for (const issue of ISSUES) {
+      expect(spawnIssueTextFor(issue, "x", false)).toBe(
+        spawnIssueText(issue, "x")
+      );
+    }
+    expect(spawnIssueTextFor(ISSUES[9]!, "x", false)).toContain("10.0.0.5");
   });
 });
 
@@ -541,7 +608,11 @@ describe("deriveSpawnsHealth", () => {
 
 describe("perDeviceShares", () => {
   it("names devices and their roles, and keeps an unsampled device as unknown", () => {
-    const { items, total } = perDeviceShares(statsFx(), ROSTER.devices, ROLES);
+    const { items, total } = perDeviceShares(
+      statsFx(),
+      ROLES,
+      operatorNaming(ROSTER.devices)
+    );
     expect(total).toBe(38);
     expect(items.map((i) => i.label)).toEqual([
       "msi-wsl · Workhorse",
@@ -560,7 +631,11 @@ describe("perDeviceShares", () => {
   it("says every role is unknown, with the reason, when the role read failed", () => {
     const roles: DeviceRoles = { kind: "unknown", reason: "HTTP 404" };
     expect(deviceRoleText(DEVICE_A, roles)).toBe("role unknown");
-    const { items } = perDeviceShares(statsFx(), ROSTER.devices, roles);
+    const { items } = perDeviceShares(
+      statsFx(),
+      roles,
+      operatorNaming(ROSTER.devices)
+    );
     expect(items[0]?.title).toContain("Role unknown: HTTP 404");
   });
 
@@ -584,7 +659,7 @@ describe("perDeviceShares", () => {
         wait_p50_secs: null,
       },
     ];
-    const { items, total } = perDeviceShares(stats, [], ROLES);
+    const { items, total } = perDeviceShares(stats, ROLES, operatorNaming([]));
     expect(total).toBe(4);
     expect(items[1]?.count).toBeNull();
   });
@@ -601,7 +676,28 @@ describe("perDeviceShares", () => {
         wait_p50_secs: null,
       },
     ];
-    expect(perDeviceShares(stats, [], ROLES).total).toBeNull();
+    expect(perDeviceShares(stats, ROLES, operatorNaming([])).total).toBeNull();
+  });
+
+  it("names every device by the naming it is handed, with no id and no role reason while presenting", () => {
+    const presented: DeviceNaming = {
+      nameOf: (id) => (id === DEVICE_A ? "Machine A" : "Machine B"),
+      showIds: false,
+    };
+    const roles: DeviceRoles = {
+      kind: "unknown",
+      reason: "HTTP 404 from /coord/fleet",
+    };
+    const { items } = perDeviceShares(statsFx(), roles, presented);
+    expect(items.map((i) => i.label)).toEqual([
+      "Machine A · role unknown",
+      "Machine B · role unknown",
+    ]);
+    for (const item of items) {
+      expect(item.title).not.toContain(DEVICE_A);
+      expect(item.title).not.toContain(DEVICE_B);
+      expect(item.title).not.toContain("HTTP 404");
+    }
   });
 
   it("falls back to the id's first block for a device the roster does not name", () => {
@@ -756,7 +852,7 @@ describe("filter tabs", () => {
         pending: true,
       })
     ).toBe(
-      "Coord's list of the requests in the last 7 days could not be read — which of them failed to start is unknown, not none."
+      "The list of the requests in the last 7 days could not be read — which of them failed to start is unknown, not none."
     );
   });
 

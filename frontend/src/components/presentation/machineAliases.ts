@@ -37,6 +37,17 @@
  * assigned; an identity with nothing to key on gets
  * {@link UNIDENTIFIED_MACHINE}, never a letter it might share.
  *
+ * ## Two devices on one machine
+ *
+ * The letter is the computer's, so two coord devices registered from one host
+ * read as the same "Machine B". A surface that lists DEVICES (one line per
+ * device id) still has to tell them apart, so the registry also numbers device
+ * ids in first-seen order ({@link MachineAliasRegistry.deviceOrdinalFor}),
+ * keyed on the device id alone and never merged. A surface ranks the devices
+ * that share a letter by that number ("Machine B, device 1", "…, device 2"),
+ * so the letter every other panel shows is untouched and the two lines are
+ * still two.
+ *
  * ## Persistence
  *
  * The session registry persists to sessionStorage, so a reload mid-
@@ -64,6 +75,17 @@ interface PersistedRegistry {
   v: number;
   next: number;
   keys: Record<string, number>;
+  /** Device ordinals by hashed device id (absent in a store written before them). */
+  devices?: Record<string, number>;
+  nextDevice?: number;
+}
+
+function ordinalEntries(raw: unknown): Array<[string, number]> {
+  if (typeof raw !== "object" || raw === null) return [];
+  return Object.entries(raw).filter(
+    (e): e is [string, number] =>
+      typeof e[1] === "number" && Number.isInteger(e[1]) && e[1] >= 0
+  );
 }
 
 /** 0 → A, 25 → Z, 26 → AA, 27 → AB … (bijective base 26). */
@@ -134,6 +156,8 @@ export class MachineAliasRegistry {
   private readonly storageKey: string;
   private byKey = new Map<string, number>();
   private next = 0;
+  private byDevice = new Map<string, number>();
+  private nextDevice = 0;
   private loaded = false;
   private readonly listeners = new Set<() => void>();
   /** Bumped on every merge — the snapshot a subscriber compares. */
@@ -216,10 +240,30 @@ export class MachineAliasRegistry {
     return index;
   }
 
+  /**
+   * The device's first-seen number in this session (0, 1, 2 …), keyed on the
+   * device id alone — `null` for a blank id. It never changes once given, and
+   * it is not the machine's letter: it only orders devices that share one.
+   */
+  deviceOrdinalFor(deviceId: string | null | undefined): number | null {
+    const id = clean(deviceId);
+    if (!id) return null;
+    this.load();
+    const key = hashKey(`device:${id.toLowerCase()}`);
+    const known = this.byDevice.get(key);
+    if (known !== undefined) return known;
+    const ordinal = this.nextDevice++;
+    this.byDevice.set(key, ordinal);
+    this.persist();
+    return ordinal;
+  }
+
   /** Forget every alias, including the persisted copy. */
   reset(): void {
     this.byKey = new Map();
     this.next = 0;
+    this.byDevice = new Map();
+    this.nextDevice = 0;
     this.loaded = true;
     try {
       this.getStorage?.()?.removeItem(this.storageKey);
@@ -247,6 +291,18 @@ export class MachineAliasRegistry {
       // Never re-issue a letter already handed out, whatever `next` says.
       const highest = entries.reduce((max, [, i]) => Math.max(max, i + 1), 0);
       this.next = Math.max(Math.floor(parsed.next), highest);
+      const devices = ordinalEntries(parsed.devices);
+      this.byDevice = new Map(devices);
+      const highestDevice = devices.reduce(
+        (max, [, i]) => Math.max(max, i + 1),
+        0
+      );
+      this.nextDevice = Math.max(
+        typeof parsed.nextDevice === "number"
+          ? Math.floor(parsed.nextDevice)
+          : 0,
+        highestDevice
+      );
     } catch {
       // Unreadable or corrupt: start empty. Letters assigned from here on are
       // still stable for the rest of the session.
@@ -260,6 +316,8 @@ export class MachineAliasRegistry {
         v: PERSISTED_VERSION,
         next: this.next,
         keys: Object.fromEntries(this.byKey),
+        devices: Object.fromEntries(this.byDevice),
+        nextDevice: this.nextDevice,
       };
       this.getStorage()?.setItem(this.storageKey, JSON.stringify(body));
     } catch {

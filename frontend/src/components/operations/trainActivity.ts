@@ -195,8 +195,11 @@ export type PauseReasonCode =
   | "ci-failed-infra-kill"
   /** coord's `ci-failed-stale-base` merge_status: CI is red but `main` has
    *  moved past the PR's CI base, so the red may be main's fault. `waiting`,
-   *  with `behind-base`: the remedy is coord's own BEHIND freshen (it updates
-   *  the branch and CI re-runs), not author work. */
+   *  with `behind-base`: it is not author work, and coord's own stale-base
+   *  freshen MAY update the branch and re-run CI — but whether it will is not
+   *  served yet (it refuses a distance-only stale base outright), so this is
+   *  an UNKNOWN wait, not a promise. Plan
+   *  `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`. */
   | "ci-failed-stale-base"
   | "ci-pending"
   | "conflicts"
@@ -288,9 +291,10 @@ const REASON_RANK: Record<PauseReasonCode, number> = {
   conflicts: 14,
   "blast-radius-block": 15,
   "review-required": 16,
-  // Beside `behind-base`, for the reason they share a clearer: coord's own
-  // BEHIND freshen. A red on a stale base is not a diagnosis of the PR, so it
-  // ranks below every author-side red rather than with `ci-failed`.
+  // Beside `behind-base`, for the reason they share a possible clearer: coord's
+  // own BEHIND freshen, which MAY bring either current (whether it will is not
+  // served yet — UNKNOWN). A red on a stale base is not a diagnosis of the PR,
+  // so it ranks below every author-side red rather than with `ci-failed`.
   "ci-failed-stale-base": 17,
   "behind-base": 18,
   "ci-pending": 19,
@@ -351,7 +355,8 @@ const REASON_META: Record<
     label: "CI red: runner killed",
     severity: "blocking",
   },
-  // `waiting`, with `behind-base`: coord's freshen is the named clearer.
+  // `waiting`, with `behind-base`: not the author's red. Coord's freshen MAY
+  // clear it; whether it will is not served yet, so this is an UNKNOWN wait.
   "ci-failed-stale-base": {
     label: "CI red on a stale base",
     severity: "waiting",

@@ -107,6 +107,21 @@ export function useMachineAliaser(): (
   );
 }
 
+/**
+ * A device's first-seen number in this session, for ordering the devices that
+ * share one machine's letter (`machineAliases.ts`, "Two devices on one
+ * machine"). `null` on a server or hydration render, where the registry is not
+ * consulted, and for a blank id.
+ */
+export function useDeviceOrdinals(): (deviceId: string) => number | null {
+  const onTheClient = useOnTheClient();
+  return useCallback(
+    (deviceId: string) =>
+      onTheClient ? sessionMachineAliases.deviceOrdinalFor(deviceId) : null,
+    [onTheClient]
+  );
+}
+
 export interface MachineNameProps {
   identity: MachineIdentity;
   /** Operator-mode wording, when better than the identity's own fields. */

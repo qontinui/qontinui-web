@@ -104,16 +104,19 @@ describe("the readings the palette audit cannot make", () => {
 
   it("keeps amber ONLY where something else clears the row, or we cannot tell", () => {
     // Every amber row is one of two things and nothing else. Either the
-    // clearer is NAMEABLE — the merge train rebases a BEHIND PR, a dispatched
-    // specialist review returns a verdict — or the row sits at the IGNORANCE
-    // FLOOR, where we cannot say whose move it is and calm would assert
-    // nothing is wrong. `unknown` and `predicate-blocked` are the floor:
+    // clearer is NAMEABLE — a dispatched specialist review returns a verdict —
+    // or the row sits at the IGNORANCE FLOOR, where we cannot say whose move
+    // it is (or whether coord will act) and calm would assert nothing is
+    // wrong. `behind-base` and `ci-failed-stale-base` are on the floor: coord's
+    // freshen MAY bring them current, but whether it will is not served yet
+    // (plan
+    // `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`). `unknown` and `predicate-blocked` are the floor:
     // coord's residue token spans members with opposite readings (`main-red`
     // and `has-cross-repo-dependency` self-clear; `has-blocking-label` needs a
     // human, `dry-run-mode` is operator config), so neither red nor the
-    // self-clearing promise is honest about it. `ci-failed-stale-base` names
-    // its clearer (coord's own freshen); `ci-failed-infra-kill` has none (no
-    // auto re-run yet) and so sits at the floor with `terminal-proposal-held`.
+    // self-clearing promise is honest about it. `ci-failed-infra-kill` has no
+    // clearer at all (no auto re-run yet) and so sits at the floor with
+    // `terminal-proposal-held`.
     const amber = ALL.filter(
       (k) => PR_ATTENTION_BY_MERGE_STATUS[k] === "waiting"
     ).sort();
@@ -128,6 +131,13 @@ describe("the readings the palette audit cannot make", () => {
         "unknown",
       ].sort()
     );
+    // Only the nameable clearer draws the self-clearing amber; the two
+    // freshen-dependent tokens draw the floor.
+    expect(PR_MERGE_STATUS_CLASS["awaiting-specialist-review"]).toBe(
+      WAITING_AMBER
+    );
+    expect(PR_MERGE_STATUS_CLASS["behind-base"]).toBe(UNKNOWN_AMBER);
+    expect(PR_MERGE_STATUS_CLASS["ci-failed-stale-base"]).toBe(UNKNOWN_AMBER);
   });
 
   it("floors `predicate-blocked` at the ignorance floor, with unknown", () => {
@@ -213,7 +223,7 @@ describe("the readings the palette audit cannot make", () => {
   describe("the CI-red tokens that are NOT the author's", () => {
     // coord splits two reds out of `ci-failed` precisely because `ci-failed`
     // reads "needs its author": `ci-failed-stale-base` (the red may be main's;
-    // coord's BEHIND freshen is the remedy) and `ci-failed-infra-kill` (every
+    // coord's freshen MAY clear it, whether it will is UNKNOWN) and `ci-failed-infra-kill` (every
     // failing check run was a self-hosted runner kill with zero failed steps;
     // the remedy is a re-run once the runner is healthy — qontinui-coord#2723).
     // Unmapped, each fell to `unknown`: the ignorance floor for states coord
@@ -224,7 +234,7 @@ describe("the readings the palette audit cannot make", () => {
         "ci-failed-stale-base",
         "ci failed stale base",
         "base is stale",
-        WAITING_AMBER,
+        UNKNOWN_AMBER,
       ],
       [
         "ci-failed-infra-kill",

@@ -6,6 +6,7 @@
  * (every one with its unit), the drill-down action, and the raw ids last.
  */
 
+import { Fragment } from "react";
 import Link from "next/link";
 import {
   RecordDetail,
@@ -17,6 +18,7 @@ import {
 import {
   MACHINE_STATUS_PALETTE,
   RUN_STATUS_PALETTE,
+  activeTimeText,
   budgetText,
   concurrencyText,
   countText,
@@ -27,7 +29,10 @@ import {
   heldShareText,
   initiatorLabel,
   openVsBudgetText,
+  runFlags,
+  runHeldOpenText,
   runLinks,
+  runRawFacts,
   runResumeText,
   runWallText,
   runsText,
@@ -139,6 +144,10 @@ export function WorkTypeRow({
             </dd>
             <dt className="text-muted-foreground">Wall time</dt>
             <dd className="m-0">{wallTimeText(line)}</dd>
+            <dt className="text-muted-foreground">Active time</dt>
+            <dd className="m-0" data-testid="coord-session-load-type-active">
+              {activeTimeText(line)}
+            </dd>
             <dt className="text-muted-foreground">Slot-hours held</dt>
             <dd className="m-0">
               {formatSlotHours(line.slotHours)} (open and inferred runs
@@ -269,6 +278,42 @@ export function MachineRow({
             </p>
             <div className="space-y-1">
               <p className="m-0 font-medium text-muted-foreground">
+                Peak open runs by work type over {windowLabel}
+              </p>
+              {line.typePeaks.length === 0 && line.peak === 0 ? (
+                <p
+                  className="m-0 italic text-muted-foreground"
+                  data-testid="coord-session-load-machine-peak-types-none"
+                >
+                  No work type had a run open at a whole minute of the window; a
+                  run under a minute that crosses no minute mark does not
+                  register here.
+                </p>
+              ) : line.typePeaks.length === 0 ? (
+                <p
+                  className="m-0 italic text-muted-foreground"
+                  data-testid="coord-session-load-machine-peak-types-unknown"
+                >
+                  Coord&apos;s concurrency read names no work type for this
+                  machine — each type&apos;s peak is unknown, not zero.
+                </p>
+              ) : (
+                <p
+                  className="m-0"
+                  data-testid="coord-session-load-machine-peak-types"
+                  title="Each type's own peak. Types can peak at different moments, so these do not add up to the machine's peak."
+                >
+                  {line.typePeaks
+                    .map((p) => `${p.label} ${p.peak}`)
+                    .join(" · ")}{" "}
+                  <span className="text-muted-foreground">
+                    (each type&apos;s own peak; these do not add up)
+                  </span>
+                </p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <p className="m-0 font-medium text-muted-foreground">
                 Slot-hours by work type over {windowLabel}
               </p>
               {line.slices === null ? (
@@ -327,7 +372,11 @@ export function RunRow({
   onToggle: () => void;
 }) {
   const status = deriveRunStatus(run);
-  const links = runLinks(run);
+  const links = runLinks(run, nowMs);
+  const flags = runFlags(run);
+  const wallText = runWallText(run, nowMs);
+  const heldOpen = runHeldOpenText(run, nowMs);
+  const rawFacts = runRawFacts(run);
   return (
     <RecordRow
       data-testid="coord-session-load-run-row"
@@ -372,9 +421,19 @@ export function RunRow({
               backfilled
             </span>
           )}
+          {flags.map((f) => (
+            <span
+              key={f.key}
+              className="text-[11px] text-muted-foreground italic whitespace-nowrap"
+              title={f.detail}
+              data-testid={`coord-session-load-run-flag-${f.key}`}
+            >
+              {f.label}
+            </span>
+          ))}
         </span>
       }
-      reason={runWallText(run, nowMs)}
+      reason={heldOpen ? `${wallText} · ${heldOpen}` : wallText}
       reasonTestId="coord-session-load-run-wall"
       time={<RowTime at={run.started_at} verb="Started" />}
     >
@@ -388,7 +447,8 @@ export function RunRow({
             {run.ended_at
               ? `, ended ${absoluteTime(run.ended_at)} — ${endReasonLabel(run.end_reason)}`
               : ", still open"}
-            . {runWallText(run, nowMs)}
+            . {wallText}
+            {heldOpen ? `; ${heldOpen}` : ""}
             {run.held_after_finish_seconds != null
               ? `; held its slot ${formatSeconds(run.held_after_finish_seconds)} after it declared itself finished`
               : ""}
@@ -419,6 +479,7 @@ export function RunRow({
               <>
                 <dt className="text-muted-foreground">Model</dt>
                 <dd className="m-0">
+                  {run.provider ? `${run.provider} · ` : ""}
                   {run.model}
                   {run.account_label ? ` · account ${run.account_label}` : ""}
                 </dd>
@@ -426,6 +487,17 @@ export function RunRow({
             )}
             <dt className="text-muted-foreground">Active time</dt>
             <dd className="m-0">{formatSeconds(run.active_seconds)}</dd>
+            {flags.map((f) => (
+              <Fragment key={f.key}>
+                <dt className="text-muted-foreground">{f.label}</dt>
+                <dd
+                  className="m-0"
+                  data-testid={`coord-session-load-run-flag-detail-${f.key}`}
+                >
+                  {f.detail}
+                </dd>
+              </Fragment>
+            ))}
           </dl>
         }
         actions={
@@ -434,8 +506,8 @@ export function RunRow({
               className="text-xs text-muted-foreground italic m-0"
               data-testid="coord-session-load-run-no-links"
             >
-              This run names no gate, spawn request, session or work unit the
-              console can open.
+              This run names no gate, spawn request, session, agent or work unit
+              the console can open.
             </p>
           ) : (
             <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs m-0 p-0 list-none">
@@ -466,6 +538,7 @@ export function RunRow({
             {run.agent_id ? ` agent=${run.agent_id}` : ""}
             {run.end_source ? ` end_source=${run.end_source}` : ""}
             {run.close_reason ? ` close_reason=${run.close_reason}` : ""}
+            {rawFacts ? ` ${rawFacts}` : ""}
           </p>
         }
       />

@@ -192,6 +192,29 @@ _COORD_PR_LIST_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 # and skips hidden tabs (its load-discipline note).
 _COORD_MERGED_READ_TIMEOUT = httpx.Timeout(45.0, connect=5.0)
 
+# Timeout for coord's project-state synthesis door (``GET /coord/project-state``,
+# the operator's one screen). coord budgets that door per SUB-READ, not as a
+# whole: each sub-read runs under ``SUB_READ_TIMEOUT`` (10s, qontinui-coord
+# ``crates/coord/src/project_state.rs``), and one that runs out degrades only
+# its own block to ``could_not_read`` while the door still answers 200 (coord's
+# doc: the door "must not become the allocation-budget door that times out as
+# a whole"). The longest chain is ``on_track``: the initiative and the
+# dependency frontier run concurrently, and THEN the work-unit classification
+# runs as a second sub-read, so it can take 2 x 10s = 20s. The other blocks run
+# concurrently with it, each under the same 10s (the degradations train-health
+# fan-out shares a 9s deadline inside its own sub-read). 25s is those 20s plus
+# 5s for coord's assembly and the transport. At ``_COORD_TIMEOUT`` every answer
+# between 5s and coord's budget was a 504 here, and the page rendered EVERY
+# block as unknown instead of the one block coord had degraded. Connect stays
+# short: an unreachable coord should still fail fast.
+#
+# COST: this route resolves its tenant with ``get_tenant_id``, which holds no
+# backend DB session across the coord call, so a slow answer costs coord's
+# time and no pooled connection. Neither reader multiplies it:
+# ``/admin/coord/home`` polls single-flight every 60s with no retries, and the
+# ``/overview`` progress panel's one-shot read never retries a 504.
+_COORD_PROJECT_STATE_TIMEOUT = httpx.Timeout(25.0, connect=5.0)
+
 # Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge header is no
 # longer sent to coord. Coord resolves the operator/tenant from the
 # forwarded Cognito bearer (``resolve_operator_optional`` middleware,
@@ -1156,8 +1179,9 @@ async def _proxy_coord_get(
     Default ``None`` puts nothing extra on the wire.
 
     ``timeout`` — override :data:`_COORD_TIMEOUT` for a read that is slow by
-    construction (the open-PR listing, :data:`_COORD_PR_LIST_TIMEOUT`, and the
-    recently-merged rows, :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None``
+    construction (the open-PR listing, :data:`_COORD_PR_LIST_TIMEOUT`, the
+    recently-merged rows, :data:`_COORD_MERGED_READ_TIMEOUT`, and the
+    project-state door, :data:`_COORD_PROJECT_STATE_TIMEOUT`). Default ``None``
     keeps the 5s fail-fast for every other proxy: coord answering a small JSON
     read slower than that means something is wrong, and that is worth surfacing.
 
@@ -3669,9 +3693,9 @@ async def _proxy_coord_post(
     all ~45 callers of this helper. Flipping the default is not a no-op at the
     wire: ``app.middleware.error_handler.http_exception_handler`` splices a
     dict detail into the top level of its envelope, which moves ``error`` from
-    the status-derived code to coord's own, turns ``message`` into a Python
-    repr of the dict rather than coord's verbatim JSON text, and lets coord's
-    remaining keys collide with the envelope's. That is a real contract change
+    the status-derived code to coord's own, turns ``message`` into the dict's
+    own ``message`` or ``error`` string rather than coord's verbatim JSON
+    text, and lets coord's remaining keys collide with the envelope's. That is a real contract change
     for every other route, invisible to their tests (which run against a bare
     ``FastAPI()`` with no handlers registered), so each route opts in
     knowingly.
@@ -4210,6 +4234,8 @@ async def get_dev_action_detail(
 # - GET    /operations/fleet/health                      — fleet rollup
 # - GET    /operations/domain-cost                       — autonomy-domain
 #                                                          cost ledger
+# - GET    /operations/project-state                     — operator one-screen
+#                                                          synthesis
 # - GET    /operations/fleet/drain                       — active machine drains
 # - POST   /operations/fleet/drain                       — drain a machine (admin)
 # - POST   /operations/fleet/undrain                     — release one (admin)
@@ -5574,6 +5600,70 @@ async def get_domain_cost(
         params["as_of"] = as_of
     return await _proxy_coord_get(
         "/coord/domain-cost", params=params or None, tenant_id=tenant_id
+    )
+
+
+# ---- Project state (the operator's one screen) ---------------------------
+
+
+@router.get("/project-state")
+async def get_project_state(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's project-state synthesis for the operator's tenant.
+
+    Plan
+    ``2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen``
+    Phase 4. A plain pass-through of coord's operator route
+    ``GET /coord/project-state`` — the same shared core that serves the
+    ``coord_project_state`` MCP tool and its device/agent twin
+    ``GET /coord/agent-project-state``, so the page and every agent read one
+    answer. No composition and no reshaping here: ``/admin/coord/home`` and
+    the ``/overview`` progress panel render coord's bytes.
+
+    The wire, as coord serves it (``schema: 1``): ``generated_at``,
+    ``tenant_id``, ``scope`` (``"operator"``, the one built scope), and four
+    blocks — ``on_track``, ``correctness``, ``needs_me``, ``degradations`` —
+    each carrying a ``state`` in ``read | could_not_read | stale |
+    not_implemented | unknown`` that is DISTINCT from its counts. A block
+    whose state is not ``read`` carries no counts, and a caller must render
+    it as unknown rather than as zero (``[policy: silent-empty-is-unknown]``)
+    — with ONE exception: a ``stale`` ``degradations`` block still carries its
+    ``open`` / ``declared`` / ``recently_cleared`` ROWS, because a known fault
+    stays true behind a lagging watcher. Those rows are real but are not known
+    to be all of them, so no count may be taken from them.
+    ``does_not_know`` lists every source the door read or tried to read,
+    plus a ``watcher:<name>`` row for each feeding watcher that is not
+    fresh, each with ``state``, ``as_of``, ``freshness_bound_secs``, rows
+    considered / excluded and why, and its ``error``. On a watcher row,
+    ``as_of`` is the watcher's last successful run and
+    ``freshness_bound_secs`` the threshold its freshness verdict applies,
+    not the age of any data.
+
+    ``on_track.totals`` is ``{row_count, classes, excluded}``. ``classes``
+    is a closed, exhaustive-with-zeros class set (``shipped``,
+    ``in_flight``, ``stalled``, ``blocked_on_dependency``,
+    ``waiting_on_gate``, ``not_started``, ``closed_other``,
+    ``off_vocabulary``, ``unset``) whose sum coord asserts equals
+    ``row_count``. ``excluded`` is ``{merge_shepherd_bookkeeping}``: coord's
+    own merge-shepherd bookkeeping units, left out of ``row_count`` and
+    every class, and counted in ``excluded`` (and in ``does_not_know``'s
+    ``work_units`` row as ``rows_excluded``); the ``/overview`` panel states
+    that count. ``stalled`` is a MECHANICAL absence-of-recorded-change class
+    (``stall_rule`` / ``stall_window_secs`` ride the wire); it is not a
+    verdict and the page does not render the word.
+
+    Declares no ``response_model``, so nothing here filters a field coord
+    adds. This docstring is what FastAPI renders into the committed,
+    drift-gated OpenAPI snapshots, so it is this repo's contract of record
+    for the route.
+    """
+    # coord's door, not this module's 5s default: see
+    # ``_COORD_PROJECT_STATE_TIMEOUT`` for why it is slower by design.
+    return await _proxy_coord_get(
+        "/coord/project-state",
+        tenant_id=tenant_id,
+        timeout=_COORD_PROJECT_STATE_TIMEOUT,
     )
 
 
@@ -14750,14 +14840,14 @@ def _readable_coord_refusal(exc: HTTPException) -> HTTPException:
 
     ``structured_errors=True`` hands coord's typed body through as the
     ``HTTPException`` detail — ``{"error": "not_admin_in_target_tenant"}``.
-    That is the right thing for a machine and, in PRODUCTION, invisible to a
+    That is the right thing for a machine and, in PRODUCTION, bare to a
     person: ``app/main.py`` registers
     ``app.middleware.error_handler.http_exception_handler`` for every
-    ``StarletteHTTPException``, and it renders a dict detail as
-    ``{"error": …, "message": detail.get("message", str(detail)), …}``. With
-    no ``message`` key in coord's body that fallback is ``str(dict)`` — a
-    Python ``repr`` (``{'error': 'not_admin_in_target_tenant'}``) in the one
-    field the dashboard shows the operator.
+    ``StarletteHTTPException``, and with no ``message`` key in coord's body
+    it fills ``message`` with the bare ``error`` code
+    (``not_admin_in_target_tenant``) — in the one field the dashboard shows
+    the operator, with no sentence around it. (An older handler put a Python
+    ``repr`` of the dict there.)
 
     So compose one. The error CODE stays the sentence's subject because it is
     the diagnostic an operator quotes; a coord ``hint``/``reason``/``detail``

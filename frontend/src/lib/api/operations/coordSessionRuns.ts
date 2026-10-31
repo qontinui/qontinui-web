@@ -36,6 +36,8 @@ export type GrowthBucket = "day" | "week";
 export interface SessionRunListQuery {
   workType?: string;
   device?: string;
+  /** `operator`, `coord`, `runner_local` or `unknown` (coord's CHECK). */
+  initiator?: string;
   /** RFC 3339 instant: runs started at or after it. */
   since?: string;
   /** coord's `next_cursor` from the previous page. */
@@ -48,6 +50,7 @@ function listQueryString(query: SessionRunListQuery): string {
   const params = new URLSearchParams();
   if (query.workType !== undefined) params.set("work_type", query.workType);
   if (query.device !== undefined) params.set("device", query.device);
+  if (query.initiator !== undefined) params.set("initiator", query.initiator);
   if (query.since !== undefined) params.set("since", query.since);
   if (query.cursor !== undefined) params.set("cursor", query.cursor);
   if (query.limit !== undefined) params.set("limit", String(query.limit));

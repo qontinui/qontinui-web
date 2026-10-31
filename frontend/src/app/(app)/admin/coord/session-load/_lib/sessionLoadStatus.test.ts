@@ -39,11 +39,13 @@ import {
   statsFx,
 } from "../__fixtures__/sessionLoad";
 import {
+  CLOCK_SKEW_TOLERANCE_SECS,
   MACHINE_ATTENTION_BY_KIND,
   MACHINE_STATUS_PALETTE,
   RUN_ATTENTION_BY_KIND,
   RUN_STATUS_PALETTE,
   TREND_DAYS,
+  activeTimeText,
   backfilledOnlyBuckets,
   budgetText,
   classifySessionLoadError,
@@ -70,7 +72,10 @@ import {
   readRunList,
   readStats,
   runFilterCounts,
+  runFlags,
+  runHeldOpenText,
   runLinks,
+  runRawFacts,
   runResumeText,
   runWallText,
   runsText,
@@ -241,6 +246,22 @@ describe("by work type", () => {
     );
   });
 
+  it("active time is a median with its sample count, unknown rather than 0 with none", () => {
+    const [pm] = workTypeLines(statsFx([groupFx()]) as unknown as StatsWire);
+    expect(activeTimeText(pm!)).toBe("median 5 min (7 runs measured)");
+    const [none] = workTypeLines(
+      statsFx([
+        groupFx({ active_seconds: { p50: null, samples: 0 } }),
+      ]) as unknown as StatsWire
+    );
+    expect(activeTimeText(none!)).toMatch(/^unknown — no run of this type/);
+    const [unread] = workTypeLines(
+      statsFx([{ work_type: "steward" }]) as unknown as StatsWire
+    );
+    expect(unread!.activeP50).toBeNull();
+    expect(activeTimeText(unread!)).toBe("median unknown");
+  });
+
   it("held after finish is a share of slot-hours, unknown when nobody declared finished", () => {
     const [vet, pm] = workTypeLines(stats());
     // 7200 s = 2 h held, of 8 slot-hours.
@@ -286,6 +307,44 @@ describe("by machine", () => {
     });
     expect(budgetText({ state: "zero" })).toBe("zero budget published");
     expect(budgetText({ state: "none" })).toBe("no budget published");
+  });
+
+  it("reads each work type's own peak across the series, without summing", () => {
+    const [m] = machineLines(conc([deviceFx()]), null);
+    expect(m!.typePeaks.map((p) => [p.workType, p.peak])).toEqual([
+      ["post_merge", 7],
+      ["vet_imp", 2],
+    ]);
+    expect(m!.peak).toBe(9);
+    const [none] = machineLines(
+      conc([
+        deviceFx({
+          series: [
+            { bucket_start: "2026-10-26T10:00:00Z" },
+            {
+              bucket_start: "2026-10-26T11:00:00Z",
+              by_work_type: { post_merge: { p95: 3 } },
+            },
+          ],
+        }),
+      ]),
+      null
+    );
+    expect(none!.typePeaks).toEqual([]);
+    const [zero] = machineLines(
+      conc([
+        deviceFx({
+          series: [
+            {
+              bucket_start: "2026-10-26T10:00:00Z",
+              by_work_type: { post_merge: { peak: 0, p95: 0 } },
+            },
+          ],
+        }),
+      ]),
+      null
+    );
+    expect(zero!.typePeaks).toEqual([]);
   });
 
   it("a live machine within its budget is calm, with open runs against the budget", () => {
@@ -717,23 +776,142 @@ describe("runs", () => {
   });
 
   it("links the gate, spawn request, session and work unit it names", () => {
-    expect(runLinks(run()).map((l) => [l.key, l.href])).toEqual([
+    const nowMs = Date.parse("2026-10-26T10:30:00Z");
+    expect(runLinks(run(), nowMs).map((l) => [l.key, l.href])).toEqual([
       ["gate", "/admin/coord/gates?gate=2d2c3b4a-0000-4000-8000-000000000002"],
-      ["spawn", "/admin/coord/spawns"],
+      ["spawn", "/admin/coord/spawns/requests?window=7d"],
+      ["session", "/sessions/1d2c3b4a-0000-4000-8000-000000000001"],
     ]);
     expect(
       runLinks(
         run({
           gate_id: null,
           spawn_request_id: null,
-          coord_session_id: "s-1",
+          agent_id: "a 1",
           work_unit_slug: "plan a",
-        })
+        }),
+        nowMs
       ).map((l) => l.href)
-    ).toEqual(["/sessions/s-1", "/admin/coord/work-units/plan%20a"]);
-    expect(runLinks(run({ gate_id: null, spawn_request_id: null }))).toEqual(
+    ).toEqual([
+      "/sessions/1d2c3b4a-0000-4000-8000-000000000001",
+      "/admin/coord/agents/a%201",
+      "/admin/coord/work-units/plan%20a",
+    ]);
+  });
+
+  it("links a run's session by the Claude id every run carries, and says when it is reconciled", () => {
+    const nowMs = Date.parse("2026-10-26T10:30:00Z");
+    const session = (over: Record<string, unknown>) =>
+      runLinks(run(over), nowMs).find((l) => l.key === "session");
+    expect(session({ coord_session_id: "s-1" })?.id).toBe(
+      "1d2c3b4a-0000-4000-8000-000000000001"
+    );
+    expect(session({})?.label).toBe("Open the session");
+    expect(session({ bind_origin: "reconciled" })?.label).toMatch(
+      /may be foreign/
+    );
+    const fallback = session({
+      claude_code_session_id: "",
+      coord_session_id: "s-1",
+      bind_origin: "reconciled",
+    });
+    expect(fallback?.href).toBe("/sessions/s-1");
+    expect(fallback?.label).toBe("Open the session");
+    expect(
+      runLinks(
+        run({
+          claude_code_session_id: "",
+          gate_id: null,
+          spawn_request_id: null,
+        }),
+        nowMs
+      )
+    ).toEqual([]);
+  });
+
+  it("opens a spawn request one window wider than the run's start needs, and 30 days at most, flagged when none is wider", () => {
+    const start = Date.parse("2026-10-26T10:00:00Z");
+    const spawn = (nowMs: number, over = {}) =>
+      runLinks(run(over), nowMs).find((l) => l.key === "spawn");
+    const href = (nowMs: number, over = {}) => spawn(nowMs, over)?.href;
+    const hour = 3600_000;
+    const day = 24 * hour;
+    // A start inside 24 h opens 7 d: the request may predate its run (a
+    // request made 25 h ago and deferred 2 h starts its run 23 h ago).
+    expect(href(start + 23 * hour)).toBe(
+      "/admin/coord/spawns/requests?window=7d"
+    );
+    expect(href(start + day)).toBe("/admin/coord/spawns/requests?window=7d");
+    expect(spawn(start + day)?.label).toBe("Find the spawn request");
+    // Past 24 h, inside 7 d: 30 d, which is still one window wider.
+    expect(href(start + day + 1)).toBe(
+      "/admin/coord/spawns/requests?window=30d"
+    );
+    expect(spawn(start + 7 * day)?.label).toBe("Find the spawn request");
+    // Past 7 d (inside 30 d), older than every window, or a start nobody can
+    // read: no window is wider than the one holding the start, so 30 d —
+    // never the 7 d default — and the link says the request may be older
+    // than it. A run started 29 d 23 h ago from a request deferred 2 h is
+    // the case the 7–30 d band covers.
+    for (const old of [
+      spawn(start + 7 * day + 1),
+      spawn(start + 29 * day + 23 * hour),
+      spawn(start + 30 * day),
+      spawn(start + 30 * day + 1),
+      spawn(start, { started_at: "not a date" }),
+    ]) {
+      expect(old?.href).toBe("/admin/coord/spawns/requests?window=30d");
+      expect(old?.label).toBe(
+        "Find the spawn request (it may be older than the last 30 days, the widest view)"
+      );
+    }
+  });
+
+  it("says when a finished run is still holding its slot, and only then", () => {
+    const nowMs = Date.parse("2026-10-26T11:00:00Z");
+    expect(runHeldOpenText(run({ ended_at: null }), nowMs)).toBe(
+      "finished 20 min ago, still holding its slot"
+    );
+    expect(runHeldOpenText(run(), nowMs)).toBeNull();
+    expect(
+      runHeldOpenText(run({ ended_at: null, finished_at: null }), nowMs)
+    ).toBeNull();
+    expect(
+      runHeldOpenText(run({ ended_at: null, finished_at: "soon" }), nowMs)
+    ).toBeNull();
+  });
+
+  it("flags a reconciled id and a skew past coord's tolerance, in either direction", () => {
+    const keys = (over: Record<string, unknown>) =>
+      runFlags(run(over)).map((f) => f.key);
+    expect(keys({})).toEqual([]);
+    expect(keys({ bind_origin: "reconciled" })).toEqual(["reconciled"]);
+    expect(keys({ clock_skew_seconds: null })).toEqual([]);
+    expect(keys({ clock_skew_seconds: CLOCK_SKEW_TOLERANCE_SECS })).toEqual([]);
+    expect(keys({ clock_skew_seconds: -CLOCK_SKEW_TOLERANCE_SECS })).toEqual(
       []
     );
+    const [behind] = runFlags(
+      run({ clock_skew_seconds: CLOCK_SKEW_TOLERANCE_SECS + 1 })
+    );
+    expect(behind?.key).toBe("clock_skew");
+    expect(behind?.detail).toMatch(/after the event's own timestamp.*replay/);
+    const [ahead] = runFlags(
+      run({ clock_skew_seconds: -(CLOCK_SKEW_TOLERANCE_SECS + 1) })
+    );
+    expect(ahead?.key).toBe("clock_skew");
+    expect(ahead?.detail).toMatch(/before the event's own timestamp.*ahead/);
+  });
+
+  it("carries the facts a run was classified from, and omits the absent ones", () => {
+    const facts = runRawFacts(run());
+    expect(facts).toContain("classifier_version=1");
+    expect(facts).toContain("spawn_origin=gate_continuation");
+    expect(facts).toContain("gate_registered_by=AUTO_PR_MERGED_GATE");
+    expect(facts).toContain("clock_skew_seconds=0");
+    expect(facts).not.toContain("spawn_kind");
+    expect(facts).not.toContain("dispatch_source");
+    expect(facts).not.toContain("null");
   });
 
   it("filter counts are dashes until loaded, then counts", () => {

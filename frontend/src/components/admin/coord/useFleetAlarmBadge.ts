@@ -84,6 +84,7 @@ import {
   type FleetHealthPayload,
 } from "@/lib/api/operations/coordFleet";
 import { DEFAULT_WINDOW_SECS } from "@/components/operations/useFleetResourceSamples";
+import { isNotHealthyDevice } from "@/components/admin/coord/machineHealth";
 
 const log = createLogger("useFleetAlarmBadge");
 
@@ -297,7 +298,11 @@ export function useFleetAlarmBadge(): FleetAlarm {
     );
     return {
       ...admission,
-      unhealthy: devices.filter((d) => d.state && d.state !== "healthy").length,
+      // The nav's own predicate: every verdict other than healthy. Home's
+      // Degrading section follows coord's project state instead and says,
+      // by state, which of these it does not call degrading
+      // (`machineHealth.ts`).
+      unhealthy: devices.filter(isNotHealthyDevice).length,
     };
   }, [health, samples, fetchedAtMs, nowMs]);
 
