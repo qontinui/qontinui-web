@@ -871,7 +871,7 @@ describe("round-8 review — the partial and unread captions say what is true", 
       onlyMergeTrain
     );
     expect(phrase).toBe(
-      "not every watcher is fresh (merge train, and 2 areas not named here); readings for 2 areas not named here could not be taken"
+      "not every watcher is fresh (merge train and 2 areas not named here); readings for 2 other areas not named here could not be taken"
     );
   });
 
@@ -888,7 +888,7 @@ describe("round-8 review — the partial and unread captions say what is true", 
       onlyMergeTrain
     );
     expect(phrase).toBe(
-      "not every watcher is fresh (1 area not named here); the reading for 1 area not named here could not be taken"
+      "not every watcher is fresh (1 area not named here); the reading for 1 other area not named here could not be taken"
     );
   });
 
