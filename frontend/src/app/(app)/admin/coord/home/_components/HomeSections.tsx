@@ -64,6 +64,7 @@ import {
   usePresentationMode,
   usePresentationScopeState,
   useRedactor,
+  type SectionSource,
 } from "@/components/presentation";
 import { FAILURE_SENTENCE_WITHHELD } from "@/components/operations/presentedFailure";
 import {
@@ -272,6 +273,7 @@ export function HomeStripSection({
   generatedAt,
   failure,
   onRefresh,
+  extraSources = [],
 }: {
   strip: HomeStrip;
   tenantName: string | null;
@@ -286,6 +288,12 @@ export function HomeStripSection({
    */
   failure: string | null;
   onRefresh: () => Promise<void>;
+  /**
+   * The reads beside the project state that the strip shows figures from
+   * (the machine roster; the queue counts when its needs-you figure is
+   * theirs), each a chip of its own while presenting.
+   */
+  extraSources?: readonly SectionSource[];
 }) {
   const { presenting } = usePresentationMode();
   // R8: the tenant's UUID is a raw id, so it is the title, never the text —
@@ -330,7 +338,11 @@ export function HomeStripSection({
   );
   return (
     <>
-      <RegionCaption region="strip" reading={{ generatedAt, kept: stale }} />
+      <RegionCaption
+        region="strip"
+        reading={{ generatedAt, kept: stale }}
+        extraSources={extraSources}
+      />
       <section
         className="flex items-center gap-2"
         data-ui-bridge-id="coord-home.strip"

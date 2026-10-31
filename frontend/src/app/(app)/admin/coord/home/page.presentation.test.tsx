@@ -993,7 +993,7 @@ describe("/admin/coord/home?present=1 — a kept reading after a failed refresh"
     // The failure leads, before the strip and every region.
     const notice = screen.getByTestId("coord-home.kept-reading");
     expect(notice).toHaveTextContent(
-      `The latest read of coord's project state failed (${FAILURE_REASON_WITHHELD}). Everything below is its last reading, not a current one.`
+      `The latest read of coord's project state failed (${FAILURE_REASON_WITHHELD}). Everything below that comes from it is its last reading, not a current one. Machine health is a current read, with its own source.`
     );
     expect(
       notice.compareDocumentPosition(screen.getByTestId("coord-home.strip")) &
@@ -1044,7 +1044,7 @@ describe("/admin/coord/home?present=1 — a kept reading after a failed refresh"
       )
     );
     expect(screen.getByTestId("coord-home.kept-reading")).toHaveTextContent(
-      `The latest read of coord's project state failed (${COORD_TIMEOUT_TEXT}). Everything below is its last reading, not a current one.`
+      `The latest read of coord's project state failed (${COORD_TIMEOUT_TEXT}). Everything below that comes from it is its last reading, not a current one. Machine health is a current read, with its own source.`
     );
     expect(screen.getByTestId("coord-home.strip")).toHaveTextContent(
       `Last failure: ${COORD_TIMEOUT_TEXT}.`

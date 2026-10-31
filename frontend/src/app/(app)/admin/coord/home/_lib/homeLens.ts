@@ -88,6 +88,71 @@ export function regionSources(reading: HomeReading): readonly SectionSource[] {
   ];
 }
 
+/**
+ * A figure on the page read from somewhere other than the project state
+ * (`_lib/homeSupplements.ts`), as the kept-reading notice speaks of it.
+ */
+export interface OtherReading {
+  /** How the notice names it, mid-sentence: "machine health". */
+  readonly name: string;
+  /** Whether it was read; `stale`: it is a kept reading too. */
+  readonly reading: {
+    readonly state: "read" | "could_not_read" | "unknown";
+    readonly stale: boolean;
+  };
+}
+
+function capitalize(s: string): string {
+  return s.length === 0 ? s : s[0]!.toUpperCase() + s.slice(1);
+}
+
+function andList(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The kept-reading notice's text: it covers only what IS a kept reading.
+ * What comes from the project state is its last reading; a figure read
+ * beside it is said to be current when its own read is, a last reading when
+ * that read failed too, and not read when it never landed.
+ */
+export function keptReadingText(
+  failure: string,
+  others: readonly OtherReading[]
+): string {
+  const fresh = others.filter(
+    (o) => o.reading.state === "read" && !o.reading.stale
+  );
+  const kept = others.filter(
+    (o) => o.reading.state === "read" && o.reading.stale
+  );
+  const unread = others.filter((o) => o.reading.state !== "read");
+  const parts = [
+    `The latest read of coord's project state failed (${failure}).`,
+    others.length === 0
+      ? "Everything below is its last reading, not a current one."
+      : "Everything below that comes from it is its last reading, not a current one.",
+  ];
+  const names = (os: readonly OtherReading[]) => andList(os.map((o) => o.name));
+  if (fresh.length > 0) {
+    parts.push(
+      `${capitalize(names(fresh))} ${fresh.length === 1 ? "is a current read, with its own source" : "are current reads, each with its own source"}.`
+    );
+  }
+  if (kept.length > 0) {
+    parts.push(
+      `${capitalize(names(kept))} ${kept.length === 1 ? "is" : "are"} a last reading too.`
+    );
+  }
+  if (unread.length > 0) {
+    parts.push(
+      `${capitalize(names(unread))} ${unread.length === 1 ? "has" : "have"} not been read — unknown.`
+    );
+  }
+  return parts.join(" ");
+}
+
 // ---------------------------------------------------------------------------
 // A failed read — explained in fixed words, or its reason withheld
 // ---------------------------------------------------------------------------

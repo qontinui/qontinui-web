@@ -36,12 +36,14 @@ import {
   RowKeyAliases,
   degradationRepo,
   isMachineSubject,
+  keptReadingText,
   presentedPlaneName,
   presentedPlaneWords,
   regionSources,
   subjectDescriptor,
   type DegradationRowKind,
   type HomeReading,
+  type OtherReading,
 } from "../_lib/homeLens";
 
 /** The page's six regions, as their captions are keyed. */
@@ -130,8 +132,11 @@ export function PageProvenance({ reading }: { reading: HomeReading }) {
 
 /**
  * What leads a kept reading while presenting (style guide §6.5, "A kept
- * reading"): the latest read failed, so everything below is the LAST reading
- * — said first, named as such, and dated by its read, never shown as current.
+ * reading"): the latest read of the project state failed, so what comes from
+ * it is the LAST reading — said first, named as such, and dated by its read,
+ * never shown as current. It covers only what is a kept reading: a figure
+ * read beside the project state (`others`) is said to be current when its
+ * own read is (`keptReadingText`).
  * The failure's own text can quote a URL or coord's error body, so its reason
  * is the page's fixed words where it has some (`presentedHomeFailure`), and
  * withheld otherwise. Operator mode has the strip's own stale qualifier and
@@ -140,10 +145,13 @@ export function PageProvenance({ reading }: { reading: HomeReading }) {
 export function KeptReadingNotice({
   reading,
   failure,
+  others = [],
 }: {
   reading: HomeReading;
   /** The latest failure as a presentation may show it (`presentedHomeFailure`). */
   failure: string | null;
+  /** The figures on the page read beside the project state. */
+  others?: readonly OtherReading[];
 }) {
   const { presenting } = usePresentationMode();
   if (!presenting || !reading.kept) return null;
@@ -153,11 +161,7 @@ export function KeptReadingNotice({
       role="status"
       data-testid="coord-home.kept-reading"
     >
-      <span>
-        The latest read of coord&apos;s project state failed (
-        {failure ?? FAILURE_REASON_WITHHELD}). Everything below is its last
-        reading, not a current one.
-      </span>
+      <span>{keptReadingText(failure ?? FAILURE_REASON_WITHHELD, others)}</span>
       <Provenance
         source={PROJECT_STATE_KEPT_SOURCE}
         asOf={reading.generatedAt}

@@ -51,7 +51,8 @@ import {
 } from "@/components/admin/coord/coordHomeStatus";
 import { useProjectState } from "./_hooks/useProjectState";
 import { useHomeSupplements } from "./_hooks/useHomeSupplements";
-import { presentedHomeFailure } from "./_lib/homeLens";
+import { presentedHomeFailure, type OtherReading } from "./_lib/homeLens";
+import { MACHINES_SOURCE, supplementSource } from "./_lib/homeSupplements";
 import { KeptReadingNotice, PageProvenance } from "./_components/HomeLens";
 import {
   CorrectSection,
@@ -108,6 +109,23 @@ export default function CoordHomePage() {
   // while presenting, the page's fixed words for it, or withheld when only
   // outside words can tell it. One decision, for every line that says it.
   const failure = presentedHomeFailure(lastError, presentableError, presenting);
+  // The figures read beside the project state that the page shows: the
+  // machine roster always; the queue counts while coord serves no needs_me.
+  const queuesShown = shown.needsMe.state !== "read";
+  const others: OtherReading[] = [
+    { name: "machine health", reading: machines },
+    ...(queuesShown
+      ? [
+          { name: "the open-gate count", reading: supplements.gates },
+          {
+            name: "the pending-question count",
+            reading: supplements.questions,
+          },
+        ]
+      : []),
+  ];
+  // The strip's own figures from those reads, each with its chip.
+  const stripSources = [supplementSource(MACHINES_SOURCE, machines)];
 
   return (
     // `overflow-x-auto`: a wide detail panel scrolls instead of stranding its
@@ -124,7 +142,7 @@ export default function CoordHomePage() {
           holds for the operator. */}
       <Caption id="coordination-overview.page" />
       <PageProvenance reading={reading} />
-      <KeptReadingNotice reading={reading} failure={failure} />
+      <KeptReadingNotice reading={reading} failure={failure} others={others} />
       <HomeStripSection
         strip={strip}
         tenantName={tenantName}
@@ -133,6 +151,7 @@ export default function CoordHomePage() {
         generatedAt={view?.generatedAt ?? null}
         failure={failure}
         onRefresh={refreshAll}
+        extraSources={stripSources}
       />
       {(!hasRead || !view) && (
         <p
