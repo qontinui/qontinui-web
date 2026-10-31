@@ -35,7 +35,7 @@
  * those renders the original, so #1999's page is unchanged.
  */
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   CollapsiblePanel,
   HealthStrip,
@@ -62,6 +62,9 @@ import {
 import { FAILURE_SENTENCE_WITHHELD } from "@/components/operations/presentedFailure";
 import {
   BLOCKED_UNIT_DESCRIPTOR,
+  INITIATIVE_UNPARSEABLE_SENTENCE,
+  RepositoryAliases,
+  repositoryAliasDescriptor,
   INITIATIVE_ITEM_DESCRIPTOR,
   INITIATIVE_KEYS_DESCRIPTOR,
   REPOSITORY_DESCRIPTOR,
@@ -632,6 +635,11 @@ export function NeedsYouSection({
           : ""
       }`
     : BLOCK_STATE_PHRASE[needs.state];
+  // While presenting, a block coord has not built is left out: the counts
+  // read from the Gates and Questions lists stand in for it, unlabelled by
+  // "not built yet".
+  const unbuiltWhilePresenting =
+    presenting && needs.state === "not_implemented";
   return (
     <section
       className="space-y-2"
@@ -657,7 +665,7 @@ export function NeedsYouSection({
           className="text-xs text-muted-foreground tabular-nums"
           data-testid="coord-home.needs-you.count"
         >
-          {header}
+          {unbuiltWhilePresenting ? null : header}
         </span>
       </div>
       {read && needs.byDomain && Object.keys(needs.byDomain).length > 0 && (
@@ -738,6 +746,10 @@ export function NeedsYouSection({
             )}
           />
         )
+      ) : unbuiltWhilePresenting ? (
+        <div className="text-sm text-muted-foreground">
+          <QueueCounts gates={gates} questions={questions} />
+        </div>
       ) : (
         <NotRead
           what="the decisions waiting on you"
@@ -1329,12 +1341,15 @@ function RepoGroupRow({
   expanded,
   onToggle,
   unitRepos,
+  aliases,
 }: {
   g: RepoGroup;
   windowSecs: number | null;
   expanded: boolean;
   onToggle: () => void;
   unitRepos: UnitRepos;
+  /** The section's repository aliases, kept across polls. */
+  aliases: RepositoryAliases;
 }) {
   const { presenting } = usePresentationMode();
   const scope = usePresentationScopeState();
@@ -1346,6 +1361,12 @@ function RepoGroupRow({
   const keyShown =
     key !== null &&
     (!presenting || redactionVerdict({ text: key, repo: key }, scope).show);
+  // A withheld repository is its alias ("Repository A"), so two withheld
+  // repositories never read as one; the alias is all the presentation says.
+  const alias =
+    presenting && g.kind === "repo" && key !== null && !keyShown
+      ? aliases.alias(key)
+      : null;
   return (
     <RecordRow
       identity={
@@ -1357,7 +1378,11 @@ function RepoGroupRow({
           <RedactedText
             text={key}
             repo={key}
-            descriptor={REPOSITORY_DESCRIPTOR}
+            descriptor={
+              alias === null
+                ? REPOSITORY_DESCRIPTOR
+                : repositoryAliasDescriptor(alias)
+            }
           />
         )
       }
@@ -1373,7 +1398,7 @@ function RepoGroupRow({
           <p className="m-0">
             {g.kind === "unattributed_repo"
               ? "Work units that name no repository. They are counted here rather than dropped."
-              : `Work units that name ${keyShown ? key : "this repository"}. A unit naming several repositories is counted under each.`}
+              : `Work units that name ${keyShown ? key : (alias ?? "this repository")}. A unit naming several repositories is counted under each.`}
           </p>
         }
         problems={
@@ -1419,6 +1444,17 @@ function InitiativeBlock({
     body = (
       <p className="m-0 text-muted-foreground">
         Coord served no initiative reading — unknown.
+      </p>
+    );
+  } else if (i.state === "unparseable" && presenting) {
+    // Coord's parser message quotes the document, and a descriptor in its
+    // place reads as a garbled clause: a fixed sentence says it instead.
+    body = (
+      <p
+        className="m-0 text-muted-foreground"
+        data-testid="coord-home.on-track.initiative.unparseable"
+      >
+        {INITIATIVE_UNPARSEABLE_SENTENCE}
       </p>
     );
   } else if (i.state === "unparseable") {
@@ -1560,6 +1596,7 @@ export function OnTrackSection({
   generatedAt?: string | null;
 }) {
   const rowKey = useRowKey();
+  const [repoAliases] = useState(() => new RepositoryAliases());
   const read = onTrack.state === "read";
   const stallWindow = onTrack.stallWindowSecs;
   // Which repositories each named unit may belong to — read once from every
@@ -1640,6 +1677,7 @@ export function OnTrackSection({
                 expanded={ctx.expanded}
                 onToggle={ctx.onToggle}
                 unitRepos={unitRepos}
+                aliases={repoAliases}
               />
             )}
           />
@@ -1679,6 +1717,11 @@ export function CorrectSection({
   // "No source" only when coord SAYS no source exists. Any other unread state
   // (could not read, stale, absent from the body) says nothing about a source.
   const noSource = correctnessHasNoSource(correctness);
+  // A section with nothing built behind it is left out of the presented
+  // page; the operator still sees it, so its absence stays visible there.
+  if (presenting && (noSource || correctness.state === "not_implemented")) {
+    return null;
+  }
   const label = measured
     ? "Coord reports a correctness reading; this page does not render it yet"
     : noSource
@@ -1905,12 +1948,21 @@ export function DoesNotKnowSection({
   stale?: boolean;
   generatedAt?: string | null;
 }) {
-  const unread = sources?.filter((s) => s.state !== "read") ?? [];
+  const { presenting } = usePresentationMode();
+  const notRead = sources?.filter((s) => s.state !== "read") ?? [];
   const read = sources?.filter((s) => s.state === "read") ?? [];
+  // While presenting, a source coord has not built yet is not listed: one
+  // line counts them, so the header's figure still adds up.
+  const unbuilt = presenting
+    ? notRead.filter((s) => s.state === "not_implemented")
+    : [];
+  const unread = presenting
+    ? notRead.filter((s) => s.state !== "not_implemented")
+    : notRead;
   const count =
     sources === null
       ? "unknown"
-      : `${unread.length} of ${sources.length} sources not read`;
+      : `${notRead.length} of ${sources.length} sources not read`;
   return (
     <section
       className="space-y-2"
@@ -1941,7 +1993,7 @@ export function DoesNotKnowSection({
         </p>
       ) : (
         <>
-          {unread.length === 0 ? (
+          {notRead.length === 0 ? (
             <p
               className="m-0 text-sm"
               data-testid="coord-home.does-not-know.all-read"
@@ -1951,12 +2003,24 @@ export function DoesNotKnowSection({
                 : "Coord read every source it lists."}
             </p>
           ) : (
-            <SourceList
-              sources={unread}
-              list="source"
-              planes={planes}
-              testId="coord-home.does-not-know.not-read"
-            />
+            unread.length > 0 && (
+              <SourceList
+                sources={unread}
+                list="source"
+                planes={planes}
+                testId="coord-home.does-not-know.not-read"
+              />
+            )
+          )}
+          {unbuilt.length > 0 && (
+            <p
+              className="m-0 text-sm text-muted-foreground"
+              data-testid="coord-home.does-not-know.not-built"
+            >
+              {unbuilt.length === 1
+                ? "1 further source is not built yet, so this view does not show it."
+                : `${unbuilt.length} further sources are not built yet, so this view does not show them.`}
+            </p>
           )}
           {read.length > 0 && (
             <CollapsiblePanel

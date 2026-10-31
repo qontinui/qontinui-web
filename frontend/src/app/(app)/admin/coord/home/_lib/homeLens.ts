@@ -24,6 +24,7 @@
 
 import {
   WITHHELD,
+  aliasLetters,
   type RedactionDescriptor,
   type SectionSource,
 } from "@/components/presentation";
@@ -191,6 +192,40 @@ export const REPOSITORY_DESCRIPTOR: RedactionDescriptor = {
   kind: "Repository",
   notApplicable: ["area", "status", "at"],
 };
+
+/**
+ * Stable aliases for the repositories a presentation withholds — "Repository
+ * A", "Repository B" — the way machines are "Machine A, B…"
+ * (`machineAliases.ts`): two withheld repositories never read as one, and a
+ * repository keeps its letter across polls for as long as the region is
+ * mounted. Letters go to withheld repositories only, in first-seen order, and
+ * are never reissued; the key is held in memory only, never rendered.
+ */
+export class RepositoryAliases {
+  private readonly byKey = new Map<string, number>();
+
+  alias(key: string): string {
+    let n = this.byKey.get(key);
+    if (n === undefined) {
+      n = this.byKey.size;
+      this.byKey.set(key, n);
+    }
+    return `Repository ${aliasLetters(n)}`;
+  }
+}
+
+/** A withheld repository's descriptor: its alias, its kind's fields left out. */
+export function repositoryAliasDescriptor(alias: string): RedactionDescriptor {
+  return { ...REPOSITORY_DESCRIPTOR, kind: alias };
+}
+
+/**
+ * What a presentation says of an initiative document coord could not parse:
+ * a fixed sentence, never coord's parser message (which quotes the document)
+ * and never a descriptor standing in for it.
+ */
+export const INITIATIVE_UNPARSEABLE_SENTENCE =
+  "The current initiative's document could not be read as written, so its status and scope are not shown.";
 
 /** A needs-you item's own status word — the badge the row shows. */
 export function needsStatusWord(

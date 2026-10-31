@@ -662,6 +662,54 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
     });
   });
 
+  describe("what the operator view keeps that a presentation leaves out", () => {
+    it("shows Correct? while nothing measures it, and lists sources not built yet, with no presentation chrome", async () => {
+      answer({
+        [PROJECT_STATE]: () =>
+          json(
+            oneUnitBody({
+              correctness: {
+                state: "unknown",
+                reason: "verification_metrics_door_absent",
+              },
+              does_not_know: [
+                { source: "verification_metrics", state: "not_implemented" },
+              ],
+            })
+          ),
+      });
+      await renderPage();
+      expect(screen.getByTestId("coord-home.correct")).toHaveTextContent(
+        "Not measured — no trust-calibration source"
+      );
+      const dnk = screen.getByTestId("coord-home.does-not-know");
+      expect(dnk).toHaveTextContent("Verification measurements");
+      expect(
+        within(dnk).queryByTestId("coord-home.does-not-know.not-built")
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("coord-home.provenance")).toBeNull();
+      expect(document.querySelector("[data-presentation-section]")).toBeNull();
+    });
+
+    it("names a repository and quotes coord's parse error as before", async () => {
+      const body = oneUnitBody();
+      (body.on_track as Record<string, unknown>).initiative = {
+        state: "unparseable",
+        error: "frontmatter line 8: indented line is not a `- item`",
+      };
+      answer({ [PROJECT_STATE]: () => json(body) });
+      await renderPage();
+      expect(screen.getByTestId("coord-home.on-track")).toHaveTextContent(
+        "example-repo"
+      );
+      expect(
+        screen.getByTestId("coord-home.on-track.initiative")
+      ).toHaveTextContent(
+        "The current initiative document could not be parsed: frontmatter line 8"
+      );
+    });
+  });
+
   describe("the no-recorded-change wording", () => {
     it("is plain words with the unit, on the strip and on a repository row", async () => {
       answer({ [PROJECT_STATE]: () => json(oneUnitBody()) });
