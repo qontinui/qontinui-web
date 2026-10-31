@@ -32,6 +32,10 @@
  *
  * A failed refresh keeps the last good list (the hook's rule) and the cell
  * says it is the last good read's answer.
+ *
+ * An UNKNOWN cell's `reason` is the reason alone: the cell's badge already says
+ * UNKNOWN, so a reason that began "UNKNOWN —" read "UNKNOWN UNKNOWN —" to a
+ * screen reader and in the operator's tooltip.
  */
 
 import type { SpawnListWire, SpawnReadIssue } from "./spawnStatus";
@@ -92,7 +96,7 @@ export function lastSpawnedCell(
   if (origin === undefined) {
     return {
       kind: "unknown",
-      reason: `UNKNOWN — ${blind}.`,
+      reason: `${blind.charAt(0).toUpperCase()}${blind.slice(1)}.`,
       presentedReason:
         "When this path last started a session is unknown: the record of spawn requests does not identify this path's starts.",
     };
@@ -103,8 +107,8 @@ export function lastSpawnedCell(
       kind: "unknown",
       reason:
         issue === null
-          ? "UNKNOWN — the spawn ledger has not answered yet."
-          : `UNKNOWN — ${spawnIssueText(issue, "when this path last spawned")}`,
+          ? "The spawn ledger has not answered yet."
+          : spawnIssueText(issue, "when this path last spawned"),
       presentedReason: LEDGER_UNREAD_PRESENTED,
     };
   }
@@ -129,7 +133,7 @@ export function lastSpawnedCell(
   if (partial !== undefined) {
     return {
       kind: "unknown",
-      reason: `UNKNOWN — none of ${measured} under this path's origin started, but ${partial}.`,
+      reason: `None of ${measured} under this path's origin started, but ${partial}.`,
       presentedReason:
         "When this path last started a session is unknown: the record of spawn requests names only some of its starts.",
     };

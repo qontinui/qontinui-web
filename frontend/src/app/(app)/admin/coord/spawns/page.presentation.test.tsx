@@ -581,12 +581,25 @@ describe("/admin/coord/spawns?present=1", () => {
       routes.roles = () => ({ status: 502, body: { detail: "upstream" } });
       renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
       await settle();
-      expect(screen.getByTestId("coord-spawns-health").textContent).toContain(
-        headline
-      );
-      expect(
-        screen.getByTestId("coord-spawns-count-all").getAttribute("data-count")
-      ).toBe("unknown");
+      if (_arm === "not served") {
+        // Not served is said once, in fixed words, and its sections collapse.
+        expect(
+          screen.getByTestId("coord-spawns-ledger-unserved").textContent
+        ).toContain(
+          "The coordination service does not offer the record of spawn requests yet"
+        );
+        expect(screen.queryByTestId("coord-spawns-health")).toBeNull();
+        expect(screen.queryByTestId("coord-spawns-count-all")).toBeNull();
+      } else {
+        expect(screen.getByTestId("coord-spawns-health").textContent).toContain(
+          headline
+        );
+        expect(
+          screen
+            .getByTestId("coord-spawns-count-all")
+            .getAttribute("data-count")
+        ).toBe("unknown");
+      }
       expectNoServiceToken();
     });
   });

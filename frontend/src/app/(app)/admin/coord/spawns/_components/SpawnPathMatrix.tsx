@@ -337,12 +337,14 @@ function PathLine({
   onToggle,
   writers,
   presenting,
+  showLastSpawned,
 }: {
   row: MatrixRow;
   open: boolean;
   onToggle: () => void;
   writers: MatrixWriters;
   presenting: boolean;
+  showLastSpawned: boolean;
 }) {
   const [primary, ...others] = row.gates;
   if (!primary) return null;
@@ -413,13 +415,18 @@ function PathLine({
             )}
           </div>
         </td>
-        <td className="py-1.5 pr-3">
-          <LastSpawnedValue cell={row.lastSpawned} presenting={presenting} />
-        </td>
+        {showLastSpawned && (
+          <td className="py-1.5 pr-3">
+            <LastSpawnedValue cell={row.lastSpawned} presenting={presenting} />
+          </td>
+        )}
       </tr>
       {open && (
         <tr>
-          <td colSpan={COLUMNS.length} className="pl-[1.125rem] pr-3">
+          <td
+            colSpan={COLUMNS.length - (showLastSpawned ? 0 : 1)}
+            className="pl-[1.125rem] pr-3"
+          >
             <GateTable row={row} writers={writers} presenting={presenting} />
           </td>
         </tr>
@@ -477,11 +484,17 @@ export function SpawnPathMatrixSection({
   writers,
   presenting,
   sources,
+  showLastSpawned = true,
 }: {
   matrix: SpawnPathMatrix;
   writers: MatrixWriters;
   presenting: boolean;
   sources: readonly SectionSource[];
+  /**
+   * `false` while coord does not serve the spawn ledger: every cell would be
+   * the same UNKNOWN, which the page states once instead (`ledgerServed.ts`).
+   */
+  showLastSpawned?: boolean;
 }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const title = captionEntry("agentic-activity.spawn-paths").title;
@@ -529,7 +542,9 @@ export function SpawnPathMatrixSection({
         <table className="w-full text-sm" data-testid="coord-spawns-path-table">
           <thead>
             <tr className="text-left text-[11px] text-muted-foreground">
-              {COLUMNS.map((c) => (
+              {COLUMNS.filter(
+                (c) => showLastSpawned || c !== "Last spawned"
+              ).map((c) => (
                 <th
                   key={c}
                   className="py-1 pr-3 font-medium"
@@ -560,6 +575,7 @@ export function SpawnPathMatrixSection({
                 }
                 writers={writers}
                 presenting={presenting}
+                showLastSpawned={showLastSpawned}
               />
             ))}
           </tbody>

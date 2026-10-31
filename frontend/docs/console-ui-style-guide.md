@@ -1604,6 +1604,17 @@ issued has settled — answered or not — so a re-read over sources that are al
 still unread (every as-of null) is still seen to have run (served policy
 `ux-priorities` `an-action-must-acknowledge-itself`, its terminal moment).
 
+**A ledger coord does not serve is said once.** While coord answers that the spawn
+ledger is not deployed, does not serve its route, or has it switched off — and no last
+good read is held — the page stands ONE `LedgerUnservedNotice` in the strip's place
+(`_lib/ledgerServed.ts`), naming every section that rests on the ledger: the strip,
+each path's Last spawned, in flight per machine, the counts, the placement and the
+rate chart. None of those renders, not even as a column of UNKNOWNs, so the same
+sentence is not repeated per section or per cell (served policy `ux-priorities`
+`repeated-chrome-must-earn-its-space-by-varying`). A read that FAILED is not this: the
+ledger is served, and each section keeps its own arm and its last good read. An
+UNKNOWN cell's reason never repeats the badge's UNKNOWN.
+
 **The per-request list and the per-device placement are an investigation view, not
 the page.** They are a triage queue at agent altitude (the operator monitors and does
 not supervise; an evaluator does not need a triage queue), so `/admin/coord/spawns`

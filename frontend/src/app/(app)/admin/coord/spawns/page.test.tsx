@@ -13,13 +13,16 @@
  *    investigation view — no row, tab or per-device line on this page.
  * 2. **A request waiting from before the window is counted as queued**, and
  *    the strip goes red once it has waited a day.
- * 3. **`{available: false}` is "spawn ledger not deployed yet"**, and every
- *    count is a dash — never 0.
+ * 3. **A ledger coord does not serve is said ONCE**: `{available: false}` and
+ *    the `no_such_route` 404 stand one notice in the strip's place, naming
+ *    every section that rests on the ledger, and none of those renders — no
+ *    strip, banner, count, chart, Last spawned or in-flight column. A read
+ *    that FAILED collapses nothing.
  * 4. **A null share renders UNKNOWN**, never `0%`.
  * 5. **Backfilled rows are counted on the strip.**
  * 6. **An empty window is a measured empty**, with counts of `0`.
  * 7. **The failure arms**: a 403 clears the counts and says who may read; a
- *    `no_such_route` 404 says coord does not serve the ledger yet; a 502 after
+ *    `no_such_route` 404 is said once, as in 3; a 502 after
  *    a good read keeps the counts and says the refresh failed; a window list
  *    that fails leaves its counts at a dash, never 0.
  * 8. **Controls**: a refresh says when it re-read; switching the window
@@ -72,6 +75,8 @@ import {
   statsFx,
 } from "./__fixtures__/coordSpawns";
 import { UNKNOWN_AMBER } from "@/components/console";
+import { LEDGER_DEPENDENTS } from "./_components/LedgerUnservedNotice";
+import { IN_FLIGHT_UNKNOWN } from "./_lib/machineStatus";
 import CoordSpawnsPage from "./page";
 
 /** Let every read in flight — including the poll's second, dependent step — land. */
@@ -193,23 +198,58 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     expect(countOf("queued")).toBe("1");
   });
 
-  it("says the spawn ledger is not deployed yet when coord answers available:false", async () => {
+  it("says once that the ledger is not deployed, and collapses every section that rests on it", async () => {
     routes.list = () => ({ body: SCHEMA_MISSING });
     routes.pending = () => ({ body: SCHEMA_MISSING });
     routes.stats = () => ({ body: SCHEMA_MISSING });
     await renderPage();
 
-    const strip = screen.getByTestId("coord-spawns-health");
-    expect(strip.textContent).toContain("Spawn ledger not deployed yet");
-    expect(strip.getAttribute("data-health-level")).toBe("amber");
-    const banner = screen.getByTestId("coord-spawns-unknown-banner");
-    expect(banner.getAttribute("data-issue")).toBe("ledger_not_deployed");
-    expect(banner.textContent).toContain("unknown, not empty");
-    expect(screen.getByTestId("coord-spawns-rate-chart-unknown")).toBeTruthy();
-    // No count was read, so every count is a dash — never 0.
-    for (const id of ["all", "queued", "failed", "placed", "devices"]) {
-      expect(countOf(id), id).toBe("unknown");
-    }
+    const notice = screen.getByTestId("coord-spawns-ledger-unserved");
+    expect(notice.getAttribute("data-issue")).toBe("ledger_not_deployed");
+    expect(notice.textContent).toContain("Spawn ledger not deployed yet");
+    expect(notice.textContent).toContain("unknown, not empty");
+    expect(
+      screen.getByTestId("coord-spawns-ledger-dependents").textContent
+    ).toBe(
+      `Until it is, this page does not show ${LEDGER_DEPENDENTS.join("; ")}. What is in flight on each machine against its ceiling is not shown either: ${IN_FLIGHT_UNKNOWN.operator}`
+    );
+    // Said once: no strip, no second banner, and no section of UNKNOWNs.
+    expect(
+      document.body.textContent?.match(/not deployed yet/g) ?? []
+    ).toHaveLength(1);
+    expect(screen.queryByTestId("coord-spawns-health")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-unknown-banner")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-requests-summary")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-placement-summary")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-rate-section")).toBeNull();
+    // Nor a column of them: no Last spawned and no in-flight column.
+    expect(screen.queryAllByTestId("coord-spawns-path-last")).toHaveLength(0);
+    expect(screen.queryByText("Last spawned")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-inflight-note")).toBeNull();
+    expect(
+      screen.queryAllByTestId("coord-spawns-machine-inflight")
+    ).toHaveLength(0);
+    // The sections that do not rest on the ledger still render.
+    expect(
+      screen.getAllByTestId("coord-spawns-path-row").length
+    ).toBeGreaterThan(10);
+    expect(screen.getAllByTestId("coord-spawns-machine")).toHaveLength(2);
+    expect(document.body.textContent).not.toContain("UNKNOWN UNKNOWN");
+  });
+
+  it("collapses nothing when a read FAILED: the ledger is served, and each section keeps its own arm", async () => {
+    const down = { status: 502, body: { detail: "coord unreachable" } };
+    routes.list = () => down;
+    routes.pending = () => down;
+    routes.stats = () => down;
+    await renderPage();
+    expect(screen.queryByTestId("coord-spawns-ledger-unserved")).toBeNull();
+    expect(screen.getByTestId("coord-spawns-health")).toBeTruthy();
+    expect(screen.getByTestId("coord-spawns-unknown-banner")).toBeTruthy();
+    expect(countOf("all")).toBe("unknown");
+    expect(
+      screen.getAllByTestId("coord-spawns-path-last").length
+    ).toBeGreaterThan(0);
   });
 
   it("renders a null share as UNKNOWN, never 0%", async () => {
@@ -317,19 +357,20 @@ describe("/admin/coord/spawns — the failure arms", () => {
     expect(countOf("all")).toBe("unknown");
   });
 
-  it("says coord does not serve the ledger yet on its no_such_route 404", async () => {
+  it("says once that coord does not serve the ledger yet on its no_such_route 404", async () => {
     const notServed = { status: 404, body: { error: "no_such_route" } };
     routes.stats = () => notServed;
     routes.list = () => notServed;
     routes.pending = () => notServed;
     await renderPage();
 
-    expect(screen.getByTestId("coord-spawns-health").textContent).toContain(
+    const notice = screen.getByTestId("coord-spawns-ledger-unserved");
+    expect(notice.getAttribute("data-issue")).toBe("route_unavailable");
+    expect(notice.textContent).toContain(
       "Coord does not serve the spawn ledger yet"
     );
-    const banner = screen.getByTestId("coord-spawns-unknown-banner");
-    expect(banner.getAttribute("data-issue")).toBe("route_unavailable");
-    expect(banner.textContent).toContain("does not serve the spawn ledger yet");
+    expect(screen.queryByTestId("coord-spawns-health")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-unknown-banner")).toBeNull();
   });
 
   it("keeps the counts and says the refresh failed when a read after a good one answers 502", async () => {

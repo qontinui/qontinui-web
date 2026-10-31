@@ -983,6 +983,25 @@ describe("last spawned — UNKNOWN unless the ledger names the path, and only wh
     });
   });
 
+  it("gives an UNKNOWN cell its reason alone, never a second UNKNOWN before it", () => {
+    const states = [
+      { list: null, issue: null, windowLabel: "last 7 days" },
+      {
+        list: null,
+        issue: { kind: "ledger_not_deployed" as const, reason: "absent" },
+        windowLabel: "last 7 days",
+      },
+      { list: listFx([]), issue: null, windowLabel: "last 7 days" },
+    ];
+    for (const ledger of states) {
+      for (const row of deriveSpawnPathMatrix(inputs({ ledger })).rows) {
+        const cell = row.lastSpawned;
+        if (cell.kind !== "unknown") continue;
+        expect(cell.reason, row.key).not.toMatch(/^UNKNOWN/);
+      }
+    }
+  });
+
   it("reads the runner scheduler as UNKNOWN whatever the ledger holds: no writer records its starts", () => {
     const scheduled = rowFx({
       origin: "scheduler",
@@ -999,7 +1018,7 @@ describe("last spawned — UNKNOWN unless the ledger names the path, and only wh
       ).lastSpawned;
       expect(cell.kind).toBe("unknown");
       expect(cell.kind === "unknown" && cell.reason).toContain(
-        "a machine's scheduled starts are not written to the spawn ledger"
+        "A machine's scheduled starts are not written to the spawn ledger"
       );
       expect(cell.kind === "unknown" && cell.presentedReason).toBe(
         "When this path last started a session is unknown: the record of spawn requests does not identify this path's starts."
