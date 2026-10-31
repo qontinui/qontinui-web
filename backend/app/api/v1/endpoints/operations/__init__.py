@@ -6528,7 +6528,7 @@ async def get_claude_accounts(
               "error": false,
               "stale": false,
               "is_active": true,       // null until the device's runner reports it
-              "account_selection_mode": "least_usage"  // manual | least_usage | null
+              "account_selection_mode": "least_usage"  // any runner mode, or null
             }
           ],
           "prepaid": [
@@ -6586,7 +6586,7 @@ async def get_claude_accounts(
     route's flags) they are surfaced as ``None`` — unknown — and never
     defaulted to ``true``, which would assert provisioning we did not observe.
     Consumers must render null as "unknown", not as ``false`` and not as the
-    ``least_usage`` default.
+    runner's default mode.
 
     ``stale`` is coord's own computed freshness verdict (30 minutes since the
     last report); it is forwarded untouched, not recomputed here.

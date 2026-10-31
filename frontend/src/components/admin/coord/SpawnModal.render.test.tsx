@@ -620,7 +620,7 @@ describe("SpawnModal Claude account roster", () => {
 
     const mode = await screen.findByTestId("coord-spawn-account-mode");
     expect(mode.textContent).toMatch(/unknown/i);
-    expect(mode.textContent).toMatch(/not necessarily least-usage/i);
+    expect(mode.textContent).toMatch(/not necessarily the runner's default/i);
 
     // ...and the row says which account is active is unknown too, rather
     // than rendering a null `is_active` as "not active".
@@ -814,7 +814,7 @@ describe("SpawnModal account roster — states that must not be invented", () =>
     const mode = screen.getByTestId("coord-spawn-account-mode");
     expect(mode.textContent).toMatch(/could not be read/i);
     expect(mode.textContent).not.toMatch(/has not reported a selection mode/i);
-    expect(mode.textContent).toMatch(/not necessarily least-usage/i);
+    expect(mode.textContent).toMatch(/not necessarily the runner's default/i);
   });
 
   it("does not describe a machine at all before one is chosen", async () => {
