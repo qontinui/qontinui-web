@@ -32,8 +32,8 @@ import { fetchFleetHealth } from "@/lib/api/operations/coordFleet";
 import { fetchPendingAgentQuestions } from "@/lib/api/operations/agentQuestions";
 import { adminDevService } from "@/services/admin-dev-service";
 import type {
-  EmptyRoster,
   MachineHealthCounts,
+  RosterExclusions,
 } from "@/components/admin/coord/machineHealth";
 import {
   GATES_PAGE_SIZE,
@@ -59,7 +59,7 @@ export interface HomeSupplements {
 interface Machines {
   counts: MachineHealthCounts;
   asOf: string | null;
-  emptyRoster: EmptyRoster | null;
+  exclusions: RosterExclusions;
 }
 interface Queue {
   count: number;
@@ -84,7 +84,7 @@ function machinesView(
     counts: axis.value.counts,
     asOf: axis.value.asOf,
     stale: axis.stale,
-    emptyRoster: axis.value.emptyRoster,
+    exclusions: axis.value.exclusions,
   };
 }
 

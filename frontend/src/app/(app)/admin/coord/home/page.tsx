@@ -48,6 +48,8 @@ import { Caption, usePresentationMode } from "@/components/presentation";
 import {
   NOTHING_READ,
   deriveHomeStrip,
+  type HomeQueue,
+  type HomeStripQueues,
 } from "@/components/admin/coord/coordHomeStatus";
 import { useProjectState } from "./_hooks/useProjectState";
 import { useHomeSupplements } from "./_hooks/useHomeSupplements";
@@ -92,29 +94,30 @@ export default function CoordHomePage() {
         ? {
             stale: machines.stale,
             counts: machines.counts,
-            emptyRoster: machines.emptyRoster,
+            exclusions: machines.exclusions ?? { kind: "not_stated" as const },
           }
         : null,
-    [machines.state, machines.counts, machines.stale, machines.emptyRoster]
+    [machines.state, machines.counts, machines.stale, machines.exclusions]
   );
   // With coord's needs block unread, the strip's needs-you figure is the
-  // queue counts' — only when BOTH queues were read.
+  // queue counts' — exact when both were read, a lower bound naming the
+  // unread one when only one was, and none when neither was.
   const { gates, questions } = supplements;
-  const stripQueues = useMemo(
-    () =>
-      shown.needsMe.state !== "read" &&
-      gates.state === "read" &&
-      gates.count !== null &&
-      questions.state === "read" &&
-      questions.count !== null
-        ? {
-            count: gates.count + questions.count,
-            exact: gates.exact && questions.exact,
-            stale: gates.stale || questions.stale,
-          }
-        : null,
-    [shown.needsMe.state, gates, questions]
-  );
+  const stripQueues = useMemo((): HomeStripQueues | null => {
+    if (shown.needsMe.state === "read") return null;
+    const g = gates.state === "read" ? gates.count : null;
+    const q = questions.state === "read" ? questions.count : null;
+    if (g === null && q === null) return null;
+    const notRead: HomeQueue[] = [];
+    if (g === null) notRead.push("gates");
+    if (q === null) notRead.push("questions");
+    return {
+      count: (g ?? 0) + (q ?? 0),
+      exact: notRead.length === 0 && gates.exact && questions.exact,
+      stale: (g !== null && gates.stale) || (q !== null && questions.stale),
+      notRead,
+    };
+  }, [shown.needsMe.state, gates, questions]);
   // While presenting, Correct? is left out when nothing is built behind it;
   // the strip then names no section the page does not show.
   const correctnessLeftOut =
@@ -125,9 +128,10 @@ export default function CoordHomePage() {
         stale,
         machines: stripMachines,
         correctnessLeftOut,
+        presenting,
         queues: stripQueues,
       }),
-    [view, stale, stripMachines, correctnessLeftOut, stripQueues]
+    [view, stale, stripMachines, correctnessLeftOut, presenting, stripQueues]
   );
   const refreshSupplements = supplements.refresh;
   // The one refresh re-reads everything the page shows.

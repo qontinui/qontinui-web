@@ -228,7 +228,11 @@ describe("the strip over the machine roster", () => {
       ...(state === null ? {} : { state }),
     }));
   const machines = (states: Array<string | null>, stale = false) => ({
-    machines: { stale, counts: summarizeMachineHealth(devices(...states)) },
+    machines: {
+      stale,
+      counts: summarizeMachineHealth(devices(...states)),
+      exclusions: { kind: "none_withheld" as const },
+    },
   });
   const degradingRow = (deviceId: string) => ({
     id: `fleet_health:state:${deviceId}`,
@@ -295,13 +299,78 @@ describe("the strip over the machine roster", () => {
     expect(s.badges.find((b) => b.key === "degraded")?.label).toBe(
       "degraded 1"
     );
-    expect(s.detail ?? "").not.toMatch(/in a degrading state/);
+    // Named once, as listed — never again as an unlisted degrading machine.
+    expect(s.detail).toContain(
+      "1 machine in a degrading state is among the open degradations."
+    );
+    expect(s.detail).not.toContain("1 machine is in a degrading state.");
     // A second degrading machine the list does not show is added, once.
     const two = deriveHomeStrip(
       withRows(degradingRow("d-0")),
       machines(["partitioned", "degraded"])
     );
     expect(two.detail).toContain("1 machine is in a degrading state.");
+    expect(two.detail).toContain(
+      "1 machine in a degrading state is among the open degradations."
+    );
+  });
+
+  it("does not count a listed machine twice when coord's degradations block is stale", () => {
+    // Coord marks the block `stale` whenever a watcher is not fresh or a
+    // sub-read is partial (`assemble_degradations_rows`) — the common
+    // production state — and still serves its rows.
+    const stale = parseProjectState({
+      generated_at: "2026-10-31T00:00:00Z",
+      on_track: {
+        state: "read",
+        totals: { row_count: 0, classes: {} },
+        groups: [],
+      },
+      correctness: { state: "read" },
+      needs_me: { state: "read", items: [], total: 0, omitted: 0 },
+      degradations: {
+        state: "stale",
+        headline: "degrading",
+        open: [degradingRow("d-0")],
+        declared: [],
+      },
+      does_not_know: [{ source: "work_units", state: "read" }],
+    });
+    const s = deriveHomeStrip(stale, machines(["partitioned", "healthy"]));
+    expect(s.detail).toContain(
+      "1 machine in a degrading state is among the open degradations."
+    );
+    expect(s.detail).not.toContain("1 machine is in a degrading state.");
+    expect(s.detail).not.toContain("machines are in a degrading state.");
+  });
+
+  it("names every machine the badge counts once, so the detail adds up to it", () => {
+    // P1's shape: one listed partitioned machine, one abandoned, and a
+    // placeholder the nav does not count.
+    const s = deriveHomeStrip(withRows(degradingRow("d-0")), {
+      machines: {
+        stale: false,
+        counts: summarizeMachineHealth([
+          { device_id: "d-0", state: "partitioned" },
+          { device_id: "d-1", state: "abandoned" },
+          { device_id: "d-2", dispatch_liveness: "unknown" },
+        ]),
+        exclusions: { kind: "none_withheld" },
+      },
+    });
+    expect(s.badges.find((b) => b.key === "machines")?.label).toBe(
+      "machines not healthy 2"
+    );
+    expect(s.detail).toContain(
+      "1 machine in a degrading state is among the open degradations."
+    );
+    expect(s.detail).toContain(
+      "1 machine not reporting healthy is not a degradation: 1 abandoned — see Dev Ops."
+    );
+    expect(s.detail).toContain(
+      "1 placeholder row coord does not grade is not counted as a machine."
+    );
+    expect(s.detail).not.toContain("no health verdict");
   });
 
   it("does not say an abandoned machine is degrading, and reconciles it with the nav", () => {
@@ -317,23 +386,8 @@ describe("the strip over the machine roster", () => {
     );
   });
 
-  it("reads coord's explicit unknown, a placeholder, and no state as no verdict — UNKNOWN, never degrading nor calm", () => {
-    for (const roster of [
-      machines(["unknown"]),
-      machines([null]),
-      {
-        machines: {
-          stale: false,
-          counts: summarizeMachineHealth([
-            {
-              device_id: "p",
-              state: "partitioned",
-              dispatch_liveness: "unknown",
-            },
-          ]),
-        },
-      },
-    ]) {
+  it("reads coord's explicit unknown and no state as no verdict — UNKNOWN, never degrading nor calm", () => {
+    for (const roster of [machines(["unknown"]), machines([null])]) {
       const s = deriveHomeStrip(calm(), roster);
       expect(s.level).toBe("amber");
       expect(s.headline).not.toBe("Something is degrading");
@@ -341,6 +395,87 @@ describe("the strip over the machine roster", () => {
       expect(s.detail).toContain("1 machine has no health verdict — unknown.");
     }
   });
+
+  it("reads healthy machines beside placeholder rows as calm, naming the rows on their own line", () => {
+    const s = deriveHomeStrip(calm(), {
+      machines: {
+        stale: false,
+        counts: summarizeMachineHealth([
+          ...Array.from({ length: 8 }, (_, i) => ({
+            device_id: `h-${i}`,
+            state: "healthy",
+          })),
+          { device_id: "p-0", dispatch_liveness: "unknown" },
+          { device_id: "p-1", state: "healthy", dispatch_liveness: "unknown" },
+        ]),
+        exclusions: { kind: "none_withheld" },
+      },
+    });
+    expect(s.level).toBe("green");
+    expect(s.headline).toBe("Nothing needs you and nothing is degrading");
+    expect(s.detail).toBe(
+      "2 placeholder rows coord does not grade are not counted as machines."
+    );
+  });
+
+  it("is not calm over a roster of placeholder rows alone", () => {
+    const s = deriveHomeStrip(calm(), {
+      machines: {
+        stale: false,
+        counts: summarizeMachineHealth([
+          {
+            device_id: "p",
+            state: "partitioned",
+            dispatch_liveness: "unknown",
+          },
+        ]),
+        exclusions: { kind: "none_withheld" },
+      },
+    });
+    expect(s.level).toBe("amber");
+    expect(s.headline).not.toMatch(/nothing is degrading/i);
+    expect(s.headline).not.toBe("Something is degrading");
+    expect(s.detail).toContain("Coord's roster holds no machine it grades.");
+    expect(s.detail).toContain(
+      "1 machine not reporting healthy is not a degradation: 1 placeholder row — see Dev Ops."
+    );
+  });
+
+  it.each([
+    [
+      "withheld",
+      { kind: "withheld", unbound: 2, boundToOtherTenant: 1 },
+      "Coord also withheld 3 machines from its roster (2 with no binding, 1 bound to another tenant), so the roster is incomplete and their health is unknown.",
+    ],
+    [
+      "could not count",
+      { kind: "withheld_unmeasured", reason: "pool timed out" },
+      "Coord could not count the machines it withheld from its roster, so the roster may be incomplete — machine health beyond it is unknown.",
+    ],
+    [
+      "does not say",
+      { kind: "not_stated" },
+      "Coord does not say whether it withheld any machines from its roster",
+    ],
+  ] as const)(
+    "is never calm over a non-empty roster coord %s",
+    (_label, exclusions, sentence) => {
+      const s = deriveHomeStrip(calm(), {
+        machines: {
+          stale: false,
+          counts: summarizeMachineHealth([
+            { device_id: "d", state: "healthy" },
+          ]),
+          exclusions,
+        },
+      });
+      expect(s.level).toBe("amber");
+      expect(s.headline).not.toMatch(/nothing is degrading/i);
+      expect(s.detail).toContain(sentence);
+      // Coord's error text never rides the strip.
+      expect(s.detail).not.toContain("pool timed out");
+    }
+  );
 
   it("says, by state, what the nav counts that home does not call degrading", () => {
     const s = deriveHomeStrip(calm(), machines(["abandoned", "unknown", null]));
@@ -357,7 +492,7 @@ describe("the strip over the machine roster", () => {
       machines: {
         stale: false,
         counts: summarizeMachineHealth([]),
-        emptyRoster: { kind: "none_withheld" },
+        exclusions: { kind: "none_withheld" },
       },
     });
     expect(none.level).toBe("amber");
@@ -369,7 +504,7 @@ describe("the strip over the machine roster", () => {
       machines: {
         stale: false,
         counts: summarizeMachineHealth([]),
-        emptyRoster: {
+        exclusions: {
           kind: "withheld_unmeasured",
           reason: "pool timed out",
         },
@@ -422,6 +557,7 @@ describe("the strip over a Correct? section the page leaves out", () => {
   const machines = {
     stale: false,
     counts: summarizeMachineHealth([{ device_id: "d", state: "healthy" }]),
+    exclusions: { kind: "none_withheld" as const },
   };
 
   it("names no 'correct?' and says correctness is not measured, staying amber", () => {
@@ -464,6 +600,7 @@ describe("the strip's needs-you figure from the queues, while coord's needs bloc
   const machines = {
     stale: false,
     counts: summarizeMachineHealth([{ device_id: "d", state: "healthy" }]),
+    exclusions: { kind: "none_withheld" as const },
   };
   const badge = (s: ReturnType<typeof deriveHomeStrip>) =>
     s.badges.find((b) => b.key === "needs");
@@ -471,7 +608,7 @@ describe("the strip's needs-you figure from the queues, while coord's needs bloc
   it("uses the queue counts, marked as theirs, and escalates on them", () => {
     const s = deriveHomeStrip(body({ state: "not_implemented" }), {
       machines,
-      queues: { count: 3, exact: true, stale: false },
+      queues: { count: 3, exact: true, stale: false, notRead: [] },
     });
     expect(s.level).toBe("red");
     expect(s.headline).toBe(
@@ -487,7 +624,7 @@ describe("the strip's needs-you figure from the queues, while coord's needs bloc
   it("says 'at least' for a count that is a lower bound, and 'last good read' for a kept one", () => {
     const s = deriveHomeStrip(body({ state: "unknown" }), {
       machines,
-      queues: { count: 50, exact: false, stale: true },
+      queues: { count: 50, exact: false, stale: true, notRead: [] },
     });
     expect(s.headline).toBe(
       "At least 50 decisions need you — counted from the Gates and Questions queues"
@@ -499,7 +636,7 @@ describe("the strip's needs-you figure from the queues, while coord's needs bloc
   it("never answers 'nothing needs you' from the queues", () => {
     const s = deriveHomeStrip(body({ state: "not_implemented" }), {
       machines,
-      queues: { count: 0, exact: true, stale: false },
+      queues: { count: 0, exact: true, stale: false, notRead: [] },
     });
     expect(s.level).toBe("amber");
     expect(s.headline).not.toMatch(/nothing needs you/i);
@@ -509,7 +646,10 @@ describe("the strip's needs-you figure from the queues, while coord's needs bloc
   it("ignores the queues once coord's own block is read, and dashes without them", () => {
     const read = deriveHomeStrip(
       body({ state: "read", items: [], total: 0, omitted: 0 }),
-      { machines, queues: { count: 4, exact: true, stale: false } }
+      {
+        machines,
+        queues: { count: 4, exact: true, stale: false, notRead: [] },
+      }
     );
     expect(badge(read)?.label).toBe("needs you 0");
     expect(read.headline).toBe("Nothing needs you and nothing is degrading");
@@ -518,5 +658,106 @@ describe("the strip's needs-you figure from the queues, while coord's needs bloc
       queues: null,
     });
     expect(badge(none)?.label).toBe("needs you –");
+  });
+
+  it("shows a known lower bound when only one queue was read, and names the unread one", () => {
+    const s = deriveHomeStrip(body({ state: "not_implemented" }), {
+      machines,
+      queues: { count: 5, exact: false, stale: false, notRead: ["questions"] },
+    });
+    expect(badge(s)?.label).toBe("needs you ≥5 (from queues)");
+    expect(s.level).toBe("red");
+    expect(s.headline).toBe(
+      "At least 5 decisions need you — counted from the Gates and Questions queues"
+    );
+    expect(s.detail).toContain(
+      "The Questions queue was not read, so its share is unknown and the figure is a lower bound."
+    );
+    expect(s.headline).not.toMatch(/nothing needs you/i);
+  });
+
+  it("never renders ≥0: a zero lower bound is none counted yet, never calm", () => {
+    for (const queues of [
+      { count: 0, exact: false, stale: false, notRead: ["gates"] as const },
+      { count: 0, exact: false, stale: false, notRead: [] as const },
+    ]) {
+      const s = deriveHomeStrip(body({ state: "not_implemented" }), {
+        machines,
+        queues: { ...queues, notRead: [...queues.notRead] },
+      });
+      expect(badge(s)?.label).toBe("needs you none counted yet (from queues)");
+      expect(badge(s)?.label).not.toMatch(/≥0|\b0\b/);
+      expect(s.level).toBe("amber");
+      expect(s.headline).not.toMatch(/nothing needs you/i);
+    }
+    const one = deriveHomeStrip(body({ state: "not_implemented" }), {
+      machines,
+      queues: { count: 0, exact: false, stale: false, notRead: ["gates"] },
+    });
+    expect(one.detail).toContain(
+      "The Gates queue was not read, so its share is unknown and none is counted yet."
+    );
+  });
+});
+
+describe("the strip while presenting", () => {
+  const unbuilt = parseProjectState({
+    generated_at: "2026-10-31T00:00:00Z",
+    on_track: {
+      state: "read",
+      totals: { row_count: 0, classes: {} },
+      groups: [],
+    },
+    correctness: { state: "read" },
+    needs_me: { state: "not_implemented" },
+    degradations: { state: "read", headline: "none", open: [], declared: [] },
+    does_not_know: [{ source: "work_units", state: "read" }],
+  });
+  const machines = {
+    stale: false,
+    counts: summarizeMachineHealth([{ device_id: "d", state: "healthy" }]),
+    exclusions: { kind: "none_withheld" as const },
+  };
+
+  it("says 'not built yet' in operator mode, as before", () => {
+    const s = deriveHomeStrip(unbuilt, { machines });
+    expect(s.detail).toContain("needs you not built yet");
+  });
+
+  it("does not say 'needs you not built yet', and uses the presented section's words, staying amber", () => {
+    const s = deriveHomeStrip(unbuilt, {
+      machines,
+      presenting: true,
+      queues: { count: 2, exact: true, stale: false, notRead: [] },
+    });
+    expect(s.detail ?? "").not.toMatch(/not built yet/);
+    expect(s.headline).toBe(
+      "2 decisions need you — counted from coord's lists of open approvals and pending agent questions"
+    );
+    expect(s.detail).toContain(
+      "Needs you is counted from coord's lists of open approvals and pending agent questions, since coord's needs block is not read."
+    );
+    expect(`${s.headline} ${s.detail}`).not.toMatch(/Gates|Questions/);
+    const none = deriveHomeStrip(unbuilt, {
+      machines,
+      presenting: true,
+      queues: null,
+    });
+    expect(none.level).toBe("amber");
+    expect(none.detail ?? "").not.toMatch(/not built yet/);
+    expect(none.detail).toContain(
+      "Needs you is unknown: coord's lists of open approvals and pending agent questions were not read."
+    );
+  });
+
+  it("still names an unread needs block coord could build", () => {
+    const s = deriveHomeStrip(
+      parseProjectState({
+        generated_at: "2026-10-31T00:00:00Z",
+        needs_me: { state: "could_not_read" },
+      }),
+      { machines, presenting: true }
+    );
+    expect(s.detail).toMatch(/needs you/);
   });
 });

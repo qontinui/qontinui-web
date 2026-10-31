@@ -197,6 +197,42 @@ describe("/admin/coord/home?present=1 — the 2026-10-31 UX pass", () => {
     });
   });
 
+  describe("coord's exclusion error is the operator's alone", () => {
+    const REASON = "pool timed out acquiring example-db-secret";
+
+    it.each([
+      ["a non-empty roster", () => roster("healthy")],
+      ["an empty roster", () => ({ ...roster(), devices: [] })],
+    ])(
+      "says the count is unknown on %s without coord's reason, in text or any attribute",
+      async (_label, base) => {
+        fleetHealth.mockImplementation(async () => ({
+          ...base(),
+          excluded: null,
+          excluded_error: REASON,
+        }));
+        await renderPresenting(fullBody());
+        const line = screen.getByTestId("coord-home.degrading.machines");
+        await waitFor(() =>
+          expect(line).toHaveAttribute("data-roster-fault", "true")
+        );
+        expect(line).toHaveTextContent(
+          "could not count the machines it withheld from its roster"
+        );
+        const text = (document.body.textContent ?? "").toLowerCase();
+        const attrs = attributeValues().join("\n").toLowerCase();
+        for (const needle of [REASON, "pool timed out", "example-db-secret"]) {
+          expect(text, `text carries ${needle}`).not.toContain(needle);
+          expect(attrs, `attribute carries ${needle}`).not.toContain(needle);
+        }
+        // The fixture has a decision waiting (red); never green either way.
+        expect(
+          screen.getByTestId("coord-home.strip.health")
+        ).not.toHaveAttribute("data-health-level", "green");
+      }
+    );
+  });
+
   describe("withheld repositories", () => {
     /** The repository groups' identity chips, in render order. */
     const identities = () =>
@@ -433,6 +469,47 @@ describe("/admin/coord/home?present=1 — the 2026-10-31 UX pass", () => {
     });
   });
 
+  describe("the kept-reading notice names the queue counts it shows", () => {
+    it("says the open-gate and pending-question counts are current reads while coord serves no needs block", async () => {
+      await renderPresenting(
+        fullBody({ needs_me: { state: "not_implemented" } })
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-home.needs-you.count.gates")
+        ).toHaveAttribute("data-count-state", "read")
+      );
+      httpFetch.mockRejectedValueOnce(new TypeError("unreachable"));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("coord-home.refresh"));
+      });
+      const notice = await screen.findByTestId("coord-home.kept-reading");
+      await waitFor(() =>
+        expect(notice).toHaveTextContent(
+          "Machine health, the open-gate count and the pending-question count are current reads, each with its own source."
+        )
+      );
+    });
+
+    it("names no queue count while coord's own needs block is read", async () => {
+      await renderPresenting(fullBody());
+      await waitFor(() =>
+        expect(
+          chips("strip").some((c) => c.textContent?.includes(MACHINES_SOURCE))
+        ).toBe(true)
+      );
+      httpFetch.mockRejectedValueOnce(new TypeError("unreachable"));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("coord-home.refresh"));
+      });
+      const notice = await screen.findByTestId("coord-home.kept-reading");
+      await waitFor(() =>
+        expect(notice).toHaveTextContent("Machine health is a current read")
+      );
+      expect(notice).not.toHaveTextContent("open-gate count");
+    });
+  });
+
   describe("the strip's needs-you figure from the queues", () => {
     it("is the queues' sum, marked as theirs, with their chips on the strip", async () => {
       gatesOverview.mockImplementation(async () => ({
@@ -460,9 +537,14 @@ describe("/admin/coord/home?present=1 — the 2026-10-31 UX pass", () => {
           screen.getByTestId("coord-home.strip.needs-you")
         ).toHaveTextContent(/^needs you 3 \(from queues\)$/)
       );
-      expect(screen.getByTestId("coord-home.strip.health")).toHaveTextContent(
-        "3 decisions need you — counted from the Gates and Questions queues"
+      const strip = screen.getByTestId("coord-home.strip.health");
+      // The presented Needs-you section's own words: no page it cannot show,
+      // and no "not built yet" for a block it leaves out.
+      expect(strip).toHaveTextContent(
+        "3 decisions need you — counted from coord's lists of open approvals and pending agent questions"
       );
+      expect(strip).not.toHaveTextContent(/not built yet/);
+      expect(strip.textContent).not.toMatch(/Gates|Questions/);
       const sources = chips("strip").map((c) => c.textContent ?? "");
       expect(sources.some((t) => t.includes(GATES_SOURCE))).toBe(true);
       expect(sources.some((t) => t.includes(QUESTIONS_SOURCE))).toBe(true);

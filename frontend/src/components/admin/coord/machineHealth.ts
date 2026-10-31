@@ -12,13 +12,20 @@
  * - **Home** follows coord's own project state, which already turns a
  *   machine into a degradation row per device for `degraded`, `partitioned`,
  *   `stale` and `ci_offline`, and deliberately not for `healthy`,
- *   `abandoned` (a decision), coord's explicit `unknown` (a stored state it
- *   could not parse), or a placeholder row coord has never had a liveness
- *   signal from (`dispatch_liveness: "unknown"`) — `qontinui-coord`
- *   `crates/coord/src/project_state.rs` `roster_degradations`. So on home an
- *   `abandoned` machine is never degrading, and `unknown`, a placeholder, or
- *   a device with no `state` at all has NO VERDICT: UNKNOWN, never degrading
- *   and never healthy ({@link machineVerdict}).
+ *   `abandoned` (a decision) or coord's explicit `unknown` (a stored state it
+ *   could not parse) — `qontinui-coord` `crates/coord/src/project_state.rs`
+ *   `roster_degradations`. So on home an `abandoned` machine is never
+ *   degrading, and `unknown` or a device with no `state` at all has NO
+ *   VERDICT: UNKNOWN, never degrading and never healthy
+ *   ({@link machineVerdict}).
+ * - **A placeholder row is not a machine.** A row coord has never had a
+ *   liveness signal from (`dispatch_liveness: "unknown"`) "has never named a
+ *   running machine"; coord leaves it out of the population it grades
+ *   (`project_state.rs` `headroom_coverage`, `roster_degradations`) and out
+ *   of both sides of its fleet-partition ratio (`fleet_health.rs`
+ *   `evaluate`). Home does the same: a placeholder is in no machine count and
+ *   is named in a line of its own. The nav still counts one whose state is
+ *   not `healthy`, so the reconcile line names those.
  *
  * A machine coord already listed as a degradation row is not counted again
  * ({@link degradingCoverage}). The machines the nav counts that home does not
@@ -55,15 +62,16 @@ export type MachineVerdict =
   | "healthy"
   | "degrading"
   | "abandoned"
-  | "no_verdict";
+  | "no_verdict"
+  | "placeholder";
 
 /**
- * Home's predicate. A placeholder (no liveness signal ever) has no verdict
- * whatever its state; so do coord's explicit `unknown`, an absent or empty
- * state, and a state string this build does not know.
+ * Home's predicate. A placeholder (no liveness signal ever) is not a machine
+ * at all, whatever its state. Coord's explicit `unknown`, an absent or empty
+ * state, and a state string this build does not know have no verdict.
  */
 export function machineVerdict(d: MachineStateRef): MachineVerdict {
-  if (d.dispatch_liveness === "unknown") return "no_verdict";
+  if (d.dispatch_liveness === "unknown") return "placeholder";
   const s = typeof d.state === "string" ? d.state : "";
   if (s === "healthy") return "healthy";
   if (s === "abandoned") return "abandoned";
@@ -72,8 +80,10 @@ export function machineVerdict(d: MachineStateRef): MachineVerdict {
 }
 
 export interface MachineHealthCounts {
-  /** Machines on coord's roster. */
+  /** Machines on coord's roster that coord grades: every row but placeholders. */
   total: number;
+  /** Placeholder rows coord does not grade; in no other count but `notHealthy`. */
+  placeholders: number;
   /** The nav's `unhealthy`: a verdict other than healthy. */
   notHealthy: number;
   healthy: number;
@@ -81,21 +91,26 @@ export interface MachineHealthCounts {
   degrading: number;
   /** Abandoned — a decision, not a degradation. */
   abandoned: number;
-  /** No verdict: coord's `unknown`, a placeholder, or no state at all. */
+  /** No verdict: coord's `unknown`, or no state at all. */
   noVerdict: number;
   /** The degrading machines' device ids, to join against coord's rows. */
   degradingIds: string[];
   /** Degrading machines coord sent no device id for (cannot be joined). */
   degradingWithoutId: number;
-  /** Machines the nav counts that home does not treat as degrading. */
-  notDegradations: { abandoned: number; noVerdict: number };
+  /** Rows the nav counts that home does not treat as degrading. */
+  notDegradations: {
+    abandoned: number;
+    noVerdict: number;
+    placeholders: number;
+  };
 }
 
 export function summarizeMachineHealth(
   devices: readonly MachineStateRef[]
 ): MachineHealthCounts {
   const c: MachineHealthCounts = {
-    total: devices.length,
+    total: 0,
+    placeholders: 0,
     notHealthy: 0,
     healthy: 0,
     degrading: 0,
@@ -103,12 +118,18 @@ export function summarizeMachineHealth(
     noVerdict: 0,
     degradingIds: [],
     degradingWithoutId: 0,
-    notDegradations: { abandoned: 0, noVerdict: 0 },
+    notDegradations: { abandoned: 0, noVerdict: 0, placeholders: 0 },
   };
   for (const d of devices) {
     const nav = isNotHealthyDevice(d);
     if (nav) c.notHealthy += 1;
     const v = machineVerdict(d);
+    if (v === "placeholder") {
+      c.placeholders += 1;
+      if (nav) c.notDegradations.placeholders += 1;
+      continue;
+    }
+    c.total += 1;
     if (v === "healthy") c.healthy += 1;
     else if (v === "abandoned") {
       c.abandoned += 1;
@@ -155,19 +176,25 @@ export function degradingCoverage(
 }
 
 /**
- * One line reconciling home with the nav: the machines the nav counts as not
- * healthy that are not degradations, by state. Null when there are none.
+ * One line reconciling home with the nav: the rows the nav counts as not
+ * healthy that are not degradations, by state — placeholder rows included,
+ * since the nav counts them. Null when there are none.
  */
 export function notDegradationsSentence(
   counts: MachineHealthCounts,
   { seeDevOps }: { seeDevOps: boolean }
 ): string | null {
-  const { abandoned, noVerdict } = counts.notDegradations;
-  const n = abandoned + noVerdict;
+  const { abandoned, noVerdict, placeholders } = counts.notDegradations;
+  const n = abandoned + noVerdict + placeholders;
   if (n === 0) return null;
   const parts: string[] = [];
   if (abandoned > 0) parts.push(`${abandoned} abandoned`);
   if (noVerdict > 0) parts.push(`${noVerdict} with no verdict`);
+  if (placeholders > 0) {
+    parts.push(
+      `${placeholders} placeholder ${placeholders === 1 ? "row" : "rows"}`
+    );
+  }
   const subject =
     n === 1
       ? "1 machine not reporting healthy is not a degradation"
@@ -175,26 +202,42 @@ export function notDegradationsSentence(
   return `${subject}: ${parts.join(", ")}${seeDevOps ? " — see Dev Ops" : ""}.`;
 }
 
+/**
+ * The placeholder rows in their own line, or null when there are none. They
+ * are coord's bookkeeping, not machines, so the line is calm.
+ */
+export function placeholdersSentence(
+  counts: MachineHealthCounts
+): string | null {
+  const n = counts.placeholders;
+  if (n === 0) return null;
+  return n === 1
+    ? "1 placeholder row coord does not grade is not counted as a machine."
+    : `${n} placeholder rows coord does not grade are not counted as machines.`;
+}
+
 // ---------------------------------------------------------------------------
-// An empty roster
+// What coord withheld from the roster
 // ---------------------------------------------------------------------------
 
 /**
- * What coord says about an EMPTY roster (`fleet_health.rs`: `excluded`,
- * `excluded_error`). Coord's roster joins `coord.tenant_devices`, so a device
- * with no binding for this tenant never appears in `devices` at all; coord
- * measures those separately, and an empty roster with devices withheld is
- * "a binding fault, not an empty fleet". None of these arms is calm.
+ * What coord says it withheld from the roster (`fleet_health.rs`: `excluded`,
+ * `excluded_error`), served on EVERY roster, not only an empty one. Coord's
+ * roster joins `coord.tenant_devices`, so a device with no binding for this
+ * tenant never appears in `devices` at all — "the device heartbeats fine …
+ * the roster's JOIN drops it" (`device_state.rs`). Coord counts those
+ * separately; an empty roster with devices withheld is "a binding fault, not
+ * an empty fleet", and a non-empty one is incomplete. Only `none_withheld`
+ * is a complete roster.
  *
- * - `none_withheld` — coord counted, and withheld nothing: the roster is
- *   truly empty. Said exactly, still not "nothing is degrading".
+ * - `none_withheld` — coord counted, and withheld nothing.
  * - `withheld` — coord withheld devices (no binding, or bound to another
- *   tenant): a binding fault, so machine health is UNKNOWN.
+ *   tenant): their health is UNKNOWN.
  * - `withheld_unmeasured` — coord could not count what it withheld
  *   (`excluded: null` beside `excluded_error`): UNKNOWN, with coord's reason.
  * - `not_stated` — a coord that serves neither field: UNKNOWN.
  */
-export type EmptyRoster =
+export type RosterExclusions =
   | { kind: "none_withheld" }
   | { kind: "withheld"; unbound: number; boundToOtherTenant: number }
   | { kind: "withheld_unmeasured"; reason: string | null }
@@ -212,7 +255,9 @@ export interface RosterExclusionsRef {
 const count = (v: unknown): number =>
   typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0;
 
-export function readEmptyRoster(body: RosterExclusionsRef): EmptyRoster {
+export function readRosterExclusions(
+  body: RosterExclusionsRef
+): RosterExclusions {
   const reason =
     typeof body.excluded_error === "string" && body.excluded_error !== ""
       ? body.excluded_error
@@ -229,9 +274,46 @@ export function readEmptyRoster(body: RosterExclusionsRef): EmptyRoster {
     : { kind: "none_withheld" };
 }
 
-/** Whether an empty roster is coord's binding fault rather than no fleet. */
-export function isRosterBindingFault(e: EmptyRoster): boolean {
+/** Whether coord withheld devices, or could not count what it withheld. */
+export function isRosterBindingFault(e: RosterExclusions): boolean {
   return e.kind === "withheld" || e.kind === "withheld_unmeasured";
+}
+
+/** Whether coord says it withheld nothing: the only complete roster. */
+export function isRosterComplete(e: RosterExclusions): boolean {
+  return e.kind === "none_withheld";
+}
+
+/**
+ * A NON-empty roster's exclusions in words, or null when it is complete.
+ * `withReason`: whether coord's own error text may be quoted (never while
+ * presenting — it is coord's error chain).
+ */
+export function rosterIncompleteSentence(
+  e: RosterExclusions,
+  { withReason }: { withReason: boolean }
+): string | null {
+  switch (e.kind) {
+    case "none_withheld":
+      return null;
+    case "withheld": {
+      const n = e.unbound + e.boundToOtherTenant;
+      return `Coord also withheld ${n} ${n === 1 ? "machine" : "machines"} from its roster (${withheldParts(e).join(", ")}), so the roster is incomplete and ${n === 1 ? "its" : "their"} health is unknown.`;
+    }
+    case "withheld_unmeasured":
+      return `Coord could not count the machines it withheld from its roster${withReason && e.reason ? ` (${e.reason})` : ""}, so the roster may be incomplete — machine health beyond it is unknown.`;
+    case "not_stated":
+      return "Coord does not say whether it withheld any machines from its roster, so the roster may be incomplete — machine health beyond it is unknown.";
+  }
+}
+
+function withheldParts(e: { unbound: number; boundToOtherTenant: number }) {
+  const parts: string[] = [];
+  if (e.unbound > 0) parts.push(`${e.unbound} with no binding`);
+  if (e.boundToOtherTenant > 0) {
+    parts.push(`${e.boundToOtherTenant} bound to another tenant`);
+  }
+  return parts;
 }
 
 /**
@@ -239,7 +321,7 @@ export function isRosterBindingFault(e: EmptyRoster): boolean {
  * be quoted (never while presenting — it is coord's error chain).
  */
 export function emptyRosterSentence(
-  e: EmptyRoster,
+  e: RosterExclusions,
   { withReason }: { withReason: boolean }
 ): string {
   switch (e.kind) {
@@ -247,12 +329,7 @@ export function emptyRosterSentence(
       return "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy.";
     case "withheld": {
       const n = e.unbound + e.boundToOtherTenant;
-      const parts: string[] = [];
-      if (e.unbound > 0) parts.push(`${e.unbound} with no binding`);
-      if (e.boundToOtherTenant > 0) {
-        parts.push(`${e.boundToOtherTenant} bound to another tenant`);
-      }
-      return `Coord lists no machines but withheld ${n} from its roster (${parts.join(", ")}) — a binding fault, not an empty fleet, so machine health is unknown.`;
+      return `Coord lists no machines but withheld ${n} from its roster (${withheldParts(e).join(", ")}) — a binding fault, not an empty fleet, so machine health is unknown.`;
     }
     case "withheld_unmeasured":
       return `Coord lists no machines and could not count the machines it withheld from its roster${withReason && e.reason ? ` (${e.reason})` : ""} — machine health is unknown.`;

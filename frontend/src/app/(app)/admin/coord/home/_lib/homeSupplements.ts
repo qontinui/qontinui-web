@@ -10,9 +10,10 @@
  *   degradation row per machine it counts as degrading (`machineHealth.ts`
  *   says which states those are). This read is what lets the Degrading
  *   section say what the nav counts that coord does not call a degradation
- *   (abandoned, no verdict), name machines with no verdict as UNKNOWN, and
- *   still show a degrading machine when the project state's degradation list
- *   was not read — without counting a listed machine twice.
+ *   (abandoned, no verdict, placeholder rows), name machines with no verdict
+ *   as UNKNOWN, say when coord withheld machines from the roster, and still
+ *   show a degrading machine when the project state's degradation list was
+ *   not read — without counting a listed machine twice.
  * - **What needs the operator** — until coord's project state serves its
  *   `needs_me` block, the two counts the Gates and Questions pages read: open
  *   operator-approval gates addressed to the operator (`GET
@@ -34,10 +35,12 @@ import type { DevOverview } from "@/services/admin-dev-service";
 import type { FleetHealthPayload } from "@/lib/api/operations/coordFleet";
 import {
   emptyRosterSentence,
-  readEmptyRoster,
+  isRosterComplete,
+  readRosterExclusions,
+  rosterIncompleteSentence,
   summarizeMachineHealth,
-  type EmptyRoster,
   type MachineHealthCounts,
+  type RosterExclusions,
 } from "@/components/admin/coord/machineHealth";
 
 /** How one supplementary read went. */
@@ -52,8 +55,8 @@ export interface MachineHealthView {
   asOf: string | null;
   /** A later read failed; these are the last good counts. */
   stale: boolean;
-  /** What coord said about an empty roster; null unless it listed none. */
-  emptyRoster: EmptyRoster | null;
+  /** What coord said it withheld from the roster; null unless read. */
+  exclusions: RosterExclusions | null;
 }
 
 export const MACHINES_NOT_READ: MachineHealthView = {
@@ -61,7 +64,7 @@ export const MACHINES_NOT_READ: MachineHealthView = {
   counts: null,
   asOf: null,
   stale: false,
-  emptyRoster: null,
+  exclusions: null,
 };
 
 /** The roster's counts, or null for a body that carried no device list. */
@@ -70,22 +73,24 @@ export function parseMachineHealth(
 ): {
   counts: MachineHealthCounts;
   asOf: string | null;
-  emptyRoster: EmptyRoster | null;
+  exclusions: RosterExclusions;
 } | null {
   if (!body || !Array.isArray(body.devices)) return null;
   return {
     counts: summarizeMachineHealth(body.devices),
     asOf: typeof body.as_of === "string" ? body.as_of : null,
-    emptyRoster: body.devices.length === 0 ? readEmptyRoster(body) : null,
+    // Read on every roster: a device coord withheld is missing from a
+    // non-empty roster just as from an empty one.
+    exclusions: readRosterExclusions(body),
   };
 }
 
 /**
  * Whether a machine reading lets the page say nothing is degrading there:
- * read, current, at least one machine listed, no machine degrading and none
- * without a verdict. An
- * abandoned machine is a decision, not a degradation, so it does not stand
- * in the way.
+ * read, current, at least one graded machine listed, coord withheld none from
+ * the roster, no machine degrading and none without a verdict. An abandoned
+ * machine is a decision, not a degradation, and a placeholder row is not a
+ * machine, so neither stands in the way.
  */
 export function machinesAllHealthy(m: MachineHealthView): boolean {
   return (
@@ -94,6 +99,9 @@ export function machinesAllHealthy(m: MachineHealthView): boolean {
     m.counts !== null &&
     // An empty roster is never calm: zero machines say nothing is fine.
     m.counts.total > 0 &&
+    // Nor is an incomplete one: a withheld machine's health is unknown.
+    m.exclusions !== null &&
+    isRosterComplete(m.exclusions) &&
     m.counts.degrading === 0 &&
     m.counts.noVerdict === 0
   );
@@ -107,11 +115,13 @@ function machines(n: number): string {
 /**
  * The Degrading section's machine line, in coord's project-state terms:
  * how many machines are degrading (and whether coord's list above already
- * shows them), how many have no verdict, out of the roster. An unread roster
- * is UNKNOWN, in words, and so is an empty roster coord withheld machines
- * from. `listed` is how many degrading machines the open degradation rows
- * already list (null when no list was served); `withReason` lets coord's own
- * error text be quoted (operator mode only).
+ * shows them), how many have no verdict, out of the machines coord grades
+ * (placeholder rows are not machines: the section names them on a line of
+ * their own). An unread roster is UNKNOWN, in words, and so is a roster coord
+ * withheld machines from, or could not say. `listed` is how many degrading
+ * machines the open degradation rows already list (null when no list was
+ * served); `withReason` lets coord's own error text be quoted (operator mode
+ * only).
  */
 export function machineHealthSentence(
   m: MachineHealthView,
@@ -125,11 +135,18 @@ export function machineHealthSentence(
       ? "Machine health could not be read — unknown, so this view cannot say no machine is degrading."
       : "Machine health has not been read yet — unknown.";
   }
-  const { total, healthy, degrading, noVerdict } = m.counts;
+  const { total, healthy, degrading, noVerdict, placeholders } = m.counts;
+  const exclusions = m.exclusions ?? { kind: "not_stated" };
+  if (total === 0 && placeholders === 0) {
+    return emptyRosterSentence(exclusions, { withReason });
+  }
+  const incomplete = rosterIncompleteSentence(exclusions, { withReason });
+  const withIncomplete = (s: string) =>
+    incomplete === null ? s : `${s} ${incomplete}`;
   if (total === 0) {
-    return emptyRosterSentence(m.emptyRoster ?? { kind: "not_stated" }, {
-      withReason,
-    });
+    return withIncomplete(
+      "Coord's roster holds no machine it grades, so there is no machine this view can call healthy."
+    );
   }
   const parts: string[] = [];
   if (degrading > 0) {
@@ -151,10 +168,14 @@ export function machineHealthSentence(
       `${noVerdict}${parts.length === 0 ? ` of ${machines(total)}` : ""} ${noVerdict === 1 ? "has" : "have"} no health verdict, so ${noVerdict === 1 ? "its" : "their"} health is unknown`
     );
   }
-  if (parts.length > 0) return `${parts.join("; ")}.`;
-  return healthy === total
-    ? `All ${machines(total)} report healthy.`
-    : `${healthy} of ${machines(total)} report healthy; none is degrading.`;
+  if (parts.length > 0) return withIncomplete(`${parts.join("; ")}.`);
+  return withIncomplete(
+    healthy === total
+      ? total === 1
+        ? "The 1 machine reports healthy."
+        : `All ${machines(total)} report healthy.`
+      : `${healthy} of ${machines(total)} ${healthy === 1 ? "reports" : "report"} healthy; none is degrading.`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -254,10 +275,14 @@ export function countOpenOperatorGates(
   };
 }
 
-/** A queue count in words: "3", "at least 50", or UNKNOWN. */
+/**
+ * A queue count in words: "3", "at least 50", or UNKNOWN. A lower bound of
+ * zero is "none counted yet" — never "at least 0", and never a calm zero.
+ */
 export function queueCountText(q: QueueCount): string {
   if (q.state !== "read" || q.count === null) return "UNKNOWN";
-  return q.exact ? String(q.count) : `at least ${q.count}`;
+  if (q.exact) return String(q.count);
+  return q.count === 0 ? "none counted yet" : `at least ${q.count}`;
 }
 
 // ---------------------------------------------------------------------------
