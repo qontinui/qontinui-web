@@ -40,9 +40,16 @@ import {
 } from "./__fixtures__/homePageDriver";
 
 const httpFetch = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
-}));
+// The page's reads beside the project state (machine roster, the queue
+// counts) are answered calm by `supplementReads` unless a test says otherwise.
+vi.mock("@/services/service-factory", async () => {
+  const s = await import("./__fixtures__/supplementReads");
+  return {
+    httpClient: s.homeTransport(
+      (...args: unknown[]) => httpFetch(...args) as Promise<Response>
+    ),
+  };
+});
 
 vi.mock("@/contexts/tenant-context", async () => {
   const f = await import("./__fixtures__/presentationFixture");

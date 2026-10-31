@@ -21,9 +21,16 @@ import { renderInPresentationMode } from "@/test/presentation";
 import { UNIT_CLASSES } from "@/components/admin/coord/coordHomeStatus";
 
 const httpFetch = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
-}));
+// The page's reads beside the project state (machine roster, the queue
+// counts) are answered calm by `supplementReads` unless a test says otherwise.
+vi.mock("@/services/service-factory", async () => {
+  const s = await import("./__fixtures__/supplementReads");
+  return {
+    httpClient: s.homeTransport(
+      (...args: unknown[]) => httpFetch(...args) as Promise<Response>
+    ),
+  };
+});
 
 const TENANT_ID = "11111111-1111-1111-1111-111111111111";
 vi.mock("@/contexts/tenant-context", () => ({

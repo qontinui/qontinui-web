@@ -90,6 +90,15 @@ function calmBody(): Record<string, unknown> {
   };
 }
 
+/**
+ * The machine roster read and every machine healthy: the strip's tests below
+ * are about coord's project state, so they hold the roster calm. What an
+ * unread or unhealthy roster does is pinned in `coordHomeStatus.ux.test.ts`.
+ */
+const CALM_MACHINES = {
+  machines: { stale: false, notHealthy: 0, noState: 0 },
+} as const;
+
 const BLOCK_KEY: Record<HomeBlock, string> = {
   needs_me: "needs_me",
   degradations: "degradations",
@@ -101,7 +110,7 @@ const NOT_READ = BLOCK_STATES.filter((s) => s !== "read");
 
 describe("deriveHomeStrip — never green over what it does not know", () => {
   it("is green for a body whose every block is read and calm (the control)", () => {
-    const strip = deriveHomeStrip(parseProjectState(calmBody()));
+    const strip = deriveHomeStrip(parseProjectState(calmBody()), CALM_MACHINES);
     expect(strip.level).toBe("green");
   });
 
@@ -117,7 +126,7 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
         ...(body[BLOCK_KEY[block]] as Record<string, unknown>),
         state,
       };
-      const strip = deriveHomeStrip(parseProjectState(body));
+      const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
       expect(strip.level).not.toBe("green");
       expect(strip.detail).toContain("Not read");
     }
@@ -129,21 +138,25 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
       expect(parseBlockState(raw)).toBe("unknown");
       const body = calmBody();
       body.needs_me = { ...(body.needs_me as object), state: raw };
-      expect(deriveHomeStrip(parseProjectState(body)).level).not.toBe("green");
+      expect(
+        deriveHomeStrip(parseProjectState(body), CALM_MACHINES).level
+      ).not.toBe("green");
     }
   );
 
   it("is not green when a does_not_know source is not read", () => {
     const body = calmBody();
     body.does_not_know = [{ source: "fleet_health roster", state: "stale" }];
-    const strip = deriveHomeStrip(parseProjectState(body));
+    const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
     expect(strip.level).toBe("amber");
   });
 
   it("is not green when does_not_know is absent", () => {
     const body = calmBody();
     delete body.does_not_know;
-    expect(deriveHomeStrip(parseProjectState(body)).level).toBe("amber");
+    expect(deriveHomeStrip(parseProjectState(body), CALM_MACHINES).level).toBe(
+      "amber"
+    );
   });
 
   it("answers 'nothing needs you' on coord's real calm shape (correctness unknown), staying amber", () => {
@@ -158,7 +171,7 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
       { source: "work_units", state: "read", as_of: "2026-09-30T12:00:00Z" },
       { source: "verification_metrics", state: "not_implemented" },
     ];
-    const strip = deriveHomeStrip(parseProjectState(body));
+    const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
     expect(strip.level).toBe("amber");
     expect(strip.headline).toMatch(
       /^Nothing needs you and nothing is degrading — part of this view is not read$/
@@ -190,7 +203,7 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
       state: "unknown",
       reason: "verification_metrics_door_absent",
     };
-    const strip = deriveHomeStrip(parseProjectState(body));
+    const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
     expect(strip.level).toBe("red");
     expect(strip.headline).toBe("2 decisions need you");
     expect(strip.detail).toContain("correct? unknown");
@@ -203,7 +216,9 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
       headline: "degraded",
       open: [{ id: "alert:1", plane: "runner", declared: false }],
     };
-    expect(deriveHomeStrip(parseProjectState(body)).level).toBe("amber");
+    expect(deriveHomeStrip(parseProjectState(body), CALM_MACHINES).level).toBe(
+      "amber"
+    );
 
     const drained = calmBody();
     drained.degradations = {
@@ -212,11 +227,13 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
       open: [],
       declared: [{ id: "drain:1", declared: true }],
     };
-    expect(deriveHomeStrip(parseProjectState(drained)).level).toBe("green");
+    expect(
+      deriveHomeStrip(parseProjectState(drained), CALM_MACHINES).level
+    ).toBe("green");
   });
 
   it("renders the stall badge in plain words with its unit, never 'stalled'", () => {
-    const strip = deriveHomeStrip(parseProjectState(calmBody()));
+    const strip = deriveHomeStrip(parseProjectState(calmBody()), CALM_MACHINES);
     const labels = strip.badges.map((b) => b.label);
     expect(labels).toContain("0 units with no recorded change in 14 days");
     expect(labels.join(" ")).not.toMatch(/stall/i);
@@ -225,7 +242,7 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
   it("shows a dash, not a zero, for a count its block did not read", () => {
     const body = calmBody();
     body.needs_me = { state: "not_implemented", total: 0 };
-    const strip = deriveHomeStrip(parseProjectState(body));
+    const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
     expect(strip.badges.find((b) => b.key === "needs")?.label).toBe(
       "needs you –"
     );
@@ -343,8 +360,8 @@ describe("the surface's palette", () => {
 describe("review fixes — the strip over a partly-known view", () => {
   it("is not green when the latest poll failed over a calm last-good view (R6)", () => {
     const view = parseProjectState(calmBody());
-    expect(deriveHomeStrip(view).level).toBe("green");
-    const strip = deriveHomeStrip(view, { stale: true });
+    expect(deriveHomeStrip(view, CALM_MACHINES).level).toBe("green");
+    const strip = deriveHomeStrip(view, { ...CALM_MACHINES, stale: true });
     expect(strip.level).toBe("amber");
     expect(strip.headline).toMatch(/at the last good read \(/);
   });
@@ -357,7 +374,10 @@ describe("review fixes — the strip over a partly-known view", () => {
       omitted: 0,
       items: [{ id: "q" }],
     };
-    const strip = deriveHomeStrip(parseProjectState(body), { stale: true });
+    const strip = deriveHomeStrip(parseProjectState(body), {
+      ...CALM_MACHINES,
+      stale: true,
+    });
     expect(strip.level).toBe("red");
     expect(strip.headline).toMatch(/at the last good read/);
   });
@@ -372,7 +392,7 @@ describe("review fixes — the strip over a partly-known view", () => {
     };
     const view = parseProjectState(body)!;
     expect(view.degradations.open).toBeNull();
-    const strip = deriveHomeStrip(view);
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
     expect(strip.level).toBe("amber");
     expect(strip.badges.find((b) => b.key === "degraded")?.label).toBe(
       "degraded –"
@@ -382,13 +402,15 @@ describe("review fixes — the strip over a partly-known view", () => {
   it("is not green when needs_me is read with no total", () => {
     const body = calmBody();
     body.needs_me = { state: "read", items: [] };
-    expect(deriveHomeStrip(parseProjectState(body)).level).toBe("amber");
+    expect(deriveHomeStrip(parseProjectState(body), CALM_MACHINES).level).toBe(
+      "amber"
+    );
   });
 
   it("is red when needs_me lists items even without a total", () => {
     const body = calmBody();
     body.needs_me = { state: "read", items: [{ id: "q-1", fork: "Pick" }] };
-    const strip = deriveHomeStrip(parseProjectState(body));
+    const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
     expect(strip.level).toBe("red");
     expect(strip.headline).toMatch(/how many is unknown/);
   });
@@ -537,7 +559,7 @@ describe("round-2 review — R8 for watchers and domains, honest red headline", 
       omitted: 0,
       items: [{ id: "q-1", fork: "Pick" }],
     };
-    const strip = deriveHomeStrip(parseProjectState(body));
+    const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
     expect(strip.level).toBe("red");
     expect(strip.headline).toBe("Decisions need you — how many is unknown");
     const badge = strip.badges.find((b) => b.key === "needs")!;
@@ -798,7 +820,10 @@ describe("round-7 review — blank recommendations, link targets, windows", () =
       state: "unknown",
       reason: "verification_metrics_door_absent",
     };
-    const strip = deriveHomeStrip(parseProjectState(body), { stale: true });
+    const strip = deriveHomeStrip(parseProjectState(body), {
+      ...CALM_MACHINES,
+      stale: true,
+    });
     expect(strip.level).toBe("amber");
     expect(strip.headline).toMatch(
       /^Cannot tell now — the latest read failed, at the last good read/

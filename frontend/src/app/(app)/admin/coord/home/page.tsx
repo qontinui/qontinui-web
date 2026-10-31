@@ -10,9 +10,12 @@
  * answerable from a single view without asking an agent — and this is that
  * view. `/admin/coord` redirects here.
  *
- * It renders ONE coord read, `GET /api/v1/operations/project-state` (a plain
- * proxy of coord's `GET /coord/project-state`, the same shared core the
- * `coord_project_state` MCP tool serves), polled every 60 s. There is no
+ * It renders coord's project state, `GET /api/v1/operations/project-state` (a
+ * plain proxy of coord's `GET /coord/project-state`, the same shared core the
+ * `coord_project_state` MCP tool serves), polled every 60 s — and, beside it,
+ * coord's machine roster and (until coord serves `needs_me`) the Gates and
+ * Questions pages' queue reads (`_hooks/useHomeSupplements.ts`), on the same
+ * cadence, each labelled with its own source. There is no
  * websocket, no toast and no notification of any kind: the profile asks for
  * "the right altitude, not the fastest feed". A failed poll keeps the last
  * good render and stamps it with its age.
@@ -38,7 +41,7 @@
  * page is unchanged.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTenant } from "@/contexts/tenant-context";
 import { Caption, usePresentationMode } from "@/components/presentation";
 import {
@@ -46,6 +49,7 @@ import {
   deriveHomeStrip,
 } from "@/components/admin/coord/coordHomeStatus";
 import { useProjectState } from "./_hooks/useProjectState";
+import { useHomeSupplements } from "./_hooks/useHomeSupplements";
 import { presentedHomeFailure } from "./_lib/homeLens";
 import { KeptReadingNotice } from "./_components/HomeLens";
 import {
@@ -63,8 +67,35 @@ export default function CoordHomePage() {
   const { tenants } = useTenant();
   const { presenting } = usePresentationMode();
   const [correctOpen, setCorrectOpen] = useState(false);
-  const strip = useMemo(() => deriveHomeStrip(view, { stale }), [view, stale]);
   const shown = view ?? NOTHING_READ;
+  // Beside the one project-state read: coord's machine roster (the source the
+  // nav's Dev Ops badge counts), and — until coord serves `needs_me` — the
+  // queue counts the Gates and Questions pages read (`_lib/homeSupplements`).
+  const supplements = useHomeSupplements({
+    needsQueues: shown.needsMe.state !== "read",
+  });
+  const { machines } = supplements;
+  const stripMachines = useMemo(
+    () =>
+      machines.state === "read" && machines.counts !== null
+        ? {
+            stale: machines.stale,
+            notHealthy: machines.counts.notHealthy,
+            noState: machines.counts.noState,
+          }
+        : null,
+    [machines.state, machines.counts, machines.stale]
+  );
+  const strip = useMemo(
+    () => deriveHomeStrip(view, { stale, machines: stripMachines }),
+    [view, stale, stripMachines]
+  );
+  const refreshSupplements = supplements.refresh;
+  // The one refresh re-reads everything the page shows.
+  const refreshAll = useCallback(
+    () => Promise.all([refresh(), refreshSupplements()]).then(() => undefined),
+    [refresh, refreshSupplements]
+  );
   const tenantName =
     (view?.tenantId && tenants.find((t) => t.id === view.tenantId)?.name) ||
     null;
@@ -99,7 +130,7 @@ export default function CoordHomePage() {
         stale={stale}
         generatedAt={view?.generatedAt ?? null}
         failure={failure}
-        onRefresh={refresh}
+        onRefresh={refreshAll}
       />
       {(!hasRead || !view) && (
         <p
@@ -113,11 +144,14 @@ export default function CoordHomePage() {
       )}
       <NeedsYouSection
         needs={shown.needsMe}
+        gates={supplements.gates}
+        questions={supplements.questions}
         stale={stale}
         generatedAt={generatedAt}
       />
       <DegradingSection
         deg={shown.degradations}
+        machines={machines}
         sources={shown.doesNotKnow}
         stale={stale}
         generatedAt={generatedAt}

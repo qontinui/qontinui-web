@@ -25,9 +25,16 @@ import { render, screen, waitFor, within } from "@testing-library/react";
  * `Response`, because a body can be read only once.
  */
 const httpFetch = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
-}));
+// The page's reads beside the project state (machine roster, the queue
+// counts) are answered calm by `supplementReads` unless a test says otherwise.
+vi.mock("@/services/service-factory", async () => {
+  const s = await import("./__fixtures__/supplementReads");
+  return {
+    httpClient: s.homeTransport(
+      (...args: unknown[]) => httpFetch(...args) as Promise<Response>
+    ),
+  };
+});
 
 /** An answer carrying `body` as JSON. */
 function jsonResponse(body: unknown, status = 200): Response {

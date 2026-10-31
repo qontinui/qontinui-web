@@ -1709,6 +1709,28 @@ export interface HomeStripReadState {
    * the last good read's, and the strip is amber at the least.
    */
   stale?: boolean;
+  /**
+   * Coord's machine roster as the page read it beside the project state
+   * (`_lib/homeSupplements.ts`), the source the `Dev Ops ▾` badge counts
+   * from. Absent or null: not read — UNKNOWN, so the strip is never green and
+   * never says nothing is degrading.
+   */
+  machines?: HomeStripMachines | null;
+}
+
+/** The machine roster's counts, for the strip. */
+export interface HomeStripMachines {
+  /** A later read failed; these are the last good counts. */
+  stale: boolean;
+  /** Machines coord reports in a state other than healthy. */
+  notHealthy: number;
+  /** Machines with no health state — unknown. */
+  noState: number;
+}
+
+/** "1 machine is" / "2 machines are". */
+function machinesAre(n: number): string {
+  return `${n} ${n === 1 ? "machine is" : "machines are"}`;
 }
 
 /** "at the last good read (T)" — the qualifier a stale view carries. */
@@ -1796,6 +1818,7 @@ export function deriveHomeStrip(
           tone: "muted",
           testId: "coord-home.strip.unknown-sources",
         },
+        machinesBadge(read.machines ?? null),
       ],
     };
   }
@@ -1818,10 +1841,21 @@ export function deriveHomeStrip(
     view.degradations.state === "read" || view.degradations.state === "stale";
   const degradedRead = view.degradations.state === "read";
   const stalled = view.onTrack.totals?.stalled ?? null;
+  // Coord's project state serves no per-machine verdict: the roster the page
+  // read beside it decides whether a machine is degrading. Unread is UNKNOWN.
+  const machines = read.machines ?? null;
+  const machinesDegrading = machines !== null && machines.notHealthy > 0;
+  const machinesCalm =
+    machines !== null &&
+    !machines.stale &&
+    machines.notHealthy === 0 &&
+    machines.noState === 0;
+  const somethingDegrading =
+    (open !== null && open.length > 0) || machinesDegrading;
 
   let attention: Attention = "none";
   if (needsSomething) attention = escalateAttention(attention, "author");
-  if (open !== null && open.length > 0) {
+  if (somethingDegrading) {
     attention = escalateAttention(attention, "waiting");
   }
   // Ignorance floors at amber: never green over a block or source not read,
@@ -1833,6 +1867,7 @@ export function deriveHomeStrip(
     unknownSources > 0 ||
     (needsRead && needsTotal === null) ||
     (degRowsServed && open === null) ||
+    !machinesCalm ||
     stale
   ) {
     attention = escalateAttention(attention, "waiting");
@@ -1850,7 +1885,7 @@ export function deriveHomeStrip(
       needsTotal === null
         ? "Decisions need you — how many is unknown"
         : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you`;
-  } else if (open !== null && open.length > 0) {
+  } else if (somethingDegrading) {
     headline = "Something is degrading";
   } else if (stale) {
     // The failed poll is the cause; name it whatever else is unread (coord
@@ -1862,7 +1897,8 @@ export function deriveHomeStrip(
     needsRead &&
     needsTotal !== null &&
     degradedRead &&
-    open !== null
+    open !== null &&
+    machinesCalm
   ) {
     // Both blocks the question is about were READ and are empty: answer it,
     // and name what else is unread as a clause rather than replacing the
@@ -1891,6 +1927,23 @@ export function deriveHomeStrip(
     detailParts.push(
       "Coord served no list of open degradations — cannot say whether any exist."
     );
+  }
+  if (machines === null) {
+    detailParts.push("Machine health was not read.");
+  } else {
+    if (machines.notHealthy > 0) {
+      detailParts.push(
+        `${machinesAre(machines.notHealthy)} in a state other than healthy.`
+      );
+    }
+    if (machines.noState > 0) {
+      detailParts.push(
+        `${machines.noState} ${machines.noState === 1 ? "machine reports" : "machines report"} no health state.`
+      );
+    }
+    if (machines.stale) {
+      detailParts.push("Machine health is from its last good read.");
+    }
   }
   if (unknownSources === null) {
     detailParts.push("Coord served no list of what it could not read.");
@@ -1935,7 +1988,18 @@ export function deriveHomeStrip(
         tone: unknownSources === null ? "muted" : "default",
         testId: "coord-home.strip.unknown-sources",
       },
+      machinesBadge(machines),
     ],
+  };
+}
+
+/** The strip's machine badge: a dash, never a zero, for a roster not read. */
+function machinesBadge(machines: HomeStripMachines | null): HomeStripBadge {
+  return {
+    key: "machines",
+    label: `machines not healthy ${countText(machines === null ? null : machines.notHealthy)}`,
+    tone: machines === null ? "muted" : "default",
+    testId: "coord-home.strip.machines",
   };
 }
 
