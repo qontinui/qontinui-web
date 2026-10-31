@@ -17,6 +17,7 @@ import {
   act,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
   within,
@@ -43,6 +44,14 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
+// Passed through, so every test reads the real hook; the window tests read
+// which window the page asked it for, and when.
+vi.mock("../_lib/useSpawnLedger", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../_lib/useSpawnLedger")>();
+  return { ...actual, useSpawnLedger: vi.fn(actual.useSpawnLedger) };
+});
+
 import {
   answerSpawnsRequest,
   defaultSpawnsRoutes,
@@ -61,6 +70,7 @@ import {
 import { UNKNOWN_AMBER } from "@/components/console";
 import { isPresentationReady } from "@/components/presentation";
 import { windowFromQuery } from "../_lib/spawnRequestsRoute";
+import { useSpawnLedger } from "../_lib/useSpawnLedger";
 import CoordSpawnRequestsPage from "./page";
 
 /** Let every read in flight — including the poll's second, dependent step — land. */
@@ -85,7 +95,13 @@ async function refresh() {
 beforeEach(() => {
   calls.length = 0;
   routes = defaultSpawnsRoutes();
+  vi.mocked(useSpawnLedger).mockClear();
 });
+
+/** The windows the page asked the ledger for, render by render. */
+function ledgerWindows(): Array<string | null> {
+  return vi.mocked(useSpawnLedger).mock.calls.map((c) => c[0]);
+}
 
 describe("/admin/coord/spawns/requests — the ledger as coord serves it", () => {
   it("renders real data: the per-device lines, the rows and a timeline", async () => {
@@ -345,6 +361,10 @@ describe("/admin/coord/spawns/requests — the failure arms", () => {
     const banner = screen.getByTestId("coord-spawns-unknown-banner");
     expect(banner.getAttribute("data-issue")).toBe("error");
     expect(banner.textContent).toContain("Last refresh failed");
+    // Named for what this page shows from the retained list.
+    expect(banner.textContent).toContain(
+      "Last refresh failed — the rows below are from the last good read."
+    );
     // The declared ignorance floor, never a hand-typed amber (§4.1).
     for (const cls of UNKNOWN_AMBER.split(" ")) {
       expect(banner.classList.contains(cls)).toBe(true);
@@ -459,7 +479,15 @@ describe("/admin/coord/spawns/requests — reached from the agentic-activity pag
     );
     try {
       await renderPage();
-      expect(calls).toContain("/api/v1/operations/spawns/stats?window=24h");
+      // The linked window is the FIRST read, and the default is never read:
+      // the ledger is asked for no window until `?window=` is read, then for
+      // the linked one.
+      const statsReads = calls.filter((c) => c.includes("/spawns/stats"));
+      expect(statsReads[0]).toBe("/api/v1/operations/spawns/stats?window=24h");
+      expect(calls).not.toContain("/api/v1/operations/spawns/stats?window=7d");
+      expect(ledgerWindows()[0]).toBeNull();
+      expect(ledgerWindows()).not.toContain("7d");
+      expect(ledgerWindows()).toContain("24h");
       const user = userEvent.setup();
       await user.click(screen.getByTestId("coord-spawns-window"));
       await user.click(
@@ -472,6 +500,18 @@ describe("/admin/coord/spawns/requests — reached from the agentic-activity pag
     } finally {
       window.history.replaceState(null, "", "/");
     }
+  });
+
+  it("reads the default window once when the link carried none", async () => {
+    await renderPage();
+    const statsReads = calls.filter((c) => c.includes("/spawns/stats"));
+    expect(statsReads).toEqual(["/api/v1/operations/spawns/stats?window=7d"]);
+  });
+
+  it("the ledger reads nothing for a window not yet decided", async () => {
+    renderHook(() => useSpawnLedger(null));
+    await settle();
+    expect(calls).toEqual([]);
   });
 
   it("ignores a window it does not offer", () => {

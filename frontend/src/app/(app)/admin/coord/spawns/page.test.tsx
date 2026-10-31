@@ -386,6 +386,10 @@ describe("/admin/coord/spawns — the failure arms", () => {
     const banner = screen.getByTestId("coord-spawns-unknown-banner");
     expect(banner.getAttribute("data-issue")).toBe("error");
     expect(banner.textContent).toContain("Last refresh failed");
+    // Named for what this page shows from the retained list.
+    expect(banner.textContent).toContain(
+      "Last refresh failed — the counts below are from the last good read."
+    );
     // The declared ignorance floor, never a hand-typed amber (§4.1).
     for (const cls of UNKNOWN_AMBER.split(" ")) {
       expect(banner.classList.contains(cls)).toBe(true);
@@ -394,6 +398,50 @@ describe("/admin/coord/spawns — the failure arms", () => {
       "Last refresh failed"
     );
     expect(countOf("all")).toBe("1");
+  });
+
+  it("gives the placement counts a dash, never 0, when a device's placed is not a number", async () => {
+    const good = statsFx();
+    routes.stats = () => ({
+      body: statsFx(
+        {},
+        {
+          per_device: [
+            { ...good.per_device[0]!, placed: null as never },
+            good.per_device[1]!,
+          ],
+        }
+      ),
+    });
+    await renderPage();
+    expect(countOf("placed")).toBe("unknown");
+    expect(countOf("devices")).toBe("unknown");
+  });
+
+  it("gives the placement counts a dash, never 0, when the stats answer carries no per-device list", async () => {
+    const { per_device: _dropped, ...noPerDevice } = statsFx();
+    routes.stats = () => ({ body: noPerDevice });
+    await renderPage();
+    expect(countOf("placed")).toBe("unknown");
+    expect(countOf("devices")).toBe("unknown");
+  });
+
+  it("says the placement counts are at the last good read when only the stats refresh fails", async () => {
+    await renderPage();
+    expect(screen.queryByTestId("coord-spawns-placement-stale")).toBeNull();
+
+    routes.stats = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await refresh();
+
+    expect(countOf("placed")).toBe("38");
+    const stale = screen.getByTestId("coord-spawns-placement-stale");
+    expect(stale.textContent).toContain("at the last good read");
+    for (const cls of UNKNOWN_AMBER.split(" ")) {
+      expect(stale.classList.contains(cls)).toBe(true);
+    }
   });
 
   it("gives the window's counts a dash, never 0, when only the window's list fails", async () => {

@@ -4,9 +4,12 @@
  * The one statement that coord does not serve the spawn ledger, standing where
  * the ledger strip would be, with every section that rests on the ledger
  * collapsed under it (`ledgerServed.ts`): the strip itself, each path's "Last
- * spawned", what is in flight on each machine, where spawns were placed, the
- * spawn requests and the hourly rate. Each is named once, here, and not
- * rendered as a column or a section of UNKNOWNs.
+ * spawned", where spawns were placed, the spawn requests and the hourly rate.
+ * Each is named once, here, and not rendered as a column or a section of
+ * UNKNOWNs. What is in flight on each machine does not rest on the ledger: it
+ * is unshown for the reason `IN_FLIGHT_UNKNOWN` (`machineStatus.ts`) states,
+ * and the notice gives that reason beside the list since the column
+ * collapses with the rest.
  */
 
 import { AlertTriangle } from "lucide-react";

@@ -274,7 +274,8 @@ export function readSpawnList(body: unknown): SpawnBodyReading<SpawnListWire> {
 /**
  * Read a `GET /spawns/stats` body. With `asked`, a body that answers another
  * window is refused: its figures would be shown under a window label they do
- * not describe.
+ * not describe. A body without a `per_device` list is malformed: read as an
+ * empty list it would say nothing was placed anywhere.
  */
 export function readSpawnStats(
   body: unknown,
@@ -283,7 +284,11 @@ export function readSpawnStats(
   if (!isRecord(body)) return { kind: "issue", issue: { kind: "malformed" } };
   const unavailable = unavailableIssue(body);
   if (unavailable) return { kind: "issue", issue: unavailable };
-  if (body.available !== true || !isRecord(body.overall)) {
+  if (
+    body.available !== true ||
+    !isRecord(body.overall) ||
+    !Array.isArray(body.per_device)
+  ) {
     return { kind: "issue", issue: { kind: "malformed" } };
   }
   if (asked !== undefined && body.window !== asked) {

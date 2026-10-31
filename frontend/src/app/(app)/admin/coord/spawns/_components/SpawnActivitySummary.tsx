@@ -11,8 +11,9 @@
  * — how many, and how they ended — and the list is one click away.
  *
  * Every count keeps its UNKNOWN arm (R6): a count whose read did not answer is
- * a dash with the reason, never 0, and a truncated list says the counts cover
- * the rows loaded.
+ * a dash with the reason, never 0, a truncated list says the counts cover
+ * the rows loaded, and placement counts kept from a read before a failed
+ * refresh say they are at the last good read.
  */
 
 import { useMemo } from "react";
@@ -28,6 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { SpawnStatsWindow } from "@/lib/api/operations/coordSpawns";
 import { spawnRequestsHref } from "../_lib/spawnRequestsRoute";
+import { UnknownNote } from "./UnknownNote";
 import type { SpawnLedgerRead } from "../_lib/useSpawnLedger";
 import {
   SPAWN_FILTERS,
@@ -68,18 +70,23 @@ function Count({
   );
 }
 
-/** How many were placed, and on how many devices; `null` while unread. */
+/**
+ * How many were placed, and on how many devices; `null` while unread, and
+ * `null` when any device's `placed` is not a number — a total that skipped it
+ * would undercount, and one that counted it as 0 would say nothing went there.
+ */
 export function placementCounts(
   stats: SpawnStatsWire | null
 ): { placed: number; devices: number } | null {
-  if (stats === null) return null;
-  const rows = Array.isArray(stats.per_device) ? stats.per_device : [];
+  if (stats === null || !Array.isArray(stats.per_device)) return null;
   let placed = 0;
   let devices = 0;
-  for (const d of rows) {
-    const n = typeof d.placed === "number" ? d.placed : 0;
-    placed += n;
-    if (n > 0) devices += 1;
+  for (const d of stats.per_device) {
+    if (typeof d.placed !== "number" || !Number.isFinite(d.placed)) {
+      return null;
+    }
+    placed += d.placed;
+    if (d.placed > 0) devices += 1;
   }
   return { placed, devices };
 }
@@ -108,6 +115,8 @@ export function SpawnActivitySummary({
     [list, pending]
   );
   const placement = placementCounts(ledger.stats.data);
+  // Counts from a retained read while the latest stats read failed.
+  const placementStale = placement !== null && ledger.stats.issue !== null;
   const label = (id: string) =>
     SPAWN_FILTERS.find((f) => f.id === id)?.label.toLowerCase() ?? id;
 
@@ -196,6 +205,16 @@ export function SpawnActivitySummary({
             </Link>
           </OperatorOnly>
         </p>
+        {placementStale && (
+          <UnknownNote
+            role="status"
+            className="text-xs"
+            data-testid="coord-spawns-placement-stale"
+          >
+            These counts are at the last good read: the latest refresh of the
+            placement failed.
+          </UnknownNote>
+        )}
       </section>
     </>
   );
