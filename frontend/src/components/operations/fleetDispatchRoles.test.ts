@@ -442,6 +442,20 @@ describe("describeRoleWriteError", () => {
       "HTTP 400 — reason_required — a reason is needed"
     );
   });
+  it("coord's sentence under detail, in the envelope the backend emits, is shown", () => {
+    // Captured verbatim from `http_exception_handler` for coord's
+    // `{"error": "reason_required", "detail": "…"}` refusal: the dict's
+    // fields are spread first, then the envelope's own four.
+    const body =
+      '{"detail":"a role change moves where coord sends work, so say why",' +
+      '"error":"reason_required","message":"reason_required",' +
+      '"timestamp":1793436820.870933,' +
+      '"path":"http://testserver/api/v1/operations/fleet/dispatch-role"}';
+    expect(describeRoleWriteError(422, body).message).toBe(
+      "HTTP 422 — reason_required — a role change moves where coord sends " +
+        "work, so say why"
+    );
+  });
   it("the current envelope (message is the code itself) prints the code once", () => {
     // `_detail_message` in `middleware/error_handler.py`: a dict detail with
     // no `message` gets its `error` as the message.

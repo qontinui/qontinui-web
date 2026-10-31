@@ -141,7 +141,18 @@ def test_a_detail_cannot_overwrite_the_envelope(detail: dict[str, Any]) -> None:
     body = _envelope(409, detail)
     assert body["path"].endswith("/boom")
     assert isinstance(body["timestamp"], float) and body["timestamp"] > 0
-    # No top-level `detail` to shadow `message` for a client reading it first.
-    assert "detail" not in body
-    # Every other field is still spread at the top level.
+    # Every other field, `detail` included, is still spread at the top level.
+    assert body["detail"] == "x"
     assert body["code"] == "c1"
+
+
+def test_coords_refusal_prose_under_detail_reaches_the_client() -> None:
+    # Coord's structured refusal (dispatch_role_routes.rs `reason_required`)
+    # carries its sentence under `detail`; the console's role editor, spawn
+    # modal and overlord-flow reader show it from the top level.
+    sentence = "a role change moves where coord sends work, so say why"
+    body = _envelope(422, {"error": "reason_required", "detail": sentence})
+    assert body["error"] == "reason_required"
+    assert body["message"] == "reason_required"
+    assert body["detail"] == sentence
+    assert body["path"].endswith("/boom")

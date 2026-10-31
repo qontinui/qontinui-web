@@ -130,9 +130,14 @@ def _detail_message(detail: Any, status_code: int) -> str:
 
 
 # The envelope's own fields: a dict detail's keys of these names are never
-# spread over it. ``detail`` is not an envelope field, but a top-level one
-# would shadow ``message`` for a client that reads ``detail`` first.
-_ENVELOPE_KEYS = frozenset({"error", "message", "timestamp", "path", "detail"})
+# spread over it. ``detail`` is deliberately NOT one of them: coord's
+# structured refusals carry their prose under ``detail`` (e.g.
+# ``{"error": "reason_required", "detail": "…say why"}``), and the console
+# clients that show it (``fleetDispatchRoles.ts``, ``spawnPlacement.ts``,
+# ``overlordFlowStatus.ts``) read it from the top level. A top-level
+# ``detail`` that a client prefers to ``message`` is coord's sentence in place
+# of the bare code — what those clients want.
+_ENVELOPE_KEYS = frozenset({"error", "message", "timestamp", "path"})
 
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -161,8 +166,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     # A dict detail's other fields are spread at the top level — a client
     # reads ``code``, ``coord_status``, ``current_version`` … there — and the
     # envelope is built AFTER the spread, so no detail key can replace the
-    # envelope's own fields or add a top-level ``detail`` that a client would
-    # read before ``message``.
+    # envelope's own fields. A ``detail`` key is spread like any other field.
     metadata: dict[str, Any] = (
         {k: v for k, v in detail_value.items() if k not in _ENVELOPE_KEYS}
         if isinstance(detail_value, dict)
