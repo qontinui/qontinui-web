@@ -259,6 +259,53 @@ describe("useSpawnPathSwitches", () => {
     expect(record?.outcomeUnknown).toBeFalsy();
   });
 
+  it("records the knob door's open outcome with the status it got, until its re-read answers", async () => {
+    let holdMerge = false;
+    let releaseMerge: () => void = () => {};
+    const merge = () =>
+      json(
+        mergeSettingsBody({ tenant: false, resolved: false, source: "tenant" })
+      );
+    answer = async (path, method) => {
+      if (method === "PATCH") return json({ error: "boom" }, 500);
+      if (path === "/api/v1/operations/pr-merge/settings") {
+        if (holdMerge) {
+          await new Promise<void>((r) => {
+            releaseMerge = r;
+          });
+        }
+        return merge();
+      }
+      if (path === "/api/v1/agent-registry/admin/registry") {
+        return json(defaultsBody());
+      }
+      if (path === "/api/v1/agent-registry") return json(effectiveBody());
+      return json({ error: "not in this test" }, 404);
+    };
+    const { result } = renderHook(() => useSpawnPathSwitches());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    holdMerge = true;
+    let done: Promise<unknown> = Promise.resolve();
+    await act(async () => {
+      done = result.current.setRedMainKnob(false);
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(result.current.writes["knob:auto_fix_red_main"]).toMatchObject({
+      phase: "unconfirmed",
+      error: "no usable answer from coord (HTTP 500), so it may have landed",
+    });
+    await act(async () => {
+      releaseMerge();
+      await done;
+    });
+    expect(result.current.writes["knob:auto_fix_red_main"]).toMatchObject({
+      phase: "written",
+      outcomeUnknown: true,
+    });
+  });
+
   it("answers a PUT made while the browser is offline as refused", async () => {
     vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(false);
     answer = async (path, method) => {

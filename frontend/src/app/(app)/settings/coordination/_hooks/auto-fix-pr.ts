@@ -18,9 +18,11 @@
  * an explicit OFF at any scope wins; otherwise an explicit ON; otherwise the
  * default. This file renders what coord decided. The one thing it adds is
  * refusing to render an `unknown` source as any value. Coord's own answer then
- * is the last value it read, or off when it holds none (served policy
- * `agent-spawn-authorization` v11: an unreadable preference never resolves
- * permissive), and this read cannot tell which, so it is neither on nor off here.
+ * is the last value it read, or off when it holds none — served policy
+ * `production-and-cost`, clause `agent-spawn-authorization`: "An UNREADABLE
+ * preference retains the last known value and never resolves to the
+ * permissive default". That last known value may be On, and this read cannot
+ * tell which it is, so it is neither on nor off here.
  */
 
 import { isWriteFailureUnknown } from "@/components/admin/coord/writeOutcome";
@@ -119,8 +121,10 @@ export function autoFixPrAbsence(profile: unknown): AutoFixPrAbsence {
  * `{error: "auto_fix_pr_column_unavailable", cause, written}`, where
  * `written: null` (`cause: "commit_unconfirmed"`) means it cannot tell whether
  * the commit landed, and an explicit `written: false` (or `true`) is a definite
- * answer and is NOT unconfirmed. Without that, the status decides, by the rule
- * every coord write shares ({@link isWriteFailureUnknown}).
+ * answer and is NOT unconfirmed. Coord sends `cause` only beside `written`
+ * (`auto_fix_pr_refusal_body`), so `written` is what is read. Without it, the
+ * status decides, by the rule every coord write shares
+ * ({@link isWriteFailureUnknown}).
  *
  * What the browser sees: the proxy raises `HTTPException(detail=<coord body
  * text>)`, and the backend's error handler wraps it as
@@ -132,7 +136,6 @@ export function isUnconfirmedFailure(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   const written = message.match(/\\?"written\\?"\s*:\s*(null|true|false)/);
   if (written) return written[1] === "null";
-  if (/commit_unconfirmed/.test(message)) return true;
   return isWriteFailureUnknown(err);
 }
 
