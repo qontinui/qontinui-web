@@ -101,25 +101,47 @@ export function GateValue({
   );
 }
 
+/**
+ * Whether a switch is enforced, in an outsider's words: the operator's tokens
+ * (`enforce`, `env-only`, `runner-only`, `shadow`) have no glossary term and no
+ * plain reading, so while presenting each kind is said as what it does. The
+ * detail (who applies it) stays in the badge's title, which every gate words
+ * for both audiences.
+ */
+export const PRESENTED_ENFORCED: Record<GateEnforcement["kind"], string> = {
+  enforce: "Applied",
+  shadow: "Recorded only",
+  off: "Not applied",
+  "env-only": "Set at deployment",
+  "runner-only": "Each machine decides",
+  unknown: "UNKNOWN",
+};
+
 export function EnforcedValue({
   enforced,
   testId,
+  presenting = false,
 }: {
   enforced: GateEnforcement;
   testId?: string;
+  presenting?: boolean;
 }) {
+  const stale = enforced.text.endsWith("(stale)");
   return (
     <Badge
       variant="outline"
       className={cn(
-        "text-[11px] font-mono whitespace-nowrap",
+        "text-[11px] whitespace-nowrap",
+        !presenting && "font-mono",
         enforced.kind === "unknown" ? UNKNOWN_AMBER : INERT
       )}
       title={enforced.title}
       data-testid={testId}
       data-enforced={enforced.kind}
     >
-      {enforced.text}
+      {presenting
+        ? `${PRESENTED_ENFORCED[enforced.kind]}${stale ? " (last good read)" : ""}`
+        : enforced.text}
     </Badge>
   );
 }

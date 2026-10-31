@@ -292,6 +292,7 @@ function GateTable({
                   <EnforcedValue
                     enforced={gate.enforced}
                     testId="coord-spawns-gate-enforced"
+                    presenting={presenting}
                   />
                 </td>
                 <td className="py-1.5 pr-3">
@@ -366,7 +367,7 @@ function PathLine({
             )}
             {row.isClass && (
               <Badge variant="outline" className={cn("text-[10px]", INERT)}>
-                class switch
+                {presenting ? "governs several paths" : "class switch"}
               </Badge>
             )}
           </span>
@@ -386,6 +387,7 @@ function PathLine({
           <EnforcedValue
             enforced={primary.enforced}
             testId="coord-spawns-path-enforced"
+            presenting={presenting}
           />
         </td>
         <td className="py-1.5 pr-3">
@@ -406,7 +408,10 @@ function PathLine({
                 testId="coord-spawns-path-preference"
               />
             )}
-            {others.length > 0 && (
+            {/* The chips' short names (class, dial, knob, flag) have no plain
+                wording, so they are the operator's; the verdict above already
+                reads every switch, and opening the line names each in full. */}
+            {!presenting && others.length > 0 && (
               <span className="flex flex-wrap gap-1">
                 {others.map((g) => (
                   <GateChip key={g.key} gate={g} />
