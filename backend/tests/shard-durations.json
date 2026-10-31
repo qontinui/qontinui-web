@@ -318,6 +318,7 @@
   "tests/test_operations_pr_merge_graph_proxy.py": 4.9,
   "tests/test_operations_pr_merge_settings_auto_fix_pr.py": 4.6,
   "tests/test_operations_priority_sets_proxy.py": 12.9,
+  "tests/test_operations_project_state_proxy.py": 5.0,
   "tests/test_operations_prompt_document_proposals_proxy.py": 18.9,
   "tests/test_operations_prompt_documents_proxy.py": 29.3,
   "tests/test_operations_repo_profile_proxy.py": 0.6,

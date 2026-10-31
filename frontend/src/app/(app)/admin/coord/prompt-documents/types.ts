@@ -1805,7 +1805,8 @@ export interface AutoPublishWorkerObservation {
   unknown_reason?: string | null;
   /**
    * The ledger's last tick of ANY kind. A follower's `follower_skip` refreshes
-   * it, so it is NEVER evidence that a pass ran — only the stale/dead "since".
+   * it, so it is NEVER evidence that a pass ran. Freshest across replicas, so
+   * on a mixed fleet it is not when a stale or dead status began.
    */
   last_tick_at?: string | null;
   /** The last time the loop body actually executed — the only "last pass". */

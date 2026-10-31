@@ -346,13 +346,15 @@ test.describe("Admin - Coord operator console", () => {
     expect(pageContent).not.toContain("Internal Server Error");
   });
 
-  test("should render coord nav shell with five primary tabs", async ({
+  test("should render coord nav shell with its direct tabs", async ({
     page,
   }) => {
-    // The landing page redirects to /admin/coord/pipeline (renamed from
-    // /admin/coord/fleet by 2026-08-25-…-devops-sections Phase 4; the old
-    // path 308s here). After redirect, both layout + nav render, and the
-    // user (if superuser) can see the 5 primary tabs + cross-links.
+    // Opens /admin/coord/pipeline directly (renamed from /admin/coord/fleet
+    // by 2026-08-25-…-devops-sections Phase 4; the old path 308s here). The
+    // console landing itself redirects to /admin/coord/home since plan
+    // 2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen
+    // Phase 4. Both layout + nav render, and the user (if superuser) can see
+    // the primary tabs + cross-links.
     await page.goto("/admin/coord/pipeline");
     await page.waitForLoadState("domcontentloaded");
 
@@ -384,7 +386,10 @@ test.describe("Admin - Coord operator console", () => {
 
       const sidebar = page.locator('aside[data-sidebar="true"]');
       const navItem = (id: string) => sidebar.locator(`[data-nav-id="${id}"]`);
+      // Home (the console landing, `/admin/coord/home`) is the first direct
+      // tab, ahead of the daily destinations.
       for (const id of [
+        "coord-home",
         "coord-pipeline",
         "coord-prs",
         "coord-gates",
@@ -414,6 +419,7 @@ test.describe("Admin - Coord operator console", () => {
   });
 
   for (const { path, testId } of [
+    { path: "/admin/coord/home", testId: "coord-home-page" },
     { path: "/admin/coord/pipeline", testId: "coord-pipeline-page" },
     { path: "/admin/coord/trees", testId: "coord-trees-page" },
     { path: "/admin/coord/runners", testId: "coord-runners-page" },

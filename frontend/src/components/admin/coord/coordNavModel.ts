@@ -10,7 +10,7 @@
  * The groups are persona-shaped (developer / merge maintainer / fleet
  * operator), carried over unchanged from the console's own dropdown nav:
  *
- *   Pipeline · Pull Requests · Gates · Notifications · Action items ·
+ *   Home · Pipeline · Pull Requests · Gates · Notifications · Action items ·
  *   Tour                                                               ← direct
  *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
@@ -78,6 +78,7 @@ import {
   HardDrive,
   History as HistoryIcon,
   Hourglass,
+  House,
   Images,
   Inbox,
   KeyRound,
@@ -187,6 +188,17 @@ export interface NavGroup {
 // console. `next.config.mjs` 308s the old path.
 export const DIRECT_TABS: NavLeaf[] = [
   {
+    // The console's landing page: the operator's one screen — what needs
+    // them, what is degrading, what is on track, and what the view does not
+    // know. Plan
+    // `2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen`
+    // Phase 4; `/admin/coord` redirects here.
+    href: "/admin/coord/home",
+    label: "Home",
+    icon: House,
+    testId: "coord-nav-home",
+  },
+  {
     href: "/admin/coord/pipeline",
     label: "Pipeline",
     icon: Activity,
@@ -205,7 +217,7 @@ export const DIRECT_TABS: NavLeaf[] = [
     testId: "coord-nav-gates",
   },
   {
-    // Fourth direct tab by argued exception — see the header block: the
+    // A direct tab by argued exception — see the header block: the
     // operator's record of what agents did, read at a glance.
     href: "/admin/coord/notifications",
     label: "Notifications",
@@ -213,7 +225,7 @@ export const DIRECT_TABS: NavLeaf[] = [
     testId: "coord-nav-notifications",
   },
   {
-    // Fifth direct tab, beside Notifications and for the opposite reason:
+    // A direct tab beside Notifications, for the opposite reason:
     // notifications are what agents DID, action items are what the operator
     // OWES (plan `2026-10-12-operator-action-items-pushed-to-the-phone`). An
     // owed to-do buried two clicks deep is the failure the feature exists to
@@ -224,7 +236,7 @@ export const DIRECT_TABS: NavLeaf[] = [
     testId: "coord-nav-action-items",
   },
   {
-    // Sixth direct tab by argued exception — not a daily destination, but
+    // A direct tab by argued exception — not a daily destination, but
     // the presenter's way in (plan `2026-10-23-console-presentation-spaces`
     // Phase 8). It is opened at the start of a presentation, often with the
     // audience already watching, so it must be one click from anywhere in
@@ -619,7 +631,7 @@ export const GROUPS: NavGroup[] = [
         // dashboard — the app registry, each app's screens and states, a live
         // element snapshot, the runner's SDK and trust posture, its component
         // actions with their declared effects, and page health. A group leaf
-        // rather than a sixth direct tab: it is a page opened to inspect or
+        // rather than a direct tab: it is a page opened to inspect or
         // to present (it is lens surface 4 of the tour), not a daily
         // destination.
         //

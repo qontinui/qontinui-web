@@ -21,7 +21,7 @@ import {
 export const ready = (...routes: string[]): PresentationReadyRoute[] =>
   routes.map((route) => ({ route, provenBy: "x.test.tsx" }));
 
-/** Today's shape: the twin, the UI Bridge and Dev Ops presentable; the overview and agentic activity not. */
+/** A partly ready shape, as when the tour landed (hence the name): the twin, the UI Bridge and Dev Ops presentable; the overview and agentic activity not. */
 export const TODAY = ready(
   "/digital-twin",
   "/admin/coord/ui-bridge",
