@@ -113,6 +113,10 @@ _EXPECTED_SAMPLE_CONSTRAINTS: dict[str, tuple[str, str]] = {
 
 _EXPECTED_LEDGER_CONSTRAINTS: dict[str, tuple[str, str]] = {
     "launch_ledger_pkey": ("p", "PRIMARY KEY (id)"),
+    "ck_launch_ledger_status_only_when_finished": (
+        "c",
+        "CHECK (((status IS NULL) OR (finished_at IS NOT NULL)))",
+    ),
     "ck_launch_ledger_label_nonblank": ("c", "CHECK ((btrim(label) <> ''::text))"),
     "ck_launch_ledger_launcher_nonblank": (
         "c",
@@ -147,7 +151,7 @@ _EXPECTED_LEDGER_INDEXES: dict[str, str] = {
     ),
     "ix_launch_ledger_open": (
         "CREATE INDEX ix_launch_ledger_open ON coord.launch_ledger USING btree "
-        "(tenant_id, account_hash, account_label) WHERE (finished_at IS NULL)"
+        "(tenant_id, account_hash, device_id, account_label) WHERE (finished_at IS NULL)"
     ),
     "ix_launch_ledger_work_type_launched": (
         "CREATE INDEX ix_launch_ledger_work_type_launched ON coord.launch_ledger "
@@ -176,8 +180,10 @@ _INSERT_SAMPLE = text(
 _INSERT_LAUNCH = text(
     """
     INSERT INTO coord.launch_ledger
-        (tenant_id, device_id, account_label, launcher, label, launched_at, status)
-    VALUES (:tid, :device, :label, :launcher, :run_label, :launched_at, :status)
+        (tenant_id, device_id, account_label, launcher, label, launched_at,
+         finished_at, status)
+    VALUES (:tid, :device, :label, :launcher, :run_label, :launched_at,
+            :finished_at, :status)
     """
 )
 
@@ -204,6 +210,7 @@ def _launch(**overrides: object) -> dict[str, object]:
         "launcher": "vet-imp-sweep",
         "run_label": "2026-10-29-some-plan",
         "launched_at": "2026-10-31T10:00:00+00:00",
+        "finished_at": None,
         "status": None,
     }
     params.update(overrides)
@@ -270,6 +277,17 @@ def _assert_shape(engine: Engine) -> None:
                 {"t": table},
             ).scalar_one()
             assert comment and "2026-10-29-launch-budget" in comment, table
+        # The two figure columns name their unit: PERCENT, not the wire's fraction.
+        for column in ("session_pct", "weekly_pct"):
+            note = conn.execute(
+                text(
+                    "SELECT col_description(to_regclass('coord.account_usage_samples'),"
+                    " (SELECT attnum FROM pg_attribute WHERE attrelid ="
+                    " to_regclass('coord.account_usage_samples') AND attname = :c))"
+                ),
+                {"c": column},
+            ).scalar_one()
+            assert note and "PERCENT" in note, column
 
 
 def _assert_absent(engine: Engine) -> None:
@@ -387,7 +405,19 @@ def test_launch_budget_01_creates_both_tables_and_enforces_their_contract() -> N
         _insert(
             engine,
             _INSERT_LAUNCH,
-            _launch(launcher="coord:unit_continuation", status="orphaned", device=None),
+            _launch(
+                launcher="coord:unit_continuation",
+                status="orphaned",
+                finished_at="2026-10-31T11:00:00+00:00",
+                device=None,
+            ),
+        )
+        # A finish verdict on a run that never finished is refused.
+        _refused(
+            engine,
+            _INSERT_LAUNCH,
+            _launch(status="orphaned"),
+            "ck_launch_ledger_status_only_when_finished",
         )
         _refused(
             engine,
