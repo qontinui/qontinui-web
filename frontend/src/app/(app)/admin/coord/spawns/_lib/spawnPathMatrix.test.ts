@@ -419,7 +419,8 @@ describe("each switch carries coord's own value", () => {
       "Guidance only · coord's verdict: it does not dispatch"
     );
     expect(flag!.effective.text).toBe("Off");
-    expect(flag!.where).toContain("COORD_PR_FIX_AUTODISPATCH_ENABLED");
+    expect(flag!.whereDetail).toContain("COORD_PR_FIX_AUTODISPATCH_ENABLED");
+    expect(flag!.where).not.toContain("COORD_");
     // Never folded: the path's own switch still reads its own value.
     expect(registry!.effective.state).toBe("on");
   });
@@ -445,7 +446,8 @@ describe("each switch carries coord's own value", () => {
     expect(knob.scopeNote).toContain("can override it");
     expect(knob.enforced.kind).toBe("enforce");
     expect(knob.effective.text).toBe("Off");
-    expect(knob.where).toContain("auto_fix_red_main");
+    expect(knob.whereDetail).toContain("auto_fix_red_main");
+    expect(knob.where).not.toContain("auto_fix_red_main");
     expect(knob.write).toEqual({ door: "auto_fix_red_main", current: false });
   });
 
@@ -831,7 +833,7 @@ describe("enforced?", () => {
       expect(gate.readOnly, key).toContain("runner");
       expect(gate.effective.state, key).toBe("unknown");
     }
-    expect(rowOf(m, "account_migration").gates[0]!.where).toContain(
+    expect(rowOf(m, "account_migration").gates[0]!.whereDetail).toContain(
       "claude_cli.auto_migrate_on_token_exhaustion"
     );
   });
@@ -1254,6 +1256,44 @@ describe("after a write, the read-back", () => {
     ).effective;
     expect(cell.state).toBe("on");
     expect(cell.writeNote).toBe("Writing off…");
+  });
+});
+
+describe("where a switch is set — plain words, with the route on demand", () => {
+  /** A route, a method, an env var or a snake_case setting key. */
+  const CODE_LEVEL =
+    /\b(?:GET|PUT|PATCH|POST)\b|\/coord\/|\/pr-merge\/|[A-Z]{2,}_[A-Z_]+|[a-z]+_[a-z_]+/;
+
+  it("names no route, variable or setting key in any gate's visible location", () => {
+    const m = deriveSpawnPathMatrix(inputs());
+    const offenders = m.rows.flatMap((r) =>
+      r.gates
+        .filter((g) => CODE_LEVEL.test(g.where))
+        .map((g) => `${r.key} ${g.key}: ${g.where}`)
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps each write door's route and setting key in the operator's on-demand detail", () => {
+    const m = deriveSpawnPathMatrix(inputs());
+    expect(
+      gateOf(m, "pr_fix_dispatch", "registry:pr_fix_dispatch").whereDetail
+    ).toBe(
+      "Registry row pr_fix_dispatch; written with PUT /coord/agent-registry/pr_fix_dispatch."
+    );
+    expect(gateOf(m, "pr_fix_dispatch", "dial:auto_fix_pr").whereDetail).toBe(
+      "Setting auto_fix_pr; written with PATCH /pr-merge/settings."
+    );
+    expect(
+      gateOf(m, "pr_fix_dispatch", "autonomy:pr_fix").whereDetail
+    ).toContain("PUT /coord/next-step-settings");
+  });
+
+  it("builds no detail while presenting", () => {
+    const m = deriveSpawnPathMatrix(inputs({ presenting: true }));
+    expect(
+      m.rows.flatMap((r) => r.gates).filter((g) => g.whereDetail !== undefined)
+    ).toEqual([]);
   });
 });
 

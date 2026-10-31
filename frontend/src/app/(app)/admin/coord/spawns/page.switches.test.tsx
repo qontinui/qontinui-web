@@ -312,17 +312,43 @@ describe("the spawn-path matrix — what coord serves", () => {
     await renderPage();
     await openPath("next_step_dispatch");
     const flag = gate("flag:next_step");
-    expect(flag.textContent).toContain("COORD_NEXT_STEP_AUTODISPATCH_ENABLED");
+    // Plain words on screen; the variable on demand, in the tooltip.
+    const where = within(flag).getByTestId("coord-spawns-gate-where");
+    expect(where.textContent).toBe(
+      "Coord's deployment settings: changed by redeploying coord."
+    );
+    expect(flag.textContent).not.toContain("COORD_");
+    expect(where.getAttribute("title")).toBe(
+      "Environment variable COORD_NEXT_STEP_AUTODISPATCH_ENABLED."
+    );
     expect(
       within(flag).getByTestId("coord-spawns-gate-readonly").textContent
     ).toContain("deployment environment");
     expect(within(flag).queryByRole("button")).toBeNull();
     await openPath("account_migration");
     const runner = gate("runner:account_migration");
-    expect(runner.textContent).toContain(
-      "claude_cli.auto_migrate_on_token_exhaustion"
-    );
+    expect(runner.textContent).not.toContain("claude_cli");
+    expect(
+      within(runner)
+        .getByTestId("coord-spawns-gate-where")
+        .getAttribute("title")
+    ).toContain("claude_cli.auto_migrate_on_token_exhaustion");
     expect(within(runner).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a path's registry name only once its line is opened", async () => {
+    await renderPage();
+    const pr = pathRow("pr_fix_dispatch");
+    expect(pr.textContent).not.toContain("pr_fix_dispatch");
+    expect(screen.queryByTestId("coord-spawns-path-key")).toBeNull();
+    await openPath("pr_fix_dispatch");
+    expect(screen.getByTestId("coord-spawns-path-key").textContent).toBe(
+      "Registry name: pr_fix_dispatch"
+    );
+    // The routes are on demand too: no gate's visible location names one.
+    for (const where of screen.getAllByTestId("coord-spawns-gate-where")) {
+      expect(where.textContent).not.toMatch(/PUT |PATCH |\/coord\//);
+    }
   });
 
   it("links the operator to where a per-repository switch is set", async () => {
