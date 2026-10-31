@@ -123,9 +123,11 @@ export async function fetchNextStepSettings(
 
 /**
  * `PUT /coord/next-step-settings` (`put_next_step_settings`) — the changed
- * domains; answers the authoritative new state. Declared `idempotent: false`
- * (a write); the client's method rule still treats a PUT as retryable, as the
- * `httpClient.put` this replaced did.
+ * domains; answers the authoritative new state. Sent ONCE (`maxRetries: 0`):
+ * the client's method rule would re-send a PUT on any 5xx, and a caller
+ * classifying the failure (`writeOutcome.ts`) reads only the last answer — a
+ * first 504 after coord committed, then retries answering the proxy's
+ * connect-failure 502, would read as a refusal of a write that landed.
  */
 export async function putNextStepSettings(
   domains: NextStepDomainWrite[]
@@ -135,6 +137,7 @@ export async function putNextStepSettings(
     method: "PUT",
     body: JSON.stringify({ domains }),
     idempotent: false,
+    maxRetries: 0,
   });
   return readJson<NextStepSettings>(res, `PUT ${url}`);
 }

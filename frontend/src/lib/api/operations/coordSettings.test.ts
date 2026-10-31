@@ -51,7 +51,7 @@ describe("coordSettings", () => {
     ]);
   });
 
-  it("putNextStepSettings PUTs {domains}, declared non-idempotent", async () => {
+  it("putNextStepSettings PUTs {domains} once, declared non-idempotent", async () => {
     fetchMock.mockResolvedValueOnce(json({ domains: [] }));
     await putNextStepSettings([
       { decision_domain: "pr_fix", autonomy_level: "auto_decide" },
@@ -62,6 +62,7 @@ describe("coordSettings", () => {
         method: "PUT",
         body: '{"domains":[{"decision_domain":"pr_fix","autonomy_level":"auto_decide"}]}',
         idempotent: false,
+        maxRetries: 0,
       },
     ]);
   });

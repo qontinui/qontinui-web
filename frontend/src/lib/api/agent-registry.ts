@@ -190,14 +190,19 @@ export async function listAgentRegistry(
 
 /** Upsert the caller's pref for one agent. Throws `AgentPrefError` with
  *  `code: "disposition_required"` when coord requires a disposition choice
- *  (disabling a policy-required agent without one). */
+ *  (disabling a policy-required agent without one).
+ *
+ *  Sent ONCE (`maxRetries: 0`): the client would re-send a PUT on any 5xx, and
+ *  the classifier (`writeOutcome.ts`) reads only the last answer. A first 504
+ *  after coord committed, followed by retries answering the proxy's
+ *  connect-failure 502, would then read as a refusal of a write that landed. */
 export async function putAgentPref(
   agentName: string,
   update: AgentPrefUpdate
 ): Promise<void> {
   const response = await httpClient.fetch(
     `${AGENT_REGISTRY_API}/prefs/${encodeURIComponent(agentName)}`,
-    { method: "PUT", body: JSON.stringify(update) }
+    { method: "PUT", body: JSON.stringify(update), maxRetries: 0 }
   );
   await handleResponse<unknown>(response, "Failed to save agent preference");
 }
@@ -273,14 +278,15 @@ export async function listAdminAgentRegistry(
   return body.agents;
 }
 
-/** ADMIN: set one agent's tenant default. */
+/** ADMIN: set one agent's tenant default. Sent once, for the reason
+ *  {@link putAgentPref} gives. */
 export async function putAgentRegistryDefaults(
   agentName: string,
   update: AgentRegistryDefaultsUpdate
 ): Promise<void> {
   const response = await httpClient.fetch(
     `${AGENT_REGISTRY_API}/admin/registry/${encodeURIComponent(agentName)}`,
-    { method: "PUT", body: JSON.stringify(update) }
+    { method: "PUT", body: JSON.stringify(update), maxRetries: 0 }
   );
   await handleResponse<unknown>(response, "Failed to save the tenant default");
 }
