@@ -1556,7 +1556,8 @@ row budget with room to spare, because a ranked aggregate is read as one block.
 
 `/admin/coord/spawns` (plan
 `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-arbitration`
-Phase 5) composes `HealthStrip`, `ShareList`, `FilterTabs`,
+Phase 5; its list and per-device lines now live on `/admin/coord/spawns/requests`,
+below) composes `HealthStrip`, `ShareList`, `FilterTabs`,
 `RecordList`/`RecordRow`/`RecordDetail`, `StatusBadge`, `RowTime`,
 `CollapsiblePanel` and `RefreshButton`, and registers one palette (a spawn
 request's status) in `CONSOLE_PALETTES`. It extends one primitive — `ShareList`
@@ -1603,10 +1604,19 @@ issued has settled — answered or not — so a re-read over sources that are al
 still unread (every as-of null) is still seen to have run (served policy
 `ux-priorities` `an-action-must-acknowledge-itself`, its terminal moment).
 
+**The per-request list and the per-device placement are an investigation view, not
+the page.** They are a triage queue at agent altitude (the operator monitors and does
+not supervise; an evaluator does not need a triage queue), so `/admin/coord/spawns`
+shows them as counts — requests by how they ended, and how many were placed across
+how many devices (`_components/SpawnActivitySummary.tsx`), each count a dash when its
+read did not answer — with an operator-only link to `/admin/coord/spawns/requests`.
+That route composes the same `FilterTabs`, `RecordList`/`SpawnRow` and `ShareList`
+(`SpawnRequestList`, `DevicePlacement`) with every UNKNOWN arm they had, is in no
+nav and is not in `PRESENTATION_READY_ROUTES`, so the lens withholds it.
+
 While presenting, every section opens with its caption and one `Provenance` chip per
 read (`SectionCaption`; the strip's chip sits under it); machines read as their
-session alias in the Machines list, the per-device share list and every request
-row (`useMachineAliaser`, through one `DeviceNaming`; the matrix names no machine);
+session alias in the Machines list (`useMachineAliaser`; the matrix names no machine);
 no device id, coord reason, event reason, raw id, setting key or member preference
 renders, and a sentence names "the coordination service" rather than coord; write
 controls and the launcher link are unmounted, and where a switch's control would be,

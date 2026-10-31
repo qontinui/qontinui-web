@@ -14,8 +14,9 @@
  *  1. `expectPresentationSafe` — no enabled write control, no write or
  *     undeclared UI Bridge action, no cost, every section's caption, no
  *     identifier and none of the fixture's names — on the loaded page and
- *     behind every disclosure (each spawn path's switches, each request's
- *     detail and timeline);
+ *     behind every disclosure (each spawn path's switches; the per-request
+ *     list is the operator's investigation view, so no request row is
+ *     presented), and no device id in any attribute;
  *  2. no write control is mounted (the switches) and the launcher link is
  *     gone, while the session-load link stays text (its page is not
  *     presentable), and machines read as their alias; where a switch's
@@ -237,16 +238,17 @@ async function checkBehindEveryDisclosure(view: PresentationView) {
     );
     expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
   }
-  const rows = () => screen.getAllByTestId("coord-spawn-row");
-  expect(rows()).toHaveLength(2);
-  for (let i = 0; i < rows().length; i += 1) {
-    await act(async () => {
-      fireEvent.click(within(rows()[i]!).getAllByRole("button")[0]!);
-    });
-    await settle();
-    expect(screen.getAllByTestId("coord-spawn-event")).toHaveLength(3);
-    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
-  }
+  // The per-request list is the investigation view's, an operator page the
+  // lens withholds: no request row, and so no request detail, is presented.
+  expect(screen.queryAllByTestId("coord-spawn-row")).toHaveLength(0);
+}
+
+/** Every attribute value and the text of the whole page — what the DOM carries. */
+function everythingInTheDom(): string {
+  const all = [...document.body.querySelectorAll("*")].flatMap((el) =>
+    [...el.attributes].map((a) => a.value)
+  );
+  return [document.body.textContent ?? "", ...all].join("\n");
 }
 
 /**
@@ -361,9 +363,16 @@ describe("/admin/coord/spawns?present=1", () => {
       screen.getAllByTestId("coord-spawns-path-row").length
     ).toBeGreaterThan(15);
     expect(screen.getAllByTestId("coord-spawns-machine")).toHaveLength(2);
-    expect(screen.getAllByTestId("coord-spawn-row")).toHaveLength(2);
+    expect(
+      screen.getByTestId("coord-spawns-count-all").getAttribute("data-count")
+    ).toBe("2");
     expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
     await checkBehindEveryDisclosure(view);
+    // No device id reaches the presented DOM, in text or in any attribute
+    // (the per-device list it was carried on, as a share key, is gone).
+    for (const id of [DEVICE_A, DEVICE_B]) {
+      expect(everythingInTheDom()).not.toContain(id);
+    }
   });
 
   it("mounts no switch and no launcher, keeps the session-load link as text, and aliases every machine", async () => {
@@ -395,12 +404,9 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(names.map((n) => n.textContent)).toEqual(["Machine A", "Machine B"]);
     for (const n of names)
       expect(n.getAttribute("data-machine-alias")).toBe("true");
-    // The per-device share list names the same machines by the same letters.
-    const shares = screen
-      .getAllByTestId("coord-spawns-device")
-      .map((d) => d.textContent ?? "");
-    expect(shares[0]).toContain("Machine A");
-    expect(shares[1]).toContain("Machine B");
+    // The investigation view is the operator's: no link into it is mounted.
+    expect(screen.queryByTestId("coord-spawns-requests-link")).toBeNull();
+    expect(screen.queryByTestId("coord-spawns-placement-link")).toBeNull();
   });
 
   it("states where a per-repository switch is set as text, with no link into a page it cannot present", async () => {
@@ -522,16 +528,11 @@ describe("/admin/coord/spawns?present=1", () => {
       });
       renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
       await settle();
-      expect(screen.getAllByTestId("coord-spawn-row").length).toBe(rows.length);
       expect(pageWords()).toContain("The role read does not list this machine");
       expect(pageWords()).toContain("This machine has not reported recently");
       expect(pageWords()).toContain("as the session run record counts them");
-      expect(pageWords()).toContain("held for");
-      expect(pageWords()).toContain("it will be placed again");
-      expect(pageWords()).toContain("1 row in the answer could not be read");
       expectNoServiceToken();
       await openEverything();
-      expect(pageWords()).toContain("No events were recorded");
       expectNoServiceToken();
     });
 
@@ -551,7 +552,9 @@ describe("/admin/coord/spawns?present=1", () => {
       renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
       await settle();
       expect(pageWords()).toContain("The fleet roster lists no machine.");
-      expect(pageWords()).toContain("No spawn request was recorded");
+      expect(
+        screen.getByTestId("coord-spawns-count-all").getAttribute("data-count")
+      ).toBe("0");
       expectNoServiceToken();
     });
 
@@ -581,7 +584,9 @@ describe("/admin/coord/spawns?present=1", () => {
       expect(screen.getByTestId("coord-spawns-health").textContent).toContain(
         headline
       );
-      expect(screen.getByTestId("coord-spawns-list-unknown")).toBeTruthy();
+      expect(
+        screen.getByTestId("coord-spawns-count-all").getAttribute("data-count")
+      ).toBe("unknown");
       expectNoServiceToken();
     });
   });
@@ -643,10 +648,10 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(
       lines.map((l) => l.textContent?.match(/^Machine [A-Z]+, device \d/)?.[0])
     ).toEqual(["Machine A, device 1", "Machine A, device 2"]);
-    const html = screen.getByTestId("coord-spawns-machines-section").outerHTML;
+    const dom = everythingInTheDom();
     for (const id of [DEVICE_A, DEVICE_B]) {
-      expect(html).not.toContain(id);
-      expect(html).not.toContain(id.slice(0, 8));
+      expect(dom).not.toContain(id);
+      expect(dom).not.toContain(id.slice(0, 8));
     }
     expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
   });
@@ -719,9 +724,6 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(screen.getByTestId("coord-spawns-unknown-banner").textContent).toBe(
       "The record of spawn requests could not be read, so which spawns were requested is unknown."
     );
-    expect(
-      screen.getByTestId("coord-spawns-reserve-note").textContent
-    ).toContain("The machines' roles could not be read.");
     expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
   });
 
