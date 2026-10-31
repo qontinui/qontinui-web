@@ -269,13 +269,20 @@ describe("/admin/coord/session-load", () => {
     ).toBe("/admin/coord/gates?gate=2d2c3b4a-0000-4000-8000-000000000002");
   });
 
-  // The row picks the link's window from the page's own clock. A run two
-  // hours old has its start in 24 h, so it links the next wider, 7 d; one
-  // three days old links 30 d. A row reading no clock (0, so every start
-  // clamps to "just now") links 7 d for both, and one reading a clock ahead
-  // of the page's links 30 d for both, so each case catches one of them.
+  // The row picks the link's window from the page's own clock: a start
+  // inside 24 h links the next wider window, 7 d; a start inside 7 d links
+  // 30 d. What each case turns red, when the row reads some other clock:
+  // - 2 h: an absent clock (NaN, which links 30 d with the "may be older"
+  //   note), or one more than 22 h ahead of the page's.
+  // - 23.5 h: an absent clock, or one more than 30 min ahead.
+  // - 72 h: an absent clock, a clock of 0 (every start clamps to "just
+  //   now", 7 d), one more than 48 h behind, or one more than 4 days ahead
+  //   (past 7 d, which adds the note).
+  // A clock less than 23.5 h behind the page's goes unnoticed: those starts
+  // still read as inside 24 h.
   it.each([
     { agoHours: 2, window: "7d" },
+    { agoHours: 23.5, window: "7d" },
     { agoHours: 72, window: "30d" },
   ])(
     "a run started $agoHours h ago links its spawn request in the $window window, by the page's clock",
