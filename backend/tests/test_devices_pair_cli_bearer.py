@@ -255,10 +255,13 @@ class TestPairCliTenantForwarding:
         assert body["error"] == "BAD_GATEWAY"
         assert body["coord_status"] == 500
         assert "coord_body" not in body
+        # pair-cli carries no one-shot nonce, so retrying it can succeed:
+        # its advice is "Retry", unlike pair-confirm's.
         assert body["message"] == (
             "Coord failed to complete pairing (HTTP 500). "
             "Retry; if it persists, check coord."
         )
+        assert "Start pairing again" not in body["message"]
 
     def test_coord_403_for_non_member_tenant_surfaces_as_502(
         self, client: TestClient
