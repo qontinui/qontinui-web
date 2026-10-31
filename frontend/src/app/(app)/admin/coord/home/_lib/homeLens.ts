@@ -11,8 +11,9 @@
  * with a structured descriptor built here, from the item's own fixed fields
  * (`kind · area · status · age`, leaving out a field its kind does not have),
  * never from its text. A value the page reads against one of its own tables
- * — a decision kind parsed out of question text, a does-not-know source —
- * shows only when the table names it, and in fixed words otherwise;
+ * — a decision kind parsed out of question text, a does-not-know source, a
+ * degradation's area — shows only when the table names it, and in fixed words
+ * otherwise;
  * a failed read is explained in the page's fixed words where its arm has
  * some, and withheld otherwise; and a row's key is an alias of the operator's.
  *
@@ -22,7 +23,9 @@
  */
 
 import {
+  PROJECT_NAME_DESCRIPTOR,
   WITHHELD,
+  aliasLetters,
   type RedactionDescriptor,
   type SectionSource,
 } from "@/components/presentation";
@@ -36,13 +39,16 @@ import { FAILURE_REASON_WITHHELD } from "@/components/operations/presentedFailur
 import { readErrorBody } from "@/lib/errors/backend-error-message";
 import {
   PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
+  correctnessHasNoSource,
   decisionDomainLabel,
   isKnownDecisionDomain,
+  isKnownPlane,
   isLabelledSource,
   ownEntry,
   isWatcherSource,
   planeLabel,
   sourceLabel,
+  type CorrectnessView,
   type DegradationView,
   type NamedUnit,
   type NeedsMeItem,
@@ -83,6 +89,86 @@ export function regionSources(reading: HomeReading): readonly SectionSource[] {
       asOf: reading.generatedAt,
     },
   ];
+}
+
+/**
+ * A figure on the page read from somewhere other than the project state
+ * (`_lib/homeSupplements.ts`), as the kept-reading notice speaks of it.
+ */
+export interface OtherReading {
+  /** How the notice names it, mid-sentence: "machine health". */
+  readonly name: string;
+  /** Whether it was read; `stale`: it is a kept reading too. */
+  readonly reading: {
+    readonly state: "read" | "could_not_read" | "unknown";
+    readonly stale: boolean;
+  };
+}
+
+function capitalize(s: string): string {
+  return s.length === 0 ? s : s[0]!.toUpperCase() + s.slice(1);
+}
+
+function andList(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The kept-reading notice's text: it covers only what IS a kept reading.
+ * What comes from the project state is its last reading; a figure read
+ * beside it is said to be current when its own read is, a last reading when
+ * that read failed too, and not read when it never landed.
+ */
+export function keptReadingText(
+  failure: string,
+  others: readonly OtherReading[]
+): string {
+  const fresh = others.filter(
+    (o) => o.reading.state === "read" && !o.reading.stale
+  );
+  const kept = others.filter(
+    (o) => o.reading.state === "read" && o.reading.stale
+  );
+  const unread = others.filter((o) => o.reading.state !== "read");
+  const parts = [
+    `The latest read of coord's project state failed (${failure}).`,
+    others.length === 0
+      ? "Everything below is its last reading, not a current one."
+      : "Everything below that comes from it is its last reading, not a current one.",
+  ];
+  const names = (os: readonly OtherReading[]) => andList(os.map((o) => o.name));
+  if (fresh.length > 0) {
+    parts.push(
+      `${capitalize(names(fresh))} ${fresh.length === 1 ? "is a current read, with its own source" : "are current reads, each with its own source"}.`
+    );
+  }
+  if (kept.length > 0) {
+    parts.push(
+      `${capitalize(names(kept))} ${kept.length === 1 ? "is" : "are"} a last reading too.`
+    );
+  }
+  if (unread.length > 0) {
+    parts.push(
+      `${capitalize(names(unread))} ${unread.length === 1 ? "has" : "have"} not been read — unknown.`
+    );
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Whether the page leaves Correct? out: while presenting, when nothing is
+ * built behind it — coord says no source measures it, or has not built the
+ * block. An unread block coord could build stays, shown as unknown. The
+ * operator always sees the section.
+ */
+export function correctLeftOut(
+  c: CorrectnessView,
+  presenting: boolean
+): boolean {
+  return (
+    presenting && (correctnessHasNoSource(c) || c.state === "not_implemented")
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -172,12 +258,11 @@ export function presentedHomeFailure(
 /**
  * The current tenant's name, which no repository can vouch for. A tenant has
  * no area, status or age on this page, so its line is its kind alone — never
- * three unknowns about fields it does not have.
+ * three unknowns about fields it does not have. It is the presentation
+ * module's one project-name descriptor, which the app shell's project
+ * selector renders through too, so the strip and the sidebar agree.
  */
-export const TENANT_DESCRIPTOR: RedactionDescriptor = {
-  kind: "Project",
-  notApplicable: ["area", "status", "at"],
-};
+export const TENANT_DESCRIPTOR: RedactionDescriptor = PROJECT_NAME_DESCRIPTOR;
 
 /**
  * A repository named by coord's grouping. Its row's own badge and summary
@@ -189,6 +274,40 @@ export const REPOSITORY_DESCRIPTOR: RedactionDescriptor = {
   kind: "Repository",
   notApplicable: ["area", "status", "at"],
 };
+
+/**
+ * Stable aliases for the repositories a presentation withholds — "Repository
+ * A", "Repository B" — the way machines are "Machine A, B…"
+ * (`machineAliases.ts`): two withheld repositories never read as one, and a
+ * repository keeps its letter across polls for as long as the region is
+ * mounted. Letters go to withheld repositories only, in first-seen order, and
+ * are never reissued; the key is held in memory only, never rendered.
+ */
+export class RepositoryAliases {
+  private readonly byKey = new Map<string, number>();
+
+  alias(key: string): string {
+    let n = this.byKey.get(key);
+    if (n === undefined) {
+      n = this.byKey.size;
+      this.byKey.set(key, n);
+    }
+    return `Repository ${aliasLetters(n)}`;
+  }
+}
+
+/** A withheld repository's descriptor: its alias, its kind's fields left out. */
+export function repositoryAliasDescriptor(alias: string): RedactionDescriptor {
+  return { ...REPOSITORY_DESCRIPTOR, kind: alias };
+}
+
+/**
+ * What a presentation says of an initiative document coord could not parse:
+ * a fixed sentence, never coord's parser message (which quotes the document)
+ * and never a descriptor standing in for it.
+ */
+export const INITIATIVE_UNPARSEABLE_SENTENCE =
+  "The current initiative's document could not be read as written, so its status and scope are not shown.";
 
 /** A needs-you item's own status word — the badge the row shows. */
 export function needsStatusWord(
@@ -248,6 +367,36 @@ function degradationAt(
   return kind === "cleared" ? d.resolvedAt : d.onsetObservedAt;
 }
 
+/**
+ * A degradation's area while presenting: the table's words, or `null` for a
+ * plane the table does not name. For any other plane the operator's label is
+ * coord's own key with its underscores spaced (`planeLabel`, pinned for the
+ * operator by `coordHomeStatus.test.ts`), and coord's list of planes grows
+ * without this page, so an allowlist: a plane shows only when the table names
+ * it. No plane at all keeps `planeLabel`'s "unclassified", which is the page's
+ * own word. A list of areas (the gap sentence, a watcher source's label)
+ * counts the `null`s as areas not named here.
+ */
+export function presentedPlaneWords(plane: string | null): string | null {
+  return !plane || isKnownPlane(plane) ? planeLabel(plane) : null;
+}
+
+/** Where one area stands alone (a row's identity, a watcher line) and is withheld. */
+export const AREA_WITHHELD = `area ${WITHHELD}`;
+
+/** A degradation's area on its own while presenting: the table's words, or {@link AREA_WITHHELD}. */
+export function presentedPlaneName(plane: string | null): string {
+  return presentedPlaneWords(plane) ?? AREA_WITHHELD;
+}
+
+/**
+ * A degradation's area in its descriptor while presenting: the table's words,
+ * or `withheld`, which the descriptor reads as "area withheld".
+ */
+export function presentedPlaneLabel(plane: string | null): string {
+  return presentedPlaneWords(plane) ?? WITHHELD;
+}
+
 /** A degradation headline's descriptor: its area and its row's status. */
 export function degradationDescriptor(
   d: DegradationView,
@@ -255,7 +404,7 @@ export function degradationDescriptor(
 ): RedactionDescriptor {
   return {
     kind: "Degradation",
-    area: planeLabel(d.plane),
+    area: presentedPlaneLabel(d.plane),
     status: kind,
     at: degradationAt(d, kind),
   };
@@ -278,7 +427,7 @@ export function subjectDescriptor(
     kind:
       (d.subjectKind && ownEntry(SUBJECT_KIND_WORD, d.subjectKind)) ||
       "Subject",
-    area: planeLabel(d.plane),
+    area: presentedPlaneLabel(d.plane),
     status: kind,
     at: degradationAt(d, kind),
   };
@@ -404,7 +553,8 @@ export const UNLABELLED_SOURCE = "A source this view has no name for";
 /**
  * A `does_not_know` row's label while presenting. The page's table labels the
  * sources it knows, and a watcher's row is named by the areas it feeds
- * (`sourceLabel`); for any OTHER source the operator's label is coord's own
+ * (`sourceLabel`, each area as {@link presentedPlaneWords} words it); for any
+ * OTHER source the operator's label is coord's own
  * identifier with its underscores spaced: internal vocabulary an evaluator
  * does not share, from a list coord grows without this page. So while
  * presenting such a row reads in fixed words: an allowlist, the rule style
@@ -417,7 +567,7 @@ export function presentedSourceLabel(
   planes: PlaneView[] | null
 ): string {
   return isLabelledSource(source) || isWatcherSource(source)
-    ? sourceLabel(source, planes)
+    ? sourceLabel(source, planes, presentedPlaneWords)
     : UNLABELLED_SOURCE;
 }
 
@@ -450,7 +600,8 @@ export function namedUnitRepos(
   const named = new Map<string, Set<string>>();
   const unbounded = new Set<string>();
   const mayHide = new Set<string>();
-  let everyUnitUnbounded = groups === null;
+  // No groups served names no unit, so every slug already reads `null` below.
+  let everyUnitUnbounded = false;
   for (const g of groups ?? []) {
     const namedList = g.named[list];
     if (g.kind === "unattributed_repo") {

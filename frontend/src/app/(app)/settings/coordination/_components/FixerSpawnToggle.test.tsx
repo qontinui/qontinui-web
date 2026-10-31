@@ -12,7 +12,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const get = vi.fn();
@@ -151,15 +151,60 @@ describe("FixerSpawnToggle — read", () => {
     );
     render(<FixerSpawnToggle canEdit />);
     const text = await tenantText();
-    expect(text).toContain("Unknown (treated as off)");
-    expect(text).not.toMatch(/Tenant setting: On/);
+    // Coord may still act on a last known On, so this says nothing about off.
+    expect(text).toContain(
+      "Tenant setting: Unknown — coord could not read this preference."
+    );
+    expect(text).not.toContain("treated as off");
+  });
+
+  it("selects no position while the source is unknown, and every position still writes", async () => {
+    get.mockResolvedValue(
+      settings({
+        auto_fix_pr_tenant: null,
+        auto_fix_pr: false,
+        auto_fix_pr_source: "unknown",
+      })
+    );
+    patch.mockResolvedValue(DEFAULT_ON);
+    render(<FixerSpawnToggle canEdit />);
+    await tenantText();
+    for (const v of POSITIONS) expect(checked(v)).toBe("false");
+    // Not read as already on Default: clicking it sends the write.
+    await userEvent.click(screen.getByTestId("fixer-spawn-default"));
+    await waitFor(() =>
+      expect(patch).toHaveBeenCalledWith(PATH, { auto_fix_pr: null })
+    );
+  });
+
+  it("does not say coord could not read it when the unknown is this page's", async () => {
+    get.mockResolvedValue(
+      settings({
+        auto_fix_pr_tenant: true,
+        auto_fix_pr: true,
+        auto_fix_pr_source: "fleet",
+      })
+    );
+    render(<FixerSpawnToggle canEdit />);
+    const text = await tenantText();
+    expect(text).toContain(
+      "Tenant setting: Unknown — coord's answer for this preference is not one this page can read."
+    );
+    expect(text).not.toContain("could not read this preference");
+    for (const v of POSITIONS) expect(checked(v)).toBe("false");
   });
 
   it("a coord build without the fields says so and disables every position", async () => {
     get.mockResolvedValue(settings({}));
     render(<FixerSpawnToggle canEdit />);
-    expect(await tenantText()).toContain("Unknown (treated as off)");
-    expect(screen.getByTestId("fixer-spawn-unsupported")).toBeTruthy();
+    const text = await tenantText();
+    expect(text).toContain(
+      "Tenant setting: Unknown — this setting is not available yet."
+    );
+    expect(text).not.toContain("treated as off");
+    expect(screen.getByTestId("fixer-spawn-unsupported").textContent).toContain(
+      "Not available yet"
+    );
     for (const v of POSITIONS) {
       expect(
         (screen.getByTestId(`fixer-spawn-${v}`) as HTMLButtonElement).disabled
@@ -167,10 +212,34 @@ describe("FixerSpawnToggle — read", () => {
     }
   });
 
+  it("a malformed tenant value is not called 'not available yet'", async () => {
+    get.mockResolvedValue(
+      settings({
+        auto_fix_pr_tenant: "false",
+        auto_fix_pr: false,
+        auto_fix_pr_source: "tenant",
+      })
+    );
+    render(<FixerSpawnToggle canEdit />);
+    const text = await tenantText();
+    expect(text).toContain(
+      "coord's answer for this setting is not one this page can read"
+    );
+    expect(text).not.toContain("not available yet");
+    const note = screen.getByTestId("fixer-spawn-unsupported").textContent;
+    expect(note).not.toContain("Not available yet");
+    expect(note).toContain("not settable here");
+  });
+
   it("a load failure renders unknown, never on, and Retry reloads", async () => {
     get.mockRejectedValueOnce(new Error("GET failed: 502"));
     render(<FixerSpawnToggle canEdit />);
-    expect(await tenantText()).toContain("Unknown (treated as off)");
+    const text = await tenantText();
+    expect(text).toContain(
+      "Tenant setting: Unknown — the merge settings could not be loaded."
+    );
+    // The failed read is this page's, and says nothing about what coord does.
+    expect(text).not.toContain("treated as off");
     expect(screen.getByTestId("fixer-spawn-error").textContent).toContain(
       "502"
     );
@@ -275,6 +344,34 @@ describe("FixerSpawnToggle — write", () => {
     await waitFor(() => expect(checked("default")).toBe("true"));
   });
 
+  it("does not count an answer whose source is unknown as saved, even when its tenant field matches", async () => {
+    get.mockResolvedValue(
+      settings({
+        auto_fix_pr_tenant: false,
+        auto_fix_pr: false,
+        auto_fix_pr_source: "tenant",
+      })
+    );
+    // Clearing to the default, answered `tenant: null` because coord cannot
+    // read the column: null is "not readable" here, not the value sent.
+    const unreadable = settings({
+      auto_fix_pr_tenant: null,
+      auto_fix_pr: false,
+      auto_fix_pr_source: "unknown",
+    });
+    patch.mockResolvedValue(unreadable);
+    render(<FixerSpawnToggle canEdit />);
+    await tenantText();
+    get.mockResolvedValue(unreadable);
+    await userEvent.click(screen.getByTestId("fixer-spawn-default"));
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastSuccess).not.toHaveBeenCalled();
+    // It re-read what coord serves, which still says nothing.
+    expect(get).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(checked("off")).toBe("false"));
+    for (const v of POSITIONS) expect(checked(v)).toBe("false");
+  });
+
   it("clicking the already-active position sends nothing", async () => {
     get.mockResolvedValue(DEFAULT_ON);
     render(<FixerSpawnToggle canEdit />);
@@ -335,6 +432,8 @@ describe("FixerSpawnToggle — write", () => {
         "Request timeout - backend may be starting up. Please try again."
       ),
     ],
+    // No HTTP status at all: the request may have reached coord.
+    ["a fetch that threw", new TypeError("Failed to fetch")],
   ])("%s is reported as outcome UNKNOWN and reloads", async (_label, error) => {
     get.mockResolvedValue(DEFAULT_ON);
     patch.mockRejectedValue(error);
@@ -370,6 +469,53 @@ describe("FixerSpawnToggle — write", () => {
     expect(get).toHaveBeenCalledTimes(1);
     expect(checked("default")).toBe("true");
   });
+
+  it.each([
+    ["a PATCH whose outcome is open", "reject"],
+    ["a 2xx that does not read back the value sent", "unconfirmed-2xx"],
+  ])(
+    "presses no position after %s until the re-read settles",
+    async (_label, mode) => {
+      get.mockResolvedValue(DEFAULT_ON);
+      if (mode === "reject") {
+        patch.mockRejectedValue(refusal(504, "timeout waiting for coord"));
+      } else {
+        patch.mockResolvedValue(DEFAULT_ON);
+      }
+      render(<FixerSpawnToggle canEdit />);
+      await tenantText();
+      expect(checked("default")).toBe("true");
+
+      let release: (v: unknown) => void = () => {};
+      get.mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            release = r;
+          })
+      );
+      await userEvent.click(screen.getByTestId("fixer-spawn-off"));
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+      // The held state is the PRE-write value: no position may claim it.
+      for (const position of POSITIONS) {
+        expect(checked(position), position).toBe("false");
+        expect(
+          screen.getByTestId(`fixer-spawn-${position}`).className
+        ).not.toContain("bg-primary");
+      }
+
+      await act(async () => {
+        release(
+          settings({
+            auto_fix_pr_tenant: false,
+            auto_fix_pr: false,
+            auto_fix_pr_source: "tenant",
+          })
+        );
+      });
+      await waitFor(() => expect(checked("off")).toBe("true"));
+      expect(checked("default")).toBe("false");
+    }
+  );
 
   it("a click during an in-flight save is dropped, not raced", async () => {
     get.mockResolvedValue(DEFAULT_ON);

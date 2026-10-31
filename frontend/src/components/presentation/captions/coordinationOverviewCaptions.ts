@@ -6,7 +6,10 @@
  * `coordination-overview.<tile>`, and never touches another surface's file.
  *
  * Phase 2 captions every region the page renders, in the order it shows
- * them (`SectionCaption` mounts each, presentation mode only). Every sentence
+ * them (`RegionCaption` mounts each, presentation mode only). A region shows
+ * its title and its ONE-sentence `oneLiner` only (`Caption` `brief`); the
+ * page caption alone renders `whyItMatters`, which each region keeps as the
+ * record of why the sentence is true. Every sentence
  * is a claim about the page, checked against it: what each region derives is
  * in `components/admin/coord/coordHomeStatus.ts`, what it renders in
  * `app/(app)/admin/coord/home/_components/HomeSections.tsx`.
@@ -35,7 +38,10 @@ export const COORDINATION_OVERVIEW_CAPTIONS = {
     // first). While presenting a recommendation is its descriptor: every one
     // is `repo: null`, so `redactionVerdict` withholds its words, and the row
     // shows only that one was given. An approval carries none, and says so.
-    oneLiner: copy`The questions and approvals waiting on the ${term("operator")}, oldest first, each marked where the agents gave a recommendation; their words stay with the ${term("operator")}.`,
+    // While coord serves no `needs_me` block, the region is the two counts
+    // read from the Gates and Questions lists (`QueueCounts`); once it does,
+    // the decisions themselves. The sentence is true of both.
+    oneLiner: copy`The questions and approvals waiting on the ${term("operator")}, and how many there are; what they say stays with the ${term("operator")}.`,
     // The detail lines "Recommended" and "If you overturn it" read as their
     // descriptors, each "none given" / "not stated" when absent: coord serves
     // both as null for every operator gate, and an agent may give either
@@ -47,13 +53,15 @@ export const COORDINATION_OVERVIEW_CAPTIONS = {
     title: "What is degrading",
     // Each row's time is the onset coord OBSERVED; its detail says whether
     // an agent response is bound (`remediationPhrase`).
-    oneLiner: copy`Infrastructure problems that are open now, each with when the ${term("coord", "coordination service")} first observed it and whether an automatic response is bound to it.`,
+    // The machine line counts the roster the Dev Ops badge counts
+    // (`MachineHealthLine`, `homeSupplements.ts`).
+    oneLiner: copy`Infrastructure problems open now, each dated by when the ${term("coord", "coordination service")} first observed it, and how many machines are not healthy.`,
     // The per-area freshness lines under the list (`planeFreshnessPhrase`).
     whyItMatters:
       "Under the list, each area shows whether its watchers are running on time, so a quiet list can be told apart from a blind one.",
   },
   "coordination-overview.on-track": {
-    title: "Work by repository",
+    title: "Work by state",
     // One row per repository coord groups the units under (plus the units
     // that name none), its summary the four classes `groupSummary` prints.
     oneLiner: copy`Every repository's ${term("work_unit", "work units")} counted by state (shipped, in flight, waiting, or without a recorded change), with the current initiative below.`,
@@ -79,7 +87,10 @@ export const COORDINATION_OVERVIEW_CAPTIONS = {
     title: "What this view does not know",
     // Coord's `does_not_know` list: each source, its state, its read time
     // (a watcher's last successful run) and its freshness bound.
-    oneLiner: copy`Each source this view is built from, whether the ${term("coord", "coordination service")} could read it, and how fresh it was.`,
+    // `DoesNotKnowSection`: the unread sources listed, the read ones behind
+    // one disclosure; while presenting, sources not built yet are counted on
+    // one line rather than listed.
+    oneLiner: copy`The sources the ${term("coord", "coordination service")} could not fully read for this view, with the ones it did read one click down.`,
     whyItMatters:
       "A view that names what it could not read is one whose calm parts can be trusted: a source that was not read stays on this list, marked as not read, instead of being dropped.",
   },

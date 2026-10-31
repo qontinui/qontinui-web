@@ -17,6 +17,7 @@ import { WITHHELD, describeRedacted } from "@/components/presentation";
 import { ROUTE_DISABLED_TEXT } from "@/components/operations/coordPollError";
 import { FAILURE_REASON_WITHHELD } from "@/components/operations/presentedFailure";
 import {
+  AREA_WITHHELD,
   BLOCKED_UNIT_DESCRIPTOR,
   COORD_TIMEOUT_TEXT,
   COORD_UNREACHABLE_TEXT,
@@ -33,6 +34,7 @@ import {
   degradationDescriptor,
   degradationRepo,
   isMachineSubject,
+  keptReadingText,
   namedUnitDescriptor,
   namedUnitRepos,
   needsDescriptor,
@@ -43,6 +45,9 @@ import {
   presentedInitiativeDate,
   presentedInitiativeStatus,
   presentedPlanPhase,
+  presentedPlaneLabel,
+  presentedPlaneName,
+  presentedPlaneWords,
   presentedSourceLabel,
   reasonDescriptor,
   regionSources,
@@ -125,6 +130,38 @@ describe("regionSources — one read, dated by coord's answer", () => {
   it("leaves the time unknown when nothing was read — never now", () => {
     expect(regionSources({ generatedAt: null, kept: false })[0]!.asOf).toBe(
       null
+    );
+  });
+});
+
+describe("keptReadingText — covers only what is a kept reading", () => {
+  const fresh = { state: "read" as const, stale: false };
+  const kept = { state: "read" as const, stale: true };
+  const unread = { state: "could_not_read" as const, stale: false };
+
+  it("says the project state's figures are its last reading, and a fresh read beside it is current", () => {
+    expect(
+      keptReadingText("x", [
+        { name: "machine health", reading: fresh },
+        { name: "the open-gate count", reading: fresh },
+        { name: "the pending-question count", reading: kept },
+      ])
+    ).toBe(
+      "The latest read of coord's project state failed (x). Everything below that comes from it is its last reading, not a current one. Machine health and the open-gate count are current reads, each with its own source. The pending-question count is a last reading too."
+    );
+  });
+
+  it("never calls an unread figure current", () => {
+    expect(
+      keptReadingText("x", [{ name: "machine health", reading: unread }])
+    ).toBe(
+      "The latest read of coord's project state failed (x). Everything below that comes from it is its last reading, not a current one. Machine health has not been read — unknown."
+    );
+  });
+
+  it("with nothing read beside it, everything below is the last reading", () => {
+    expect(keptReadingText("x", [])).toBe(
+      "The latest read of coord's project state failed (x). Everything below is its last reading, not a current one."
     );
   });
 });
@@ -287,6 +324,42 @@ describe("descriptors — built from fixed fields, never from the text", () => {
     }
   );
 
+  it("dates a degradation's subject as it dates the row: onset while open, and when it cleared once cleared", () => {
+    const cleared = "2026-10-20T09:00:00Z";
+    const d = degradation({
+      subject: { kind: "service", name: "rds:db", id: "rds:db" },
+      onset_observed_at: AT,
+      resolved_at: cleared,
+    });
+    expect(subjectDescriptor(d, "degrading").at).toBe(AT);
+    expect(subjectDescriptor(d, "declared").at).toBe(AT);
+    expect(subjectDescriptor(d, "cleared").at).toBe(cleared);
+    // No onset served stays unknown, whatever else the row is dated by.
+    expect(
+      subjectDescriptor(
+        degradation({ subject: { kind: "service", name: "x", id: "x" } }),
+        "degrading"
+      ).at
+    ).toBeNull();
+  });
+
+  it("dates a named unit by its last recorded change, then its first in-progress time, and otherwise leaves it unknown", () => {
+    const unit = list(["s"]).units[0]!;
+    const changed = "2026-10-19T08:00:00Z";
+    for (const kind of ["stalled", "waitingOnGate"] as const) {
+      expect(
+        namedUnitDescriptor(
+          { ...unit, lastRecordedChangeAt: changed, firstInProgressAt: AT },
+          kind
+        ).at
+      ).toBe(changed);
+      expect(
+        namedUnitDescriptor({ ...unit, firstInProgressAt: AT }, kind).at
+      ).toBe(AT);
+      expect(namedUnitDescriptor(unit, kind).at).toBeNull();
+    }
+  });
+
   it("words a named unit by its list, and a reason by its status", () => {
     const u = list(["s"]).units[0]!;
     expect(namedUnitDescriptor(u, "stalled").status).toBe("no recorded change");
@@ -378,6 +451,70 @@ describe("presentedDecisionDomains — the table's words, or fixed words", () =>
   });
 });
 
+describe("presentedPlaneLabel — the table's words, or withheld", () => {
+  it.each([
+    ["runner", "runner"],
+    ["disk", "disk"],
+    ["merge_train", "merge train"],
+    ["credential", "credential"],
+    ["build_capacity", "build capacity"],
+    ["cloud_service", "cloud service"],
+    ["coord_itself", "coord"],
+  ])("words %s as the table does", (plane, words) => {
+    expect(presentedPlaneLabel(plane)).toBe(words);
+  });
+
+  it.each([
+    "acme corp vpn",
+    "acme_corp_vpn",
+    // Names no confidential term: the table is what withholds it.
+    "partner_a_tunnel",
+    // Keys Object.prototype carries are not the table's.
+    "constructor",
+    "toString",
+    "__proto__",
+  ])("withholds %s, which the table does not name", (plane) => {
+    expect(presentedPlaneLabel(plane)).toBe(WITHHELD);
+  });
+
+  it.each([[null], [""]])("keeps the page's own word for %j", (plane) => {
+    expect(presentedPlaneLabel(plane)).toBe("unclassified");
+    expect(presentedPlaneName(plane)).toBe("unclassified");
+    expect(presentedPlaneWords(plane)).toBe("unclassified");
+  });
+
+  it("standing alone, reads an off-table area as 'area withheld'; in a list, as one to count", () => {
+    expect(presentedPlaneName("partner_a_tunnel")).toBe(AREA_WITHHELD);
+    expect(AREA_WITHHELD).toBe("area withheld");
+    expect(presentedPlaneWords("partner_a_tunnel")).toBeNull();
+    expect(presentedPlaneName("merge_train")).toBe("merge train");
+    expect(presentedPlaneWords("merge_train")).toBe("merge train");
+  });
+
+  it("reads as an area withheld in both of a degradation's descriptors", () => {
+    const d = degradation({
+      id: "alert:1",
+      plane: "partner_a_tunnel",
+      subject: { kind: "service", name: "tunnel-1", id: "tunnel-1" },
+      headline: "A tunnel is down",
+      onset_observed_at: AT,
+    });
+    const scope = {
+      status: "ready",
+      scope: { firstPartyOwners: ["qontinui"], confidentialTerms: [] },
+    } as const;
+    for (const [descriptor, kind] of [
+      [degradationDescriptor(d, "degrading"), "Degradation"],
+      [subjectDescriptor(d, "degrading"), "Service"],
+    ] as const) {
+      expect(descriptor.area).toBe(WITHHELD);
+      expect(describeRedacted(descriptor, scope)).toMatch(
+        new RegExp(`^${kind} · area withheld · degrading · `)
+      );
+    }
+  });
+});
+
 describe("presentedSourceLabel — the table's words, or fixed words", () => {
   it("labels a source the table knows, and a watcher by the area it feeds", () => {
     expect(presentedSourceLabel("work_units", null)).toBe("Work units");
@@ -391,6 +528,35 @@ describe("presentedSourceLabel — the table's words, or fixed words", () => {
     })!.degradations.planes;
     expect(presentedSourceLabel("watcher:w1", planes)).toBe(
       "Watcher feeding runner"
+    );
+  });
+
+  it("never names an area the table does not name, in a watcher's label", () => {
+    const planes = parseProjectState({
+      degradations: {
+        state: "read",
+        planes: {
+          runner: { fresh: false, watchers: [{ name: "w1", state: "stale" }] },
+          partner_a_tunnel: {
+            fresh: false,
+            watchers: [
+              { name: "w1", state: "stale" },
+              { name: "w2", state: "stale" },
+            ],
+          },
+          acme_corp_vpn: {
+            fresh: false,
+            watchers: [{ name: "w2", state: "stale" }],
+          },
+        },
+      },
+    })!.degradations.planes;
+    expect(presentedSourceLabel("watcher:w1", planes)).toBe(
+      "Watcher feeding runner and 1 area not named here"
+    );
+    // Two areas off the table are two, not one folded "withheld".
+    expect(presentedSourceLabel("watcher:w2", planes)).toBe(
+      "Watcher feeding 2 areas not named here"
     );
   });
 
@@ -478,6 +644,34 @@ describe("namedUnitRepos — a unit's repositories are bounded, or withheld", ()
     expect(hidden("u")).toBeNull();
   });
 
+  // A unit named under first-party repositories alone would show, so these go
+  // through the `unbounded` set: the slug IS in `named`, by its first-party
+  // group, and the other group's naming it must still win.
+  it.each([
+    [
+      "a group of an unknown kind",
+      group("x", list(["both"]), list([]), "unknown"),
+    ],
+    [
+      "a group with no repository",
+      group(null, list(["both"]), list([]), "repo"),
+    ],
+    ["the unattributed group", group(null, list(["both"]))],
+  ])(
+    "withholds a unit a first-party group names when %s names it too",
+    (_name, other) => {
+      const firstParty = group("qontinui/web", list(["both", "only-web"]));
+      for (const groups of [
+        [firstParty, other],
+        [other, firstParty],
+      ]) {
+        const reposOf = namedUnitRepos(groups, "stalled");
+        expect(reposOf("both")).toBeNull();
+        expect(reposOf("only-web")).toEqual(["qontinui/web"]);
+      }
+    }
+  );
+
   it("withholds everything when coord served no groups, and a slug no group names", () => {
     expect(namedUnitRepos(null, "stalled")("u")).toBeNull();
     expect(
@@ -491,12 +685,24 @@ describe("values shown verbatim only in a shape that names no one", () => {
     expect(presentedPlanPhase("3")).toBe("3");
     expect(presentedPlanPhase(" 12b ")).toBe("12b");
     expect(presentedPlanPhase("the Acme phase")).toBe(WITHHELD);
+    // The whole value must have the shape: a number at either end clears nothing.
+    expect(presentedPlanPhase("3 for Acme Corp")).toBe(WITHHELD);
+    expect(presentedPlanPhase("Acme Corp 3")).toBe(WITHHELD);
+    // At most three digits and one letter: the letter is a sub-phase, and a
+    // run of either can spell a name or a figure.
+    expect(presentedPlanPhase("3acmecorp")).toBe(WITHHELD);
+    expect(presentedPlanPhase("1234")).toBe(WITHHELD);
+    expect(presentedPlanPhase("123")).toBe("123");
   });
 
   it("says live or not live, never the frontmatter's own word", () => {
     expect(presentedInitiativeStatus("live")).toBe("live");
     expect(presentedInitiativeStatus("draft for Acme")).toBe("not live");
     expect(presentedInitiativeStatus(null)).toBe("unknown");
+    // Live only when that is all it says: these name the word and deny it.
+    expect(presentedInitiativeStatus("not live yet")).toBe("not live");
+    expect(presentedInitiativeStatus("live for Acme")).toBe("not live");
+    expect(presentedInitiativeStatus(" live ")).toBe("live");
   });
 
   it("shows an ISO date and withholds any other date text", () => {
@@ -505,6 +711,21 @@ describe("values shown verbatim only in a shape that names no one", () => {
       "2026-10-31T09:00:00Z"
     );
     expect(presentedInitiativeDate("when Acme signs")).toBe(WITHHELD);
+    // The whole value must have the shape: a date at either end clears nothing.
+    expect(presentedInitiativeDate("2026-12-01 when Acme Corp signs")).toBe(
+      WITHHELD
+    );
+    expect(presentedInitiativeDate("2026-12-01T09:00:00Z for Acme Corp")).toBe(
+      WITHHELD
+    );
+    expect(presentedInitiativeDate("Acme Corp 2026-12-01")).toBe(WITHHELD);
+    // Nor does a time at the end clear free text between the two.
+    expect(presentedInitiativeDate("2026-12-01 for Acme Corp 09:00")).toBe(
+      WITHHELD
+    );
+    expect(presentedInitiativeDate("2026-12-01 09:00")).toBe(
+      "2026-12-01 09:00"
+    );
     expect(presentedInitiativeDate(null)).toBeNull();
   });
 });

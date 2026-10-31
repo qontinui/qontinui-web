@@ -85,12 +85,20 @@ import {
   TENANT_ID,
   TENANT_NAME,
   UNLABELLED_FEED_SOURCE,
+  completeWaitingListsBody,
   firstDecisionAnsweredBody,
   fullBody,
+  initiativeBody,
   noLiveInitiativeBody,
+  unitAlsoInUnknownGroupBody,
   unreadBlocksBody,
   unservedDecisionsBody,
 } from "./__fixtures__/presentationFixture";
+import {
+  checkBehindEveryDisclosure,
+  expandRow,
+  openSourcesRead,
+} from "./__fixtures__/homePageDriver";
 import {
   COORD_TIMEOUT_TEXT,
   PROJECT_STATE_KEPT_SOURCE,
@@ -108,9 +116,16 @@ import { HOME_REFRESH_ACTION, HOME_REFRESH_ID } from "./_components/HomeLens";
  * `Response`: a body can be read only once.
  */
 const httpFetch = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
-}));
+// The page's reads beside the project state (machine roster, the queue
+// counts) are answered calm by `supplementReads` unless a test says otherwise.
+vi.mock("@/services/service-factory", async () => {
+  const s = await import("./__fixtures__/supplementReads");
+  return {
+    httpClient: s.homeTransport(
+      (...args: unknown[]) => httpFetch(...args) as Promise<Response>
+    ),
+  };
+});
 
 // The tenant list the strip names the tenant from — the fixture's tenant,
 // whose name carries a client's.
@@ -138,16 +153,29 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status });
 }
 
-/** Every caption the page renders in presentation mode. */
+/**
+ * Every caption the page renders in presentation mode over the fixtures.
+ * Correct? is left out of the presented page while nothing measures it
+ * (`fullBody`'s `verification_metrics_door_absent`), so its caption is
+ * required only where a body gives it a reading (`WITH_CORRECT`).
+ */
 const HOME_CAPTIONS: CaptionKey[] = [
   "coordination-overview.page",
   "coordination-overview.strip",
   "coordination-overview.needs-you",
   "coordination-overview.degrading",
   "coordination-overview.on-track",
-  "coordination-overview.correct",
   "coordination-overview.does-not-know",
 ];
+const WITH_CORRECT: CaptionKey[] = [
+  ...HOME_CAPTIONS,
+  "coordination-overview.correct",
+];
+
+/** Correct? with a reading the presented page shows: coord gave none. */
+const CORRECT_UNREAD = {
+  correctness: { state: "unknown", reason: "probe_token_withheld" },
+};
 
 /** The six regions, as their captions and testids name them. */
 const REGIONS = [
@@ -158,6 +186,9 @@ const REGIONS = [
   "correct",
   "does-not-know",
 ] as const;
+
+/** The regions `fullBody` presents — Correct? is left out (nothing measures it). */
+const PRESENTED = REGIONS.filter((r) => r !== "correct");
 
 function resetEnvironment() {
   httpFetch.mockReset();
@@ -187,48 +218,29 @@ function leakedIdentifiers(): string[] {
   );
 }
 
-/**
- * Run `check` on the page as rendered, then behind every disclosure: the
- * recently-cleared panel opened, then every record row expanded in turn (a
- * list keeps one row open, so each is checked open on its own).
- */
-function checkBehindEveryDisclosure(check: () => void) {
-  check();
-  const cleared = screen.queryByTestId("coord-home.degrading.cleared");
-  if (cleared) {
-    fireEvent.click(
-      within(cleared).getByRole("button", { name: /Recently cleared/ })
-    );
-    check();
-  }
-  const rows = [...document.querySelectorAll("[data-console-row]")];
-  expect(rows.length).toBeGreaterThan(0);
-  for (const row of rows) {
-    if (row.getAttribute("aria-expanded") !== "true") fireEvent.click(row);
-    check();
-  }
-}
-
-/** Expand the record row in `region` whose line shows `text`. */
-function expandRow(region: HTMLElement, text: string | RegExp) {
-  const row = [...region.querySelectorAll("[data-console-row]")].find((r) =>
-    typeof text === "string"
-      ? (r.textContent ?? "").includes(text)
-      : text.test(r.textContent ?? "")
-  );
-  if (!row) throw new Error(`no row showing ${String(text)}`);
-  if (row.getAttribute("aria-expanded") !== "true") fireEvent.click(row);
-  // `RecordRow`'s own wrapper: the line, and its detail once expanded.
-  return row.parentElement as HTMLElement;
-}
-
 /** The provenance chips a region's caption carries. */
+/** The page's one provenance line's chips (`PageProvenance`). */
+function pageChips(): HTMLElement[] {
+  const line = screen.queryByTestId("coord-home.provenance");
+  return line
+    ? [...line.querySelectorAll<HTMLElement>("[data-provenance]")]
+    : [];
+}
+
+/**
+ * A region's project-state chips. A region whose figures also come from a
+ * read beside the project state (machine health, the queue counts —
+ * `_lib/homeSupplements.ts`) carries a chip for each of those too; those are
+ * pinned in `page.ux.presentation.test.tsx`.
+ */
 function regionChips(region: (typeof REGIONS)[number]): HTMLElement[] {
   const caption = document.querySelector<HTMLElement>(
     `[data-presentation-section="coordination-overview.${region}"]`
   );
   if (!caption) throw new Error(`region ${region} has no caption`);
-  return [...caption.querySelectorAll<HTMLElement>("[data-provenance]")];
+  return [...caption.querySelectorAll<HTMLElement>("[data-provenance]")].filter(
+    (chip) => /coord's project state/.test(chip.textContent ?? "")
+  );
 }
 
 /**
@@ -270,8 +282,16 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
       1
     );
     expect(screen.getAllByTestId("coord-home.on-track.group")).toHaveLength(4);
+    openSourcesRead();
+    // One of the fixture's eight sources is not built yet: counted on one
+    // line while presenting, not listed.
     expect(screen.getAllByTestId("coord-home.does-not-know.row")).toHaveLength(
-      8
+      7
+    );
+    expect(
+      screen.getByTestId("coord-home.does-not-know.not-built")
+    ).toHaveTextContent(
+      "1 further source is not built yet, so this view does not show it."
     );
     expect(
       document.querySelectorAll('[data-redacted="true"]').length
@@ -327,12 +347,15 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
         within(notRead).queryByTestId(`coord-home.${block}.not-read.error`)
       ).toBeNull();
     }
-    // The initiative's parse error is a descriptor.
+    // The initiative's parse error is a fixed sentence, never coord's.
     const initiative = screen.getByTestId("coord-home.on-track.initiative");
-    expect(initiative).toHaveTextContent(/could not be parsed: Reason · /);
+    expect(initiative).toHaveTextContent(
+      "The current initiative's document could not be read as written, so its status and scope are not shown."
+    );
+    expect(initiative).not.toHaveTextContent(/could not be parsed|Reason · /);
     checkBehindEveryDisclosure(() => {
       expectPresentationSafe(view, {
-        captions: HOME_CAPTIONS,
+        captions: WITH_CORRECT,
         forbidden: MUST_NOT_APPEAR,
       });
       expect(leakedIdentifiers()).toEqual([]);
@@ -368,7 +391,30 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
     });
   });
 
-  it.each(["not_implemented", "could_not_read", "stale", "unknown"])(
+  it("when needs_me is not built yet: the counts stand in for it, with no 'not built' line and no pointer at pages it cannot show", async () => {
+    const view = await renderPresenting(
+      fullBody({ needs_me: { state: "not_implemented", total: 0, items: [] } })
+    );
+    const region = screen.getByTestId("coord-home.needs-you");
+    expect(
+      screen.queryByTestId("coord-home.needs-you.not-read")
+    ).not.toBeInTheDocument();
+    expect(region).not.toHaveTextContent(/not built|does not serve/);
+    expect(
+      screen.getByTestId("coord-home.needs-you.count")
+    ).toBeEmptyDOMElement();
+    expect(
+      within(region).getByTestId("coord-home.needs-you.counts")
+    ).toHaveTextContent("Approvals waiting on the operator: 0");
+    expect(region.textContent).not.toMatch(/Pending decisions|Questions|Gates/);
+    expect(within(region).queryByRole("link")).toBeNull();
+    expectPresentationSafe(view, {
+      captions: HOME_CAPTIONS,
+      forbidden: MUST_NOT_APPEAR,
+    });
+  });
+
+  it.each(["could_not_read", "stale", "unknown"])(
     "when needs_me is %s: it says it is not known, with no pointer at pages it cannot show",
     async (state) => {
       const view = await renderPresenting(
@@ -378,10 +424,14 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
       expect(notRead).toHaveAttribute("data-block-state", state);
       expect(notRead.textContent).not.toBe("");
       // Neither Questions nor Gates is presentation-ready, so naming them
-      // would send an evaluator to two pages that open nothing.
+      // would send an evaluator to two pages that open nothing: the counts
+      // read from their lists name what is counted instead.
       expect(notRead.textContent).not.toMatch(
         /Pending decisions|Questions|Gates/
       );
+      expect(
+        within(notRead).getByTestId("coord-home.needs-you.counts")
+      ).toHaveTextContent("Approvals waiting on the operator: 0");
       expect(within(notRead).queryByRole("link")).toBeNull();
       expect(notRead.querySelector("[data-lens-link]")).toBeNull();
       expectPresentationSafe(view, {
@@ -395,14 +445,18 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
     httpFetch.mockReturnValue(new Promise(() => {}));
     const view = renderInPresentationMode(<CoordHomePage />, { scope: SCOPE });
     await waitFor(() => expect(httpFetch).toHaveBeenCalled());
+    // The page's one provenance line dates the project state UNKNOWN; no
+    // region repeats it.
+    const chips = pageChips();
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toHaveTextContent(`source: ${PROJECT_STATE_SOURCE}`);
+    expect(chips[0]).toHaveAttribute("data-provenance-known", "false");
+    expect(chips[0]).toHaveTextContent("as of UNKNOWN");
+    expect(chips[0]).toHaveClass(...UNKNOWN_AMBER.split(" "));
     for (const region of REGIONS) {
-      const chips = regionChips(region);
-      expect(chips, region).toHaveLength(1);
-      expect(chips[0]).toHaveAttribute("data-provenance-known", "false");
-      expect(chips[0]).toHaveTextContent("as of UNKNOWN");
-      expect(chips[0]).toHaveClass(...UNKNOWN_AMBER.split(" "));
+      expect(regionChips(region), region).toHaveLength(0);
     }
-    expectPresentationSafe(view, { captions: HOME_CAPTIONS });
+    expectPresentationSafe(view, { captions: WITH_CORRECT });
   });
 
   it("when the first read meets a deployment without the door: the page's own sentence says why, never the failure's text", async () => {
@@ -460,14 +514,15 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
 describe("/admin/coord/home?present=1 — each region: caption, provenance, redaction", () => {
   beforeEach(resetEnvironment);
 
-  it("captions every region and dates its figures by coord's answer", async () => {
+  it("captions every region in one sentence, and dates the project state once, by coord's answer", async () => {
     const body = fullBody();
     const view = await renderPresenting(body);
-    for (const region of REGIONS) {
+    for (const region of PRESENTED) {
       const caption = document.querySelector<HTMLElement>(
         `[data-presentation-section="coordination-overview.${region}"]`
       )!;
-      // Title, one sentence and why it matters — before the region's data.
+      // Title and ONE sentence — before the region's data; the why-it-
+      // matters line is the page caption's alone.
       expect(
         caption.querySelector('[data-caption-part="one-liner"]'),
         region
@@ -475,17 +530,19 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
       expect(
         caption.querySelector('[data-caption-part="why-it-matters"]'),
         region
-      ).not.toBeNull();
-      const chips = regionChips(region);
-      expect(chips, region).toHaveLength(1);
-      expect(chips[0]).toHaveTextContent(`source: ${PROJECT_STATE_SOURCE}`);
-      expect(chips[0]).toHaveAttribute("data-provenance-known", "true");
-      expect(chips[0]).toHaveTextContent(/as of (under a minute|\d+m) ago/);
-      // Dated by coord's answer, which the chip's title states.
-      expect(chips[0].getAttribute("title")).toMatch(
-        /^Source: coord's project state\. As of /
-      );
+      ).toBeNull();
+      // No region repeats the project state's chip.
+      expect(regionChips(region), region).toHaveLength(0);
     }
+    const chips = pageChips();
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toHaveTextContent(`source: ${PROJECT_STATE_SOURCE}`);
+    expect(chips[0]).toHaveAttribute("data-provenance-known", "true");
+    expect(chips[0]).toHaveTextContent(/as of (under a minute|\d+m) ago/);
+    // Dated by coord's answer, which the chip's title states.
+    expect(chips[0].getAttribute("title")).toMatch(
+      /^Source: coord's project state\. As of /
+    );
     // The caption leads its region: the strip's comes before the strip, the
     // others open their section.
     const stripCaption = screen.getByTestId("coord-home.strip.caption");
@@ -494,7 +551,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
         screen.getByTestId("coord-home.strip")
       ) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
-    for (const region of REGIONS.slice(1)) {
+    for (const region of PRESENTED.slice(1)) {
       const section = screen.getByTestId(`coord-home.${region}`);
       expect(section.firstElementChild).toBe(
         screen.getByTestId(`coord-home.${region}.caption`)
@@ -535,7 +592,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     // not what it says.
     const caption = screen.getByTestId("coord-home.needs-you.caption");
     expect(caption).toHaveTextContent(
-      /each marked where the agents gave a recommendation; their words stay with the operator/i
+      /and how many there are; what they say stays with the operator/i
     );
     expect(caption.textContent).not.toMatch(
       /shown with the agents' recommendation|carries it|settled in one read/
@@ -657,8 +714,12 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     // The first-party repository is named; the foreign one and the bare one
     // (no owner to vouch for) are descriptors.
     expect(identities).toContain(FIRST_PARTY_REPO);
-    // ...and the descriptor is the kind alone, short enough for the chip.
-    expect(identities.filter((i) => i === "Repository")).toHaveLength(2);
+    // ...each its own stable alias, short enough for the chip, so the two
+    // withheld repositories never read as one.
+    expect(identities.filter((i) => /^Repository [A-Z]$/.test(i))).toEqual([
+      "Repository A",
+      "Repository B",
+    ]);
     expect(identities).toContain("no repo named");
     // Its detail names it; the foreign group's says "this repository".
     const own = expandRow(region, FIRST_PARTY_REPO);
@@ -680,14 +741,14 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     ];
     expect(unitNames("true").length).toBeGreaterThanOrEqual(2);
     for (const name of unitNames("true")) {
-      expect(name.closest("[data-lens-link]")).toBeNull();
+      expect(name.closest("a, [data-lens-link]")).toBeNull();
     }
     expect(unitNames("false").map((n) => n.textContent)).toEqual([
       FIRST_PARTY_UNIT_TITLE,
     ]);
     expect(unitNames("false")[0]!.closest("[data-lens-link]")).not.toBeNull();
-    const foreign = expandRow(region, /^Repository/);
-    expect(foreign).toHaveTextContent("Work units that name this repository.");
+    const foreign = expandRow(region, /^Repository A/);
+    expect(foreign).toHaveTextContent("Work units that name Repository A.");
     // The initiative: items and keys are descriptors, the end date (not a
     // date) is withheld, the start date (an ISO date) shows.
     const initiative = screen.getByTestId("coord-home.on-track.initiative");
@@ -724,23 +785,126 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     expect(leakedIdentifiers()).toEqual([]);
   });
 
+  it("on track: a start date a person typed is withheld unless it is a date", async () => {
+    const view = await renderPresenting(
+      initiativeBody({ starts: "when Acme Corp signs" })
+    );
+    expect(
+      screen.getByTestId("coord-home.on-track.initiative")
+    ).toHaveTextContent(/Status live · from withheld · ends withheld/);
+    expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+    expect(leakedIdentifiers()).toEqual([]);
+  });
+
+  it.each([
+    ["null", { ends: null }],
+    ["absent", { ends: undefined }],
+  ])(
+    "on track: an initiative end date that is %s reads unknown, not withheld",
+    async (_spelling, fields) => {
+      const view = await renderPresenting(initiativeBody(fields));
+      expect(
+        screen.getByTestId("coord-home.on-track.initiative")
+      ).toHaveTextContent(/Status live · from 2026-10-01 · ends unknown ·/);
+      expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+      expect(leakedIdentifiers()).toEqual([]);
+    }
+  );
+
+  it.each([
+    ["null", { starts: null }],
+    ["absent", { starts: undefined }],
+  ])(
+    "on track: an initiative start date that is %s reads unknown, not nothing",
+    async (_spelling, fields) => {
+      const view = await renderPresenting(initiativeBody(fields));
+      expect(
+        screen.getByTestId("coord-home.on-track.initiative")
+      ).toHaveTextContent(/Status live · from unknown · ends withheld ·/);
+      expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+      expect(leakedIdentifiers()).toEqual([]);
+    }
+  );
+
+  it("on track: a unit also named by a group of an unknown kind is withheld, though the scope clears the repository that names it", async () => {
+    const view = await renderPresenting(unitAlsoInUnknownGroupBody());
+    const own = expandRow(
+      screen.getByTestId("coord-home.on-track"),
+      FIRST_PARTY_REPO
+    );
+    expect(own).toHaveTextContent(/Work unit · area unknown · no recorded/);
+    expect(
+      own.querySelector(
+        '[data-testid^="coord-home.on-track.named."] [data-redacted="false"]'
+      )
+    ).toBeNull();
+    // The group that names it: a kind this page does not recognise, so its row
+    // says neither its key nor "repo", closed or open.
+    const unknownGroup = screen
+      .getAllByTestId("coord-home.on-track.group")
+      .at(-1)!;
+    expect(unknownGroup.querySelector("[data-console-row]")).toHaveTextContent(
+      /^no repo named/
+    );
+    fireEvent.click(unknownGroup.querySelector("[data-console-row]")!);
+    expect(unknownGroup).toHaveTextContent(
+      "Work units that name this repository."
+    );
+    checkBehindEveryDisclosure(() => {
+      expectPresentationSafe(view, {
+        forbidden: [...MUST_NOT_APPEAR, FIRST_PARTY_UNIT_TITLE],
+      });
+      expect(document.body.textContent).not.toContain(FIRST_PARTY_UNIT_TITLE);
+    });
+  });
+
+  it("on track: a waiting unit is named once no waiting list can hide it", async () => {
+    const view = await renderPresenting(completeWaitingListsBody());
+    const own = expandRow(
+      screen.getByTestId("coord-home.on-track"),
+      FIRST_PARTY_REPO
+    );
+    const waiting = within(own).getByTestId(
+      "coord-home.on-track.named.waiting_on_condition"
+    );
+    const name = waiting.querySelector('[data-redacted="false"]');
+    expect(name).toHaveTextContent(HIDDEN_UNIT_TITLE);
+    expect(name!.closest("[data-lens-link]")).not.toBeNull();
+    // The list it is cleared from, and only that one: the foreign repository's
+    // own waiting unit stays withheld.
+    expectPresentationSafe(view, {
+      forbidden: MUST_NOT_APPEAR.filter((n) => n !== HIDDEN_UNIT_TITLE),
+    });
+  });
+
   it("correct: the row and its why; coord's reason token is not rendered", async () => {
-    const view = await renderPresenting(fullBody());
+    const view = await renderPresenting(fullBody(CORRECT_UNREAD));
     const region = screen.getByTestId("coord-home.correct");
     expect(region).toHaveTextContent(
-      /Not measured — no trust-calibration source/
+      /Not known — coord gave no reading of trust calibration/
     );
-    const detail = expandRow(region, /Not measured/);
+    const detail = expandRow(region, /Not known/);
     expect(detail).toHaveTextContent(/survives independent checking/);
     expect(detail.querySelector("[data-console-raw]")).toBeNull();
     expectPresentationSafe(view, {
-      forbidden: ["verification_metrics_door_absent"],
+      captions: WITH_CORRECT,
+      forbidden: ["probe_token_withheld"],
     });
+  });
+
+  it("correct: left out of the presented page while nothing measures it", async () => {
+    const view = await renderPresenting(fullBody());
+    expect(screen.queryByTestId("coord-home.correct")).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(
+      /trust-calibration|trust calibration/
+    );
+    expectPresentationSafe(view, { captions: HOME_CAPTIONS });
   });
 
   it("does not know: sources in words with no raw id, and coord's reasons as descriptors", async () => {
     const view = await renderPresenting(fullBody());
     const region = screen.getByTestId("coord-home.does-not-know");
+    openSourcesRead();
     for (const label of region.querySelectorAll(
       "[data-console-row] span[title]"
     )) {
@@ -779,9 +943,9 @@ describe("/admin/coord/home?present=1 — Correct? shows no write control", () =
   beforeEach(resetEnvironment);
 
   it("offers only the disclosure of its own reading, registers no write action, and keeps its raw line off", async () => {
-    const view = await renderPresenting(fullBody());
+    const view = await renderPresenting(fullBody(CORRECT_UNREAD));
     const region = screen.getByTestId("coord-home.correct");
-    expandRow(region, /Not measured/);
+    expandRow(region, /Not known/);
     // The only control in the region is the row's own disclosure.
     const controls = region.querySelectorAll(
       "button, a[href], input, select, textarea"
@@ -829,19 +993,21 @@ describe("/admin/coord/home?present=1 — a kept reading after a failed refresh"
     // The failure leads, before the strip and every region.
     const notice = screen.getByTestId("coord-home.kept-reading");
     expect(notice).toHaveTextContent(
-      `The latest read of coord's project state failed (${FAILURE_REASON_WITHHELD}). Everything below is its last reading, not a current one.`
+      `The latest read of coord's project state failed (${FAILURE_REASON_WITHHELD}). Everything below that comes from it is its last reading, not a current one. Machine health is a current read, with its own source.`
     );
     expect(
       notice.compareDocumentPosition(screen.getByTestId("coord-home.strip")) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
-    // Dated by its read: the notice's chip and every region's chip name the
-    // last read, and their time is the answer's, known — never now.
+    // Dated by its read: the notice's chip names the last read, and its time
+    // is the answer's, known — never now. The page's own provenance line
+    // yields to it, and no region repeats it.
     const chips = [
       ...notice.querySelectorAll<HTMLElement>("[data-provenance]"),
-      ...REGIONS.flatMap(regionChips),
+      ...PRESENTED.flatMap(regionChips),
     ];
-    expect(chips).toHaveLength(REGIONS.length + 1);
+    expect(chips).toHaveLength(1);
+    expect(pageChips()).toHaveLength(0);
     for (const chip of chips) {
       expect(chip).toHaveTextContent(`source: ${PROJECT_STATE_KEPT_SOURCE}`);
       expect(chip).toHaveAttribute("data-provenance-known", "true");
@@ -878,7 +1044,7 @@ describe("/admin/coord/home?present=1 — a kept reading after a failed refresh"
       )
     );
     expect(screen.getByTestId("coord-home.kept-reading")).toHaveTextContent(
-      `The latest read of coord's project state failed (${COORD_TIMEOUT_TEXT}). Everything below is its last reading, not a current one.`
+      `The latest read of coord's project state failed (${COORD_TIMEOUT_TEXT}). Everything below that comes from it is its last reading, not a current one. Machine health is a current read, with its own source.`
     );
     expect(screen.getByTestId("coord-home.strip")).toHaveTextContent(
       `Last failure: ${COORD_TIMEOUT_TEXT}.`
@@ -1038,7 +1204,7 @@ describe("/admin/coord/home?present=1 — the console's page gate renders it", (
 describe("/admin/coord/home for the operator — the console is unchanged", () => {
   beforeEach(resetEnvironment);
 
-  it("points at Questions and Gates when the needs block was not read", async () => {
+  it("counts what waits on the operator from the Questions and Gates lists when the needs block was not read", async () => {
     httpFetch.mockImplementation(async () =>
       jsonResponse(fullBody({ needs_me: { state: "not_implemented" } }))
     );
@@ -1047,11 +1213,13 @@ describe("/admin/coord/home for the operator — the console is unchanged", () =
         <CoordHomePage />
       </FixedPresentationMode>
     );
-    const pendingAt = await screen.findByTestId(
-      "coord-home.needs-you.pending-at"
+    // The counts the Gates and Questions pages read, each linking there.
+    const pendingAt = await screen.findByTestId("coord-home.needs-you.counts");
+    await waitFor(() =>
+      expect(pendingAt).toHaveTextContent("Approvals waiting on you: 0 · Gates")
     );
     expect(pendingAt).toHaveTextContent(
-      "Pending decisions are listed at Questions and Gates."
+      "Questions waiting on you: 0 · Questions"
     );
     expect(
       within(pendingAt).getByRole("link", { name: "Questions" })
@@ -1124,6 +1292,7 @@ describe("/admin/coord/home for the operator — the console is unchanged", () =
     );
     // A source the page's table does not label reads as coord's identifier
     // for the operator, exactly as #1999 renders it.
+    openSourcesRead();
     expect(screen.getByTestId("coord-home.does-not-know")).toHaveTextContent(
       "Coord.example feed visibility (kinds this caller can be served)"
     );

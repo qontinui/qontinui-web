@@ -17,6 +17,7 @@ import {
   rolloutHeadline,
   scopeStatus,
   summarizeScopes,
+  writeUnknownReason,
   EMPTY_READING,
   type RepoDialReading,
 } from "./repoFollowupStatus";
@@ -170,6 +171,44 @@ describe("rollout mode", () => {
       reading(view({ mode: "enforce" }), { scopeReadbackError: "503" }),
     ]);
     expect(r.mode).toBeNull();
+  });
+});
+
+describe("a write whose outcome is open", () => {
+  it("is UNKNOWN on the scope row, worded as unknown and never as written", () => {
+    const s = scopeStatus(view({ scope: "all", resolved_scope: "repo" }), {
+      outcomeUnknown: "timeout waiting for coord",
+    });
+    expect(s.kind).toBe("unknown");
+    expect(s.label).toBe(UNKNOWN_DASH);
+    expect(s.reason).toBe(
+      "whether the last change was applied is unknown (timeout waiting for coord) — re-reading what coord holds"
+    );
+    expect(s.reason).not.toMatch(/written|failed/);
+  });
+
+  it("counts as unknown, not as its pre-write scope or mode", () => {
+    const r = reading(view({ scope: "all", mode: "enforce" }), {
+      scopeOutcomeUnknown: "HTTP 504 with no readable reason",
+    });
+    expect(summarizeScopes([r])).toEqual({
+      all: 0,
+      code_only: 0,
+      none: 0,
+      unknown: 1,
+      stale: 0,
+    });
+    expect(fleetRolloutMode([r]).mode).toBeNull();
+  });
+
+  it("names a failed read-back before an open outcome, and nothing for neither", () => {
+    expect(writeUnknownReason("503", "x")).toBe(
+      "written, but reading it back failed (503) — refresh to re-check"
+    );
+    expect(writeUnknownReason(null, "x")).toBe(
+      "whether the last change was applied is unknown (x) — re-reading what coord holds"
+    );
+    expect(writeUnknownReason(null, null)).toBeNull();
   });
 });
 

@@ -744,7 +744,24 @@ async def get_device_identity(
 # ---------------------------------------------------------------------------
 
 
-def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
+# What to tell a caller after a coord 5xx, per pairing door. Coord's
+# ``post_pair_complete`` consumes the one-shot pairing ``state`` before most of
+# its 5xx paths (the membership probe, the owner read, ``record_pairing``,
+# ``issue_device``), so a retry of the same pair-confirm answers 401
+# ``unknown_state``: the only recovery is a fresh pairing from the device.
+# ``pair-cli`` carries no nonce, so retrying it can succeed.
+PAIR_CONFIRM_5XX_ADVICE = "Start pairing again from your device."
+PAIR_CLI_5XX_ADVICE = "Retry; if it persists, check coord."
+
+# The ``hint`` values coord's pairing handlers attach to a 5xx. All are
+# compile-time constants in coord (``PairingRefusal::with_hint`` takes a
+# ``&'static str``; the multi-tenant ``record_pairing`` 500 writes the literal).
+# A 5xx ``hint`` is relayed only when it is one of these, so no free text from
+# a 5xx body (which can carry SQL or pool context) reaches a client.
+_COORD_STATIC_5XX_HINTS = frozenset({"restart pairing"})
+
+
+def _coord_refusal_detail(resp: Any, *, server_error_advice: str) -> dict[str, Any]:
     """The 502 ``detail`` relaying a non-2xx coord pairing answer.
 
     Coord's pairing refusals are ``{error, code, hint?}`` (plus a token-free
@@ -755,12 +772,39 @@ def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
     past 500 chars, so a client cannot reliably parse it to tell "not a
     member" from a retryable coord-side failure or a burned pairing nonce.
 
-    ``error`` and ``message`` are what make those fields reach a client:
-    the app's ``http_exception_handler`` spreads a dict detail carrying
-    ``error`` into the TOP LEVEL of the response, but flattens one without
-    it to ``message: str(detail)`` — a Python repr, every ``coord_*`` field
-    lost.
+    ``error`` sets the envelope's top-level code to ``bad_gateway``, and the
+    app's ``http_exception_handler`` spreads the dict's other fields into the
+    TOP LEVEL of the response, so every ``coord_*`` field, ``code`` and
+    ``hint`` reach a client. (A dict without ``error`` is spread the same way
+    now; it used to be flattened to ``message: str(detail)``, a Python repr.)
+
+    A coord 5xx is relayed as its status and a fixed sentence only, as the
+    pair-code redeem and ``fleet_targets._reraise_coord_refusal`` do: its text
+    can carry SQL or connection-pool context, so it stays in the server log
+    (both callers log ``resp.text[:500]`` before raising). The sentence ends
+    with ``server_error_advice``, which differs per door
+    (``PAIR_CONFIRM_5XX_ADVICE`` / ``PAIR_CLI_5XX_ADVICE``). The one 5xx field
+    relayed is ``coord_hint``, and only when it is one of coord's static
+    values (``_COORD_STATIC_5XX_HINTS``). A 4xx is coord's refusal of this
+    pairing, and its body says why, so it is relayed.
     """
+    if resp.status_code >= 500:
+        failure: dict[str, Any] = {
+            "error": ErrorCode.BAD_GATEWAY.value,
+            "coord_status": resp.status_code,
+            "message": (
+                f"Coord failed to complete pairing (HTTP {resp.status_code}). "
+                f"{server_error_advice}"
+            ),
+        }
+        try:
+            body = resp.json()
+        except ValueError:
+            body = None
+        hint = body.get("hint") if isinstance(body, dict) else None
+        if isinstance(hint, str) and hint in _COORD_STATIC_5XX_HINTS:
+            failure["coord_hint"] = hint
+        return failure
     detail: dict[str, Any] = {
         "error": ErrorCode.BAD_GATEWAY.value,
         "coord_status": resp.status_code,
@@ -910,7 +954,9 @@ async def pair_confirm(
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=_coord_refusal_detail(resp),
+            detail=_coord_refusal_detail(
+                resp, server_error_advice=PAIR_CONFIRM_5XX_ADVICE
+            ),
         )
 
     try:
@@ -1102,7 +1148,7 @@ async def pair_cli(
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=_coord_refusal_detail(resp),
+            detail=_coord_refusal_detail(resp, server_error_advice=PAIR_CLI_5XX_ADVICE),
         )
 
     try:

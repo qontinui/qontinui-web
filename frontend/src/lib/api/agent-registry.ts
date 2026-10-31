@@ -17,8 +17,13 @@
  * generated api-client snapshot regen).
  */
 
+import { readAnswerJson, type HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
+import {
+  isOutcomeUnknownStatus,
+  isWriteFailureUnknown,
+} from "@/components/admin/coord/writeOutcome";
 
 const AGENT_REGISTRY_API = `${ApiConfig.API_BASE_URL}/api/v1/agent-registry`;
 
@@ -77,16 +82,24 @@ export type AgentPrefErrorCode =
 export class AgentPrefError extends Error {
   readonly code: AgentPrefErrorCode | null;
   readonly status: number;
+  /**
+   * Whether `message` is the server's reason. `false` means the body gave none
+   * and `message` is this client's fallback ("Failed to save …"), which must
+   * not be quoted where the outcome is unknown (`outcomeUnknownReason`).
+   */
+  readonly detailServed: boolean;
 
   constructor(
     message: string,
     code: AgentPrefErrorCode | null,
-    status: number
+    status: number,
+    detailServed = true
   ) {
     super(message);
     this.name = "AgentPrefError";
     this.code = code;
     this.status = status;
+    this.detailServed = detailServed;
   }
 }
 
@@ -103,20 +116,35 @@ function extractErrorCode(body: unknown): AgentPrefErrorCode | null {
   return null;
 }
 
-function extractMessage(body: unknown, fallback: string): string {
-  if (typeof body === "object" && body !== null && "detail" in body) {
-    const detail = (body as { detail: unknown }).detail;
-    if (typeof detail === "string") return detail;
-    if (
-      typeof detail === "object" &&
-      detail !== null &&
-      "message" in detail &&
-      typeof (detail as { message: unknown }).message === "string"
-    ) {
-      return (detail as { message: string }).message;
-    }
+/** The reason in an error body: FastAPI's own `{detail}`, or what the backend's
+ *  error handler serves in production, `{error, message, timestamp, path}`. */
+function extractMessage(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const { detail, message } = body as { detail?: unknown; message?: unknown };
+  if (typeof detail === "string") return detail;
+  if (
+    typeof detail === "object" &&
+    detail !== null &&
+    "message" in detail &&
+    typeof (detail as { message: unknown }).message === "string"
+  ) {
+    return (detail as { message: string }).message;
   }
-  return fallback;
+  return typeof message === "string" ? message : null;
+}
+
+/**
+ * Whether a failed write may still have landed, so the caller must re-read
+ * before saying anything about it: the rule every coord write shares
+ * (`writeOutcome.ts`), over what this client or `httpClient` throws. A 4xx is a
+ * refusal, and so is a door's own connect-failure 502. Any other 5xx proves
+ * nothing, a client timeout or a failure with no HTTP status is the same state,
+ * and an offline browser is taken as not having sent it.
+ */
+export function isWriteOutcomeUnknown(err: unknown): boolean {
+  return err instanceof AgentPrefError
+    ? isOutcomeUnknownStatus(err.status, err.message)
+    : isWriteFailureUnknown(err);
 }
 
 async function handleResponse<T>(
@@ -125,13 +153,15 @@ async function handleResponse<T>(
 ): Promise<T> {
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => ({}));
+    const served = extractMessage(body);
     throw new AgentPrefError(
-      extractMessage(body, fallback),
+      served ?? fallback,
       extractErrorCode(body),
-      response.status
+      response.status,
+      served !== null
     );
   }
-  return response.json() as Promise<T>;
+  return readAnswerJson<T>(response);
 }
 
 /** The current user's effective agent list.
@@ -145,9 +175,14 @@ async function handleResponse<T>(
  *  every 2xx it produces, which is exactly why anything else reaching here is
  *  a broken response — a proxy error page, a rewritten body — and not a
  *  tenant with no agents. An empty ARRAY is still a legitimate answer and
- *  passes through untouched. */
-export async function listAgentRegistry(): Promise<AgentRegistryEntry[]> {
-  const response = await httpClient.fetch(AGENT_REGISTRY_API);
+ *  passes through untouched.
+ *
+ *  `options` are the request's own (a dashboard poll passes
+ *  `COORD_DASHBOARD_POLL_OPTIONS`: one request, the next poll is the retry). */
+export async function listAgentRegistry(
+  options?: HttpOptions
+): Promise<AgentRegistryEntry[]> {
+  const response = await httpClient.fetch(AGENT_REGISTRY_API, options);
   const body = await handleResponse<{ agents: AgentRegistryEntry[] }>(
     response,
     "Failed to load agent registry"
@@ -165,14 +200,19 @@ export async function listAgentRegistry(): Promise<AgentRegistryEntry[]> {
 
 /** Upsert the caller's pref for one agent. Throws `AgentPrefError` with
  *  `code: "disposition_required"` when coord requires a disposition choice
- *  (disabling a policy-required agent without one). */
+ *  (disabling a policy-required agent without one).
+ *
+ *  Sent ONCE (`maxRetries: 0`): the client would re-send a PUT on any 5xx, and
+ *  the classifier (`writeOutcome.ts`) reads only the last answer. A first 504
+ *  after coord committed, followed by retries answering the proxy's
+ *  connect-failure 502, would then read as a refusal of a write that landed. */
 export async function putAgentPref(
   agentName: string,
   update: AgentPrefUpdate
 ): Promise<void> {
   const response = await httpClient.fetch(
     `${AGENT_REGISTRY_API}/prefs/${encodeURIComponent(agentName)}`,
-    { method: "PUT", body: JSON.stringify(update) }
+    { method: "PUT", body: JSON.stringify(update), maxRetries: 0 }
   );
   await handleResponse<unknown>(response, "Failed to save agent preference");
 }
@@ -225,9 +265,14 @@ export interface AgentRegistryDefaultsUpdate {
  *  with the `?? []` that function had already had removed. An admin reading
  *  an empty registry concludes the tenant has no agents to configure; a
  *  response that never carried a list is not that fact. An empty ARRAY still
- *  passes through untouched. */
-export async function listAdminAgentRegistry(): Promise<AdminAgentRegistryRow[]> {
-  const response = await httpClient.fetch(`${AGENT_REGISTRY_API}/admin/registry`);
+ *  passes through untouched. `options` as for `listAgentRegistry`. */
+export async function listAdminAgentRegistry(
+  options?: HttpOptions
+): Promise<AdminAgentRegistryRow[]> {
+  const response = await httpClient.fetch(
+    `${AGENT_REGISTRY_API}/admin/registry`,
+    options
+  );
   const body = await handleResponse<{ agents: AdminAgentRegistryRow[] }>(
     response,
     "Failed to load the agent registry"
@@ -243,14 +288,15 @@ export async function listAdminAgentRegistry(): Promise<AdminAgentRegistryRow[]>
   return body.agents;
 }
 
-/** ADMIN: set one agent's tenant default. */
+/** ADMIN: set one agent's tenant default. Sent once, for the reason
+ *  {@link putAgentPref} gives. */
 export async function putAgentRegistryDefaults(
   agentName: string,
   update: AgentRegistryDefaultsUpdate
 ): Promise<void> {
   const response = await httpClient.fetch(
     `${AGENT_REGISTRY_API}/admin/registry/${encodeURIComponent(agentName)}`,
-    { method: "PUT", body: JSON.stringify(update) }
+    { method: "PUT", body: JSON.stringify(update), maxRetries: 0 }
   );
   await handleResponse<unknown>(response, "Failed to save the tenant default");
 }

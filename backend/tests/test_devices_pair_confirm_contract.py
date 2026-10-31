@@ -62,7 +62,7 @@ def _build_test_app() -> FastAPI:
     test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
     # The production handler, so these tests pin the shape a client actually
     # receives: it rewrites a dict detail rather than nesting it.
-    test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     test_app.include_router(devices_router, prefix=API_PREFIX)
     return test_app
 
@@ -277,7 +277,7 @@ class TestPairConfirmSendsCoordArmB:
         enabled, gate, token, httpx_client = _patches()
         with enabled, gate, token, httpx_client as MockClient:
             instance = AsyncMock()
-            bad = _mock_response(status_code=500, text="upstream exploded")
+            bad = _mock_response(status_code=409, text="refused, not json")
             bad.json.side_effect = ValueError("not json")
             instance.post.return_value = bad
             _configure_mock_client(MockClient, instance)
@@ -289,12 +289,135 @@ class TestPairConfirmSendsCoordArmB:
 
         assert resp.status_code == 502, resp.text
         detail = resp.json()
-        assert detail["coord_status"] == 500
-        assert detail["coord_body"] == "upstream exploded"
-        assert detail["message"] == "Coord refused pairing (HTTP 500)."
+        assert detail["coord_status"] == 409
+        assert detail["coord_body"] == "refused, not json"
+        assert detail["message"] == "Coord refused pairing (HTTP 409)."
         assert not any(
             k in detail for k in ("coord_code", "coord_hint", "coord_skip_reasons")
         )
+
+    @pytest.mark.parametrize("coord_status", [500, 501, 505, 599])
+    def test_coord_5xx_relays_its_status_and_a_fixed_sentence_only(
+        self, client: TestClient, coord_status: int
+    ) -> None:
+        # Coord's 5xx text can carry SQL / pool context: none of it, nor any
+        # field parsed from it, reaches the browser.
+        leak = "pg_error::wrap: relation coord.devices connection pool exhausted"
+        enabled, gate, token, httpx_client = _patches()
+        with enabled, gate, token, httpx_client as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=coord_status,
+                json_data={"error": leak, "code": leak, "hint": leak},
+                text=leak,
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = client.post(
+                f"{API_PREFIX}/pair-confirm",
+                json={"state": _STATE, "device_id": _DEVICE_ID},
+            )
+
+        assert resp.status_code == 502, resp.text
+        assert leak not in resp.text
+        detail = resp.json()
+        assert detail["error"] == "BAD_GATEWAY"
+        assert detail["coord_status"] == coord_status
+        # Coord consumed the one-shot pairing state before most of its 5xx
+        # paths, so a retry of this pair-confirm cannot succeed: the advice is
+        # to start pairing again, never "Retry".
+        assert detail["message"] == (
+            f"Coord failed to complete pairing (HTTP {coord_status}). "
+            "Start pairing again from your device."
+        )
+        assert "Retry" not in detail["message"]
+        assert not any(
+            k in detail
+            for k in ("coord_body", "coord_code", "coord_hint", "coord_skip_reasons")
+        )
+
+    # Not 503: the proxy retries a coord 503 and answers its own outage.
+    @pytest.mark.parametrize("coord_status", [500, 501])
+    def test_coord_5xx_relays_coords_static_restart_hint(
+        self, client: TestClient, coord_status: int
+    ) -> None:
+        # Coord's membership-probe 500 (`PairingRefusal::INTERNAL`) carries
+        # `hint: "restart pairing"`, a compile-time constant: it is relayed,
+        # while the rest of the 5xx body still is not.
+        leak = "pg_error::wrap: relation coord.tenant_members connection reset"
+        enabled, gate, token, httpx_client = _patches()
+        with enabled, gate, token, httpx_client as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=coord_status,
+                json_data={
+                    "error": leak,
+                    "code": "internal_error",
+                    "hint": "restart pairing",
+                },
+                text=leak,
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = client.post(
+                f"{API_PREFIX}/pair-confirm",
+                json={"state": _STATE, "device_id": _DEVICE_ID},
+            )
+
+        assert resp.status_code == 502, resp.text
+        assert leak not in resp.text
+        detail = resp.json()
+        assert detail["coord_hint"] == "restart pairing"
+        assert not any(
+            k in detail for k in ("coord_body", "coord_code", "coord_skip_reasons")
+        )
+
+    @pytest.mark.parametrize(
+        "hint",
+        ["restart pairing; pool exhausted", "Restart pairing", "", 7, [], {}],
+    )
+    def test_coord_5xx_drops_a_hint_that_is_not_a_static_value(
+        self, client: TestClient, hint: object
+    ) -> None:
+        enabled, gate, token, httpx_client = _patches()
+        with enabled, gate, token, httpx_client as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=500, json_data={"error": "x", "hint": hint}, text="x"
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = client.post(
+                f"{API_PREFIX}/pair-confirm",
+                json={"state": _STATE, "device_id": _DEVICE_ID},
+            )
+
+        assert resp.status_code == 502, resp.text
+        assert "coord_hint" not in resp.json()
+
+    def test_coord_5xx_with_a_non_json_body_relays_no_hint(
+        self, client: TestClient
+    ) -> None:
+        enabled, gate, token, httpx_client = _patches()
+        with enabled, gate, token, httpx_client as MockClient:
+            instance = AsyncMock()
+            response = _mock_response(status_code=500, text="<html>bad gateway")
+            response.json.side_effect = ValueError("not json")
+            instance.post.return_value = response
+            _configure_mock_client(MockClient, instance)
+
+            resp = client.post(
+                f"{API_PREFIX}/pair-confirm",
+                json={"state": _STATE, "device_id": _DEVICE_ID},
+            )
+
+        assert resp.status_code == 502, resp.text
+        detail = resp.json()
+        assert detail["message"] == (
+            "Coord failed to complete pairing (HTTP 500). "
+            "Start pairing again from your device."
+        )
+        assert "coord_hint" not in detail
 
     def test_unlinked_operator_is_refused_before_any_outbound_call(
         self, client: TestClient

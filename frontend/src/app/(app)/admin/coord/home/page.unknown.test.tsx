@@ -25,9 +25,16 @@ import { render, screen, waitFor, within } from "@testing-library/react";
  * `Response`, because a body can be read only once.
  */
 const httpFetch = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
-}));
+// The page's reads beside the project state (machine roster, the queue
+// counts) are answered calm by `supplementReads` unless a test says otherwise.
+vi.mock("@/services/service-factory", async () => {
+  const s = await import("./__fixtures__/supplementReads");
+  return {
+    httpClient: s.homeTransport(
+      (...args: unknown[]) => httpFetch(...args) as Promise<Response>
+    ),
+  };
+});
 
 /** An answer carrying `body` as JSON. */
 function jsonResponse(body: unknown, status = 200): Response {
@@ -265,9 +272,11 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
         ).toHaveTextContent(
           "Not known — coord gave no reading of the decisions waiting on you."
         );
+        // The queues beside it are read (calm by default here), so the
+        // strip's figure is theirs — marked so, and never "nothing needs you".
         expect(
           screen.getByTestId("coord-home.strip.needs-you")
-        ).toHaveTextContent(/^needs you –$/);
+        ).toHaveTextContent(/^needs you 0 \(from queues\)$/);
         expect(strip()).toHaveAttribute("data-health-level", "amber");
         expect(strip()).toHaveTextContent(
           "Cannot tell — part of this view is not read"
@@ -301,9 +310,10 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       ).toHaveTextContent(
         "Not known — coord does not serve the decisions waiting on you on this view yet."
       );
+      // The queue counts beside it are read: the figure is theirs, marked.
       expect(
         screen.getByTestId("coord-home.strip.needs-you")
-      ).toHaveTextContent(/^needs you –$/);
+      ).toHaveTextContent(/^needs you 0 \(from queues\)$/);
       expect(strip()).toHaveAttribute("data-health-level", "amber");
       expect(strip()).toHaveTextContent(
         "Cannot tell — part of this view is not read"
@@ -334,9 +344,9 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       ).toHaveTextContent("Coord served no initiative reading — unknown.");
       expect(
         screen.getByTestId("coord-home.strip.no-change")
-      ).toHaveTextContent(/–$/);
+      ).toHaveTextContent(/^– units /);
       expect(strip()).toHaveAttribute("data-health-level", "amber");
-      expect(strip()).toHaveTextContent("Not read: on track unknown.");
+      expect(strip()).toHaveTextContent("Not read: work by state unknown.");
       expect(screen.queryByText(/^No work units\.$/)).not.toBeInTheDocument();
     });
 
@@ -543,10 +553,13 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       for (const id of [
         "coord-home.strip.needs-you",
         "coord-home.strip.degraded",
-        "coord-home.strip.no-change",
         "coord-home.strip.unknown-sources",
       ])
         expect(screen.getByTestId(id).textContent).toMatch(/–$/);
+      // The no-change badge leads with its count (plain words, then the unit).
+      expect(
+        screen.getByTestId("coord-home.strip.no-change").textContent
+      ).toMatch(/^– units /);
       for (const id of [
         "coord-home.needs-you.not-read",
         "coord-home.degrading.not-read",

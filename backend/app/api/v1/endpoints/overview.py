@@ -50,8 +50,11 @@ router = APIRouter()
 
 
 async def get_overview_tenant_id(
-    caller: OverviewCaller = Depends(get_overview_caller),
+    # Resolved FIRST, so a non-Cognito caller (a coord device JWT) is refused
+    # here before the caller resolution spends a coord round-trip: these read
+    # routes are Cognito-only.
     _user: UserModel = Depends(get_current_active_user_async),
+    caller: OverviewCaller = Depends(get_overview_caller),
 ) -> UUID:
     """The ACTIVE tenant, for any member of it — the read gate.
 
@@ -143,8 +146,7 @@ async def write_settings(
         record_id=str(tenant_id),
         action="create" if before is None else "update",
         source=change_log.change_source(request),
-        actor=access.actor,
-        actor_user_id=access.user_id,
+        **change_log.attribution(access, request),
         before=before,
         after=after,
         version_before=before.version if before else None,
