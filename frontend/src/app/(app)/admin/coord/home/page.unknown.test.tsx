@@ -334,7 +334,7 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       ).toHaveTextContent("Coord served no initiative reading — unknown.");
       expect(
         screen.getByTestId("coord-home.strip.no-change")
-      ).toHaveTextContent(/–$/);
+      ).toHaveTextContent(/^– units /);
       expect(strip()).toHaveAttribute("data-health-level", "amber");
       expect(strip()).toHaveTextContent("Not read: work by state unknown.");
       expect(screen.queryByText(/^No work units\.$/)).not.toBeInTheDocument();
@@ -543,10 +543,13 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       for (const id of [
         "coord-home.strip.needs-you",
         "coord-home.strip.degraded",
-        "coord-home.strip.no-change",
         "coord-home.strip.unknown-sources",
       ])
         expect(screen.getByTestId(id).textContent).toMatch(/–$/);
+      // The no-change badge leads with its count (plain words, then the unit).
+      expect(
+        screen.getByTestId("coord-home.strip.no-change").textContent
+      ).toMatch(/^– units /);
       for (const id of [
         "coord-home.needs-you.not-read",
         "coord-home.degrading.not-read",

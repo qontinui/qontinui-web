@@ -170,7 +170,12 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
     const strip = deriveHomeStrip(null);
     expect(strip.level).toBe("amber");
     expect(strip.headline).toMatch(/Cannot tell/);
-    expect(strip.badges.every((b) => b.label.endsWith("–"))).toBe(true);
+    // Every count is a dash; the no-change badge leads with its count.
+    expect(
+      strip.badges.every((b) =>
+        b.key === "no-change" ? b.label.startsWith("– ") : b.label.endsWith("–")
+      )
+    ).toBe(true);
   });
 
   it("is red when an operator fork is waiting, even beside an unread block", () => {
@@ -210,10 +215,10 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
     expect(deriveHomeStrip(parseProjectState(drained)).level).toBe("green");
   });
 
-  it("renders the stall badge as 'no change 14 d', never 'stalled'", () => {
+  it("renders the stall badge in plain words with its unit, never 'stalled'", () => {
     const strip = deriveHomeStrip(parseProjectState(calmBody()));
     const labels = strip.badges.map((b) => b.label);
-    expect(labels).toContain("no change 14 d 0");
+    expect(labels).toContain("0 units with no recorded change in 14 days");
     expect(labels.join(" ")).not.toMatch(/stall/i);
   });
 
