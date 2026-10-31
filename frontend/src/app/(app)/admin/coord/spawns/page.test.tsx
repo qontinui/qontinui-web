@@ -75,6 +75,7 @@ import {
   rowFx,
   statsFx,
 } from "./__fixtures__/coordSpawns";
+import { UNKNOWN_AMBER } from "@/components/console";
 import CoordSpawnsPage from "./page";
 
 /** Let every read in flight — including the poll's second, dependent step — land. */
@@ -431,6 +432,10 @@ describe("/admin/coord/spawns — the failure arms", () => {
     const banner = screen.getByTestId("coord-spawns-unknown-banner");
     expect(banner.getAttribute("data-issue")).toBe("error");
     expect(banner.textContent).toContain("Last refresh failed");
+    // The declared ignorance floor, never a hand-typed amber (§4.1).
+    for (const cls of UNKNOWN_AMBER.split(" ")) {
+      expect(banner.classList.contains(cls)).toBe(true);
+    }
     expect(screen.getByTestId("coord-spawns-health").textContent).toContain(
       "Last refresh failed"
     );
