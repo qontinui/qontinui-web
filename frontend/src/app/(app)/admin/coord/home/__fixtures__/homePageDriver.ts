@@ -11,6 +11,10 @@ import { fireEvent, screen, within } from "@testing-library/react";
  * Run `check` on the page as rendered, then behind every disclosure: the
  * recently-cleared panel opened, then every record row expanded in turn (a
  * list keeps one row open, so each is checked open on its own).
+ *
+ * The rows are collected once, after the panel opens and before any row is
+ * expanded: a record row that appears only inside another row's expanded
+ * detail is checked as part of that detail, but is never itself expanded.
  */
 export function checkBehindEveryDisclosure(check: () => void) {
   check();

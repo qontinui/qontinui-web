@@ -361,7 +361,7 @@ const ARMS: Arm[] = [
     body: { on_track: onTrack({ groups: [namedOne({ omitted: 0 })] }) },
     region: ON_TRACK,
     open: "row",
-    says: [],
+    says: ["Overview copy pass"],
     never: [/Whether more exist/, /more not named here/],
   },
   {
