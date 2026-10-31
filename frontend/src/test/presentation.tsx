@@ -49,14 +49,17 @@
  *   (`uiBridgeBinding.ts`).
  * - **(c) a cost** — `CostFigure`'s operator-mode figure, the "list-price
  *   equivalent" label, or any currency figure (`$12`, `€0.40`, `3 USD`) in
- *   text or in a `title` / `aria-label` / `alt` / `placeholder` / input value.
+ *   text or in a `title` / `aria-label` / `aria-description` / `alt` /
+ *   `placeholder` / input or textarea value.
  * - **(d) a missing caption** — each key in `options.captions` must render.
  * - **(e) an identity** — an email address (personal data) or a UUID (an
- *   internal identifier) in text or in a `title` / `aria-label` / `alt` /
- *   `placeholder` / input value, always; and any of `options.forbidden` — the
- *   fixture's hostnames, device ids, other parties' names — anywhere, matched
- *   ignoring case. A page test passes the real names its fixture holds, so the
- *   check sees exactly what the lens was meant to hide (D3.3).
+ *   internal identifier) in text or in a `title` / `aria-label` /
+ *   `aria-description` / `alt` / `placeholder` / input or textarea value,
+ *   always; and any of `options.forbidden` — the fixture's hostnames,
+ *   device ids, other parties' names — in text or in those same text-bearing
+ *   attributes, matched ignoring case. It does NOT read `href`, `data-*` or
+ *   other attributes; scan those with `attributesNaming`. A page test passes
+ *   the real names its fixture holds, so the check sees exactly what the lens was meant to hide (D3.3).
  * - **(f) a view that is not on the screen** — checks (a)–(e) look for what
  *   is shown, so over nothing they pass whatever the page would render. A
  *   render's view (one carrying its `container`, as `renderInPresentationMode`
