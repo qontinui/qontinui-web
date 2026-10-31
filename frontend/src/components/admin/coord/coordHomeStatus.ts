@@ -2066,9 +2066,15 @@ export function deriveHomeStrip(
     // was the roster: say what keeps it from calm, not "not read". Any other
     // gap is a clause, as above; the detail names it.
     const noVerdict = mc?.noVerdict ?? 0;
+    // The cut is named after the machines with no verdict, never dropped:
+    // "1 machine has no verdict" alone reads as the only thing unknown.
+    const cutClause =
+      machines !== null && rosterCutHidesHealth(machines.cut)
+        ? `, and coord's roster ${machines.cut.kind === "may_be_cut" ? "may be" : "is"} cut off`
+        : "";
     headline =
       rosterReadNotCalm === "no_verdict"
-        ? `Nothing needs you, but ${noVerdict} ${noVerdict === 1 ? "machine has" : "machines have"} no health verdict — ${noVerdict === 1 ? "its" : "their"} health is unknown`
+        ? `Nothing needs you, but ${noVerdict} ${noVerdict === 1 ? "machine has" : "machines have"} no health verdict — ${noVerdict === 1 ? "its" : "their"} health is unknown${cutClause}`
         : rosterReadNotCalm === "no_live"
           ? "Nothing needs you and no live machine reports — none can be called healthy"
           : `Nothing needs you and no listed machine is degrading — coord's roster ${machines?.cut.kind === "may_be_cut" ? "may be" : "is"} cut off`;
