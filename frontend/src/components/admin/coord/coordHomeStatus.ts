@@ -1149,7 +1149,7 @@ export function degradationsGapPhrase(
     watched.unnamed > 0 ? areasNotNamedHere(watched.unnamed) : "",
   ]
     .filter(Boolean)
-    .join(", and ");
+    .join(" and ");
   if (watchedAreas) {
     parts.push(`not every watcher is fresh (${watchedAreas})`);
   }
@@ -1160,11 +1160,16 @@ export function degradationsGapPhrase(
   for (const area of unwatched.named) {
     parts.push(`the ${area} reading could not be taken`);
   }
+  // When the watcher clause already counted unnamed areas, these are others:
+  // "1 area not named here" twice would read as one area, under-reading the gap.
+  const other = watched.unnamed > 0 ? "other " : "";
   if (unwatched.unnamed === 1) {
-    parts.push(`the reading for ${areasNotNamedHere(1)} could not be taken`);
+    parts.push(
+      `the reading for 1 ${other}area not named here could not be taken`
+    );
   } else if (unwatched.unnamed > 1) {
     parts.push(
-      `readings for ${areasNotNamedHere(unwatched.unnamed)} could not be taken`
+      `readings for ${unwatched.unnamed} ${other}areas not named here could not be taken`
     );
   }
   const partial = [

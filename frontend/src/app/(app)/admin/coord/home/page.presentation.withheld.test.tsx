@@ -300,7 +300,7 @@ describe("a plane the page's table does not name", () => {
     expect(
       screen.getByTestId("coord-home.degrading.incomplete")
     ).toHaveTextContent(
-      /^Incomplete view — not every watcher is fresh \(1 area not named here\); the reading for 1 area not named here could not be taken\. /
+      /^Incomplete view — not every watcher is fresh \(1 area not named here\); the reading for 1 other area not named here could not be taken\. /
     );
 
     // The watcher lines, whose element carries no key either.
