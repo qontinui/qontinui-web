@@ -652,7 +652,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     ];
     expect(unitNames("true").length).toBeGreaterThanOrEqual(2);
     for (const name of unitNames("true")) {
-      expect(name.closest("[data-lens-link]")).toBeNull();
+      expect(name.closest("a, [data-lens-link]")).toBeNull();
     }
     expect(unitNames("false").map((n) => n.textContent)).toEqual([
       FIRST_PARTY_UNIT_TITLE,

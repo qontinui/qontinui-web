@@ -58,7 +58,6 @@ import {
   usePresentationMode,
   usePresentationScopeState,
   useRedactor,
-  WITHHELD,
 } from "@/components/presentation";
 import { FAILURE_SENTENCE_WITHHELD } from "@/components/operations/presentedFailure";
 import {
@@ -87,6 +86,7 @@ import {
   RegionCaption,
   useLinkOpens,
   usePlaneLabel,
+  usePlaneWords,
   useRowKey,
   useSubjectText,
 } from "./HomeLens";
@@ -112,6 +112,7 @@ import {
   attributedText,
   initiativeAttributionPhrase,
   decisionDomainLabel,
+  isKnownPlane,
   withoutVerdictWords,
   remediationPhrase,
   sourceErrorSentence,
@@ -765,6 +766,7 @@ export function DegradingSection({
   const { presenting } = usePresentationMode();
   const rowKey = useRowKey();
   const planeName = usePlaneLabel();
+  const planeWords = usePlaneWords();
   const open = openDegradations(deg);
   const declared = [
     ...(deg.open ?? []).filter((r) => r.declared),
@@ -820,8 +822,9 @@ export function DegradingSection({
                   : (degradationsGapTitle(deg) ?? undefined)
               }
             >
-              Incomplete view — {degradationsGapPhrase(deg, sources, planeName)}
-              . The rows below are real; there may be others.
+              Incomplete view —{" "}
+              {degradationsGapPhrase(deg, sources, planeWords)}. The rows below
+              are real; there may be others.
             </p>
           )}
           {open === null && (
@@ -940,9 +943,10 @@ export function DegradingSection({
               {deg.planes.map((p) => (
                 <li
                   key={p.plane}
-                  // Coord's own key: not on the element when its area is withheld.
+                  // Coord's own key: not on the element while presenting a
+                  // plane the table does not name.
                   data-plane={
-                    planeName(p.plane) === WITHHELD ? undefined : p.plane
+                    presenting && !isKnownPlane(p.plane) ? undefined : p.plane
                   }
                   // Watcher names are coord's internal vocabulary: a title
                   // for the operator only.
@@ -994,8 +998,9 @@ type UnitRepos = Readonly<
  * unit that fails is not even handed to `LensLink`, which renders plain text
  * today (the unit's page is not presentation-ready) and would render an anchor
  * carrying the slug the day `/admin/coord/work-units/[slug]` is registered.
- * The page tests pin that by `data-lens-link`, so the guard is not dormant
- * until then.
+ * The page tests pin that by asking for neither an anchor nor a
+ * `data-lens-link` (which `LensLink` puts on both of its arms), so the guard
+ * is not dormant until then.
  */
 function NamedUnitItem({
   u,
