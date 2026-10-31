@@ -5,6 +5,7 @@
  * operator mode and in presentation mode.
  */
 
+import { distinguishDevices } from "./deviceDistinction";
 import { describe, expect, it } from "vitest";
 import { parseDispatchRoles } from "@/components/operations/fleetDispatchRoles";
 import { parseFleetDrain } from "@/components/operations/fleetDrain";
@@ -279,5 +280,43 @@ describe("in presentation mode", () => {
         presenting: true,
       })
     ).not.toContain("502");
+  });
+});
+
+describe("distinguishDevices — two device lines that would read the same", () => {
+  const A = "aaaaaaaa-0000-4000-8000-000000000001";
+  const B = "bbbbbbbb-0000-4000-8000-000000000002";
+  const C = "cccccccc-0000-4000-8000-000000000003";
+  const ordinals: Record<string, number> = { [A]: 5, [B]: 2, [C]: 9 };
+
+  it("gives the operator each shared name's short device id, and leaves a unique name alone", () => {
+    const out = distinguishDevices(
+      [
+        { deviceId: A, name: "host-1" },
+        { deviceId: B, name: "HOST-1" },
+        { deviceId: C, name: "host-2" },
+      ],
+      false,
+      (id) => ordinals[id] ?? null
+    );
+    expect([...out.entries()]).toEqual([
+      [A, "aaaaaaaa"],
+      [B, "bbbbbbbb"],
+    ]);
+  });
+
+  it("numbers the devices that share a letter while presenting, by the registry's first-seen order, naming no id", () => {
+    const out = distinguishDevices(
+      [
+        { deviceId: A, name: "Machine A" },
+        { deviceId: B, name: "Machine A" },
+        { deviceId: C, name: "Machine B" },
+      ],
+      true,
+      (id) => ordinals[id] ?? null
+    );
+    expect(out.get(B)).toBe("device 1");
+    expect(out.get(A)).toBe("device 2");
+    expect(out.has(C)).toBe(false);
   });
 });

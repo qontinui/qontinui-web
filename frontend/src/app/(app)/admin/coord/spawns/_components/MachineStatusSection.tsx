@@ -13,9 +13,13 @@
  * Machines are named through `MachineName` (D3.3): their real name for the
  * operator, their session alias ("Machine A") while presenting, from the one
  * registry every lens panel shares — and no device id renders while
- * presenting, in text or in a title.
+ * presenting, in text or in a title. A line is one DEVICE, keyed on its device
+ * id; when two lines would read the same, each carries what tells it apart
+ * (`deviceDistinction.ts`): a short device id for the operator, "device 1/2"
+ * while presenting.
  */
 
+import { useMemo } from "react";
 import { Server } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { UNKNOWN_AMBER } from "@/components/console";
@@ -23,10 +27,13 @@ import {
   MachineName,
   SectionCaption,
   captionEntry,
+  useDeviceOrdinals,
+  useMachineAliaser,
   type SectionSource,
 } from "@/components/presentation";
 import { cn } from "@/lib/utils";
 import { UnknownNote } from "./UnknownNote";
+import { distinguishDevices } from "../_lib/deviceDistinction";
 import {
   IN_FLIGHT_UNKNOWN,
   type MachineCell,
@@ -78,6 +85,20 @@ export function MachineStatusSection({
   sources: readonly SectionSource[];
 }) {
   const title = captionEntry("agentic-activity.machines").title;
+  const nameOf = useMachineAliaser();
+  const ordinalOf = useDeviceOrdinals();
+  const distinct = useMemo(
+    () =>
+      distinguishDevices(
+        (lines ?? []).map((l) => ({
+          deviceId: l.key,
+          name: nameOf(l.identity),
+        })),
+        presenting,
+        ordinalOf
+      ),
+    [lines, nameOf, ordinalOf, presenting]
+  );
   return (
     <section
       className="space-y-2"
@@ -151,6 +172,18 @@ export function MachineStatusSection({
                       identity={line.identity}
                       data-testid="coord-spawns-machine-name"
                     />
+                    {distinct.has(line.key) && (
+                      <span
+                        className={cn(
+                          "ml-1.5 text-[11px] font-normal text-muted-foreground",
+                          !presenting && "font-mono"
+                        )}
+                        data-testid="coord-spawns-machine-distinct"
+                      >
+                        {presenting ? ", " : "· "}
+                        {distinct.get(line.key)}
+                      </span>
+                    )}
                     {line.stale && (
                       <Badge
                         variant="outline"

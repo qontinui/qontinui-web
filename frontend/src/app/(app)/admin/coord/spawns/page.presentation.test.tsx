@@ -623,6 +623,34 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(screen.queryByTestId("coord-spawns-machines-stale")).toBeNull();
   });
 
+  it("tells apart two devices on one host without naming either device", async () => {
+    routes.fleet = () => ({
+      body: {
+        devices: [
+          { device_id: DEVICE_A, hostname: HOST_A },
+          { device_id: DEVICE_B, hostname: HOST_A },
+        ],
+      },
+    });
+    const view = renderInPresentationMode(<CoordSpawnsPage />, {
+      scope: SCOPE,
+    });
+    await settle();
+    const lines = screen.getAllByTestId("coord-spawns-machine");
+    expect(lines).toHaveLength(2);
+    // One computer keeps one letter on every panel; each device line says
+    // which of its devices it is.
+    expect(
+      lines.map((l) => l.textContent?.match(/^Machine [A-Z]+, device \d/)?.[0])
+    ).toEqual(["Machine A, device 1", "Machine A, device 2"]);
+    const html = screen.getByTestId("coord-spawns-machines-section").outerHTML;
+    for (const id of [DEVICE_A, DEVICE_B]) {
+      expect(html).not.toContain(id);
+      expect(html).not.toContain(id.slice(0, 8));
+    }
+    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+  });
+
   it("names what the matrix leaves out, and lists a row it cannot classify without its name", async () => {
     routes.effective = () => ({
       body: {
@@ -755,6 +783,32 @@ describe("/admin/coord/spawns for the operator — the same fixtures", () => {
       screen.getByTestId("coord-spawns-machines-stale").textContent
     ).toContain("this list is from the last good read");
     expect(screen.getAllByTestId("coord-spawns-machine-stale")).toHaveLength(2);
+  });
+
+  it("gives two devices that share a hostname their short device ids, and only those two", async () => {
+    routes.fleet = () => ({
+      body: {
+        devices: [
+          { device_id: DEVICE_A, hostname: HOST_A },
+          { device_id: DEVICE_B, hostname: HOST_A },
+          {
+            device_id: "11111111-2222-4333-8444-555555555555",
+            hostname: HOST_B,
+          },
+        ],
+      },
+    });
+    render(<CoordSpawnsPage />);
+    await settle();
+    const lines = screen.getAllByTestId("coord-spawns-machine");
+    expect(lines).toHaveLength(3);
+    expect(
+      lines.map(
+        (l) =>
+          within(l).queryByTestId("coord-spawns-machine-distinct")
+            ?.textContent ?? null
+      )
+    ).toEqual([`· ${DEVICE_A.slice(0, 8)}`, `· ${DEVICE_B.slice(0, 8)}`, null]);
   });
 
   it("shows the real names, the switches and the launcher the lens withholds", async () => {
