@@ -55,14 +55,16 @@ function mergeSettingsUnread(
     );
   }
   if (read.profile === null && read.dial === null) {
-    return unknownCell(
-      "UNKNOWN",
-      presenting
+    // "Still being read" only while a read is out: an answered read with no
+    // profile is a different fact, in either mode.
+    const title = read.loading
+      ? presenting
         ? "The project's merge settings are still being read."
-        : read.loading
-          ? "The merge settings are still being read."
-          : "The merge settings answered with no profile."
-    );
+        : "The merge settings are still being read."
+      : presenting
+        ? "The project's merge settings answered with no settings."
+        : "The merge settings answered with no profile.";
+    return unknownCell("UNKNOWN", title);
   }
   return null;
 }
