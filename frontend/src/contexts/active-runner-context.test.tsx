@@ -85,6 +85,7 @@ function releasePinTo(poolId: string) {
           status: "pin_ineligible",
           deviceId: input.preferred,
           reason: "offline",
+          rawReason: "offline",
           detail: "no heartbeat for 10 minutes",
           missingCapabilities: [],
         }
@@ -94,7 +95,11 @@ function releasePinTo(poolId: string) {
           via: "pool",
           pinReleased:
             input.preferred && input.preferred !== poolId
-              ? { reason: "offline", detail: "no heartbeat for 10 minutes" }
+              ? {
+                  reason: "offline",
+                  rawReason: "offline",
+                  detail: "no heartbeat for 10 minutes",
+                }
               : null,
         };
 }
@@ -654,6 +659,8 @@ describe("ActiveRunnerProvider auto-select is coord's resolver", () => {
       status: "no_capable",
       missing: [],
       onlineDevices: 0,
+      staleCapable: 0,
+      unprobedOnlineDevices: 0,
       pinReleased: null,
     });
     setList([runner(REMOTE_ID, 9876), runner(LOCAL_ID, 9877)]);
@@ -960,7 +967,11 @@ describe("ActiveRunnerProvider disconnect", () => {
             status: "resolved",
             deviceId: LOCAL_ID,
             via: "pool",
-            pinReleased: { reason: "offline", detail: null },
+            pinReleased: {
+              reason: "offline",
+              rawReason: "offline",
+              detail: null,
+            },
           };
     // runners[0] is remote; the picked runner is listed and then leaves.
     setList([
@@ -1064,7 +1075,7 @@ describe("dispatchTargetFrom — where NEW placeable work goes", () => {
         status: "resolved",
         deviceId: REMOTE_ID,
         via: "pool",
-        pinReleased: { reason: "drained", detail: null },
+        pinReleased: { reason: "drained", rawReason: "drained", detail: null },
       },
     });
     expect(out.runnerId).toBe(REMOTE_ID);
@@ -1076,6 +1087,70 @@ describe("dispatchTargetFrom — where NEW placeable work goes", () => {
       text: "Your pick old-laptop is drained — taken out of service for new work — running on box-1111.",
     });
   });
+
+  it("a pick released for a code this build predates names coord's code, not 'malformed'", () => {
+    const out = dispatchTargetFrom({
+      ...base,
+      pin: localPin,
+      resolution: {
+        status: "resolved",
+        deviceId: REMOTE_ID,
+        via: "pool",
+        pinReleased: { reason: null, rawReason: "quarantined", detail: null },
+      },
+    });
+    expect(out.runnerId).toBe(REMOTE_ID);
+    expect(out.notice).toMatchObject({ kind: "pin_released", reason: null });
+    expect(out.notice?.text).toBe(
+      "Your pick this-box is not eligible (coord says “quarantined”) — running on box-1111."
+    );
+  });
+
+  it.each([
+    [0, 0, "None of your runners is online and able to take new work."],
+    [
+      1,
+      0,
+      "None of your runners is online and able to take new work. 1 runner online has not yet run the credential probes this work needs; retry once it has.",
+    ],
+    [
+      0,
+      2,
+      "None of your runners is online and able to take new work. 2 runners able to take this work were last seen too long ago to wait for.",
+    ],
+    [
+      2,
+      0,
+      "None of your runners is online and able to take new work. 2 runners online have not yet run the credential probes this work needs; retry once they have.",
+    ],
+    [
+      0,
+      1,
+      "None of your runners is online and able to take new work. 1 runner able to take this work was last seen too long ago to wait for.",
+    ],
+    [
+      1,
+      1,
+      "None of your runners is online and able to take new work. 1 runner online has not yet run the credential probes this work needs; retry once it has. 1 runner able to take this work was last seen too long ago to wait for.",
+    ],
+  ])(
+    "no capable runner names coord's counts (unprobed %i, stale %i)",
+    (unprobedOnlineDevices, staleCapable, message) => {
+      expect(
+        dispatchTargetFrom({
+          ...base,
+          resolution: {
+            status: "no_capable",
+            missing: [],
+            onlineDevices: unprobedOnlineDevices,
+            staleCapable,
+            unprobedOnlineDevices,
+            pinReleased: null,
+          },
+        })
+      ).toMatchObject({ runnerId: null, reason: "no_capable", message });
+    }
+  );
 
   it("a move off the pick is announced even when coord gives no reason", () => {
     const out = dispatchTargetFrom({
@@ -1138,6 +1213,8 @@ describe("dispatchTargetFrom — where NEW placeable work goes", () => {
         status: "no_capable",
         missing: [],
         onlineDevices: 0,
+        staleCapable: 0,
+        unprobedOnlineDevices: 0,
         pinReleased: null,
       },
       "no_capable",
@@ -1230,6 +1307,7 @@ describe("machineBoundDispatchFrom — machine-bound work never moves (D2)", () 
         status: "pin_ineligible",
         deviceId: LOCAL_ID,
         reason: "missing_capabilities",
+        rawReason: "missing_capabilities",
         detail: "needs screen capture",
         missingCapabilities: ["screen_capture"],
       },
@@ -1245,6 +1323,28 @@ describe("machineBoundDispatchFrom — machine-bound work never moves (D2)", () 
     });
     expect(out.message).toMatch(/Your pick this-box can't run this/);
     expect(out.message).toMatch(/missing: screen_capture/);
+  });
+
+  it("a pick refused for a code this build predates is still refused, naming coord's code", () => {
+    const out = machineBoundDispatchFrom({
+      runners: listed,
+      pin: localPin,
+      placeable: placeableOn(REMOTE_ID),
+      resolution: {
+        status: "pin_ineligible",
+        deviceId: LOCAL_ID,
+        reason: null,
+        rawReason: "quarantined",
+        detail: "quarantined by the operator",
+        missingCapabilities: [],
+      },
+    });
+    expect(out.runnerId).toBeNull();
+    expect(out.reason).toBe("pin_ineligible");
+    expect(out.pinRefused).toMatchObject({ deviceId: LOCAL_ID, reason: null });
+    expect(out.message).toMatch(
+      /Your pick this-box can't run this: it is not eligible \(coord says “quarantined”\)\./
+    );
   });
 
   it("coord answering with ANOTHER device is refused, never taken", () => {
@@ -1372,7 +1472,11 @@ describe("the new-work target and the read target agree whenever new work is all
           status: "resolved",
           deviceId: LOCAL_ID,
           via: "pool",
-          pinReleased: { reason: "offline", detail: null },
+          pinReleased: {
+            reason: "offline",
+            rawReason: "offline",
+            detail: null,
+          },
         },
       },
       {
@@ -1429,12 +1533,13 @@ describe("refusal === null ⇒ new work and reads address the same device (sweep
       status: "resolved",
       deviceId: LOCAL_ID,
       via: "pool",
-      pinReleased: { reason: "offline", detail: null },
+      pinReleased: { reason: "offline", rawReason: "offline", detail: null },
     },
     {
       status: "pin_ineligible",
       deviceId: REMOTE_ID,
       reason: "drained",
+      rawReason: "drained",
       detail: "drained",
       missingCapabilities: [],
     },
@@ -1442,10 +1547,18 @@ describe("refusal === null ⇒ new work and reads address the same device (sweep
       status: "pin_ineligible",
       deviceId: LOCAL_ID,
       reason: "offline",
+      rawReason: "offline",
       detail: "offline",
       missingCapabilities: [],
     },
-    { status: "no_capable", missing: [], onlineDevices: 0, pinReleased: null },
+    {
+      status: "no_capable",
+      missing: [],
+      onlineDevices: 0,
+      staleCapable: 0,
+      unprobedOnlineDevices: 0,
+      pinReleased: null,
+    },
     { status: "all_drained", pinReleased: null },
     { status: "drain_unreadable" },
     {
