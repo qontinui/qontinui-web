@@ -532,14 +532,13 @@ export function readRosterCut(body: RosterCutRef): RosterCut {
   const droppedOversized = isOversizedCount(body.degradable_dropped);
   const limit = rowCapField(body.row_cap, "soft") ?? COORD_ROSTER_ROW_LIMIT;
   // `truncated: false` is a completeness claim: not trusted beside a
-  // malformed sibling. (A larger `total` or a non-zero `degradable_dropped`
-  // beside it is a cut, read below before the flag is.)
-  const totalMalformed =
-    body.total !== undefined && total === null && !totalOversized;
+  // malformed sibling. (A larger `total`, a non-zero `degradable_dropped`, or
+  // either past the safe-integer range beside it is a cut, read below before
+  // the flag is, so dropping the flag beside an oversized count changes
+  // nothing.)
+  const totalMalformed = body.total !== undefined && total === null;
   const droppedMalformed =
-    body.degradable_dropped !== undefined &&
-    degradableDropped === null &&
-    !droppedOversized;
+    body.degradable_dropped !== undefined && degradableDropped === null;
   if (truncated === false && (totalMalformed || droppedMalformed)) {
     truncated = null;
   }
