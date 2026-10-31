@@ -51,7 +51,8 @@ export const FIRST_PARTY_UNIT_SLUG = "2026-09-05-overview-copy";
 export const SHARED_UNIT_TITLE = "Shared rollout across two repositories";
 /**
  * Named only under the first-party repository, but the foreign repository's
- * list of the same kind was cut short and may hide it: withheld.
+ * list of the same kind was cut short and may hide it: withheld, until that
+ * list is complete ({@link completeWaitingListsBody}).
  */
 export const HIDDEN_UNIT_TITLE = "Web release gate wait";
 /** A first-party headline the scope clears, so it shows while presenting. */
@@ -662,6 +663,186 @@ export function firstDecisionAnsweredBody() {
       items: body.needs_me.items.slice(1),
     },
   };
+}
+
+/** {@link fullBody} with the initiative's own fields replaced. */
+export function initiativeBody(fields: Record<string, unknown>) {
+  const body = fullBody();
+  return {
+    ...body,
+    on_track: {
+      ...body.on_track,
+      initiative: { ...body.on_track.initiative, ...fields },
+    },
+  };
+}
+
+/**
+ * The unit only the first-party repository names, also named by a group whose
+ * repository this page cannot recognise. That group cannot bound it, so the
+ * title the scope otherwise clears is withheld.
+ */
+export function unitAlsoInUnknownGroupBody() {
+  const body = fullBody();
+  return {
+    ...body,
+    on_track: {
+      ...body.on_track,
+      groups: [
+        ...body.on_track.groups,
+        {
+          key: "acme-area",
+          kind: "acme_area",
+          row_count: 1,
+          classes: CLASSES,
+          named: {
+            stalled: {
+              units: [unit(FIRST_PARTY_UNIT_SLUG, FIRST_PARTY_UNIT_TITLE)],
+              omitted: 0,
+            },
+            waiting_on_gate: { units: [], omitted: 0 },
+          },
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * The foreign repository's waiting list complete, so it can hide nothing: the
+ * first-party repository's waiting unit belongs to that repository alone, and
+ * the title {@link HIDDEN_UNIT_TITLE} names is cleared.
+ */
+export function completeWaitingListsBody() {
+  const body = fullBody();
+  return {
+    ...body,
+    on_track: {
+      ...body.on_track,
+      groups: body.on_track.groups.map((g) => ({
+        ...g,
+        named: {
+          ...g.named,
+          waiting_on_gate: { ...g.named.waiting_on_gate, omitted: 0 },
+        },
+      })),
+    },
+  };
+}
+
+/**
+ * One repository group naming `units` as its stalled list, every list complete,
+ * so the repository alone decides what the scope clears.
+ */
+export function oneGroupBody(
+  repo: string,
+  units: readonly { slug: string; title: string | null }[]
+) {
+  const body = fullBody();
+  return {
+    ...body,
+    on_track: {
+      ...body.on_track,
+      groups: [
+        {
+          key: repo,
+          kind: "repo",
+          row_count: units.length,
+          classes: CLASSES,
+          named: {
+            stalled: {
+              units: units.map((u) => unit(u.slug, u.title)),
+              omitted: 0,
+            },
+            waiting_on_gate: { units: [], omitted: 0 },
+          },
+        },
+      ],
+    },
+  };
+}
+
+/** An open degradation of an uneventful kind, with `fields` replaced. */
+function openRow(id: string, fields: Record<string, unknown>) {
+  return {
+    id,
+    plane: "cloud_service",
+    subject: { kind: "service", name: "a-service", id: "a-service" },
+    headline: "A cloud service is hard-down",
+    onset_observed_at: ago(45),
+    last_seen_at: ago(1),
+    age_secs: 2700,
+    auto_remediation: null,
+    drill: null,
+    declared: false,
+    ...fields,
+  };
+}
+
+/**
+ * A service coord names with an id but no name. The id is a raw identifier, so
+ * it has nothing to stand in for the name.
+ */
+export const NAMELESS_SUBJECT_ID = "rds:acme-prod";
+export function namelessSubjectBody() {
+  return fullBody({
+    degradations: {
+      state: "read",
+      headline: "degraded",
+      open: [
+        openRow("alert:90", {
+          subject: { kind: "service", id: NAMELESS_SUBJECT_ID, name: null },
+        }),
+      ],
+      declared: [],
+      recently_cleared: [],
+      planes: {},
+    },
+  });
+}
+
+/** Planes the page's table does not name: one with a client's name, one without. */
+export const CLIENT_PLANE = "acme corp vpn";
+export const UNNAMED_PLANE = "partner_a_tunnel";
+export const OFF_TABLE_WATCHER = "tunnel_watcher";
+
+/**
+ * Off-table planes in every place a plane reaches: a degradation's row, the gap
+ * sentence (one plane with a watcher, one without), the watcher lines and a
+ * watcher source's label. Beside them, one plane the table does name.
+ */
+export function offTablePlanesBody() {
+  return fullBody({
+    degradations: {
+      state: "stale",
+      headline: "unknown",
+      open: [
+        openRow("alert:91", { plane: CLIENT_PLANE }),
+        openRow("alert:92", { plane: UNNAMED_PLANE }),
+        openRow("alert:93", { plane: "runner" }),
+      ],
+      declared: [],
+      recently_cleared: [],
+      planes: {
+        [CLIENT_PLANE]: { fresh: false, watchers: [] },
+        [UNNAMED_PLANE]: {
+          fresh: false,
+          watchers: [
+            { name: OFF_TABLE_WATCHER, state: "stale", as_of: ago(9) },
+          ],
+        },
+        runner: { fresh: true, watchers: [] },
+      },
+    },
+    does_not_know: [
+      {
+        source: `watcher:${OFF_TABLE_WATCHER}`,
+        state: "stale",
+        as_of: ago(9),
+        error: "no_successful_tick",
+      },
+    ],
+  });
 }
 
 /** Coord counted decisions for the operator but served none of them. */

@@ -7984,6 +7984,29 @@
               }
             ],
             "title": "Version Before"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -7997,7 +8020,9 @@
           "version_before",
           "version_after",
           "before",
-          "after"
+          "after",
+          "via_device",
+          "via_session"
         ],
         "title": "ChangeLogEntry",
         "type": "object"
@@ -12405,6 +12430,672 @@
         "title": "CorpusHealth",
         "type": "object"
       },
+      "CostCategoriesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/CostCategoryRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "CostCategoriesItem",
+        "type": "object"
+      },
+      "CostCategoriesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CostCategoryRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "CostCategoriesList",
+        "type": "object"
+      },
+      "CostCategoryCreate": {
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CostCategoryCreate",
+        "type": "object"
+      },
+      "CostCategoryRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by",
+          "id",
+          "name",
+          "description",
+          "sort_order"
+        ],
+        "title": "CostCategoryRead",
+        "type": "object"
+      },
+      "CostCategoryUpdate": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": -1000000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          }
+        },
+        "title": "CostCategoryUpdate",
+        "type": "object"
+      },
+      "CostEntriesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/CostEntryRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "CostEntriesItem",
+        "type": "object"
+      },
+      "CostEntriesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CostEntryRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "CostEntriesList",
+        "type": "object"
+      },
+      "CostEntryCreate": {
+        "properties": {
+          "amount_micros": {
+            "maximum": 9007199254740991.0,
+            "minimum": -9007199254740991.0,
+            "title": "Amount Micros",
+            "type": "integer"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Currency",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "expects_delivery": {
+            "default": false,
+            "title": "Expects Delivery",
+            "type": "boolean"
+          },
+          "incurred_on": {
+            "format": "date",
+            "formatMaximum": "2200-12-31",
+            "formatMinimum": "1970-01-01",
+            "title": "Incurred On",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Notes",
+            "type": "string"
+          },
+          "order_ref": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Order Ref",
+            "type": "string"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "quantity": {
+            "default": 1,
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "received_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received On"
+          },
+          "recurring_cost_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurring Cost Id"
+          },
+          "vendor": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incurred_on",
+          "description",
+          "amount_micros",
+          "currency"
+        ],
+        "title": "CostEntryCreate",
+        "type": "object"
+      },
+      "CostEntryRead": {
+        "properties": {
+          "amount_micros": {
+            "title": "Amount Micros",
+            "type": "integer"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "expects_delivery": {
+            "title": "Expects Delivery",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "incurred_on": {
+            "format": "date",
+            "title": "Incurred On",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "order_ref": {
+            "title": "Order Ref",
+            "type": "string"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "received_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received On"
+          },
+          "recurring_cost_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurring Cost Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by",
+          "id",
+          "incurred_on",
+          "description",
+          "vendor",
+          "category_id",
+          "amount_micros",
+          "currency",
+          "quantity",
+          "expects_delivery",
+          "received_on",
+          "order_ref",
+          "notes",
+          "recurring_cost_id",
+          "period_start"
+        ],
+        "title": "CostEntryRead",
+        "type": "object"
+      },
+      "CostEntryUpdate": {
+        "description": "Every field optional; ``null`` clears ``category_id`` or\n``received_on``. Which recurring period an entry records is fixed when it\nis created.",
+        "properties": {
+          "amount_micros": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": -9007199254740991.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "expects_delivery": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expects Delivery"
+          },
+          "incurred_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incurred On"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "order_ref": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Ref"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "received_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received On"
+          },
+          "vendor": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor"
+          }
+        },
+        "title": "CostEntryUpdate",
+        "type": "object"
+      },
       "CostLineRead": {
         "properties": {
           "basis": {
@@ -12602,6 +13293,59 @@
           "label"
         ],
         "title": "CostLineWrite",
+        "type": "object"
+      },
+      "CostSummary": {
+        "properties": {
+          "awaiting_amount_count": {
+            "title": "Awaiting Amount Count",
+            "type": "integer"
+          },
+          "awaiting_delivery_count": {
+            "title": "Awaiting Delivery Count",
+            "type": "integer"
+          },
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "currencies": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencyTotals"
+            },
+            "title": "Currencies",
+            "type": "array"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/MonthCategoryTotal"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/RecurringPeriod"
+            },
+            "title": "Periods",
+            "type": "array"
+          },
+          "today": {
+            "format": "date",
+            "title": "Today",
+            "type": "string"
+          }
+        },
+        "required": [
+          "today",
+          "base_currency",
+          "currencies",
+          "months",
+          "periods",
+          "awaiting_delivery_count",
+          "awaiting_amount_count"
+        ],
+        "title": "CostSummary",
         "type": "object"
       },
       "CostTrendDataPoint": {
@@ -12987,6 +13731,40 @@
           }
         },
         "title": "CreateChatBody",
+        "type": "object"
+      },
+      "CurrencyTotals": {
+        "description": "Every figure in one currency. Currencies are never added together:\nthere is no exchange rate the page could honestly apply.",
+        "properties": {
+          "awaiting_delivery_micros": {
+            "title": "Awaiting Delivery Micros",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "scheduled_micros": {
+            "title": "Scheduled Micros",
+            "type": "integer"
+          },
+          "spent_to_date_micros": {
+            "title": "Spent To Date Micros",
+            "type": "integer"
+          },
+          "this_month_micros": {
+            "title": "This Month Micros",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "spent_to_date_micros",
+          "scheduled_micros",
+          "this_month_micros",
+          "awaiting_delivery_micros"
+        ],
+        "title": "CurrencyTotals",
         "type": "object"
       },
       "CustomFunctionListResponse": {
@@ -34165,6 +34943,48 @@
         "title": "MonitorSettingsSchema",
         "type": "object"
       },
+      "MonthCategoryTotal": {
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "month": {
+            "format": "date",
+            "title": "Month",
+            "type": "string"
+          },
+          "recorded_micros": {
+            "title": "Recorded Micros",
+            "type": "integer"
+          },
+          "scheduled_micros": {
+            "title": "Scheduled Micros",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "category_id",
+          "currency",
+          "recorded_micros",
+          "scheduled_micros"
+        ],
+        "title": "MonthCategoryTotal",
+        "type": "object"
+      },
       "MouseSettingsSchema": {
         "description": "Mouse action configuration schema.",
         "properties": {
@@ -36662,6 +37482,42 @@
             ],
             "title": "Slug"
           },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "maxLength": 200,
             "minLength": 1,
@@ -36782,6 +37638,39 @@
             "title": "Slug",
             "type": "string"
           },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -36805,6 +37694,29 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -36822,7 +37734,12 @@
           "created_at",
           "updated_at",
           "created_by",
-          "updated_by"
+          "updated_by",
+          "source_repo",
+          "source_path",
+          "source_sha",
+          "via_device",
+          "via_session"
         ],
         "title": "PageRead",
         "type": "object"
@@ -36860,7 +37777,7 @@
         "type": "object"
       },
       "PageUpdate": {
-        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.",
+        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.\n\n``source_repo`` + ``source_path`` do not CHANGE a page's source: they name\nthe source the writer believes the page mirrors, and a page whose source\nis absent or different refuses the write (409 ``source_mismatch``).\n``source_sha`` is the commit the new content mirrors.",
         "properties": {
           "body_md": {
             "anyOf": [
@@ -36924,6 +37841,42 @@
               }
             ],
             "title": "Related"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
           },
           "title": {
             "anyOf": [
@@ -37018,6 +37971,17 @@
             ],
             "title": "Owner"
           },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -37025,6 +37989,29 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -37032,6 +38019,9 @@
           "title",
           "created_at",
           "created_by",
+          "source_sha",
+          "via_device",
+          "via_session",
           "body_md",
           "doc_number",
           "doc_status",
@@ -37058,6 +38048,17 @@
             ],
             "title": "Created By"
           },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -37065,13 +38066,39 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
           "version",
           "title",
           "created_at",
-          "created_by"
+          "created_by",
+          "source_sha",
+          "via_device",
+          "via_session"
         ],
         "title": "PageVersionSummary",
         "type": "object"
@@ -44068,6 +45095,499 @@
         ],
         "title": "RecordingStatusEnum",
         "type": "string"
+      },
+      "RecurringCostCreate": {
+        "properties": {
+          "amount_kind": {
+            "default": "fixed",
+            "enum": [
+              "fixed",
+              "variable"
+            ],
+            "title": "Amount Kind",
+            "type": "string"
+          },
+          "amount_micros": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "cadence": {
+            "default": "monthly",
+            "enum": [
+              "monthly",
+              "quarterly",
+              "annual"
+            ],
+            "title": "Cadence",
+            "type": "string"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Currency",
+            "type": "string"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Notes",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "formatMaximum": "2200-12-31",
+            "formatMinimum": "1970-01-01",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "vendor": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "currency",
+          "start_date"
+        ],
+        "title": "RecurringCostCreate",
+        "type": "object"
+      },
+      "RecurringCostRead": {
+        "properties": {
+          "amount_kind": {
+            "enum": [
+              "fixed",
+              "variable"
+            ],
+            "title": "Amount Kind",
+            "type": "string"
+          },
+          "amount_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "cadence": {
+            "enum": [
+              "monthly",
+              "quarterly",
+              "annual"
+            ],
+            "title": "Cadence",
+            "type": "string"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by",
+          "id",
+          "name",
+          "vendor",
+          "category_id",
+          "cadence",
+          "amount_kind",
+          "amount_micros",
+          "currency",
+          "start_date",
+          "end_date",
+          "notes"
+        ],
+        "title": "RecurringCostRead",
+        "type": "object"
+      },
+      "RecurringCostUpdate": {
+        "description": "Every field optional; ``null`` clears ``category_id``, ``amount_micros``\nor ``end_date``. The cross-field rules are checked by the store on the\nrecord as it will stand.",
+        "properties": {
+          "amount_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fixed",
+                  "variable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Kind"
+          },
+          "amount_micros": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "cadence": {
+            "anyOf": [
+              {
+                "enum": [
+                  "monthly",
+                  "quarterly",
+                  "annual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cadence"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "vendor": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor"
+          }
+        },
+        "title": "RecurringCostUpdate",
+        "type": "object"
+      },
+      "RecurringCostsItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/RecurringCostRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "RecurringCostsItem",
+        "type": "object"
+      },
+      "RecurringCostsList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RecurringCostRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "RecurringCostsList",
+        "type": "object"
+      },
+      "RecurringPeriod": {
+        "description": "One period of a recurring cost that has fallen due (``period_start``\non or before ``today``).",
+        "properties": {
+          "amount_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "entry_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Id"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "recurring_cost_id": {
+            "format": "uuid",
+            "title": "Recurring Cost Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "recorded",
+              "scheduled",
+              "awaiting_amount"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recurring_cost_id",
+          "period_start",
+          "state",
+          "entry_id",
+          "amount_micros",
+          "currency"
+        ],
+        "title": "RecurringPeriod",
+        "type": "object"
       },
       "RedisHealth": {
         "description": "Redis health status and metrics.",
@@ -110657,6 +112177,25 @@
             }
           },
           {
+            "description": "Only writes from this surface (X-Overview-Source).",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(ui|api|import)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only writes from this surface (X-Overview-Source).",
+              "title": "Source"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -110694,9 +112233,569 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Change Log",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/cost-categories": {
+      "get": {
+        "operationId": "api_v1_overview_cost_categories_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostCategoriesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Cost Categories",
+        "tags": [
+          "overview",
+          "overview:cost-categories"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_cost_categories_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostCategoryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostCategoriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Cost Categories",
+        "tags": [
+          "overview",
+          "overview:cost-categories"
+        ]
+      }
+    },
+    "/api/v1/overview/cost-categories/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_cost_categories_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Cost Categories",
+        "tags": [
+          "overview",
+          "overview:cost-categories"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_cost_categories_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostCategoriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Cost Categories",
+        "tags": [
+          "overview",
+          "overview:cost-categories"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_cost_categories_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostCategoryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostCategoriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Cost Categories",
+        "tags": [
+          "overview",
+          "overview:cost-categories"
+        ]
+      }
+    },
+    "/api/v1/overview/cost-entries": {
+      "get": {
+        "operationId": "api_v1_overview_cost_entries_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Cost Entries",
+        "tags": [
+          "overview",
+          "overview:cost-entries"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_cost_entries_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostEntryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Cost Entries",
+        "tags": [
+          "overview",
+          "overview:cost-entries"
+        ]
+      }
+    },
+    "/api/v1/overview/cost-entries/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_cost_entries_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Cost Entries",
+        "tags": [
+          "overview",
+          "overview:cost-entries"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_cost_entries_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Cost Entries",
+        "tags": [
+          "overview",
+          "overview:cost-entries"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_cost_entries_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostEntryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Cost Entries",
+        "tags": [
+          "overview",
+          "overview:cost-entries"
+        ]
+      }
+    },
+    "/api/v1/overview/costs/summary": {
+      "get": {
+        "description": "What the project has spent, per currency; the month-by-category table;\nand every recurring period that has fallen due, recorded or not. Computed\non read against today (UTC); readable by any member.",
+        "operationId": "api_v1_overview_costs_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Cost Summary",
         "tags": [
           "overview"
         ]
@@ -110720,6 +112819,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Estimates",
@@ -110783,6 +112885,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Estimates",
@@ -110832,6 +112937,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Forecast",
@@ -110882,6 +112990,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Rollup",
@@ -110938,6 +113049,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Estimates",
@@ -110984,6 +113098,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Estimates",
@@ -111056,6 +113173,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Estimates",
@@ -111083,6 +113203,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Files",
@@ -111147,6 +113270,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Upload File",
@@ -111203,6 +113329,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Download File",
@@ -111259,6 +113388,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Files",
@@ -111305,6 +113437,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Files",
@@ -111332,6 +113467,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Intent Documents",
@@ -111395,6 +113533,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Intent Documents",
@@ -111443,6 +113584,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Intent Documents",
@@ -111515,6 +113659,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Intent Documents",
@@ -111542,6 +113689,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Milestones",
@@ -111605,6 +113755,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Milestones",
@@ -111662,6 +113815,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Milestones",
@@ -111708,6 +113864,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Milestones",
@@ -111780,6 +113939,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Milestones",
@@ -111807,6 +113969,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Pages",
@@ -111870,6 +114035,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Pages",
@@ -111923,6 +114091,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Page Backlinks",
@@ -111971,6 +114142,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Page Versions",
@@ -112027,6 +114201,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Page Version",
@@ -112100,6 +114277,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Revert Page",
@@ -112156,6 +114336,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Pages",
@@ -112202,6 +114385,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Pages",
@@ -112274,6 +114460,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Pages",
@@ -112301,6 +114490,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Phase Progress",
@@ -112349,6 +114541,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Phase Progress",
@@ -112421,12 +114616,280 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Phase Progress",
         "tags": [
           "overview",
           "overview:phase-progress"
+        ]
+      }
+    },
+    "/api/v1/overview/recurring-costs": {
+      "get": {
+        "operationId": "api_v1_overview_recurring_costs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringCostsList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Recurring Costs",
+        "tags": [
+          "overview",
+          "overview:recurring-costs"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_recurring_costs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringCostCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringCostsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Recurring Costs",
+        "tags": [
+          "overview",
+          "overview:recurring-costs"
+        ]
+      }
+    },
+    "/api/v1/overview/recurring-costs/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_recurring_costs_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Recurring Costs",
+        "tags": [
+          "overview",
+          "overview:recurring-costs"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_recurring_costs_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringCostsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Recurring Costs",
+        "tags": [
+          "overview",
+          "overview:recurring-costs"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_recurring_costs_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringCostUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringCostsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Recurring Costs",
+        "tags": [
+          "overview",
+          "overview:recurring-costs"
         ]
       }
     },
@@ -112449,6 +114912,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Catalog",
@@ -112476,6 +114942,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Settings",
@@ -112521,6 +114990,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Write Settings",

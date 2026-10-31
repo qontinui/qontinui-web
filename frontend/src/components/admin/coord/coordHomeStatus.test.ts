@@ -55,6 +55,7 @@ import {
   type BlockState,
   type HomeBlock,
   isKnownDecisionDomain,
+  isKnownPlane,
   isLabelledSource,
   planeLabel,
 } from "./coordHomeStatus";
@@ -606,6 +607,38 @@ describe("coord needs_me wire at 4907c36ff", () => {
     expect(decisionDomainLabel("unclassified")).toBe("unclassified");
   });
 
+  describe("an initiative's typed status and dates", () => {
+    const initiative = (fields: Record<string, unknown>) =>
+      parseProjectState({
+        on_track: {
+          state: "read",
+          initiative: { state: "read", alignment: "read", ...fields },
+        },
+      })!.onTrack.initiative!;
+
+    it.each([
+      ["empty", ""],
+      ["spaces", "   "],
+      ["tabs and a newline", "\t\n "],
+    ])("reads %s as no value, like an absent one", (_case, blank) => {
+      const i = initiative({ status: blank, starts: blank, ends: blank });
+      expect(i.status).toBeNull();
+      expect(i.starts).toBeNull();
+      expect(i.ends).toBeNull();
+    });
+
+    it("keeps what a person typed, verbatim", () => {
+      const i = initiative({
+        status: "draft",
+        starts: "2026-10-01",
+        ends: " when Acme Corp signs ",
+      });
+      expect(i.status).toBe("draft");
+      expect(i.starts).toBe("2026-10-01");
+      expect(i.ends).toBe(" when Acme Corp signs ");
+    });
+  });
+
   it("reads initiative attribution only when alignment is read", () => {
     const linked = parseProjectState({
       on_track: {
@@ -814,6 +847,130 @@ describe("round-8 review — the partial and unread captions say what is true", 
       })
     );
     expect(phrase).toBe("not every watcher is fresh (merge train)");
+  });
+
+  // A label that names only the merge train: every other area is one it
+  // will not name, which the phrase must COUNT, never fold into one.
+  const onlyMergeTrain = (plane: string | null) =>
+    plane === "merge_train" ? "merge train" : null;
+  const NO_WATCHER = { fresh: false, watchers: [] };
+
+  it("counts each area its label will not name, one by one", () => {
+    const phrase = degradationsGapPhrase(
+      deg({
+        state: "stale",
+        planes: {
+          merge_train: STALE_MERGE_TRAIN.merge_train,
+          build_capacity: STALE_MERGE_TRAIN.merge_train,
+          cloud_service: STALE_MERGE_TRAIN.merge_train,
+          disk: NO_WATCHER,
+          coord_itself: NO_WATCHER,
+        },
+      }),
+      null,
+      onlyMergeTrain
+    );
+    expect(phrase).toBe(
+      "not every watcher is fresh (merge train and 2 areas not named here); readings for 2 other areas not named here could not be taken"
+    );
+  });
+
+  it("says 1 area, in the singular, when one is not named", () => {
+    const phrase = degradationsGapPhrase(
+      deg({
+        state: "stale",
+        planes: {
+          build_capacity: STALE_MERGE_TRAIN.merge_train,
+          disk: NO_WATCHER,
+        },
+      }),
+      null,
+      onlyMergeTrain
+    );
+    expect(phrase).toBe(
+      "not every watcher is fresh (1 area not named here); the reading for 1 other area not named here could not be taken"
+    );
+  });
+
+  it.each([
+    [0, 2, "readings for 2 areas not named here could not be taken"],
+    [
+      1,
+      2,
+      "not every watcher is fresh (1 area not named here); readings for 2 other areas not named here could not be taken",
+    ],
+    [
+      2,
+      1,
+      "not every watcher is fresh (2 areas not named here); the reading for 1 other area not named here could not be taken",
+    ],
+  ])(
+    "counts %i watched and %i unwatched areas not named here as distinct",
+    (watchedCount, unwatchedCount, expected) => {
+      const planes: Record<string, unknown> = {};
+      for (let i = 0; i < watchedCount; i += 1) {
+        planes[`watched_${i}`] = STALE_MERGE_TRAIN.merge_train;
+      }
+      for (let i = 0; i < unwatchedCount; i += 1) {
+        planes[`unwatched_${i}`] = NO_WATCHER;
+      }
+      const phrase = degradationsGapPhrase(
+        deg({ state: "stale", planes }),
+        null,
+        onlyMergeTrain
+      );
+      expect(phrase).toBe(expected);
+    }
+  );
+
+  it("lists several named watched areas before the count, without a serial comma", () => {
+    const phrase = degradationsGapPhrase(
+      deg({
+        state: "stale",
+        planes: {
+          merge_train: STALE_MERGE_TRAIN.merge_train,
+          build_capacity: STALE_MERGE_TRAIN.merge_train,
+          cloud_service: STALE_MERGE_TRAIN.merge_train,
+        },
+      }),
+      null,
+      (plane) => (plane === "cloud_service" ? null : planeLabel(plane))
+    );
+    expect(phrase).toBe(
+      "not every watcher is fresh (merge train, build capacity and 1 area not named here)"
+    );
+  });
+
+  it("names the areas its label names beside the count of those it will not", () => {
+    const phrase = degradationsGapPhrase(
+      deg({
+        state: "stale",
+        planes: {
+          merge_train: NO_WATCHER,
+          disk: NO_WATCHER,
+        },
+      }),
+      null,
+      onlyMergeTrain
+    );
+    expect(phrase).toBe(
+      "the merge train reading could not be taken; the reading for 1 area not named here could not be taken"
+    );
+  });
+
+  it("(operator) names every distinct key, even two that space to one label", () => {
+    const phrase = degradationsGapPhrase(
+      deg({
+        state: "stale",
+        planes: {
+          merge_train: NO_WATCHER,
+          "merge train": NO_WATCHER,
+        },
+      })
+    );
+    expect(phrase).toBe(
+      "the merge train reading could not be taken; the merge train reading could not be taken"
+    );
   });
 
   it("names every watched plane served as not fresh, and none served fresh or unstated", () => {
@@ -1199,6 +1356,21 @@ describe("round-8 review — R8 for what the view does not know", () => {
     expect(sourceLabel(source, planes)).toBe("Watcher feeding Degrading");
   });
 
+  it("counts a watcher row's areas its label will not name", () => {
+    const onlyRunner = (plane: string | null) =>
+      plane === "runner" ? "runner" : null;
+    // health_ledger feeds runner and credential; stuck_pr_watcher, merge train.
+    expect(sourceLabel("watcher:health_ledger", PLANES, onlyRunner)).toBe(
+      "Watcher feeding runner and 1 area not named here"
+    );
+    expect(sourceLabel("watcher:stuck_pr_watcher", PLANES, onlyRunner)).toBe(
+      "Watcher feeding 1 area not named here"
+    );
+    expect(sourceLabel("watcher:health_ledger", PLANES, () => null)).toBe(
+      "Watcher feeding 2 areas not named here"
+    );
+  });
+
   it("spaces a source it has no label for, as it does an unknown domain", () => {
     expect(sourceLabel("deploy_freshness_feed")).toBe("Deploy freshness feed");
   });
@@ -1543,6 +1715,15 @@ describe("a served key spelled like an Object.prototype member", () => {
 
   it.each(PROTOTYPE_KEYS)("%s is not a plane the table names", (key) => {
     expect(planeLabel(key)).toBe(key.replace(/_/g, " "));
+    expect(isKnownPlane(key)).toBe(false);
+  });
+
+  it("names a plane the table holds, and calls no plane unclassified", () => {
+    expect(isKnownPlane("merge_train")).toBe(true);
+    expect(isKnownPlane("merge train")).toBe(false);
+    expect(planeLabel("merge_train")).toBe("merge train");
+    expect(planeLabel(null)).toBe("unclassified");
+    expect(planeLabel("")).toBe("unclassified");
   });
 
   it.each(PROTOTYPE_KEYS)("%s is not a source the table labels", (key) => {

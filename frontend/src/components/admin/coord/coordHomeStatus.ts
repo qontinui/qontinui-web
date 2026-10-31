@@ -415,9 +415,11 @@ function parseInitiative(raw: unknown): InitiativeView | null {
   const inScopeRaw = arr(o.in_scope);
   return {
     state,
-    status: str(o.status),
-    starts: str(o.starts),
-    ends: str(o.ends),
+    // Frontmatter typed by hand: a blank value says nothing, the same as an
+    // absent one, so it reads as unknown rather than as an empty clause.
+    status: nonBlank(str(o.status)),
+    starts: nonBlank(str(o.starts)),
+    ends: nonBlank(str(o.ends)),
     alignment: str(o.alignment),
     reason: str(o.reason),
     inScope: inScopeRaw
@@ -1004,6 +1006,47 @@ export function planeLabel(plane: string | null): string {
 }
 
 /**
+ * Whether the page's table names this plane. An own-property check, so a key
+ * spelled `constructor` is not one it names.
+ */
+export function isKnownPlane(plane: string): boolean {
+  return ownEntry(PLANE_LABEL, plane) !== undefined;
+}
+
+/**
+ * How a caller words a plane in a list of areas: words, or `null` for an area
+ * the list must not name. The operator's is {@link planeLabel}, which names
+ * every plane; the presentation lens's names only the table's planes.
+ */
+export type PlaneWords = (plane: string | null) => string | null;
+
+/** "1 area not named here" / "2 areas not named here"; with `other`, "2 other areas not named here". */
+export function areasNotNamedHere(count: number, other = false): string {
+  const kind = other ? "other " : "";
+  return `${count} ${kind}${count === 1 ? "area" : "areas"} not named here`;
+}
+
+/**
+ * The areas of `planes` as `words` names them, in order, and how many it
+ * would not name. Those are counted, never collapsed into one: two areas not
+ * named are two areas missing from the view. (Coord serves planes as an
+ * object's keys, so each plane is a distinct area.)
+ */
+function wordedAreas(
+  planes: readonly PlaneView[],
+  words: PlaneWords
+): { named: string[]; unnamed: number } {
+  const named: string[] = [];
+  let unnamed = 0;
+  for (const p of planes) {
+    const w = words(p.plane);
+    if (w === null) unnamed += 1;
+    else named.push(w);
+  }
+  return { named, unnamed };
+}
+
+/**
  * A degradation's subject for the collapsed row (R8): its name only. Coord's
  * subject id — a device UUID beside a hostname — is a raw id, so it goes to
  * the expanded detail's last line ({@link degradationRawLine}).
@@ -1084,23 +1127,49 @@ const PARTIAL_SOURCE_STATES: ReadonlySet<BlockState> = new Set([
  *
  * Failing all three (a coord that serves neither), it is worded from what
  * `stale` itself guarantees.
+ *
+ * Each area is worded by `label`; an area it will not name (`null`, the
+ * presentation lens's answer for a plane off the page's table) is COUNTED —
+ * "the reading for 1 area not named here", "2 areas not named here" — so the
+ * sentence never says less is missing than is. When the watcher clause has
+ * already counted some, the reading clause's are "other" areas, so two
+ * counts never read as one.
  */
 export function degradationsGapPhrase(
   deg: DegradationsView,
-  sources: SourceCoverageView[] | null = null
+  sources: SourceCoverageView[] | null = null,
+  label: PlaneWords = planeLabel
 ): string {
   const planes = deg.planes ?? [];
   const parts: string[] = [];
-  const watched = planes
-    .filter((p) => p.fresh === false && p.watchers.length > 0)
-    .map((p) => planeLabel(p.plane));
-  if (watched.length > 0) {
-    parts.push(`not every watcher is fresh (${watched.join(", ")})`);
+  const notFresh = planes.filter((p) => p.fresh === false);
+  const watched = wordedAreas(
+    notFresh.filter((p) => p.watchers.length > 0),
+    label
+  );
+  const watchedAreas = [
+    watched.named.join(", "),
+    watched.unnamed > 0 ? areasNotNamedHere(watched.unnamed) : "",
+  ]
+    .filter(Boolean)
+    .join(" and ");
+  if (watchedAreas) {
+    parts.push(`not every watcher is fresh (${watchedAreas})`);
   }
-  for (const p of planes) {
-    if (p.fresh === false && p.watchers.length === 0) {
-      parts.push(`the ${planeLabel(p.plane)} reading could not be taken`);
-    }
+  const unwatched = wordedAreas(
+    notFresh.filter((p) => p.watchers.length === 0),
+    label
+  );
+  for (const area of unwatched.named) {
+    parts.push(`the ${area} reading could not be taken`);
+  }
+  // When the watcher clause already counted unnamed areas, these are others:
+  // "1 area not named here" twice would read as one area, under-reading the gap.
+  const others = areasNotNamedHere(unwatched.unnamed, watched.unnamed > 0);
+  if (unwatched.unnamed === 1) {
+    parts.push(`the reading for ${others} could not be taken`);
+  } else if (unwatched.unnamed > 1) {
+    parts.push(`readings for ${others} could not be taken`);
   }
   const partial = [
     ...new Set(
@@ -1254,21 +1323,30 @@ function humanised(text: string): string {
  * the area(s) it feeds, read from the degradations planes coord served
  * beside it (the watcher's own name is internal vocabulary). A watcher coord
  * lists without a plane, or with no planes served, still feeds the Degrading
- * block, which is how coord chose to list it.
+ * block, which is how coord chose to list it. An area `label` will not name
+ * is counted, as {@link degradationsGapPhrase} counts it.
  */
 export function sourceLabel(
   source: string,
-  planes: PlaneView[] | null = null
+  planes: PlaneView[] | null = null,
+  label: PlaneWords = planeLabel
 ): string {
   const known = ownEntry(SOURCE_LABEL, source);
   if (known) return known;
   if (isWatcherSource(source)) {
     const name = source.slice(WATCHER_SOURCE_PREFIX.length);
-    const fed = (planes ?? [])
-      .filter((p) => p.watchers.some((w) => w.name === name))
-      .map((p) => planeLabel(p.plane));
-    return fed.length > 0
-      ? `Watcher feeding ${fed.join(", ")}`
+    const fed = wordedAreas(
+      (planes ?? []).filter((p) => p.watchers.some((w) => w.name === name)),
+      label
+    );
+    if (fed.unnamed > 0) {
+      const unnamed = areasNotNamedHere(fed.unnamed);
+      return fed.named.length > 0
+        ? `Watcher feeding ${fed.named.join(", ")} and ${unnamed}`
+        : `Watcher feeding ${unnamed}`;
+    }
+    return fed.named.length > 0
+      ? `Watcher feeding ${fed.named.join(", ")}`
       : "Watcher feeding Degrading";
   }
   return humanised(source);

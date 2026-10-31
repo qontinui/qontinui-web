@@ -24,8 +24,9 @@
  * of its figures (`RegionCaption`); every free-text carrier renders through
  * `RedactedText` / `useRedactor` with a structured descriptor
  * (`_lib/homeLens.ts`), and every value read against one of the page's
- * tables — a decision kind, a does-not-know source — shows only when the
- * table names it, in fixed words otherwise; a machine is its alias
+ * tables — a decision kind, a does-not-know source, a degradation's area —
+ * shows only when the table names it, in fixed words otherwise; a machine is
+ * its alias
  * (`useMachineAliaser`); R8's raw last line and coord's quoted error chains
  * are not rendered; a row is keyed by an alias of its operator key
  * (`useRowKey`); a link goes through `LensLink`, and a drill or an
@@ -84,6 +85,8 @@ import {
   HomeRefreshButton,
   RegionCaption,
   useLinkOpens,
+  usePlaneLabel,
+  usePlaneWords,
   useRowKey,
   useSubjectText,
 } from "./HomeLens";
@@ -109,8 +112,8 @@ import {
   attributedText,
   initiativeAttributionPhrase,
   decisionDomainLabel,
+  isKnownPlane,
   withoutVerdictWords,
-  planeLabel,
   remediationPhrase,
   sourceErrorSentence,
   sourceLabel,
@@ -650,6 +653,7 @@ function DegradationRow({
   const redact = useRedactor();
   const subjectText = useSubjectText();
   const opens = useLinkOpens();
+  const planeName = usePlaneLabel();
   // Evidence one click down — and only where the click opens something:
   // while presenting, a drill to a page the presentation cannot show would
   // be link-shaped text that opens nothing, so it is left out.
@@ -678,7 +682,7 @@ function DegradationRow({
     );
   return (
     <RecordRow
-      identity={planeLabel(d.plane)}
+      identity={planeName(d.plane)}
       label={
         d.headline === null ? (
           <span>(no headline)</span>
@@ -761,6 +765,8 @@ export function DegradingSection({
 }) {
   const { presenting } = usePresentationMode();
   const rowKey = useRowKey();
+  const planeName = usePlaneLabel();
+  const planeWords = usePlaneWords();
   const open = openDegradations(deg);
   const declared = [
     ...(deg.open ?? []).filter((r) => r.declared),
@@ -816,8 +822,9 @@ export function DegradingSection({
                   : (degradationsGapTitle(deg) ?? undefined)
               }
             >
-              Incomplete view — {degradationsGapPhrase(deg, sources)}. The rows
-              below are real; there may be others.
+              Incomplete view —{" "}
+              {degradationsGapPhrase(deg, sources, planeWords)}. The rows below
+              are real; there may be others.
             </p>
           )}
           {open === null && (
@@ -936,14 +943,18 @@ export function DegradingSection({
               {deg.planes.map((p) => (
                 <li
                   key={p.plane}
-                  data-plane={p.plane}
+                  // Coord's own key: not on the element while presenting a
+                  // plane the table does not name.
+                  data-plane={
+                    presenting && !isKnownPlane(p.plane) ? undefined : p.plane
+                  }
                   // Watcher names are coord's internal vocabulary: a title
                   // for the operator only.
                   title={
                     presenting ? undefined : planeWatcherNames(p) || undefined
                   }
                 >
-                  {planeLabel(p.plane)}: {planeFreshnessPhrase(p)}
+                  {planeName(p.plane)}: {planeFreshnessPhrase(p)}
                 </li>
               ))}
             </ul>
@@ -982,11 +993,14 @@ type UnitRepos = Readonly<
  * One named unit. Its title — or its slug when it has none — is free text
  * attributed to every repository it may belong to (`namedUnitRepos`), so
  * while presenting it shows only when all of them are first-party. Its link's
- * URL carries the slug, so a unit whose title is withheld is not linked — not
- * even handed to `LensLink`, which renders plain text today (the unit's page
- * is not presentation-ready) and would render an anchor carrying the slug the
- * day `/admin/coord/work-units/[slug]` is registered. `page.presentation.test`
- * pins that by `data-lens-link`, so the guard is not dormant until then.
+ * URL carries the slug, so a unit is linked only when its name AND its slug
+ * clear the scope: a slug can name a client under a title that does not. A
+ * unit that fails is not even handed to `LensLink`, which renders plain text
+ * today (the unit's page is not presentation-ready) and would render an anchor
+ * carrying the slug the day `/admin/coord/work-units/[slug]` is registered.
+ * The page tests pin that by asking for neither an anchor nor a
+ * `data-lens-link` (which `LensLink` puts on both of its arms), so the guard
+ * is not dormant until then.
  */
 function NamedUnitItem({
   u,
@@ -1005,7 +1019,10 @@ function NamedUnitItem({
   const text = u.title ?? u.slug;
   const descriptor = namedUnitDescriptor(u, list);
   const linkable =
-    !presenting || redactionVerdict({ text, repo: repos }, scope).show;
+    !presenting ||
+    [text, u.slug].every(
+      (shown) => redactionVerdict({ text: shown, repo: repos }, scope).show
+    );
   const title = redact({ text, repo: repos, descriptor });
   const name = (
     <RedactedText text={text} repo={repos} descriptor={descriptor} />
@@ -1235,15 +1252,15 @@ function InitiativeBlock({
     const status = presenting
       ? presentedInitiativeStatus(i.status)
       : (i.status ?? "unknown");
-    const starts = presenting ? presentedInitiativeDate(i.starts) : i.starts;
+    const starts =
+      (presenting ? presentedInitiativeDate(i.starts) : i.starts) ?? "unknown";
     const ends =
       (presenting ? presentedInitiativeDate(i.ends) : i.ends) ?? "unknown";
     const unknownKeys = i.unknownKey?.keys.join(", ") ?? "";
     body = (
       <div className="space-y-1">
         <p className="m-0">
-          Status {status}
-          {starts ? ` · from ${starts}` : ""} · ends {ends} ·{" "}
+          Status {status} · from {starts} · ends {ends} ·{" "}
           <span data-testid="coord-home.on-track.initiative.alignment">
             {initiativeAttributionPhrase(i)}
           </span>

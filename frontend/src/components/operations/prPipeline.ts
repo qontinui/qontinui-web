@@ -15,6 +15,7 @@
 
 import type { Attention } from "@/components/console/attention";
 import { redactSecrets } from "./mergeTypes";
+import { PR_ATTENTION_BY_MERGE_STATUS } from "@/app/(app)/admin/coord/prs/prStatus";
 import type {
   MergeEconomics,
   PrRow,
@@ -49,11 +50,32 @@ export type UnifiedStatusKind =
   // label says to fix it — it just sits, marked "waiting", excluded from the
   // needs-attention count. Past the deferral window we re-escalate to red.
   | "conflict-stranded"
-  // A `needs-rebase` whose premise expired. "coord auto-rebases it in the
-  // train" is a promise about the near future; past the dwell cap with no
-  // observed GitHub activity the train has demonstrably not arrived, and the
-  // amber "no action needed" would be a lie — so we re-escalate to red.
+  // A `needs-rebase` whose wait outlived its dwell cap. `needs-rebase` makes
+  // no promise any more (whether coord's freshen will act is UNKNOWN until
+  // coord serves it — plan
+  // `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`),
+  // but it is still amber and outside the needs-attention count; past the
+  // dwell cap with no observed GitHub activity nothing has demonstrably
+  // brought the branch current, so we re-escalate to red.
   | "needs-rebase-stale"
+  // BEHIND, and coord's merge predicate holds the PR for ANOTHER reason (its
+  // `merge_status` is a real block token, not `behind-base`). Coord's BEHIND
+  // freshen refuses any predicate-blocked PR, so nothing updates the branch
+  // until that block clears. Three kinds, one per attention grade, because the
+  // grade is read from `/admin/coord/prs`'s audited per-token table
+  // (`PR_ATTENTION_BY_MERGE_STATUS`) and this module's palette and
+  // `ATTENTION_BY_KIND` are keyed by KIND — a single kind with a per-row
+  // attention would paint a red hold amber (or the reverse). See
+  // `behindHeldStatus`.
+  | "behind-held-author"
+  | "behind-held-waiting"
+  | "behind-held-none"
+  // A `behind-held-waiting` whose hold outlived its dwell cap. The waiting
+  // grade covers holds that never clear on their own (a blocking label,
+  // dry-run mode, a cross-repo edge that never moves); past the cap with no
+  // observed activity the hold has demonstrably not cleared — re-escalated to
+  // red for an author look.
+  | "behind-held-stale"
   // A `blocked` whose premise expired. "lands after the other PR" holds only
   // while the overlapping PR is actually moving; past the dwell cap the
   // overlap has demonstrably not cleared and the waiting promise is dead —
@@ -123,15 +145,27 @@ export type DwellEvidence = "measured" | "unknown";
  * | draft            | intentionally parked by the author   | no           |
  * | unknown          | GitHub still recomputing             | no           |
  * | blocked          | overlaps another PR; coord serializes| no — waits   |
- * | needs-rebase     | BEHIND; coord auto-rebases in train  | no — waits   |
+ * | needs-rebase     | BEHIND / red on a stale base; whether| no — waits   |
+ * |                  | coord's freshen acts is UNKNOWN      | (dwell-capped)|
  * | conflict-deferred| true conflict, but far from merging  | no — waits   |
  * | conflict-stranded| deferred so long the premise expired | YES          |
- * | needs-rebase-stale| BEHIND so long the promise expired  | YES          |
+ * | needs-rebase-stale| BEHIND past the dwell cap, unmoved  | YES          |
  * | blocked-stale    | blocked so long the promise expired  | YES          |
  * | conflict         | rebase/candidate CI failed           | YES          |
  * | not-mergeable    | conflicts, and it blocks now         | YES          |
  * | checks-failing   | a check reported failure             | YES          |
  * | requirements     | review demanded / ruleset unmet      | YES          |
+ * | behind-held-author| BEHIND, held by an author-owned block| YES          |
+ * | behind-held-waiting| BEHIND, held by a block nobody owns | no — waits   |
+ * |                  | or that clears without the author    |              |
+ * | behind-held-none | BEHIND, held only by running CI      | no           |
+ * | behind-held-stale| held-waiting so long the hold expired| YES          |
+ *
+ * The three `behind-held-*` grades are not chosen here: they are
+ * `PR_ATTENTION_BY_MERGE_STATUS[merge_status]` (admin/coord/prs/prStatus.ts),
+ * mapped onto the kind whose name carries that grade, so the two pages
+ * cannot grade the same hold differently and this table stays a pure
+ * function of kind.
  */
 export const ATTENTION_BY_KIND: Record<UnifiedStatusKind, Attention> = {
   ready: "none",
@@ -153,6 +187,10 @@ export const ATTENTION_BY_KIND: Record<UnifiedStatusKind, Attention> = {
   "not-mergeable": "author",
   "checks-failing": "author",
   requirements: "author",
+  "behind-held-author": "author",
+  "behind-held-waiting": "waiting",
+  "behind-held-none": "none",
+  "behind-held-stale": "author",
 };
 
 /**
@@ -305,7 +343,8 @@ export function formatContextNames(names: readonly string[]): string {
 // 2026-07-17-fleet-ci-duration-aware-severity).
 //
 // A TRUE merge conflict (`DIRTY` / `mergeable===false`) is NOT uniformly
-// "act now". Coord auto-rebases each candidate just before it tests+merges it,
+// "act now". Coord rebases each candidate when it cuts it, just before it
+// tests+merges it (it never resolves a textual conflict itself),
 // so on a repo whose candidate CI runs ~2h and whose PR is deep in the land
 // queue, resolving the conflict *now* only means it goes stale again before
 // coord reaches it. The severity model:
@@ -580,9 +619,9 @@ export function isMergedPr(
 /**
  * Floor for how long the other two waiting kinds (`needs-rebase`, `blocked`)
  * may sit with no observed activity before their promise reads as expired.
- * 24h, deliberately conservative: coord rebases at land and overlaps clear
- * within a few land cycles, so a full day of silence means the train is
- * demonstrably not reaching this PR — while the goal is catching 340-hour
+ * 24h, deliberately conservative: a BEHIND branch that coord does freshen
+ * moves within minutes and overlaps clear within a few land cycles, so a full
+ * day of silence means nothing is demonstrably bringing this PR along — while the goal is catching 340-hour
  * lies, not nagging at hour seven. Per-repo the real cutoff is
  * `max(this, 4 × candidate-CI p90)` — see `waitingDwellCapMs`.
  */
@@ -591,9 +630,12 @@ export const WAITING_STALE_MAX_MS = 24 * 60 * 60 * 1000;
 /**
  * Base kind → the kind it escalates to once its dwell cap is exceeded.
  *
- * Every `waiting` kind is a promise about the near future ("coord rebases it",
- * "lands after the other PR", "resolve at merge") that decays into a falsehood
- * when the future doesn't arrive — so every one of them gets an expiry here.
+ * Every `waiting` kind is a wait on the near future ("behind — coord may
+ * freshen it", "lands after the other PR", "resolve at merge") that decays
+ * into a falsehood when the future doesn't arrive — so every one of them gets
+ * an expiry here — `behind-held-waiting` included: its grade spans holds
+ * that never clear on their own (a blocking label, dry-run mode), so without
+ * an expiry it would sit amber, outside the needs-attention count, forever.
  * A kind absent from this map never escalates.
  */
 export const STALE_ESCALATION: Partial<
@@ -602,6 +644,7 @@ export const STALE_ESCALATION: Partial<
   "needs-rebase": "needs-rebase-stale",
   blocked: "blocked-stale",
   "conflict-deferred": "conflict-stranded",
+  "behind-held-waiting": "behind-held-stale",
 };
 
 /**
@@ -609,7 +652,11 @@ export const STALE_ESCALATION: Partial<
  * lookups take this instead of the full union so asking for a dwell cap on a
  * kind that has none is unrepresentable, not silently defaulted.
  */
-export type EscalatableKind = "needs-rebase" | "blocked" | "conflict-deferred";
+export type EscalatableKind =
+  | "needs-rebase"
+  | "blocked"
+  | "conflict-deferred"
+  | "behind-held-waiting";
 
 function isEscalatable(kind: UnifiedStatusKind): kind is EscalatableKind {
   return STALE_ESCALATION[kind] !== undefined;
@@ -624,8 +671,9 @@ function isEscalatable(kind: UnifiedStatusKind): kind is EscalatableKind {
  * `CONFLICT_DEFERRAL_MAX_MS` so a fast repo still gets a grace window rather
  * than flipping red the moment a conflict appears — unchanged from web#813.
  * `needs-rebase` / `blocked`: four candidate runs, floored at
- * `WAITING_STALE_MAX_MS` — a longer leash, since coord genuinely services
- * these in the train and only a full day of silence falsifies the promise.
+ * `WAITING_STALE_MAX_MS` — a longer leash, since coord may genuinely service
+ * these (the BEHIND freshen; the overlap serializer) and only a full day of
+ * silence shows it is not.
  */
 export function waitingDwellCapMs(
   kind: EscalatableKind,
@@ -715,8 +763,8 @@ export function escalateStaleWaiting(
         kind: target,
         label: "Behind (stalled)",
         reason:
-          `no observed activity for ${dur} while behind its base — coord's ` +
-          `auto-rebase promise has expired; needs an author look`,
+          `no observed activity for ${dur} while behind its base — nothing ` +
+          `has brought it current; needs an author look`,
         attention: "author",
       };
     case "blocked-stale":
@@ -726,6 +774,15 @@ export function escalateStaleWaiting(
         reason:
           `no observed activity for ${dur} while waiting on an overlapping PR ` +
           `— the overlap should have cleared by now; needs an author look`,
+        attention: "author",
+      };
+    case "behind-held-stale":
+      return {
+        kind: target,
+        label: "Behind main — held (stalled)",
+        reason:
+          `no observed activity for ${dur} while behind its base and held by ` +
+          `another block — the hold has not cleared; needs an author look`,
         attention: "author",
       };
     case "conflict-stranded":
@@ -788,6 +845,70 @@ export function withDwellEvidence(
 }
 
 /**
+ * `merge_status` tokens that, on a BEHIND row, do NOT name a hold:
+ * `behind-base` (coord knows of no other block — which includes a verdict it
+ * never evaluated) and `ci-failed-stale-base` (its own arm) are the two the
+ * freshen may act on; `ready` / `queued` say nothing blocks; `draft` /
+ * `landed-open` are settled by earlier arms; `unknown` is coord saying it has
+ * no verdict, which is the UNKNOWN reading, not a named hold; `conflicts` is
+ * routed to the conflict arm (CI-duration-aware deferral / strand) before
+ * this set is consulted. Every other token — including one this build does
+ * not know — is a real predicate block, which coord's BEHIND freshen refuses
+ * to act past.
+ */
+const BEHIND_NON_HOLD_TOKENS: ReadonlySet<string> = new Set([
+  "behind-base",
+  "ci-failed-stale-base",
+  "ready",
+  "queued",
+  "draft",
+  "landed-open",
+  "unknown",
+  "conflicts",
+]);
+
+function isBehindHoldToken(token: string | undefined): token is string {
+  return !!token && !BEHIND_NON_HOLD_TOKENS.has(token);
+}
+
+const BEHIND_HELD_KIND_BY_ATTENTION: Record<Attention, UnifiedStatusKind> = {
+  author: "behind-held-author",
+  waiting: "behind-held-waiting",
+  none: "behind-held-none",
+};
+
+/**
+ * A BEHIND PR coord's predicate holds for another reason (plan
+ * `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`,
+ * D2 step 1).
+ *
+ * Attention is NOT decided here: it is `/admin/coord/prs`'s audited per-token
+ * grade, `PR_ATTENTION_BY_MERGE_STATUS[token]`, falling to that table's
+ * `unknown` row (the ignorance floor) for a token this build does not know.
+ * The grade then picks the kind (`BEHIND_HELD_KIND_BY_ATTENTION`), so
+ * `ATTENTION_BY_KIND[kind] === attention` holds by construction and the
+ * kind-keyed badge palette paints the hold in that grade's colour family.
+ */
+function behindHeldStatus(pr: PrRow, token: string): UnifiedStatus {
+  const known = Object.prototype.hasOwnProperty.call(
+    PR_ATTENTION_BY_MERGE_STATUS,
+    token
+  );
+  const attention =
+    PR_ATTENTION_BY_MERGE_STATUS[
+      (known ? token : "unknown") as keyof typeof PR_ATTENTION_BY_MERGE_STATUS
+    ];
+  // Redacted like every other coord-authored sentence this module renders.
+  const block = redactSecrets(pr.blocking_summary?.trim() ?? "") || token;
+  return {
+    kind: BEHIND_HELD_KIND_BY_ATTENTION[attention],
+    label: "Behind main — held",
+    reason: `behind ${pr.base_branch} — coord updates it only once this clears: ${block}`,
+    attention,
+  };
+}
+
+/**
  * Status for a PR with NO active merge attempt — GitHub's view decides.
  * Precedence (report §C/§7): merged (terminal, and it outranks the stale
  * pr_state a fast-forward land leaves behind) > draft > behind-main >
@@ -823,35 +944,65 @@ function statusFromGitHub(
       attention: "none",
     };
   }
-  if (pr.merge_state_status === "BEHIND") {
-    // Coord's merge train rebases candidates itself — BEHIND is a "just
-    // wait" state, not an author-action state. Kind stays `needs-rebase`
-    // for filtering continuity.
+  // BEHIND is NOT a promise that coord will bring the branch current. Coord's
+  // BEHIND freshen (`PUT update-branch`) refuses every PR its merge predicate
+  // blocks, gives up after a per-PR attempt ceiling, is suppressed by a content
+  // gate and has kill switches; the train's candidate rebase reaches only an
+  // admitted PR and never resolves a conflict. So the arm reads what coord
+  // DOES serve — `merge_status` — and never says "no action needed" (plan
+  // `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`,
+  // D2 step 1). A BEHIND row carrying `ci-failed-stale-base` falls through to
+  // the more specific stale-base arm directly below, and a conflicted one
+  // (`mergeable === false`, or coord's `conflicts`) to the conflict arm, so
+  // its CI-duration-aware deferral / strand logic still applies.
+  const behindConflicted =
+    pr.mergeable === false || pr.merge_status === "conflicts";
+  if (
+    pr.merge_state_status === "BEHIND" &&
+    pr.merge_status !== "ci-failed-stale-base" &&
+    !behindConflicted
+  ) {
+    if (isBehindHoldToken(pr.merge_status)) {
+      return behindHeldStatus(pr, pr.merge_status);
+    }
+    // `behind-base` (no other block coord knows of), or no verdict at all.
+    // Coord's freshen MAY act; whether it will is not served yet, so the row
+    // says UNKNOWN. Kind stays `needs-rebase` so the dwell cap still
+    // re-escalates it to red when nothing moves it. The dwell-evidence bit is
+    // left to `withDwellEvidence`: it describes whether a dwell CLOCK exists,
+    // and forcing it to `unknown` here would claim "coord reports no age"
+    // for a row whose clock coord does report.
     return {
       kind: "needs-rebase",
       label: "Needs rebase",
-      reason: `behind ${pr.base_branch} — coord auto-rebases it in the train, no action needed`,
+      reason: `behind ${pr.base_branch} — whether coord will update it is UNKNOWN`,
       attention: "waiting",
     };
   }
   // coord's `ci-failed-stale-base` merge_status overrides the raw CI fields the
   // same way `landed-open` overrides them in `isMergedPr`: coord diagnosed the
-  // red as sitting on a base `main` has moved past, and its remedy is coord's
-  // own BEHIND freshen (update the branch, CI re-runs) — the very promise
-  // `needs-rebase` makes, under the same dwell cap that re-escalates it to red
-  // when the freshen never arrives. Without it the frozen red falls through to
-  // `checks-failing` and asks the author to "push a fix" for main's failure.
-  // Its sibling `ci-failed-infra-kill` gets no override: no existing kind
-  // promises "re-run once the runner is healthy" without naming the author.
+  // red as sitting on a base `main` has moved past, so the red may be main's
+  // rather than the author's. Coord's stale-base freshen MAY update the branch
+  // and re-run CI, but it refuses a whole sub-population (a distance-only stale
+  // base is never freshened), so the row says UNKNOWN rather than promising
+  // the freshen — amber, under the same dwell cap that re-escalates it to red.
+  // Without the override the frozen red falls through to `checks-failing` and
+  // asks the author to "push a fix" for main's failure. Its sibling
+  // `ci-failed-infra-kill` gets no override: no existing kind reads "re-run
+  // once the runner is healthy" without naming the author.
   if (pr.merge_status === "ci-failed-stale-base") {
     return {
       kind: "needs-rebase",
       label: "Needs rebase",
-      reason: `CI red on a stale base — ${pr.base_branch} moved past it; coord freshens it (updates the branch, CI re-runs), no action needed`,
+      reason: `CI red on a stale base — ${pr.base_branch} moved past it; whether coord will freshen it is UNKNOWN`,
       attention: "waiting",
     };
   }
-  if (pr.mergeable === false || pr.merge_state_status === "DIRTY") {
+  if (
+    pr.mergeable === false ||
+    pr.merge_state_status === "DIRTY" ||
+    (pr.merge_state_status === "BEHIND" && behindConflicted)
+  ) {
     const longCi = isLongCiRepo(pr.repo, economics);
     const nearFront = isNearFrontOfQueue(pr.repo, economics);
     // RED — "act now": short-CI repo (a conflict blocks the fast train), OR
@@ -1429,13 +1580,18 @@ const KIND_RANK: Record<UnifiedStatusKind, number> = {
   requirements: 0,
   "checks-failing": 0,
   "needs-rebase": 0,
+  "behind-held-author": 0,
+  "behind-held-stale": 0,
   blocked: 1,
+  "behind-held-waiting": 1,
   // De-escalated conflict: "soon, not now" — sorts with the waiting-on-others
   // band, below the true act-now (rank 0) rows, above in-flight/idle.
   "conflict-deferred": 1,
   landing: 2,
   "awaiting-ci": 3,
   "checks-pending": 4,
+  // Held only by running CI: the same band as the checks it waits on.
+  "behind-held-none": 4,
   rebasing: 5,
   queued: 6,
   ready: 7,
@@ -1792,7 +1948,8 @@ export function derivePipelineHealth(
   const staleWaits = rows.filter(
     (r) =>
       r.status.kind === "needs-rebase-stale" ||
-      r.status.kind === "blocked-stale"
+      r.status.kind === "blocked-stale" ||
+      r.status.kind === "behind-held-stale"
   ).length;
   if (staleWaits > 0)
     authorReasons.push(

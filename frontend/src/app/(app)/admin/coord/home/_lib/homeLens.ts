@@ -11,8 +11,9 @@
  * with a structured descriptor built here, from the item's own fixed fields
  * (`kind · area · status · age`, leaving out a field its kind does not have),
  * never from its text. A value the page reads against one of its own tables
- * — a decision kind parsed out of question text, a does-not-know source —
- * shows only when the table names it, and in fixed words otherwise;
+ * — a decision kind parsed out of question text, a does-not-know source, a
+ * degradation's area — shows only when the table names it, and in fixed words
+ * otherwise;
  * a failed read is explained in the page's fixed words where its arm has
  * some, and withheld otherwise; and a row's key is an alias of the operator's.
  *
@@ -22,6 +23,7 @@
  */
 
 import {
+  PROJECT_NAME_DESCRIPTOR,
   WITHHELD,
   type RedactionDescriptor,
   type SectionSource,
@@ -38,6 +40,7 @@ import {
   PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
   decisionDomainLabel,
   isKnownDecisionDomain,
+  isKnownPlane,
   isLabelledSource,
   ownEntry,
   isWatcherSource,
@@ -172,12 +175,11 @@ export function presentedHomeFailure(
 /**
  * The current tenant's name, which no repository can vouch for. A tenant has
  * no area, status or age on this page, so its line is its kind alone — never
- * three unknowns about fields it does not have.
+ * three unknowns about fields it does not have. It is the presentation
+ * module's one project-name descriptor, which the app shell's project
+ * selector renders through too, so the strip and the sidebar agree.
  */
-export const TENANT_DESCRIPTOR: RedactionDescriptor = {
-  kind: "Project",
-  notApplicable: ["area", "status", "at"],
-};
+export const TENANT_DESCRIPTOR: RedactionDescriptor = PROJECT_NAME_DESCRIPTOR;
 
 /**
  * A repository named by coord's grouping. Its row's own badge and summary
@@ -248,6 +250,36 @@ function degradationAt(
   return kind === "cleared" ? d.resolvedAt : d.onsetObservedAt;
 }
 
+/**
+ * A degradation's area while presenting: the table's words, or `null` for a
+ * plane the table does not name. For any other plane the operator's label is
+ * coord's own key with its underscores spaced (`planeLabel`, pinned for the
+ * operator by `coordHomeStatus.test.ts`), and coord's list of planes grows
+ * without this page, so an allowlist: a plane shows only when the table names
+ * it. No plane at all keeps `planeLabel`'s "unclassified", which is the page's
+ * own word. A list of areas (the gap sentence, a watcher source's label)
+ * counts the `null`s as areas not named here.
+ */
+export function presentedPlaneWords(plane: string | null): string | null {
+  return !plane || isKnownPlane(plane) ? planeLabel(plane) : null;
+}
+
+/** Where one area stands alone (a row's identity, a watcher line) and is withheld. */
+export const AREA_WITHHELD = `area ${WITHHELD}`;
+
+/** A degradation's area on its own while presenting: the table's words, or {@link AREA_WITHHELD}. */
+export function presentedPlaneName(plane: string | null): string {
+  return presentedPlaneWords(plane) ?? AREA_WITHHELD;
+}
+
+/**
+ * A degradation's area in its descriptor while presenting: the table's words,
+ * or `withheld`, which the descriptor reads as "area withheld".
+ */
+export function presentedPlaneLabel(plane: string | null): string {
+  return presentedPlaneWords(plane) ?? WITHHELD;
+}
+
 /** A degradation headline's descriptor: its area and its row's status. */
 export function degradationDescriptor(
   d: DegradationView,
@@ -255,7 +287,7 @@ export function degradationDescriptor(
 ): RedactionDescriptor {
   return {
     kind: "Degradation",
-    area: planeLabel(d.plane),
+    area: presentedPlaneLabel(d.plane),
     status: kind,
     at: degradationAt(d, kind),
   };
@@ -278,7 +310,7 @@ export function subjectDescriptor(
     kind:
       (d.subjectKind && ownEntry(SUBJECT_KIND_WORD, d.subjectKind)) ||
       "Subject",
-    area: planeLabel(d.plane),
+    area: presentedPlaneLabel(d.plane),
     status: kind,
     at: degradationAt(d, kind),
   };
@@ -404,7 +436,8 @@ export const UNLABELLED_SOURCE = "A source this view has no name for";
 /**
  * A `does_not_know` row's label while presenting. The page's table labels the
  * sources it knows, and a watcher's row is named by the areas it feeds
- * (`sourceLabel`); for any OTHER source the operator's label is coord's own
+ * (`sourceLabel`, each area as {@link presentedPlaneWords} words it); for any
+ * OTHER source the operator's label is coord's own
  * identifier with its underscores spaced: internal vocabulary an evaluator
  * does not share, from a list coord grows without this page. So while
  * presenting such a row reads in fixed words: an allowlist, the rule style
@@ -417,7 +450,7 @@ export function presentedSourceLabel(
   planes: PlaneView[] | null
 ): string {
   return isLabelledSource(source) || isWatcherSource(source)
-    ? sourceLabel(source, planes)
+    ? sourceLabel(source, planes, presentedPlaneWords)
     : UNLABELLED_SOURCE;
 }
 
@@ -450,7 +483,8 @@ export function namedUnitRepos(
   const named = new Map<string, Set<string>>();
   const unbounded = new Set<string>();
   const mayHide = new Set<string>();
-  let everyUnitUnbounded = groups === null;
+  // No groups served names no unit, so every slug already reads `null` below.
+  let everyUnitUnbounded = false;
   for (const g of groups ?? []) {
     const namedList = g.named[list];
     if (g.kind === "unattributed_repo") {

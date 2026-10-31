@@ -27,7 +27,7 @@
  * answers about the data itself (`issueClearsRetained`), which clear it.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import {
@@ -178,6 +178,7 @@ export interface RunListFilter {
   windowId: SessionLoadWindow;
   workType: string | null;
   device: string | null;
+  initiator: string | null;
 }
 
 export type RunListRead =
@@ -198,7 +199,7 @@ export type RunListRead =
   | { kind: "issue"; issue: SessionLoadIssue };
 
 function filterKey(f: RunListFilter): string {
-  return `${f.windowId}|${f.workType ?? ""}|${f.device ?? ""}`;
+  return `${f.windowId}|${f.workType ?? ""}|${f.device ?? ""}|${f.initiator ?? ""}`;
 }
 
 /**
@@ -216,6 +217,10 @@ export function useSessionRunList(filter: RunListFilter): {
     null
   );
   const [nonce, setNonce] = useState(0);
+  // Bumped whenever a first page lands: a later page asked for before that,
+  // even mid-refresh, belongs to the list it replaced, and appending it would
+  // leave a gap.
+  const firstPagesLanded = useRef(0);
 
   useEffect(() => {
     let live = true;
@@ -228,11 +233,13 @@ export function useSessionRunList(filter: RunListFilter): {
         limit: RUN_PAGE_LIMIT,
         ...(filter.workType ? { workType: filter.workType } : {}),
         ...(filter.device ? { device: filter.device } : {}),
+        ...(filter.initiator ? { initiator: filter.initiator } : {}),
       },
       COORD_DASHBOARD_POLL_OPTIONS
     )
       .then((body) => {
         if (!live) return;
+        firstPagesLanded.current += 1;
         const reading = readRunList(body);
         if (reading.kind === "issue") {
           setState({ key, read: { kind: "issue", issue: reading.issue } });
@@ -260,6 +267,7 @@ export function useSessionRunList(filter: RunListFilter): {
       })
       .catch((err: unknown) => {
         if (!live) return;
+        firstPagesLanded.current += 1;
         setState({
           key,
           read: { kind: "issue", issue: classifySessionLoadError(err) },
@@ -281,6 +289,7 @@ export function useSessionRunList(filter: RunListFilter): {
     if (read.kind !== "ok" || read.nextCursor === null || read.loadingMore)
       return;
     const cursor = read.nextCursor;
+    const extending = firstPagesLanded.current;
     setState({ key, read: { ...read, loadingMore: true, moreIssue: null } });
     fetchSessionRuns(
       {
@@ -288,11 +297,13 @@ export function useSessionRunList(filter: RunListFilter): {
         limit: RUN_PAGE_LIMIT,
         ...(filter.workType ? { workType: filter.workType } : {}),
         ...(filter.device ? { device: filter.device } : {}),
+        ...(filter.initiator ? { initiator: filter.initiator } : {}),
         since: read.since,
       },
       COORD_DASHBOARD_POLL_OPTIONS
     )
       .then((body) => {
+        if (extending !== firstPagesLanded.current) return;
         const reading = readRunList(body);
         setState((prev) => {
           if (prev?.key !== key || prev.read.kind !== "ok") return prev;
@@ -324,6 +335,7 @@ export function useSessionRunList(filter: RunListFilter): {
         });
       })
       .catch((err: unknown) => {
+        if (extending !== firstPagesLanded.current) return;
         setState((prev) =>
           prev?.key === key && prev.read.kind === "ok"
             ? {
@@ -337,7 +349,7 @@ export function useSessionRunList(filter: RunListFilter): {
             : prev
         );
       });
-  }, [read, key, filter.workType, filter.device]);
+  }, [read, key, filter.workType, filter.device, filter.initiator]);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 

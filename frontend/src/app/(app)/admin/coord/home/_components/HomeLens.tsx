@@ -25,7 +25,9 @@ import {
 } from "@/components/presentation";
 import {
   degradationSubjectText,
+  planeLabel,
   type DegradationView,
+  type PlaneWords,
 } from "@/components/admin/coord/coordHomeStatus";
 import { FAILURE_REASON_WITHHELD } from "@/components/operations/presentedFailure";
 import {
@@ -33,6 +35,8 @@ import {
   RowKeyAliases,
   degradationRepo,
   isMachineSubject,
+  presentedPlaneName,
+  presentedPlaneWords,
   regionSources,
   subjectDescriptor,
   type DegradationRowKind,
@@ -197,6 +201,26 @@ export function useRowKey(): (list: string, operatorKey: string) => string {
       presenting ? aliases.key(list, operatorKey) : operatorKey,
     [presenting, aliases]
   );
+}
+
+/**
+ * How this mode words a degradation's area standing alone (a row's identity,
+ * a watcher line): `planeLabel` for the operator; while presenting, the
+ * table's words or "area withheld" (`presentedPlaneName`).
+ */
+export function usePlaneLabel(): (plane: string | null) => string {
+  const { presenting } = usePresentationMode();
+  return presenting ? presentedPlaneName : planeLabel;
+}
+
+/**
+ * How this mode words a degradation's area in a list of areas (the gap
+ * sentence): `planeLabel` for the operator; while presenting, the table's
+ * words or `null`, which the list counts (`presentedPlaneWords`).
+ */
+export function usePlaneWords(): PlaneWords {
+  const { presenting } = usePresentationMode();
+  return presenting ? presentedPlaneWords : planeLabel;
 }
 
 /**

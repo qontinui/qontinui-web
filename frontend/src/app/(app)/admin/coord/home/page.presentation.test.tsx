@@ -85,12 +85,19 @@ import {
   TENANT_ID,
   TENANT_NAME,
   UNLABELLED_FEED_SOURCE,
+  completeWaitingListsBody,
   firstDecisionAnsweredBody,
   fullBody,
+  initiativeBody,
   noLiveInitiativeBody,
+  unitAlsoInUnknownGroupBody,
   unreadBlocksBody,
   unservedDecisionsBody,
 } from "./__fixtures__/presentationFixture";
+import {
+  checkBehindEveryDisclosure,
+  expandRow,
+} from "./__fixtures__/homePageDriver";
 import {
   COORD_TIMEOUT_TEXT,
   PROJECT_STATE_KEPT_SOURCE,
@@ -185,41 +192,6 @@ function leakedIdentifiers(): string[] {
   return MUST_NOT_APPEAR.filter((needle) =>
     html.includes(needle.toLowerCase())
   );
-}
-
-/**
- * Run `check` on the page as rendered, then behind every disclosure: the
- * recently-cleared panel opened, then every record row expanded in turn (a
- * list keeps one row open, so each is checked open on its own).
- */
-function checkBehindEveryDisclosure(check: () => void) {
-  check();
-  const cleared = screen.queryByTestId("coord-home.degrading.cleared");
-  if (cleared) {
-    fireEvent.click(
-      within(cleared).getByRole("button", { name: /Recently cleared/ })
-    );
-    check();
-  }
-  const rows = [...document.querySelectorAll("[data-console-row]")];
-  expect(rows.length).toBeGreaterThan(0);
-  for (const row of rows) {
-    if (row.getAttribute("aria-expanded") !== "true") fireEvent.click(row);
-    check();
-  }
-}
-
-/** Expand the record row in `region` whose line shows `text`. */
-function expandRow(region: HTMLElement, text: string | RegExp) {
-  const row = [...region.querySelectorAll("[data-console-row]")].find((r) =>
-    typeof text === "string"
-      ? (r.textContent ?? "").includes(text)
-      : text.test(r.textContent ?? "")
-  );
-  if (!row) throw new Error(`no row showing ${String(text)}`);
-  if (row.getAttribute("aria-expanded") !== "true") fireEvent.click(row);
-  // `RecordRow`'s own wrapper: the line, and its detail once expanded.
-  return row.parentElement as HTMLElement;
 }
 
 /** The provenance chips a region's caption carries. */
@@ -680,7 +652,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     ];
     expect(unitNames("true").length).toBeGreaterThanOrEqual(2);
     for (const name of unitNames("true")) {
-      expect(name.closest("[data-lens-link]")).toBeNull();
+      expect(name.closest("a, [data-lens-link]")).toBeNull();
     }
     expect(unitNames("false").map((n) => n.textContent)).toEqual([
       FIRST_PARTY_UNIT_TITLE,
@@ -722,6 +694,98 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     ).toHaveTextContent(/^Current initiativeStatus not live · from 2026-10-01/);
     expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
     expect(leakedIdentifiers()).toEqual([]);
+  });
+
+  it("on track: a start date a person typed is withheld unless it is a date", async () => {
+    const view = await renderPresenting(
+      initiativeBody({ starts: "when Acme Corp signs" })
+    );
+    expect(
+      screen.getByTestId("coord-home.on-track.initiative")
+    ).toHaveTextContent(/Status live · from withheld · ends withheld/);
+    expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+    expect(leakedIdentifiers()).toEqual([]);
+  });
+
+  it.each([
+    ["null", { ends: null }],
+    ["absent", { ends: undefined }],
+  ])(
+    "on track: an initiative end date that is %s reads unknown, not withheld",
+    async (_spelling, fields) => {
+      const view = await renderPresenting(initiativeBody(fields));
+      expect(
+        screen.getByTestId("coord-home.on-track.initiative")
+      ).toHaveTextContent(/Status live · from 2026-10-01 · ends unknown ·/);
+      expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+      expect(leakedIdentifiers()).toEqual([]);
+    }
+  );
+
+  it.each([
+    ["null", { starts: null }],
+    ["absent", { starts: undefined }],
+  ])(
+    "on track: an initiative start date that is %s reads unknown, not nothing",
+    async (_spelling, fields) => {
+      const view = await renderPresenting(initiativeBody(fields));
+      expect(
+        screen.getByTestId("coord-home.on-track.initiative")
+      ).toHaveTextContent(/Status live · from unknown · ends withheld ·/);
+      expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+      expect(leakedIdentifiers()).toEqual([]);
+    }
+  );
+
+  it("on track: a unit also named by a group of an unknown kind is withheld, though the scope clears the repository that names it", async () => {
+    const view = await renderPresenting(unitAlsoInUnknownGroupBody());
+    const own = expandRow(
+      screen.getByTestId("coord-home.on-track"),
+      FIRST_PARTY_REPO
+    );
+    expect(own).toHaveTextContent(/Work unit · area unknown · no recorded/);
+    expect(
+      own.querySelector(
+        '[data-testid^="coord-home.on-track.named."] [data-redacted="false"]'
+      )
+    ).toBeNull();
+    // The group that names it: a kind this page does not recognise, so its row
+    // says neither its key nor "repo", closed or open.
+    const unknownGroup = screen
+      .getAllByTestId("coord-home.on-track.group")
+      .at(-1)!;
+    expect(unknownGroup.querySelector("[data-console-row]")).toHaveTextContent(
+      /^no repo named/
+    );
+    fireEvent.click(unknownGroup.querySelector("[data-console-row]")!);
+    expect(unknownGroup).toHaveTextContent(
+      "Work units that name this repository."
+    );
+    checkBehindEveryDisclosure(() => {
+      expectPresentationSafe(view, {
+        forbidden: [...MUST_NOT_APPEAR, FIRST_PARTY_UNIT_TITLE],
+      });
+      expect(document.body.textContent).not.toContain(FIRST_PARTY_UNIT_TITLE);
+    });
+  });
+
+  it("on track: a waiting unit is named once no waiting list can hide it", async () => {
+    const view = await renderPresenting(completeWaitingListsBody());
+    const own = expandRow(
+      screen.getByTestId("coord-home.on-track"),
+      FIRST_PARTY_REPO
+    );
+    const waiting = within(own).getByTestId(
+      "coord-home.on-track.named.waiting_on_condition"
+    );
+    const name = waiting.querySelector('[data-redacted="false"]');
+    expect(name).toHaveTextContent(HIDDEN_UNIT_TITLE);
+    expect(name!.closest("[data-lens-link]")).not.toBeNull();
+    // The list it is cleared from, and only that one: the foreign repository's
+    // own waiting unit stays withheld.
+    expectPresentationSafe(view, {
+      forbidden: MUST_NOT_APPEAR.filter((n) => n !== HIDDEN_UNIT_TITLE),
+    });
   });
 
   it("correct: the row and its why; coord's reason token is not rendered", async () => {
