@@ -907,7 +907,7 @@ describe("round-8 review — the partial and unread captions say what is true", 
   ])(
     "counts %i watched and %i unwatched areas not named here as distinct",
     (watchedCount, unwatchedCount, expected) => {
-      const planes: Record<string, typeof NO_WATCHER> = {};
+      const planes: Record<string, unknown> = {};
       for (let i = 0; i < watchedCount; i += 1) {
         planes[`watched_${i}`] = STALE_MERGE_TRAIN.merge_train;
       }
