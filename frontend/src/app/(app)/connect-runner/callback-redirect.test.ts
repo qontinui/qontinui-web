@@ -274,20 +274,20 @@ describe("pairConfirmErrorMessage", () => {
     ).toBe(fallback);
   });
   it("appends coord's restart hint to a 5xx sentence that lacks it, once", () => {
-    // An older backend's sentence says retry; coord's own hint says the
-    // request was used up, and that is what the user can act on.
+    // The backend on main (during deploy skew) relays coord's hint beside a
+    // sentence that names only the failure; coord's hint says the request was
+    // used up, and that is what the user can act on.
     expect(
       pairConfirmErrorMessage(
         {
           coord_status: 500,
           coord_hint: "restart pairing",
-          message:
-            "Coord failed to complete pairing (HTTP 500). Retry; if it persists, check coord.",
+          message: "Coord refused pairing (HTTP 500: internal_error).",
         },
         502
       )
     ).toBe(
-      "Coord failed to complete pairing (HTTP 500). Retry; if it persists, check coord. Start pairing again from your device."
+      "Coord refused pairing (HTTP 500: internal_error). Start pairing again from your device."
     );
     // The current backend's sentence already says it: not repeated.
     const sentence =

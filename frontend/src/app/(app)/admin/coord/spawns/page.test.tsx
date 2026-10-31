@@ -91,7 +91,6 @@ async function renderPage() {
   await settle();
 }
 
-/** A summary count as rendered: its number, or `unknown` for a dash. */
 /**
  * The label beside a summary count: the `Count`'s last child span, read on
  * its own so the assertion pins the copy, not how the value and label sit
@@ -102,6 +101,7 @@ function labelOf(id: string): string | null {
   return count.lastElementChild?.textContent ?? null;
 }
 
+/** A summary count as rendered: its number, or `unknown` for a dash. */
 function countOf(id: string): string | null {
   return screen
     .getByTestId(`coord-spawns-count-${id}`)
