@@ -48,6 +48,8 @@ describe("MobileTopBar", () => {
     expect(name).toHaveTextContent("Project");
     expect(container.textContent).not.toContain(fx.ACTIVE);
     expect(attributesNaming(document.body, fx.ACTIVE)).toEqual([]);
+    expect(attributesNaming(document.body, "acme-corp-rollout")).toEqual([]);
+    expect(attributesNaming(document.body, "t-active")).toEqual([]);
   });
 
   it("names the active project in the operator view", () => {

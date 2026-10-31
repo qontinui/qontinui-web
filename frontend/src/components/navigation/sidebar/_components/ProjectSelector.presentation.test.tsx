@@ -59,6 +59,11 @@ function page(): { text: string; attributes: string[] } {
     attributes: [
       ...attributesNaming(document.body, fx.ACTIVE),
       ...attributesNaming(document.body, fx.OTHER),
+      // The slug and id identify the project as surely as its name does.
+      ...attributesNaming(document.body, "acme-corp-rollout"),
+      ...attributesNaming(document.body, "globex-pilot"),
+      ...attributesNaming(document.body, "t-active"),
+      ...attributesNaming(document.body, "t-other"),
     ],
   };
 }
