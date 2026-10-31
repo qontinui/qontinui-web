@@ -11,6 +11,15 @@ import {
   NO_CONNECTION_MESSAGE,
   REQUEST_TIMEOUT_MESSAGE,
 } from "@/services/http-client";
+
+/**
+ * The reason for a failure raised after an answer arrived: a 2xx whose body
+ * would not parse (`UnreadableAnswerError`, or a bare `SyntaxError` from a
+ * `response.json()`), or one that broke off mid-read. The answer reached the
+ * browser; what it said did not.
+ */
+export const ANSWER_UNREADABLE_REASON =
+  "an answer came back that could not be read";
 import { httpBodyOf, httpStatusOf } from "./httpStatus";
 
 /**
@@ -112,13 +121,17 @@ function quotableDetail(detail: string | null): string | null {
  * the write failed, which nobody knows. So those are replaced, and only a
  * detail the server actually gave is quoted. An error with a numeric `status`
  * and `detailServed: false` (`AgentPrefError` over a body with no reason)
- * carries the client's fallback as its message, and quotes nothing.
+ * carries the client's fallback as its message, and quotes nothing. A failure
+ * after the answer arrived (a `SyntaxError`, which every body reader here
+ * raises for an unreadable 2xx) is {@link ANSWER_UNREADABLE_REASON}, never
+ * "no answer reached the browser".
  */
 export function outcomeUnknownReason(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   if (message === REQUEST_TIMEOUT_MESSAGE) {
     return "no answer came back within the client's time limit";
   }
+  if (err instanceof SyntaxError) return ANSWER_UNREADABLE_REASON;
   const typed = err as { status?: unknown; detailServed?: unknown } | null;
   const parsedStatus = httpStatusOf(err);
   if (parsedStatus !== null) {
