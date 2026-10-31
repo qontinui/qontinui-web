@@ -164,7 +164,7 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "category still used by a cost or a recurring cost cannot be "
                 "deleted (409 category_in_use)."
             ),
-            permission="editing_roles",
+            permission="person_edits",
             read_model=CostCategoryRead,
             create_model=CostCategoryCreate,
             update_model=CostCategoryUpdate,
@@ -186,7 +186,7 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "period no longer falls due (409 periods_recorded) — give it "
                 "an end_date instead. Money is integer micros."
             ),
-            permission="editing_roles",
+            permission="person_edits",
             read_model=RecurringCostRead,
             create_model=RecurringCostCreate,
             update_model=RecurringCostUpdate,
@@ -208,7 +208,7 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "'none' for uncategorised), awaiting_delivery=true, "
                 "recurring_cost_id. Money is integer micros."
             ),
-            permission="editing_roles",
+            permission="person_edits",
             read_model=CostEntryRead,
             create_model=CostEntryCreate,
             update_model=CostEntryUpdate,

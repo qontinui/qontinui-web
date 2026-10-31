@@ -10,12 +10,15 @@ controls on project B, only to have the save refused. The server gate was
 right; the affordance lied. Every overview surface now renders its controls
 from :class:`OverviewAccess`, resolved for the ACTIVE tenant only.
 
-Three rules, chosen by what a resource is and where it is stored:
+Four rules, chosen by what a resource is and where it is stored:
 
 * ``editing_roles`` — web-owned content. The tenant's
   ``overview.settings.editing_roles`` (default ``{admin}``) names the coord
   roles that may write; a qontinui superuser may always write, as on every
   other web-owned admin surface.
+* ``person_edits`` — web-owned content a person must write themselves. Read
+  and written exactly as ``editing_roles``, except that a device principal may
+  read it and never write it (:data:`DEVICE_WRITE_REFUSALS`).
 * ``project_admin`` — web-owned AUTHORITY, i.e. the settings that say who may
   edit. An admin of the tenant (or a superuser) only: a setting that widens
   access must not be writable by the people it widens it to.
@@ -33,6 +36,10 @@ refuse a device outright, reads included (:data:`DEVICE_REFUSALS`): a
 ``coord_admin`` resource, because coord stores those behind operator routes
 that reject a device JWT; and ``project_admin``, because those settings decide
 who else may edit, and a device acts for its user with nobody watching.
+One more rule refuses a device its WRITES only (:data:`DEVICE_WRITE_REFUSALS`):
+``person_edits``, the cost ledger, whose entries are money the project says it
+spent — a record a person vouches for, not one an agent may create or delete
+unattended in its user's name.
 """
 
 from __future__ import annotations
@@ -64,7 +71,9 @@ from app.services.coord_device_memberships import get_device_memberships
 from app.services.coord_identity import get_coord_identity
 from app.services.coord_jwks import kid_outside_coord_family
 
-PermissionRule = Literal["editing_roles", "project_admin", "coord_admin"]
+PermissionRule = Literal[
+    "editing_roles", "person_edits", "project_admin", "coord_admin"
+]
 
 #: Which credential proved the caller. ``user`` — a Cognito user JWT (a person
 #: in a browser, or anything holding their token). ``device`` — a coord device
@@ -78,6 +87,7 @@ TENANT_NOT_BOUND = "tenant_not_bound"
 DEVICE_NOT_SUPPORTED_FOR_COORD_BACKED = "device_not_supported_for_coord_backed_resource"
 DEVICE_NOT_SUPPORTED_FOR_PROJECT_ADMIN = "device_not_supported_for_project_admin"
 NOT_A_DEVICE_PRINCIPAL = "not_a_device_principal"
+DEVICE_NOT_SUPPORTED_FOR_PERSON_EDITS = "device_not_supported_for_person_edits"
 
 #: The rules a device principal is refused on OUTRIGHT, reads as well as
 #: writes and before any store runs, with the code and message each refusal
@@ -102,6 +112,25 @@ DEVICE_REFUSALS: dict[PermissionRule, tuple[str, str]] = {
         "Project settings decide who may edit this project, so only a person "
         "signed in as a project administrator may change them or read their "
         "history.",
+    ),
+}
+
+#: The rules a device principal may READ but never WRITE — create, update and
+#: delete alike — with the code and message the write refusal carries. Refused
+#: as :data:`DEVICE_REFUSALS` are (from the verified token alone, before the
+#: project is resolved), but only on a write route.
+#:
+#: * ``person_edits`` — the cost ledger (categories, recurring costs, cost
+#:   entries). A paired device acts as its owning user, so without this a
+#:   device could record or delete spending in any project where that user
+#:   holds an editing role, with nobody watching. The ledger is what the
+#:   project says it spent; a person records it. Reads stay open, so an agent
+#:   can still report on it.
+DEVICE_WRITE_REFUSALS: dict[PermissionRule, tuple[str, str]] = {
+    "person_edits": (
+        DEVICE_NOT_SUPPORTED_FOR_PERSON_EDITS,
+        "This record is written only by a person: a paired device may read it "
+        "but not create, change or delete it. Sign in as a person to edit it.",
     ),
 }
 
@@ -261,9 +290,12 @@ class OverviewAccess:
     via_device: UUID | None
 
     def can_edit(self, rule: PermissionRule) -> bool:
-        if rule in DEVICE_REFUSALS and self.via_device is not None:
-            # A rule only a person may exercise (see DEVICE_REFUSALS): the
-            # catalog says so rather than offering an edit the door refuses.
+        if self.via_device is not None and (
+            rule in DEVICE_REFUSALS or rule in DEVICE_WRITE_REFUSALS
+        ):
+            # A rule only a person may write (see DEVICE_REFUSALS and
+            # DEVICE_WRITE_REFUSALS): the catalog says so rather than offering
+            # an edit the door refuses.
             return False
         is_admin = "admin" in self.roles
         if rule == "coord_admin":
@@ -425,9 +457,11 @@ async def get_overview_access(
 
 
 def refuse_device_on_operator_only(
-    principal: OverviewPrincipal, rule: PermissionRule
+    principal: OverviewPrincipal, rule: PermissionRule, *, write: bool = False
 ) -> None:
-    """403 a device on a rule only a person may exercise (:data:`DEVICE_REFUSALS`).
+    """403 a device on a rule only a person may exercise (:data:`DEVICE_REFUSALS`),
+    and, when ``write``, on a rule only a person may write
+    (:data:`DEVICE_WRITE_REFUSALS`).
 
     * ``coord_admin``: coord's operator routes (``/coord/prompt-documents``)
       authorize the forwarded bearer as an SSO operator and reject a device
@@ -445,17 +479,23 @@ def refuse_device_on_operator_only(
     With coord down, a key cache that is cold or expired gives that
     verifier's 503; one missing the token's key id gives a 503 for the first
     miss in each 30-second forced-refresh window and the verifier's 401
-    inside it. Never this 403. Reads and writes alike; the refusal carries
-    the rule's own code.
+    inside it. Never this 403. :data:`DEVICE_REFUSALS` applies to reads and
+    writes alike, :data:`DEVICE_WRITE_REFUSALS` to writes only; the refusal
+    carries the rule's own code.
     """
+    if principal.kind != "device":
+        return
     refusal = DEVICE_REFUSALS.get(rule)
-    if refusal is not None and principal.kind == "device":
+    if refusal is None and write:
+        refusal = DEVICE_WRITE_REFUSALS.get(rule)
+    if refusal is not None:
         code, message = refusal
         raise _refusal(403, code, message)
 
 
-def device_gate(rule: PermissionRule):
-    """A dependency applying :func:`refuse_device_on_operator_only` for ``rule``.
+def device_gate(rule: PermissionRule, *, write: bool = False):
+    """A dependency applying :func:`refuse_device_on_operator_only` for ``rule``
+    (``write`` for a write route).
 
     Declared FIRST in :func:`require_read` / :func:`require_edit`: FastAPI
     resolves a dependency's sub-dependencies in declaration order and stops at
@@ -466,14 +506,15 @@ def device_gate(rule: PermissionRule):
     async def dependency(
         principal: OverviewPrincipal = Depends(get_overview_principal),
     ) -> None:
-        refuse_device_on_operator_only(principal, rule)
+        refuse_device_on_operator_only(principal, rule, write=write)
 
     return dependency
 
 
 def require_read(rule: PermissionRule):
     """A dependency for a resource's READ routes: any member of the active
-    project, except a device on a rule in :data:`DEVICE_REFUSALS`."""
+    project, except a device on a rule in :data:`DEVICE_REFUSALS` (a rule in
+    :data:`DEVICE_WRITE_REFUSALS` stays readable to a device)."""
 
     async def dependency(
         _gate: None = Depends(device_gate(rule)),
@@ -488,10 +529,10 @@ def require_edit(rule: PermissionRule):
     """A dependency that refuses a write the caller may not make — decided by
     the same :meth:`OverviewAccess.can_edit` the reads serve, after
     :func:`device_gate` has refused a device on a rule only a person may
-    exercise."""
+    exercise or write."""
 
     async def dependency(
-        _gate: None = Depends(device_gate(rule)),
+        _gate: None = Depends(device_gate(rule, write=True)),
         access: OverviewAccess = Depends(get_overview_access),
     ) -> OverviewAccess:
         if not access.can_edit(rule):
