@@ -242,6 +242,10 @@ describe("/admin/coord/agent-registry", () => {
   it.each([
     [400, "bad request"],
     [502, "coord is not reachable"],
+    [
+      502,
+      "coord does not serve PUT /coord/agent-registry/code-reviewer yet — deploy qontinui-coord first",
+    ],
   ])(
     "a %i (%s) stays a plain failure, with nothing re-read",
     async (status, detail) => {

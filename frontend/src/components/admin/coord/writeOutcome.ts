@@ -11,19 +11,32 @@ import { NO_CONNECTION_MESSAGE } from "@/services/http-client";
 import { httpBodyOf, httpStatusOf } from "./httpStatus";
 
 /**
- * The web proxies' exact detail for a connect failure — the one 5xx that proves
- * coord never saw the request (`_proxy_coord_write`, `_coord_request`).
+ * The web proxies' exact detail for a connect failure — a 502 that proves coord
+ * never saw the request (`_proxy_coord_write`, `_coord_request`). It proves
+ * that of the attempt it answers, so the writes classified here are sent once
+ * (`maxRetries: 0`): an earlier attempt's lost 504 cannot hide behind it.
  */
 export const PROXY_NOT_REACHABLE_DETAIL = "coord is not reachable";
+
+/**
+ * How the registry door's deploy-order 502 begins
+ * (`_coord_request_deploy_order_aware`): coord answered an EMPTY 404, i.e. the
+ * route is not deployed, so nothing was written. The rest of the detail names
+ * the route and the remedy ("deploy qontinui-coord first"), which a caller
+ * shows as it came.
+ */
+export const PROXY_ROUTE_ABSENT_PREFIX = "coord does not serve ";
 
 /**
  * A status after which the write may or may not have been applied.
  *
  * 500, 503 and 504 are unknown: coord's own 5xx, an intermediary's, or the
  * proxy's timeout / lost answer can all follow a commit. A 502 is "not applied"
- * ONLY when it is the proxy's own connect failure, recognised by its exact
- * detail — a 502 from a load balancer in front of the web backend, or one coord
- * forwarded, carries no such proof and is unknown too. Every other 5xx,
+ * ONLY when it is one of the proxy's own two no-write answers, recognised by
+ * its detail: the connect failure (exact), or the deploy-order answer for a
+ * route coord does not serve (by its prefix). A 502 from a load balancer in
+ * front of the web backend, or one coord forwarded, carries no such proof and
+ * is unknown too. Every other 5xx,
  * including a CDN's 520/524, is unknown as well, because none of them is a
  * refusal. A 4xx is coord's or the proxy's answer about the request.
  */
@@ -31,7 +44,12 @@ export function isOutcomeUnknownStatus(
   status: number,
   detail: string | null
 ): boolean {
-  if (status === 502) return detail !== PROXY_NOT_REACHABLE_DETAIL;
+  if (status === 502) {
+    return !(
+      detail === PROXY_NOT_REACHABLE_DETAIL ||
+      (detail?.startsWith(PROXY_ROUTE_ABSENT_PREFIX) ?? false)
+    );
+  }
   return status >= 500;
 }
 

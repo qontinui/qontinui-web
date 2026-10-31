@@ -228,6 +228,37 @@ describe("useSpawnPathSwitches", () => {
     });
   });
 
+  it("answers the deploy-order 502 as refused, keeping coord's route and remedy", async () => {
+    const detail =
+      "coord does not serve PUT /coord/agent-registry/{agent_name} yet — " +
+      "deploy qontinui-coord first";
+    answer = async (path, method) => {
+      if (method === "PUT") {
+        return json({ error: "BAD_GATEWAY", message: detail }, 502);
+      }
+      if (path === "/api/v1/agent-registry/admin/registry") {
+        return json(defaultsBody());
+      }
+      if (path === "/api/v1/agent-registry") return json(effectiveBody());
+      return json({ error: "not in this test" }, 404);
+    };
+    const { result } = renderHook(() => useSpawnPathSwitches());
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.setRegistryDefault(
+        "merge_shepherd",
+        false
+      );
+    });
+    expect(outcome).toMatchObject({
+      outcome: "refused",
+      message: expect.stringContaining("deploy qontinui-coord first"),
+    });
+    const record = result.current.writes["registry:merge_shepherd"];
+    expect(record).toMatchObject({ phase: "refused", error: detail });
+    expect(record?.outcomeUnknown).toBeFalsy();
+  });
+
   it("answers a PUT made while the browser is offline as refused", async () => {
     vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(false);
     answer = async (path, method) => {
