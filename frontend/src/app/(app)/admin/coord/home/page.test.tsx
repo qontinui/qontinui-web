@@ -66,6 +66,7 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+import { openSourcesRead } from "./__fixtures__/homePageDriver";
 import CoordHomePage from "./page";
 
 const REGIONS = [
@@ -434,6 +435,7 @@ describe("/admin/coord/home", () => {
     );
     // …and with coord's exclusion reason that names the class expanded too.
     const dnk = screen.getByTestId("coord-home.does-not-know");
+    openSourcesRead();
     fireEvent.click(within(dnk).getByText("Work unit status changes"));
     expect(dnk).toHaveTextContent("Why excluded:");
     expect(document.body.textContent ?? "").not.toMatch(/stalled/i);
@@ -1175,6 +1177,11 @@ describe("/admin/coord/home", () => {
 
   it("lists what the view does not know, with not-read sources marked", async () => {
     await renderWith(doorBody());
+    // The not-read source is listed; the two read ones are one click down.
+    expect(screen.getAllByTestId("coord-home.does-not-know.row")).toHaveLength(
+      1
+    );
+    openSourcesRead();
     const rows = screen.getAllByTestId("coord-home.does-not-know.row");
     expect(rows).toHaveLength(3);
     expect(screen.getByTestId("coord-home.does-not-know")).toHaveTextContent(
@@ -1222,6 +1229,7 @@ describe("/admin/coord/home", () => {
       })
     );
     const dnk = screen.getByTestId("coord-home.does-not-know");
+    openSourcesRead();
     for (const [label, raw] of [
       ["Work units", "work_units"],
       ["Work unit status changes", "work_unit_status_history"],
@@ -1242,8 +1250,10 @@ describe("/admin/coord/home", () => {
       .getByText("Watcher feeding merge train")
       .closest('[data-testid="coord-home.does-not-know.row"]') as HTMLElement;
     expect(watcherRow).toHaveTextContent(
-      "no successful run on record · freshness bound 5m · exclusions not stated"
+      "no successful run on record · freshness bound 5m"
     );
+    // The clause coord did not state is said once, under the list.
+    expect(watcherRow).not.toHaveTextContent(/not stated/);
     expect(watcherRow).not.toHaveTextContent(/may be up to/);
     fireEvent.click(within(dnk).getByText("Watcher feeding merge train"));
     expect(
@@ -1254,8 +1264,12 @@ describe("/admin/coord/home", () => {
     const drainRow = within(dnk)
       .getByText("Machine drains")
       .closest('[data-testid="coord-home.does-not-know.row"]') as HTMLElement;
-    expect(drainRow).toHaveTextContent(
-      "coord reported an error · maximum age not stated · exclusions not stated"
+    expect(drainRow).toHaveTextContent("coord reported an error");
+    expect(drainRow).not.toHaveTextContent(/not stated/);
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.not-read.unstated")
+    ).toHaveTextContent(
+      "Coord stated no age bound for 2 of 3, and no count of excluded rows for all 3."
     );
     expect(drainRow).not.toHaveTextContent(/timeout/);
     fireEvent.click(within(dnk).getByText("Machine drains"));
@@ -1289,13 +1303,19 @@ describe("/admin/coord/home", () => {
     const rows = within(dnk).getAllByTestId("coord-home.does-not-know.row");
     const watcherRow = rows[rows.length - 1];
     expect(watcherRow).toHaveTextContent(
-      "last run is overdue · last success older than its 1m 30s freshness bound · exclusions not stated"
+      "last run is overdue · last success older than its 1m 30s freshness bound"
     );
     expect(
       watcherRow.querySelector('[title^="Last successful run "]')
     ).not.toBeNull();
     expect(watcherRow.querySelector('[title^="Read "]')).toBeNull();
-    expect(rows[0].querySelector('[title^="Read "]')).not.toBeNull();
+    // A read source, behind "Sources read", is captioned as read.
+    const readPanel = openSourcesRead();
+    expect(
+      within(readPanel)
+        .getAllByTestId("coord-home.does-not-know.row")[0]
+        .querySelector('[title^="Read "]')
+    ).not.toBeNull();
     // Expanded, the detail states the same bound, to the second.
     fireEvent.click(within(dnk).getByText("Watcher feeding Degrading"));
     expect(watcherRow).toHaveTextContent(
@@ -1323,12 +1343,12 @@ describe("/admin/coord/home", () => {
       })
     );
     const dnk = screen.getByTestId("coord-home.does-not-know");
+    openSourcesRead();
     const trainRow = within(dnk)
       .getByText("Merge train health, per repository")
       .closest('[data-testid="coord-home.does-not-know.row"]') as HTMLElement;
-    expect(trainRow).toHaveTextContent(
-      "may be up to 20s old · exclusions not stated"
-    );
+    expect(trainRow).toHaveTextContent("may be up to 20s old");
+    expect(trainRow).not.toHaveTextContent(/not stated/);
     expect(trainRow).not.toHaveTextContent(/0m/);
     fireEvent.click(
       within(dnk).getByText("Merge train health, per repository")

@@ -97,6 +97,7 @@ import {
 import {
   checkBehindEveryDisclosure,
   expandRow,
+  openSourcesRead,
 } from "./__fixtures__/homePageDriver";
 import {
   COORD_TIMEOUT_TEXT,
@@ -242,6 +243,7 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
       1
     );
     expect(screen.getAllByTestId("coord-home.on-track.group")).toHaveLength(4);
+    openSourcesRead();
     expect(screen.getAllByTestId("coord-home.does-not-know.row")).toHaveLength(
       8
     );
@@ -805,6 +807,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
   it("does not know: sources in words with no raw id, and coord's reasons as descriptors", async () => {
     const view = await renderPresenting(fullBody());
     const region = screen.getByTestId("coord-home.does-not-know");
+    openSourcesRead();
     for (const label of region.querySelectorAll(
       "[data-console-row] span[title]"
     )) {
@@ -1188,6 +1191,7 @@ describe("/admin/coord/home for the operator — the console is unchanged", () =
     );
     // A source the page's table does not label reads as coord's identifier
     // for the operator, exactly as #1999 renders it.
+    openSourcesRead();
     expect(screen.getByTestId("coord-home.does-not-know")).toHaveTextContent(
       "Coord.example feed visibility (kinds this caller can be served)"
     );
