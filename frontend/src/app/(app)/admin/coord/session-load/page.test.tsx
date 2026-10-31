@@ -275,14 +275,18 @@ describe("/admin/coord/session-load", () => {
   // - 2 h: an absent clock (NaN, which links 30 d with the "may be older"
   //   note), or one more than 22 h ahead of the page's.
   // - 23.5 h: an absent clock, or one more than 30 min ahead.
+  // - 25 h: an absent clock, a clock of 0, one more than 1 h behind (the
+  //   start reads inside 24 h, 7 d), or one more than 143 h ahead (past 7 d).
   // - 72 h: an absent clock, a clock of 0 (every start clamps to "just
   //   now", 7 d), one more than 48 h behind, or one more than 4 days ahead
   //   (past 7 d, which adds the note).
-  // A clock less than 23.5 h behind the page's goes unnoticed: those starts
-  // still read as inside 24 h.
+  // So the bound is: a clock less than 1 h behind or less than 30 min ahead
+  // of the page's goes unnoticed. The 2 h and 23.5 h cases catch no clock
+  // behind at all; without the 25 h case, a clock up to 48 h behind would.
   it.each([
     { agoHours: 2, window: "7d" },
     { agoHours: 23.5, window: "7d" },
+    { agoHours: 25, window: "30d" },
     { agoHours: 72, window: "30d" },
   ])(
     "a run started $agoHours h ago links its spawn request in the $window window, by the page's clock",
