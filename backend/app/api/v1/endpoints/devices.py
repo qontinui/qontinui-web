@@ -755,11 +755,11 @@ def _coord_refusal_detail(resp: Any) -> dict[str, Any]:
     past 500 chars, so a client cannot reliably parse it to tell "not a
     member" from a retryable coord-side failure or a burned pairing nonce.
 
-    ``error`` and ``message`` are what make those fields reach a client:
-    the app's ``http_exception_handler`` spreads a dict detail carrying
-    ``error`` into the TOP LEVEL of the response, but flattens one without
-    it to ``message: str(detail)`` — a Python repr, every ``coord_*`` field
-    lost.
+    ``error`` sets the envelope's top-level code to ``bad_gateway``, and the
+    app's ``http_exception_handler`` spreads the dict's other fields into the
+    TOP LEVEL of the response, so every ``coord_*`` field, ``code`` and
+    ``hint`` reach a client. (A dict without ``error`` is spread the same way
+    now; it used to be flattened to ``message: str(detail)``, a Python repr.)
     """
     detail: dict[str, Any] = {
         "error": ErrorCode.BAD_GATEWAY.value,
