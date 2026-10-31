@@ -362,7 +362,7 @@ function VolumesUnknown({
  * so an outsider gets the fact without the identifier (plan
  * `2026-10-23-console-presentation-spaces` D3.3).
  */
-export const DISK_UNREADABLE_PRESENTED =
+const DISK_UNREADABLE_PRESENTED =
   "Disk telemetry for this machine could not be read, so nothing here says whether its disk is fine or full.";
 
 function DiskSection({ volumes }: { volumes: MachineVolumes }) {

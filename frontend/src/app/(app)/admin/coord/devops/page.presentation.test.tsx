@@ -81,9 +81,14 @@ const deviceStatusRows = new Map<string, unknown>();
  * `everSeeded` false when no fleet read ever answered — the hook's own report
  * for a route that has failed from the start.
  */
-const deviceStatusState: { error: string | null; everSeeded: boolean } = {
+const deviceStatusState: {
+  error: string | null;
+  everSeeded: boolean;
+  answeredAtMs: number | null;
+} = {
   error: null,
   everSeeded: true,
+  answeredAtMs: Date.now(),
 };
 vi.mock("@/components/operations/useDeviceStatusStream", () => ({
   useDeviceStatusStream: () => ({
@@ -92,6 +97,9 @@ vi.mock("@/components/operations/useDeviceStatusStream", () => ({
     error: deviceStatusState.error,
     seeded: true,
     everSeeded: deviceStatusState.everSeeded,
+    answeredAtMs: deviceStatusState.everSeeded
+      ? deviceStatusState.answeredAtMs
+      : null,
     refetch: vi.fn(),
   }),
 }));
@@ -187,6 +195,7 @@ function resetEnvironment() {
   deviceStatusRows.clear();
   deviceStatusState.error = null;
   deviceStatusState.everSeeded = true;
+  deviceStatusState.answeredAtMs = Date.now();
   window.localStorage.clear();
   window.sessionStorage.clear();
   sessionMachineAliases.reset();
@@ -447,7 +456,9 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       expect(engineeringVocabularyOnPage()).toEqual([]);
     });
     // A role row's lane table, opened: coord's state in words.
-    const lanes = [...document.querySelectorAll('[data-testid="fleet-roles-lanes"]')];
+    const lanes = [
+      ...document.querySelectorAll('[data-testid="fleet-roles-lanes"]'),
+    ];
     expect(lanes.some((t) => /closed by role/.test(t.textContent ?? ""))).toBe(
       true
     );
@@ -605,6 +616,66 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     expect(SECTION_SOURCES.map(([id]) => id).sort()).toEqual(
       DEVOPS_CAPTIONS.filter((id) => id !== "dev-ops.page").sort()
     );
+  });
+
+  it("a device-status read that answered with no row is dated by that answer on both sections that show it, through a later failure; rows pushed before any read answered date nothing", async () => {
+    const chipKnown = (id: "dev-ops.health-strip" | "dev-ops.machines") =>
+      sectionChips(id)
+        .get(DEVOPS_SOURCES.deviceStatus)
+        ?.getAttribute("data-provenance-known");
+    const expectBoth = (known: "true" | "false") =>
+      waitFor(() => {
+        expect(chipKnown("dev-ops.health-strip")).toBe(known);
+        expect(chipKnown("dev-ops.machines")).toBe(known);
+      });
+
+    const expectBothDated = () =>
+      waitFor(() => {
+        for (const id of [
+          "dev-ops.health-strip",
+          "dev-ops.machines",
+        ] as const) {
+          expect(
+            sectionChips(id).get(DEVOPS_SOURCES.deviceStatus)
+          ).toHaveTextContent("as of 3m ago");
+        }
+      });
+
+    deviceStatusState.answeredAtMs = Date.now() - 180_000;
+    mockRoutes();
+    const answered = renderInPresentationMode(<CoordDevOpsPage />, {
+      scope: SCOPE,
+    });
+    await settle();
+    await expectBoth("true");
+    await expectBothDated();
+    answered.unmount();
+
+    deviceStatusState.error = "HTTP 500";
+    const stale = renderInPresentationMode(<CoordDevOpsPage />, {
+      scope: SCOPE,
+    });
+    await settle();
+    await expectBoth("true");
+    await expectBothDated();
+    stale.unmount();
+
+    // Rows kept through the failure: last-known words, safe to present.
+    seedDeviceStatus();
+    const lastKnown = renderInPresentationMode(<CoordDevOpsPage />, {
+      scope: SCOPE,
+    });
+    await settle();
+    expect(
+      await screen.findByTestId("device-status-last-known")
+    ).toBeInTheDocument();
+    expectPresentationSafe(lastKnown, { captions: DEVOPS_CAPTIONS });
+    lastKnown.unmount();
+
+    deviceStatusState.everSeeded = false;
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    await settle();
+    await expectBoth("false");
   });
 
   it("a read that answered and then failed is dated UNKNOWN where its section shows nothing from it — drain, roles, the audit feed", async () => {
@@ -916,9 +987,9 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
     // for the operator in this same state.)
     // (`textContent` glues adjacent cells together — "not readUpdated" — so
     // the pattern keys on the word and the space after it, not a boundary.)
-    expect(
-      screen.getByTestId("coord-devops-machines").textContent
-    ).not.toMatch(/Updated\s/);
+    expect(screen.getByTestId("coord-devops-machines").textContent).not.toMatch(
+      /Updated\s/
+    );
     expectPresentationSafe(view, { captions: DEVOPS_CAPTIONS });
   });
 

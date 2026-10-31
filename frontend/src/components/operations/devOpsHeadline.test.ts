@@ -11,8 +11,10 @@ import { describe, expect, it } from "vitest";
 import type { HeadlineValue } from "@/components/presentation";
 import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 import type { CiRunnerMirrorRead, CoordCiRunnerRow } from "./ciRunnerMirror";
+import type { DeviceStatus } from "./types";
 import {
   ciRunnersReadyFigure,
+  deviceStatusReadAsOf,
   latestInstant,
   machinesHealthyFigure,
   workspacesInUseFigure,
@@ -326,6 +328,55 @@ describe("ciRunnersReadyFigure", () => {
       known(
         ciRunnersReadyFigure(mirror([mirrorRow("a", "idle")], { asOf: null }))
       ).asOf
+    ).toBeNull();
+  });
+});
+
+describe("deviceStatusReadAsOf — the device-status read's as-of", () => {
+  const row = (updated_at: string) => ({ updated_at }) as DeviceStatus;
+  const ANSWER = Date.parse("2026-10-23T12:30:00Z");
+
+  it("dates rows by the newest report, not by when the answer arrived", () => {
+    const byHostname = new Map([
+      ["a", row("2026-10-23T12:00:00Z")],
+      ["b", row("2026-10-23T12:10:00Z")],
+    ]);
+    expect(
+      deviceStatusReadAsOf({
+        byHostname,
+        everSeeded: true,
+        answeredAtMs: ANSWER,
+      })
+    ).toBe("2026-10-23T12:10:00.000Z");
+  });
+
+  it("dates an answered empty list by that answer's arrival", () => {
+    expect(
+      deviceStatusReadAsOf({
+        byHostname: new Map(),
+        everSeeded: true,
+        answeredAtMs: ANSWER,
+      })
+    ).toBe(ANSWER);
+  });
+
+  it("is UNKNOWN when no read has answered, even with rows pushed by frame", () => {
+    expect(
+      deviceStatusReadAsOf({
+        byHostname: new Map([["a", row("2026-10-23T12:00:00Z")]]),
+        everSeeded: false,
+        answeredAtMs: null,
+      })
+    ).toBeNull();
+  });
+
+  it("is UNKNOWN when rows came back with no time that parses, not the answer's arrival", () => {
+    expect(
+      deviceStatusReadAsOf({
+        byHostname: new Map([["a", row("garbage")]]),
+        everSeeded: true,
+        answeredAtMs: ANSWER,
+      })
     ).toBeNull();
   });
 });

@@ -7086,7 +7086,7 @@ async def get_fleet_volumes(
 # **Honesty.** `census_recent_rows == 0` means coord has no recent census hit
 # for that device within the narrow window, so `active_worktrees` for that
 # device could not be corroborated as live and MUST be rendered UNKNOWN by
-# the caller — never as an idle/empty machine and never as a healthy `0/8`.
+# the caller — never as an idle/empty machine and never as a healthy `0/<max>`.
 # This is a different, narrower-windowed field from the per-device door's
 # `census_rows_observed` (24h) and must not be confused with it.
 
@@ -7098,13 +7098,13 @@ async def get_fleet_worktree_slots(
     """Proxy coord's ``GET /coord/fleet/worktree-slots`` (tenant-scoped).
 
     Fleet-wide worktree-allocation-slot occupancy: how many of each device's
-    ``COORD_MAX_WORKTREES`` slots are occupied, and by what. Response shape
+    ``max_worktrees`` slots are occupied, and by what. Response shape
     is coord-authored and passed through untouched::
 
         {"tenant_id": "<uuid>", "device_count": <int>, "truncated": false,
          "device_cap": 100, "census_window_secs": 900,
          "devices": [{"device_id": "<uuid>", "hostname": "<string>|null",
-             "active_worktrees": <int>, "max_worktrees": 8,
+             "active_worktrees": <int>, "max_worktrees": <int>,
              "census_recent_rows": <int>,
              "occupants": {"shown": 0, "total": 0, "truncated": false,
                             "rows": []}}]}
@@ -7113,7 +7113,7 @@ async def get_fleet_worktree_slots(
     that device within the narrow (``census_window_secs``, default 900s)
     window, so ``active_worktrees`` for that device could not be
     corroborated as live and the caller MUST render that row UNKNOWN — never
-    an idle/empty machine and never a healthy ``0/8`` — see the frontend
+    an idle/empty machine and never a healthy ``0/<max>`` — see the frontend
     hook and `FleetResourceStrip`'s existing honesty rules.
 
     Error answers pass through verbatim, status and JSON body, for the same

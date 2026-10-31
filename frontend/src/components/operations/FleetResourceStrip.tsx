@@ -31,7 +31,7 @@
  * `headroom` verdict and the floor beside it, and the pressure percentage is
  * rendered in neutral type. The band constants that used to colour this table
  * (`SATURATED_AT` / `WARN_AT`, decided in TypeScript) are deleted: they could
- * paint a row amber that the ranker had already stopped electing.
+ * paint a row amber on a threshold no guard applies.
  *
  * ## The §C3 honesty rules this file implements
  *
@@ -52,8 +52,8 @@
  *   lead column IS the swap-or-commit figure; there is no second one.
  *   One deliberate exception: a swap-ratio THRESHOLD coord actually reports
  *   for such a lane is still shown (with a note that the row's pressure
- *   figure is a different instrument), because withholding a rule the
- *   dispatcher enforces is the worse error. A threshold is not a measurement.
+ *   figure is a different instrument), because withholding a rule a guard
+ *   enforces is the worse error. A threshold is not a measurement.
  * - **The SATURATION axis renders `unknown`, never green, until each machine's
  *   runner is rebuilt.** Added by plan
  *   `2026-08-27-fleet-telemetry-has-no-saturation-dimension-but-memory`: a
@@ -745,8 +745,11 @@ function RejectClause({ detail }: { detail: FloorDetail }) {
  *
  * `headroom` is coord's own admission state for the lane, computed against
  * the floor coord enforces, on the column that floor governs. The strip does
- * not re-derive it and holds no threshold of its own, so "the dashboard says
- * red" and "the dispatcher stopped sending work" cannot come apart.
+ * not re-derive it and holds no threshold of its own, so a red row always means
+ * a guard refuses work, though a guard can also hold work on an amber row. A red
+ * row says nothing about placement: coord's dispatchers rank machines by load
+ * and only prefer (qontinui-coord `ci_dispatch.rs`, "Resource headroom is a
+ * RANKING input, never a filter"), so work can still be sent there and refused.
  *
  * `unknown` — the field absent (a coord without the floor fields), null, or a
  * stale/absent sample — renders in the same muted tone as a dead row. Absence
@@ -782,7 +785,7 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
               {HEADROOM_LABEL[headroom]}
             </Badge>
             {/* The verb, on screen rather than only in the colour: a breached
-                lane FAILS the work and a warned one DELAYS it, and an
+                lane FAILS the work and a warned one can DELAY it, and an
                 operator deciding whether to drain a machine needs the
                 difference without hovering. */}
             {headroom !== "unknown" && (
@@ -793,7 +796,7 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
                 {headroom === "breach"
                   ? "builds fail here"
                   : headroom === "warn"
-                    ? "builds wait"
+                    ? "builds may wait"
                     : "no guard acting"}
               </span>
             )}
@@ -802,9 +805,9 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
         <TooltipContent className="max-w-[22rem] text-[11px] space-y-1">
           <div>
             coord&apos;s own admission verdict for this lane, computed against
-            the floors below. This page holds no threshold of its own — if it
-            says the machine is refusing work, the dispatcher already stopped
-            sending it.
+            the floors below. This page holds no threshold of its own. A verdict
+            is not a routing decision: coord ranks machines by load and only
+            prefers, so work can still be sent to a machine that refuses it.
           </div>
           <div className="text-muted-foreground">
             {HEADROOM_MEANING[headroom]}
@@ -845,14 +848,14 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
           {/* The pressure axis. On the Linux lanes this is the ONLY guard —
               `ci_node` reads free commit and nothing floors mem_available —
               so omitting it would render a WSL row at swap 0.6 as "no guard
-              acting" while the dispatcher had already stepped back.
+              acting" while `ci_node` was already deferring.
 
               Suppressed on a lane that shows no swap figure UNLESS coord
               actually asserts a threshold there. §C1 forbids a swap word on
               a Windows host row because swap is the commit counters printed
               twice — and "no swap threshold" on a lane that has no swap axis
               is noise, not disclosure. A real reported ceiling still prints:
-              withholding a rule the dispatcher enforces is the inversion this
+              withholding a rule a guard enforces is the inversion this
               column exists to prevent, and it outranks the tidiness rule. */}
           {showsPressureAxis && (
             <Aged freshness={row.freshness}>
@@ -1167,7 +1170,7 @@ function FloorsLegend({
         </li>
         <li data-testid="fleet-resource-warn-margin">
           On a <strong>byte floor</strong>, a lane reads{" "}
-          <strong>work waits</strong> from{" "}
+          <strong>{HEADROOM_LABEL.warn}</strong> from{" "}
           <span className="tabular-nums">{formatWarnMargin(warnMargin)}</span>{" "}
           the deferring floor <em>downwards</em> — the margin is coord&apos;s,
           read off this response, never assumed here. On a{" "}
@@ -1526,8 +1529,8 @@ export function FleetResourceStrip({
                     const position = positions?.get(row.key);
                     // The row's tone is the SERVER's admission verdict. There
                     // is no client-side band left to derive it from, and that
-                    // is the point: the strip cannot show amber for a machine
-                    // coord has already stopped electing.
+                    // is the point: the strip cannot show amber on a threshold
+                    // of this page's own.
                     const headroom = rowHeadroom(s);
                     const tone = headroomTone(row.freshness, headroom);
                     const diskRatio = safeRatio(

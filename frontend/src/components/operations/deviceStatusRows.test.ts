@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  applyFramesOverRead,
   indexDeviceStatusRows,
   mergeDeviceStatusRow,
 } from "./deviceStatusRows";
@@ -52,6 +53,34 @@ describe("indexDeviceStatusRows", () => {
       row("d-1", null, "2026-09-14T10:00:00Z"),
     ]);
     expect(map.get("d-1")?.device_id).toBe("d-1");
+  });
+});
+
+describe("applyFramesOverRead", () => {
+  const OLD = "2026-09-14T10:00:00Z";
+  const NEW = "2026-09-14T10:05:00Z";
+
+  it("a frame newer than the read's row wins", () => {
+    const read = indexDeviceStatusRows([row("d-1", "msi", OLD)]);
+    const frame = row("d-1", "msi", NEW);
+    expect(applyFramesOverRead(read, [frame]).get("msi")).toBe(frame);
+  });
+
+  it("a frame the read has overtaken is dropped", () => {
+    const later = row("d-1", "msi", NEW);
+    const read = indexDeviceStatusRows([later]);
+    expect(applyFramesOverRead(read, [row("d-1", "msi", OLD)]).get("msi")).toBe(
+      later
+    );
+  });
+
+  it("a frame for a device the read did not serve is added, and a pruned row stays gone", () => {
+    const read = indexDeviceStatusRows([row("d-1", "msi", OLD)]);
+    const frame = row("d-2", "lenovo", NEW);
+    const next = applyFramesOverRead(read, [frame]);
+    expect(next.get("lenovo")).toBe(frame);
+    expect([...next.keys()].sort()).toEqual(["lenovo", "msi"]);
+    expect(applyFramesOverRead(new Map(), []).size).toBe(0);
   });
 });
 

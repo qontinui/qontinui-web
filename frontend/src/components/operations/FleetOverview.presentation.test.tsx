@@ -73,6 +73,7 @@ function Host({ presenting }: { presenting: boolean }): ReactElement {
           error: null,
           seeded: true,
           everSeeded: true,
+          answeredAtMs: Date.now(),
           refetch: noop,
         }}
         nowMs={Date.now()}
