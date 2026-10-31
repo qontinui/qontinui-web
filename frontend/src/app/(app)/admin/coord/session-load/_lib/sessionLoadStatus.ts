@@ -1685,8 +1685,9 @@ export interface RunLink {
 export interface SpawnRequestWindow {
   window: SpawnStatsWindow;
   /**
-   * The run started before the widest window (or its start is unreadable),
-   * so the request may be older than anything the view can show.
+   * No wider window is left to absorb a deferral: the run started inside
+   * only the widest window, before it, or at an unreadable time. The request
+   * may then be older than anything the view can show.
    */
   mayBeOlderThanView: boolean;
 }
@@ -1701,11 +1702,12 @@ export interface SpawnRequestWindow {
  * opens the NEXT wider window, which also absorbs the page clock moving
  * between this render and the click. That holds every request made up to
  * the gap between the two windows before its run started (6 days past a
- * 24 h start, 23 days past a 7 d start). A start already past 7 days opens
- * the widest window, 30 days, which is the most the view offers; a start
- * older than that, or unreadable, opens 30 days too and says the request
- * may be older than the view. `nowMs` is the caller's clock, passed in so
- * the row and its link agree on what "now" is.
+ * 24 h start, 23 days past a 7 d start). A start already past 7 days has no
+ * wider window left: it opens the widest, 30 days, which is the most the
+ * view offers, and so does a start older than that or unreadable. In all
+ * three the request may have been made before the 30 days begin, so the
+ * link says it may be older than the view. `nowMs` is the caller's clock,
+ * passed in so the row and its link agree on what "now" is.
  */
 export function spawnWindowForRun(
   run: SessionRunWire,
@@ -1715,10 +1717,11 @@ export function spawnWindowForRun(
   // An unreadable start is NaN, which no window holds: the beyond-view arm.
   const age = Math.max(0, nowMs - Date.parse(run.started_at));
   const narrowest = SPAWN_WINDOWS.findIndex((w) => age <= w.ms);
-  if (narrowest < 0)
+  // Nothing wider than the window holding the start: the widest, flagged.
+  if (narrowest < 0 || narrowest + 1 > widest)
     return { window: SPAWN_WINDOWS[widest]!.id, mayBeOlderThanView: true };
   return {
-    window: SPAWN_WINDOWS[Math.min(narrowest + 1, widest)]!.id,
+    window: SPAWN_WINDOWS[narrowest + 1]!.id,
     mayBeOlderThanView: false,
   };
 }
