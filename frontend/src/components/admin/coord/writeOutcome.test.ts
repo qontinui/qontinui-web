@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NO_CONNECTION_MESSAGE } from "@/services/http-client";
 import {
   PROXY_NOT_REACHABLE_DETAIL,
+  PROXY_ROUTE_ABSENT_PREFIX,
   isOutcomeUnknownStatus,
   isWriteFailureUnknown,
 } from "./writeOutcome";
@@ -22,6 +23,18 @@ describe("isOutcomeUnknownStatus", () => {
       true
     );
     expect(isOutcomeUnknownStatus(502, null)).toBe(true);
+  });
+
+  it("reads the deploy-order 502 as not applied, by its prefix", () => {
+    // `_coord_request_deploy_order_aware`: coord answered an empty 404.
+    const detail =
+      "coord does not serve PUT /coord/agent-registry/{agent_name} yet — " +
+      "deploy qontinui-coord first";
+    expect(detail.startsWith(PROXY_ROUTE_ABSENT_PREFIX)).toBe(true);
+    expect(isOutcomeUnknownStatus(502, detail)).toBe(false);
+    // Only on a 502, and only at the start.
+    expect(isOutcomeUnknownStatus(504, detail)).toBe(true);
+    expect(isOutcomeUnknownStatus(502, `upstream: ${detail}`)).toBe(true);
   });
 
   it.each([400, 403, 404, 409, 422, 429])("%i is an answer", (status) => {
@@ -45,6 +58,11 @@ describe("isWriteFailureUnknown", () => {
         refusal: { code: "upstream_unavailable" },
       }),
       JSON.stringify({ detail: "coord is not reachable" }),
+      JSON.stringify({
+        error: "BAD_GATEWAY",
+        message:
+          "coord does not serve /coord/x yet — deploy qontinui-coord first",
+      }),
     ]) {
       expect(isWriteFailureUnknown(failed(502, body))).toBe(false);
     }
