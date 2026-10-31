@@ -404,3 +404,45 @@ describe("the strip over the machine roster", () => {
     ).toBe("red");
   });
 });
+
+describe("the strip over a Correct? section the page leaves out", () => {
+  const body = (correctness: unknown) =>
+    parseProjectState({
+      generated_at: "2026-10-31T00:00:00Z",
+      on_track: {
+        state: "read",
+        totals: { row_count: 0, classes: {} },
+        groups: [],
+      },
+      correctness,
+      needs_me: { state: "read", items: [], total: 0, omitted: 0 },
+      degradations: { state: "read", headline: "none", open: [], declared: [] },
+      does_not_know: [{ source: "work_units", state: "read" }],
+    });
+  const machines = {
+    stale: false,
+    counts: summarizeMachineHealth([{ device_id: "d", state: "healthy" }]),
+  };
+
+  it("names no 'correct?' and says correctness is not measured, staying amber", () => {
+    const view = body({ state: "not_implemented" });
+    const shown = deriveHomeStrip(view, { machines });
+    expect(shown.detail).toContain("correct?");
+    expect(shown.detail).not.toContain("Correctness is not measured yet.");
+    const leftOut = deriveHomeStrip(view, {
+      machines,
+      correctnessLeftOut: true,
+    });
+    expect(leftOut.detail ?? "").not.toMatch(/correct\?/);
+    expect(leftOut.detail).toContain("Correctness is not measured yet.");
+    expect(leftOut.level).toBe("amber");
+  });
+
+  it("says nothing about correctness when it was read", () => {
+    const s = deriveHomeStrip(body({ state: "read" }), {
+      machines,
+      correctnessLeftOut: true,
+    });
+    expect(s.detail ?? "").not.toContain("Correctness is not measured yet.");
+  });
+});

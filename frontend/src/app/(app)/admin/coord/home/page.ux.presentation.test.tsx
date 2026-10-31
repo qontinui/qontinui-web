@@ -297,6 +297,12 @@ describe("/admin/coord/home?present=1 — the 2026-10-31 UX pass", () => {
             '[data-presentation-section="coordination-overview.correct"]'
           )
         ).toBeNull();
+        // The strip names no section the page leaves out, and still says,
+        // in one plain line, that correctness is not measured.
+        const strip = screen.getByTestId("coord-home.strip.health");
+        expect(strip).not.toHaveTextContent(/correct\?/i);
+        expect(strip).toHaveTextContent("Correctness is not measured yet.");
+        expect(strip).not.toHaveAttribute("data-health-level", "green");
       }
     );
 
@@ -307,6 +313,10 @@ describe("/admin/coord/home?present=1 — the 2026-10-31 UX pass", () => {
       expect(screen.getByTestId("coord-home.correct")).toHaveTextContent(
         "Not known — coord could not read trust calibration this time"
       );
+      // The section is shown, so the strip still names it.
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveTextContent(/correct\? could not be read/);
+      expect(strip).not.toHaveTextContent("Correctness is not measured yet.");
     });
 
     it("count the sources not built yet on one line rather than list them", async () => {

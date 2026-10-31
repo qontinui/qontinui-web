@@ -51,7 +51,11 @@ import {
 } from "@/components/admin/coord/coordHomeStatus";
 import { useProjectState } from "./_hooks/useProjectState";
 import { useHomeSupplements } from "./_hooks/useHomeSupplements";
-import { presentedHomeFailure, type OtherReading } from "./_lib/homeLens";
+import {
+  correctLeftOut,
+  presentedHomeFailure,
+  type OtherReading,
+} from "./_lib/homeLens";
 import { MACHINES_SOURCE, supplementSource } from "./_lib/homeSupplements";
 import { KeptReadingNotice, PageProvenance } from "./_components/HomeLens";
 import {
@@ -88,9 +92,18 @@ export default function CoordHomePage() {
         : null,
     [machines.state, machines.counts, machines.stale, machines.emptyRoster]
   );
+  // While presenting, Correct? is left out when nothing is built behind it;
+  // the strip then names no section the page does not show.
+  const correctnessLeftOut =
+    view !== null && correctLeftOut(view.correctness, presenting);
   const strip = useMemo(
-    () => deriveHomeStrip(view, { stale, machines: stripMachines }),
-    [view, stale, stripMachines]
+    () =>
+      deriveHomeStrip(view, {
+        stale,
+        machines: stripMachines,
+        correctnessLeftOut,
+      }),
+    [view, stale, stripMachines, correctnessLeftOut]
   );
   const refreshSupplements = supplements.refresh;
   // The one refresh re-reads everything the page shows.
