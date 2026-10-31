@@ -238,6 +238,7 @@ export type {
 } from "./presentationScopeLoader";
 
 export {
+  PROJECT_NAME_DESCRIPTOR,
   WITHHELD,
   containsConfidentialTerm,
   describeRedacted,

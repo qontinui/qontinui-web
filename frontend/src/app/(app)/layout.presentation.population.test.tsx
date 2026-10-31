@@ -32,6 +32,7 @@
 import { lazy, type ComponentType } from "react";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { attributesNaming } from "@/test/attributesNaming";
 
 const fx = vi.hoisted(() => {
   const DEVICE = "0b9d6a54-0000-4000-8000-0000000000aa";
@@ -47,7 +48,7 @@ const fx = vi.hoisted(() => {
   return {
     DEVICE,
     EMAIL: "presenter@example.test",
-    OWN_PROJECT: "Qontinui Fleet",
+    OWN_PROJECT: "Acme Corp rollout",
     OTHER_PROJECT: "Partner Portal",
     RUNNER_NAME: "build-box-07",
     runner,
@@ -97,7 +98,7 @@ vi.mock("@/contexts/tenant-context", () => ({
   TenantProvider: fx.passThrough,
   useTenant: () => ({
     tenants: [
-      { id: "t-own", name: fx.OWN_PROJECT, slug: "qontinui-fleet" },
+      { id: "t-own", name: fx.OWN_PROJECT, slug: "acme-corp-rollout" },
       { id: "t-other", name: fx.OTHER_PROJECT, slug: "partner-portal" },
     ],
     activeTenantId: "t-own",
@@ -263,7 +264,14 @@ describe("the app shell beside a lens page", () => {
     expect(
       await screen.findByText("Runner: Machine A", {}, { timeout: LAZY_MS })
     ).toBeTruthy();
-    expect(container).toHaveTextContent(fx.OWN_PROJECT);
+    // Every shell surface that names the project — the sidebar's selector
+    // and the phone-width top bar — withholds it the way the home page's
+    // tenant strip does ("Project"): not in the text, not in any attribute.
+    expect(container).toHaveTextContent("Active project: Project");
+    for (const name of [fx.OWN_PROJECT, fx.OTHER_PROJECT]) {
+      expect(document.body.textContent).not.toContain(name);
+      expect(attributesNaming(document.body, name)).toEqual([]);
+    }
     expect(container.innerHTML).not.toContain(fx.EMAIL);
     expect(container.innerHTML).not.toContain(fx.OTHER_PROJECT);
     expect(container.innerHTML).not.toContain(fx.RUNNER_NAME);
@@ -288,6 +296,7 @@ describe("the app shell beside a lens page", () => {
       )
     ).toBeTruthy();
     expect(container.innerHTML).toContain(fx.EMAIL);
+    expect(container).toHaveTextContent(fx.OWN_PROJECT);
     expect(screen.getByTitle("New project")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Costs" })).toBeTruthy();
     // The operator's controls are all there.

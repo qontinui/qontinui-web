@@ -23,6 +23,7 @@
  */
 
 import {
+  PROJECT_NAME_DESCRIPTOR,
   WITHHELD,
   type RedactionDescriptor,
   type SectionSource,
@@ -174,12 +175,11 @@ export function presentedHomeFailure(
 /**
  * The current tenant's name, which no repository can vouch for. A tenant has
  * no area, status or age on this page, so its line is its kind alone — never
- * three unknowns about fields it does not have.
+ * three unknowns about fields it does not have. It is the presentation
+ * module's one project-name descriptor, which the app shell's project
+ * selector renders through too, so the strip and the sidebar agree.
  */
-export const TENANT_DESCRIPTOR: RedactionDescriptor = {
-  kind: "Project",
-  notApplicable: ["area", "status", "at"],
-};
+export const TENANT_DESCRIPTOR: RedactionDescriptor = PROJECT_NAME_DESCRIPTOR;
 
 /**
  * A repository named by coord's grouping. Its row's own badge and summary
