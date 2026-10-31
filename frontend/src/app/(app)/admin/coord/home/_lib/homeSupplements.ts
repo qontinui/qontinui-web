@@ -30,7 +30,10 @@
 import type { DevOverview } from "@/services/admin-dev-service";
 import type { FleetHealthPayload } from "@/lib/api/operations/coordFleet";
 import {
+  emptyRosterSentence,
+  readEmptyRoster,
   summarizeMachineHealth,
+  type EmptyRoster,
   type MachineHealthCounts,
 } from "@/components/admin/coord/machineHealth";
 
@@ -46,6 +49,8 @@ export interface MachineHealthView {
   asOf: string | null;
   /** A later read failed; these are the last good counts. */
   stale: boolean;
+  /** What coord said about an empty roster; null unless it listed none. */
+  emptyRoster: EmptyRoster | null;
 }
 
 export const MACHINES_NOT_READ: MachineHealthView = {
@@ -53,22 +58,29 @@ export const MACHINES_NOT_READ: MachineHealthView = {
   counts: null,
   asOf: null,
   stale: false,
+  emptyRoster: null,
 };
 
 /** The roster's counts, or null for a body that carried no device list. */
 export function parseMachineHealth(
   body: FleetHealthPayload | null | undefined
-): { counts: MachineHealthCounts; asOf: string | null } | null {
+): {
+  counts: MachineHealthCounts;
+  asOf: string | null;
+  emptyRoster: EmptyRoster | null;
+} | null {
   if (!body || !Array.isArray(body.devices)) return null;
   return {
     counts: summarizeMachineHealth(body.devices),
     asOf: typeof body.as_of === "string" ? body.as_of : null,
+    emptyRoster: body.devices.length === 0 ? readEmptyRoster(body) : null,
   };
 }
 
 /**
  * Whether a machine reading lets the page say nothing is degrading there:
- * read, current, no machine degrading and none without a verdict. An
+ * read, current, at least one machine listed, no machine degrading and none
+ * without a verdict. An
  * abandoned machine is a decision, not a degradation, so it does not stand
  * in the way.
  */
@@ -77,6 +89,8 @@ export function machinesAllHealthy(m: MachineHealthView): boolean {
     m.state === "read" &&
     !m.stale &&
     m.counts !== null &&
+    // An empty roster is never calm: zero machines say nothing is fine.
+    m.counts.total > 0 &&
     m.counts.degrading === 0 &&
     m.counts.noVerdict === 0
   );
@@ -91,12 +105,17 @@ function machines(n: number): string {
  * The Degrading section's machine line, in coord's project-state terms:
  * how many machines are degrading (and whether coord's list above already
  * shows them), how many have no verdict, out of the roster. An unread roster
- * is UNKNOWN, in words. `listed` is how many degrading machines the open
- * degradation rows already list; null when no list was served.
+ * is UNKNOWN, in words, and so is an empty roster coord withheld machines
+ * from. `listed` is how many degrading machines the open degradation rows
+ * already list (null when no list was served); `withReason` lets coord's own
+ * error text be quoted (operator mode only).
  */
 export function machineHealthSentence(
   m: MachineHealthView,
-  listed: number | null = null
+  {
+    listed = null,
+    withReason = false,
+  }: { listed?: number | null; withReason?: boolean } = {}
 ): string {
   if (m.state !== "read" || m.counts === null) {
     return m.state === "could_not_read"
@@ -104,7 +123,11 @@ export function machineHealthSentence(
       : "Machine health has not been read yet — unknown.";
   }
   const { total, healthy, degrading, noVerdict } = m.counts;
-  if (total === 0) return "Coord lists no machines.";
+  if (total === 0) {
+    return emptyRosterSentence(m.emptyRoster ?? { kind: "not_stated" }, {
+      withReason,
+    });
+  }
   const parts: string[] = [];
   if (degrading > 0) {
     let where = "";

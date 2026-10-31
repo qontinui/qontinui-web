@@ -79,9 +79,13 @@ export default function CoordHomePage() {
   const stripMachines = useMemo(
     () =>
       machines.state === "read" && machines.counts !== null
-        ? { stale: machines.stale, counts: machines.counts }
+        ? {
+            stale: machines.stale,
+            counts: machines.counts,
+            emptyRoster: machines.emptyRoster,
+          }
         : null,
-    [machines.state, machines.counts, machines.stale]
+    [machines.state, machines.counts, machines.stale, machines.emptyRoster]
   );
   const strip = useMemo(
     () => deriveHomeStrip(view, { stale, machines: stripMachines }),

@@ -174,3 +174,89 @@ export function notDegradationsSentence(
       : `${n} machines not reporting healthy are not degradations`;
   return `${subject}: ${parts.join(", ")}${seeDevOps ? " — see Dev Ops" : ""}.`;
 }
+
+// ---------------------------------------------------------------------------
+// An empty roster
+// ---------------------------------------------------------------------------
+
+/**
+ * What coord says about an EMPTY roster (`fleet_health.rs`: `excluded`,
+ * `excluded_error`). Coord's roster joins `coord.tenant_devices`, so a device
+ * with no binding for this tenant never appears in `devices` at all; coord
+ * measures those separately, and an empty roster with devices withheld is
+ * "a binding fault, not an empty fleet". None of these arms is calm.
+ *
+ * - `none_withheld` — coord counted, and withheld nothing: the roster is
+ *   truly empty. Said exactly, still not "nothing is degrading".
+ * - `withheld` — coord withheld devices (no binding, or bound to another
+ *   tenant): a binding fault, so machine health is UNKNOWN.
+ * - `withheld_unmeasured` — coord could not count what it withheld
+ *   (`excluded: null` beside `excluded_error`): UNKNOWN, with coord's reason.
+ * - `not_stated` — a coord that serves neither field: UNKNOWN.
+ */
+export type EmptyRoster =
+  | { kind: "none_withheld" }
+  | { kind: "withheld"; unbound: number; boundToOtherTenant: number }
+  | { kind: "withheld_unmeasured"; reason: string | null }
+  | { kind: "not_stated" };
+
+/** The body fields an empty roster is read from. */
+export interface RosterExclusionsRef {
+  excluded?: {
+    unbound?: number | null;
+    bound_to_other_tenant?: number | null;
+  } | null;
+  excluded_error?: string | null;
+}
+
+const count = (v: unknown): number =>
+  typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0;
+
+export function readEmptyRoster(body: RosterExclusionsRef): EmptyRoster {
+  const reason =
+    typeof body.excluded_error === "string" && body.excluded_error !== ""
+      ? body.excluded_error
+      : null;
+  const x = body.excluded;
+  if (reason !== null || x === null) {
+    return { kind: "withheld_unmeasured", reason };
+  }
+  if (x === undefined || typeof x !== "object") return { kind: "not_stated" };
+  const unbound = count(x.unbound);
+  const boundToOtherTenant = count(x.bound_to_other_tenant);
+  return unbound + boundToOtherTenant > 0
+    ? { kind: "withheld", unbound, boundToOtherTenant }
+    : { kind: "none_withheld" };
+}
+
+/** Whether an empty roster is coord's binding fault rather than no fleet. */
+export function isRosterBindingFault(e: EmptyRoster): boolean {
+  return e.kind === "withheld" || e.kind === "withheld_unmeasured";
+}
+
+/**
+ * An empty roster in words. `withReason`: whether coord's own error text may
+ * be quoted (never while presenting — it is coord's error chain).
+ */
+export function emptyRosterSentence(
+  e: EmptyRoster,
+  { withReason }: { withReason: boolean }
+): string {
+  switch (e.kind) {
+    case "none_withheld":
+      return "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy.";
+    case "withheld": {
+      const n = e.unbound + e.boundToOtherTenant;
+      const parts: string[] = [];
+      if (e.unbound > 0) parts.push(`${e.unbound} with no binding`);
+      if (e.boundToOtherTenant > 0) {
+        parts.push(`${e.boundToOtherTenant} bound to another tenant`);
+      }
+      return `Coord lists no machines but withheld ${n} from its roster (${parts.join(", ")}) — a binding fault, not an empty fleet, so machine health is unknown.`;
+    }
+    case "withheld_unmeasured":
+      return `Coord lists no machines and could not count the machines it withheld from its roster${withReason && e.reason ? ` (${e.reason})` : ""} — machine health is unknown.`;
+    case "not_stated":
+      return "Coord lists no machines and does not say whether it withheld any — machine health is unknown.";
+  }
+}

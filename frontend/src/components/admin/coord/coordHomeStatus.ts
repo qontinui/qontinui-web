@@ -91,7 +91,9 @@ import {
 import { readErrorBody } from "@/lib/errors/backend-error-message";
 import {
   degradingCoverage,
+  emptyRosterSentence,
   notDegradationsSentence,
+  type EmptyRoster,
   type MachineHealthCounts,
 } from "@/components/admin/coord/machineHealth";
 
@@ -1729,6 +1731,8 @@ export interface HomeStripMachines {
   stale: boolean;
   /** The roster's counts (`machineHealth.ts` says what each one is). */
   counts: MachineHealthCounts;
+  /** What coord said about an empty roster; null (or absent) unless it listed none. */
+  emptyRoster?: EmptyRoster | null;
 }
 
 /** "1 machine is" / "2 machines are". */
@@ -1860,6 +1864,9 @@ export function deriveHomeStrip(
     machines !== null &&
     mc !== null &&
     !machines.stale &&
+    // Zero machines are not a calm fleet: an empty roster never answers
+    // "nothing is degrading".
+    mc.total > 0 &&
     unlistedDegrading === 0 &&
     mc.noVerdict === 0;
   const somethingDegrading =
@@ -1943,6 +1950,14 @@ export function deriveHomeStrip(
   if (machines === null || mc === null) {
     detailParts.push("Machine health was not read.");
   } else {
+    if (mc.total === 0) {
+      // Never coord's error text here: the strip is shown in every mode.
+      detailParts.push(
+        emptyRosterSentence(machines.emptyRoster ?? { kind: "not_stated" }, {
+          withReason: false,
+        })
+      );
+    }
     if (unlistedDegrading > 0) {
       detailParts.push(
         `${machinesAre(unlistedDegrading)} in a degrading state.`

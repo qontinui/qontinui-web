@@ -101,6 +101,7 @@ import {
 } from "./HomeLens";
 import {
   degradingCoverage,
+  isRosterBindingFault,
   notDegradationsSentence,
 } from "@/components/admin/coord/machineHealth";
 import {
@@ -903,8 +904,11 @@ function MachineHealthLine({
   listed: number | null;
 }) {
   const opens = useLinkOpens();
+  const { presenting } = usePresentationMode();
   const read = machines.state === "read" && machines.counts !== null;
   const devOps = read && opens("/admin/coord/devops");
+  const fault =
+    machines.emptyRoster !== null && isRosterBindingFault(machines.emptyRoster);
   const reconcile =
     read && machines.counts !== null
       ? notDegradationsSentence(machines.counts, { seeDevOps: false })
@@ -916,10 +920,12 @@ function MachineHealthLine({
         data-testid="coord-home.degrading.machines"
         data-ui-bridge-id="coord-home.degrading.machines"
         data-machines-state={machines.state}
+        data-roster-fault={fault ? "true" : undefined}
       >
         <span className="text-muted-foreground">Machines: </span>
         {read && machines.stale ? "At the last good read, " : ""}
-        {machineHealthSentence(machines, listed)}
+        {/* Coord's own error text is the operator's alone (R8). */}
+        {machineHealthSentence(machines, { listed, withReason: !presenting })}
         {devOps && !reconcile && (
           <>
             {" "}
@@ -1072,7 +1078,11 @@ export function DegradingSection({
                   machines.counts !== null &&
                   machines.counts.degrading > 0
                     ? "No open degradation was served, but a machine is in a degrading state — see Machines below."
-                    : "No open degradation was served, but machine health is not fully known, so this view cannot say nothing is degrading."}
+                    : machines.state === "read" &&
+                        machines.counts !== null &&
+                        machines.counts.total === 0
+                      ? "No open degradation was served, but coord lists no machines, so this view cannot say nothing is degrading — see Machines below."
+                      : "No open degradation was served, but machine health is not fully known, so this view cannot say nothing is degrading."}
                 </p>
               )
             ) : (

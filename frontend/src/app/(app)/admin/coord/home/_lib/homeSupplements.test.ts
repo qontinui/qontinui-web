@@ -9,6 +9,8 @@ import type { DevOverview } from "@/services/admin-dev-service";
 import {
   degradingCoverage,
   isNotHealthyDevice,
+  isRosterBindingFault,
+  readEmptyRoster,
   machineVerdict,
   notDegradationsSentence,
   summarizeMachineHealth,
@@ -40,6 +42,7 @@ const read = (
   ),
   asOf: null,
   stale,
+  emptyRoster: null,
 });
 
 describe("machine health", () => {
@@ -152,6 +155,75 @@ describe("machine health", () => {
     ).toBe(false);
   });
 
+  describe("an empty roster is never calm", () => {
+    const empty = (body: Record<string, unknown>): MachineHealthView => {
+      const p = parseMachineHealth({ devices: [], ...body });
+      return {
+        state: "read",
+        counts: p!.counts,
+        asOf: null,
+        stale: false,
+        emptyRoster: p!.emptyRoster,
+      };
+    };
+
+    it("reads coord's exclusion fields into one of four arms", () => {
+      expect(readEmptyRoster({ excluded: { unbound: 0 } })).toEqual({
+        kind: "none_withheld",
+      });
+      expect(
+        readEmptyRoster({ excluded: { unbound: 2, bound_to_other_tenant: 1 } })
+      ).toEqual({ kind: "withheld", unbound: 2, boundToOtherTenant: 1 });
+      expect(
+        readEmptyRoster({ excluded: null, excluded_error: "pool timed out" })
+      ).toEqual({ kind: "withheld_unmeasured", reason: "pool timed out" });
+      expect(readEmptyRoster({ excluded: null })).toEqual({
+        kind: "withheld_unmeasured",
+        reason: null,
+      });
+      expect(readEmptyRoster({})).toEqual({ kind: "not_stated" });
+      expect(
+        parseMachineHealth({
+          devices: [{ state: "healthy" }],
+          excluded: { unbound: 3 },
+        })?.emptyRoster
+      ).toBeNull();
+    });
+
+    it("is a binding fault, UNKNOWN with the reason, when coord withheld devices or could not count them", () => {
+      const withheld = empty({ excluded: { unbound: 1 } });
+      expect(isRosterBindingFault(withheld.emptyRoster!)).toBe(true);
+      expect(machinesAllHealthy(withheld)).toBe(false);
+      expect(machineHealthSentence(withheld)).toBe(
+        "Coord lists no machines but withheld 1 from its roster (1 with no binding) — a binding fault, not an empty fleet, so machine health is unknown."
+      );
+      const failed = empty({
+        excluded: null,
+        excluded_error: "pool timed out",
+      });
+      expect(isRosterBindingFault(failed.emptyRoster!)).toBe(true);
+      expect(machineHealthSentence(failed, { withReason: true })).toBe(
+        "Coord lists no machines and could not count the machines it withheld from its roster (pool timed out) — machine health is unknown."
+      );
+      // Coord's error text is the operator's alone.
+      expect(machineHealthSentence(failed)).not.toContain("pool timed out");
+    });
+
+    it("says exactly that when nothing was withheld, and still does not call it calm", () => {
+      const none = empty({
+        excluded: { unbound: 0, bound_to_other_tenant: 0 },
+      });
+      expect(isRosterBindingFault(none.emptyRoster!)).toBe(false);
+      expect(machinesAllHealthy(none)).toBe(false);
+      expect(machineHealthSentence(none)).toBe(
+        "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy."
+      );
+      expect(machineHealthSentence(empty({}))).toBe(
+        "Coord lists no machines and does not say whether it withheld any — machine health is unknown."
+      );
+    });
+  });
+
   it("words each arm, an unread one as unknown", () => {
     expect(machineHealthSentence(read(["healthy", "healthy"]))).toBe(
       "All 2 machines report healthy."
@@ -162,15 +234,17 @@ describe("machine health", () => {
     expect(machineHealthSentence(read(["degraded", "healthy"]))).toBe(
       "1 of 2 machines is in a degrading state."
     );
-    expect(machineHealthSentence(read(["degraded", "healthy"]), 1)).toBe(
-      "1 of 2 machines is in a degrading state — listed above."
-    );
     expect(
-      machineHealthSentence(read(["degraded", "stale", "unknown", null]), 1)
+      machineHealthSentence(read(["degraded", "healthy"]), { listed: 1 })
+    ).toBe("1 of 2 machines is in a degrading state — listed above.");
+    expect(
+      machineHealthSentence(read(["degraded", "stale", "unknown", null]), {
+        listed: 1,
+      })
     ).toBe(
       "2 of 4 machines are in a degrading state — 1 listed above, 1 not in coord's list; 2 have no health verdict, so their health is unknown."
     );
-    expect(machineHealthSentence(read(["degraded"]), 0)).toBe(
+    expect(machineHealthSentence(read(["degraded"]), { listed: 0 })).toBe(
       "1 of 1 machine is in a degrading state — not in coord's list above."
     );
     expect(machineHealthSentence(MACHINES_NOT_READ)).toMatch(/unknown/);

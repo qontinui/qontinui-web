@@ -352,6 +352,36 @@ describe("the strip over the machine roster", () => {
     );
   });
 
+  it("never answers 'nothing is degrading' over an empty roster, and names a binding fault UNKNOWN", () => {
+    const none = deriveHomeStrip(calm(), {
+      machines: {
+        stale: false,
+        counts: summarizeMachineHealth([]),
+        emptyRoster: { kind: "none_withheld" },
+      },
+    });
+    expect(none.level).toBe("amber");
+    expect(none.headline).not.toMatch(/nothing is degrading/i);
+    expect(none.detail).toContain(
+      "Coord lists no machines and withheld none from its roster"
+    );
+    const fault = deriveHomeStrip(calm(), {
+      machines: {
+        stale: false,
+        counts: summarizeMachineHealth([]),
+        emptyRoster: {
+          kind: "withheld_unmeasured",
+          reason: "pool timed out",
+        },
+      },
+    });
+    expect(fault.level).toBe("amber");
+    expect(fault.headline).not.toMatch(/nothing is degrading/i);
+    expect(fault.detail).toContain("machine health is unknown");
+    // Coord's error text never rides the strip.
+    expect(fault.detail).not.toContain("pool timed out");
+  });
+
   it("is amber, not calm, when the counts are kept", () => {
     const kept = deriveHomeStrip(calm(), machines(["healthy"], true));
     expect(kept.level).toBe("amber");

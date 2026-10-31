@@ -336,6 +336,16 @@ export interface FleetHealthConditions {
 export interface FleetHealthPayload {
   devices?: FleetHealthDevice[];
   /**
+   * Devices coord withheld from `devices` (`fleet_health.rs`, Phase 3.3):
+   * those naming this tenant with no binding (`unbound`) or bound to another
+   * tenant. `null` = NOT MEASURED (see `excluded_error`), never "none".
+   * An empty `devices` beside a non-zero count is a binding fault, not an
+   * empty fleet. Absent on a coord predating it.
+   */
+  excluded?: { unbound?: number; bound_to_other_tenant?: number } | null;
+  /** Why coord could not count `excluded`; null when it could. */
+  excluded_error?: string | null;
+  /**
    * The Conditions rollup. Absent on a coord predating it — see
    * {@link FleetHealthConditions}.
    */
