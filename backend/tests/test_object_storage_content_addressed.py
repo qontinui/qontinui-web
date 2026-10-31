@@ -126,6 +126,13 @@ class ContractOnlyBackend(StorageBackend):
     ) -> str:
         return f"mem://{key}?ttl={expiration}"
 
+    def key_from_object_url(self, url: str) -> str | None:
+        return (
+            url.removeprefix("mem://").split("?", 1)[0]
+            if url.startswith("mem://")
+            else None
+        )
+
     def file_exists(self, key: str) -> bool:
         return key in self.objects
 
