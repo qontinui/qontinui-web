@@ -298,10 +298,23 @@ export interface RosterExclusionsRef {
 /**
  * A count coord serialized as an `i64`: a non-negative safe integer. A
  * larger number is not a count this view can print or subtract exactly
- * (`1e21` prints as "1e+21"), so it reads as malformed.
+ * (`1e21` prints as "1e+21"); {@link isOversizedCount} says when it is still
+ * a count.
  */
 const isCount = (v: unknown): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+
+/**
+ * A non-negative integer past the safe-integer range: a count too large to
+ * print or subtract exactly, but still a count. Beside a roster it is
+ * evidence of a cut (it exceeds any list this view can hold), never of a
+ * whole roster. A non-integer, a negative value or a non-number is not one.
+ */
+const isOversizedCount = (v: unknown): boolean =>
+  typeof v === "number" &&
+  Number.isInteger(v) &&
+  !Number.isSafeInteger(v) &&
+  v > 0;
 
 /**
  * Coord serializes `excluded` as exactly two `i64` counts, or `null` beside
@@ -441,7 +454,8 @@ export const COORD_ROSTER_ROW_LIMIT = 1000;
  *   `total`). Complete for health purposes: calm is allowed, and the lines
  *   say how many rows are not listed.
  * - `cut_degradable` — coord withheld `degradableDropped` machines that
- *   could be degrading: the health view is partial, never calm.
+ *   could be degrading (null when coord's count is too large to print): the
+ *   health view is partial, never calm.
  * - `reported_cut` — coord says it cut the roster (`truncated: true`, or a
  *   `total` above the rows listed) but gives no usable `degradable_dropped`:
  *   the rows past the cut are UNKNOWN, never calm.
@@ -465,7 +479,7 @@ export type RosterCut =
       kind: "cut_degradable";
       listed: number;
       total: number | null;
-      degradableDropped: number;
+      degradableDropped: number | null;
       hardLimit: number | null;
     }
   | { kind: "reported_cut"; listed: number; total: number | null }
@@ -498,6 +512,9 @@ function rowCapField(rowCap: unknown, key: "soft" | "hard"): number | null {
  * - a non-zero `degradable_dropped`, or a `total` above the rows listed, is
  *   read as a cut BEFORE the flag is consulted, so `truncated: false` beside
  *   either never reads whole;
+ * - a `total` or `degradable_dropped` past the safe-integer range is such a
+ *   cut too, with no figure to print: `reported_cut` with no `total`, or
+ *   `cut_degradable` with no count;
  * - `truncated: false` beside a malformed `total` or `degradable_dropped` is
  *   dropped, so the flag alone does not vouch for completeness;
  * - `truncated: true` beside a `total` equal to the rows listed keeps the
@@ -510,27 +527,36 @@ export function readRosterCut(body: RosterCutRef): RosterCut {
   const degradableDropped = isCount(body.degradable_dropped)
     ? body.degradable_dropped
     : null;
+  // Too large to print, yet larger than any list: a cut, not a malformed field.
+  const totalOversized = isOversizedCount(body.total);
+  const droppedOversized = isOversizedCount(body.degradable_dropped);
   const limit = rowCapField(body.row_cap, "soft") ?? COORD_ROSTER_ROW_LIMIT;
   // `truncated: false` is a completeness claim: not trusted beside a
   // malformed sibling. (A larger `total` or a non-zero `degradable_dropped`
   // beside it is a cut, read below before the flag is.)
-  const totalMalformed = body.total !== undefined && total === null;
+  const totalMalformed =
+    body.total !== undefined && total === null && !totalOversized;
   const droppedMalformed =
-    body.degradable_dropped !== undefined && degradableDropped === null;
+    body.degradable_dropped !== undefined &&
+    degradableDropped === null &&
+    !droppedOversized;
   if (truncated === false && (totalMalformed || droppedMalformed)) {
     truncated = null;
   }
   const cutTotal = total !== null && total > listed ? total : null;
-  if (degradableDropped !== null && degradableDropped > 0) {
+  if (
+    droppedOversized ||
+    (degradableDropped !== null && degradableDropped > 0)
+  ) {
     return {
       kind: "cut_degradable",
       listed,
       total: cutTotal,
-      degradableDropped,
+      degradableDropped: droppedOversized ? null : degradableDropped,
       hardLimit: rowCapField(body.row_cap, "hard"),
     };
   }
-  if (truncated === true || cutTotal !== null) {
+  if (truncated === true || cutTotal !== null || totalOversized) {
     return truncated === true && cutTotal !== null && degradableDropped === 0
       ? { kind: "cut_tail_only", listed, total: cutTotal, limit }
       : { kind: "reported_cut", listed, total: cutTotal };
@@ -577,16 +603,24 @@ export function rosterCutSentence(c: RosterCut): string | null {
           : "are abandoned or placeholder rows";
       // Coord lists every row that could degrade before it applies the soft
       // limit, so more rows than the limit can be listed. "Past coord's limit
-      // of 1000" beside 1200 listed rows would read as a contradiction.
+      // of 1000" beside 1200 listed rows would read as a contradiction, and
+      // so would it beside 3 (fewer than the limit: coord's SQL never cuts
+      // there, but a body may say so). Only a list AT the limit is cut there.
       const where =
         c.listed > c.limit
           ? "coord left out of its list (it lists every machine that could degrade first)"
-          : `past coord's limit of ${c.limit}, not listed here`;
+          : c.listed < c.limit
+            ? "coord left out of its list"
+            : `past coord's limit of ${c.limit}, not listed here`;
       return `Coord's roster lists ${rowsText(c.listed)} of ${c.total}: the other ${n} ${rows} ${where} — coord says none of them could be degrading.`;
     }
     case "cut_degradable": {
       const d = c.degradableDropped;
-      return `Coord's roster lists ${rowsText(c.listed)}${c.total !== null ? ` of ${c.total}` : ""}, and coord withheld ${d} ${d === 1 ? "machine that" : "machines that"} could be degrading past its row limit${c.hardLimit !== null ? ` of ${c.hardLimit}` : ""} — ${d === 1 ? "its" : "their"} health is unknown, so this view is partial.`;
+      const withheld =
+        d === null
+          ? "machines that could be degrading (more than this view can count)"
+          : `${d} ${d === 1 ? "machine that" : "machines that"} could be degrading`;
+      return `Coord's roster lists ${rowsText(c.listed)}${c.total !== null ? ` of ${c.total}` : ""}, and coord withheld ${withheld} past its row limit${c.hardLimit !== null ? ` of ${c.hardLimit}` : ""} — ${d === 1 ? "its" : "their"} health is unknown, so this view is partial.`;
     }
     case "reported_cut":
       return c.total !== null

@@ -603,6 +603,7 @@ describe("machine health", () => {
           expect(c).toEqual({ kind: "reported_cut", listed: 3, total: null });
           expect(rosterCutSentence(c)).not.toMatch(/e\+|9007/);
         }
+        // Too large to print, still a count: coord withheld degradable rows.
         expect(
           readRosterCut({
             devices: healthy(3),
@@ -610,12 +611,124 @@ describe("machine health", () => {
             total: 5,
             degradable_dropped: 1e21,
           })
-        ).toEqual({ kind: "reported_cut", listed: 3, total: 5 });
+        ).toEqual({
+          kind: "cut_degradable",
+          listed: 3,
+          total: 5,
+          degradableDropped: null,
+          hardLimit: null,
+        });
         expect(
           readRosterExclusions({
             excluded: { unbound: 1e21, bound_to_other_tenant: 0 },
           })
         ).toEqual({ kind: "withheld_unmeasured", reason: null });
+      });
+
+      // A count past 2^53 is too large to print, but it is larger than any
+      // list: it is evidence of a cut, never of a whole roster.
+      const OVERSIZED_TOTAL = {
+        kind: "reported_cut",
+        listed: 3,
+        total: null,
+      } as const;
+      const OVERSIZED_DROPPED = {
+        kind: "cut_degradable",
+        listed: 3,
+        total: null,
+        degradableDropped: null,
+        hardLimit: null,
+      } as const;
+      it.each([
+        ["total: 1e21, no flag", { total: 1e21 }, OVERSIZED_TOTAL],
+        ["total: 2 ** 53, no flag", { total: 2 ** 53 }, OVERSIZED_TOTAL],
+        [
+          "degradable_dropped: 1e21, no flag",
+          { degradable_dropped: 1e21 },
+          OVERSIZED_DROPPED,
+        ],
+        [
+          "degradable_dropped: 2 ** 53, no flag",
+          { degradable_dropped: 2 ** 53 },
+          OVERSIZED_DROPPED,
+        ],
+        [
+          "truncated: false, total: 1e21, degradable_dropped: 0",
+          { truncated: false, total: 1e21, degradable_dropped: 0 },
+          OVERSIZED_TOTAL,
+        ],
+        [
+          "truncated: false, total: 3, degradable_dropped: 1e21",
+          { truncated: false, total: 3, degradable_dropped: 1e21 },
+          OVERSIZED_DROPPED,
+        ],
+      ])(
+        "under the limit, %s is a cut with no figure, never whole",
+        (_label, extra, expected) => {
+          const c = readRosterCut({ devices: healthy(3), ...extra });
+          expect(c).toEqual(expected);
+          expect(rosterCutHidesHealth(c)).toBe(true);
+          const sentence = rosterCutSentence(c) ?? "";
+          expect(sentence).not.toMatch(/e\+|9007/);
+          expect(sentence).toMatch(/unknown/);
+        }
+      );
+
+      it("names an oversized degradable count without printing it", () => {
+        expect(
+          rosterCutSentence(
+            readRosterCut({ devices: healthy(3), degradable_dropped: 1e21 })
+          )
+        ).toBe(
+          "Coord's roster lists 3 rows, and coord withheld machines that could be degrading (more than this view can count) past its row limit — their health is unknown, so this view is partial."
+        );
+      });
+
+      it.each([
+        ["a negative oversized total", { total: -1e21 }],
+        ["an infinite total", { total: Infinity }],
+        [
+          "a negative oversized degradable_dropped",
+          { degradable_dropped: -1e21 },
+        ],
+        ["a fractional degradable_dropped", { degradable_dropped: 0.5 }],
+        ["a string total", { total: "1e21" }],
+      ])(
+        "truncated: false beside %s stays malformed, not a cut",
+        (_label, extra) => {
+          // Not a cut (no evidence of one) and not whole (the flag is not
+          // trusted beside a malformed sibling): the row-count fallback.
+          expect(
+            readRosterCut({ devices: healthy(3), truncated: false, ...extra })
+          ).toEqual({ kind: "whole" });
+          expect(
+            readRosterCut({
+              devices: healthy(1000),
+              truncated: false,
+              ...extra,
+            })
+          ).toEqual({ kind: "may_be_cut", listed: 1000, limit: 1000 });
+        }
+      );
+
+      it("a tail-only cut under the limit does not say the rows are past it", () => {
+        // Coord's SQL lists at least min(total, soft) rows, so this body is
+        // one it cannot send; the line still must not contradict itself.
+        const c = readRosterCut({
+          devices: healthy(3),
+          truncated: true,
+          total: 5,
+          degradable_dropped: 0,
+        });
+        expect(c).toEqual({
+          kind: "cut_tail_only",
+          listed: 3,
+          total: 5,
+          limit: 1000,
+        });
+        expect(rosterCutSentence(c)).toBe(
+          "Coord's roster lists 3 rows of 5: the other 2 are abandoned or placeholder rows coord left out of its list — coord says none of them could be degrading."
+        );
       });
 
       it("a fractional total is not a figure to print", () => {

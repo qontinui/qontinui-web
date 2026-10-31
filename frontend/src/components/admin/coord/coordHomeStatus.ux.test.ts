@@ -482,10 +482,74 @@ describe("the strip over the machine roster", () => {
         machines: roster(["healthy", null], { cut: CUT }),
       });
       expect(s.headline).toBe(
-        "Nothing needs you, but 1 machine has no health verdict — its health is unknown"
+        "Nothing needs you, but 1 machine has no health verdict — its health is unknown, and coord's roster is cut off"
       );
       expect(s.detail).toContain(
         "Coord reports its roster was cut after 1 row — machine health beyond it is unknown."
+      );
+    });
+
+    it.each([
+      [
+        "a cut that withheld degradable machines",
+        {
+          kind: "cut_degradable",
+          listed: 3,
+          total: 9,
+          degradableDropped: 2,
+          hardLimit: null,
+        } as RosterCut,
+        ", and coord's roster is cut off",
+      ],
+      [
+        "a roster that may be cut",
+        { kind: "may_be_cut", listed: 3, limit: 3 } as RosterCut,
+        ", and coord's roster may be cut off",
+      ],
+      [
+        "a tail-only cut, which hides no health",
+        { kind: "cut_tail_only", listed: 3, total: 5, limit: 3 } as RosterCut,
+        "",
+      ],
+      ["a whole roster", { kind: "whole" } as RosterCut, ""],
+    ])(
+      "the no-verdict headline names %s only when it hides health",
+      (_label, cut, clause) => {
+        const s = deriveHomeStrip(calm(), {
+          machines: roster(["healthy", null, "unknown"], { cut }),
+        });
+        expect(s.level).toBe("amber");
+        expect(s.headline).toBe(
+          `Nothing needs you, but 2 machines have no health verdict — their health is unknown${clause}`
+        );
+      }
+    );
+
+    it("checks the cut before 'no live machine', since a cut-off machine may be live", () => {
+      // Every listed machine is abandoned, and the cut hides the rest: a
+      // machine past the cut may be live, so "no live machine reports" is
+      // not known. The cut answers first.
+      for (const cut of [
+        CUT,
+        { kind: "may_be_cut", listed: 2, limit: 2 } as RosterCut,
+      ]) {
+        const s = deriveHomeStrip(calm(), {
+          machines: roster(["abandoned", "abandoned"], { cut }),
+        });
+        expect(s.level).toBe("amber");
+        expect(s.headline).toMatch(
+          /^Nothing needs you and no listed machine is degrading — coord's roster (is|may be) cut off$/
+        );
+        expect(s.headline).not.toMatch(/no live machine/);
+      }
+      // A tail-only cut hides no health: there the answer is "no live machine".
+      const tail = deriveHomeStrip(calm(), {
+        machines: roster(["abandoned", "abandoned"], {
+          cut: { kind: "cut_tail_only", listed: 2, total: 4, limit: 2 },
+        }),
+      });
+      expect(tail.headline).toBe(
+        "Nothing needs you and no live machine reports — none can be called healthy"
       );
     });
 
