@@ -77,6 +77,7 @@ import {
   REPOSITORY_DESCRIPTOR,
   TENANT_DESCRIPTOR,
   degradationDescriptor,
+  correctLeftOut,
   degradationRepo,
   namedUnitDescriptor,
   namedUnitRepos,
@@ -1792,9 +1793,7 @@ export function CorrectSection({
   const noSource = correctnessHasNoSource(correctness);
   // A section with nothing built behind it is left out of the presented
   // page; the operator still sees it, so its absence stays visible there.
-  if (presenting && (noSource || correctness.state === "not_implemented")) {
-    return null;
-  }
+  if (correctLeftOut(correctness, presenting)) return null;
   const label = measured
     ? "Coord reports a correctness reading; this page does not render it yet"
     : noSource

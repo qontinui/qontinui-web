@@ -38,6 +38,7 @@ import { FAILURE_REASON_WITHHELD } from "@/components/operations/presentedFailur
 import { readErrorBody } from "@/lib/errors/backend-error-message";
 import {
   PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
+  correctnessHasNoSource,
   decisionDomainLabel,
   isKnownDecisionDomain,
   isKnownPlane,
@@ -46,6 +47,7 @@ import {
   isWatcherSource,
   planeLabel,
   sourceLabel,
+  type CorrectnessView,
   type DegradationView,
   type NamedUnit,
   type NeedsMeItem,
@@ -151,6 +153,21 @@ export function keptReadingText(
     );
   }
   return parts.join(" ");
+}
+
+/**
+ * Whether the page leaves Correct? out: while presenting, when nothing is
+ * built behind it — coord says no source measures it, or has not built the
+ * block. An unread block coord could build stays, shown as unknown. The
+ * operator always sees the section.
+ */
+export function correctLeftOut(
+  c: CorrectnessView,
+  presenting: boolean
+): boolean {
+  return (
+    presenting && (correctnessHasNoSource(c) || c.state === "not_implemented")
+  );
 }
 
 // ---------------------------------------------------------------------------

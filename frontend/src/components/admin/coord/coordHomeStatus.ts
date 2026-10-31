@@ -1723,6 +1723,14 @@ export interface HomeStripReadState {
    * never says nothing is degrading.
    */
   machines?: HomeStripMachines | null;
+  /**
+   * The page leaves its Correct? section out (while presenting, with nothing
+   * built behind it). The strip then names no "correct?" in what it did not
+   * read — there is no section to look at — and says in one plain line that
+   * correctness is not measured yet, so the reader still learns it. It still
+   * floors at amber: correctness is not known.
+   */
+  correctnessLeftOut?: boolean;
 }
 
 /** The machine roster's counts, for the strip. */
@@ -1744,6 +1752,9 @@ function machinesAre(n: number): string {
 export function lastGoodReadPhrase(generatedAt: string | null): string {
   return `at the last good read (${absoluteTime(generatedAt)})`;
 }
+
+/** The strip's one line for a Correct? section the page leaves out. */
+export const CORRECTNESS_NOT_MEASURED_TEXT = "Correctness is not measured yet.";
 
 /** The page's words for a deployment that does not serve the door yet. */
 export const PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT =
@@ -1892,7 +1903,9 @@ export function deriveHomeStrip(
     attention = escalateAttention(attention, "waiting");
   }
 
+  const correctnessLeftOut = read.correctnessLeftOut === true;
   const unreadPhrase = unread
+    .filter((b) => !(correctnessLeftOut && b.block === "correctness"))
     .map((b) => `${HOME_BLOCK_LABEL[b.block]} ${BLOCK_STATE_PHRASE[b.state]}`)
     .join("; ");
 
@@ -1937,6 +1950,9 @@ export function deriveHomeStrip(
 
   const detailParts: string[] = [];
   if (unreadPhrase) detailParts.push(`Not read: ${unreadPhrase}.`);
+  if (correctnessLeftOut && view.correctness.state !== "read") {
+    detailParts.push(CORRECTNESS_NOT_MEASURED_TEXT);
+  }
   if (needsRead && needsTotal === null) {
     detailParts.push(
       "Coord gave no usable count of the decisions that need you."
