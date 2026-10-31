@@ -5,10 +5,13 @@
  * REACHABLE in the product. So it must render without opening the Advanced
  * disclosure, and must not disappear when the unrelated next-step settings
  * request fails. PrioritySetsSection has its own fetches and is stubbed.
+ *
+ * It also shows no position as the saved one while a write's outcome is open:
+ * until the re-read settles, the value on hand is the one from before it.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const get = vi.fn();
@@ -362,5 +365,63 @@ describe("CoordinationSettingsPage — a code-fallback domain can be saved", () 
         domains: [{ decision_domain: "pr_fix", autonomy_level: "auto_decide" }],
       }
     );
+  });
+});
+
+// Built once at module level so the case below reads a value, not the helper.
+const EFFECTIVE_NEXT_STEP = nextStepSettings("effective");
+
+describe("CoordinationSettingsPage — a fixer write whose outcome is open", () => {
+  it("presses no fixer position while the re-read after the write is out", async () => {
+    let releaseReread: (body: typeof DIAL) => void = () => {};
+    let dialReads = 0;
+    get.mockImplementation((url: string) => {
+      const path = String(url ?? "");
+      if (path.includes("next-step-settings")) {
+        return Promise.resolve(EFFECTIVE_NEXT_STEP);
+      }
+      if (path.includes("pr-merge/settings")) {
+        dialReads += 1;
+        if (dialReads === 1) return Promise.resolve(DIAL);
+        // The re-read the open outcome starts is held, so the outcome stays open.
+        return new Promise((resolve) => {
+          releaseReread = resolve;
+        });
+      }
+      return Promise.resolve({});
+    });
+    // The PATCH answers 2xx with the tenant value still null: it did not read
+    // back the "on" that was sent, so whether the write landed is open.
+    patchViaFetch.mockReset();
+    patchViaFetch.mockResolvedValue(DIAL);
+    const user = userEvent.setup();
+    render(<CoordinationSettingsPage />);
+
+    await waitFor(() => expect(checkedAttr("default")).toBe("true"));
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("fixer-spawn-on") as HTMLButtonElement).disabled
+      ).toBe(false)
+    );
+    await user.click(screen.getByTestId("fixer-spawn-on"));
+    await waitFor(() => expect(patchViaFetch).toHaveBeenCalledTimes(1));
+    expect(patchViaFetch.mock.calls[0]?.[1]).toEqual({ auto_fix_pr: true });
+    await waitFor(() => expect(dialReads).toBe(2));
+
+    // The value on hand is the pre-write "default": showing it pressed would
+    // claim it is what coord holds after the write.
+    for (const position of ["default", "on", "off"] as const) {
+      expect(checkedAttr(position)).not.toBe("true");
+      expect(
+        screen
+          .getByTestId(`fixer-spawn-${position}`)
+          .getAttribute("aria-pressed")
+      ).not.toBe("true");
+    }
+
+    await act(async () => {
+      releaseReread(DIAL);
+    });
+    await waitFor(() => expect(checkedAttr("default")).toBe("true"));
   });
 });
