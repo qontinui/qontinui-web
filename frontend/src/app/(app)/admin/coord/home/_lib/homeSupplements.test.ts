@@ -18,6 +18,7 @@ import {
 import {
   GATES_PAGE_SIZE,
   MACHINES_NOT_READ,
+  MACHINES_SOURCE,
   QUEUE_NOT_READ,
   countOpenOperatorGates,
   countPendingOperatorQuestions,
@@ -25,6 +26,7 @@ import {
   machinesAllHealthy,
   parseMachineHealth,
   queueCountText,
+  supplementSource,
   type MachineHealthView,
 } from "./homeSupplements";
 
@@ -377,5 +379,20 @@ describe("queueCountText", () => {
         exact: false,
       })
     ).toBe("at least 4");
+  });
+});
+
+describe("supplementSource — a kept reading names itself", () => {
+  it("adds ', last read' to a kept read's source, and nothing to a current one", () => {
+    expect(
+      supplementSource(MACHINES_SOURCE, { stale: true, asOf: "t" })
+    ).toEqual({
+      key: MACHINES_SOURCE,
+      source: `${MACHINES_SOURCE}, last read`,
+      asOf: "t",
+    });
+    expect(
+      supplementSource(MACHINES_SOURCE, { stale: false, asOf: null }).source
+    ).toBe(MACHINES_SOURCE);
   });
 });
