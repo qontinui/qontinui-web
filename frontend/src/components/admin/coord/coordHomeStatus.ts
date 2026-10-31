@@ -1020,7 +1020,7 @@ export function isKnownPlane(plane: string): boolean {
  */
 export type PlaneWords = (plane: string | null) => string | null;
 
-/** "1 area not named here" / "2 areas not named here". */
+/** "1 area not named here" / "2 areas not named here"; with `other`, "2 other areas not named here". */
 export function areasNotNamedHere(count: number, other = false): string {
   const kind = other ? "other " : "";
   return `${count} ${kind}${count === 1 ? "area" : "areas"} not named here`;
