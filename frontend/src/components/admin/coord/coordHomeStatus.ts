@@ -177,6 +177,14 @@ export type ClassCounts = Readonly<Record<UnitClass, number | null>>;
 /** Coord's compiled stall window (14 days) — used only when the wire omits it. */
 export const DEFAULT_STALL_WINDOW_SECS = 14 * 24 * 3600;
 
+/**
+ * A count of work units with its unit, singular for one: "1 unit",
+ * "3 units", "– units" when coord served no count (never a zero).
+ */
+export function unitCountText(n: number | null, noun = "unit"): string {
+  return `${n === null ? "–" : n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
 /** Whole days in a stall window, for the label. */
 export function stallWindowDays(windowSecs: number | null): number {
   return Math.round((windowSecs ?? DEFAULT_STALL_WINDOW_SECS) / 86_400);
@@ -1534,7 +1542,7 @@ export type HomeBlock =
 export const HOME_BLOCK_LABEL: Readonly<Record<HomeBlock, string>> = {
   needs_me: "needs you",
   degradations: "degrading",
-  on_track: "on track",
+  on_track: "work by state",
   correctness: "correct?",
 };
 
