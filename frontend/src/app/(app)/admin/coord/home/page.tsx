@@ -56,7 +56,12 @@ import {
   presentedHomeFailure,
   type OtherReading,
 } from "./_lib/homeLens";
-import { MACHINES_SOURCE, supplementSource } from "./_lib/homeSupplements";
+import {
+  GATES_SOURCE,
+  MACHINES_SOURCE,
+  QUESTIONS_SOURCE,
+  supplementSource,
+} from "./_lib/homeSupplements";
 import { KeptReadingNotice, PageProvenance } from "./_components/HomeLens";
 import {
   CorrectSection,
@@ -92,6 +97,24 @@ export default function CoordHomePage() {
         : null,
     [machines.state, machines.counts, machines.stale, machines.emptyRoster]
   );
+  // With coord's needs block unread, the strip's needs-you figure is the
+  // queue counts' — only when BOTH queues were read.
+  const { gates, questions } = supplements;
+  const stripQueues = useMemo(
+    () =>
+      shown.needsMe.state !== "read" &&
+      gates.state === "read" &&
+      gates.count !== null &&
+      questions.state === "read" &&
+      questions.count !== null
+        ? {
+            count: gates.count + questions.count,
+            exact: gates.exact && questions.exact,
+            stale: gates.stale || questions.stale,
+          }
+        : null,
+    [shown.needsMe.state, gates, questions]
+  );
   // While presenting, Correct? is left out when nothing is built behind it;
   // the strip then names no section the page does not show.
   const correctnessLeftOut =
@@ -102,8 +125,9 @@ export default function CoordHomePage() {
         stale,
         machines: stripMachines,
         correctnessLeftOut,
+        queues: stripQueues,
       }),
-    [view, stale, stripMachines, correctnessLeftOut]
+    [view, stale, stripMachines, correctnessLeftOut, stripQueues]
   );
   const refreshSupplements = supplements.refresh;
   // The one refresh re-reads everything the page shows.
@@ -137,8 +161,17 @@ export default function CoordHomePage() {
         ]
       : []),
   ];
-  // The strip's own figures from those reads, each with its chip.
-  const stripSources = [supplementSource(MACHINES_SOURCE, machines)];
+  // The strip's own figures from those reads, each with its chip: the
+  // roster always, the queues when its needs-you figure is theirs.
+  const stripSources = [
+    supplementSource(MACHINES_SOURCE, machines),
+    ...(stripQueues !== null
+      ? [
+          supplementSource(GATES_SOURCE, supplements.gates),
+          supplementSource(QUESTIONS_SOURCE, supplements.questions),
+        ]
+      : []),
+  ];
 
   return (
     // `overflow-x-auto`: a wide detail panel scrolls instead of stranding its

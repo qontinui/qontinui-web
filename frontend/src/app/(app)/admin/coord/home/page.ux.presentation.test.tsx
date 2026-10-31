@@ -433,6 +433,53 @@ describe("/admin/coord/home?present=1 — the 2026-10-31 UX pass", () => {
     });
   });
 
+  describe("the strip's needs-you figure from the queues", () => {
+    it("is the queues' sum, marked as theirs, with their chips on the strip", async () => {
+      gatesOverview.mockImplementation(async () => ({
+        generated_at: new Date().toISOString(),
+        gates: [
+          {
+            gate_id: "g1",
+            verdict: "open",
+            clearance_audience: "operator",
+            predicate: { kind: "operator_approval" },
+          },
+        ],
+        counts: { open: 1 },
+        rollouts: { auto_merge: { enabled: [], disabled: [] }, features: [] },
+      }));
+      pendingQuestions.mockImplementation(async () => ({
+        questions: [{ id: "q1" }],
+        total: 2,
+      }));
+      await renderPresenting(
+        fullBody({ needs_me: { state: "not_implemented" } })
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-home.strip.needs-you")
+        ).toHaveTextContent(/^needs you 3 \(from queues\)$/)
+      );
+      expect(screen.getByTestId("coord-home.strip.health")).toHaveTextContent(
+        "3 decisions need you — counted from the Gates and Questions queues"
+      );
+      const sources = chips("strip").map((c) => c.textContent ?? "");
+      expect(sources.some((t) => t.includes(GATES_SOURCE))).toBe(true);
+      expect(sources.some((t) => t.includes(QUESTIONS_SOURCE))).toBe(true);
+    });
+
+    it("carries no queue chip on the strip while coord's own block is read", async () => {
+      await renderPresenting(fullBody());
+      await waitFor(() =>
+        expect(
+          chips("strip").some((c) => c.textContent?.includes(MACHINES_SOURCE))
+        ).toBe(true)
+      );
+      const sources = chips("strip").map((c) => c.textContent ?? "");
+      expect(sources.some((t) => t.includes(GATES_SOURCE))).toBe(false);
+    });
+  });
+
   describe("Needs you's counts, while coord serves no needs block", () => {
     it("counts with their own sources, links to no page it cannot show, and quotes no gate or question", async () => {
       pendingQuestions.mockImplementation(async () => ({

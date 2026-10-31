@@ -446,3 +446,77 @@ describe("the strip over a Correct? section the page leaves out", () => {
     expect(s.detail ?? "").not.toContain("Correctness is not measured yet.");
   });
 });
+
+describe("the strip's needs-you figure from the queues, while coord's needs block is unread", () => {
+  const body = (needs_me: unknown) =>
+    parseProjectState({
+      generated_at: "2026-10-31T00:00:00Z",
+      on_track: {
+        state: "read",
+        totals: { row_count: 0, classes: {} },
+        groups: [],
+      },
+      correctness: { state: "read" },
+      needs_me,
+      degradations: { state: "read", headline: "none", open: [], declared: [] },
+      does_not_know: [{ source: "work_units", state: "read" }],
+    });
+  const machines = {
+    stale: false,
+    counts: summarizeMachineHealth([{ device_id: "d", state: "healthy" }]),
+  };
+  const badge = (s: ReturnType<typeof deriveHomeStrip>) =>
+    s.badges.find((b) => b.key === "needs");
+
+  it("uses the queue counts, marked as theirs, and escalates on them", () => {
+    const s = deriveHomeStrip(body({ state: "not_implemented" }), {
+      machines,
+      queues: { count: 3, exact: true, stale: false },
+    });
+    expect(s.level).toBe("red");
+    expect(s.headline).toBe(
+      "3 decisions need you — counted from the Gates and Questions queues"
+    );
+    expect(badge(s)?.label).toBe("needs you 3 (from queues)");
+    expect(badge(s)?.tone).toBe("attention");
+    expect(s.detail).toContain(
+      "Needs you is counted from the Gates and Questions queues, since coord's needs block is not read."
+    );
+  });
+
+  it("says 'at least' for a count that is a lower bound, and 'last good read' for a kept one", () => {
+    const s = deriveHomeStrip(body({ state: "unknown" }), {
+      machines,
+      queues: { count: 50, exact: false, stale: true },
+    });
+    expect(s.headline).toBe(
+      "At least 50 decisions need you — counted from the Gates and Questions queues"
+    );
+    expect(badge(s)?.label).toBe("needs you ≥50 (from queues)");
+    expect(s.detail).toContain("— at their last good read.");
+  });
+
+  it("never answers 'nothing needs you' from the queues", () => {
+    const s = deriveHomeStrip(body({ state: "not_implemented" }), {
+      machines,
+      queues: { count: 0, exact: true, stale: false },
+    });
+    expect(s.level).toBe("amber");
+    expect(s.headline).not.toMatch(/nothing needs you/i);
+    expect(badge(s)?.label).toBe("needs you 0 (from queues)");
+  });
+
+  it("ignores the queues once coord's own block is read, and dashes without them", () => {
+    const read = deriveHomeStrip(
+      body({ state: "read", items: [], total: 0, omitted: 0 }),
+      { machines, queues: { count: 4, exact: true, stale: false } }
+    );
+    expect(badge(read)?.label).toBe("needs you 0");
+    expect(read.headline).toBe("Nothing needs you and nothing is degrading");
+    const none = deriveHomeStrip(body({ state: "not_implemented" }), {
+      machines,
+      queues: null,
+    });
+    expect(badge(none)?.label).toBe("needs you –");
+  });
+});
