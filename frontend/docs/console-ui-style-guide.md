@@ -1597,7 +1597,11 @@ coord did not read back as asked). Six more things are recorded:
 In the operator view too, a switch's "Where it is set" is plain words (R8's altitude
 rule): the route, environment variable or setting key behind it is that cell's
 tooltip (`MatrixGate.whereDetail`, never built while presenting), and a path's
-registry name appears only once its line is opened.
+registry name appears only once its line is opened. A press of the page's refresh
+ends with a "Re-read at <time>" status beside the button once every read it
+issued has settled — answered or not — so a re-read over sources that are all
+still unread (every as-of null) is still seen to have run (served policy
+`ux-priorities` `an-action-must-acknowledge-itself`, its terminal moment).
 
 While presenting, every section opens with its caption and one `Provenance` chip per
 read (`SectionCaption`; the strip's chip sits under it); machines read as their

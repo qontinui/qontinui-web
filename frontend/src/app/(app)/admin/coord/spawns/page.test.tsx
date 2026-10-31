@@ -501,6 +501,34 @@ describe("/admin/coord/spawns — the failure arms", () => {
 });
 
 describe("/admin/coord/spawns — controls", () => {
+  it("says when a refresh re-read the page, even when no read answered and every as-of is null", async () => {
+    const down = () => ({ status: 502, body: { detail: "coord unreachable" } });
+    for (const key of [
+      "stats",
+      "list",
+      "pending",
+      "fleet",
+      "roles",
+      "effective",
+      "defaults",
+      "nextStep",
+      "merge",
+      "repos",
+      "drain",
+      "concurrency",
+    ] as const) {
+      routes[key] = down;
+    }
+    await renderPage();
+    expect(screen.queryByTestId("coord-spawns-reread")).toBeNull();
+    const before = calls.length;
+    await refresh();
+    expect(calls.length).toBeGreaterThan(before);
+    const reread = screen.getByTestId("coord-spawns-reread");
+    expect(reread.textContent).toMatch(/^Re-read at \S/);
+    expect(reread.getAttribute("role")).toBe("status");
+  });
+
   it("re-reads stats and list for a new window, from coord's window_start", async () => {
     routes.stats = (url) => ({
       body: url.includes("window=24h")
