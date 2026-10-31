@@ -27,7 +27,10 @@ import { PROJECT_STATE_POLL_MS } from "@/components/admin/coord/coordHomeStatus"
 import { fetchFleetHealth } from "@/lib/api/operations/coordFleet";
 import { fetchPendingAgentQuestions } from "@/lib/api/operations/agentQuestions";
 import { adminDevService } from "@/services/admin-dev-service";
-import type { MachineHealthCounts } from "@/components/admin/coord/machineHealth";
+import type {
+  EmptyRoster,
+  MachineHealthCounts,
+} from "@/components/admin/coord/machineHealth";
 import {
   GATES_PAGE_SIZE,
   MACHINES_NOT_READ,
@@ -52,6 +55,7 @@ export interface HomeSupplements {
 interface Machines {
   counts: MachineHealthCounts;
   asOf: string | null;
+  emptyRoster: EmptyRoster | null;
 }
 interface Queue {
   count: number;
@@ -76,6 +80,7 @@ function machinesView(
     counts: axis.value.counts,
     asOf: axis.value.asOf,
     stale: axis.stale,
+    emptyRoster: axis.value.emptyRoster,
   };
 }
 

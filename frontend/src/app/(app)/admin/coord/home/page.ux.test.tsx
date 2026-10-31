@@ -515,6 +515,64 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       expect(machines).not.toHaveTextContent("Coord lists no machines.");
     });
 
+    it("reads an empty roster coord withheld devices from as a binding fault, never calm", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () =>
+          json({
+            as_of: new Date().toISOString(),
+            devices: [],
+            excluded: { unbound: 1, bound_to_other_tenant: 1 },
+            excluded_error: null,
+          }),
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() =>
+        expect(machines).toHaveAttribute("data-roster-fault", "true")
+      );
+      expect(machines).toHaveTextContent(
+        "Coord lists no machines but withheld 2 from its roster (1 with no binding, 1 bound to another tenant) — a binding fault, not an empty fleet, so machine health is unknown."
+      );
+      const deg = screen.getByTestId("coord-home.degrading");
+      expect(deg).not.toHaveTextContent("Nothing is degrading");
+      expect(
+        within(deg).getByTestId("coord-home.degrading.machines-not-calm")
+      ).toHaveTextContent("coord lists no machines");
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveAttribute("data-health-level", "amber");
+      expect(strip).not.toHaveTextContent(/nothing is degrading/i);
+    });
+
+    it("says exactly that an empty roster withheld nothing, and does not rest calm on zero machines", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () =>
+          json({
+            as_of: new Date().toISOString(),
+            devices: [],
+            excluded: { unbound: 0, bound_to_other_tenant: 0 },
+            excluded_error: null,
+          }),
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() =>
+        expect(machines).toHaveTextContent(
+          "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy."
+        )
+      );
+      expect(machines).not.toHaveAttribute("data-roster-fault");
+      expect(screen.getByTestId("coord-home.degrading")).not.toHaveTextContent(
+        "Nothing is degrading"
+      );
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveAttribute("data-health-level", "amber");
+      expect(strip).not.toHaveTextContent(/nothing is degrading/i);
+    });
+
     it("says nothing is degrading only when every machine reports healthy", async () => {
       answer({
         [PROJECT_STATE]: () => json(oneUnitBody()),
