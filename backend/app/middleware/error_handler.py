@@ -129,6 +129,12 @@ def _detail_message(detail: Any, status_code: int) -> str:
     return f"HTTP {status_code} with no message"
 
 
+# The envelope's own fields: a dict detail's keys of these names are never
+# spread over it. ``detail`` is not an envelope field, but a top-level one
+# would shadow ``message`` for a client that reads ``detail`` first.
+_ENVELOPE_KEYS = frozenset({"error", "message", "timestamp", "path", "detail"})
+
+
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Handle HTTP exceptions with standardized format"""
     # A refusal raised through `app.core.refusal.refusal_error`: the same
@@ -149,30 +155,27 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     detail_value: Any = exc.detail
     if isinstance(detail_value, dict) and "error" in detail_value:
         error_code = detail_value["error"]
-        message = _detail_message(detail_value, exc.status_code)
-        metadata: dict[str, Any] = {
-            k: v for k, v in detail_value.items() if k not in ["error", "message"]
-        }
     else:
         error_code = get_default_error_code(exc.status_code).value
-        message = _detail_message(detail_value, exc.status_code)
-        # A dict detail without ``error`` keeps every other field too — a
-        # client reads ``code``, ``coord_status``, ``current_version`` … at
-        # the top level, exactly as the ``error`` branch spreads them.
-        metadata = (
-            {k: v for k, v in detail_value.items() if k != "message"}
-            if isinstance(detail_value, dict)
-            else {}
-        )
+    message = _detail_message(detail_value, exc.status_code)
+    # A dict detail's other fields are spread at the top level — a client
+    # reads ``code``, ``coord_status``, ``current_version`` … there — and the
+    # envelope is built AFTER the spread, so no detail key can replace the
+    # envelope's own fields or add a top-level ``detail`` that a client would
+    # read before ``message``.
+    metadata: dict[str, Any] = (
+        {k: v for k, v in detail_value.items() if k not in _ENVELOPE_KEYS}
+        if isinstance(detail_value, dict)
+        else {}
+    )
 
     content = {
+        **metadata,
         "error": error_code,
         "message": message,
         "timestamp": time.time(),
         "path": str(request.url),
     }
-    if metadata:
-        content.update(metadata)
 
     # Propagate HTTPException headers (e.g. Retry-After on 503,
     # WWW-Authenticate on 401) — JSONResponse drops them otherwise.

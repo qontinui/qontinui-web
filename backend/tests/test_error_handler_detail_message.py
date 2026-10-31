@@ -122,3 +122,26 @@ def test_a_string_detail_is_the_message() -> None:
 def test_a_dict_detail_without_error_still_uses_its_message() -> None:
     body = _envelope(400, {"message": "bad shape"})
     assert body["message"] == "bad shape"
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        {"path": "/etc/elsewhere", "timestamp": 0, "detail": "x", "code": "c1"},
+        {
+            "error": "refused",
+            "path": "/etc/elsewhere",
+            "timestamp": 0,
+            "detail": "x",
+            "code": "c1",
+        },
+    ],
+)
+def test_a_detail_cannot_overwrite_the_envelope(detail: dict[str, Any]) -> None:
+    body = _envelope(409, detail)
+    assert body["path"].endswith("/boom")
+    assert isinstance(body["timestamp"], float) and body["timestamp"] > 0
+    # No top-level `detail` to shadow `message` for a client reading it first.
+    assert "detail" not in body
+    # Every other field is still spread at the top level.
+    assert body["code"] == "c1"
