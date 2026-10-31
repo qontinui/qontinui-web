@@ -37,6 +37,7 @@ import {
   rolloutHeadline,
   scopeStatus,
   summarizeScopes,
+  writeUnknownReason,
   type RepoDialReading,
 } from "../_lib/repoFollowupStatus";
 import type {
@@ -272,6 +273,7 @@ function RepoRow({
   const status = scopeStatus(reading.scope, {
     error: reading.scopeError,
     readbackError: reading.scopeReadbackError,
+    outcomeUnknown: reading.scopeOutcomeUnknown,
   });
   return (
     <RecordRow
@@ -307,7 +309,7 @@ function RepoRow({
           <div className="space-y-4">
             <ScopeEditor
               // Re-seed the draft whenever coord's answer changes.
-              key={`${reading.scopeReadbackError !== null ? "readback-failed" : (reading.scope?.scope ?? "?")}|${(reading.scope?.code_paths ?? []).join("\n")}`}
+              key={`${reading.scopeReadbackError !== null || reading.scopeOutcomeUnknown !== null ? "write-unknown" : (reading.scope?.scope ?? "?")}|${(reading.scope?.code_paths ?? []).join("\n")}`}
               repo={repo}
               reading={reading}
               canEdit={canEdit}
@@ -329,7 +331,8 @@ function RepoRow({
             scope={knownScope(reading)?.scope ?? "unknown"} · resolved_scope=
             {knownScope(reading)?.resolved_scope ?? "unknown"} · mode=
             {knownScope(reading)?.mode ?? "unknown"} · delivery=
-            {reading.deliveryReadbackError === null
+            {reading.deliveryReadbackError === null &&
+            reading.deliveryOutcomeUnknown === null
               ? (reading.delivery?.mode ?? "unknown")
               : "unknown"}
           </span>
@@ -359,7 +362,10 @@ function ScopeEditor({
   }) => Promise<boolean>;
 }) {
   const view = reading.scope;
-  const known = view !== null && reading.scopeReadbackError === null;
+  const known =
+    view !== null &&
+    reading.scopeReadbackError === null &&
+    reading.scopeOutcomeUnknown === null;
   const stored = view?.code_paths ?? [];
   const [draftScope, setDraftScope] = useState<FollowupScope | null>(
     known ? view.scope : null
@@ -483,15 +489,19 @@ function DeliveryEditor({
   const resolvedScope = reading.delivery?.resolved_scope ?? null;
   const confirmed = resolvedScope === "repo" || resolvedScope === "default";
   const current: DeliveryMode | null =
-    reading.deliveryReadbackError === null
+    reading.deliveryReadbackError === null &&
+    reading.deliveryOutcomeUnknown === null
       ? (reading.delivery?.mode ?? null)
       : null;
-  const problem = reading.deliveryReadbackError
-    ? `written, but reading it back failed (${reading.deliveryReadbackError}) — refresh to re-check`
-    : reading.deliveryError
+  const problem =
+    writeUnknownReason(
+      reading.deliveryReadbackError,
+      reading.deliveryOutcomeUnknown
+    ) ??
+    (reading.deliveryError
       ? readErrorText(reading.deliveryError) +
         (reading.delivery ? "; showing the last value read" : "")
-      : null;
+      : null);
   return (
     <div className="space-y-2" data-testid="repo-followup-delivery-editor">
       <div className="flex flex-wrap items-center gap-2 text-sm">

@@ -36,7 +36,7 @@ describe("repoFollowupDials", () => {
     ]);
   });
 
-  it("putPostMergeFollowupScope PUTs the body, declared non-idempotent", async () => {
+  it("putPostMergeFollowupScope PUTs the body once, declared non-idempotent", async () => {
     fetchMock.mockResolvedValueOnce(json({ ok: true, effective: null }));
     await putPostMergeFollowupScope({
       repo: "o/r",
@@ -49,6 +49,7 @@ describe("repoFollowupDials", () => {
         method: "PUT",
         body: '{"repo":"o/r","scope":"code_only","code_paths":["src/**"]}',
         idempotent: false,
+        maxRetries: 0,
       },
     ]);
   });
@@ -64,7 +65,7 @@ describe("repoFollowupDials", () => {
     ]);
   });
 
-  it("putContinuationDeliveryMode PUTs {repo, mode}", async () => {
+  it("putContinuationDeliveryMode PUTs {repo, mode} once", async () => {
     fetchMock.mockResolvedValueOnce(json({ ok: true, effective: null }));
     await putContinuationDeliveryMode("o/r", "notify_only");
     expect(fetchMock.mock.calls[0]).toEqual([
@@ -73,6 +74,7 @@ describe("repoFollowupDials", () => {
         method: "PUT",
         body: '{"repo":"o/r","mode":"notify_only"}',
         idempotent: false,
+        maxRetries: 0,
       },
     ]);
   });

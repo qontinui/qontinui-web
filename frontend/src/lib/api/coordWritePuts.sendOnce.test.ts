@@ -27,6 +27,10 @@ import {
   putAgentRegistryDefaults,
 } from "./agent-registry";
 import { putNextStepSettings } from "./operations/coordSettings";
+import {
+  putContinuationDeliveryMode,
+  putPostMergeFollowupScope,
+} from "./operations/repoFollowupDials";
 
 function tokenManager(): TokenManager {
   return {
@@ -96,6 +100,14 @@ describe.each([
       putNextStepSettings([
         { decision_domain: "pr_fix", autonomy_level: "auto_decide" },
       ]),
+  ],
+  [
+    "putPostMergeFollowupScope",
+    () => putPostMergeFollowupScope({ repo: "acme/widgets", scope: "none" }),
+  ],
+  [
+    "putContinuationDeliveryMode",
+    () => putContinuationDeliveryMode("acme/widgets", "notify_only"),
   ],
 ])("%s", (_name, write) => {
   it("sends one PUT on a 504, so the open outcome is the one reported", async () => {
