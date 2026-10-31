@@ -9,12 +9,13 @@
  *
  * A path's line shows its PRIMARY switch — a coord path's own agent-registry
  * row, the post-merge follow-up's per-repository scope, a runner path's
- * machine-local switch — in the matrix's five columns (switch, scope,
- * enforced?, effective state, last spawned), with every OTHER switch that
- * governs the path as a chip beside the effective state, each carrying its own
- * served value. Nothing is combined into one verdict (`spawnPathGates.ts`).
- * Opening the line (R5, one at a time) lists every switch in full, with its
- * control in operator mode.
+ * machine-local switch — in the matrix's columns (switch, scope, enforced?,
+ * effective state, last spawned). The effective state is the path's VERDICT
+ * across every switch that governs it (`spawnPathVerdict.ts`: UNKNOWN when any
+ * is unknown, Off when any is off, On only when all are read and on); under it
+ * the primary switch keeps its own labelled value, and every OTHER switch is a
+ * chip carrying its own served value. Opening the line (R5, one at a time)
+ * lists every switch in full, with its control in operator mode.
  *
  * In presentation mode the section opens with its caption and the provenance
  * of each read; tokens (registry names, variables, routes) are not shown; no
@@ -48,6 +49,7 @@ import {
   GateChip,
   GateValue,
   LastSpawnedValue,
+  PathVerdictValue,
   PreferenceNote,
 } from "./SpawnPathCells";
 import {
@@ -86,6 +88,10 @@ const COLUMNS = [
   "Effective state",
   "Last spawned",
 ] as const;
+
+/** What the "Effective state" column says, on its header. */
+export const EFFECTIVE_STATE_CAPTION =
+  "The path's state across every switch that governs it: On only when every one is read and on, Off when any is off, UNKNOWN when any could not be read.";
 
 /** The disclosure on a path's line: navigation-only, so live in presentation. */
 function PathToggle({
@@ -369,10 +375,16 @@ function PathLine({
         </td>
         <td className="py-1.5 pr-3">
           <div className="flex flex-col gap-1">
-            <GateValue
-              cell={primary.effective}
-              testId="coord-spawns-path-effective"
-            />
+            <PathVerdictValue verdict={row.verdict} />
+            <span className="inline-flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+              <span data-testid="coord-spawns-path-effective-label">
+                {primary.title}:
+              </span>
+              <GateValue
+                cell={primary.effective}
+                testId="coord-spawns-path-effective"
+              />
+            </span>
             {primary.preference && (
               <PreferenceNote
                 cell={primary.preference}
@@ -485,10 +497,10 @@ export function SpawnPathMatrixSection({
         className="text-xs text-muted-foreground m-0"
         data-testid="coord-spawns-paths-note"
       >
-        {countsText}. This page does not combine a path&apos;s switches into one
-        verdict: for the paths it starts, the coordination service refuses a
-        spawn when the path&apos;s agent registry switch or its class switch is
-        off, and every other switch says on its own line whether it is enforced.{" "}
+        {countsText}. A path&apos;s effective state is read across every switch
+        that governs it: On only when every one is read and on, Off when any is
+        off, and UNKNOWN when any could not be read. Each switch also keeps its
+        own value, and says on its own line whether it is enforced.{" "}
         {OTHER_RUNNER_STARTS}
         {!presenting && matrix.roleRows !== null && matrix.roleRows > 0
           ? ` ${matrix.roleRows} further registry row${matrix.roleRows === 1 ? " is an agent role" : "s are agent roles"} that sessions call on, not spawn paths; they are set on the agent registry page.`
@@ -505,7 +517,20 @@ export function SpawnPathMatrixSection({
           <thead>
             <tr className="text-left text-[11px] text-muted-foreground">
               {COLUMNS.map((c) => (
-                <th key={c} className="py-1 pr-3 font-medium">
+                <th
+                  key={c}
+                  className="py-1 pr-3 font-medium"
+                  title={
+                    c === "Effective state"
+                      ? EFFECTIVE_STATE_CAPTION
+                      : undefined
+                  }
+                  data-testid={
+                    c === "Effective state"
+                      ? "coord-spawns-effective-header"
+                      : undefined
+                  }
+                >
                   {c}
                 </th>
               ))}

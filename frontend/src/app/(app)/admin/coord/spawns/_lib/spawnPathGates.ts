@@ -12,17 +12,25 @@
  * | the merge-settings dial and knobs | `mergeSettingsGates.ts` |
  * | the post-merge follow-up scope, and the runner-local switches | `followupGates.ts` |
  *
- * ## The effective state is coord's, never this page's
+ * ## Each gate's value is one served read; the path's verdict only narrows
  *
  * Each gate shows the value ONE served read gives it — the registry row's
  * tenant default (what coord enforces for the paths it starts), the next-step
  * settings' own `effective_state`, the merge settings' resolved dial, the
  * follow-up scope read. A path governed by several switches lists every one
- * this console can read, each with its own value, and the page never folds
- * them into one verdict: coord's authorization fold (strictest of the path's
- * own row and its class row) is coord's, and a second copy here could drift
- * from it (served policy `production-and-cost` `agent-spawn-authorization`;
- * the drift is how the 2026-08-03 outage looked).
+ * this console can read, each with its own value.
+ *
+ * Each gate also says what it alone allows ({@link GateVerdict}: `on`, `off`,
+ * `unknown`, or `not_governing` for a switch coord reads but does not act on,
+ * such as a follow-up scope in shadow mode), and `spawnPathVerdict.ts` folds a
+ * path's gates into its "Effective state": UNKNOWN when any governing gate is,
+ * Off when any is off, On only when every one is read and on. That fold is
+ * strictly no more permissive than coord's own (strictest of the path's row
+ * and its class row, served policy `production-and-cost`
+ * `agent-spawn-authorization`): it can say UNKNOWN or Off where coord would
+ * start a session, never On where coord would refuse one, so a reader is never
+ * told a path runs on the strength of one switch while another is unread (the
+ * 2026-10-30 UX pass found "On" over an UNKNOWN dial).
  *
  * ## After a write, the read-back — never the value asked for
  *
@@ -204,6 +212,20 @@ export function switchWriteResult(write: SwitchWrite): SwitchWriteResult {
 
 export type CellTone = "known" | "unknown" | "contradiction";
 
+/**
+ * What one gate alone says about whether its path may start a session:
+ * `on` (it allows it), `off` (it stops it), `unknown` (it could not be read,
+ * or whether it governs could not be), `not_governing` (coord reads it but does
+ * not act on it — a follow-up scope in shadow mode, or with the check off).
+ */
+export type GateVerdict = "on" | "off" | "unknown" | "not_governing";
+
+/** An on/off cell's verdict: its read value, or `unknown` when it has none. */
+export function onOffVerdict(cell: GateCell): GateVerdict {
+  if (cell.tone === "unknown") return "unknown";
+  return cell.state === "on" ? "on" : cell.state === "off" ? "off" : "unknown";
+}
+
 /** One value in the matrix. */
 export interface GateCell {
   /** Machine-readable value (`on`, `off`, a level, `unknown`, …). */
@@ -281,6 +303,8 @@ export interface MatrixGate {
   enforced: GateEnforcement;
   /** Coord's value for it. */
   effective: GateCell;
+  /** What this gate alone allows — the input to the path's verdict. */
+  verdict: GateVerdict;
   /**
    * Operator mode only: the signed-in member's OWN preference row, when one
    * is recorded — never the path's state (coord's enforcement of the paths it

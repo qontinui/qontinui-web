@@ -16,9 +16,11 @@ import type {
   NextStepSettings,
 } from "@/lib/api/operations/coordSettings";
 import {
+  onOffVerdict,
   unknownCell,
   withWrite,
   type GateCell,
+  type GateVerdict,
   type MatrixGate,
   type ReadPart,
   type SwitchWrite,
@@ -35,6 +37,18 @@ export const AUTONOMY_LEVELS: readonly AutonomyLevel[] = [
   "guidance_only",
   "auto_decide",
 ];
+
+/**
+ * The level's verdict: coord starts the session only at Auto, and frames or
+ * escalates below it — so Auto is `on`, either other level `off`.
+ */
+function autonomyVerdict(cell: GateCell): GateVerdict {
+  if (cell.tone === "unknown") return "unknown";
+  if (cell.state === "auto_decide") return "on";
+  return cell.state === "guidance_only" || cell.state === "always_escalate"
+    ? "off"
+    : "unknown";
+}
 
 function domainOf(
   read: ReadPart<NextStepSettings>,
@@ -126,6 +140,7 @@ export function autonomyGate(
           stale: read.error !== null,
         };
   const canEdit = read.data?.can_edit === true;
+  const effective = withWrite(value, write, levelText, presenting);
   return {
     key: `autonomy:${domain}`,
     title: "Autonomy level",
@@ -140,7 +155,8 @@ export function autonomyGate(
         ? "The coordination service starts this path's session only at the Auto level; below it, it frames the step or hands it to a person."
         : "Coord starts this path's session only at the Auto level; below it, it frames or escalates instead.",
     },
-    effective: withWrite(value, write, levelText, presenting),
+    effective,
+    verdict: autonomyVerdict(effective),
     write:
       d && canEdit
         ? {
@@ -209,6 +225,7 @@ export function fleetFlagGate(
         : "Read from coord's environment when it starts; changing it is a redeploy of coord, not a console write.",
     },
     effective,
+    verdict: onOffVerdict(effective),
     write: null,
     readOnly: presenting
       ? "Changed only by redeploying the coordination service."

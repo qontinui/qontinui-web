@@ -48,9 +48,11 @@
  *   The requests still waiting are read whatever their age, oldest first,
  *   and listed; a cut at coord's page bound is said, with the total.
  * - **"Efficiency".** Requested per hour against started per hour, by name.
- * - **One verdict per spawn path.** Each switch shows the value its own source
- *   serves; coord's authorization fold is coord's, and is never recomputed
- *   here.
+ * - **On for a path one of whose switches is unread or off.** A path's
+ *   effective state is its verdict across every switch that governs it
+ *   (`spawnPathVerdict.ts`): UNKNOWN when any is unknown, Off when any is off,
+ *   On only when every one is read and on. The registry switch keeps its own
+ *   labelled value beside it.
  * - **"Never" for a path the ledger cannot attribute.** Last spawned is
  *   UNKNOWN, and says why, wherever no ledger field names the path or names
  *   only some of its starts; a start found is a lower bound, and "none" is

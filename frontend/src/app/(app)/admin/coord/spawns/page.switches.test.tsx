@@ -204,12 +204,12 @@ describe("the spawn-path matrix — what coord serves", () => {
     // What the matrix lists, counted by kind — person-started and class
     // switches are not counted as paths the system starts on its own.
     const note = screen.getByTestId("coord-spawns-paths-note").textContent;
-    // It says what it covers, and limits the refusal to the switches that refuse.
+    // It says what it covers, and how the effective state is read.
     expect(note).toContain(OTHER_RUNNER_STARTS);
     expect(note).toContain(
-      "the coordination service refuses a spawn when the path's agent registry switch or its class switch is off, and every other switch says on its own line whether it is enforced."
+      "A path's effective state is read across every switch that governs it: On only when every one is read and on, Off when any is off, and UNKNOWN when any could not be read."
     );
-    expect(note).not.toContain("own switch or its class switch");
+    expect(note).not.toContain("does not combine");
     expect(screen.queryByTestId("coord-spawns-paths-unclassified")).toBeNull();
     expect(screen.getByTestId("coord-spawns-paths-note").textContent).toContain(
       "11 paths the coordination service starts on its own, 1 path a person starts from the console, 2 class switches that each govern many paths at once and 3 paths each machine starts on its own."
@@ -357,6 +357,89 @@ describe("the spawn-path matrix — what coord serves", () => {
     expect(
       within(b!).getByTestId("coord-spawns-machine-inflight").textContent
     ).toBe("UNKNOWN");
+  });
+});
+
+describe("the spawn-path matrix — a path's effective state is its verdict across every switch", () => {
+  function verdictOf(key: string): HTMLElement {
+    return within(pathRow(key)).getByTestId("coord-spawns-path-verdict");
+  }
+
+  it("reads On only when every governing switch is read and on, and keeps the registry switch's own value labelled", async () => {
+    routes.merge = () => ({
+      body: mergeSettingsBody(undefined, {
+        auto_fix_red_main: true,
+        rulebook_overrides: { auto_fix_admission_stall: true },
+      }),
+    });
+    await renderPage();
+    const pr = pathRow("pr_fix_dispatch");
+    expect(verdictOf("pr_fix_dispatch").getAttribute("data-verdict")).toBe(
+      "on"
+    );
+    expect(verdictOf("pr_fix_dispatch").textContent).toBe("On");
+    expect(
+      within(pr).getByTestId("coord-spawns-path-effective-label").textContent
+    ).toBe("Agent registry switch:");
+    expect(
+      within(pr).getByTestId("coord-spawns-path-effective").textContent
+    ).toBe("On");
+    expect(
+      verdictOf("admission_stall_fix_dispatch").getAttribute("data-verdict")
+    ).toBe("on");
+    expect(
+      screen.getByTestId("coord-spawns-effective-header").getAttribute("title")
+    ).toBe(
+      "The path's state across every switch that governs it: On only when every one is read and on, Off when any is off, UNKNOWN when any could not be read."
+    );
+  });
+
+  it("reads UNKNOWN, not On, when the registry switch is on but another governing switch is unknown", async () => {
+    // The stall knob is not recorded, so nothing this console reads serves it.
+    routes.merge = () => ({ body: mergeSettingsBody() });
+    await renderPage();
+    const row = pathRow("admission_stall_fix_dispatch");
+    expect(
+      within(row).getByTestId("coord-spawns-path-effective").textContent
+    ).toBe("On");
+    const verdict = verdictOf("admission_stall_fix_dispatch");
+    expect(verdict.getAttribute("data-verdict")).toBe("unknown");
+    expect(verdict.textContent).toBe("UNKNOWN");
+    expect(verdict.getAttribute("title")).toContain(
+      "responder knob for a stalled merge queue is unknown"
+    );
+  });
+
+  it("reads UNKNOWN when the merge settings could not be read, though the registry switch is on", async () => {
+    routes.merge = () => ({ status: 502, body: { detail: "down" } });
+    await renderPage();
+    expect(verdictOf("pr_fix_dispatch").getAttribute("data-verdict")).toBe(
+      "unknown"
+    );
+    expect(
+      within(pathRow("pr_fix_dispatch"))
+        .getByTestId("coord-spawns-path-effective")
+        .getAttribute("data-gate-state")
+    ).toBe("on");
+  });
+
+  it("reads Off when any governing switch is off, naming it", async () => {
+    routes.nextStep = () => ({
+      body: nextStepBody({ pr_fix: { master_flag_enabled: false } }),
+    });
+    await renderPage();
+    const verdict = verdictOf("pr_fix_dispatch");
+    expect(verdict.getAttribute("data-verdict")).toBe("off");
+    expect(verdict.getAttribute("title")).toBe(
+      "Off because the fleet flag is off."
+    );
+  });
+
+  it("reads a path whose switch lives on each machine as UNKNOWN", async () => {
+    await renderPage();
+    expect(verdictOf("runner_stewards").getAttribute("data-verdict")).toBe(
+      "unknown"
+    );
   });
 });
 

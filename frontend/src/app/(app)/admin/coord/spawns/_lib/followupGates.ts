@@ -28,6 +28,7 @@ import {
   unknownCell,
   type GateCell,
   type GateEnforcement,
+  type GateVerdict,
   type FollowupRead,
   type MatrixGate,
 } from "./spawnPathGates";
@@ -223,11 +224,38 @@ function followupEffective(
   };
 }
 
+/**
+ * What the scopes allow, under the rollout mode in force. Shadow or off: coord
+ * reads the scopes but acts on none (`not_governing`). Otherwise: `off` when no
+ * repository's merge would start a follow-up, `on` when at least one would —
+ * and, with the mode itself unknown, `on` only when no repository's scope
+ * could stop one, since then it does not matter whether coord acts on them.
+ */
+export function followupScopeVerdict(
+  read: FollowupRead,
+  readings: ReadonlyArray<RepoDialReading | undefined>,
+  enforced: GateEnforcement,
+  effective: GateCell
+): GateVerdict {
+  if (enforced.kind === "shadow" || enforced.kind === "off") {
+    return "not_governing";
+  }
+  if (effective.tone === "unknown" || read.repos === null) return "unknown";
+  const s = summarizeScopes(readings);
+  const followed = s.all + s.code_only;
+  if (enforced.kind === "unknown") {
+    return read.repos.length > 0 && s.none === 0 ? "on" : "unknown";
+  }
+  return followed > 0 ? "on" : "off";
+}
+
 export function followupScopeGate(
   read: FollowupRead,
   presenting: boolean
 ): MatrixGate {
   const readings = (read.repos ?? []).map((r) => read.readings[r]);
+  const enforced = followupEnforcement(read, readings, presenting);
+  const effective = followupEffective(read, readings, presenting);
   return {
     key: "scope:post_merge_followup",
     title: "Follow-up scope, per repository",
@@ -235,8 +263,9 @@ export function followupScopeGate(
       ? "A per-repository setting: every merge, code changes only, or never."
       : "Per repository, under Agent registry → Per-repo follow-up dials (PUT /post-merge-followup-scope); the rollout mode is coord's COORD_POST_MERGE_SCOPE_MODE.",
     scope: "repo",
-    enforced: followupEnforcement(read, readings, presenting),
-    effective: followupEffective(read, readings, presenting),
+    enforced,
+    effective,
+    verdict: followupScopeVerdict(read, readings, enforced, effective),
     write: null,
     readOnly: "Set per repository, not for the whole project.",
     setOn: { href: AGENT_REGISTRY_HREF, label: "Set per repository" },
@@ -270,6 +299,7 @@ export function runnerGate(
         ? "Set on each machine; this page does not read it."
         : "Coord does not see this path: its switch lives on each runner, and this console reads no runner's setting."
     ),
+    verdict: "unknown",
     write: null,
     readOnly: presenting
       ? "Not changed from this page."

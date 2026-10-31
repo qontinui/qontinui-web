@@ -29,8 +29,10 @@
  * PR fixer's `auto_fix_pr`, the red-main fixer's `auto_fix_red_main`, the
  * stalled-train responder's `auto_fix_admission_stall`), and the next-step
  * autonomy level and fleet flag of a dispatch arm (`nextStepGates.ts`). And
- * when it last spawned (`spawnPathLastSpawned.ts`). The rows are never folded
- * into one verdict per path: each gate's value is the one coord serves for it.
+ * when it last spawned (`spawnPathLastSpawned.ts`). Each gate's value is the
+ * one coord serves for it; the row's `verdict` folds them the strictest way
+ * (`spawnPathVerdict.ts`): UNKNOWN when any governing gate is, Off when any is
+ * off, On only when every one is read and on.
  */
 
 import type {
@@ -65,6 +67,7 @@ import {
   redMainKnobGate,
 } from "./mergeSettingsGates";
 import { followupScopeGate, runnerGate } from "./followupGates";
+import { pathVerdict, type PathVerdict } from "./spawnPathVerdict";
 import {
   lastSpawnedCell,
   type LastSpawnedCell,
@@ -98,6 +101,8 @@ export interface MatrixRow {
   isClass: boolean;
   /** Primary first. Never empty. */
   gates: MatrixGate[];
+  /** The verdict across every governing gate (`spawnPathVerdict.ts`). */
+  verdict: PathVerdict;
   lastSpawned: LastSpawnedCell;
 }
 
@@ -279,6 +284,7 @@ function coordRow(
     source,
     isClass: words.isClass === true,
     gates,
+    verdict: pathVerdict(gates),
     lastSpawned: lastSpawnedCell(inputs.ledger, {
       origin: words.ledgerOrigin,
       blind: words.isClass
@@ -318,6 +324,7 @@ function handRow(path: UnservedPath, inputs: MatrixInputs): MatrixRow {
     source: "hand",
     isClass: false,
     gates,
+    verdict: pathVerdict(gates),
     lastSpawned: lastSpawnedCell(inputs.ledger, {
       origin: path.ledgerOrigin,
       blind:
