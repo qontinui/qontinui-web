@@ -243,6 +243,16 @@ describe("pairConfirmErrorMessage", () => {
     };
     expect(pairConfirmErrorMessage(relayed, 502)).toBe(sentence);
     expect(pairConfirmErrorMessage({ detail: relayed }, 502)).toBe(sentence);
+    // The backend's own sentence is what is shown, whatever it says.
+    expect(
+      pairConfirmErrorMessage(
+        {
+          coord_status: 500,
+          message: "Coord is restarting; retry in a minute.",
+        },
+        502
+      )
+    ).toBe("Coord is restarting; retry in a minute.");
     // A 5xx relayed without the sentence still says retry, not "refused".
     expect(
       pairConfirmErrorMessage({ detail: { coord_status: 503 } }, 502)
