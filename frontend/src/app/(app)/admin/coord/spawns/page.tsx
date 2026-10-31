@@ -340,15 +340,18 @@ export default function CoordSpawnsPage() {
     presenting,
   ]);
 
+  // A refresh's terminal moment, said whether or not any read answered: with
+  // every as-of null a refresh that ran looks exactly like one that did not.
+  const [rereadAt, setRereadAt] = useState<number | null>(null);
   const refreshAll = () =>
-    Promise.all([
+    Promise.allSettled([
       ledger.refresh(),
       switches.refresh(),
       sessions.refresh(),
       fleet.refresh(),
       dispatchRoles.refresh(),
       drain.refresh(),
-    ]);
+    ]).then(() => setRereadAt(Date.now()));
 
   const roleNote =
     roles.kind === "unknown"
@@ -388,6 +391,16 @@ export default function CoordSpawnsPage() {
           title={`Re-reads the spawn ledger, the switches, the machines and their sessions now; the page also refreshes itself (the ledger every ${SPAWNS_POLL_MS / 1000} s)`}
           data-testid="coord-spawns-refresh"
         />
+        {rereadAt !== null && (
+          <span
+            className="text-xs text-muted-foreground"
+            role="status"
+            data-testid="coord-spawns-reread"
+            title="Every read on this page was issued again and has settled; each section says what it got."
+          >
+            Re-read at {new Date(rereadAt).toLocaleTimeString()}
+          </span>
+        )}
         {/* The window picker is the operator's: a closed Radix Select keeps
             its items in a detached DocumentFragment, which no presentation
             check can read, so while presenting the window is stated instead
