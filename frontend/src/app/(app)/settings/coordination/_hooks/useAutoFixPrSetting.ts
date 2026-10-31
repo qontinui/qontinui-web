@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { outcomeUnknownReason } from "@/components/admin/coord/writeOutcome";
 import {
   fetchTenantSettings,
   patchTenantAutoFixPr,
@@ -196,7 +197,11 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
           toast.error(
             "Save outcome unknown — the change may or may not have been applied. Reloading to check."
           );
-          return { kind: "unconfirmed", reason: message, reread: load() };
+          return {
+            kind: "unconfirmed",
+            reason: outcomeUnknownReason(err),
+            reread: load(),
+          };
         }
         toast.error(message);
         return { kind: "refused", message };

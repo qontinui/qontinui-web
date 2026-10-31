@@ -34,6 +34,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Bot, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { outcomeUnknownReason } from "@/components/admin/coord/writeOutcome";
 import {
   AgentPrefError,
   isWriteOutcomeUnknown,
@@ -252,9 +253,9 @@ export default function AgentsSettingsPage() {
       } else if (isWriteOutcomeUnknown(err)) {
         // The change may have landed, so "failed" beside the old value would be
         // a claim nobody can make: only a re-read can say.
-        const unknown = `${agentName}: whether this change was saved is unknown (${
-          err instanceof Error ? err.message : String(err)
-        }).`;
+        const unknown = `${agentName}: whether this change was saved is unknown (${outcomeUnknownReason(
+          err
+        )}).`;
         const rows = await refresh().catch(() => null);
         if (rows === null) {
           toast.error(
