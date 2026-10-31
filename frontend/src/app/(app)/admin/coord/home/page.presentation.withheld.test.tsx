@@ -20,6 +20,7 @@ import {
   expectPresentationSafe,
   renderInPresentationMode,
 } from "@/test/presentation";
+import { AREA_WITHHELD } from "./_lib/homeLens";
 import {
   CLIENT_PLANE,
   FIRST_PARTY_REPO,
@@ -94,6 +95,23 @@ function html(): string {
   return document.body.innerHTML.toLowerCase();
 }
 
+/**
+ * Every attribute in the document whose value carries `needle`, ignoring
+ * case. `expectPresentationSafe` reads text and a few text attributes
+ * (`title`, `aria-label`, …), never an `href`, so a link's URL needs this.
+ */
+function attributesCarrying(needle: string): string[] {
+  const lower = needle.toLowerCase();
+  return [...document.body.querySelectorAll("*")].flatMap((el) =>
+    [...el.attributes]
+      .filter((a) => a.value.toLowerCase().includes(lower))
+      .map((a) => `${el.tagName.toLowerCase()}[${a.name}]`)
+  );
+}
+
+/** Neither an anchor nor anything handed to `LensLink`, whose arms both carry `data-lens-link`. */
+const ANY_LINK = "a, [data-lens-link]";
+
 beforeEach(() => {
   httpFetch.mockReset();
   sessionMachineAliases.reset();
@@ -150,8 +168,9 @@ describe("a work unit's link, whose URL carries its slug", () => {
     );
     const name = unitName();
     expect(name).toHaveAttribute("data-redacted", "true");
-    expect(name.closest("[data-lens-link]")).toBeNull();
+    expect(name.closest(ANY_LINK)).toBeNull();
     expect(html()).not.toContain("2026-10-01-rollout");
+    expect(attributesCarrying("acme")).toEqual([]);
     expectPresentationSafe(view, { forbidden: ["acme"] });
   });
 
@@ -164,8 +183,9 @@ describe("a work unit's link, whose URL carries its slug", () => {
     const name = unitName();
     expect(name).toHaveAttribute("data-redacted", "false");
     expect(name).toHaveTextContent("Overview copy pass");
-    expect(name.closest("[data-lens-link]")).toBeNull();
+    expect(name.closest(ANY_LINK)).toBeNull();
     expect(html()).not.toContain("acme-rollout");
+    expect(attributesCarrying("acme")).toEqual([]);
     expectPresentationSafe(view, { forbidden: ["acme"] });
   });
 
@@ -198,7 +218,8 @@ describe("a work unit's link, whose URL carries its slug", () => {
     );
     const name = unitName();
     expect(name).toHaveAttribute("data-redacted", "true");
-    expect(name.closest("[data-lens-link]")).toBeNull();
+    expect(name.closest(ANY_LINK)).toBeNull();
+    expect(attributesCarrying("acme")).toEqual([]);
     expectPresentationSafe(view, { forbidden: ["acme"] });
   });
 
@@ -263,7 +284,7 @@ describe("a plane the page's table does not name", () => {
     // The row identity, its headline's descriptor and its subject's descriptor.
     for (const row of [client!, unnamed!]) {
       expect(row.querySelector("[data-console-row] > span")).toHaveTextContent(
-        new RegExp(`^${WITHHELD}$`)
+        new RegExp(`^${AREA_WITHHELD}$`)
       );
       expect(row).toHaveTextContent(/Degradation · area withheld · degrading/);
       expect(within(row).getByTestId("row-reason")).toHaveTextContent(
@@ -279,7 +300,7 @@ describe("a plane the page's table does not name", () => {
     expect(
       screen.getByTestId("coord-home.degrading.incomplete")
     ).toHaveTextContent(
-      /^Incomplete view — not every watcher is fresh \(withheld\); the withheld reading could not be taken\. /
+      /^Incomplete view — not every watcher is fresh \(1 area not named here\); the reading for 1 area not named here could not be taken\. /
     );
 
     // The watcher lines, whose element carries no key either.
@@ -289,8 +310,8 @@ describe("a plane the page's table does not name", () => {
         .querySelectorAll("li"),
     ];
     expect(lines.map((l) => l.textContent)).toEqual([
-      "withheld: no watcher; its reading could not be taken",
-      expect.stringMatching(/^withheld: 1 of 1 watcher not fresh/),
+      "area withheld: no watcher; its reading could not be taken",
+      expect.stringMatching(/^area withheld: 1 of 1 watcher not fresh/),
       "runner: read directly, no watcher",
     ]);
     expect(lines.map((l) => l.getAttribute("data-plane"))).toEqual([
@@ -301,7 +322,7 @@ describe("a plane the page's table does not name", () => {
 
     // A watcher source's label.
     expect(screen.getByTestId("coord-home.does-not-know")).toHaveTextContent(
-      "Watcher feeding withheld"
+      "Watcher feeding 1 area not named here"
     );
 
     const needles = [
@@ -349,5 +370,57 @@ describe("a plane the page's table does not name", () => {
     expect(screen.getByTestId("coord-home.does-not-know")).toHaveTextContent(
       "Watcher feeding partner a tunnel"
     );
+  });
+
+  // A plane coord might one day key `withheld`: the operator's line reads
+  // exactly the lens's word for an area, so only the mode may drop the key.
+  function withheldPlaneBody() {
+    return fullBody({
+      degradations: {
+        state: "read",
+        headline: "none",
+        open: [],
+        declared: [],
+        recently_cleared: [],
+        planes: {
+          [WITHHELD]: { fresh: true, watchers: [] },
+          runner: { fresh: true, watchers: [] },
+        },
+      },
+    });
+  }
+
+  function planeLines() {
+    return [
+      ...screen
+        .getByTestId("coord-home.degrading.planes")
+        .querySelectorAll("li"),
+    ];
+  }
+
+  it("(control) the operator keeps the key of a plane coord names `withheld`", async () => {
+    await renderOperator(withheldPlaneBody());
+    const lines = planeLines();
+    expect(lines.map((l) => l.textContent)).toEqual([
+      "withheld: read directly, no watcher",
+      "runner: read directly, no watcher",
+    ]);
+    expect(lines.map((l) => l.getAttribute("data-plane"))).toEqual([
+      WITHHELD,
+      "runner",
+    ]);
+  });
+
+  it("drops that key while presenting, the table not naming it", async () => {
+    await renderPresenting(withheldPlaneBody());
+    const lines = planeLines();
+    expect(lines.map((l) => l.textContent)).toEqual([
+      "area withheld: read directly, no watcher",
+      "runner: read directly, no watcher",
+    ]);
+    expect(lines.map((l) => l.getAttribute("data-plane"))).toEqual([
+      null,
+      "runner",
+    ]);
   });
 });

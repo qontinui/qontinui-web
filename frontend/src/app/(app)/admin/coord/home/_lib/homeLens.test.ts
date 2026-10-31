@@ -17,6 +17,7 @@ import { WITHHELD, describeRedacted } from "@/components/presentation";
 import { ROUTE_DISABLED_TEXT } from "@/components/operations/coordPollError";
 import { FAILURE_REASON_WITHHELD } from "@/components/operations/presentedFailure";
 import {
+  AREA_WITHHELD,
   BLOCKED_UNIT_DESCRIPTOR,
   COORD_TIMEOUT_TEXT,
   COORD_UNREACHABLE_TEXT,
@@ -44,6 +45,8 @@ import {
   presentedInitiativeStatus,
   presentedPlanPhase,
   presentedPlaneLabel,
+  presentedPlaneName,
+  presentedPlaneWords,
   presentedSourceLabel,
   reasonDescriptor,
   regionSources,
@@ -443,6 +446,16 @@ describe("presentedPlaneLabel — the table's words, or withheld", () => {
 
   it.each([[null], [""]])("keeps the page's own word for %j", (plane) => {
     expect(presentedPlaneLabel(plane)).toBe("unclassified");
+    expect(presentedPlaneName(plane)).toBe("unclassified");
+    expect(presentedPlaneWords(plane)).toBe("unclassified");
+  });
+
+  it("standing alone, reads an off-table area as 'area withheld'; in a list, as one to count", () => {
+    expect(presentedPlaneName("partner_a_tunnel")).toBe(AREA_WITHHELD);
+    expect(AREA_WITHHELD).toBe("area withheld");
+    expect(presentedPlaneWords("partner_a_tunnel")).toBeNull();
+    expect(presentedPlaneName("merge_train")).toBe("merge train");
+    expect(presentedPlaneWords("merge_train")).toBe("merge train");
   });
 
   it("reads as an area withheld in both of a degradation's descriptors", () => {
@@ -506,10 +519,11 @@ describe("presentedSourceLabel — the table's words, or fixed words", () => {
       },
     })!.degradations.planes;
     expect(presentedSourceLabel("watcher:w1", planes)).toBe(
-      "Watcher feeding runner, withheld"
+      "Watcher feeding runner and 1 area not named here"
     );
+    // Two areas off the table are two, not one folded "withheld".
     expect(presentedSourceLabel("watcher:w2", planes)).toBe(
-      "Watcher feeding withheld"
+      "Watcher feeding 2 areas not named here"
     );
   });
 

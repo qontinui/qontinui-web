@@ -251,15 +251,33 @@ function degradationAt(
 }
 
 /**
- * A degradation's area while presenting: the table's words, or `withheld`.
- * For any other plane the operator's label is coord's own key with its
- * underscores spaced (`planeLabel`, pinned for the operator by
- * `coordHomeStatus.test.ts`), and coord's list of planes grows without this
- * page, so an allowlist: a plane shows only when the table names it. No plane
- * at all keeps `planeLabel`'s "unclassified", which is the page's own word.
+ * A degradation's area while presenting: the table's words, or `null` for a
+ * plane the table does not name. For any other plane the operator's label is
+ * coord's own key with its underscores spaced (`planeLabel`, pinned for the
+ * operator by `coordHomeStatus.test.ts`), and coord's list of planes grows
+ * without this page, so an allowlist: a plane shows only when the table names
+ * it. No plane at all keeps `planeLabel`'s "unclassified", which is the page's
+ * own word. A list of areas (the gap sentence, a watcher source's label)
+ * counts the `null`s as areas not named here.
+ */
+export function presentedPlaneWords(plane: string | null): string | null {
+  return !plane || isKnownPlane(plane) ? planeLabel(plane) : null;
+}
+
+/** Where one area stands alone (a row's identity, a watcher line) and is withheld. */
+export const AREA_WITHHELD = `area ${WITHHELD}`;
+
+/** A degradation's area on its own while presenting: the table's words, or {@link AREA_WITHHELD}. */
+export function presentedPlaneName(plane: string | null): string {
+  return presentedPlaneWords(plane) ?? AREA_WITHHELD;
+}
+
+/**
+ * A degradation's area in its descriptor while presenting: the table's words,
+ * or `withheld`, which the descriptor reads as "area withheld".
  */
 export function presentedPlaneLabel(plane: string | null): string {
-  return !plane || isKnownPlane(plane) ? planeLabel(plane) : WITHHELD;
+  return presentedPlaneWords(plane) ?? WITHHELD;
 }
 
 /** A degradation headline's descriptor: its area and its row's status. */
@@ -418,7 +436,7 @@ export const UNLABELLED_SOURCE = "A source this view has no name for";
 /**
  * A `does_not_know` row's label while presenting. The page's table labels the
  * sources it knows, and a watcher's row is named by the areas it feeds
- * (`sourceLabel`, each area as {@link presentedPlaneLabel} words it); for any
+ * (`sourceLabel`, each area as {@link presentedPlaneWords} words it); for any
  * OTHER source the operator's label is coord's own
  * identifier with its underscores spaced: internal vocabulary an evaluator
  * does not share, from a list coord grows without this page. So while
@@ -432,7 +450,7 @@ export function presentedSourceLabel(
   planes: PlaneView[] | null
 ): string {
   return isLabelledSource(source) || isWatcherSource(source)
-    ? sourceLabel(source, planes, presentedPlaneLabel)
+    ? sourceLabel(source, planes, presentedPlaneWords)
     : UNLABELLED_SOURCE;
 }
 
@@ -465,7 +483,8 @@ export function namedUnitRepos(
   const named = new Map<string, Set<string>>();
   const unbounded = new Set<string>();
   const mayHide = new Set<string>();
-  let everyUnitUnbounded = groups === null;
+  // No groups served names no unit, so every slug already reads `null` below.
+  let everyUnitUnbounded = false;
   for (const g of groups ?? []) {
     const namedList = g.named[list];
     if (g.kind === "unattributed_repo") {
