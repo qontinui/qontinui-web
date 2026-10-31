@@ -40,9 +40,16 @@ import {
 } from "./__fixtures__/homePageDriver";
 
 const httpFetch = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
-}));
+// The page's reads beside the project state (machine roster, the queue
+// counts) are answered calm by `supplementReads` unless a test says otherwise.
+vi.mock("@/services/service-factory", async () => {
+  const s = await import("./__fixtures__/supplementReads");
+  return {
+    httpClient: s.homeTransport(
+      (...args: unknown[]) => httpFetch(...args) as Promise<Response>
+    ),
+  };
+});
 
 vi.mock("@/contexts/tenant-context", async () => {
   const f = await import("./__fixtures__/presentationFixture");
@@ -245,13 +252,13 @@ describe("a work unit's link, whose URL carries its slug", () => {
 describe("a first-party repository whose name carries a confidential term", () => {
   const REPO = "qontinui/acme-portal";
 
-  it("is a descriptor on its row and 'this repository' in its detail", async () => {
+  it("is its alias on its row and in its detail", async () => {
     const view = await renderPresenting(
       oneGroupBody(REPO, [{ slug: "2026-10-01-rollout", title: "A pass" }])
     );
     const region = screen.getByTestId("coord-home.on-track");
-    const row = expandRow(region, /^Repository/);
-    expect(row).toHaveTextContent("Work units that name this repository.");
+    const row = expandRow(region, /^Repository A/);
+    expect(row).toHaveTextContent("Work units that name Repository A.");
     checkBehindEveryDisclosure(() => {
       expectPresentationSafe(view, { forbidden: [REPO, "acme"] });
       expect(html()).not.toContain("acme");

@@ -811,7 +811,7 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     // The gates page's continuation vocabulary plus the two ledger-only
     // states (`queued`, `superseded`), so both surfaces paint a shared word
     // the same way.
-    surface: "spawn requests (/admin/coord/spawns)",
+    surface: "spawn requests (/admin/coord/spawns/requests)",
     module: "app/(app)/admin/coord/spawns/_lib/spawnStatus.ts",
     attentionByKind: SPAWN_ATTENTION_BY_KIND,
     palette: {

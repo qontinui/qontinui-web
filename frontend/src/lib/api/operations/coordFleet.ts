@@ -122,6 +122,15 @@ export interface FleetHealthDevice {
    */
   ci_runner_status?: string | null;
   /**
+   * Coord's tri-state liveness evidence (`fleet_health.rs`
+   * `DispatchLiveness`): `within_dispatch_window` | `outside_dispatch_window`
+   * | `unknown`. `unknown` marks a placeholder row coord has never had a
+   * liveness signal from — not a machine coord grades, so coord's project
+   * state raises no degradation for it (`machineHealth.ts`). Absent on a
+   * coord predating the field.
+   */
+  dispatch_liveness?: string;
+  /**
    * Is this device inside coord's dispatch/liveness window right now —
    * probe-reachable, or heartbeated within `COORD_DEVICE_HEARTBEAT_TTL_SECS`
    * (`fleet_health.rs` `DeviceHealthSnapshot::within_dispatch_window`). Coord
@@ -326,6 +335,34 @@ export interface FleetHealthConditions {
 
 export interface FleetHealthPayload {
   devices?: FleetHealthDevice[];
+  /**
+   * Devices coord withheld from `devices` (`fleet_health.rs`, Phase 3.3):
+   * those naming this tenant with no binding (`unbound`) or bound to another
+   * tenant. `null` = NOT MEASURED (see `excluded_error`), never "none".
+   * An empty `devices` beside a non-zero count is a binding fault, not an
+   * empty fleet. Absent on a coord predating it.
+   */
+  excluded?: { unbound?: number; bound_to_other_tenant?: number } | null;
+  /** Why coord could not count `excluded`; null when it could. */
+  excluded_error?: string | null;
+  /**
+   * Whether coord's row cap withheld any row from `devices` (`fleet_health.rs`
+   * roster completeness; `device_state.rs` `ROSTER_CAP`). Absent on an older
+   * coord, and absent is NOT "not truncated": that coord's roster query was
+   * capped at 1000 rows with nothing saying so (`machineHealth.ts`
+   * `readRosterCut`).
+   */
+  truncated?: boolean;
+  /** Rows the roster matched before any cap; `count < total` exactly when `truncated`. */
+  total?: number;
+  /**
+   * Rows that could carry a degradation that the hard cap withheld. `0` means
+   * no degradation was lost, even when `truncated`; above 0 the rollups are
+   * partial.
+   */
+  degradable_dropped?: number;
+  /** The caps applied: `soft` cuts only the non-degradable tail, `hard` everything. */
+  row_cap?: { soft?: number; hard?: number };
   /**
    * The Conditions rollup. Absent on a coord predating it — see
    * {@link FleetHealthConditions}.

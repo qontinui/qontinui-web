@@ -16,8 +16,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { RefreshButton } from "@/components/console";
 import {
+  Caption,
   Provenance,
-  SectionCaption,
+  type SectionSource,
   lensLinkTarget,
   useMachineAliaser,
   usePresentationMode,
@@ -35,12 +36,14 @@ import {
   RowKeyAliases,
   degradationRepo,
   isMachineSubject,
+  keptReadingText,
   presentedPlaneName,
   presentedPlaneWords,
   regionSources,
   subjectDescriptor,
   type DegradationRowKind,
   type HomeReading,
+  type OtherReading,
 } from "../_lib/homeLens";
 
 /** The page's six regions, as their captions are keyed. */
@@ -53,31 +56,87 @@ export type HomeRegion =
   | "does-not-know";
 
 /**
- * A region's caption and the provenance of its figures — presentation mode
- * only (`SectionCaption` renders nothing for the operator). Every region
- * renders the one project-state read, so its single chip names that read
- * and dates it by coord's answer.
+ * A region's caption — presentation mode only: its title and ONE sentence
+ * (`Caption` `brief`), before its data. The project-state read every region
+ * renders is stated once, for the page, by `PageProvenance`, rather than on
+ * each region; a region carries a chip only for figures it reads from
+ * somewhere else (`extraSources`: machine health, the queue counts), each
+ * with its own source and time, so no figure is dated by a read it did not
+ * come from.
  */
 export function RegionCaption({
   region,
-  reading,
+  extraSources = [],
 }: {
   region: HomeRegion;
-  reading: HomeReading;
+  /** The project-state reading — stated by `PageProvenance`, not here. */
+  reading?: HomeReading;
+  /**
+   * Figures in the region read from somewhere other than the project state
+   * (`_lib/homeSupplements.ts`), each with its own source and time.
+   */
+  extraSources?: readonly SectionSource[];
 }) {
+  const { presenting } = usePresentationMode();
+  if (!presenting) return null;
+  const id = `coordination-overview.${region}` as const;
   return (
-    <SectionCaption
-      id={`coordination-overview.${region}`}
-      sources={regionSources(reading)}
+    <div
+      className="space-y-1.5"
       data-testid={`coord-home.${region}.caption`}
-    />
+      data-presentation-section={id}
+    >
+      <Caption id={id} level={3} brief />
+      {extraSources.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          data-presentation-section-sources=""
+        >
+          {extraSources.map((s, i) => (
+            <Provenance
+              key={s.key ?? `${s.source ?? "unknown"}-${i}`}
+              source={s.source}
+              asOf={s.asOf}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The page's one provenance line while presenting: every region renders the
+ * one project-state read, so its source and time are said once, under the
+ * page caption, instead of on each region. A kept reading is stated by
+ * `KeptReadingNotice`, which carries the same chip, so this line yields to it.
+ */
+export function PageProvenance({ reading }: { reading: HomeReading }) {
+  const { presenting } = usePresentationMode();
+  if (!presenting || reading.kept) return null;
+  return (
+    <div
+      className="flex flex-wrap items-center gap-1.5"
+      data-testid="coord-home.provenance"
+    >
+      {regionSources(reading).map((s) => (
+        <Provenance
+          key={s.source ?? "unknown"}
+          source={s.source}
+          asOf={s.asOf}
+        />
+      ))}
+    </div>
   );
 }
 
 /**
  * What leads a kept reading while presenting (style guide §6.5, "A kept
- * reading"): the latest read failed, so everything below is the LAST reading
- * — said first, named as such, and dated by its read, never shown as current.
+ * reading"): the latest read of the project state failed, so what comes from
+ * it is the LAST reading — said first, named as such, and dated by its read,
+ * never shown as current. It covers only what is a kept reading: a figure
+ * read beside the project state (`others`) is said to be current when its
+ * own read is (`keptReadingText`).
  * The failure's own text can quote a URL or coord's error body, so its reason
  * is the page's fixed words where it has some (`presentedHomeFailure`), and
  * withheld otherwise. Operator mode has the strip's own stale qualifier and
@@ -86,10 +145,13 @@ export function RegionCaption({
 export function KeptReadingNotice({
   reading,
   failure,
+  others = [],
 }: {
   reading: HomeReading;
   /** The latest failure as a presentation may show it (`presentedHomeFailure`). */
   failure: string | null;
+  /** The figures on the page read beside the project state. */
+  others?: readonly OtherReading[];
 }) {
   const { presenting } = usePresentationMode();
   if (!presenting || !reading.kept) return null;
@@ -99,11 +161,7 @@ export function KeptReadingNotice({
       role="status"
       data-testid="coord-home.kept-reading"
     >
-      <span>
-        The latest read of coord&apos;s project state failed (
-        {failure ?? FAILURE_REASON_WITHHELD}). Everything below is its last
-        reading, not a current one.
-      </span>
+      <span>{keptReadingText(failure ?? FAILURE_REASON_WITHHELD, others)}</span>
       <Provenance
         source={PROJECT_STATE_KEPT_SOURCE}
         asOf={reading.generatedAt}

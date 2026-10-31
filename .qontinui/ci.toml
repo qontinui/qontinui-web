@@ -156,6 +156,23 @@
 #    only meaningful as the input to the stack. So the lane stays Actions-only,
 #    and the Actions lane remains the only place a changed spec is executed
 #    before it lands.
+#
+# 8. frontend-ci.yml's "Fleet-noun vocabulary (pinned)" and "Spawn contract
+#    (pinned)" steps — COMPOSITE ACTIONS, EXPRESSED HERE BY A DIFFERENT ROUTE.
+#    Each does a sparse checkout at the commit its `*.pin.toml` names and exports
+#    the file's path for the test that reads it. This lane cannot run an action,
+#    and QONTINUI_SPAWN_CONTRACT_FILE and QONTINUI_FLEET_NOUNS_FILE are not in
+#    manifest.rs::ENV_ALLOWLIST, so the tests take their local arm here: the
+#    sibling's working file at the pinned digest, else `git show <ref>:<path>`.
+#    The executor's sibling is a depth-1 clone of one commit, chosen for the
+#    backend's path dependency, so the second half alone would find nothing once
+#    schemas moved past a pin, and every web PR here would go red until someone
+#    bumped it. The `fetch-pinned-schemas-commits` step closes that: it checks
+#    each working file against its pin's digest and, for one that is off it,
+#    fetches the pinned commit into the sibling and checks the digest there. It
+#    is the one step here with no workflow twin of the same name, and a failure of
+#    it is a red naming the commit, not a vacuous green. Its bytes are the pin's in
+#    both lanes; only the route to them differs.
 # ===========================================================================
 
 version = 1
@@ -400,8 +417,21 @@ command = ["npm", "run", "type-check"]
 working_dir = "frontend"
 
 [[steps]]
+name = "fetch-pinned-schemas-commits"
+# The lane's half of frontend-ci.yml's "Spawn contract (pinned)" and "Fleet-noun
+# vocabulary (pinned)" composite actions, which it cannot run: see gap 8 in this
+# file's header. Without it the suite's `git show <ref>:<path>` fallback finds
+# nothing in the depth-1 sibling. A bare `python` and `git` as for the repo-wide
+# gates, plus an HTTPS fetch of the public schemas repo when a working file is
+# not at its pinned digest. The script resolves `../qontinui-schemas` from its
+# own location, so it does not depend on the working directory.
+command = ["python", "scripts/ci/fetch_pinned_schemas_commits.py"]
+
+[[steps]]
 name = "frontend-test"
-# frontend-ci.yml "Unit tests" → package.json `test` = `vitest run`.
+# frontend-ci.yml "Unit tests" → package.json `test` = `vitest run`. Reads the
+# spawn contract and fleet-noun vocabulary at their pins, which the step above
+# made readable.
 command = ["npm", "test"]
 working_dir = "frontend"
 

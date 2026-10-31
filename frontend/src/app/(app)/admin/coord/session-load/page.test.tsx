@@ -269,6 +269,45 @@ describe("/admin/coord/session-load", () => {
     ).toBe("/admin/coord/gates?gate=2d2c3b4a-0000-4000-8000-000000000002");
   });
 
+  // The row picks the link's window from the page's own clock: a start
+  // inside 24 h links the next wider window, 7 d; a start inside 7 d links
+  // 30 d. What each case turns red, when the row reads some other clock:
+  // - 2 h: an absent clock (NaN, which links 30 d with the "may be older"
+  //   note), or one more than 22 h ahead of the page's.
+  // - 23.5 h: an absent clock, or one more than 30 min ahead.
+  // - 25 h: an absent clock, a clock of 0, one more than 1 h behind (the
+  //   start reads inside 24 h, 7 d), or one more than 143 h ahead (past 7 d).
+  // - 72 h: an absent clock, a clock of 0 (every start clamps to "just
+  //   now", 7 d), one more than 48 h behind, or one more than 4 days ahead
+  //   (past 7 d, which adds the note).
+  // So the bound is: a clock less than 1 h behind or less than 30 min ahead
+  // of the page's goes unnoticed. The 2 h and 23.5 h cases catch no clock
+  // behind at all; without the 25 h case, a clock up to 48 h behind would.
+  it.each([
+    { agoHours: 2, window: "7d" },
+    { agoHours: 23.5, window: "7d" },
+    { agoHours: 25, window: "30d" },
+    { agoHours: 72, window: "30d" },
+  ])(
+    "a run started $agoHours h ago links its spawn request in the $window window, by the page's clock",
+    async ({ agoHours, window }) => {
+      const started = new Date(Date.now() - agoHours * 3600_000).toISOString();
+      routes.runs = () => ({
+        body: runListFx([runFx({ started_at: started })]),
+      });
+      await renderPage();
+      const run = screen.getByTestId("coord-session-load-run-row");
+      await act(async () => {
+        fireEvent.click(within(run).getByRole("button", { expanded: false }));
+      });
+      const link = screen.getByTestId("coord-session-load-run-link-spawn");
+      expect(link.getAttribute("href")).toBe(
+        `/admin/coord/spawns/requests?window=${window}`
+      );
+      expect(link.textContent).toBe("Find the spawn request");
+    }
+  );
+
   it("an open run past its finish says so on the row; a run's session always links", async () => {
     routes.runs = () => ({
       body: runListFx([

@@ -10,9 +10,12 @@
  * answerable from a single view without asking an agent — and this is that
  * view. `/admin/coord` redirects here.
  *
- * It renders ONE coord read, `GET /api/v1/operations/project-state` (a plain
- * proxy of coord's `GET /coord/project-state`, the same shared core the
- * `coord_project_state` MCP tool serves), polled every 60 s. There is no
+ * It renders coord's project state, `GET /api/v1/operations/project-state` (a
+ * plain proxy of coord's `GET /coord/project-state`, the same shared core the
+ * `coord_project_state` MCP tool serves), polled every 60 s — and, beside it,
+ * coord's machine roster and (until coord serves `needs_me`) the Gates and
+ * Questions pages' queue reads (`_hooks/useHomeSupplements.ts`), on the same
+ * cadence, each labelled with its own source. There is no
  * websocket, no toast and no notification of any kind: the profile asks for
  * "the right altitude, not the fastest feed". A failed poll keeps the last
  * good render and stamps it with its age.
@@ -27,9 +30,10 @@
  * The coordination overview is lens surface 2 (`lensSurfaces.ts`), and it is
  * registered presentation-ready (`presentationReadiness.ts`) on the strength
  * of `page.presentation.test.tsx`. The same route and the same read, rendered
- * for an external evaluator (D1): the page opens with its caption, each
- * region with its caption and the provenance of its figures (the one read,
- * dated by coord's answer), a kept reading after a failed refresh is named as
+ * for an external evaluator (D1): the page opens with its caption and ONE
+ * provenance line (the project-state read, dated by coord's answer), each
+ * region with its title and one sentence, and a chip of its own only for a
+ * figure read from somewhere else (machine health, the queue counts), a kept reading after a failed refresh is named as
  * the last one and never as current, free text is redacted, machines are
  * aliased, raw ids and coord's quoted errors are not rendered — a failed read
  * is explained in the page's own fixed words where its reason allows, and
@@ -38,16 +42,30 @@
  * page is unchanged.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTenant } from "@/contexts/tenant-context";
 import { Caption, usePresentationMode } from "@/components/presentation";
 import {
   NOTHING_READ,
   deriveHomeStrip,
+  type HomeQueue,
+  type HomeStripQueues,
 } from "@/components/admin/coord/coordHomeStatus";
+import { unstatedRosterCut } from "@/components/admin/coord/machineHealth";
 import { useProjectState } from "./_hooks/useProjectState";
-import { presentedHomeFailure } from "./_lib/homeLens";
-import { KeptReadingNotice } from "./_components/HomeLens";
+import { useHomeSupplements } from "./_hooks/useHomeSupplements";
+import {
+  correctLeftOut,
+  presentedHomeFailure,
+  type OtherReading,
+} from "./_lib/homeLens";
+import {
+  GATES_SOURCE,
+  MACHINES_SOURCE,
+  QUESTIONS_SOURCE,
+  supplementSource,
+} from "./_lib/homeSupplements";
+import { KeptReadingNotice, PageProvenance } from "./_components/HomeLens";
 import {
   CorrectSection,
   DegradingSection,
@@ -63,8 +81,78 @@ export default function CoordHomePage() {
   const { tenants } = useTenant();
   const { presenting } = usePresentationMode();
   const [correctOpen, setCorrectOpen] = useState(false);
-  const strip = useMemo(() => deriveHomeStrip(view, { stale }), [view, stale]);
   const shown = view ?? NOTHING_READ;
+  // Beside the one project-state read: coord's machine roster (the source the
+  // nav's Dev Ops badge counts), and — until coord serves `needs_me` — the
+  // queue counts the Gates and Questions pages read (`_lib/homeSupplements`).
+  const supplements = useHomeSupplements({
+    needsQueues: shown.needsMe.state !== "read",
+  });
+  const { machines } = supplements;
+  const stripMachines = useMemo(
+    () =>
+      machines.state === "read" && machines.counts !== null
+        ? {
+            stale: machines.stale,
+            counts: machines.counts,
+            exclusions: machines.exclusions ?? { kind: "not_stated" as const },
+            // Unstated is never "whole". Unreachable defensive fallback: a
+            // read view always carries its cut.
+            cut:
+              machines.cut ??
+              unstatedRosterCut(
+                machines.counts.total + machines.counts.placeholders
+              ),
+          }
+        : null,
+    [
+      machines.state,
+      machines.counts,
+      machines.stale,
+      machines.exclusions,
+      machines.cut,
+    ]
+  );
+  // With coord's needs block unread, the strip's needs-you figure is the
+  // queue counts' — exact when both were read, a lower bound naming the
+  // unread one when only one was, and none when neither was.
+  const { gates, questions } = supplements;
+  const stripQueues = useMemo((): HomeStripQueues | null => {
+    if (shown.needsMe.state === "read") return null;
+    const g = gates.state === "read" ? gates.count : null;
+    const q = questions.state === "read" ? questions.count : null;
+    if (g === null && q === null) return null;
+    const notRead: HomeQueue[] = [];
+    if (g === null) notRead.push("gates");
+    if (q === null) notRead.push("questions");
+    return {
+      count: (g ?? 0) + (q ?? 0),
+      exact: notRead.length === 0 && gates.exact && questions.exact,
+      stale: (g !== null && gates.stale) || (q !== null && questions.stale),
+      notRead,
+    };
+  }, [shown.needsMe.state, gates, questions]);
+  // While presenting, Correct? is left out when nothing is built behind it;
+  // the strip then names no section the page does not show.
+  const correctnessLeftOut =
+    view !== null && correctLeftOut(view.correctness, presenting);
+  const strip = useMemo(
+    () =>
+      deriveHomeStrip(view, {
+        stale,
+        machines: stripMachines,
+        correctnessLeftOut,
+        presenting,
+        queues: stripQueues,
+      }),
+    [view, stale, stripMachines, correctnessLeftOut, presenting, stripQueues]
+  );
+  const refreshSupplements = supplements.refresh;
+  // The one refresh re-reads everything the page shows.
+  const refreshAll = useCallback(
+    () => Promise.all([refresh(), refreshSupplements()]).then(() => undefined),
+    [refresh, refreshSupplements]
+  );
   const tenantName =
     (view?.tenantId && tenants.find((t) => t.id === view.tenantId)?.name) ||
     null;
@@ -76,6 +164,32 @@ export default function CoordHomePage() {
   // while presenting, the page's fixed words for it, or withheld when only
   // outside words can tell it. One decision, for every line that says it.
   const failure = presentedHomeFailure(lastError, presentableError, presenting);
+  // The figures read beside the project state that the page shows: the
+  // machine roster always; the queue counts while coord serves no needs_me.
+  const queuesShown = shown.needsMe.state !== "read";
+  const others: OtherReading[] = [
+    { name: "machine health", reading: machines },
+    ...(queuesShown
+      ? [
+          { name: "the open-gate count", reading: supplements.gates },
+          {
+            name: "the pending-question count",
+            reading: supplements.questions,
+          },
+        ]
+      : []),
+  ];
+  // The strip's own figures from those reads, each with its chip: the
+  // roster always, the queues when its needs-you figure is theirs.
+  const stripSources = [
+    supplementSource(MACHINES_SOURCE, machines),
+    ...(stripQueues !== null
+      ? [
+          supplementSource(GATES_SOURCE, supplements.gates),
+          supplementSource(QUESTIONS_SOURCE, supplements.questions),
+        ]
+      : []),
+  ];
 
   return (
     // `overflow-x-auto`: a wide detail panel scrolls instead of stranding its
@@ -91,7 +205,8 @@ export default function CoordHomePage() {
           renders neither, so R1's "the page opens with its health strip"
           holds for the operator. */}
       <Caption id="coordination-overview.page" />
-      <KeptReadingNotice reading={reading} failure={failure} />
+      <PageProvenance reading={reading} />
+      <KeptReadingNotice reading={reading} failure={failure} others={others} />
       <HomeStripSection
         strip={strip}
         tenantName={tenantName}
@@ -99,7 +214,8 @@ export default function CoordHomePage() {
         stale={stale}
         generatedAt={view?.generatedAt ?? null}
         failure={failure}
-        onRefresh={refresh}
+        onRefresh={refreshAll}
+        extraSources={stripSources}
       />
       {(!hasRead || !view) && (
         <p
@@ -113,11 +229,14 @@ export default function CoordHomePage() {
       )}
       <NeedsYouSection
         needs={shown.needsMe}
+        gates={supplements.gates}
+        questions={supplements.questions}
         stale={stale}
         generatedAt={generatedAt}
       />
       <DegradingSection
         deg={shown.degradations}
+        machines={machines}
         sources={shown.doesNotKnow}
         stale={stale}
         generatedAt={generatedAt}

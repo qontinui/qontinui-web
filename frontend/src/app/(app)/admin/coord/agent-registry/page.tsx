@@ -38,7 +38,7 @@
  * not a third invented set.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,10 +51,13 @@ import {
 } from "@/components/console";
 import {
   AgentPrefError,
+  isWriteOutcomeUnknown,
   listAdminAgentRegistry,
   putAgentRegistryDefaults,
   type AdminAgentRegistryRow,
 } from "@/lib/api/agent-registry";
+import { outcomeUnknownReason } from "@/components/admin/coord/writeOutcome";
+import { createReadSequence } from "@/components/console";
 import { RepoFollowupDialsPanel } from "./_components/RepoFollowupDialsPanel";
 
 // R3 — the colour families, IMPORTED. They used to be re-declared here,
@@ -157,7 +160,8 @@ function deriveHealth(rows: AdminAgentRegistryRow[]): Health {
     return {
       level: "amber",
       headline: `${contested} default${contested === 1 ? "" : "s"} members have overridden`,
-      detail: "Changing those reaches only members with no recorded preference.",
+      detail:
+        "Changing those reaches only members with no recorded preference.",
       disabledByDefault,
       contested,
     };
@@ -212,7 +216,9 @@ function HealthStrip({
         <Badge
           variant="outline"
           className={`font-mono text-[11px] ${
-            loaded && health.contested > 0 ? "text-amber-200 border-amber-500/35" : ""
+            loaded && health.contested > 0
+              ? "text-amber-200 border-amber-500/35"
+              : ""
           }`}
         >
           overridden {loaded ? health.contested : "–"}
@@ -272,23 +278,53 @@ export default function CoordAgentRegistryPage() {
   );
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
 
-  const refresh = useCallback(async () => {
+  // Reads can overtake each other (a slow re-read after one save, a fast one
+  // after the next). Each is ticketed, so an older answer never paints over a
+  // newer one, and an older failure says nothing about a newer value.
+  const reads = useRef(createReadSequence());
+
+  /**
+   * Resolves with whether what is on screen is a read issued at or after this
+   * one — the answer a save's re-read needs. `afterWrite` is a save's re-read:
+   * its failure is reported by that save, beside the write's outcome, so a 403
+   * on it does not replace the page — and that text — with the panel for a
+   * reader who may not read the page at all.
+   */
+  const refresh = useCallback(async (afterWrite = false): Promise<boolean> => {
+    const seq = reads.current;
+    const ticket = seq.issue();
     try {
-      setRows(await listAdminAgentRegistry());
-      setLoadError(null);
-      setForbidden(false);
+      const next = await listAdminAgentRegistry();
+      if (seq.settle(ticket, true)) {
+        setRows(next);
+        // A NEWER read that failed still stands: an older answer may show its
+        // rows, but must not clear that failure's banner or panel.
+        if (!seq.isStale()) {
+          setLoadError(null);
+          setForbidden(false);
+        }
+      }
+      return true;
     } catch (err) {
+      seq.settle(ticket, false);
+      // A newer read has delivered since this one was issued, so the screen
+      // holds a read made after it: for the save waiting on this re-read,
+      // that is the answer it needed, not a failed re-read.
+      if (seq.hasDelivered() && !seq.isStale()) return true;
       // The web tier gates both proxies, so a non-admin lands here with
       // `not_coord_tenant_admin` rather than an opaque coord body. Say what
       // the page is instead of showing an empty registry, which would read as
       // "this tenant has no agents".
       if (err instanceof AgentPrefError && err.status === 403) {
-        setForbidden(true);
-        setLoadError(null);
+        if (!afterWrite) {
+          setForbidden(true);
+          setLoadError(null);
+        }
       } else {
         setForbidden(false);
         setLoadError(err instanceof Error ? err.message : String(err));
       }
+      return false;
     } finally {
       setLoaded(true);
     }
@@ -310,22 +346,49 @@ export default function CoordAgentRegistryPage() {
       return next;
     });
     try {
-      await putAgentRegistryDefaults(name, update);
-      // Re-read rather than patching local state: what is shown is then what
-      // the server recorded, including anything coord normalised on the way
-      // in. The same UX-honesty rule /settings/agents follows.
-      await refresh();
-    } catch (err) {
-      setSaveErrors((prev) => ({
-        ...prev,
-        [name]: err instanceof Error ? err.message : String(err),
-      }));
+      await reportSave(name, update);
     } finally {
       setSavingAgents((prev) => {
         const next = new Set(prev);
         next.delete(name);
         return next;
       });
+    }
+  };
+
+  /** One save: the PUT's own outcome, then the re-read after it. */
+  const reportSave = async (
+    name: string,
+    update: { default_enabled: boolean; policy_required?: boolean }
+  ) => {
+    const setSaveError = (text: string) =>
+      setSaveErrors((prev) => ({ ...prev, [name]: text }));
+    try {
+      await putAgentRegistryDefaults(name, update);
+    } catch (err) {
+      if (isWriteOutcomeUnknown(err)) {
+        // The change may have landed, so "failed" beside the old value would be
+        // a claim nobody can make: only a re-read can say.
+        const unknown = `Whether this change was applied is unknown (${outcomeUnknownReason(err)}).`;
+        setSaveError(`${unknown} Re-reading what coord serves.`);
+        setSaveError(
+          (await refresh(true))
+            ? `${unknown} What is shown is a read made after it.`
+            : `${unknown} The re-read failed too, so what is shown may be out of date.`
+        );
+      } else {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+    // Re-read rather than patching local state: what is shown is then what
+    // the server recorded, including anything coord normalised on the way
+    // in. The same UX-honesty rule /settings/agents follows. The write is
+    // saved whatever the re-read says.
+    if (!(await refresh(true))) {
+      setSaveError(
+        "Saved, but the re-read failed, so what is shown may be out of date."
+      );
     }
   };
 

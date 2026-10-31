@@ -676,9 +676,13 @@ export const GROUPS: NavGroup[] = [
       },
       {
         // Plan `2026-10-21-spawns-outrank-ci-and-builds-in-fleet-capacity-
-        // arbitration` Phase 5: every spawn coord was asked to place — where
-        // it went, how long it waited, how it ended — and the per-device
-        // breakdown. Beside Computers because it reports spawns PER device,
+        // arbitration` Phase 5, as plan `2026-10-23-console-presentation-
+        // spaces` Phase 4 reshaped it: agentic activity — the spawn paths and
+        // their switches, the machines, and how many spawns coord was asked
+        // to place and how they ended. The per-request list and the
+        // per-device placement moved to the spawn requests view
+        // (`/admin/coord/spawns/requests`), which has no menu entry of its
+        // own: this page links to it from those counts. Beside Computers because it reports spawns PER device,
         // and `coordAdminOnly` for the same reason as Computers: its three
         // proxies (`/operations/spawns…`) are `require_coord_tenant_admin`
         // (the rows name each spawn's devices, account and session), and the

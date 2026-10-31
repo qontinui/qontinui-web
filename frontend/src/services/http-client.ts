@@ -296,6 +296,57 @@ export function isRetryableStatus(args: {
 }
 
 /**
+ * What a request rejects with when it failed and the browser reports it is
+ * offline. Exported so a caller deciding whether a write may have landed can
+ * tell this apart from a fetch that failed for a reason nobody can name.
+ */
+export const NO_CONNECTION_MESSAGE =
+  "No internet connection. Please check your network.";
+
+/**
+ * What a request rejects with when the client's own timeout fired. Exported so
+ * a caller that must not invite a retry (a write whose outcome is open) can
+ * word it differently.
+ */
+export const REQUEST_TIMEOUT_MESSAGE =
+  "Request timeout - backend may be starting up. Please try again.";
+
+/**
+ * What reading an answer's body rejects with once the answer has arrived: the
+ * body would not parse (an HTML page, an empty body on a 2xx) or broke off
+ * mid-read. It is a `SyntaxError` so every caller that already names an
+ * unparseable body by that type keeps doing so, and it keeps the reader's own
+ * message. `answeredStatus` is the status that DID come back — distinct from a
+ * `status` field on purpose, because a caller reads `status` as the failure's.
+ *
+ * Exported so a caller deciding whether a write may have landed can say that an
+ * answer came back, rather than that none reached the browser.
+ */
+export class UnreadableAnswerError extends SyntaxError {
+  readonly answeredStatus: number;
+
+  constructor(answeredStatus: number, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "UnreadableAnswerError";
+    this.answeredStatus = answeredStatus;
+  }
+}
+
+/**
+ * `response.json()`, with every failure after the answer arrived raised as an
+ * {@link UnreadableAnswerError}. A caller's own abort is handed back as it came.
+ */
+export async function readAnswerJson<T>(response: Response): Promise<T> {
+  try {
+    return (await response.json()) as T;
+  } catch (err: unknown) {
+    // A DOMException is not an `Error` in every runtime, so read the name.
+    if ((err as { name?: unknown } | null)?.name === "AbortError") throw err;
+    throw new UnreadableAnswerError(response.status, err);
+  }
+}
+
+/**
  * Default client-side fetch timeout. Sized to cover an Elastic Beanstalk
  * cold-start (~10-15s) plus normal request latency, but small enough that a
  * truly stuck request fails fast. Per-request `timeoutMs` overrides this.
@@ -823,13 +874,11 @@ export class HttpClient {
       }
 
       if ((error as Error).name === "AbortError") {
-        throw new Error(
-          "Request timeout - backend may be starting up. Please try again."
-        );
+        throw new Error(REQUEST_TIMEOUT_MESSAGE);
       }
 
       if (typeof navigator !== "undefined" && !navigator.onLine) {
-        throw new Error("No internet connection. Please check your network.");
+        throw new Error(NO_CONNECTION_MESSAGE);
       }
 
       throw error;
@@ -929,7 +978,7 @@ export class HttpClient {
       throw new Error(`GET ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -954,7 +1003,7 @@ export class HttpClient {
       throw new Error(`POST ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -975,7 +1024,7 @@ export class HttpClient {
       throw new Error(`PUT ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -1000,7 +1049,7 @@ export class HttpClient {
       throw new Error(`PATCH ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -1027,7 +1076,7 @@ export class HttpClient {
       return undefined as T;
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**

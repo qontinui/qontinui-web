@@ -82,6 +82,12 @@ jobs:
       - name: Fleet-noun vocabulary (pinned)
         uses: ./.github/actions/fleet-nouns-vocab
 
+      # The pinned spawn contract (spawn-contract.pin.toml) for
+      # src/app/(app)/admin/coord/spawns/_lib/spawnPathContract.test.ts; sets
+      # QONTINUI_SPAWN_CONTRACT_FILE. Plan 2026-10-23-console-presentation-spaces.
+      - name: Spawn contract (pinned)
+        uses: ./.github/actions/spawn-contract
+
       # Mirror frontend-ci.yml's setup so coverage runs in the same environment
       # the gating lane validates.
       - name: Setup Node.js

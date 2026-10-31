@@ -21,9 +21,16 @@ import { renderInPresentationMode } from "@/test/presentation";
 import { UNIT_CLASSES } from "@/components/admin/coord/coordHomeStatus";
 
 const httpFetch = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
-}));
+// The page's reads beside the project state (machine roster, the queue
+// counts) are answered calm by `supplementReads` unless a test says otherwise.
+vi.mock("@/services/service-factory", async () => {
+  const s = await import("./__fixtures__/supplementReads");
+  return {
+    httpClient: s.homeTransport(
+      (...args: unknown[]) => httpFetch(...args) as Promise<Response>
+    ),
+  };
+});
 
 const TENANT_ID = "11111111-1111-1111-1111-111111111111";
 vi.mock("@/contexts/tenant-context", () => ({
@@ -185,6 +192,8 @@ interface Arm {
   never?: RegExp[];
   /** A sentence on a line the presentation does not render at all. */
   operatorOnly?: boolean;
+  /** A sentence only the presentation says, in place of the operator's. */
+  presentingOnly?: boolean;
 }
 
 const DEGRADING = "coord-home.degrading";
@@ -457,6 +466,8 @@ const ARMS: Arm[] = [
     says: [
       "The current initiative document could not be parsed: no reason given.",
     ],
+    // While presenting, a fixed sentence stands in for the whole clause.
+    operatorOnly: true,
   },
   {
     arm: "an unparseable initiative with an empty reason",
@@ -467,6 +478,21 @@ const ARMS: Arm[] = [
     says: [
       "The current initiative document could not be parsed: no reason given.",
     ],
+    operatorOnly: true,
+  },
+  {
+    arm: "an unparseable initiative, presented",
+    body: {
+      on_track: onTrack({
+        initiative: { state: "unparseable", error: "line 8: bad item" },
+      }),
+    },
+    region: INITIATIVE,
+    says: [
+      "The current initiative's document could not be read as written, so its status and scope are not shown.",
+    ],
+    never: [/could not be parsed/, /line 8/, /Reason ·/],
+    presentingOnly: true,
   },
 
   // What this view does not know
@@ -495,6 +521,14 @@ function openDisclosure(region: string, open: Arm["open"]) {
   if (open === "cleared") {
     fireEvent.click(screen.getByRole("button", { name: /Recently cleared/ }));
   } else if (open === "row") {
+    // A read source sits behind the "Sources read" panel.
+    const panel = screen
+      .getByTestId(region)
+      .querySelector('[data-testid="coord-home.does-not-know.read"]');
+    const toggle = panel?.querySelector("button");
+    if (toggle && toggle.getAttribute("aria-expanded") !== "true") {
+      fireEvent.click(toggle);
+    }
     const row = screen.getByTestId(region).querySelector("[data-console-row]");
     if (!row) throw new Error(`no row to open in ${region}`);
     fireEvent.click(row);
@@ -513,7 +547,9 @@ describe.each([
       window.sessionStorage.clear();
     });
 
-    const arms = ARMS.filter((a) => !presenting || !a.operatorOnly);
+    const arms = ARMS.filter((a) =>
+      presenting ? !a.operatorOnly : !a.presentingOnly
+    );
 
     it.each(arms.map((a) => [a.arm, a] as const))("%s", async (_name, arm) => {
       const body = { ...calmBody(), ...arm.body };
