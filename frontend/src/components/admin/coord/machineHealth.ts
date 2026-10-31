@@ -179,6 +179,13 @@ export function degradingCoverage(
  * One line reconciling home with the nav: the rows the nav counts as not
  * healthy that are not degradations, by state — placeholder rows included,
  * since the nav counts them. Null when there are none.
+ *
+ * Placeholder rows and machines with no verdict are also named on lines of
+ * their own, above this one (the placeholder line, and the machines line's
+ * no-verdict clause). So this line points back at them ("named above")
+ * rather than counting them a second time, and its subject is "rows" when
+ * any is a placeholder, which is not a machine. A reader summing every line
+ * then reaches the badge, not more.
  */
 export function notDegradationsSentence(
   counts: MachineHealthCounts,
@@ -189,17 +196,41 @@ export function notDegradationsSentence(
   if (n === 0) return null;
   const parts: string[] = [];
   if (abandoned > 0) parts.push(`${abandoned} abandoned`);
-  if (noVerdict > 0) parts.push(`${noVerdict} with no verdict`);
-  if (placeholders > 0) {
+  if (noVerdict > 0) {
     parts.push(
-      `${placeholders} placeholder ${placeholders === 1 ? "row" : "rows"}`
+      noVerdict === counts.noVerdict
+        ? `the ${noVerdict} with no verdict named above`
+        : `${noVerdict} of the ${counts.noVerdict} with no verdict named above`
     );
   }
+  if (placeholders > 0) {
+    parts.push(
+      placeholders === counts.placeholders
+        ? `the ${placeholders} placeholder ${placeholders === 1 ? "row" : "rows"} named above`
+        : `${placeholders} of the ${counts.placeholders} placeholder rows named above`
+    );
+  }
+  const noun = placeholders > 0 ? "row" : "machine";
   const subject =
     n === 1
-      ? "1 machine not reporting healthy is not a degradation"
-      : `${n} machines not reporting healthy are not degradations`;
+      ? `1 ${noun} not reporting healthy is not a degradation`
+      : `${n} ${noun}s not reporting healthy are not degradations`;
   return `${subject}: ${parts.join(", ")}${seeDevOps ? " — see Dev Ops" : ""}.`;
+}
+
+/**
+ * Whether no graded machine is live: every row coord grades is abandoned
+ * (or there is none), so whatever else the roster holds is placeholders.
+ * No machine reports, so none can be called fine — never calm.
+ */
+export function noLiveMachine(counts: MachineHealthCounts): boolean {
+  return counts.total === counts.abandoned;
+}
+
+/** A roster whose graded machines are all abandoned, in words. */
+export function noLiveMachineSentence(counts: MachineHealthCounts): string {
+  const n = counts.total;
+  return `${n === 1 ? "The 1 machine coord grades is" : `All ${n} machines coord grades are`} abandoned, so no live machine reports — there is no machine this view can call healthy.`;
 }
 
 /**
@@ -228,13 +259,16 @@ export function placeholdersSentence(
  * the roster's JOIN drops it" (`device_state.rs`). Coord counts those
  * separately; an empty roster with devices withheld is "a binding fault, not
  * an empty fleet", and a non-empty one is incomplete. Only `none_withheld`
- * is a complete roster.
+ * is a complete roster as far as exclusions go — and even then a roster at
+ * coord's row limit may be cut off ({@link RosterCut}), which is incomplete
+ * too.
  *
  * - `none_withheld` — coord counted, and withheld nothing.
  * - `withheld` — coord withheld devices (no binding, or bound to another
  *   tenant): their health is UNKNOWN.
  * - `withheld_unmeasured` — coord could not count what it withheld
  *   (`excluded: null` beside `excluded_error`): UNKNOWN, with coord's reason.
+ *   A malformed `excluded` reads the same, with no reason.
  * - `not_stated` — a coord that serves neither field: UNKNOWN.
  */
 export type RosterExclusions =
@@ -243,18 +277,23 @@ export type RosterExclusions =
   | { kind: "withheld_unmeasured"; reason: string | null }
   | { kind: "not_stated" };
 
-/** The body fields an empty roster is read from. */
+/** The body fields the exclusions are read from (unvalidated: a proxy may mangle them). */
 export interface RosterExclusionsRef {
-  excluded?: {
-    unbound?: number | null;
-    bound_to_other_tenant?: number | null;
-  } | null;
-  excluded_error?: string | null;
+  excluded?: unknown;
+  excluded_error?: unknown;
 }
 
-const count = (v: unknown): number =>
-  typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0;
+/** A count coord serialized as an `i64`: a finite, non-negative integer. */
+const isCount = (v: unknown): v is number =>
+  typeof v === "number" && Number.isInteger(v) && v >= 0;
 
+/**
+ * Coord serializes `excluded` as exactly two `i64` counts, or `null` beside
+ * `excluded_error`. Anything else — `{}`, `[]`, a missing, `null` or
+ * non-numeric count — is not a count of zero: it reads as
+ * `withheld_unmeasured` (UNKNOWN), never `none_withheld`. Only an absent
+ * field is `not_stated` (a coord predating it).
+ */
 export function readRosterExclusions(
   body: RosterExclusionsRef
 ): RosterExclusions {
@@ -266,9 +305,18 @@ export function readRosterExclusions(
   if (reason !== null || x === null) {
     return { kind: "withheld_unmeasured", reason };
   }
-  if (x === undefined || typeof x !== "object") return { kind: "not_stated" };
-  const unbound = count(x.unbound);
-  const boundToOtherTenant = count(x.bound_to_other_tenant);
+  if (x === undefined) return { kind: "not_stated" };
+  // An array, like any object without both counts, fails the count check.
+  if (typeof x !== "object") {
+    return { kind: "withheld_unmeasured", reason: null };
+  }
+  const { unbound, bound_to_other_tenant: boundToOtherTenant } = x as Record<
+    string,
+    unknown
+  >;
+  if (!isCount(unbound) || !isCount(boundToOtherTenant)) {
+    return { kind: "withheld_unmeasured", reason: null };
+  }
   return unbound + boundToOtherTenant > 0
     ? { kind: "withheld", unbound, boundToOtherTenant }
     : { kind: "none_withheld" };
@@ -279,7 +327,10 @@ export function isRosterBindingFault(e: RosterExclusions): boolean {
   return e.kind === "withheld" || e.kind === "withheld_unmeasured";
 }
 
-/** Whether coord says it withheld nothing: the only complete roster. */
+/**
+ * Whether coord says it withheld nothing. A roster is complete only when
+ * this holds AND it is not cut off at coord's row limit ({@link isRosterCut}).
+ */
 export function isRosterComplete(e: RosterExclusions): boolean {
   return e.kind === "none_withheld";
 }
@@ -336,4 +387,70 @@ export function emptyRosterSentence(
     case "not_stated":
       return "Coord lists no machines and does not say whether it withheld any — machine health is unknown.";
   }
+}
+
+// ---------------------------------------------------------------------------
+// Whether coord cut the roster off at its row limit
+// ---------------------------------------------------------------------------
+
+/**
+ * The most rows coord's roster returns. `qontinui-coord`
+ * `crates/coord/src/device_state.rs`, the roster query: `ORDER BY <in
+ * dispatch window> DESC, d.hostname LIMIT 1000`. Coord serves no total and
+ * no truncation flag beside it, so a roster this long may have been cut off,
+ * and the rows past the cut (out-of-window machines, by hostname) are
+ * missing with nothing saying so. Keep this equal to coord's `LIMIT`.
+ */
+export const COORD_ROSTER_ROW_LIMIT = 1000;
+
+/**
+ * Whether the roster may be cut off at coord's row limit.
+ *
+ * - `whole` — fewer rows than the limit, and coord says nothing of a cut.
+ * - `may_be_cut` — the roster is at the limit, or coord says it was cut
+ *   (`truncated: true`), or coord serves a `total` larger than the rows it
+ *   listed. The rows past the cut are UNKNOWN, just as a withheld machine is.
+ *   `total` is coord's figure when it served one larger than `listed`.
+ */
+export type RosterCut =
+  | { kind: "whole" }
+  | { kind: "may_be_cut"; listed: number; total: number | null };
+
+/** The body fields the cut is read from (`truncated`/`total`: optional, unvalidated). */
+export interface RosterCutRef {
+  devices: readonly unknown[];
+  truncated?: unknown;
+  total?: unknown;
+}
+
+export function readRosterCut(body: RosterCutRef): RosterCut {
+  const listed = body.devices.length;
+  const total =
+    typeof body.total === "number" &&
+    Number.isFinite(body.total) &&
+    body.total > listed
+      ? body.total
+      : null;
+  if (
+    body.truncated === true ||
+    total !== null ||
+    listed >= COORD_ROSTER_ROW_LIMIT
+  ) {
+    return { kind: "may_be_cut", listed, total };
+  }
+  return { kind: "whole" };
+}
+
+/** Whether the roster may be cut off: never complete, never calm. */
+export function isRosterCut(c: RosterCut): boolean {
+  return c.kind === "may_be_cut";
+}
+
+/** A roster that may be cut off, in words; null when it is whole. */
+export function rosterCutSentence(c: RosterCut): string | null {
+  if (c.kind === "whole") return null;
+  const rows = `${c.listed} ${c.listed === 1 ? "row" : "rows"}`;
+  return c.total !== null
+    ? `Coord's roster lists ${rows} of ${c.total}, so it is cut off at coord's limit — the health of the other ${c.total - c.listed} is unknown.`
+    : `Coord's roster lists ${rows}, so it may be cut off at coord's limit of ${COORD_ROSTER_ROW_LIMIT} — machine health beyond it is unknown.`;
 }

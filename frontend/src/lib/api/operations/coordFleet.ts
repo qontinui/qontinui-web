@@ -346,6 +346,15 @@ export interface FleetHealthPayload {
   /** Why coord could not count `excluded`; null when it could. */
   excluded_error?: string | null;
   /**
+   * Whether coord cut `devices` off at its roster query's row limit
+   * (`device_state.rs`, `LIMIT 1000`). Not served by coord yet; absent is
+   * NOT "not truncated" — a roster at the limit may be cut off either way
+   * (`machineHealth.ts` `readRosterCut`).
+   */
+  truncated?: boolean;
+  /** The roster's full size before any cut, when coord serves one. Not served yet. */
+  total?: number;
+  /**
    * The Conditions rollup. Absent on a coord predating it — see
    * {@link FleetHealthConditions}.
    */

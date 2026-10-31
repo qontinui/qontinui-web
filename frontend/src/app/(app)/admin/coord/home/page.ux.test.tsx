@@ -384,7 +384,7 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
         "coord-home.degrading.machines-reconcile"
       );
       expect(reconcile).toHaveTextContent(
-        "2 machines not reporting healthy are not degradations: 1 abandoned, 1 with no verdict — see Dev Ops."
+        "2 machines not reporting healthy are not degradations: 1 abandoned, the 1 with no verdict named above — see Dev Ops."
       );
       expect(
         within(reconcile).getByRole("link", { name: "Dev Ops" })
@@ -511,7 +511,7 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       expect(
         screen.getByTestId("coord-home.degrading.machines-reconcile")
       ).toHaveTextContent(
-        "1 machine not reporting healthy is not a degradation: 1 placeholder row"
+        "1 row not reporting healthy is not a degradation: 1 of the 2 placeholder rows named above — see Dev Ops."
       );
       expect(
         screen.getByTestId("coord-home.degrading.empty")
@@ -559,6 +559,114 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
         expect(strip).not.toHaveTextContent("pool timed out");
       }
     );
+
+    it.each([
+      [
+        "is at coord's row limit",
+        () => roster(...Array<string>(1000).fill("healthy")),
+        "Coord's roster lists 1000 rows, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
+      ],
+      [
+        "says it cut the roster off",
+        () => ({ ...roster("healthy"), truncated: true }),
+        "Coord's roster lists 1 row, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
+      ],
+      [
+        "serves a total larger than the rows it lists",
+        () => ({ ...roster("healthy", "healthy"), total: 5 }),
+        "Coord's roster lists 2 rows of 5, so it is cut off at coord's limit — the health of the other 3 is unknown.",
+      ],
+    ])(
+      "never reads a roster calm when coord %s, even with nothing withheld",
+      async (_label, body, sentence) => {
+        answer({
+          [PROJECT_STATE]: () => json(oneUnitBody()),
+          [FLEET]: () => json(body()),
+          ...quiet,
+        });
+        await renderPage();
+        const machines = screen.getByTestId("coord-home.degrading.machines");
+        await waitFor(() => expect(machines).toHaveTextContent(sentence));
+        // A cut is not a binding fault.
+        expect(machines).not.toHaveAttribute("data-roster-fault");
+        const deg = screen.getByTestId("coord-home.degrading");
+        expect(deg).not.toHaveTextContent("Nothing is degrading");
+        expect(
+          within(deg).getByTestId("coord-home.degrading.machines-not-calm")
+        ).toHaveTextContent("coord's roster may be missing machines");
+        const strip = screen.getByTestId("coord-home.strip.health");
+        expect(strip).toHaveAttribute("data-health-level", "amber");
+        expect(strip).not.toHaveTextContent(/nothing is degrading/i);
+        expect(strip).toHaveTextContent(sentence);
+      }
+    );
+
+    it("reads an older coord's unstated exclusions as maybe incomplete, with no binding-fault attribute", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () =>
+          json({
+            as_of: new Date().toISOString(),
+            devices: [
+              {
+                device_id: "d-0",
+                hostname: "example-host-0",
+                state: "healthy",
+              },
+            ],
+          }),
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() =>
+        expect(machines).toHaveTextContent(
+          "Coord does not say whether it withheld any machines from its roster, so the roster may be incomplete"
+        )
+      );
+      expect(machines).not.toHaveAttribute("data-roster-fault");
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveAttribute("data-health-level", "amber");
+      expect(strip).not.toHaveTextContent(/nothing is degrading/i);
+    });
+
+    it("never reads calm when every machine coord grades is abandoned: no live machine reports", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () => {
+          const r = roster("abandoned", "abandoned");
+          return json({
+            ...r,
+            devices: [
+              ...r.devices,
+              {
+                device_id: "d-ph",
+                hostname: "example-host-ph",
+                state: "healthy",
+                dispatch_liveness: "unknown",
+              },
+            ],
+          });
+        },
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() =>
+        expect(machines).toHaveTextContent(
+          "All 2 machines coord grades are abandoned, so no live machine reports — there is no machine this view can call healthy."
+        )
+      );
+      const deg = screen.getByTestId("coord-home.degrading");
+      expect(deg).not.toHaveTextContent("Nothing is degrading");
+      expect(
+        within(deg).getByTestId("coord-home.degrading.machines-not-calm")
+      ).toHaveTextContent("no live machine reports");
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveAttribute("data-health-level", "amber");
+      expect(strip).not.toHaveTextContent(/nothing is degrading/i);
+      expect(strip).toHaveTextContent("so no live machine reports");
+    });
 
     it("says machine health is unknown, never calm, when the roster cannot be read", async () => {
       answer({

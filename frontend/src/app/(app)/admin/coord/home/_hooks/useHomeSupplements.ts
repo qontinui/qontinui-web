@@ -33,6 +33,7 @@ import { fetchPendingAgentQuestions } from "@/lib/api/operations/agentQuestions"
 import { adminDevService } from "@/services/admin-dev-service";
 import type {
   MachineHealthCounts,
+  RosterCut,
   RosterExclusions,
 } from "@/components/admin/coord/machineHealth";
 import {
@@ -60,6 +61,7 @@ interface Machines {
   counts: MachineHealthCounts;
   asOf: string | null;
   exclusions: RosterExclusions;
+  cut: RosterCut;
 }
 interface Queue {
   count: number;
@@ -85,6 +87,7 @@ function machinesView(
     asOf: axis.value.asOf,
     stale: axis.stale,
     exclusions: axis.value.exclusions,
+    cut: axis.value.cut,
   };
 }
 

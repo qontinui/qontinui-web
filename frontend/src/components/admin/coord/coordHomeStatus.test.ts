@@ -101,6 +101,7 @@ const CALM_MACHINES = {
     stale: false,
     counts: summarizeMachineHealth([{ device_id: "d-0", state: "healthy" }]),
     exclusions: { kind: "none_withheld" },
+    cut: { kind: "whole" },
   },
 } as const;
 

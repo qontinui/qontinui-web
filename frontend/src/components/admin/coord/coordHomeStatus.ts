@@ -93,10 +93,15 @@ import {
   degradingCoverage,
   emptyRosterSentence,
   isRosterComplete,
+  isRosterCut,
+  noLiveMachine,
+  noLiveMachineSentence,
   notDegradationsSentence,
   placeholdersSentence,
+  rosterCutSentence,
   rosterIncompleteSentence,
   type MachineHealthCounts,
+  type RosterCut,
   type RosterExclusions,
 } from "@/components/admin/coord/machineHealth";
 
@@ -1777,6 +1782,8 @@ export interface HomeStripMachines {
   counts: MachineHealthCounts;
   /** What coord said it withheld from the roster; only `none_withheld` is complete. */
   exclusions: RosterExclusions;
+  /** Whether the roster may be cut off at coord's row limit; only `whole` is complete. */
+  cut: RosterCut;
 }
 
 /** "1 machine is" / "2 machines are". */
@@ -1957,10 +1964,13 @@ export function deriveHomeStrip(
     mc !== null &&
     !machines.stale &&
     // Zero machines are not a calm fleet: an empty roster never answers
-    // "nothing is degrading". Placeholder rows are not machines.
-    mc.total > 0 &&
-    // Nor is a roster coord withheld machines from, or could not say.
+    // "nothing is degrading". Placeholder rows are not machines, and an
+    // abandoned one does not report, so a roster of only those is not calm.
+    !noLiveMachine(mc) &&
+    // Nor is a roster coord withheld machines from, or could not say, or one
+    // that may be cut off at coord's row limit.
     isRosterComplete(machines.exclusions) &&
+    !isRosterCut(machines.cut) &&
     unlistedDegrading === 0 &&
     mc.noVerdict === 0;
   const somethingDegrading =
@@ -2045,8 +2055,10 @@ export function deriveHomeStrip(
     );
   }
   if (queues !== null) {
+    // While presenting, coord's unbuilt needs block is named nowhere (the
+    // section leaves it out), so the presented line says only the source.
     detailParts.push(
-      `Needs you is counted from ${queuesSourceText(presenting)}, since coord's needs block is not read${queues.stale ? " — at their last good read" : ""}.`
+      `Needs you is counted from ${queuesSourceText(presenting)}${presenting ? "" : ", since coord's needs block is not read"}${queues.stale ? " — at their last good read" : ""}.`
     );
     if (queues.notRead.length > 0) {
       const names = queues.notRead.map((q) => queueName(q, presenting));
@@ -2075,11 +2087,15 @@ export function deriveHomeStrip(
     } else {
       if (mc.total === 0) {
         detailParts.push("Coord's roster holds no machine it grades.");
+      } else if (noLiveMachine(mc)) {
+        detailParts.push(noLiveMachineSentence(mc));
       }
       const incomplete = rosterIncompleteSentence(machines.exclusions, {
         withReason: false,
       });
       if (incomplete) detailParts.push(incomplete);
+      const cut = rosterCutSentence(machines.cut);
+      if (cut) detailParts.push(cut);
     }
     // Every machine the badge counts is named once below: listed, unlisted,
     // or in the reconcile line.
