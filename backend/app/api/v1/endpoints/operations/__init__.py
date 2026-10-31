@@ -3693,9 +3693,9 @@ async def _proxy_coord_post(
     all ~45 callers of this helper. Flipping the default is not a no-op at the
     wire: ``app.middleware.error_handler.http_exception_handler`` splices a
     dict detail into the top level of its envelope, which moves ``error`` from
-    the status-derived code to coord's own, turns ``message`` into a Python
-    repr of the dict rather than coord's verbatim JSON text, and lets coord's
-    remaining keys collide with the envelope's. That is a real contract change
+    the status-derived code to coord's own, turns ``message`` into the dict's
+    own ``message`` or ``error`` string rather than coord's verbatim JSON
+    text, and lets coord's remaining keys collide with the envelope's. That is a real contract change
     for every other route, invisible to their tests (which run against a bare
     ``FastAPI()`` with no handlers registered), so each route opts in
     knowingly.
@@ -14840,14 +14840,14 @@ def _readable_coord_refusal(exc: HTTPException) -> HTTPException:
 
     ``structured_errors=True`` hands coord's typed body through as the
     ``HTTPException`` detail — ``{"error": "not_admin_in_target_tenant"}``.
-    That is the right thing for a machine and, in PRODUCTION, invisible to a
+    That is the right thing for a machine and, in PRODUCTION, bare to a
     person: ``app/main.py`` registers
     ``app.middleware.error_handler.http_exception_handler`` for every
-    ``StarletteHTTPException``, and it renders a dict detail as
-    ``{"error": …, "message": detail.get("message", str(detail)), …}``. With
-    no ``message`` key in coord's body that fallback is ``str(dict)`` — a
-    Python ``repr`` (``{'error': 'not_admin_in_target_tenant'}``) in the one
-    field the dashboard shows the operator.
+    ``StarletteHTTPException``, and with no ``message`` key in coord's body
+    it fills ``message`` with the bare ``error`` code
+    (``not_admin_in_target_tenant``) — in the one field the dashboard shows
+    the operator, with no sentence around it. (An older handler put a Python
+    ``repr`` of the dict there.)
 
     So compose one. The error CODE stays the sentence's subject because it is
     the diagnostic an operator quotes; a coord ``hint``/``reason``/``detail``
