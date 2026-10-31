@@ -495,6 +495,14 @@ function openDisclosure(region: string, open: Arm["open"]) {
   if (open === "cleared") {
     fireEvent.click(screen.getByRole("button", { name: /Recently cleared/ }));
   } else if (open === "row") {
+    // A read source sits behind the "Sources read" panel.
+    const panel = screen
+      .getByTestId(region)
+      .querySelector('[data-testid="coord-home.does-not-know.read"]');
+    const toggle = panel?.querySelector("button");
+    if (toggle && toggle.getAttribute("aria-expanded") !== "true") {
+      fireEvent.click(toggle);
+    }
     const row = screen.getByTestId(region).querySelector("[data-console-row]");
     if (!row) throw new Error(`no row to open in ${region}`);
     fireEvent.click(row);

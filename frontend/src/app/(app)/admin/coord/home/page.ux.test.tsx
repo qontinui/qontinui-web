@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
-import { expandRow } from "./__fixtures__/homePageDriver";
+import { expandRow, openSourcesRead } from "./__fixtures__/homePageDriver";
 
 const httpFetch = vi.fn();
 const httpGet = vi.fn();
@@ -225,6 +225,105 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
         within(row).queryByTestId("coord-home.on-track.group.unnamed")
       ).not.toBeInTheDocument();
       expect(row).toHaveTextContent("Example unit");
+    });
+  });
+
+  describe("What this view does not know", () => {
+    const now = () => new Date().toISOString();
+    const SOURCES = [
+      { source: "work_units", state: "read", as_of: now() },
+      { source: "fleet_drain", state: "read", as_of: now() },
+      {
+        source: "train_health (per authority repo)",
+        state: "read",
+        as_of: now(),
+        freshness_bound_secs: 20,
+      },
+      { source: "verification_metrics", state: "not_implemented" },
+      { source: "worker_heartbeats", state: "could_not_read", error: "x" },
+    ];
+
+    it("lists the sources not read, and puts the read ones behind one disclosure with their count", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody({ does_not_know: SOURCES })),
+      });
+      await renderPage();
+      const region = screen.getByTestId("coord-home.does-not-know");
+      expect(
+        within(region).getByTestId("coord-home.does-not-know.count")
+      ).toHaveTextContent("2 of 5 sources not read");
+      const listed = within(region).getAllByTestId(
+        "coord-home.does-not-know.row"
+      );
+      expect(listed).toHaveLength(2);
+      expect(listed[0]).toHaveTextContent("Verification measurements");
+      expect(listed[0]).toHaveTextContent("not built yet");
+      expect(listed[1]).toHaveTextContent("Watcher heartbeats");
+      expect(listed[1]).toHaveTextContent("could not be read");
+      expect(region).not.toHaveTextContent("Machine drains");
+      expect(
+        within(region).getByTestId("coord-home.does-not-know.read-count")
+      ).toHaveTextContent("read 3");
+      const panel = openSourcesRead();
+      expect(
+        within(panel).getAllByTestId("coord-home.does-not-know.row")
+      ).toHaveLength(3);
+      expect(panel).toHaveTextContent("Machine drains");
+    });
+
+    it("says each unstated clause once per list, never on every row", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody({ does_not_know: SOURCES })),
+      });
+      await renderPage();
+      const region = screen.getByTestId("coord-home.does-not-know");
+      openSourcesRead();
+      for (const row of within(region).getAllByTestId(
+        "coord-home.does-not-know.row"
+      )) {
+        expect(row).not.toHaveTextContent(/not stated/);
+      }
+      expect(
+        within(region).getByTestId("coord-home.does-not-know.not-read.unstated")
+      ).toHaveTextContent(
+        "Coord stated no age bound for all 2, and no count of excluded rows for all 2."
+      );
+      expect(
+        within(region).getByTestId("coord-home.does-not-know.read.unstated")
+      ).toHaveTextContent(
+        "Coord stated no age bound for 2 of 3, and no count of excluded rows for all 3."
+      );
+      expect(region).toHaveTextContent("may be up to 20s old");
+    });
+
+    it("says every source was read when none is unread, and still counts the read ones", async () => {
+      answer({
+        [PROJECT_STATE]: () =>
+          json(oneUnitBody({ does_not_know: SOURCES.slice(0, 3) })),
+      });
+      await renderPage();
+      const region = screen.getByTestId("coord-home.does-not-know");
+      expect(
+        within(region).getByTestId("coord-home.does-not-know.all-read")
+      ).toHaveTextContent("Coord read every source it lists.");
+      expect(
+        within(region).queryAllByTestId("coord-home.does-not-know.row")
+      ).toHaveLength(0);
+      expect(
+        within(region).getByTestId("coord-home.does-not-know.read-count")
+      ).toHaveTextContent("read 3");
+    });
+
+    it("never says every source was read when coord listed none", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody({ does_not_know: [] })),
+      });
+      await renderPage();
+      const region = screen.getByTestId("coord-home.does-not-know");
+      expect(region).toHaveTextContent("Coord listed no sources — unknown.");
+      expect(
+        within(region).queryByTestId("coord-home.does-not-know.all-read")
+      ).not.toBeInTheDocument();
     });
   });
 

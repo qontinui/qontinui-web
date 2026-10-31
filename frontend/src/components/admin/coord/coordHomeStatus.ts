@@ -1507,17 +1507,44 @@ export function sourceAgePhrase(s: SourceCoverageView): string {
  * it left out. A field coord did not state is said to be not stated — never a
  * dash, never a zero.
  */
-export function sourceRowReason(s: SourceCoverageView): string {
+export function sourceRowReason(
+  s: SourceCoverageView,
+  { omitUnstated = false }: { omitUnstated?: boolean } = {}
+): string {
   const parts: string[] = [];
   const error = sourceErrorWords(s);
   if (error !== null) parts.push(error);
-  parts.push(sourceAgePhrase(s));
-  parts.push(
-    s.rowsExcluded === null
-      ? "exclusions not stated"
-      : `${s.rowsExcluded} excluded`
-  );
+  // With `omitUnstated`, a field coord did not state is left off the row: the
+  // list says it once for every row it applies to (`unstatedSummary`), rather
+  // than repeat the identical clause on each.
+  if (!(omitUnstated && s.freshnessBoundSecs === null)) {
+    parts.push(sourceAgePhrase(s));
+  }
+  if (s.rowsExcluded !== null) parts.push(`${s.rowsExcluded} excluded`);
+  else if (!omitUnstated) parts.push("exclusions not stated");
   return parts.join(" · ");
+}
+
+/**
+ * The one line a list of sources says in place of a "not stated" clause on
+ * every row (`sourceRowReason` with `omitUnstated`): how many of `sources`
+ * coord gave no age bound for, and how many no exclusion count — or null
+ * when it stated both for every one. Counted, never dropped: a field coord
+ * did not state is still said to be not stated.
+ */
+export function unstatedSummary(
+  sources: readonly SourceCoverageView[]
+): string | null {
+  const n = sources.length;
+  const noBound = sources.filter((s) => s.freshnessBoundSecs === null).length;
+  const noExcl = sources.filter((s) => s.rowsExcluded === null).length;
+  const of = (k: number) =>
+    k === n ? (n === 1 ? "it" : `all ${n}`) : `${k} of ${n}`;
+  const parts: string[] = [];
+  if (noBound > 0) parts.push(`no age bound for ${of(noBound)}`);
+  if (noExcl > 0) parts.push(`no count of excluded rows for ${of(noExcl)}`);
+  if (parts.length === 0) return null;
+  return `Coord stated ${parts.join(", and ")}.`;
 }
 
 /**

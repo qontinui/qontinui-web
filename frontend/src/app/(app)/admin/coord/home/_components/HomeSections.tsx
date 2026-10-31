@@ -119,6 +119,7 @@ import {
   sourceLabel,
   sourceRawLine,
   sourceRowReason,
+  unstatedSummary,
   sourceTimeWords,
   stallWindowDays,
   unitClassLabel,
@@ -1569,6 +1570,160 @@ export function CorrectSection({
 // 6. What this view does not know
 // ---------------------------------------------------------------------------
 
+/** One source coord lists in `does_not_know`, as a record row. */
+function SourceRow({
+  s,
+  planes,
+  expanded,
+  onToggle,
+}: {
+  s: SourceCoverageView;
+  planes: PlaneView[] | null;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const { presenting } = usePresentationMode();
+  const words = sourceTimeWords(s);
+  return (
+    <RecordRow
+      identity={s.state === "read" ? "read" : "not read"}
+      // R8: words on the row; coord's raw id only in the title and the
+      // detail's last line — both the operator's alone.
+      label={
+        <span title={presenting ? undefined : s.source}>
+          {presenting
+            ? // A source the table does not label would read as coord's
+              // identifier: fixed words while presenting.
+              presentedSourceLabel(s.source, planes)
+            : sourceLabel(s.source, planes)}
+        </span>
+      }
+      status={
+        <HomeBadge
+          kind={s.state === "read" ? "source_read" : "source_not_read"}
+          label={BLOCK_STATE_PHRASE[s.state]}
+        />
+      }
+      // A clause coord did not state is said once, under the list
+      // (`unstatedSummary`), not on every row.
+      reason={sourceRowReason(s, { omitUnstated: true })}
+      time={
+        <RowTime
+          at={s.asOf}
+          verb={words.verb}
+          absent={{ label: words.absentLabel, title: words.absentTitle }}
+        />
+      }
+      attention={
+        HOME_ATTENTION_BY_KIND[
+          s.state === "read" ? "source_read" : "source_not_read"
+        ]
+      }
+      expanded={expanded}
+      onToggle={onToggle}
+      data-testid="coord-home.does-not-know.row"
+    >
+      <RecordDetail
+        why={
+          <div className="space-y-1">
+            <p className="m-0">
+              {s.state === "read"
+                ? `Read ${relativeTime(s.asOf, { absent: "at an unknown time" })}.`
+                : `This source is ${BLOCK_STATE_PHRASE[s.state]}.`}
+              {s.error
+                ? // Coord's own error chain is quoted on the raw line, which
+                  // is not rendered while presenting.
+                  ` ${
+                    presenting && !isWatcherSource(s.source)
+                      ? `Coord reported an error. ${FAILURE_SENTENCE_WITHHELD}`
+                      : sourceErrorSentence(s)
+                  }`
+                : ""}
+            </p>
+            <p className="m-0 text-muted-foreground">
+              Freshness bound:{" "}
+              {s.freshnessBoundSecs === null
+                ? "not stated"
+                : boundText(s.freshnessBoundSecs)}
+              {" · "}Rows considered: {s.rowsConsidered ?? "not stated"}
+              {" · "}Rows excluded: {s.rowsExcluded ?? "not stated"}
+            </p>
+            {s.exclusionReason && (
+              <p className="m-0 text-muted-foreground">
+                Why excluded:{" "}
+                <RedactedText
+                  text={withoutVerdictWords(s.exclusionReason)}
+                  repo={null}
+                  descriptor={reasonDescriptor("excluded", s.asOf)}
+                />
+              </p>
+            )}
+          </div>
+        }
+        raw={
+          // R8's raw last line — coord's source id and error chain — is the
+          // operator's: not rendered while presenting.
+          presenting ? undefined : (
+            <span
+              className="font-mono text-[10px] text-muted-foreground/60 break-all"
+              data-testid="coord-home.does-not-know.raw"
+            >
+              {sourceRawLine(s)}
+            </span>
+          )
+        }
+      />
+    </RecordRow>
+  );
+}
+
+/** A list of sources, then the one line for the clauses coord did not state. */
+function SourceList({
+  sources,
+  list,
+  planes,
+  testId,
+}: {
+  sources: SourceCoverageView[];
+  list: string;
+  planes: PlaneView[] | null;
+  testId: string;
+}) {
+  const rowKey = useRowKey();
+  const unstated = unstatedSummary(sources);
+  return (
+    <div className="space-y-1">
+      <RecordList
+        items={sources}
+        itemKey={(s, i) => rowKey(list, `${s.source}:${i}`)}
+        renderRow={(s, ctx) => (
+          <SourceRow
+            s={s}
+            planes={planes}
+            expanded={ctx.expanded}
+            onToggle={ctx.onToggle}
+          />
+        )}
+      />
+      {unstated !== null && (
+        <p
+          className="m-0 text-xs text-muted-foreground"
+          data-testid={`${testId}.unstated`}
+        >
+          {unstated}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What this view does not know. The sources coord could not fully read are
+ * the section's answer, so they are listed; the sources it read answer no
+ * question the section asks, so they sit behind one disclosure with their
+ * count. Neither list repeats a clause coord did not state on every row: it
+ * says it once, counted (`unstatedSummary`).
+ */
 export function DoesNotKnowSection({
   sources,
   planes = null,
@@ -1582,12 +1737,12 @@ export function DoesNotKnowSection({
   stale?: boolean;
   generatedAt?: string | null;
 }) {
-  const { presenting } = usePresentationMode();
-  const rowKey = useRowKey();
+  const unread = sources?.filter((s) => s.state !== "read") ?? [];
+  const read = sources?.filter((s) => s.state === "read") ?? [];
   const count =
     sources === null
       ? "unknown"
-      : `${sources.filter((s) => s.state !== "read").length} of ${sources.length} sources not read`;
+      : `${unread.length} of ${sources.length} sources not read`;
   return (
     <section
       className="space-y-2"
@@ -1600,7 +1755,10 @@ export function DoesNotKnowSection({
       />
       <div className="flex items-baseline gap-2">
         <h2 className={HEADING}>What this view does not know</h2>
-        <span className="text-xs text-muted-foreground tabular-nums">
+        <span
+          className="text-xs text-muted-foreground tabular-nums"
+          data-testid="coord-home.does-not-know.count"
+        >
           {count}
         </span>
       </div>
@@ -1609,111 +1767,59 @@ export function DoesNotKnowSection({
           Coord served no list of the sources it read, so what this view does
           not know is itself unknown.
         </p>
+      ) : sources.length === 0 ? (
+        <p className="m-0 text-sm text-muted-foreground">
+          Coord listed no sources — unknown.
+        </p>
       ) : (
-        <RecordList
-          items={sources}
-          itemKey={(s, i) => rowKey("source", `${s.source}:${i}`)}
-          empty={
-            <p className="m-0 text-sm text-muted-foreground">
-              Coord listed no sources — unknown.
+        <>
+          {unread.length === 0 ? (
+            <p
+              className="m-0 text-sm"
+              data-testid="coord-home.does-not-know.all-read"
+            >
+              {stale
+                ? `Coord had read every source it lists ${lastGoodReadPhrase(generatedAt)}.`
+                : "Coord read every source it lists."}
             </p>
-          }
-          renderRow={(s, ctx) => (
-            <RecordRow
-              identity={s.state === "read" ? "read" : "not read"}
-              // R8: words on the row; coord's raw id only in the title and
-              // the detail's last line — both the operator's alone.
-              label={
-                <span title={presenting ? undefined : s.source}>
-                  {presenting
-                    ? // A source the table does not label would read as
-                      // coord's identifier: fixed words while presenting.
-                      presentedSourceLabel(s.source, planes)
-                    : sourceLabel(s.source, planes)}
-                </span>
-              }
-              status={
-                <HomeBadge
-                  kind={s.state === "read" ? "source_read" : "source_not_read"}
-                  label={BLOCK_STATE_PHRASE[s.state]}
+          ) : (
+            <SourceList
+              sources={unread}
+              list="source"
+              planes={planes}
+              testId="coord-home.does-not-know.not-read"
+            />
+          )}
+          {read.length > 0 && (
+            <CollapsiblePanel
+              title="Sources read"
+              titleAs="h3"
+              defaultOpen={false}
+              summary={
+                <StatCluster
+                  stats={[
+                    {
+                      key: "read",
+                      label: "read ",
+                      value: read.length,
+                      tone: "muted",
+                    },
+                  ]}
+                  data-testid="coord-home.does-not-know.read-count"
                 />
               }
-              reason={sourceRowReason(s)}
-              time={(() => {
-                const words = sourceTimeWords(s);
-                return (
-                  <RowTime
-                    at={s.asOf}
-                    verb={words.verb}
-                    absent={{
-                      label: words.absentLabel,
-                      title: words.absentTitle,
-                    }}
-                  />
-                );
-              })()}
-              attention={
-                HOME_ATTENTION_BY_KIND[
-                  s.state === "read" ? "source_read" : "source_not_read"
-                ]
-              }
-              expanded={ctx.expanded}
-              onToggle={ctx.onToggle}
-              data-testid="coord-home.does-not-know.row"
+              data-testid="coord-home.does-not-know.read"
+              data-ui-bridge-id="coord-home.does-not-know.read"
             >
-              <RecordDetail
-                why={
-                  <div className="space-y-1">
-                    <p className="m-0">
-                      {s.state === "read"
-                        ? `Read ${relativeTime(s.asOf, { absent: "at an unknown time" })}.`
-                        : `This source is ${BLOCK_STATE_PHRASE[s.state]}.`}
-                      {s.error
-                        ? // Coord's own error chain is quoted on the raw
-                          // line, which is not rendered while presenting.
-                          ` ${
-                            presenting && !isWatcherSource(s.source)
-                              ? `Coord reported an error. ${FAILURE_SENTENCE_WITHHELD}`
-                              : sourceErrorSentence(s)
-                          }`
-                        : ""}
-                    </p>
-                    <p className="m-0 text-muted-foreground">
-                      Freshness bound:{" "}
-                      {s.freshnessBoundSecs === null
-                        ? "not stated"
-                        : boundText(s.freshnessBoundSecs)}
-                      {" · "}Rows considered: {s.rowsConsidered ?? "not stated"}
-                      {" · "}Rows excluded: {s.rowsExcluded ?? "not stated"}
-                    </p>
-                    {s.exclusionReason && (
-                      <p className="m-0 text-muted-foreground">
-                        Why excluded:{" "}
-                        <RedactedText
-                          text={withoutVerdictWords(s.exclusionReason)}
-                          repo={null}
-                          descriptor={reasonDescriptor("excluded", s.asOf)}
-                        />
-                      </p>
-                    )}
-                  </div>
-                }
-                raw={
-                  // R8's raw last line — coord's source id and error chain —
-                  // is the operator's: not rendered while presenting.
-                  presenting ? undefined : (
-                    <span
-                      className="font-mono text-[10px] text-muted-foreground/60 break-all"
-                      data-testid="coord-home.does-not-know.raw"
-                    >
-                      {sourceRawLine(s)}
-                    </span>
-                  )
-                }
+              <SourceList
+                sources={read}
+                list="source-read"
+                planes={planes}
+                testId="coord-home.does-not-know.read"
               />
-            </RecordRow>
+            </CollapsiblePanel>
           )}
-        />
+        </>
       )}
     </section>
   );

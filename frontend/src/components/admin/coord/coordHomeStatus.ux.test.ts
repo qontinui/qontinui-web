@@ -11,7 +11,10 @@ import {
   groupBreakdown,
   groupBreakdownSentence,
   noRecordedChangeBadgeLabel,
+  sourceRowReason,
   unnamedUnitsSentence,
+  unstatedSummary,
+  type SourceCoverageView,
   parseProjectState,
   unitCountText,
 } from "./coordHomeStatus";
@@ -141,5 +144,64 @@ describe("a repository group's account of its units", () => {
     expect(unnamedUnitsSentence(4)).toContain(
       "the 4 other units are not listed"
     );
+  });
+});
+
+describe("a clause coord did not state, said once per list", () => {
+  const src = (over: Partial<SourceCoverageView>): SourceCoverageView => ({
+    source: "work_units",
+    state: "read",
+    asOf: null,
+    freshnessBoundSecs: null,
+    rowsConsidered: null,
+    rowsExcluded: null,
+    exclusionReason: null,
+    error: null,
+    ...over,
+  });
+
+  it("leaves an unstated bound and exclusion count off the row", () => {
+    expect(sourceRowReason(src({}), { omitUnstated: true })).toBe("");
+    expect(
+      sourceRowReason(src({ freshnessBoundSecs: 20, rowsExcluded: 3 }), {
+        omitUnstated: true,
+      })
+    ).toBe("may be up to 20s old · 3 excluded");
+    expect(
+      sourceRowReason(src({ state: "could_not_read", error: "x" }), {
+        omitUnstated: true,
+      })
+    ).toBe("coord reported an error");
+  });
+
+  it("still says 'not stated' on the row when not asked to omit it", () => {
+    expect(sourceRowReason(src({}))).toBe(
+      "maximum age not stated · exclusions not stated"
+    );
+  });
+
+  it("counts the rows each unstated field applies to", () => {
+    expect(
+      unstatedSummary([
+        src({}),
+        src({ freshnessBoundSecs: 20 }),
+        src({ rowsExcluded: 0 }),
+      ])
+    ).toBe(
+      "Coord stated no age bound for 2 of 3, and no count of excluded rows for 2 of 3."
+    );
+    expect(unstatedSummary([src({}), src({})])).toBe(
+      "Coord stated no age bound for all 2, and no count of excluded rows for all 2."
+    );
+    expect(unstatedSummary([src({ rowsExcluded: 1 })])).toBe(
+      "Coord stated no age bound for it."
+    );
+  });
+
+  it("says nothing when coord stated both for every row, and a zero is stated", () => {
+    expect(
+      unstatedSummary([src({ freshnessBoundSecs: 0, rowsExcluded: 0 })])
+    ).toBeNull();
+    expect(unstatedSummary([])).toBeNull();
   });
 });
