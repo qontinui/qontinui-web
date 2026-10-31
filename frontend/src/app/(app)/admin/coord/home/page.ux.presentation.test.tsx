@@ -375,6 +375,54 @@ describe("/admin/coord/home?present=1 — the 2026-10-31 UX pass", () => {
     });
   });
 
+  describe("the strip's own provenance, and a kept reading", () => {
+    it("dates the strip's machine figures by the roster's read, never by the project state's", async () => {
+      const asOf = new Date(Date.now() - 7 * 60_000).toISOString();
+      fleetHealth.mockImplementation(async () => ({
+        ...roster("healthy", "degraded"),
+        as_of: asOf,
+      }));
+      await renderPresenting(fullBody());
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-home.strip.machines")
+        ).toHaveTextContent(/^machines not healthy 1$/)
+      );
+      const machines = chips("strip").find((c) =>
+        c.textContent?.includes(MACHINES_SOURCE)
+      );
+      expect(machines).toBeDefined();
+      expect(machines).toHaveAttribute("data-provenance-known", "true");
+      expect(machines).toHaveTextContent(/as of 7m ago/);
+    });
+
+    it("says, after a failed refresh, which figures are a current read and which are kept", async () => {
+      await renderPresenting(fullBody());
+      await waitFor(() =>
+        expect(
+          chips("strip").some((c) => c.textContent?.includes(MACHINES_SOURCE))
+        ).toBe(true)
+      );
+      // Both reads fail on the refresh: the roster's figures are a kept
+      // reading too, and the notice and the chip say so.
+      httpFetch.mockRejectedValueOnce(new TypeError("unreachable"));
+      fleetHealth.mockRejectedValueOnce(new TypeError("unreachable"));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("coord-home.refresh"));
+      });
+      const notice = await screen.findByTestId("coord-home.kept-reading");
+      await waitFor(() =>
+        expect(notice).toHaveTextContent(
+          "Everything below that comes from it is its last reading, not a current one. Machine health is a last reading too."
+        )
+      );
+      expect(notice).not.toHaveTextContent("is a current read");
+      expect(
+        chips("strip").find((c) => c.textContent?.includes(MACHINES_SOURCE))
+      ).toHaveTextContent(`${MACHINES_SOURCE}, last read`);
+    });
+  });
+
   describe("Needs you's counts, while coord serves no needs block", () => {
     it("counts with their own sources, links to no page it cannot show, and quotes no gate or question", async () => {
       pendingQuestions.mockImplementation(async () => ({
