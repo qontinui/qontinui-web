@@ -192,6 +192,8 @@ interface Arm {
   never?: RegExp[];
   /** A sentence on a line the presentation does not render at all. */
   operatorOnly?: boolean;
+  /** A sentence only the presentation says, in place of the operator's. */
+  presentingOnly?: boolean;
 }
 
 const DEGRADING = "coord-home.degrading";
@@ -464,6 +466,8 @@ const ARMS: Arm[] = [
     says: [
       "The current initiative document could not be parsed: no reason given.",
     ],
+    // While presenting, a fixed sentence stands in for the whole clause.
+    operatorOnly: true,
   },
   {
     arm: "an unparseable initiative with an empty reason",
@@ -474,6 +478,21 @@ const ARMS: Arm[] = [
     says: [
       "The current initiative document could not be parsed: no reason given.",
     ],
+    operatorOnly: true,
+  },
+  {
+    arm: "an unparseable initiative, presented",
+    body: {
+      on_track: onTrack({
+        initiative: { state: "unparseable", error: "line 8: bad item" },
+      }),
+    },
+    region: INITIATIVE,
+    says: [
+      "The current initiative's document could not be read as written, so its status and scope are not shown.",
+    ],
+    never: [/could not be parsed/, /line 8/, /Reason ·/],
+    presentingOnly: true,
   },
 
   // What this view does not know
@@ -528,7 +547,9 @@ describe.each([
       window.sessionStorage.clear();
     });
 
-    const arms = ARMS.filter((a) => !presenting || !a.operatorOnly);
+    const arms = ARMS.filter((a) =>
+      presenting ? !a.operatorOnly : !a.presentingOnly
+    );
 
     it.each(arms.map((a) => [a.arm, a] as const))("%s", async (_name, arm) => {
       const body = { ...calmBody(), ...arm.body };

@@ -30,9 +30,10 @@
  * The coordination overview is lens surface 2 (`lensSurfaces.ts`), and it is
  * registered presentation-ready (`presentationReadiness.ts`) on the strength
  * of `page.presentation.test.tsx`. The same route and the same read, rendered
- * for an external evaluator (D1): the page opens with its caption, each
- * region with its caption and the provenance of its figures (the one read,
- * dated by coord's answer), a kept reading after a failed refresh is named as
+ * for an external evaluator (D1): the page opens with its caption and ONE
+ * provenance line (the project-state read, dated by coord's answer), each
+ * region with its title and one sentence, and a chip of its own only for a
+ * figure read from somewhere else (machine health, the queue counts), a kept reading after a failed refresh is named as
  * the last one and never as current, free text is redacted, machines are
  * aliased, raw ids and coord's quoted errors are not rendered — a failed read
  * is explained in the page's own fixed words where its reason allows, and
@@ -51,7 +52,7 @@ import {
 import { useProjectState } from "./_hooks/useProjectState";
 import { useHomeSupplements } from "./_hooks/useHomeSupplements";
 import { presentedHomeFailure } from "./_lib/homeLens";
-import { KeptReadingNotice } from "./_components/HomeLens";
+import { KeptReadingNotice, PageProvenance } from "./_components/HomeLens";
 import {
   CorrectSection,
   DegradingSection,
@@ -122,6 +123,7 @@ export default function CoordHomePage() {
           renders neither, so R1's "the page opens with its health strip"
           holds for the operator. */}
       <Caption id="coordination-overview.page" />
+      <PageProvenance reading={reading} />
       <KeptReadingNotice reading={reading} failure={failure} />
       <HomeStripSection
         strip={strip}
