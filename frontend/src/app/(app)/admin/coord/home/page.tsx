@@ -51,6 +51,7 @@ import {
   type HomeQueue,
   type HomeStripQueues,
 } from "@/components/admin/coord/coordHomeStatus";
+import { unstatedRosterCut } from "@/components/admin/coord/machineHealth";
 import { useProjectState } from "./_hooks/useProjectState";
 import { useHomeSupplements } from "./_hooks/useHomeSupplements";
 import {
@@ -95,12 +96,13 @@ export default function CoordHomePage() {
             stale: machines.stale,
             counts: machines.counts,
             exclusions: machines.exclusions ?? { kind: "not_stated" as const },
-            // Unstated is never "whole": a read view always carries one.
-            cut: machines.cut ?? {
-              kind: "may_be_cut" as const,
-              listed: machines.counts.total + machines.counts.placeholders,
-              total: null,
-            },
+            // Unstated is never "whole". Unreachable defensive fallback: a
+            // read view always carries its cut.
+            cut:
+              machines.cut ??
+              unstatedRosterCut(
+                machines.counts.total + machines.counts.placeholders
+              ),
           }
         : null,
     [

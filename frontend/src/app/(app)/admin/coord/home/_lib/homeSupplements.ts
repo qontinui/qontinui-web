@@ -36,14 +36,15 @@ import type { FleetHealthPayload } from "@/lib/api/operations/coordFleet";
 import {
   emptyRosterSentence,
   isRosterComplete,
-  isRosterCut,
   noLiveMachine,
   noLiveMachineSentence,
   readRosterCut,
   readRosterExclusions,
+  rosterCutHidesHealth,
   rosterCutSentence,
   rosterIncompleteSentence,
   summarizeMachineHealth,
+  unstatedRosterCut,
   type MachineHealthCounts,
   type RosterCut,
   type RosterExclusions,
@@ -63,7 +64,7 @@ export interface MachineHealthView {
   stale: boolean;
   /** What coord said it withheld from the roster; null unless read. */
   exclusions: RosterExclusions | null;
-  /** Whether the roster may be cut off at coord's row limit; null unless read. */
+  /** Whether coord cut the roster off at its row limit; null unless read. */
   cut: RosterCut | null;
 }
 
@@ -92,11 +93,13 @@ export function parseMachineHealth(
     // Read on every roster: a device coord withheld is missing from a
     // non-empty roster just as from an empty one.
     exclusions: readRosterExclusions(body),
-    // A roster at coord's row limit may be missing rows `excluded` cannot see.
+    // A roster cut at coord's row limit is missing rows `excluded` cannot see.
     cut: readRosterCut({
       devices: body.devices,
       truncated: body.truncated,
       total: body.total,
+      degradable_dropped: body.degradable_dropped,
+      row_cap: body.row_cap,
     }),
   };
 }
@@ -104,8 +107,8 @@ export function parseMachineHealth(
 /**
  * Whether a machine reading lets the page say nothing is degrading there:
  * read, current, at least one live (not abandoned) graded machine listed,
- * coord withheld none from the roster and did not cut it off at its row
- * limit, no machine degrading and none without a verdict. An abandoned
+ * coord withheld none from the roster, its cut (if any) withheld no machine
+ * that could be degrading, no machine degrading and none without a verdict. An abandoned
  * machine is a decision, not a degradation, and a placeholder row is not a
  * machine, so neither stands in the way — but neither reports either, so a
  * roster of only those is never calm.
@@ -119,11 +122,11 @@ export function machinesAllHealthy(m: MachineHealthView): boolean {
     // is one whose graded machines are all abandoned: no live one reports.
     !noLiveMachine(m.counts) &&
     // Nor is an incomplete one: a withheld machine's health is unknown, and
-    // so is a row past coord's limit.
+    // so is a row past coord's limit that could be degrading.
     m.exclusions !== null &&
     isRosterComplete(m.exclusions) &&
     m.cut !== null &&
-    !isRosterCut(m.cut) &&
+    !rosterCutHidesHealth(m.cut) &&
     m.counts.degrading === 0 &&
     m.counts.noVerdict === 0
   );
@@ -162,9 +165,10 @@ export function machineHealthSentence(
   if (total === 0 && placeholders === 0) {
     return emptyRosterSentence(exclusions, { withReason });
   }
-  // A read view always carries its cut; unstated is never "whole".
+  // A read view always carries its cut (an unreachable defensive fallback):
+  // unstated is never "whole".
   const cut = rosterCutSentence(
-    m.cut ?? { kind: "may_be_cut", listed: total + placeholders, total: null }
+    m.cut ?? unstatedRosterCut(total + placeholders)
   );
   const incomplete = [
     rosterIncompleteSentence(exclusions, { withReason }),

@@ -346,14 +346,23 @@ export interface FleetHealthPayload {
   /** Why coord could not count `excluded`; null when it could. */
   excluded_error?: string | null;
   /**
-   * Whether coord cut `devices` off at its roster query's row limit
-   * (`device_state.rs`, `LIMIT 1000`). Not served by coord yet; absent is
-   * NOT "not truncated" — a roster at the limit may be cut off either way
-   * (`machineHealth.ts` `readRosterCut`).
+   * Whether coord's row cap withheld any row from `devices` (`fleet_health.rs`
+   * roster completeness; `device_state.rs` `ROSTER_CAP`). Absent on an older
+   * coord, and absent is NOT "not truncated": that coord's roster query was
+   * capped at 1000 rows with nothing saying so (`machineHealth.ts`
+   * `readRosterCut`).
    */
   truncated?: boolean;
-  /** The roster's full size before any cut, when coord serves one. Not served yet. */
+  /** Rows the roster matched before any cap; `count < total` exactly when `truncated`. */
   total?: number;
+  /**
+   * Rows that could carry a degradation that the hard cap withheld. `0` means
+   * no degradation was lost, even when `truncated`; above 0 the rollups are
+   * partial.
+   */
+  degradable_dropped?: number;
+  /** The caps applied: `soft` cuts only the non-degradable tail, `hard` everything. */
+  row_cap?: { soft?: number; hard?: number };
   /**
    * The Conditions rollup. Absent on a coord predating it — see
    * {@link FleetHealthConditions}.

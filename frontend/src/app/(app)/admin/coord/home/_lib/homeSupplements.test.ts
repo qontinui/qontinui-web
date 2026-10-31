@@ -12,7 +12,8 @@ import {
   COORD_ROSTER_ROW_LIMIT,
   isRosterBindingFault,
   isRosterComplete,
-  isRosterCut,
+  rosterCutHidesHealth,
+  rosterCutSentence,
   readRosterCut,
   readRosterExclusions,
   rosterIncompleteSentence,
@@ -199,7 +200,7 @@ describe("machine health", () => {
       "2 machines not reporting healthy are not degradations: 1 abandoned, the 1 with no verdict named above — see Dev Ops."
     );
     expect(
-      notDegradationsSentence(read(["abandoned"]).counts!, {
+      notDegradationsSentence(read(["abandoned", "healthy"]).counts!, {
         seeDevOps: false,
       })
     ).toBe(
@@ -386,7 +387,7 @@ describe("machine health", () => {
     });
   });
 
-  describe("a roster at coord's row limit may be cut off, and is never calm", () => {
+  describe("coord's roster cut: its completeness fields when served, the row count when not", () => {
     const healthy = (n: number) =>
       Array.from({ length: n }, (_, i) => ({
         device_id: `d-${i}`,
@@ -407,68 +408,228 @@ describe("machine health", () => {
         cut: p!.cut,
       };
     };
+    const ROW_CAP = { soft: 1000, hard: 10000 };
+    /** A body as the roster-cap coord serves it. */
+    const served = (
+      n: number,
+      total: number,
+      degradableDropped: number,
+      rowCap: unknown = ROW_CAP
+    ) => ({
+      devices: healthy(n),
+      total,
+      truncated: total > n,
+      degradable_dropped: degradableDropped,
+      row_cap: rowCap,
+    });
 
-    it("names coord's LIMIT as one constant", () => {
+    it("names an older coord's LIMIT as one constant", () => {
       expect(COORD_ROSTER_ROW_LIMIT).toBe(1000);
     });
 
-    it("reads each of the three signals as may be cut off, and nothing else", () => {
-      expect(readRosterCut({ devices: healthy(999) })).toEqual({
-        kind: "whole",
+    describe("with coord's fields served", () => {
+      it("trusts `truncated: false` whatever the row count", () => {
+        for (const n of [3, 1000, 1500]) {
+          const m = view(served(n, n, 0));
+          expect(m.cut).toEqual({ kind: "whole" });
+          expect(machinesAllHealthy(m)).toBe(true);
+          expect(machineHealthSentence(m)).toBe(
+            `All ${n} machines report healthy.`
+          );
+        }
+        // `truncated: false` alone, with nothing else served, is complete.
+        expect(
+          readRosterCut({ devices: healthy(1500), truncated: false })
+        ).toEqual({ kind: "whole" });
       });
-      expect(readRosterCut({ devices: healthy(1000) })).toEqual({
-        kind: "may_be_cut",
-        listed: 1000,
-        total: null,
+
+      it("reads a cut that withheld no degradable row as complete for health, and calm", () => {
+        const m = view(served(1000, 1400, 0));
+        expect(m.cut).toEqual({
+          kind: "cut_tail_only",
+          listed: 1000,
+          total: 1400,
+          limit: 1000,
+        });
+        expect(rosterCutHidesHealth(m.cut!)).toBe(false);
+        expect(machinesAllHealthy(m)).toBe(true);
+        expect(machineHealthSentence(m)).toBe(
+          "All 1000 machines report healthy. Coord's roster lists 1000 rows of 1400: the other 400 are abandoned or placeholder rows past coord's limit of 1000, not listed here — coord says none of them could be degrading."
+        );
+        // One row past the cut, in the singular; the soft cap coord names.
+        expect(
+          rosterCutSentence(
+            readRosterCut(served(5, 6, 0, { soft: 5, hard: 50 }))
+          )
+        ).toBe(
+          "Coord's roster lists 5 rows of 6: the other 1 is an abandoned or placeholder row past coord's limit of 5, not listed here — coord says none of them could be degrading."
+        );
       });
-      expect(readRosterCut({ devices: healthy(3), truncated: true })).toEqual({
-        kind: "may_be_cut",
-        listed: 3,
-        total: null,
+
+      it("is never calm when coord withheld machines that could be degrading, and says how many", () => {
+        const m = view(served(10000, 10250, 30));
+        expect(m.cut).toEqual({
+          kind: "cut_degradable",
+          listed: 10000,
+          total: 10250,
+          degradableDropped: 30,
+          hardLimit: 10000,
+        });
+        expect(rosterCutHidesHealth(m.cut!)).toBe(true);
+        expect(machinesAllHealthy(m)).toBe(false);
+        expect(machineHealthSentence(m)).toBe(
+          "All 10000 machines report healthy. Coord's roster lists 10000 rows of 10250, and coord withheld 30 machines that could be degrading past its row limit of 10000 — their health is unknown, so this view is partial."
+        );
+        expect(
+          rosterCutSentence(
+            readRosterCut({ devices: healthy(2), degradable_dropped: 1 })
+          )
+        ).toBe(
+          "Coord's roster lists 2 rows, and coord withheld 1 machine that could be degrading past its row limit — its health is unknown, so this view is partial."
+        );
       });
-      expect(readRosterCut({ devices: healthy(3), total: 7 })).toEqual({
-        kind: "may_be_cut",
-        listed: 3,
-        total: 7,
+
+      it("says coord reported the cut, never 'so it may be cut off', below the limit", () => {
+        // `truncated: true` with no usable `degradable_dropped`.
+        const m = view({ devices: healthy(50), truncated: true });
+        expect(m.cut).toEqual({
+          kind: "reported_cut",
+          listed: 50,
+          total: null,
+        });
+        expect(machinesAllHealthy(m)).toBe(false);
+        expect(machineHealthSentence(m)).toBe(
+          "All 50 machines report healthy. Coord reports its roster was cut after 50 rows — machine health beyond it is unknown."
+        );
+        const withTotal = view({ devices: healthy(1), total: 4 });
+        expect(machinesAllHealthy(withTotal)).toBe(false);
+        expect(machineHealthSentence(withTotal)).toBe(
+          "The 1 machine reports healthy. Coord reports its roster was cut: it lists 1 row of 4 — the health of the other 3 is unknown."
+        );
       });
-      // A total no larger than the list, or `truncated: false`, says no cut.
-      expect(readRosterCut({ devices: healthy(3), total: 3 })).toEqual({
-        kind: "whole",
+    });
+
+    describe("with coord's fields absent (an older coord)", () => {
+      it("reads the row count: whole under the limit, may be cut at it", () => {
+        expect(readRosterCut({ devices: healthy(999) })).toEqual({
+          kind: "whole",
+        });
+        expect(readRosterCut({ devices: healthy(1000) })).toEqual({
+          kind: "may_be_cut",
+          listed: 1000,
+          limit: 1000,
+        });
+        expect(machinesAllHealthy(view({ devices: healthy(999) }))).toBe(true);
+        const m = view({ devices: healthy(1000) });
+        expect(machinesAllHealthy(m)).toBe(false);
+        expect(machineHealthSentence(m)).toBe(
+          "All 1000 machines report healthy. Coord's roster lists 1000 rows, at coord's limit of 1000, so it may be cut off — machine health beyond it is unknown."
+        );
       });
-      expect(readRosterCut({ devices: healthy(3), truncated: false })).toEqual({
-        kind: "whole",
+
+      it("names the soft limit from `row_cap` when it is served", () => {
+        const c = readRosterCut({
+          devices: healthy(20),
+          row_cap: { soft: 20, hard: 200 },
+        });
+        expect(c).toEqual({ kind: "may_be_cut", listed: 20, limit: 20 });
+        expect(rosterCutSentence(c)).toBe(
+          "Coord's roster lists 20 rows, at coord's limit of 20, so it may be cut off — machine health beyond it is unknown."
+        );
       });
-      // Coord saying "not truncated" does not lift the cap reading.
+    });
+
+    describe("a malformed field is absent, never complete", () => {
+      it.each([
+        ["a string truncated", { truncated: "false" }],
+        ["a fractional total", { total: 1000.5 }],
+        ["a negative total", { total: -1 }],
+        ["a string total", { total: "1000" }],
+        [
+          "a fractional degradable_dropped",
+          { degradable_dropped: 0.5, truncated: true, total: 1200 },
+        ],
+        [
+          "a negative degradable_dropped",
+          { degradable_dropped: -1, truncated: true, total: 1200 },
+        ],
+        [
+          "a string degradable_dropped",
+          { degradable_dropped: "0", truncated: true, total: 1200 },
+        ],
+        ["a total below the rows listed", { total: 10, truncated: false }],
+        [
+          "truncated: false beside a larger total",
+          { truncated: false, total: 1200 },
+        ],
+        [
+          "truncated: false beside a dropped degradable row",
+          { truncated: false, degradable_dropped: 2 },
+        ],
+      ])("at the limit, %s is never calm", (_label, extra) => {
+        const m = view({ devices: healthy(1000), ...extra });
+        expect(rosterCutHidesHealth(m.cut!)).toBe(true);
+        expect(machinesAllHealthy(m)).toBe(false);
+      });
+
+      it("a fractional total is not a figure to print", () => {
+        expect(readRosterCut({ devices: healthy(50), total: 50.5 })).toEqual({
+          kind: "whole",
+        });
+        expect(
+          readRosterCut({ devices: healthy(50), truncated: true, total: 50.5 })
+        ).toEqual({ kind: "reported_cut", listed: 50, total: null });
+      });
+
+      it("a malformed row_cap falls back to the older coord's limit", () => {
+        for (const row_cap of [
+          { soft: 0 },
+          { soft: "20" },
+          { soft: 2.5 },
+          [],
+          "x",
+        ]) {
+          expect(readRosterCut({ devices: healthy(20), row_cap })).toEqual({
+            kind: "whole",
+          });
+        }
+      });
+
+      it.each([
+        ["a total below the rows listed", { total: 2 }],
+        ["a fractional total", { total: 3.5 }],
+        ["a string degradable_dropped", { degradable_dropped: "0" }],
+        ["a null degradable_dropped", { degradable_dropped: null }],
+      ])(
+        "truncated: false beside %s is not trusted under the limit either",
+        (_label, extra) => {
+          // Not "whole" from `truncated: false`: the claim falls back to the row
+          // count, and a short roster is whole only as an older coord's is.
+          const c = readRosterCut({
+            devices: healthy(1000),
+            truncated: false,
+            ...extra,
+          });
+          expect(c).toEqual({ kind: "may_be_cut", listed: 1000, limit: 1000 });
+        }
+      );
+
+      it("truncated: true beside a total equal to the list keeps the reported cut", () => {
+        expect(
+          readRosterCut({
+            devices: healthy(3),
+            truncated: true,
+            total: 3,
+            degradable_dropped: 0,
+          })
+        ).toEqual({ kind: "reported_cut", listed: 3, total: null });
+      });
+    });
+
+    it("an unstated cut is never whole", () => {
       expect(
-        isRosterCut(readRosterCut({ devices: healthy(1000), truncated: false }))
-      ).toBe(true);
-    });
-
-    it.each([
-      [
-        "at the limit",
-        { devices: healthy(1000) },
-        "All 1000 machines report healthy. Coord's roster lists 1000 rows, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
-      ],
-      [
-        "flagged truncated",
-        { devices: healthy(2), truncated: true },
-        "All 2 machines report healthy. Coord's roster lists 2 rows, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
-      ],
-      [
-        "with a larger total",
-        { devices: healthy(1), total: 4 },
-        "The 1 machine reports healthy. Coord's roster lists 1 row of 4, so it is cut off at coord's limit — the health of the other 3 is unknown.",
-      ],
-    ])("is not calm, and says so, %s", (_label, body, sentence) => {
-      const m = view(body);
-      expect(isRosterComplete(m.exclusions!)).toBe(true);
-      expect(machinesAllHealthy(m)).toBe(false);
-      expect(machineHealthSentence(m)).toBe(sentence);
-    });
-
-    it("is calm one row under the limit", () => {
-      expect(machinesAllHealthy(view({ devices: healthy(999) }))).toBe(true);
+        machinesAllHealthy({ ...view({ devices: healthy(3) }), cut: null })
+      ).toBe(false);
     });
   });
 
@@ -560,11 +721,35 @@ describe("machine health", () => {
     );
     // Without a placeholder the subject stays machines.
     expect(
+      notDegradationsSentence(
+        read(["abandoned", "abandoned", "healthy"]).counts!,
+        { seeDevOps: false }
+      )
+    ).toBe(
+      "2 machines not reporting healthy are not degradations: 2 abandoned."
+    );
+  });
+
+  it("points back at the abandoned machines when the no-live-machine line already names them", () => {
+    // The no-live-machine line counts them, so the reconcile line must not
+    // count them again: summed, the lines reach the badge, not double it.
+    expect(
       notDegradationsSentence(read(["abandoned", "abandoned"]).counts!, {
         seeDevOps: false,
       })
     ).toBe(
-      "2 machines not reporting healthy are not degradations: 2 abandoned."
+      "2 machines not reporting healthy are not degradations: the 2 abandoned named above."
+    );
+    expect(
+      notDegradationsSentence(
+        summarizeMachineHealth([
+          { device_id: "a", state: "abandoned" },
+          { device_id: "p", state: "stale", dispatch_liveness: "unknown" },
+        ]),
+        { seeDevOps: true }
+      )
+    ).toBe(
+      "2 rows not reporting healthy are not degradations: the 1 abandoned named above, the 1 placeholder row named above — see Dev Ops."
     );
   });
 
