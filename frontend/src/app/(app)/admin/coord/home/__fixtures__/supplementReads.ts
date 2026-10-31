@@ -27,7 +27,10 @@ export const FLEET_HEALTH_ROUTE = "/fleet/health";
 export const QUESTIONS_ROUTE = "/agent-questions/pending";
 export const GATES_ROUTE = "/admin-dev/overview";
 
-/** A roster of machines in the given states (absent = no health state). */
+/**
+ * A roster of machines in the given states (absent = no health state), with
+ * nothing withheld from it — coord states its exclusions on every roster.
+ */
 export function roster(...states: Array<string | null>) {
   return {
     as_of: new Date().toISOString(),
@@ -36,8 +39,15 @@ export function roster(...states: Array<string | null>) {
       hostname: `example-host-${i}`,
       ...(state === null ? {} : { state }),
     })),
+    ...NONE_WITHHELD,
   };
 }
+
+/** Coord's exclusion fields for a roster it withheld nothing from. */
+export const NONE_WITHHELD = {
+  excluded: { unbound: 0, bound_to_other_tenant: 0 },
+  excluded_error: null,
+} as const;
 
 export const CALM_ROSTER = () => roster("healthy");
 export const EMPTY_QUESTIONS = () => ({ questions: [] });

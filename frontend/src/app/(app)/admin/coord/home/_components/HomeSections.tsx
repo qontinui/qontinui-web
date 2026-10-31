@@ -104,7 +104,9 @@ import {
 import {
   degradingCoverage,
   isRosterBindingFault,
+  isRosterComplete,
   notDegradationsSentence,
+  placeholdersSentence,
 } from "@/components/admin/coord/machineHealth";
 import {
   GATES_SOURCE,
@@ -906,8 +908,10 @@ function DegradationRow({
  * shows them (`listed`; null when no list was served), how many have no
  * verdict — and, so this section reconciles with the `Dev Ops ▾` badge, the
  * machines that badge counts as not healthy that are not degradations
- * (abandoned, no verdict), by state. Counts only, never a machine's name; the
- * machines themselves are on Dev Ops, linked where that page opens.
+ * (abandoned, no verdict, placeholder rows), by state. Placeholder rows coord
+ * does not grade are not machines, and are named on a line of their own.
+ * Counts only, never a machine's name; the machines themselves are on Dev
+ * Ops, linked where that page opens.
  */
 function MachineHealthLine({
   machines,
@@ -921,10 +925,16 @@ function MachineHealthLine({
   const read = machines.state === "read" && machines.counts !== null;
   const devOps = read && opens("/admin/coord/devops");
   const fault =
-    machines.emptyRoster !== null && isRosterBindingFault(machines.emptyRoster);
+    read && machines.exclusions !== null
+      ? isRosterBindingFault(machines.exclusions)
+      : false;
   const reconcile =
     read && machines.counts !== null
       ? notDegradationsSentence(machines.counts, { seeDevOps: false })
+      : null;
+  const placeholders =
+    read && machines.counts !== null
+      ? placeholdersSentence(machines.counts)
       : null;
   return (
     <>
@@ -949,6 +959,14 @@ function MachineHealthLine({
           </>
         )}
       </p>
+      {placeholders && (
+        <p
+          className="m-0 text-sm text-muted-foreground"
+          data-testid="coord-home.degrading.machines-placeholders"
+        >
+          {placeholders}
+        </p>
+      )}
       {reconcile && (
         <p
           className="m-0 text-sm text-muted-foreground"
@@ -1095,7 +1113,11 @@ export function DegradingSection({
                         machines.counts !== null &&
                         machines.counts.total === 0
                       ? "No open degradation was served, but coord lists no machines, so this view cannot say nothing is degrading — see Machines below."
-                      : "No open degradation was served, but machine health is not fully known, so this view cannot say nothing is degrading."}
+                      : machines.state === "read" &&
+                          machines.exclusions !== null &&
+                          !isRosterComplete(machines.exclusions)
+                        ? "No open degradation was served, but coord's roster may be missing machines, so this view cannot say nothing is degrading — see Machines below."
+                        : "No open degradation was served, but machine health is not fully known, so this view cannot say nothing is degrading."}
                 </p>
               )
             ) : (

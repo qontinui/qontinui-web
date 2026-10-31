@@ -38,7 +38,11 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-const ROSTER = { devices: [{ device_id: "d", state: "healthy" }] };
+const ROSTER = {
+  devices: [{ device_id: "d", state: "healthy" }],
+  excluded: { unbound: 0, bound_to_other_tenant: 0 },
+  excluded_error: null,
+};
 const OVERVIEW = { gates: [], counts: { open: 0 } };
 
 beforeEach(() => {

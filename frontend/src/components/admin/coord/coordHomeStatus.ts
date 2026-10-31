@@ -92,9 +92,12 @@ import { readErrorBody } from "@/lib/errors/backend-error-message";
 import {
   degradingCoverage,
   emptyRosterSentence,
+  isRosterComplete,
   notDegradationsSentence,
-  type EmptyRoster,
+  placeholdersSentence,
+  rosterIncompleteSentence,
   type MachineHealthCounts,
+  type RosterExclusions,
 } from "@/components/admin/coord/machineHealth";
 
 /** Poll cadence — the profile's "the right altitude, not the fastest feed". */
@@ -1732,24 +1735,39 @@ export interface HomeStripReadState {
    */
   correctnessLeftOut?: boolean;
   /**
+   * The page is presenting. The strip then speaks of what waits on the
+   * operator in the presented Needs-you section's own words: it names no
+   * Gates or Questions page (neither can be shown), and while coord has not
+   * built its needs block — which the presented section leaves out, with its
+   * "not built yet" wording — the strip does not name that block either. It
+   * still floors at amber: the block is not read.
+   */
+  presenting?: boolean;
+  /**
    * The Gates and Questions queues' counts of what waits on the operator,
    * summed — read beside the project state while coord serves no readable
    * `needs_me` block (`_lib/homeSupplements.ts`). Used only while that block
    * is unread, and marked as counts from the queues wherever it shows. Null
-   * or absent unless BOTH queues were read.
+   * or absent unless AT LEAST ONE queue was read; with one unread the sum is
+   * a lower bound (`notRead`).
    */
   queues?: HomeStripQueues | null;
 }
 
 /** The two queue counts as the strip uses them. */
 export interface HomeStripQueues {
-  /** Open operator gates plus pending operator questions. */
+  /** Open operator gates plus pending operator questions, of those read. */
   count: number;
-  /** Both counts are whole queues; false: at least `count`. */
+  /** Both counts were read and are whole queues; false: at least `count`. */
   exact: boolean;
   /** Either count is a last good reading after a failed read. */
   stale: boolean;
+  /** The queues whose read did not land; their share is unknown. */
+  notRead: readonly HomeQueue[];
 }
+
+/** One of the two queues the strip may count from. */
+export type HomeQueue = "gates" | "questions";
 
 /** The machine roster's counts, for the strip. */
 export interface HomeStripMachines {
@@ -1757,13 +1775,43 @@ export interface HomeStripMachines {
   stale: boolean;
   /** The roster's counts (`machineHealth.ts` says what each one is). */
   counts: MachineHealthCounts;
-  /** What coord said about an empty roster; null (or absent) unless it listed none. */
-  emptyRoster?: EmptyRoster | null;
+  /** What coord said it withheld from the roster; only `none_withheld` is complete. */
+  exclusions: RosterExclusions;
 }
 
 /** "1 machine is" / "2 machines are". */
 function machinesAre(n: number): string {
   return `${n} ${n === 1 ? "machine is" : "machines are"}`;
+}
+
+/** Where the strip says the queue counts come from, in the mode's words. */
+function queuesSourceText(presenting: boolean): string {
+  return presenting
+    ? "coord's lists of open approvals and pending agent questions"
+    : "the Gates and Questions queues";
+}
+
+/** One queue, named as the mode names it. */
+function queueName(q: HomeQueue, presenting: boolean): string {
+  if (presenting) {
+    return q === "gates"
+      ? "the list of open approvals"
+      : "the list of pending agent questions";
+  }
+  return q === "gates" ? "the Gates queue" : "the Questions queue";
+}
+
+function capitalizeFirst(s: string): string {
+  return s.length === 0 ? s : s[0]!.toUpperCase() + s.slice(1);
+}
+
+/**
+ * The queue figure on the badge: exact, `≥N`, or — for a lower bound of
+ * zero — "none counted yet", never "≥0".
+ */
+function queuesFigure(q: HomeStripQueues): string {
+  if (q.exact) return String(q.count);
+  return q.count === 0 ? "none counted yet" : `≥${q.count}`;
 }
 
 /** "at the last good read (T)" — the qualifier a stale view carries. */
@@ -1866,7 +1914,11 @@ export function deriveHomeStrip(
       ? null
       : view.doesNotKnow.filter((s) => s.state !== "read").length;
 
+  const presenting = read.presenting === true;
   const needsRead = view.needsMe.state === "read";
+  // While presenting, the Needs-you section leaves an unbuilt block out, so
+  // the strip names it nowhere either (`presenting` above).
+  const needsLeftOut = presenting && view.needsMe.state === "not_implemented";
   // The displayable count: null when absent OR contradicted by the list.
   const needsTotal = needsDisplayCount(view.needsMe);
   const needsListed = needsRead ? (view.needsMe.items?.length ?? 0) : 0;
@@ -1896,13 +1948,19 @@ export function deriveHomeStrip(
       ? 0
       : degradingCoverage(mc, degRowsServed ? (open ?? null) : null).unlisted;
   const machinesDegrading = unlistedDegrading > 0;
+  const listedDegrading =
+    mc === null || !degRowsServed
+      ? 0
+      : degradingCoverage(mc, open ?? null).listed;
   const machinesCalm =
     machines !== null &&
     mc !== null &&
     !machines.stale &&
     // Zero machines are not a calm fleet: an empty roster never answers
-    // "nothing is degrading".
+    // "nothing is degrading". Placeholder rows are not machines.
     mc.total > 0 &&
+    // Nor is a roster coord withheld machines from, or could not say.
+    isRosterComplete(machines.exclusions) &&
     unlistedDegrading === 0 &&
     mc.noVerdict === 0;
   const somethingDegrading =
@@ -1931,13 +1989,14 @@ export function deriveHomeStrip(
   const correctnessLeftOut = read.correctnessLeftOut === true;
   const unreadPhrase = unread
     .filter((b) => !(correctnessLeftOut && b.block === "correctness"))
+    .filter((b) => !(needsLeftOut && b.block === "needs_me"))
     .map((b) => `${HOME_BLOCK_LABEL[b.block]} ${BLOCK_STATE_PHRASE[b.state]}`)
     .join("; ");
 
   let headline: string;
   if (attention === "author" && queues !== null) {
     const n = queues.count;
-    headline = `${queues.exact ? "" : "At least "}${n} ${n === 1 ? "decision needs" : "decisions need"} you — counted from the Gates and Questions queues`;
+    headline = `${queues.exact ? "" : "At least "}${n} ${n === 1 ? "decision needs" : "decisions need"} you — counted from ${queuesSourceText(presenting)}`;
   } else if (attention === "author") {
     headline =
       // Never "0 decisions need you" beside listed items: a total that is
@@ -1987,7 +2046,17 @@ export function deriveHomeStrip(
   }
   if (queues !== null) {
     detailParts.push(
-      `Needs you is counted from the Gates and Questions queues, since coord's needs block is not read${queues.stale ? " — at their last good read" : ""}.`
+      `Needs you is counted from ${queuesSourceText(presenting)}, since coord's needs block is not read${queues.stale ? " — at their last good read" : ""}.`
+    );
+    if (queues.notRead.length > 0) {
+      const names = queues.notRead.map((q) => queueName(q, presenting));
+      detailParts.push(
+        `${capitalizeFirst(names.join(" and "))} ${names.length === 1 ? "was" : "were"} not read, so ${names.length === 1 ? "its" : "their"} share is unknown and ${queues.count === 0 ? "none is counted yet" : "the figure is a lower bound"}.`
+      );
+    }
+  } else if (needsLeftOut) {
+    detailParts.push(
+      `Needs you is unknown: ${queuesSourceText(true)} were not read.`
     );
   }
   if (degRowsServed && open === null) {
@@ -1998,12 +2067,25 @@ export function deriveHomeStrip(
   if (machines === null || mc === null) {
     detailParts.push("Machine health was not read.");
   } else {
-    if (mc.total === 0) {
-      // Never coord's error text here: the strip is shown in every mode.
+    // Never coord's error text here: the strip is shown in every mode.
+    if (mc.total === 0 && mc.placeholders === 0) {
       detailParts.push(
-        emptyRosterSentence(machines.emptyRoster ?? { kind: "not_stated" }, {
-          withReason: false,
-        })
+        emptyRosterSentence(machines.exclusions, { withReason: false })
+      );
+    } else {
+      if (mc.total === 0) {
+        detailParts.push("Coord's roster holds no machine it grades.");
+      }
+      const incomplete = rosterIncompleteSentence(machines.exclusions, {
+        withReason: false,
+      });
+      if (incomplete) detailParts.push(incomplete);
+    }
+    // Every machine the badge counts is named once below: listed, unlisted,
+    // or in the reconcile line.
+    if (listedDegrading > 0) {
+      detailParts.push(
+        `${listedDegrading} ${listedDegrading === 1 ? "machine" : "machines"} in a degrading state ${listedDegrading === 1 ? "is" : "are"} among the open degradations.`
       );
     }
     if (unlistedDegrading > 0) {
@@ -2016,6 +2098,8 @@ export function deriveHomeStrip(
         `${mc.noVerdict} ${mc.noVerdict === 1 ? "machine has" : "machines have"} no health verdict — unknown.`
       );
     }
+    const placeholders = placeholdersSentence(mc);
+    if (placeholders) detailParts.push(placeholders);
     const reconcile = notDegradationsSentence(mc, { seeDevOps: true });
     if (reconcile) detailParts.push(reconcile);
     if (machines.stale) {
@@ -2040,7 +2124,7 @@ export function deriveHomeStrip(
         key: "needs",
         label:
           queues !== null
-            ? `needs you ${queues.exact ? "" : "≥"}${queues.count} (from queues)`
+            ? `needs you ${queuesFigure(queues)} (from queues)`
             : `needs you ${countText(needsTotal)}`,
         tone: needsSomething
           ? "attention"

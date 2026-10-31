@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { expandRow, openSourcesRead } from "./__fixtures__/homePageDriver";
+import { NONE_WITHHELD } from "./__fixtures__/supplementReads";
 
 const httpFetch = vi.fn();
 const httpGet = vi.fn();
@@ -337,6 +338,7 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
         hostname: `example-host-${i}`,
         ...(state === null ? {} : { state }),
       })),
+      ...NONE_WITHHELD,
     });
     const quiet = { [QUESTIONS]: () => json({ questions: [] }) };
 
@@ -463,11 +465,100 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       );
       const strip = screen.getByTestId("coord-home.strip.health");
       expect(strip).toHaveTextContent("Something is degrading");
-      expect(strip).not.toHaveTextContent("in a degrading state");
+      // Named once, as listed — the strip's lines add up to its badge.
+      expect(strip).toHaveTextContent(
+        "1 machine in a degrading state is among the open degradations."
+      );
+      expect(strip).not.toHaveTextContent("1 machine is in a degrading state.");
       expect(screen.getByTestId("coord-home.strip.degraded")).toHaveTextContent(
         /^degraded 1$/
       );
     });
+
+    it("does not count placeholder rows as machines: healthy machines beside them read calm", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () => {
+          const r = roster(...Array.from({ length: 8 }, () => "healthy"));
+          return json({
+            ...r,
+            devices: [
+              ...r.devices,
+              { device_id: "p-0", dispatch_liveness: "unknown" },
+              {
+                device_id: "p-1",
+                state: "partitioned",
+                dispatch_liveness: "unknown",
+              },
+            ],
+          });
+        },
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() =>
+        expect(machines).toHaveTextContent("All 8 machines report healthy.")
+      );
+      expect(machines).not.toHaveTextContent("of 10");
+      expect(machines).not.toHaveTextContent("no health verdict");
+      expect(
+        screen.getByTestId("coord-home.degrading.machines-placeholders")
+      ).toHaveTextContent(
+        "2 placeholder rows coord does not grade are not counted as machines."
+      );
+      // The nav counts the partitioned placeholder; the reconcile line says so.
+      expect(
+        screen.getByTestId("coord-home.degrading.machines-reconcile")
+      ).toHaveTextContent(
+        "1 machine not reporting healthy is not a degradation: 1 placeholder row"
+      );
+      expect(
+        screen.getByTestId("coord-home.degrading.empty")
+      ).toHaveTextContent("Nothing is degrading");
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveAttribute("data-health-level", "green");
+      expect(strip).not.toHaveTextContent(/cannot tell/i);
+    });
+
+    it.each([
+      [
+        "withheld devices",
+        {
+          excluded: { unbound: 2, bound_to_other_tenant: 0 },
+          excluded_error: null,
+        },
+        "Coord also withheld 2 machines from its roster (2 with no binding), so the roster is incomplete and their health is unknown.",
+      ],
+      [
+        "could not count what it withheld",
+        { excluded: null, excluded_error: "pool timed out" },
+        "Coord could not count the machines it withheld from its roster (pool timed out), so the roster may be incomplete",
+      ],
+    ])(
+      "never reads a non-empty roster calm when coord %s",
+      async (_label, exclusions, sentence) => {
+        answer({
+          [PROJECT_STATE]: () => json(oneUnitBody()),
+          [FLEET]: () => json({ ...roster("healthy"), ...exclusions }),
+          ...quiet,
+        });
+        await renderPage();
+        const machines = screen.getByTestId("coord-home.degrading.machines");
+        await waitFor(() => expect(machines).toHaveTextContent(sentence));
+        expect(machines).toHaveAttribute("data-roster-fault", "true");
+        const deg = screen.getByTestId("coord-home.degrading");
+        expect(deg).not.toHaveTextContent("Nothing is degrading");
+        expect(
+          within(deg).getByTestId("coord-home.degrading.machines-not-calm")
+        ).toHaveTextContent("coord's roster may be missing machines");
+        const strip = screen.getByTestId("coord-home.strip.health");
+        expect(strip).toHaveAttribute("data-health-level", "amber");
+        expect(strip).not.toHaveTextContent(/nothing is degrading/i);
+        // The strip shows in every mode: never coord's own error text.
+        expect(strip).not.toHaveTextContent("pool timed out");
+      }
+    );
 
     it("says machine health is unknown, never calm, when the roster cannot be read", async () => {
       answer({
@@ -624,7 +715,11 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
     const QUESTIONS = "/api/v1/operations/agent-questions/pending";
     const GATES = "/api/v1/admin-dev/overview";
     const calmFleet = {
-      [FLEET]: () => json({ devices: [{ device_id: "d", state: "healthy" }] }),
+      [FLEET]: () =>
+        json({
+          devices: [{ device_id: "d", state: "healthy" }],
+          ...NONE_WITHHELD,
+        }),
     };
     const unbuilt = () =>
       json(oneUnitBody({ needs_me: { state: "not_implemented" } }));
@@ -765,6 +860,85 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
           screen.getByTestId("coord-home.needs-you.count.gates")
         ).toHaveTextContent(
           "Approvals waiting on you: 1 (at its last good read)"
+        )
+      );
+    });
+
+    it("shows the strip a known lower bound when one list was read and the other failed, never 'nothing needs you'", async () => {
+      answer(
+        {
+          [PROJECT_STATE]: unbuilt,
+          ...calmFleet,
+          [QUESTIONS]: () => json({ error: "unavailable" }, 503),
+        },
+        {
+          [GATES]: () =>
+            overview([
+              gate("operator_approval", "operator"),
+              gate("operator_approval", "operator"),
+            ]),
+        }
+      );
+      await renderPage();
+      const badge = screen.getByTestId("coord-home.strip.needs-you");
+      await waitFor(() =>
+        expect(badge).toHaveTextContent(/^needs you ≥2 \(from queues\)$/)
+      );
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveTextContent(
+        "At least 2 decisions need you — counted from the Gates and Questions queues"
+      );
+      expect(strip).toHaveTextContent(
+        "The Questions queue was not read, so its share is unknown and the figure is a lower bound."
+      );
+      expect(strip).not.toHaveTextContent(/nothing needs you/i);
+    });
+
+    it("says none is counted yet, never ≥0, when the one list read is empty and the other failed", async () => {
+      answer(
+        {
+          [PROJECT_STATE]: unbuilt,
+          ...calmFleet,
+          [QUESTIONS]: () => json({ questions: [] }),
+        },
+        {}
+      );
+      await renderPage();
+      const badge = screen.getByTestId("coord-home.strip.needs-you");
+      await waitFor(() =>
+        expect(badge).toHaveTextContent(
+          /^needs you none counted yet \(from queues\)$/
+        )
+      );
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).not.toHaveTextContent("≥0");
+      expect(strip).not.toHaveTextContent(/nothing needs you/i);
+      expect(strip).toHaveAttribute("data-health-level", "amber");
+      expect(strip).toHaveTextContent(
+        "The Gates queue was not read, so its share is unknown and none is counted yet."
+      );
+    });
+
+    it("carries a kept queue count to the strip as its last good read", async () => {
+      answer(
+        {
+          [PROJECT_STATE]: unbuilt,
+          ...calmFleet,
+          [QUESTIONS]: () => json({ questions: [] }),
+        },
+        {
+          [GATES]: () =>
+            overview([gate("operator_approval", "operator")], {
+              coord_error: "reconnecting",
+              coord_reconnecting: true,
+            }),
+        }
+      );
+      await renderPage();
+      const strip = screen.getByTestId("coord-home.strip.health");
+      await waitFor(() =>
+        expect(strip).toHaveTextContent(
+          "Needs you is counted from the Gates and Questions queues, since coord's needs block is not read — at their last good read."
         )
       );
     });
