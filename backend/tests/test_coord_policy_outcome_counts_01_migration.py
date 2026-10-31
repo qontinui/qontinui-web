@@ -88,7 +88,7 @@ _REVISION_FILENAME = "coord_policy_outcome_counts_01_rollup.py"
 
 # Pinned as a literal, not read back from the module, so a re-point of
 # down_revision is a deliberate two-file change.
-_PARENT_REVISION_ID = "slice_tel_01"
+_PARENT_REVISION_ID = "gatecorr_02_replacement_gate_index"
 
 _SCHEMA = "coord"
 _COUNTS = "policy_outcome_counts"
