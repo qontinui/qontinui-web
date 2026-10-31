@@ -18,9 +18,12 @@
  *   operator-approval gates addressed to the operator (`GET
  *   /admin-dev/overview`, the Gates page's read), and pending agent questions
  *   addressed to the operator (`GET /operations/agent-questions/pending`, the
- *   Questions page's default read). The gate predicate is the one coord's own
- *   `needs_me` source names ("open operator_approval, clearance_audience
- *   operator").
+ *   Questions page's default read). Coord's own `needs_me` source is named
+ *   "needs_me (agent_questions operator audience + operator gates)"
+ *   (`project_state.rs`); the gate predicate here — open, `operator_approval`,
+ *   `clearance_audience: operator` — is this page's reading of "operator
+ *   gates", not a string coord serves (the web-side label key for it is in
+ *   `coordHomeStatus.ts`).
  *
  * Every reading has a state, and only `read` carries a number: a source that
  * could not be read, or answered with a body this page does not recognise, is
@@ -190,11 +193,13 @@ const asNumber = (v: unknown): number | null =>
 /**
  * Pending agent questions addressed to the operator, from one page of the
  * Questions page's read at offset 0. Coord's `total` is an exact pre-limit
- * count riding on the returned rows, so it is OMITTED when no row came back —
- * which at offset 0 is an empty queue, a real zero. With rows but no total
- * (an older build), the page length is the count only when coord says the
- * page was not truncated; otherwise it is a lower bound. Null for a body
- * with no `questions` array: not a reading.
+ * count; at offset 0 it sends `total: 0` for an empty page, and omits it only
+ * past offset 0 or when its count failed to decode (`agent_questions.rs`
+ * `page_from_rows`). So at offset 0 an empty page with no total (an older
+ * build) is still an empty queue, a real zero. With rows but no total, the
+ * page length is the count only when coord says the page was not truncated;
+ * otherwise it is a lower bound. Null for a body with no `questions` array:
+ * not a reading.
  */
 export function countPendingOperatorQuestions(
   body: unknown
