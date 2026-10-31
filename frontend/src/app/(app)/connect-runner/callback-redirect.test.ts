@@ -230,12 +230,12 @@ describe("pairConfirmErrorMessage", () => {
       pairConfirmErrorMessage({ detail: { coord_status: 409 } }, 502)
     ).toBe("Pairing was refused (coord HTTP 409).");
   });
-  it("shows a coord 5xx as the backend's retry sentence, never as a refusal", () => {
-    // `_coord_refusal_detail` in `devices.py` relays a coord 5xx as its
-    // status and this fixed sentence; the app's handler spreads it to the
-    // top level, a bare app nests it under `detail`.
+  it("shows a coord 5xx as the backend's restart sentence, never as a refusal", () => {
+    // `_coord_refusal_detail` in `devices.py` relays a pair-confirm coord 5xx
+    // as its status and this fixed sentence; the app's handler spreads it to
+    // the top level, a bare app nests it under `detail`.
     const sentence =
-      "Coord failed to complete pairing (HTTP 500). Retry; if it persists, check coord.";
+      "Coord failed to complete pairing (HTTP 500). Start pairing again from your device.";
     const relayed = {
       error: "BAD_GATEWAY",
       coord_status: 500,
@@ -253,12 +253,58 @@ describe("pairConfirmErrorMessage", () => {
         502
       )
     ).toBe("Coord is restarting; retry in a minute.");
-    // A 5xx relayed without the sentence still says retry, not "refused".
+  });
+  it("tells the user to restart pairing, not retry, when a 5xx carries no sentence", () => {
+    // Coord consumed the one-shot state before most of its 5xx paths, so a
+    // retry from this page answers `unknown_state`.
+    const fallback =
+      "Coord failed to complete pairing (HTTP 503). Start pairing again from your device.";
     expect(
       pairConfirmErrorMessage({ detail: { coord_status: 503 } }, 502)
+    ).toBe(fallback);
+    // An empty sentence is no sentence: the fallback shows, not "".
+    expect(
+      pairConfirmErrorMessage({ coord_status: 503, message: "" }, 502)
+    ).toBe(fallback);
+    expect(
+      pairConfirmErrorMessage(
+        { detail: { coord_status: 503, message: "" } },
+        502
+      )
+    ).toBe(fallback);
+  });
+  it("appends coord's restart hint to a 5xx sentence that lacks it, once", () => {
+    // An older backend's sentence says retry; coord's own hint says the
+    // request was used up, and that is what the user can act on.
+    expect(
+      pairConfirmErrorMessage(
+        {
+          coord_status: 500,
+          coord_hint: "restart pairing",
+          message:
+            "Coord failed to complete pairing (HTTP 500). Retry; if it persists, check coord.",
+        },
+        502
+      )
     ).toBe(
-      "Coord failed to complete pairing (HTTP 503). Retry; if it persists, check coord."
+      "Coord failed to complete pairing (HTTP 500). Retry; if it persists, check coord. Start pairing again from your device."
     );
+    // The current backend's sentence already says it: not repeated.
+    const sentence =
+      "Coord failed to complete pairing (HTTP 500). Start pairing again from your device.";
+    expect(
+      pairConfirmErrorMessage(
+        { coord_status: 500, coord_hint: "restart pairing", message: sentence },
+        502
+      )
+    ).toBe(sentence);
+    // Any other hint on a 5xx is ignored.
+    expect(
+      pairConfirmErrorMessage(
+        { coord_status: 500, coord_hint: "check the pool", message: "m" },
+        502
+      )
+    ).toBe("m");
   });
   it("keeps a coord outage's retry advice", () => {
     expect(
