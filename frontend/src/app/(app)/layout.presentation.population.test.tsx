@@ -69,7 +69,11 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({
-    user: { email: fx.EMAIL, username: "presenter" },
+    user: {
+      email: fx.EMAIL,
+      username: "presenter",
+      tenant_slug: "acme-corp-rollout",
+    },
     loading: false,
     logout: vi.fn(),
   }),
@@ -98,10 +102,18 @@ vi.mock("@/contexts/tenant-context", () => ({
   TenantProvider: fx.passThrough,
   useTenant: () => ({
     tenants: [
-      { id: "t-own", name: fx.OWN_PROJECT, slug: "acme-corp-rollout" },
-      { id: "t-other", name: fx.OTHER_PROJECT, slug: "partner-portal" },
+      {
+        id: "tenant-4b2a-own",
+        name: fx.OWN_PROJECT,
+        slug: "acme-corp-rollout",
+      },
+      {
+        id: "tenant-8e6d-other",
+        name: fx.OTHER_PROJECT,
+        slug: "partner-portal",
+      },
     ],
-    activeTenantId: "t-own",
+    activeTenantId: "tenant-4b2a-own",
     setActiveTenantId: vi.fn(),
   }),
 }));
@@ -268,10 +280,25 @@ describe("the app shell beside a lens page", () => {
     // and the phone-width top bar — withholds it the way the home page's
     // tenant strip does ("Project"): not in the text, not in any attribute.
     expect(container).toHaveTextContent("Active project: Project");
-    for (const name of [fx.OWN_PROJECT, fx.OTHER_PROJECT]) {
+    for (const name of [
+      fx.OWN_PROJECT,
+      fx.OTHER_PROJECT,
+      // A slug or id identifies a project as surely as its name.
+      "acme-corp-rollout",
+      "partner-portal",
+      "tenant-4b2a-own",
+      "tenant-8e6d-other",
+    ]) {
       expect(document.body.textContent).not.toContain(name);
       expect(attributesNaming(document.body, name)).toEqual([]);
     }
+    // The account menu names the tenant's slug inside its dropdown, which mounts
+    // only when opened; so the operator-only gate is what keeps the slug off a
+    // presented page, and the gate is observed directly: no trigger renders
+    // (the expanded one; the collapsed trigger carries no marker).
+    expect(
+      document.querySelector('[data-tutorial-id="sidebar-user-menu"]')
+    ).toBeNull();
     expect(container.innerHTML).not.toContain(fx.EMAIL);
     expect(container.innerHTML).not.toContain(fx.OTHER_PROJECT);
     expect(container.innerHTML).not.toContain(fx.RUNNER_NAME);

@@ -31,10 +31,10 @@ const fx = vi.hoisted(() => ({
 vi.mock("@/contexts/tenant-context", () => ({
   useTenant: () => ({
     tenants: [
-      { id: "t-active", name: fx.ACTIVE, slug: "acme-corp-rollout" },
-      { id: "t-other", name: fx.OTHER, slug: "globex-pilot" },
+      { id: "tenant-7f3c-acme", name: fx.ACTIVE, slug: "acme-corp-rollout" },
+      { id: "tenant-9d1e-globex", name: fx.OTHER, slug: "globex-pilot" },
     ],
-    activeTenantId: "t-active",
+    activeTenantId: "tenant-7f3c-acme",
     setActiveTenantId: fx.setActiveTenantId,
   }),
 }));
@@ -62,8 +62,8 @@ function page(): { text: string; attributes: string[] } {
       // The slug and id identify the project as surely as its name does.
       ...attributesNaming(document.body, "acme-corp-rollout"),
       ...attributesNaming(document.body, "globex-pilot"),
-      ...attributesNaming(document.body, "t-active"),
-      ...attributesNaming(document.body, "t-other"),
+      ...attributesNaming(document.body, "tenant-7f3c-acme"),
+      ...attributesNaming(document.body, "tenant-9d1e-globex"),
     ],
   };
 }

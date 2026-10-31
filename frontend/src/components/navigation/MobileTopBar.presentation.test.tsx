@@ -16,8 +16,10 @@ const fx = vi.hoisted(() => ({ ACTIVE: "Acme Corp rollout" }));
 
 vi.mock("@/contexts/tenant-context", () => ({
   useTenant: () => ({
-    tenants: [{ id: "t-active", name: fx.ACTIVE, slug: "acme-corp-rollout" }],
-    activeTenantId: "t-active",
+    tenants: [
+      { id: "tenant-7f3c-acme", name: fx.ACTIVE, slug: "acme-corp-rollout" },
+    ],
+    activeTenantId: "tenant-7f3c-acme",
     setActiveTenantId: vi.fn(),
   }),
 }));
@@ -49,7 +51,7 @@ describe("MobileTopBar", () => {
     expect(container.textContent).not.toContain(fx.ACTIVE);
     expect(attributesNaming(document.body, fx.ACTIVE)).toEqual([]);
     expect(attributesNaming(document.body, "acme-corp-rollout")).toEqual([]);
-    expect(attributesNaming(document.body, "t-active")).toEqual([]);
+    expect(attributesNaming(document.body, "tenant-7f3c-acme")).toEqual([]);
   });
 
   it("names the active project in the operator view", () => {
