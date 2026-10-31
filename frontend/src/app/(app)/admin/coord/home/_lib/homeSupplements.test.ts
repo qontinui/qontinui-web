@@ -614,6 +614,19 @@ describe("machine health", () => {
         }
       );
 
+      it("a non-integer degradable_dropped is no count of machines to print", () => {
+        for (const degradable_dropped of [0.5, -1, "3"]) {
+          expect(
+            readRosterCut({
+              devices: healthy(3),
+              truncated: true,
+              total: 5,
+              degradable_dropped,
+            })
+          ).toEqual({ kind: "reported_cut", listed: 3, total: 5 });
+        }
+      });
+
       it("a cut is tail-only only with `truncated: true` beside it", () => {
         // A larger `total` and `degradable_dropped: 0` with no flag is a cut
         // coord did not fully describe: UNKNOWN past it, never calm.
