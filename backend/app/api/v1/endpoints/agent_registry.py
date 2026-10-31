@@ -133,6 +133,34 @@ async def get_registry_user(request: Request) -> User:
     return user
 
 
+def _answer_lost_detail(method: str, what_happened: str) -> str:
+    """What a 504 says when there is no usable answer from coord. Only a write
+    has anything to re-read before retrying."""
+    if method.upper() == "GET":
+        return what_happened
+    return (
+        f"{what_happened}; the change may have been applied, so re-read the "
+        "current state before retrying"
+    )
+
+
+def _no_usable_answer(
+    method: str, path: str, resp: httpx.Response, what_came: str
+) -> HTTPException:
+    """The 504 for an answer below 400 that this door cannot use. Coord answered,
+    so it may have acted; the status is named because it is all there is to go on.
+    """
+    logger.warning(
+        "coord_answer_lost", method=method, path=path, status=resp.status_code
+    )
+    return HTTPException(
+        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+        detail=_answer_lost_detail(
+            method, f"coord answered {resp.status_code} with {what_came}"
+        ),
+    )
+
+
 async def _coord_request(
     method: str,
     path: str,
@@ -147,6 +175,20 @@ async def _coord_request(
     coord's 422 error codes (``disposition_required`` /
     ``invalid_disposition``) reach the frontend intact rather than as an
     opaque string.
+
+    The transport statuses say whether coord may have acted, on the same split
+    as ``operations._proxy_coord_write``, because a caller of a write door
+    decides from them whether the write may have landed:
+
+    * ``ConnectError`` → **502**: no connection was made, so coord never saw the
+      request. The only arm that says nothing changed.
+    * a timeout, any OTHER transport failure after the request may have been
+      sent (``ReadError``, ``RemoteProtocolError``), a 2xx whose body is not JSON,
+      or a 3xx, which httpx does not follow → **504**: coord may have committed,
+      and only a re-read can tell.
+
+    Unlike that helper this one has no ``None`` arm: every caller reads a body, so
+    a 2xx with none (a 204, an empty 200) is a 504 as well.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(None)
@@ -165,10 +207,20 @@ async def _coord_request(
             ) from exc
         except httpx.RequestError as exc:
             # Any other transport failure (ReadError, RemoteProtocolError,
-            # ...) — coord unreachable rather than an application error.
+            # ...): the request may already have been sent, so coord's answer
+            # is lost rather than coord being unreachable.
+            logger.warning(
+                "coord_answer_lost",
+                method=method,
+                path=path,
+                exc_type=type(exc).__name__,
+            )
             raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="coord is not reachable",
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=_answer_lost_detail(
+                    method,
+                    f"coord's answer was lost in transit ({type(exc).__name__})",
+                ),
             ) from exc
     if resp.status_code >= 400:
         detail: Any
@@ -177,7 +229,13 @@ async def _coord_request(
         except ValueError:
             detail = resp.text
         raise HTTPException(status_code=resp.status_code, detail=detail)
-    return resp.json()
+    if resp.is_success:
+        try:
+            return resp.json()
+        except ValueError as exc:
+            what_came = "no body" if not resp.content else "a body that is not JSON"
+            raise _no_usable_answer(method, path, resp, what_came) from exc
+    raise _no_usable_answer(method, path, resp, "a redirect this door does not follow")
 
 
 async def _coord_request_deploy_order_aware(

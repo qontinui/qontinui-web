@@ -125,7 +125,7 @@ concurrency:
 jobs:
   workflow-lint:
     name: workflow-lint
-    runs-on: [self-hosted, public-pool]  # never GitHub-hosted: hosted runners are off
+    runs-on: [self-hosted, public-pool, ram-4g]  # never GitHub-hosted: hosted runners are off
     # Backstop only. Step timeouts sum to 27 min (checkout 2 + arch 1 +
     # install 18 + zizmor 3 + actionlint 2 + summary 1); this sits 3 min above
     # that, so a slow step is killed by its own timeout, not by this one.

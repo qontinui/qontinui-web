@@ -25,16 +25,22 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-const { AgentPrefError, listAgentRegistry, listAdminAgentRegistry } = await import(
-  "./agent-registry",
-);
+const {
+  AgentPrefError,
+  isWriteOutcomeUnknown,
+  listAgentRegistry,
+  listAdminAgentRegistry,
+  putAgentRegistryDefaults,
+} = await import("./agent-registry");
+const { outcomeUnknownReason } =
+  await import("@/components/admin/coord/writeOutcome");
 
 function respondWith(body: unknown, status = 200) {
   fetchMock.mockResolvedValueOnce(
     new Response(JSON.stringify(body), {
       status,
       headers: { "Content-Type": "application/json" },
-    }),
+    })
   );
 }
 
@@ -75,19 +81,24 @@ describe("listAgentRegistry", () => {
     ["an object agents key", { agents: { "code-reviewer": sampleAgent } }],
     ["a string agents key", { agents: "code-reviewer" }],
     ["a bare array body", [sampleAgent]],
-  ])("throws rather than claiming an empty registry on %s", async (_label, body) => {
-    respondWith(body);
-    // `?? []` returned [] for every one of these, and the page then stated
-    // "No agents are registered for your tenant yet."
-    await expect(listAgentRegistry()).rejects.toBeInstanceOf(AgentPrefError);
-  });
+  ])(
+    "throws rather than claiming an empty registry on %s",
+    async (_label, body) => {
+      respondWith(body);
+      // `?? []` returned [] for every one of these, and the page then stated
+      // "No agents are registered for your tenant yet."
+      await expect(listAgentRegistry()).rejects.toBeInstanceOf(AgentPrefError);
+    }
+  );
 
   it("still surfaces the backend's own error text on a non-2xx", async () => {
     // The 502s #1042 added carry coord's reason in `detail`; the page renders
     // it verbatim in its error card, so it must survive this path unchanged.
     respondWith(
-      { detail: "coord returned a non-list `agents` on the effective registry" },
-      502,
+      {
+        detail: "coord returned a non-list `agents` on the effective registry",
+      },
+      502
     );
     await expect(listAgentRegistry()).rejects.toThrow(/non-list `agents`/);
   });
@@ -135,8 +146,111 @@ describe("listAdminAgentRegistry", () => {
     ["a null agents key", { agents: null }],
     ["an object agents key", { agents: { "code-reviewer": adminRow } }],
     ["a bare array body", [adminRow]],
-  ])("throws rather than claiming an empty registry on %s", async (_l, body) => {
-    respondWith(body);
-    await expect(listAdminAgentRegistry()).rejects.toBeInstanceOf(AgentPrefError);
+  ])(
+    "throws rather than claiming an empty registry on %s",
+    async (_l, body) => {
+      respondWith(body);
+      await expect(listAdminAgentRegistry()).rejects.toBeInstanceOf(
+        AgentPrefError
+      );
+    }
+  );
+});
+
+describe("what a failed write says", () => {
+  afterEach(() => fetchMock.mockReset());
+
+  const failure = async (body: unknown, status: number) => {
+    respondWith(body, status);
+    return putAgentRegistryDefaults("code-reviewer", {
+      default_enabled: true,
+    }).catch((e: unknown) => e);
+  };
+
+  it("reads the backend's production envelope, not only FastAPI's detail", async () => {
+    // What `error_handler.py` serves: without this the door's own sentence is
+    // dropped for the client's fallback.
+    const err = await failure(
+      {
+        error: "GATEWAY_TIMEOUT",
+        message: "timeout waiting for coord",
+        timestamp: 1,
+        path: "/x",
+      },
+      504
+    );
+    expect(err).toBeInstanceOf(AgentPrefError);
+    expect((err as Error).message).toBe("timeout waiting for coord");
+    expect(isWriteOutcomeUnknown(err)).toBe(true);
+  });
+
+  it("still reads detail, as a string and as an object", async () => {
+    expect(((await failure({ detail: "no" }, 400)) as Error).message).toBe(
+      "no"
+    );
+    expect(
+      ((await failure({ detail: { message: "nested" } }, 400)) as Error).message
+    ).toBe("nested");
+  });
+
+  it("recognises the door's connect failure through the envelope, and only that 502", async () => {
+    expect(
+      isWriteOutcomeUnknown(
+        await failure(
+          { error: "BAD_GATEWAY", message: "coord is not reachable" },
+          502
+        )
+      )
+    ).toBe(false);
+    expect(
+      isWriteOutcomeUnknown(
+        await failure({ detail: "coord is not reachable" }, 502)
+      )
+    ).toBe(false);
+    expect(
+      isWriteOutcomeUnknown(await failure({ message: "Bad Gateway" }, 502))
+    ).toBe(true);
+  });
+
+  it("does not take a 4xx for an open outcome, and takes a statusless failure for one", () => {
+    expect(isWriteOutcomeUnknown(new AgentPrefError("no", null, 403))).toBe(
+      false
+    );
+    expect(isWriteOutcomeUnknown(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isWriteOutcomeUnknown(new Error("PUT /x failed: 503 - busy"))).toBe(
+      true
+    );
+  });
+
+  it("quotes coord's 500 by its error when the envelope carries it (error_handler)", async () => {
+    // Coord's registry 500 is `{"error": "failed to upsert agent registry row"}`;
+    // the handler now gives that `error` as the message rather than a repr.
+    const err = await failure(
+      {
+        error: "failed to upsert agent registry row",
+        message: "failed to upsert agent registry row",
+      },
+      500
+    );
+    expect((err as Error).message).toBe("failed to upsert agent registry row");
+    expect((err as AgentPrefError).detailServed).toBe(true);
+    expect(isWriteOutcomeUnknown(err)).toBe(true);
+    expect(outcomeUnknownReason(err)).toBe(
+      "failed to upsert agent registry row"
+    );
+  });
+
+  it("does not quote its own fallback where the outcome is open", async () => {
+    // A 5xx with no JSON body: the message is this client's "Failed to save …".
+    fetchMock.mockResolvedValueOnce(
+      new Response("<html>503</html>", { status: 503 })
+    );
+    const err = await putAgentRegistryDefaults("code-reviewer", {
+      default_enabled: true,
+    }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe("Failed to save the tenant default");
+    expect((err as AgentPrefError).detailServed).toBe(false);
+    expect(isWriteOutcomeUnknown(err)).toBe(true);
+    expect(outcomeUnknownReason(err)).toBe("HTTP 503 with no readable reason");
   });
 });

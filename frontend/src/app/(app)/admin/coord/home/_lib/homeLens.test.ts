@@ -34,6 +34,7 @@ import {
   degradationDescriptor,
   degradationRepo,
   isMachineSubject,
+  keptReadingText,
   namedUnitDescriptor,
   namedUnitRepos,
   needsDescriptor,
@@ -129,6 +130,38 @@ describe("regionSources — one read, dated by coord's answer", () => {
   it("leaves the time unknown when nothing was read — never now", () => {
     expect(regionSources({ generatedAt: null, kept: false })[0]!.asOf).toBe(
       null
+    );
+  });
+});
+
+describe("keptReadingText — covers only what is a kept reading", () => {
+  const fresh = { state: "read" as const, stale: false };
+  const kept = { state: "read" as const, stale: true };
+  const unread = { state: "could_not_read" as const, stale: false };
+
+  it("says the project state's figures are its last reading, and a fresh read beside it is current", () => {
+    expect(
+      keptReadingText("x", [
+        { name: "machine health", reading: fresh },
+        { name: "the open-gate count", reading: fresh },
+        { name: "the pending-question count", reading: kept },
+      ])
+    ).toBe(
+      "The latest read of coord's project state failed (x). Everything below that comes from it is its last reading, not a current one. Machine health and the open-gate count are current reads, each with its own source. The pending-question count is a last reading too."
+    );
+  });
+
+  it("never calls an unread figure current", () => {
+    expect(
+      keptReadingText("x", [{ name: "machine health", reading: unread }])
+    ).toBe(
+      "The latest read of coord's project state failed (x). Everything below that comes from it is its last reading, not a current one. Machine health has not been read — unknown."
+    );
+  });
+
+  it("with nothing read beside it, everything below is the last reading", () => {
+    expect(keptReadingText("x", [])).toBe(
+      "The latest read of coord's project state failed (x). Everything below is its last reading, not a current one."
     );
   });
 });

@@ -6,11 +6,19 @@
 # the labels of the runners registered to qontinui/qontinui-web
 # (`gh api repos/qontinui/qontinui-web/actions/runners`, 2026-10-04):
 # merytshost-public {public-pool} and spaceship-wsl {qontinui, spaceship}.
+# The ram-<N>g memory classes (plan
+# 2026-10-28-heavy-ci-jobs-land-only-on-runners-sized-for-them) are the values
+# of qontinui-claude-config scripts/ci-runner-size-classes.json `classes_gib`;
+# merytshost-public carries all four since 2026-10-31.
 self-hosted-runner:
   labels:
     - public-pool
     - qontinui
     - spaceship
+    - ram-2g
+    - ram-4g
+    - ram-16g
+    - ram-40g
 
 # shellcheck findings actionlint relays from `run:` bodies, ignored by code.
 # Each entry is a whole-code ignore with its reason; nothing else is muted.

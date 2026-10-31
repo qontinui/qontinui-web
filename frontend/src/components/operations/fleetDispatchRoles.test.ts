@@ -415,7 +415,8 @@ describe("describeRoleWriteError", () => {
     expect(r.message).toContain("Force");
   });
   it("the deployed envelope (dict spliced to top level, repr in message) never shows the repr", () => {
-    // `middleware/error_handler.py`: `message = detail.get("message", str(detail))`.
+    // An older `middleware/error_handler.py` filled `message` with the dict's
+    // Python repr: `message = detail.get("message", str(detail))`.
     const r = describeRoleWriteError(
       409,
       JSON.stringify({
@@ -439,6 +440,62 @@ describe("describeRoleWriteError", () => {
     );
     expect(other.message).toBe(
       "HTTP 400 — reason_required — a reason is needed"
+    );
+  });
+  it("coord's sentence under detail, in the envelope the backend emits, is shown", () => {
+    // The envelope `http_exception_handler` builds for coord's
+    // `reason_required` refusal: coord answers it with 400 and the `detail`
+    // below (`validate_put` in qontinui-coord
+    // `crates/coord/src/dispatch_role_routes.rs`), the passthrough keeps that
+    // status, and the handler spreads the dict's fields first, then the
+    // envelope's own four. `timestamp` and `path` are sample values.
+    const detail =
+      "a role change moves where coord sends work (and, from plan Phase 4, " +
+      "GitHub routing); the version history records why, so `reason` is " +
+      "required and may not be blank";
+    const body = JSON.stringify({
+      detail,
+      error: "reason_required",
+      message: "reason_required",
+      timestamp: 1793436820.870933,
+      path: "http://testserver/api/v1/operations/fleet/dispatch-role",
+    });
+    expect(describeRoleWriteError(400, body).message).toBe(
+      `HTTP 400 — reason_required — ${detail}`
+    );
+  });
+  it("the current envelope (message is the code itself) prints the code once", () => {
+    // `_detail_message` in `middleware/error_handler.py`: a dict detail with
+    // no `message` gets its `error` as the message.
+    const tenant = describeRoleWriteError(
+      409,
+      JSON.stringify({
+        error: "device_not_in_tenant",
+        message: "device_not_in_tenant",
+        timestamp: 1,
+        path: "/api/v1/operations/fleet/dispatch-role",
+      })
+    );
+    expect(tenant.message).toBe("HTTP 409 — device_not_in_tenant");
+    const host = describeRoleWriteError(
+      422,
+      JSON.stringify({ error: "no_agent_host", message: "no_agent_host" })
+    );
+    expect(host.kind).toBe("no_agent_host");
+    expect(host.message).toBe(
+      "Coord refused: this machine has no workstation runner, so it cannot " +
+        "host agent sessions and cannot be a Workhorse. Choose CI node or Bench."
+    );
+    // Coord's own prose in `message` is still quoted.
+    const prose = describeRoleWriteError(
+      409,
+      JSON.stringify({
+        error: "device_not_in_tenant",
+        message: "no device with this id is bound to your tenant",
+      })
+    );
+    expect(prose.message).toBe(
+      "HTTP 409 — device_not_in_tenant — no device with this id is bound to your tenant"
     );
   });
   it("no_agent_host at the top level is typed", () => {

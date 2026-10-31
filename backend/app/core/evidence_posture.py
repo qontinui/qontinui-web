@@ -312,6 +312,36 @@ OVERVIEW_PUBLISHING_PLAN: Final = (
 )
 
 
+def _device_write_refused_rows(path: str) -> dict[tuple[str, str], Posture]:
+    """The three generic-contract rows of an overview resource whose rule is in
+    ``permissions.DEVICE_WRITE_REFUSALS`` (``person_edits``).
+
+    ``Read``, not ``Evidence``: the routes stay in the population because
+    their dependency tree resolves ``get_overview_principal``, which admits a
+    device JWT, but every write method refuses a device principal with a 403
+    from its verified token alone, before the project is resolved or any
+    store runs. So nothing a device sends through these doors is durable, and
+    there is no device-written assertion to correct. A person's write keeps
+    the generic contract (change log, ``If-Match``) and is outside this
+    table's scope — the same reasoning as the ``project_admin`` and
+    ``coord_admin`` rows below.
+    """
+    reason = (
+        "refused to every device principal with 403 "
+        "device_not_supported_for_person_edits from its verified token alone, "
+        "before the project is resolved through coord or any store runs, so a "
+        "device mutates nothing through this door (it may still read the "
+        "resource); a person's write keeps the change log and If-Match "
+        "contract and is outside this table's scope"
+    )
+    item = f"{path}/{{record_id}}"
+    return {
+        ("POST", path): Read(reason),
+        ("PATCH", item): Read(reason),
+        ("DELETE", item): Read(reason),
+    }
+
+
 def _overview_record_rows(
     path: str, *, create: tuple[str, ...], update: tuple[str, ...], deletion: Gap | None
 ) -> dict[tuple[str, str], Posture]:
@@ -841,8 +871,9 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
     # it is bound to (plan 2026-10-07-agents-publish-documents-to-the-project-
     # overview D1), so every overview write admits a device JWT — except the
     # rules ``permissions.DEVICE_REFUSALS`` refuses a device outright
-    # (coord-backed resources and the project settings), whose rows below
-    # are refusals.
+    # (coord-backed resources and the project settings) and the rules
+    # ``permissions.DEVICE_WRITE_REFUSALS`` refuses a device's WRITES (the
+    # cost ledger), whose rows below are refusals.
     **_overview_record_rows(
         f"{_OVERVIEW}/pages",
         create=("kind",),
@@ -926,6 +957,12 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
             ),
         ),
     ),
+    # The cost ledger is what the project says it spent, recorded by a
+    # person: ``person_edits`` is in ``DEVICE_WRITE_REFUSALS``, so a device
+    # reads it and writes none of it.
+    **_device_write_refused_rows(f"{_OVERVIEW}/cost-categories"),
+    **_device_write_refused_rows(f"{_OVERVIEW}/recurring-costs"),
+    **_device_write_refused_rows(f"{_OVERVIEW}/cost-entries"),
     # The settings decide who may edit (``editing_roles``), so a device may
     # not write them: ``project_admin`` is in ``DEVICE_REFUSALS``.
     ("PUT", f"{_OVERVIEW}/settings"): Read(

@@ -25,6 +25,7 @@
 import {
   PROJECT_NAME_DESCRIPTOR,
   WITHHELD,
+  aliasLetters,
   type RedactionDescriptor,
   type SectionSource,
 } from "@/components/presentation";
@@ -38,6 +39,7 @@ import { FAILURE_REASON_WITHHELD } from "@/components/operations/presentedFailur
 import { readErrorBody } from "@/lib/errors/backend-error-message";
 import {
   PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
+  correctnessHasNoSource,
   decisionDomainLabel,
   isKnownDecisionDomain,
   isKnownPlane,
@@ -46,6 +48,7 @@ import {
   isWatcherSource,
   planeLabel,
   sourceLabel,
+  type CorrectnessView,
   type DegradationView,
   type NamedUnit,
   type NeedsMeItem,
@@ -86,6 +89,86 @@ export function regionSources(reading: HomeReading): readonly SectionSource[] {
       asOf: reading.generatedAt,
     },
   ];
+}
+
+/**
+ * A figure on the page read from somewhere other than the project state
+ * (`_lib/homeSupplements.ts`), as the kept-reading notice speaks of it.
+ */
+export interface OtherReading {
+  /** How the notice names it, mid-sentence: "machine health". */
+  readonly name: string;
+  /** Whether it was read; `stale`: it is a kept reading too. */
+  readonly reading: {
+    readonly state: "read" | "could_not_read" | "unknown";
+    readonly stale: boolean;
+  };
+}
+
+function capitalize(s: string): string {
+  return s.length === 0 ? s : s[0]!.toUpperCase() + s.slice(1);
+}
+
+function andList(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The kept-reading notice's text: it covers only what IS a kept reading.
+ * What comes from the project state is its last reading; a figure read
+ * beside it is said to be current when its own read is, a last reading when
+ * that read failed too, and not read when it never landed.
+ */
+export function keptReadingText(
+  failure: string,
+  others: readonly OtherReading[]
+): string {
+  const fresh = others.filter(
+    (o) => o.reading.state === "read" && !o.reading.stale
+  );
+  const kept = others.filter(
+    (o) => o.reading.state === "read" && o.reading.stale
+  );
+  const unread = others.filter((o) => o.reading.state !== "read");
+  const parts = [
+    `The latest read of coord's project state failed (${failure}).`,
+    others.length === 0
+      ? "Everything below is its last reading, not a current one."
+      : "Everything below that comes from it is its last reading, not a current one.",
+  ];
+  const names = (os: readonly OtherReading[]) => andList(os.map((o) => o.name));
+  if (fresh.length > 0) {
+    parts.push(
+      `${capitalize(names(fresh))} ${fresh.length === 1 ? "is a current read, with its own source" : "are current reads, each with its own source"}.`
+    );
+  }
+  if (kept.length > 0) {
+    parts.push(
+      `${capitalize(names(kept))} ${kept.length === 1 ? "is" : "are"} a last reading too.`
+    );
+  }
+  if (unread.length > 0) {
+    parts.push(
+      `${capitalize(names(unread))} ${unread.length === 1 ? "has" : "have"} not been read — unknown.`
+    );
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Whether the page leaves Correct? out: while presenting, when nothing is
+ * built behind it — coord says no source measures it, or has not built the
+ * block. An unread block coord could build stays, shown as unknown. The
+ * operator always sees the section.
+ */
+export function correctLeftOut(
+  c: CorrectnessView,
+  presenting: boolean
+): boolean {
+  return (
+    presenting && (correctnessHasNoSource(c) || c.state === "not_implemented")
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +274,40 @@ export const REPOSITORY_DESCRIPTOR: RedactionDescriptor = {
   kind: "Repository",
   notApplicable: ["area", "status", "at"],
 };
+
+/**
+ * Stable aliases for the repositories a presentation withholds — "Repository
+ * A", "Repository B" — the way machines are "Machine A, B…"
+ * (`machineAliases.ts`): two withheld repositories never read as one, and a
+ * repository keeps its letter across polls for as long as the region is
+ * mounted. Letters go to withheld repositories only, in first-seen order, and
+ * are never reissued; the key is held in memory only, never rendered.
+ */
+export class RepositoryAliases {
+  private readonly byKey = new Map<string, number>();
+
+  alias(key: string): string {
+    let n = this.byKey.get(key);
+    if (n === undefined) {
+      n = this.byKey.size;
+      this.byKey.set(key, n);
+    }
+    return `Repository ${aliasLetters(n)}`;
+  }
+}
+
+/** A withheld repository's descriptor: its alias, its kind's fields left out. */
+export function repositoryAliasDescriptor(alias: string): RedactionDescriptor {
+  return { ...REPOSITORY_DESCRIPTOR, kind: alias };
+}
+
+/**
+ * What a presentation says of an initiative document coord could not parse:
+ * a fixed sentence, never coord's parser message (which quotes the document)
+ * and never a descriptor standing in for it.
+ */
+export const INITIATIVE_UNPARSEABLE_SENTENCE =
+  "The current initiative's document could not be read as written, so its status and scope are not shown.";
 
 /** A needs-you item's own status word — the badge the row shows. */
 export function needsStatusWord(

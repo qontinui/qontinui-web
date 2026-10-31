@@ -6,11 +6,17 @@
  * Phase 4:
  *
  *   1. the strip — one derived headline, never green over a block not read;
- *   2. Needs you — operator forks, each as fork + recommendation;
- *   3. Degrading — open degradations with their onset, recently cleared folded;
- *   4. On track — class totals, then one row per repo expanding to named units;
- *   5. Correct? — present from day one so its absence is visible;
- *   6. What this view does not know — always rendered, never collapsed.
+ *   2. Needs you — operator forks, each as fork + recommendation; until coord
+ *      serves that block, the Gates and Questions lists' counts;
+ *   3. Degrading — open degradations with their onset, recently cleared
+ *      folded, and the machine roster in coord's project-state terms
+ *      (degrading, no verdict, and what the nav counts that is neither);
+ *   4. Work by state — class totals, then one row per repo expanding to its
+ *      class counts and named units;
+ *   5. Correct? — present from day one so its absence is visible (to the
+ *      operator; a presentation leaves it out while nothing measures it);
+ *   6. What this view does not know — always rendered: the sources not read
+ *      listed, the ones read behind one disclosure.
  *
  * Composition only (style guide §6.4): every visual element here is a console
  * primitive. Every derivation — the strip, the labels, the "may we say nothing
@@ -35,7 +41,7 @@
  * those renders the original, so #1999's page is unchanged.
  */
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   CollapsiblePanel,
   HealthStrip,
@@ -58,15 +64,20 @@ import {
   usePresentationMode,
   usePresentationScopeState,
   useRedactor,
+  type SectionSource,
 } from "@/components/presentation";
 import { FAILURE_SENTENCE_WITHHELD } from "@/components/operations/presentedFailure";
 import {
   BLOCKED_UNIT_DESCRIPTOR,
+  INITIATIVE_UNPARSEABLE_SENTENCE,
+  RepositoryAliases,
+  repositoryAliasDescriptor,
   INITIATIVE_ITEM_DESCRIPTOR,
   INITIATIVE_KEYS_DESCRIPTOR,
   REPOSITORY_DESCRIPTOR,
   TENANT_DESCRIPTOR,
   degradationDescriptor,
+  correctLeftOut,
   degradationRepo,
   namedUnitDescriptor,
   namedUnitRepos,
@@ -90,6 +101,26 @@ import {
   useRowKey,
   useSubjectText,
 } from "./HomeLens";
+import {
+  degradingCoverage,
+  isRosterBindingFault,
+  isRosterComplete,
+  rosterCutHidesHealth,
+  noLiveMachine,
+  notDegradationsSentence,
+  placeholdersSentence,
+} from "@/components/admin/coord/machineHealth";
+import {
+  GATES_SOURCE,
+  MACHINES_SOURCE,
+  QUESTIONS_SOURCE,
+  machineHealthSentence,
+  machinesAllHealthy,
+  queueCountText,
+  supplementSource,
+  type MachineHealthView,
+  type QueueCount,
+} from "../_lib/homeSupplements";
 import {
   BLOCK_STATE_PHRASE,
   HOME_ATTENTION_BY_KIND,
@@ -119,6 +150,7 @@ import {
   sourceLabel,
   sourceRawLine,
   sourceRowReason,
+  unstatedSummary,
   sourceTimeWords,
   stallWindowDays,
   unitClassLabel,
@@ -140,6 +172,10 @@ import {
   type PlaneView,
   type RepoGroup,
   type SourceCoverageView,
+  unitCountText,
+  groupBreakdown,
+  groupBreakdownSentence,
+  unnamedUnitsSentence,
 } from "@/components/admin/coord/coordHomeStatus";
 
 const HEADING =
@@ -242,6 +278,7 @@ export function HomeStripSection({
   generatedAt,
   failure,
   onRefresh,
+  extraSources = [],
 }: {
   strip: HomeStrip;
   tenantName: string | null;
@@ -256,6 +293,12 @@ export function HomeStripSection({
    */
   failure: string | null;
   onRefresh: () => Promise<void>;
+  /**
+   * The reads beside the project state that the strip shows figures from
+   * (the machine roster; the queue counts when its needs-you figure is
+   * theirs), each a chip of its own while presenting.
+   */
+  extraSources?: readonly SectionSource[];
 }) {
   const { presenting } = usePresentationMode();
   // R8: the tenant's UUID is a raw id, so it is the title, never the text —
@@ -300,7 +343,11 @@ export function HomeStripSection({
   );
   return (
     <>
-      <RegionCaption region="strip" reading={{ generatedAt, kept: stale }} />
+      <RegionCaption
+        region="strip"
+        reading={{ generatedAt, kept: stale }}
+        extraSources={extraSources}
+      />
       <section
         className="flex items-center gap-2"
         data-ui-bridge-id="coord-home.strip"
@@ -485,12 +532,119 @@ function NeedsYouRow({
   );
 }
 
+/** One queue count's line: the figure, why it is unknown, and its page. */
+function QueueCountLine({
+  label,
+  what,
+  q,
+  href,
+  page,
+  testId,
+}: {
+  label: string;
+  /** The list, for the unknown sentence: "the gates list". */
+  what: string;
+  q: QueueCount;
+  href: string;
+  page: string;
+  testId: string;
+}) {
+  const opens = useLinkOpens();
+  const text = queueCountText(q);
+  const why =
+    q.state === "read"
+      ? q.stale
+        ? " (at its last good read)"
+        : ""
+      : q.state === "could_not_read"
+        ? ` — ${what} could not be read`
+        : ` — ${what} has not been read yet`;
+  // `what` names a list, never a page: "the gates list", "the questions list".
+  return (
+    <li data-testid={testId} data-count-state={q.state}>
+      {label}: <span className="tabular-nums text-foreground">{text}</span>
+      {why}
+      {/* While presenting, a page that cannot be presented is a dead end,
+          so its link is left out (`useLinkOpens`). */}
+      {opens(href) && (
+        <>
+          {" · "}
+          <LensLink href={href} className="underline">
+            {page}
+          </LensLink>
+        </>
+      )}
+    </li>
+  );
+}
+
+/**
+ * What waits on the operator, counted from the Gates and Questions pages'
+ * reads until coord serves its `needs_me` block. Each count is the page's own
+ * source and links there; an unread source says UNKNOWN and why, never 0.
+ */
+function QueueCounts({
+  gates,
+  questions,
+}: {
+  gates: QueueCount;
+  questions: QueueCount;
+}) {
+  // While presenting, the Gates and Questions pages cannot be shown, so the
+  // lines name what is counted, not the pages that list it.
+  const { presenting } = usePresentationMode();
+  return (
+    <div className="space-y-1" data-testid="coord-home.needs-you.counts">
+      <p className="m-0">
+        {presenting
+          ? "Counted from coord's lists of open approvals and pending agent questions:"
+          : "Meanwhile, counted from the lists the Gates and Questions pages read:"}
+      </p>
+      <ul className="m-0 pl-4 list-disc space-y-0.5">
+        <QueueCountLine
+          label={
+            presenting
+              ? "Approvals waiting on the operator"
+              : "Approvals waiting on you"
+          }
+          what="the gates list"
+          q={gates}
+          href="/admin/coord/gates"
+          page="Gates"
+          testId="coord-home.needs-you.count.gates"
+        />
+        <QueueCountLine
+          label={
+            presenting
+              ? "Agent questions waiting on the operator"
+              : "Questions waiting on you"
+          }
+          what="the questions list"
+          q={questions}
+          href="/admin/coord/questions"
+          page="Questions"
+          testId="coord-home.needs-you.count.questions"
+        />
+      </ul>
+    </div>
+  );
+}
+
 export function NeedsYouSection({
   needs,
+  gates,
+  questions,
   stale = false,
   generatedAt = null,
 }: {
   needs: NeedsMeView;
+  /**
+   * Open operator approvals and pending operator questions, read from the
+   * Gates and Questions pages' own sources (`_lib/homeSupplements.ts`) —
+   * shown while coord's `needs_me` block is not read.
+   */
+  gates: QueueCount;
+  questions: QueueCount;
   /** The latest poll failed; this is the last good read (style guide R6). */
   stale?: boolean;
   generatedAt?: string | null;
@@ -509,6 +663,11 @@ export function NeedsYouSection({
           : ""
       }`
     : BLOCK_STATE_PHRASE[needs.state];
+  // While presenting, a block coord has not built is left out: the counts
+  // read from the Gates and Questions lists stand in for it, unlabelled by
+  // "not built yet".
+  const unbuiltWhilePresenting =
+    presenting && needs.state === "not_implemented";
   return (
     <section
       className="space-y-2"
@@ -519,6 +678,14 @@ export function NeedsYouSection({
       <RegionCaption
         region="needs-you"
         reading={{ generatedAt, kept: stale }}
+        extraSources={
+          read
+            ? []
+            : [
+                supplementSource(GATES_SOURCE, gates),
+                supplementSource(QUESTIONS_SOURCE, questions),
+              ]
+        }
       />
       <div className="flex items-baseline gap-2">
         <h2 className={HEADING}>Needs you</h2>
@@ -526,7 +693,7 @@ export function NeedsYouSection({
           className="text-xs text-muted-foreground tabular-nums"
           data-testid="coord-home.needs-you.count"
         >
-          {header}
+          {unbuiltWhilePresenting ? null : header}
         </span>
       </div>
       {read && needs.byDomain && Object.keys(needs.byDomain).length > 0 && (
@@ -607,27 +774,17 @@ export function NeedsYouSection({
             )}
           />
         )
+      ) : unbuiltWhilePresenting ? (
+        <div className="text-sm text-muted-foreground">
+          <QueueCounts gates={gates} questions={questions} />
+        </div>
       ) : (
         <NotRead
           what="the decisions waiting on you"
           state={needs.state}
           testId="coord-home.needs-you.not-read"
         >
-          {/* While presenting, two page names that open nothing are a dead
-              end, so the pointer shows only when both pages can open. */}
-          {opens("/admin/coord/questions") && opens("/admin/coord/gates") && (
-            <p className="m-0" data-testid="coord-home.needs-you.pending-at">
-              Pending decisions are listed at{" "}
-              <LensLink href="/admin/coord/questions" className="underline">
-                Questions
-              </LensLink>{" "}
-              and{" "}
-              <LensLink href="/admin/coord/gates" className="underline">
-                Gates
-              </LensLink>
-              .
-            </p>
-          )}
+          <QueueCounts gates={gates} questions={questions} />
         </NotRead>
       )}
     </section>
@@ -747,13 +904,109 @@ function DegradationRow({
   );
 }
 
+/**
+ * The machines line under the degradations, in coord's project-state terms:
+ * how many machines are degrading and whether coord's list above already
+ * shows them (`listed`; null when no list was served), how many have no
+ * verdict — and, so this section reconciles with the `Dev Ops ▾` badge, the
+ * machines that badge counts as not healthy that are not degradations
+ * (abandoned, no verdict, placeholder rows), by state. Placeholder rows coord
+ * does not grade are not machines, and are named on a line of their own.
+ * Counts only, never a machine's name; the machines themselves are on Dev
+ * Ops, linked where that page opens.
+ */
+function MachineHealthLine({
+  machines,
+  listed,
+}: {
+  machines: MachineHealthView;
+  listed: number | null;
+}) {
+  const opens = useLinkOpens();
+  const { presenting } = usePresentationMode();
+  const read = machines.state === "read" && machines.counts !== null;
+  const devOps = read && opens("/admin/coord/devops");
+  const fault =
+    read && machines.exclusions !== null
+      ? isRosterBindingFault(machines.exclusions)
+      : false;
+  const reconcile =
+    read && machines.counts !== null
+      ? notDegradationsSentence(machines.counts, { seeDevOps: false })
+      : null;
+  const placeholders =
+    read && machines.counts !== null
+      ? placeholdersSentence(machines.counts)
+      : null;
+  return (
+    <>
+      <p
+        className="m-0 text-sm"
+        data-testid="coord-home.degrading.machines"
+        data-ui-bridge-id="coord-home.degrading.machines"
+        data-machines-state={machines.state}
+        data-roster-fault={fault ? "true" : undefined}
+      >
+        <span className="text-muted-foreground">Machines: </span>
+        {read && machines.stale ? "At the last good read, " : ""}
+        {/* Coord's own error text is the operator's alone (R8). */}
+        {machineHealthSentence(machines, { listed, withReason: !presenting })}
+        {devOps && !reconcile && (
+          <>
+            {" "}
+            <LensLink href="/admin/coord/devops" className="underline">
+              See them on Dev Ops
+            </LensLink>
+            .
+          </>
+        )}
+      </p>
+      {placeholders && (
+        <p
+          className="m-0 text-sm text-muted-foreground"
+          data-testid="coord-home.degrading.machines-placeholders"
+        >
+          {placeholders}
+        </p>
+      )}
+      {reconcile && (
+        <p
+          className="m-0 text-sm text-muted-foreground"
+          data-testid="coord-home.degrading.machines-reconcile"
+        >
+          {/* The sentence's own full stop moves after the link. */}
+          {reconcile.replace(/\.$/, "")}
+          {devOps && (
+            <>
+              {" — see "}
+              <LensLink href="/admin/coord/devops" className="underline">
+                Dev Ops
+              </LensLink>
+            </>
+          )}
+          .
+        </p>
+      )}
+    </>
+  );
+}
+
 export function DegradingSection({
   deg,
+  machines,
   sources = null,
   stale = false,
   generatedAt = null,
 }: {
   deg: DegradationsView;
+  /**
+   * Coord's machine roster, read beside the project state
+   * (`_lib/homeSupplements.ts`). Coord's project state already lists a
+   * degrading machine as a row; the roster says which machines have no
+   * verdict, which the nav counts that are not degradations, and any
+   * degrading machine the list does not show.
+   */
+  machines: MachineHealthView;
   /**
    * What the view does not know (`does_not_know`): the gap sentence names the
    * degradation sources coord did not fully read from it.
@@ -788,6 +1041,7 @@ export function DegradingSection({
       <RegionCaption
         region="degrading"
         reading={{ generatedAt, kept: stale }}
+        extraSources={[supplementSource(MACHINES_SOURCE, machines)]}
       />
       <div className="flex items-baseline gap-2">
         <h2 className={HEADING}>Degrading</h2>
@@ -839,14 +1093,41 @@ export function DegradingSection({
           {rows.length === 0 ? (
             open === null ? null : deg.state === "read" &&
               deg.headline === "none" ? (
-              <p
-                className="m-0 text-sm"
-                data-testid="coord-home.degrading.empty"
-              >
-                {stale
-                  ? `Nothing was degrading ${lastGoodReadPhrase(generatedAt)}`
-                  : "Nothing is degrading"}
-              </p>
+              machinesAllHealthy(machines) ? (
+                <p
+                  className="m-0 text-sm"
+                  data-testid="coord-home.degrading.empty"
+                >
+                  {stale
+                    ? `Nothing was degrading ${lastGoodReadPhrase(generatedAt)}`
+                    : "Nothing is degrading"}
+                </p>
+              ) : (
+                <p
+                  className="m-0 text-sm text-muted-foreground"
+                  data-testid="coord-home.degrading.machines-not-calm"
+                >
+                  {machines.state === "read" &&
+                  machines.counts !== null &&
+                  machines.counts.degrading > 0
+                    ? "No open degradation was served, but a machine is in a degrading state — see Machines below."
+                    : machines.state === "read" &&
+                        machines.counts !== null &&
+                        machines.counts.total === 0
+                      ? "No open degradation was served, but coord lists no machines, so this view cannot say nothing is degrading — see Machines below."
+                      : machines.state === "read" &&
+                          ((machines.exclusions !== null &&
+                            !isRosterComplete(machines.exclusions)) ||
+                            (machines.cut !== null &&
+                              rosterCutHidesHealth(machines.cut)))
+                        ? "No open degradation was served, but coord's roster may be missing machines, so this view cannot say nothing is degrading — see Machines below."
+                        : machines.state === "read" &&
+                            machines.counts !== null &&
+                            noLiveMachine(machines.counts)
+                          ? "No open degradation was served, but no live machine reports, so this view cannot say nothing is degrading — see Machines below."
+                          : "No open degradation was served, but machine health is not fully known, so this view cannot say nothing is degrading."}
+                </p>
+              )
             ) : (
               <p className="m-0 text-sm text-muted-foreground">
                 No open degradation was served, but coord cannot say none exist.
@@ -920,6 +1201,14 @@ export function DegradingSection({
           </CollapsiblePanel>
         </>
       )}
+      <MachineHealthLine
+        machines={machines}
+        listed={
+          rowsServed && open !== null && machines.counts !== null
+            ? degradingCoverage(machines.counts, open).listed
+            : null
+        }
+      />
       <div
         className="space-y-0.5 text-xs text-muted-foreground"
         data-testid="coord-home.degrading.planes"
@@ -966,7 +1255,7 @@ export function DegradingSection({
 }
 
 // ---------------------------------------------------------------------------
-// 4. On track
+// 4. Work by state
 // ---------------------------------------------------------------------------
 
 function groupSummary(g: RepoGroup, windowSecs: number | null): string {
@@ -979,7 +1268,7 @@ function groupSummary(g: RepoGroup, windowSecs: number | null): string {
   return [
     `shipped ${n(c.shipped)}`,
     `in flight ${n(c.in_flight)}`,
-    `no recorded change ${stallWindowDays(windowSecs)} d ${n(c.stalled)}`,
+    `no recorded change in ${stallWindowDays(windowSecs)} days ${n(c.stalled)}`,
     `waiting ${n(waiting)}`,
   ].join(" · ");
 }
@@ -1108,18 +1397,63 @@ function NamedUnits({
   );
 }
 
+/**
+ * Every unit a repository group counts, accounted for one click down: each
+ * class's count (`groupBreakdown`), and — because coord names the units of
+ * only two classes here — how many of the counted units are listed on the
+ * Work units page instead, with the link where it opens (`useLinkOpens`).
+ */
+function GroupUnitsAccount({
+  g,
+  windowSecs,
+}: {
+  g: RepoGroup;
+  windowSecs: number | null;
+}) {
+  const opens = useLinkOpens();
+  const b = groupBreakdown(g);
+  const unnamed = unnamedUnitsSentence(b.unnamed);
+  return (
+    <div
+      className="space-y-1 text-muted-foreground"
+      data-testid="coord-home.on-track.group.classes"
+    >
+      <p className="m-0">{groupBreakdownSentence(b, windowSecs)}</p>
+      {unnamed !== null && (
+        <p className="m-0" data-testid="coord-home.on-track.group.unnamed">
+          {unnamed}
+          {b.unnamed === null ? null : opens("/admin/coord/work-units") ? (
+            <>
+              {b.unnamed === 1 ? "; it is on" : "; they are on"}{" "}
+              <LensLink href="/admin/coord/work-units" className="underline">
+                Work units
+              </LensLink>
+              .
+            </>
+          ) : (
+            "."
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function RepoGroupRow({
   g,
   windowSecs,
   expanded,
   onToggle,
   unitRepos,
+  aliases,
 }: {
   g: RepoGroup;
   windowSecs: number | null;
   expanded: boolean;
   onToggle: () => void;
   unitRepos: UnitRepos;
+  /** The section's repository aliases, kept across polls. */
+  aliases: RepositoryAliases;
 }) {
   const { presenting } = usePresentationMode();
   const scope = usePresentationScopeState();
@@ -1131,6 +1465,12 @@ function RepoGroupRow({
   const keyShown =
     key !== null &&
     (!presenting || redactionVerdict({ text: key, repo: key }, scope).show);
+  // A withheld repository is its alias ("Repository A"), so two withheld
+  // repositories never read as one; the alias is all the presentation says.
+  const alias =
+    presenting && g.kind === "repo" && key !== null && !keyShown
+      ? aliases.alias(key)
+      : null;
   return (
     <RecordRow
       identity={
@@ -1142,14 +1482,16 @@ function RepoGroupRow({
           <RedactedText
             text={key}
             repo={key}
-            descriptor={REPOSITORY_DESCRIPTOR}
+            descriptor={
+              alias === null
+                ? REPOSITORY_DESCRIPTOR
+                : repositoryAliasDescriptor(alias)
+            }
           />
         )
       }
       label={groupSummary(g, windowSecs)}
-      status={
-        <HomeBadge kind="repo_group" label={`${g.rowCount ?? "–"} units`} />
-      }
+      status={<HomeBadge kind="repo_group" label={unitCountText(g.rowCount)} />}
       attention={HOME_ATTENTION_BY_KIND.repo_group}
       expanded={expanded}
       onToggle={onToggle}
@@ -1160,11 +1502,12 @@ function RepoGroupRow({
           <p className="m-0">
             {g.kind === "unattributed_repo"
               ? "Work units that name no repository. They are counted here rather than dropped."
-              : `Work units that name ${keyShown ? key : "this repository"}. A unit naming several repositories is counted under each.`}
+              : `Work units that name ${keyShown ? key : (alias ?? "this repository")}. A unit naming several repositories is counted under each.`}
           </p>
         }
         problems={
           <div className="space-y-2">
+            <GroupUnitsAccount g={g} windowSecs={windowSecs} />
             <NamedUnits
               title={`No recorded change in ${days} days`}
               list={g.named.stalled}
@@ -1205,6 +1548,17 @@ function InitiativeBlock({
     body = (
       <p className="m-0 text-muted-foreground">
         Coord served no initiative reading — unknown.
+      </p>
+    );
+  } else if (i.state === "unparseable" && presenting) {
+    // Coord's parser message quotes the document, and a descriptor in its
+    // place reads as a garbled clause: a fixed sentence says it instead.
+    body = (
+      <p
+        className="m-0 text-muted-foreground"
+        data-testid="coord-home.on-track.initiative.unparseable"
+      >
+        {INITIATIVE_UNPARSEABLE_SENTENCE}
       </p>
     );
   } else if (i.state === "unparseable") {
@@ -1346,6 +1700,7 @@ export function OnTrackSection({
   generatedAt?: string | null;
 }) {
   const rowKey = useRowKey();
+  const [repoAliases] = useState(() => new RepositoryAliases());
   const read = onTrack.state === "read";
   const stallWindow = onTrack.stallWindowSecs;
   // Which repositories each named unit may belong to — read once from every
@@ -1373,10 +1728,13 @@ export function OnTrackSection({
     >
       <RegionCaption region="on-track" reading={{ generatedAt, kept: stale }} />
       <div className="flex items-baseline gap-2">
-        <h2 className={HEADING}>On track</h2>
-        <span className="text-xs text-muted-foreground tabular-nums">
+        <h2 className={HEADING}>Work by state</h2>
+        <span
+          className="text-xs text-muted-foreground tabular-nums"
+          data-testid="coord-home.on-track.count"
+        >
           {read
-            ? `${onTrack.rowCount ?? "–"} work units`
+            ? unitCountText(onTrack.rowCount, "work unit")
             : BLOCK_STATE_PHRASE[onTrack.state]}
         </span>
       </div>
@@ -1423,6 +1781,7 @@ export function OnTrackSection({
                 expanded={ctx.expanded}
                 onToggle={ctx.onToggle}
                 unitRepos={unitRepos}
+                aliases={repoAliases}
               />
             )}
           />
@@ -1462,6 +1821,9 @@ export function CorrectSection({
   // "No source" only when coord SAYS no source exists. Any other unread state
   // (could not read, stale, absent from the body) says nothing about a source.
   const noSource = correctnessHasNoSource(correctness);
+  // A section with nothing built behind it is left out of the presented
+  // page; the operator still sees it, so its absence stays visible there.
+  if (correctLeftOut(correctness, presenting)) return null;
   const label = measured
     ? "Coord reports a correctness reading; this page does not render it yet"
     : noSource
@@ -1521,6 +1883,160 @@ export function CorrectSection({
 // 6. What this view does not know
 // ---------------------------------------------------------------------------
 
+/** One source coord lists in `does_not_know`, as a record row. */
+function SourceRow({
+  s,
+  planes,
+  expanded,
+  onToggle,
+}: {
+  s: SourceCoverageView;
+  planes: PlaneView[] | null;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const { presenting } = usePresentationMode();
+  const words = sourceTimeWords(s);
+  return (
+    <RecordRow
+      identity={s.state === "read" ? "read" : "not read"}
+      // R8: words on the row; coord's raw id only in the title and the
+      // detail's last line — both the operator's alone.
+      label={
+        <span title={presenting ? undefined : s.source}>
+          {presenting
+            ? // A source the table does not label would read as coord's
+              // identifier: fixed words while presenting.
+              presentedSourceLabel(s.source, planes)
+            : sourceLabel(s.source, planes)}
+        </span>
+      }
+      status={
+        <HomeBadge
+          kind={s.state === "read" ? "source_read" : "source_not_read"}
+          label={BLOCK_STATE_PHRASE[s.state]}
+        />
+      }
+      // A clause coord did not state is said once, under the list
+      // (`unstatedSummary`), not on every row.
+      reason={sourceRowReason(s, { omitUnstated: true })}
+      time={
+        <RowTime
+          at={s.asOf}
+          verb={words.verb}
+          absent={{ label: words.absentLabel, title: words.absentTitle }}
+        />
+      }
+      attention={
+        HOME_ATTENTION_BY_KIND[
+          s.state === "read" ? "source_read" : "source_not_read"
+        ]
+      }
+      expanded={expanded}
+      onToggle={onToggle}
+      data-testid="coord-home.does-not-know.row"
+    >
+      <RecordDetail
+        why={
+          <div className="space-y-1">
+            <p className="m-0">
+              {s.state === "read"
+                ? `Read ${relativeTime(s.asOf, { absent: "at an unknown time" })}.`
+                : `This source is ${BLOCK_STATE_PHRASE[s.state]}.`}
+              {s.error
+                ? // Coord's own error chain is quoted on the raw line, which
+                  // is not rendered while presenting.
+                  ` ${
+                    presenting && !isWatcherSource(s.source)
+                      ? `Coord reported an error. ${FAILURE_SENTENCE_WITHHELD}`
+                      : sourceErrorSentence(s)
+                  }`
+                : ""}
+            </p>
+            <p className="m-0 text-muted-foreground">
+              Freshness bound:{" "}
+              {s.freshnessBoundSecs === null
+                ? "not stated"
+                : boundText(s.freshnessBoundSecs)}
+              {" · "}Rows considered: {s.rowsConsidered ?? "not stated"}
+              {" · "}Rows excluded: {s.rowsExcluded ?? "not stated"}
+            </p>
+            {s.exclusionReason && (
+              <p className="m-0 text-muted-foreground">
+                Why excluded:{" "}
+                <RedactedText
+                  text={withoutVerdictWords(s.exclusionReason)}
+                  repo={null}
+                  descriptor={reasonDescriptor("excluded", s.asOf)}
+                />
+              </p>
+            )}
+          </div>
+        }
+        raw={
+          // R8's raw last line — coord's source id and error chain — is the
+          // operator's: not rendered while presenting.
+          presenting ? undefined : (
+            <span
+              className="font-mono text-[10px] text-muted-foreground/60 break-all"
+              data-testid="coord-home.does-not-know.raw"
+            >
+              {sourceRawLine(s)}
+            </span>
+          )
+        }
+      />
+    </RecordRow>
+  );
+}
+
+/** A list of sources, then the one line for the clauses coord did not state. */
+function SourceList({
+  sources,
+  list,
+  planes,
+  testId,
+}: {
+  sources: SourceCoverageView[];
+  list: string;
+  planes: PlaneView[] | null;
+  testId: string;
+}) {
+  const rowKey = useRowKey();
+  const unstated = unstatedSummary(sources);
+  return (
+    <div className="space-y-1">
+      <RecordList
+        items={sources}
+        itemKey={(s, i) => rowKey(list, `${s.source}:${i}`)}
+        renderRow={(s, ctx) => (
+          <SourceRow
+            s={s}
+            planes={planes}
+            expanded={ctx.expanded}
+            onToggle={ctx.onToggle}
+          />
+        )}
+      />
+      {unstated !== null && (
+        <p
+          className="m-0 text-xs text-muted-foreground"
+          data-testid={`${testId}.unstated`}
+        >
+          {unstated}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What this view does not know. The sources coord could not fully read are
+ * the section's answer, so they are listed; the sources it read answer no
+ * question the section asks, so they sit behind one disclosure with their
+ * count. Neither list repeats a clause coord did not state on every row: it
+ * says it once, counted (`unstatedSummary`).
+ */
 export function DoesNotKnowSection({
   sources,
   planes = null,
@@ -1535,11 +2051,20 @@ export function DoesNotKnowSection({
   generatedAt?: string | null;
 }) {
   const { presenting } = usePresentationMode();
-  const rowKey = useRowKey();
+  const notRead = sources?.filter((s) => s.state !== "read") ?? [];
+  const read = sources?.filter((s) => s.state === "read") ?? [];
+  // While presenting, a source coord has not built yet is not listed: one
+  // line counts them, so the header's figure still adds up.
+  const unbuilt = presenting
+    ? notRead.filter((s) => s.state === "not_implemented")
+    : [];
+  const unread = presenting
+    ? notRead.filter((s) => s.state !== "not_implemented")
+    : notRead;
   const count =
     sources === null
       ? "unknown"
-      : `${sources.filter((s) => s.state !== "read").length} of ${sources.length} sources not read`;
+      : `${notRead.length} of ${sources.length} sources not read`;
   return (
     <section
       className="space-y-2"
@@ -1552,7 +2077,10 @@ export function DoesNotKnowSection({
       />
       <div className="flex items-baseline gap-2">
         <h2 className={HEADING}>What this view does not know</h2>
-        <span className="text-xs text-muted-foreground tabular-nums">
+        <span
+          className="text-xs text-muted-foreground tabular-nums"
+          data-testid="coord-home.does-not-know.count"
+        >
           {count}
         </span>
       </div>
@@ -1561,111 +2089,71 @@ export function DoesNotKnowSection({
           Coord served no list of the sources it read, so what this view does
           not know is itself unknown.
         </p>
+      ) : sources.length === 0 ? (
+        <p className="m-0 text-sm text-muted-foreground">
+          Coord listed no sources — unknown.
+        </p>
       ) : (
-        <RecordList
-          items={sources}
-          itemKey={(s, i) => rowKey("source", `${s.source}:${i}`)}
-          empty={
-            <p className="m-0 text-sm text-muted-foreground">
-              Coord listed no sources — unknown.
+        <>
+          {notRead.length === 0 ? (
+            <p
+              className="m-0 text-sm"
+              data-testid="coord-home.does-not-know.all-read"
+            >
+              {stale
+                ? `Coord had read every source it lists ${lastGoodReadPhrase(generatedAt)}.`
+                : "Coord read every source it lists."}
             </p>
-          }
-          renderRow={(s, ctx) => (
-            <RecordRow
-              identity={s.state === "read" ? "read" : "not read"}
-              // R8: words on the row; coord's raw id only in the title and
-              // the detail's last line — both the operator's alone.
-              label={
-                <span title={presenting ? undefined : s.source}>
-                  {presenting
-                    ? // A source the table does not label would read as
-                      // coord's identifier: fixed words while presenting.
-                      presentedSourceLabel(s.source, planes)
-                    : sourceLabel(s.source, planes)}
-                </span>
-              }
-              status={
-                <HomeBadge
-                  kind={s.state === "read" ? "source_read" : "source_not_read"}
-                  label={BLOCK_STATE_PHRASE[s.state]}
+          ) : (
+            unread.length > 0 && (
+              <SourceList
+                sources={unread}
+                list="source"
+                planes={planes}
+                testId="coord-home.does-not-know.not-read"
+              />
+            )
+          )}
+          {unbuilt.length > 0 && (
+            <p
+              className="m-0 text-sm text-muted-foreground"
+              data-testid="coord-home.does-not-know.not-built"
+            >
+              {unbuilt.length === 1
+                ? "1 further source is not built yet, so this view does not show it."
+                : `${unbuilt.length} further sources are not built yet, so this view does not show them.`}
+            </p>
+          )}
+          {read.length > 0 && (
+            <CollapsiblePanel
+              title="Sources read"
+              titleAs="h3"
+              defaultOpen={false}
+              summary={
+                <StatCluster
+                  stats={[
+                    {
+                      key: "read",
+                      label: "read ",
+                      value: read.length,
+                      tone: "muted",
+                    },
+                  ]}
+                  data-testid="coord-home.does-not-know.read-count"
                 />
               }
-              reason={sourceRowReason(s)}
-              time={(() => {
-                const words = sourceTimeWords(s);
-                return (
-                  <RowTime
-                    at={s.asOf}
-                    verb={words.verb}
-                    absent={{
-                      label: words.absentLabel,
-                      title: words.absentTitle,
-                    }}
-                  />
-                );
-              })()}
-              attention={
-                HOME_ATTENTION_BY_KIND[
-                  s.state === "read" ? "source_read" : "source_not_read"
-                ]
-              }
-              expanded={ctx.expanded}
-              onToggle={ctx.onToggle}
-              data-testid="coord-home.does-not-know.row"
+              data-testid="coord-home.does-not-know.read"
+              data-ui-bridge-id="coord-home.does-not-know.read"
             >
-              <RecordDetail
-                why={
-                  <div className="space-y-1">
-                    <p className="m-0">
-                      {s.state === "read"
-                        ? `Read ${relativeTime(s.asOf, { absent: "at an unknown time" })}.`
-                        : `This source is ${BLOCK_STATE_PHRASE[s.state]}.`}
-                      {s.error
-                        ? // Coord's own error chain is quoted on the raw
-                          // line, which is not rendered while presenting.
-                          ` ${
-                            presenting && !isWatcherSource(s.source)
-                              ? `Coord reported an error. ${FAILURE_SENTENCE_WITHHELD}`
-                              : sourceErrorSentence(s)
-                          }`
-                        : ""}
-                    </p>
-                    <p className="m-0 text-muted-foreground">
-                      Freshness bound:{" "}
-                      {s.freshnessBoundSecs === null
-                        ? "not stated"
-                        : boundText(s.freshnessBoundSecs)}
-                      {" · "}Rows considered: {s.rowsConsidered ?? "not stated"}
-                      {" · "}Rows excluded: {s.rowsExcluded ?? "not stated"}
-                    </p>
-                    {s.exclusionReason && (
-                      <p className="m-0 text-muted-foreground">
-                        Why excluded:{" "}
-                        <RedactedText
-                          text={withoutVerdictWords(s.exclusionReason)}
-                          repo={null}
-                          descriptor={reasonDescriptor("excluded", s.asOf)}
-                        />
-                      </p>
-                    )}
-                  </div>
-                }
-                raw={
-                  // R8's raw last line — coord's source id and error chain —
-                  // is the operator's: not rendered while presenting.
-                  presenting ? undefined : (
-                    <span
-                      className="font-mono text-[10px] text-muted-foreground/60 break-all"
-                      data-testid="coord-home.does-not-know.raw"
-                    >
-                      {sourceRawLine(s)}
-                    </span>
-                  )
-                }
+              <SourceList
+                sources={read}
+                list="source-read"
+                planes={planes}
+                testId="coord-home.does-not-know.read"
               />
-            </RecordRow>
+            </CollapsiblePanel>
           )}
-        />
+        </>
       )}
     </section>
   );

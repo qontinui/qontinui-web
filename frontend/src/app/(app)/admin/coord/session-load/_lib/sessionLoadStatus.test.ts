@@ -776,9 +776,10 @@ describe("runs", () => {
   });
 
   it("links the gate, spawn request, session and work unit it names", () => {
-    expect(runLinks(run()).map((l) => [l.key, l.href])).toEqual([
+    const nowMs = Date.parse("2026-10-26T10:30:00Z");
+    expect(runLinks(run(), nowMs).map((l) => [l.key, l.href])).toEqual([
       ["gate", "/admin/coord/gates?gate=2d2c3b4a-0000-4000-8000-000000000002"],
-      ["spawn", "/admin/coord/spawns"],
+      ["spawn", "/admin/coord/spawns/requests?window=7d"],
       ["session", "/sessions/1d2c3b4a-0000-4000-8000-000000000001"],
     ]);
     expect(
@@ -788,7 +789,8 @@ describe("runs", () => {
           spawn_request_id: null,
           agent_id: "a 1",
           work_unit_slug: "plan a",
-        })
+        }),
+        nowMs
       ).map((l) => l.href)
     ).toEqual([
       "/sessions/1d2c3b4a-0000-4000-8000-000000000001",
@@ -798,8 +800,9 @@ describe("runs", () => {
   });
 
   it("links a run's session by the Claude id every run carries, and says when it is reconciled", () => {
+    const nowMs = Date.parse("2026-10-26T10:30:00Z");
     const session = (over: Record<string, unknown>) =>
-      runLinks(run(over)).find((l) => l.key === "session");
+      runLinks(run(over), nowMs).find((l) => l.key === "session");
     expect(session({ coord_session_id: "s-1" })?.id).toBe(
       "1d2c3b4a-0000-4000-8000-000000000001"
     );
@@ -820,9 +823,48 @@ describe("runs", () => {
           claude_code_session_id: "",
           gate_id: null,
           spawn_request_id: null,
-        })
+        }),
+        nowMs
       )
     ).toEqual([]);
+  });
+
+  it("opens a spawn request one window wider than the run's start needs, and 30 days at most, flagged when none is wider", () => {
+    const start = Date.parse("2026-10-26T10:00:00Z");
+    const spawn = (nowMs: number, over = {}) =>
+      runLinks(run(over), nowMs).find((l) => l.key === "spawn");
+    const href = (nowMs: number, over = {}) => spawn(nowMs, over)?.href;
+    const hour = 3600_000;
+    const day = 24 * hour;
+    // A start inside 24 h opens 7 d: the request may predate its run (a
+    // request made 25 h ago and deferred 2 h starts its run 23 h ago).
+    expect(href(start + 23 * hour)).toBe(
+      "/admin/coord/spawns/requests?window=7d"
+    );
+    expect(href(start + day)).toBe("/admin/coord/spawns/requests?window=7d");
+    expect(spawn(start + day)?.label).toBe("Find the spawn request");
+    // Past 24 h, inside 7 d: 30 d, which is still one window wider.
+    expect(href(start + day + 1)).toBe(
+      "/admin/coord/spawns/requests?window=30d"
+    );
+    expect(spawn(start + 7 * day)?.label).toBe("Find the spawn request");
+    // Past 7 d (inside 30 d), older than every window, or a start nobody can
+    // read: no window is wider than the one holding the start, so 30 d —
+    // never the 7 d default — and the link says the request may be older
+    // than it. A run started 29 d 23 h ago from a request deferred 2 h is
+    // the case the 7–30 d band covers.
+    for (const old of [
+      spawn(start + 7 * day + 1),
+      spawn(start + 29 * day + 23 * hour),
+      spawn(start + 30 * day),
+      spawn(start + 30 * day + 1),
+      spawn(start, { started_at: "not a date" }),
+    ]) {
+      expect(old?.href).toBe("/admin/coord/spawns/requests?window=30d");
+      expect(old?.label).toBe(
+        "Find the spawn request (it may be older than the last 30 days, the widest view)"
+      );
+    }
   });
 
   it("says when a finished run is still holding its slot, and only then", () => {

@@ -705,6 +705,35 @@ describe("CoordNav", () => {
       }
     });
 
+    it("counts a machine with no state as no verdict, never as unhealthy", async () => {
+      // The nav's predicate needs a verdict: coord sent `state` for d-1 and
+      // d-3 only. Home follows a different predicate (`machineHealth.ts`);
+      // this pins that the nav's own did not move with it.
+      routeFleet(
+        {
+          devices: [
+            coordDevice("d-1", "msi", "healthy"),
+            coordDevice("d-2", "nuc"),
+            coordDevice("d-3", "box", "abandoned"),
+          ],
+        },
+        {
+          latest: [
+            sample("d-1", null, "ok"),
+            sample("d-2", null, "ok"),
+            sample("d-3", null, "ok"),
+          ],
+          history: [],
+        }
+      );
+      render(<CoordNav />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-nav-devops-unhealthy-badge")
+        ).toHaveTextContent("1 unhealthy")
+      );
+    });
+
     it("shows `unknown`, not silence, when the fleet's telemetry has gone dark", async () => {
       // The false-safe this badge exists to prevent: machines are registered,
       // nothing is publishing samples. A breach-only badge would render this

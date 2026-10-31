@@ -376,7 +376,7 @@ def _reraise_coord_refusal(exc: HTTPException) -> HTTPException:
     * 4xx with a JSON ``{"error": "<prose>"}`` body (no ``message``): reworded
       as ``coord_refused`` with a readable ``message`` —
       ``http_exception_handler`` would otherwise render ``message`` as the
-      Python repr of the whole dict.
+      bare ``error`` string, with no "coord refused" framing.
     * 5xx: a generic "coord failed" with the status only. coord's 5xx text can
       carry SQL/pool context (``pg_error::wrap``), which must not reach the
       browser, and it is NOT tagged ``coord_refused`` — the frontend unwraps

@@ -89,6 +89,21 @@ import {
   describeCoordPollError,
 } from "@/components/operations/coordPollError";
 import { readErrorBody } from "@/lib/errors/backend-error-message";
+import {
+  degradingCoverage,
+  emptyRosterSentence,
+  isRosterComplete,
+  noLiveMachine,
+  noLiveMachineSentence,
+  notDegradationsSentence,
+  placeholdersSentence,
+  rosterCutHidesHealth,
+  rosterCutSentence,
+  rosterIncompleteSentence,
+  type MachineHealthCounts,
+  type RosterCut,
+  type RosterExclusions,
+} from "@/components/admin/coord/machineHealth";
 
 /** Poll cadence — the profile's "the right altitude, not the fastest feed". */
 export const PROJECT_STATE_POLL_MS = 60_000;
@@ -176,6 +191,26 @@ export type ClassCounts = Readonly<Record<UnitClass, number | null>>;
 
 /** Coord's compiled stall window (14 days) — used only when the wire omits it. */
 export const DEFAULT_STALL_WINDOW_SECS = 14 * 24 * 3600;
+
+/**
+ * A count of work units with its unit, singular for one: "1 unit",
+ * "3 units", "– units" when coord served no count (never a zero).
+ */
+export function unitCountText(n: number | null, noun = "unit"): string {
+  return `${n === null ? "–" : n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * The strip's badge for the stall class, in plain words with its unit:
+ * "3 units with no recorded change in 14 days"; "– units …" when coord
+ * served no count. Never "stalled", and never an abbreviation ("14 d").
+ */
+export function noRecordedChangeBadgeLabel(
+  count: number | null,
+  windowSecs: number | null
+): string {
+  return `${unitCountText(count)} with no recorded change in ${stallWindowDays(windowSecs)} days`;
+}
 
 /** Whole days in a stall window, for the label. */
 export function stallWindowDays(windowSecs: number | null): number {
@@ -327,6 +362,79 @@ function parseGroup(raw: unknown): RepoGroup | null {
       waitingOnGate: parseNamedList(named?.waiting_on_gate),
     },
   };
+}
+
+/** The classes coord names units for, per repository group (`named`). */
+export const NAMED_UNIT_CLASSES: ReadonlySet<UnitClass> = new Set([
+  "stalled",
+  "waiting_on_gate",
+]);
+
+/**
+ * What a repository group's expanded detail says about the units it counts.
+ *
+ * Coord's project state serves every class's COUNT per group, but names the
+ * units of only two classes (`named.stalled`, `named.waiting_on_gate`). So
+ * the detail accounts for every unit the badge counts: each class with a
+ * count, in coord's order (`counted`); the classes coord served no count for
+ * (`unserved`, never a zero); and how many counted units sit in a class whose
+ * units coord does not name here (`unnamed`, null when any of those classes
+ * is unserved) — those are on the Work units page, not on this one.
+ */
+export interface GroupBreakdown {
+  counted: ReadonlyArray<{ cls: UnitClass; count: number }>;
+  unserved: readonly UnitClass[];
+  unnamed: number | null;
+}
+
+export function groupBreakdown(g: RepoGroup): GroupBreakdown {
+  const counted: { cls: UnitClass; count: number }[] = [];
+  const unserved: UnitClass[] = [];
+  let unnamed: number | null = 0;
+  for (const cls of UNIT_CLASSES) {
+    const n = g.classes[cls];
+    if (n === null) {
+      unserved.push(cls);
+      if (!NAMED_UNIT_CLASSES.has(cls)) unnamed = null;
+      continue;
+    }
+    if (n > 0) counted.push({ cls, count: n });
+    if (!NAMED_UNIT_CLASSES.has(cls) && unnamed !== null) unnamed += n;
+  }
+  return { counted, unserved, unnamed };
+}
+
+/** The breakdown as one sentence: "By state: not started 1 · shipped 2." */
+export function groupBreakdownSentence(
+  b: GroupBreakdown,
+  windowSecs: number | null
+): string {
+  const label = (cls: UnitClass) => unitClassLabel(cls, windowSecs);
+  const parts: string[] = [];
+  parts.push(
+    b.counted.length === 0
+      ? "By state: no class holds a unit."
+      : `By state: ${b.counted.map((c) => `${label(c.cls)} ${c.count}`).join(" · ")}.`
+  );
+  if (b.unserved.length > 0) {
+    parts.push(
+      `Coord served no count for ${b.unserved.map(label).join(", ")} — unknown, not zero.`
+    );
+  }
+  return parts.join(" ");
+}
+
+/**
+ * The sentence for the units coord does not name on this page, or null when
+ * every counted unit is in a named class. `count` null: some such class was
+ * not counted, so how many is unknown.
+ */
+export function unnamedUnitsSentence(count: number | null): string | null {
+  if (count === 0) return null;
+  if (count === null) {
+    return "Coord names units here only when they have no recorded change or wait on a condition; how many of this repository's other units exist is unknown.";
+  }
+  return `Coord names units here only when they have no recorded change or wait on a condition, so ${count === 1 ? "the 1 other unit is" : `the ${count} other units are`} not listed here`;
 }
 
 /** Work attributed to an initiative item (or a bucket), as coord counts it. */
@@ -1414,17 +1522,44 @@ export function sourceAgePhrase(s: SourceCoverageView): string {
  * it left out. A field coord did not state is said to be not stated — never a
  * dash, never a zero.
  */
-export function sourceRowReason(s: SourceCoverageView): string {
+export function sourceRowReason(
+  s: SourceCoverageView,
+  { omitUnstated = false }: { omitUnstated?: boolean } = {}
+): string {
   const parts: string[] = [];
   const error = sourceErrorWords(s);
   if (error !== null) parts.push(error);
-  parts.push(sourceAgePhrase(s));
-  parts.push(
-    s.rowsExcluded === null
-      ? "exclusions not stated"
-      : `${s.rowsExcluded} excluded`
-  );
+  // With `omitUnstated`, a field coord did not state is left off the row: the
+  // list says it once for every row it applies to (`unstatedSummary`), rather
+  // than repeat the identical clause on each.
+  if (!(omitUnstated && s.freshnessBoundSecs === null)) {
+    parts.push(sourceAgePhrase(s));
+  }
+  if (s.rowsExcluded !== null) parts.push(`${s.rowsExcluded} excluded`);
+  else if (!omitUnstated) parts.push("exclusions not stated");
   return parts.join(" · ");
+}
+
+/**
+ * The one line a list of sources says in place of a "not stated" clause on
+ * every row (`sourceRowReason` with `omitUnstated`): how many of `sources`
+ * coord gave no age bound for, and how many no exclusion count — or null
+ * when it stated both for every one. Counted, never dropped: a field coord
+ * did not state is still said to be not stated.
+ */
+export function unstatedSummary(
+  sources: readonly SourceCoverageView[]
+): string | null {
+  const n = sources.length;
+  const noBound = sources.filter((s) => s.freshnessBoundSecs === null).length;
+  const noExcl = sources.filter((s) => s.rowsExcluded === null).length;
+  const of = (k: number) =>
+    k === n ? (n === 1 ? "it" : `all ${n}`) : `${k} of ${n}`;
+  const parts: string[] = [];
+  if (noBound > 0) parts.push(`no age bound for ${of(noBound)}`);
+  if (noExcl > 0) parts.push(`no count of excluded rows for ${of(noExcl)}`);
+  if (parts.length === 0) return null;
+  return `Coord stated ${parts.join(", and ")}.`;
 }
 
 /**
@@ -1534,7 +1669,7 @@ export type HomeBlock =
 export const HOME_BLOCK_LABEL: Readonly<Record<HomeBlock, string>> = {
   needs_me: "needs you",
   degradations: "degrading",
-  on_track: "on track",
+  on_track: "work by state",
   correctness: "correct?",
 };
 
@@ -1589,12 +1724,110 @@ export interface HomeStripReadState {
    * the last good read's, and the strip is amber at the least.
    */
   stale?: boolean;
+  /**
+   * Coord's machine roster as the page read it beside the project state
+   * (`_lib/homeSupplements.ts`), the source the `Dev Ops ▾` badge counts
+   * from. Absent or null: not read — UNKNOWN, so the strip is never green and
+   * never says nothing is degrading.
+   */
+  machines?: HomeStripMachines | null;
+  /**
+   * The page leaves its Correct? section out (while presenting, with nothing
+   * built behind it). The strip then names no "correct?" in what it did not
+   * read — there is no section to look at — and says in one plain line that
+   * correctness is not measured yet, so the reader still learns it. It still
+   * floors at amber: correctness is not known.
+   */
+  correctnessLeftOut?: boolean;
+  /**
+   * The page is presenting. The strip then speaks of what waits on the
+   * operator in the presented Needs-you section's own words: it names no
+   * Gates or Questions page (neither can be shown), and while coord has not
+   * built its needs block — which the presented section leaves out, with its
+   * "not built yet" wording — the strip does not name that block either. It
+   * still floors at amber: the block is not read.
+   */
+  presenting?: boolean;
+  /**
+   * The Gates and Questions queues' counts of what waits on the operator,
+   * summed — read beside the project state while coord serves no readable
+   * `needs_me` block (`_lib/homeSupplements.ts`). Used only while that block
+   * is unread, and marked as counts from the queues wherever it shows. Null
+   * or absent unless AT LEAST ONE queue was read; with one unread the sum is
+   * a lower bound (`notRead`).
+   */
+  queues?: HomeStripQueues | null;
+}
+
+/** The two queue counts as the strip uses them. */
+export interface HomeStripQueues {
+  /** Open operator gates plus pending operator questions, of those read. */
+  count: number;
+  /** Both counts were read and are whole queues; false: at least `count`. */
+  exact: boolean;
+  /** Either count is a last good reading after a failed read. */
+  stale: boolean;
+  /** The queues whose read did not land; their share is unknown. */
+  notRead: readonly HomeQueue[];
+}
+
+/** One of the two queues the strip may count from. */
+export type HomeQueue = "gates" | "questions";
+
+/** The machine roster's counts, for the strip. */
+export interface HomeStripMachines {
+  /** A later read failed; these are the last good counts. */
+  stale: boolean;
+  /** The roster's counts (`machineHealth.ts` says what each one is). */
+  counts: MachineHealthCounts;
+  /** What coord said it withheld from the roster; only `none_withheld` is complete. */
+  exclusions: RosterExclusions;
+  /** Whether coord cut the roster at its row limit; complete unless it hides health. */
+  cut: RosterCut;
+}
+
+/** "1 machine is" / "2 machines are". */
+function machinesAre(n: number): string {
+  return `${n} ${n === 1 ? "machine is" : "machines are"}`;
+}
+
+/** Where the strip says the queue counts come from, in the mode's words. */
+function queuesSourceText(presenting: boolean): string {
+  return presenting
+    ? "coord's lists of open approvals and pending agent questions"
+    : "the Gates and Questions queues";
+}
+
+/** One queue, named as the mode names it. */
+function queueName(q: HomeQueue, presenting: boolean): string {
+  if (presenting) {
+    return q === "gates"
+      ? "the list of open approvals"
+      : "the list of pending agent questions";
+  }
+  return q === "gates" ? "the Gates queue" : "the Questions queue";
+}
+
+function capitalizeFirst(s: string): string {
+  return s.length === 0 ? s : s[0]!.toUpperCase() + s.slice(1);
+}
+
+/**
+ * The queue figure on the badge: exact, `≥N`, or — for a lower bound of
+ * zero — "none counted yet", never "≥0".
+ */
+function queuesFigure(q: HomeStripQueues): string {
+  if (q.exact) return String(q.count);
+  return q.count === 0 ? "none counted yet" : `≥${q.count}`;
 }
 
 /** "at the last good read (T)" — the qualifier a stale view carries. */
 export function lastGoodReadPhrase(generatedAt: string | null): string {
   return `at the last good read (${absoluteTime(generatedAt)})`;
 }
+
+/** The strip's one line for a Correct? section the page leaves out. */
+export const CORRECTNESS_NOT_MEASURED_TEXT = "Correctness is not measured yet.";
 
 /** The page's words for a deployment that does not serve the door yet. */
 export const PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT =
@@ -1666,7 +1899,7 @@ export function deriveHomeStrip(
         },
         {
           key: "no-change",
-          label: `no change ${stallWindowDays(null)} d –`,
+          label: noRecordedChangeBadgeLabel(null, null),
           tone: "muted",
           testId: "coord-home.strip.no-change",
         },
@@ -1676,6 +1909,7 @@ export function deriveHomeStrip(
           tone: "muted",
           testId: "coord-home.strip.unknown-sources",
         },
+        machinesBadge(read.machines ?? null),
       ],
     };
   }
@@ -1687,21 +1921,83 @@ export function deriveHomeStrip(
       ? null
       : view.doesNotKnow.filter((s) => s.state !== "read").length;
 
+  const presenting = read.presenting === true;
   const needsRead = view.needsMe.state === "read";
+  // While presenting, the Needs-you section leaves an unbuilt block out, so
+  // the strip names it nowhere either (`presenting` above).
+  const needsLeftOut = presenting && view.needsMe.state === "not_implemented";
   // The displayable count: null when absent OR contradicted by the list.
   const needsTotal = needsDisplayCount(view.needsMe);
   const needsListed = needsRead ? (view.needsMe.items?.length ?? 0) : 0;
-  const needsSomething =
-    needsRead && ((needsTotal ?? 0) > 0 || needsListed > 0);
+  // With coord's needs block unread, the queue counts stand in for it —
+  // marked as theirs in the headline, the detail and the badge.
+  const queues = needsRead ? null : (read.queues ?? null);
+  const needsSomething = needsRead
+    ? (needsTotal ?? 0) > 0 || needsListed > 0
+    : queues !== null && queues.count > 0;
+  // Only coord's own block answers "nothing needs you": the queue counts
+  // give a figure, never that answer.
+  const nothingNeedsYou = needsRead && needsTotal !== null;
   const open = openDegradations(view.degradations);
   const degRowsServed =
     view.degradations.state === "read" || view.degradations.state === "stale";
   const degradedRead = view.degradations.state === "read";
   const stalled = view.onTrack.totals?.stalled ?? null;
+  // Coord's project state already lists a degrading machine as a row of its
+  // own (`machineHealth.ts`); the roster read beside it adds only the
+  // degrading machines that list does not show — never one twice — and says
+  // which machines have no verdict. An abandoned machine is a decision, not a
+  // degradation. Unread is UNKNOWN.
+  const machines = read.machines ?? null;
+  const mc = machines?.counts ?? null;
+  const unlistedDegrading =
+    mc === null
+      ? 0
+      : degradingCoverage(mc, degRowsServed ? (open ?? null) : null).unlisted;
+  const machinesDegrading = unlistedDegrading > 0;
+  const listedDegrading =
+    mc === null || !degRowsServed
+      ? 0
+      : degradingCoverage(mc, open ?? null).listed;
+  const machinesCalm =
+    machines !== null &&
+    mc !== null &&
+    !machines.stale &&
+    // Zero machines are not a calm fleet: an empty roster never answers
+    // "nothing is degrading". Placeholder rows are not machines, and an
+    // abandoned one does not report, so a roster of only those is not calm.
+    !noLiveMachine(mc) &&
+    // Nor is a roster coord withheld machines from, or could not say, or one
+    // whose cut at coord's row limit may hide a degrading machine.
+    isRosterComplete(machines.exclusions) &&
+    !rosterCutHidesHealth(machines.cut) &&
+    unlistedDegrading === 0 &&
+    mc.noVerdict === 0;
+  // The roster WAS read, is current and withholds nothing, and still is not
+  // calm: some machines have no verdict, its cut hides machines, or no graded
+  // machine is live. The headline says which, never that the roster was not
+  // read. (A degrading machine never reaches it: `somethingDegrading` answers
+  // first.) A machine with no verdict is named before the cut, since "no
+  // listed machine is degrading" is not known of it.
+  const rosterReadNotCalm: "no_verdict" | "cut" | "no_live" | null =
+    machines === null ||
+    mc === null ||
+    machines.stale ||
+    !isRosterComplete(machines.exclusions)
+      ? null
+      : mc.noVerdict > 0
+        ? "no_verdict"
+        : rosterCutHidesHealth(machines.cut)
+          ? "cut"
+          : noLiveMachine(mc)
+            ? "no_live"
+            : null;
+  const somethingDegrading =
+    (open !== null && open.length > 0) || machinesDegrading;
 
   let attention: Attention = "none";
   if (needsSomething) attention = escalateAttention(attention, "author");
-  if (open !== null && open.length > 0) {
+  if (somethingDegrading) {
     attention = escalateAttention(attention, "waiting");
   }
   // Ignorance floors at amber: never green over a block or source not read,
@@ -1713,24 +2009,31 @@ export function deriveHomeStrip(
     unknownSources > 0 ||
     (needsRead && needsTotal === null) ||
     (degRowsServed && open === null) ||
+    !machinesCalm ||
     stale
   ) {
     attention = escalateAttention(attention, "waiting");
   }
 
+  const correctnessLeftOut = read.correctnessLeftOut === true;
   const unreadPhrase = unread
+    .filter((b) => !(correctnessLeftOut && b.block === "correctness"))
+    .filter((b) => !(needsLeftOut && b.block === "needs_me"))
     .map((b) => `${HOME_BLOCK_LABEL[b.block]} ${BLOCK_STATE_PHRASE[b.state]}`)
     .join("; ");
 
   let headline: string;
-  if (attention === "author") {
+  if (attention === "author" && queues !== null) {
+    const n = queues.count;
+    headline = `${queues.exact ? "" : "At least "}${n} ${n === 1 ? "decision needs" : "decisions need"} you — counted from ${queuesSourceText(presenting)}`;
+  } else if (attention === "author") {
     headline =
       // Never "0 decisions need you" beside listed items: a total that is
       // absent, or smaller than what was listed, is not a count to print.
       needsTotal === null
         ? "Decisions need you — how many is unknown"
         : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you`;
-  } else if (open !== null && open.length > 0) {
+  } else if (somethingDegrading) {
     headline = "Something is degrading";
   } else if (stale) {
     // The failed poll is the cause; name it whatever else is unread (coord
@@ -1739,10 +2042,10 @@ export function deriveHomeStrip(
     headline = "Cannot tell now — the latest read failed";
   } else if (
     !stale &&
-    needsRead &&
-    needsTotal !== null &&
+    nothingNeedsYou &&
     degradedRead &&
-    open !== null
+    open !== null &&
+    machinesCalm
   ) {
     // Both blocks the question is about were READ and are empty: answer it,
     // and name what else is unread as a clause rather than replacing the
@@ -1753,6 +2056,35 @@ export function deriveHomeStrip(
     // The clause stays generic: the detail line names what is not read.
     headline = "Nothing needs you and nothing is degrading";
     if (attention === "waiting") headline += " — part of this view is not read";
+  } else if (
+    nothingNeedsYou &&
+    degradedRead &&
+    open !== null &&
+    rosterReadNotCalm !== null
+  ) {
+    // Coord's needs and degradations blocks were read and are empty, and so
+    // was the roster: say what keeps it from calm, not "not read". Any other
+    // gap is a clause, as above; the detail names it.
+    const noVerdict = mc?.noVerdict ?? 0;
+    // The cut is named after the machines with no verdict, never dropped:
+    // "1 machine has no verdict" alone reads as the only thing unknown.
+    const cutClause =
+      machines !== null && rosterCutHidesHealth(machines.cut)
+        ? `, and coord's roster ${machines.cut.kind === "may_be_cut" ? "may be" : "is"} cut off`
+        : "";
+    headline =
+      rosterReadNotCalm === "no_verdict"
+        ? `Nothing needs you, but ${noVerdict} ${noVerdict === 1 ? "machine has" : "machines have"} no health verdict — ${noVerdict === 1 ? "its" : "their"} health is unknown${cutClause}`
+        : rosterReadNotCalm === "no_live"
+          ? "Nothing needs you and no live machine reports — none can be called healthy"
+          : `Nothing needs you and no listed machine is degrading — coord's roster ${machines?.cut.kind === "may_be_cut" ? "may be" : "is"} cut off`;
+    if (
+      unread.length > 0 ||
+      unknownSources === null ||
+      (unknownSources ?? 0) > 0
+    ) {
+      headline += "; part of this view is not read";
+    }
   } else if (attention === "waiting") {
     headline = "Cannot tell — part of this view is not read";
   } else {
@@ -1762,15 +2094,81 @@ export function deriveHomeStrip(
 
   const detailParts: string[] = [];
   if (unreadPhrase) detailParts.push(`Not read: ${unreadPhrase}.`);
+  if (correctnessLeftOut && view.correctness.state !== "read") {
+    detailParts.push(CORRECTNESS_NOT_MEASURED_TEXT);
+  }
   if (needsRead && needsTotal === null) {
     detailParts.push(
       "Coord gave no usable count of the decisions that need you."
+    );
+  }
+  if (queues !== null) {
+    // While presenting, coord's unbuilt needs block is named nowhere (the
+    // section leaves it out), so the presented line says only the source.
+    detailParts.push(
+      `Needs you is counted from ${queuesSourceText(presenting)}${presenting ? "" : ", since coord's needs block is not read"}${queues.stale ? " — at their last good read" : ""}.`
+    );
+    if (queues.notRead.length > 0) {
+      const names = queues.notRead.map((q) => queueName(q, presenting));
+      detailParts.push(
+        `${capitalizeFirst(names.join(" and "))} ${names.length === 1 ? "was" : "were"} not read, so ${names.length === 1 ? "its" : "their"} share is unknown and ${queues.count === 0 ? "none is counted yet" : "the figure is a lower bound"}.`
+      );
+    }
+  } else if (needsLeftOut) {
+    detailParts.push(
+      `Needs you is unknown: ${queuesSourceText(true)} were not read.`
     );
   }
   if (degRowsServed && open === null) {
     detailParts.push(
       "Coord served no list of open degradations — cannot say whether any exist."
     );
+  }
+  if (machines === null || mc === null) {
+    detailParts.push("Machine health was not read.");
+  } else {
+    // Never coord's error text here: the strip is shown in every mode.
+    if (mc.total === 0 && mc.placeholders === 0) {
+      detailParts.push(
+        emptyRosterSentence(machines.exclusions, { withReason: false })
+      );
+    } else {
+      if (mc.total === 0) {
+        detailParts.push("Coord's roster holds no machine it grades.");
+      } else if (noLiveMachine(mc)) {
+        detailParts.push(noLiveMachineSentence(mc));
+      }
+      const incomplete = rosterIncompleteSentence(machines.exclusions, {
+        withReason: false,
+      });
+      if (incomplete) detailParts.push(incomplete);
+      const cut = rosterCutSentence(machines.cut);
+      if (cut) detailParts.push(cut);
+    }
+    // Every machine the badge counts is named once below: listed, unlisted,
+    // or in the reconcile line.
+    if (listedDegrading > 0) {
+      detailParts.push(
+        `${listedDegrading} ${listedDegrading === 1 ? "machine" : "machines"} in a degrading state ${listedDegrading === 1 ? "is" : "are"} among the open degradations.`
+      );
+    }
+    if (unlistedDegrading > 0) {
+      detailParts.push(
+        `${machinesAre(unlistedDegrading)} in a degrading state.`
+      );
+    }
+    if (mc.noVerdict > 0) {
+      detailParts.push(
+        `${mc.noVerdict} ${mc.noVerdict === 1 ? "machine has" : "machines have"} no health verdict — unknown.`
+      );
+    }
+    const placeholders = placeholdersSentence(mc);
+    if (placeholders) detailParts.push(placeholders);
+    const reconcile = notDegradationsSentence(mc, { seeDevOps: true });
+    if (reconcile) detailParts.push(reconcile);
+    if (machines.stale) {
+      detailParts.push("Machine health is from its last good read.");
+    }
   }
   if (unknownSources === null) {
     detailParts.push("Coord served no list of what it could not read.");
@@ -1788,8 +2186,15 @@ export function deriveHomeStrip(
     badges: [
       {
         key: "needs",
-        label: `needs you ${countText(needsTotal)}`,
-        tone: needsSomething ? "attention" : needsRead ? "default" : "muted",
+        label:
+          queues !== null
+            ? `needs you ${queuesFigure(queues)} (from queues)`
+            : `needs you ${countText(needsTotal)}`,
+        tone: needsSomething
+          ? "attention"
+          : needsRead || queues !== null
+            ? "default"
+            : "muted",
         testId: "coord-home.strip.needs-you",
       },
       {
@@ -1802,7 +2207,10 @@ export function deriveHomeStrip(
       },
       {
         key: "no-change",
-        label: `no change ${stallWindowDays(view.onTrack.stallWindowSecs)} d ${countText(stalled)}`,
+        label: noRecordedChangeBadgeLabel(
+          stalled,
+          view.onTrack.stallWindowSecs
+        ),
         tone: stalled === null ? "muted" : "default",
         testId: "coord-home.strip.no-change",
       },
@@ -1812,7 +2220,20 @@ export function deriveHomeStrip(
         tone: unknownSources === null ? "muted" : "default",
         testId: "coord-home.strip.unknown-sources",
       },
+      machinesBadge(machines),
     ],
+  };
+}
+
+/** The strip's machine badge: a dash, never a zero, for a roster not read. */
+function machinesBadge(machines: HomeStripMachines | null): HomeStripBadge {
+  return {
+    key: "machines",
+    // The nav's count, so the two read the same number; the detail line says
+    // which of them are not degradations.
+    label: `machines not healthy ${countText(machines === null ? null : machines.counts.notHealthy)}`,
+    tone: machines === null ? "muted" : "default",
+    testId: "coord-home.strip.machines",
   };
 }
 

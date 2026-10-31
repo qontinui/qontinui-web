@@ -372,7 +372,7 @@ export function RunRow({
   onToggle: () => void;
 }) {
   const status = deriveRunStatus(run);
-  const links = runLinks(run);
+  const links = runLinks(run, nowMs);
   const flags = runFlags(run);
   const wallText = runWallText(run, nowMs);
   const heldOpen = runHeldOpenText(run, nowMs);
