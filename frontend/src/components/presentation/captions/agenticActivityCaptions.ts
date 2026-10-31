@@ -7,7 +7,7 @@
  *
  * Phase 4 captions every section the page renders, in page order: the spawn
  * paths and their switches, the machines, the spawn requests (the strip and
- * the list), where they were placed, and the hourly rates. Each sentence says
+ * their counts), where they were placed (counted), and the hourly rates. Each sentence says
  * only what that section shows, and is true against coord; and since the
  * page's captions are read together on one screen, a point made once (an
  * unread value is unknown) is not made again by a section.
@@ -51,16 +51,17 @@ export const AGENTIC_ACTIVITY_CAPTIONS = {
   },
   "agentic-activity.requests": {
     title: "Spawn requests",
-    oneLiner: copy`Every request the ${term("coord", "coordination service")} received to start a session: where it went, how long it waited, and how it ended.`,
+    // Counts on this page; the list itself is the operator's investigation view.
+    oneLiner: copy`How many requests the ${term("coord", "coordination service")} received to start a session in the window, and how they ended.`,
     whyItMatters:
-      "Each request names where it came from, so what the system starts on its own and what a person asked for can be told apart, and a session counts as finished only when it reported its own work finished.",
+      "A session counts as finished only when it reported its own work finished, so a request that started is never counted as work done.",
   },
   "agentic-activity.placement": {
     title: "Where requests were placed",
     oneLiner:
-      "How many requests each machine was given in the window, and how many of them started, were refused and were deferred.",
+      "How many requests were placed on a machine in the window, and across how many machines.",
     whyItMatters:
-      "A share that piles onto one machine shows at a glance, before that machine falls behind.",
+      "Requests spread across few machines show work piling up before any one of them falls behind.",
   },
   "agentic-activity.rate": {
     title: "Requested versus started per hour",
