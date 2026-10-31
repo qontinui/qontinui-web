@@ -42,6 +42,12 @@ export const PROXY_ROUTE_ABSENT_PREFIX = "coord does not serve ";
  * is unknown too. Every other 5xx,
  * including a CDN's 520/524, is unknown as well, because none of them is a
  * refusal. A 4xx is coord's or the proxy's answer about the request.
+ *
+ * Coord's registry 500 is recognisable — it reaches the browser with a stable
+ * `error: "failed to upsert agent registry row"` — and is still left unknown
+ * on purpose, not because a client cannot tell it apart: it is the upsert's
+ * catch-all for any database error, and one of those is a commit whose
+ * acknowledgement was lost, so the words do not prove nothing was written.
  */
 export function isOutcomeUnknownStatus(
   status: number,
