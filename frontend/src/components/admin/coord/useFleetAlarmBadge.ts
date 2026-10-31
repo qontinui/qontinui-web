@@ -298,7 +298,10 @@ export function useFleetAlarmBadge(): FleetAlarm {
     );
     return {
       ...admission,
-      // The one predicate home's Degrading section counts with too.
+      // The nav's own predicate: every verdict other than healthy. Home's
+      // Degrading section follows coord's project state instead and says,
+      // by state, which of these it does not call degrading
+      // (`machineHealth.ts`).
       unhealthy: devices.filter(isNotHealthyDevice).length,
     };
   }, [health, samples, fetchedAtMs, nowMs]);

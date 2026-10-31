@@ -5,11 +5,14 @@
  * polling is `_hooks/useHomeSupplements.ts`.
  *
  * - **Machine health** — coord's `/fleet/health` roster, the source the
- *   `Dev Ops ▾` nav badge counts "unhealthy" from (`useFleetAlarmBadge`, one
- *   predicate in `machineHealth.ts`). Coord's project state reads the same
- *   roster (its "Machines in the fleet" source) but serves no per-machine
- *   verdict, so without this the Degrading section read calm beside a nav
- *   counting machines that are not healthy.
+ *   `Dev Ops ▾` nav badge counts "unhealthy" from (`useFleetAlarmBadge`).
+ *   Coord's project state reads the same roster and already serves a
+ *   degradation row per machine it counts as degrading (`machineHealth.ts`
+ *   says which states those are). This read is what lets the Degrading
+ *   section say what the nav counts that coord does not call a degradation
+ *   (abandoned, no verdict), name machines with no verdict as UNKNOWN, and
+ *   still show a degrading machine when the project state's degradation list
+ *   was not read — without counting a listed machine twice.
  * - **What needs the operator** — until coord's project state serves its
  *   `needs_me` block, the two counts the Gates and Questions pages read: open
  *   operator-approval gates addressed to the operator (`GET
@@ -63,14 +66,19 @@ export function parseMachineHealth(
   };
 }
 
-/** Whether a machine reading lets the page say nothing is degrading there. */
+/**
+ * Whether a machine reading lets the page say nothing is degrading there:
+ * read, current, no machine degrading and none without a verdict. An
+ * abandoned machine is a decision, not a degradation, so it does not stand
+ * in the way.
+ */
 export function machinesAllHealthy(m: MachineHealthView): boolean {
   return (
     m.state === "read" &&
     !m.stale &&
     m.counts !== null &&
-    m.counts.notHealthy === 0 &&
-    m.counts.noState === 0
+    m.counts.degrading === 0 &&
+    m.counts.noVerdict === 0
   );
 }
 
@@ -80,31 +88,47 @@ function machines(n: number): string {
 }
 
 /**
- * The Degrading section's machine line. Says how many machines coord reports
- * in a state other than healthy and how many report none, out of the roster;
- * an unread roster is UNKNOWN, in words.
+ * The Degrading section's machine line, in coord's project-state terms:
+ * how many machines are degrading (and whether coord's list above already
+ * shows them), how many have no verdict, out of the roster. An unread roster
+ * is UNKNOWN, in words. `listed` is how many degrading machines the open
+ * degradation rows already list; null when no list was served.
  */
-export function machineHealthSentence(m: MachineHealthView): string {
+export function machineHealthSentence(
+  m: MachineHealthView,
+  listed: number | null = null
+): string {
   if (m.state !== "read" || m.counts === null) {
     return m.state === "could_not_read"
       ? "Machine health could not be read — unknown, so this view cannot say no machine is degrading."
       : "Machine health has not been read yet — unknown.";
   }
-  const { total, notHealthy, noState } = m.counts;
+  const { total, healthy, degrading, noVerdict } = m.counts;
   if (total === 0) return "Coord lists no machines.";
   const parts: string[] = [];
-  if (notHealthy > 0) {
+  if (degrading > 0) {
+    let where = "";
+    if (listed !== null) {
+      where =
+        listed >= degrading
+          ? " — listed above"
+          : listed > 0
+            ? ` — ${listed} listed above, ${degrading - listed} not in coord's list`
+            : " — not in coord's list above";
+    }
     parts.push(
-      `${notHealthy} of ${machines(total)} ${notHealthy === 1 ? "is" : "are"} in a state other than healthy`
+      `${degrading} of ${machines(total)} ${degrading === 1 ? "is" : "are"} in a degrading state${where}`
     );
   }
-  if (noState > 0) {
+  if (noVerdict > 0) {
     parts.push(
-      `${noState} ${noState === 1 ? "reports" : "report"} no health state, so ${noState === 1 ? "its" : "their"} health is unknown`
+      `${noVerdict}${parts.length === 0 ? ` of ${machines(total)}` : ""} ${noVerdict === 1 ? "has" : "have"} no health verdict, so ${noVerdict === 1 ? "its" : "their"} health is unknown`
     );
   }
-  if (parts.length === 0) return `All ${machines(total)} report healthy.`;
-  return `${parts.join("; ")}.`;
+  if (parts.length > 0) return `${parts.join("; ")}.`;
+  return healthy === total
+    ? `All ${machines(total)} report healthy.`
+    : `${healthy} of ${machines(total)} report healthy; none is degrading.`;
 }
 
 // ---------------------------------------------------------------------------

@@ -9,7 +9,8 @@
  *   2. Needs you — operator forks, each as fork + recommendation; until coord
  *      serves that block, the Gates and Questions lists' counts;
  *   3. Degrading — open degradations with their onset, recently cleared
- *      folded, and the machines coord reports not healthy;
+ *      folded, and the machine roster in coord's project-state terms
+ *      (degrading, no verdict, and what the nav counts that is neither);
  *   4. Work by state — class totals, then one row per repo expanding to its
  *      class counts and named units;
  *   5. Correct? — present from day one so its absence is visible (to the
@@ -98,6 +99,10 @@ import {
   useRowKey,
   useSubjectText,
 } from "./HomeLens";
+import {
+  degradingCoverage,
+  notDegradationsSentence,
+} from "@/components/admin/coord/machineHealth";
 import {
   GATES_SOURCE,
   MACHINES_SOURCE,
@@ -882,35 +887,68 @@ function DegradationRow({
 }
 
 /**
- * The machines line under the degradations: how many machines coord reports
- * in a state other than healthy and how many report none, from the roster
- * the `Dev Ops ▾` badge counts — so this section cannot read calm while the
- * nav counts unhealthy machines. Counts only, never a machine's name; the
+ * The machines line under the degradations, in coord's project-state terms:
+ * how many machines are degrading and whether coord's list above already
+ * shows them (`listed`; null when no list was served), how many have no
+ * verdict — and, so this section reconciles with the `Dev Ops ▾` badge, the
+ * machines that badge counts as not healthy that are not degradations
+ * (abandoned, no verdict), by state. Counts only, never a machine's name; the
  * machines themselves are on Dev Ops, linked where that page opens.
  */
-function MachineHealthLine({ machines }: { machines: MachineHealthView }) {
+function MachineHealthLine({
+  machines,
+  listed,
+}: {
+  machines: MachineHealthView;
+  listed: number | null;
+}) {
   const opens = useLinkOpens();
   const read = machines.state === "read" && machines.counts !== null;
+  const devOps = read && opens("/admin/coord/devops");
+  const reconcile =
+    read && machines.counts !== null
+      ? notDegradationsSentence(machines.counts, { seeDevOps: false })
+      : null;
   return (
-    <p
-      className="m-0 text-sm"
-      data-testid="coord-home.degrading.machines"
-      data-ui-bridge-id="coord-home.degrading.machines"
-      data-machines-state={machines.state}
-    >
-      <span className="text-muted-foreground">Machines: </span>
-      {read && machines.stale ? "At the last good read, " : ""}
-      {machineHealthSentence(machines)}
-      {read && opens("/admin/coord/devops") && (
-        <>
-          {" "}
-          <LensLink href="/admin/coord/devops" className="underline">
-            See them on Dev Ops
-          </LensLink>
+    <>
+      <p
+        className="m-0 text-sm"
+        data-testid="coord-home.degrading.machines"
+        data-ui-bridge-id="coord-home.degrading.machines"
+        data-machines-state={machines.state}
+      >
+        <span className="text-muted-foreground">Machines: </span>
+        {read && machines.stale ? "At the last good read, " : ""}
+        {machineHealthSentence(machines, listed)}
+        {devOps && !reconcile && (
+          <>
+            {" "}
+            <LensLink href="/admin/coord/devops" className="underline">
+              See them on Dev Ops
+            </LensLink>
+            .
+          </>
+        )}
+      </p>
+      {reconcile && (
+        <p
+          className="m-0 text-sm text-muted-foreground"
+          data-testid="coord-home.degrading.machines-reconcile"
+        >
+          {/* The sentence's own full stop moves after the link. */}
+          {reconcile.replace(/\.$/, "")}
+          {devOps && (
+            <>
+              {" — see "}
+              <LensLink href="/admin/coord/devops" className="underline">
+                Dev Ops
+              </LensLink>
+            </>
+          )}
           .
-        </>
+        </p>
       )}
-    </p>
+    </>
   );
 }
 
@@ -924,9 +962,10 @@ export function DegradingSection({
   deg: DegradationsView;
   /**
    * Coord's machine roster, read beside the project state
-   * (`_lib/homeSupplements.ts`): coord's project state reads the same roster
-   * but serves no per-machine verdict, so this decides whether a machine is
-   * degrading.
+   * (`_lib/homeSupplements.ts`). Coord's project state already lists a
+   * degrading machine as a row; the roster says which machines have no
+   * verdict, which the nav counts that are not degradations, and any
+   * degrading machine the list does not show.
    */
   machines: MachineHealthView;
   /**
@@ -1031,8 +1070,8 @@ export function DegradingSection({
                 >
                   {machines.state === "read" &&
                   machines.counts !== null &&
-                  machines.counts.notHealthy > 0
-                    ? "No open degradation was served, but not every machine is healthy — see Machines below."
+                  machines.counts.degrading > 0
+                    ? "No open degradation was served, but a machine is in a degrading state — see Machines below."
                     : "No open degradation was served, but machine health is not fully known, so this view cannot say nothing is degrading."}
                 </p>
               )
@@ -1109,7 +1148,14 @@ export function DegradingSection({
           </CollapsiblePanel>
         </>
       )}
-      <MachineHealthLine machines={machines} />
+      <MachineHealthLine
+        machines={machines}
+        listed={
+          rowsServed && open !== null && machines.counts !== null
+            ? degradingCoverage(machines.counts, open).listed
+            : null
+        }
+      />
       <div
         className="space-y-0.5 text-xs text-muted-foreground"
         data-testid="coord-home.degrading.planes"

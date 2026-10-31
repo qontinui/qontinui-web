@@ -7,7 +7,10 @@
 import { describe, expect, it } from "vitest";
 import type { DevOverview } from "@/services/admin-dev-service";
 import {
+  degradingCoverage,
   isNotHealthyDevice,
+  machineVerdict,
+  notDegradationsSentence,
   summarizeMachineHealth,
 } from "@/components/admin/coord/machineHealth";
 import {
@@ -23,38 +26,110 @@ import {
   type MachineHealthView,
 } from "./homeSupplements";
 
+/** A read roster of machines in the given states (null: no state at all). */
 const read = (
-  notHealthy: number,
-  noState: number,
-  total: number,
+  states: Array<string | null>,
   stale = false
 ): MachineHealthView => ({
   state: "read",
-  counts: { total, notHealthy, noState },
+  counts: summarizeMachineHealth(
+    states.map((state, i) => ({
+      device_id: `d-${i}`,
+      ...(state === null ? {} : { state }),
+    }))
+  ),
   asOf: null,
   stale,
 });
 
 describe("machine health", () => {
-  it("counts every state other than healthy as not healthy, and an absent state as unknown", () => {
+  it("follows coord's project state: four degrading states, abandoned apart, unknown and placeholders without a verdict", () => {
+    const c = summarizeMachineHealth([
+      { device_id: "h", state: "healthy" },
+      { device_id: "d", state: "degraded" },
+      { device_id: "s", state: "stale" },
+      { device_id: "p", state: "partitioned" },
+      { device_id: "c", state: "ci_offline" },
+      { device_id: "a", state: "abandoned" },
+      { device_id: "u", state: "unknown" },
+      { device_id: "n", state: "some_newer_state" },
+      { device_id: "ph", state: "partitioned", dispatch_liveness: "unknown" },
+      { device_id: "x" },
+      { device_id: "e", state: "" },
+    ]);
+    expect(c).toEqual({
+      total: 11,
+      notHealthy: 8,
+      healthy: 1,
+      degrading: 4,
+      abandoned: 1,
+      noVerdict: 5,
+      degradingIds: ["d", "s", "p", "c"],
+      degradingWithoutId: 0,
+      notDegradations: { abandoned: 1, noVerdict: 3 },
+    });
+  });
+
+  it("reads each verdict as coord's project state does", () => {
+    expect(machineVerdict({ state: "healthy" })).toBe("healthy");
+    expect(machineVerdict({ state: "abandoned" })).toBe("abandoned");
+    expect(machineVerdict({ state: "unknown" })).toBe("no_verdict");
+    expect(machineVerdict({})).toBe("no_verdict");
     expect(
-      summarizeMachineHealth([
-        { state: "healthy" },
-        { state: "degraded" },
-        { state: "stale" },
-        { state: "partitioned" },
-        { state: "abandoned" },
-        { state: "some_newer_state" },
-        {},
-        { state: "" },
-      ])
-    ).toEqual({ total: 8, notHealthy: 5, noState: 2 });
+      machineVerdict({ state: "healthy", dispatch_liveness: "unknown" })
+    ).toBe("no_verdict");
+    expect(
+      machineVerdict({
+        state: "degraded",
+        dispatch_liveness: "outside_dispatch_window",
+      })
+    ).toBe("degrading");
   });
 
   it("is the nav's predicate: a stateless machine is not counted unhealthy", () => {
     expect(isNotHealthyDevice({})).toBe(false);
     expect(isNotHealthyDevice({ state: "healthy" })).toBe(false);
     expect(isNotHealthyDevice({ state: "degraded" })).toBe(true);
+    expect(isNotHealthyDevice({ state: "abandoned" })).toBe(true);
+  });
+
+  it("joins degrading machines to coord's rows by device, so none is counted twice", () => {
+    const c = summarizeMachineHealth([
+      { device_id: "a", state: "partitioned" },
+      { device_id: "b", state: "degraded" },
+      { state: "stale" },
+    ]);
+    expect(c.degradingWithoutId).toBe(1);
+    expect(
+      degradingCoverage(c, [
+        { id: "fleet_health:state:a", subjectKind: "device", subjectId: "a" },
+        { id: "repo-row", subjectKind: "repo", subjectId: "b" },
+      ])
+    ).toEqual({ listed: 1, unlisted: 2 });
+    expect(degradingCoverage(c, null)).toEqual({ listed: 0, unlisted: 3 });
+  });
+
+  it("reconciles with the nav in one line, by state", () => {
+    expect(
+      notDegradationsSentence(read(["abandoned", "unknown"]).counts!, {
+        seeDevOps: true,
+      })
+    ).toBe(
+      "2 machines not reporting healthy are not degradations: 1 abandoned, 1 with no verdict — see Dev Ops."
+    );
+    expect(
+      notDegradationsSentence(read(["abandoned"]).counts!, {
+        seeDevOps: false,
+      })
+    ).toBe(
+      "1 machine not reporting healthy is not a degradation: 1 abandoned."
+    );
+    // A machine with no state is not one the nav counts.
+    expect(
+      notDegradationsSentence(read([null, "degraded"]).counts!, {
+        seeDevOps: true,
+      })
+    ).toBeNull();
   });
 
   it("reads a body with no device list as no reading", () => {
@@ -63,11 +138,14 @@ describe("machine health", () => {
     expect(parseMachineHealth({ devices: [] })?.counts.total).toBe(0);
   });
 
-  it("is calm only when read, current, and every machine reports healthy", () => {
-    expect(machinesAllHealthy(read(0, 0, 3))).toBe(true);
-    expect(machinesAllHealthy(read(1, 0, 3))).toBe(false);
-    expect(machinesAllHealthy(read(0, 1, 3))).toBe(false);
-    expect(machinesAllHealthy(read(0, 0, 3, true))).toBe(false);
+  it("is calm only when read, current, and no machine is degrading or without a verdict", () => {
+    expect(machinesAllHealthy(read(["healthy", "healthy"]))).toBe(true);
+    // Abandoned is a decision, not a degradation.
+    expect(machinesAllHealthy(read(["healthy", "abandoned"]))).toBe(true);
+    expect(machinesAllHealthy(read(["healthy", "degraded"]))).toBe(false);
+    expect(machinesAllHealthy(read(["healthy", "unknown"]))).toBe(false);
+    expect(machinesAllHealthy(read(["healthy", null]))).toBe(false);
+    expect(machinesAllHealthy(read(["healthy"], true))).toBe(false);
     expect(machinesAllHealthy(MACHINES_NOT_READ)).toBe(false);
     expect(
       machinesAllHealthy({ ...MACHINES_NOT_READ, state: "could_not_read" })
@@ -75,17 +153,25 @@ describe("machine health", () => {
   });
 
   it("words each arm, an unread one as unknown", () => {
-    expect(machineHealthSentence(read(0, 0, 4))).toBe(
-      "All 4 machines report healthy."
+    expect(machineHealthSentence(read(["healthy", "healthy"]))).toBe(
+      "All 2 machines report healthy."
     );
-    expect(machineHealthSentence(read(1, 0, 4))).toBe(
-      "1 of 4 machines is in a state other than healthy."
+    expect(machineHealthSentence(read(["healthy", "abandoned"]))).toBe(
+      "1 of 2 machines report healthy; none is degrading."
     );
-    expect(machineHealthSentence(read(2, 3, 9))).toBe(
-      "2 of 9 machines are in a state other than healthy; 3 report no health state, so their health is unknown."
+    expect(machineHealthSentence(read(["degraded", "healthy"]))).toBe(
+      "1 of 2 machines is in a degrading state."
     );
-    expect(machineHealthSentence(read(0, 0, 0))).toBe(
-      "Coord lists no machines."
+    expect(machineHealthSentence(read(["degraded", "healthy"]), 1)).toBe(
+      "1 of 2 machines is in a degrading state — listed above."
+    );
+    expect(
+      machineHealthSentence(read(["degraded", "stale", "unknown", null]), 1)
+    ).toBe(
+      "2 of 4 machines are in a degrading state — 1 listed above, 1 not in coord's list; 2 have no health verdict, so their health is unknown."
+    );
+    expect(machineHealthSentence(read(["degraded"]), 0)).toBe(
+      "1 of 1 machine is in a degrading state — not in coord's list above."
     );
     expect(machineHealthSentence(MACHINES_NOT_READ)).toMatch(/unknown/);
     expect(
