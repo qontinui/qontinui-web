@@ -93,9 +93,12 @@ export async function fetchPostMergeFollowupScope(
 }
 
 /**
- * `PUT /post-merge-followup-scope` (`put_post_merge_followup_scope`). Declared
- * `idempotent: false` (a write); the client's method rule still treats a PUT
- * as retryable, exactly as the `httpClient.put` this replaced did.
+ * `PUT /post-merge-followup-scope` (`put_post_merge_followup_scope`). Sent ONCE
+ * (`maxRetries: 0`): `idempotent: false` alone does nothing for a PUT, which
+ * the client's method rule retries on any 5xx, and the write classifier
+ * (`writeOutcome.ts`) reads only the last answer — a first 504 after coord
+ * committed, followed by a retry's connect-failure 502, would read as a
+ * refusal of a write that landed.
  */
 export async function putPostMergeFollowupScope(
   write: PostMergeFollowupScopeWrite
@@ -105,6 +108,7 @@ export async function putPostMergeFollowupScope(
     method: "PUT",
     body: JSON.stringify(write),
     idempotent: false,
+    maxRetries: 0,
   });
   return readJson<PostMergeFollowupScopeWriteResult>(res, `PUT ${url}`);
 }
@@ -119,9 +123,8 @@ export async function fetchContinuationDeliveryMode(
 }
 
 /**
- * `PUT /continuation-delivery-mode` (`put_continuation_delivery_mode`).
- * `idempotent: false` is a no-op: the client's method rule still retries a
- * PUT on a 5xx, exactly as the `httpClient.put` this replaced did.
+ * `PUT /continuation-delivery-mode` (`put_continuation_delivery_mode`). Sent
+ * once, for the reason {@link putPostMergeFollowupScope} gives.
  */
 export async function putContinuationDeliveryMode(
   repo: string,
@@ -132,6 +135,7 @@ export async function putContinuationDeliveryMode(
     method: "PUT",
     body: JSON.stringify({ repo, mode }),
     idempotent: false,
+    maxRetries: 0,
   });
   return readJson<ContinuationDeliveryModeWriteResult>(res, `PUT ${url}`);
 }

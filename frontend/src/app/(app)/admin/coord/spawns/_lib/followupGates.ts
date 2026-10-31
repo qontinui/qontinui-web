@@ -48,6 +48,10 @@ function scopeUnknownReasons(
       out.add("not read yet");
     } else if (r.scopeReadbackError) {
       out.add(`a write's read-back failed (${r.scopeReadbackError})`);
+    } else if (r.scopeOutcomeUnknown) {
+      out.add(
+        `whether a write was applied is unknown (${r.scopeOutcomeUnknown})`
+      );
     } else if (r.scope === null) {
       out.add(r.scopeError ? readErrorText(r.scopeError) : "not read yet");
     }
