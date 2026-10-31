@@ -68,8 +68,16 @@ export function FixerSpawnToggle({
   editRightsKnown = true,
   autonomyState,
 }: FixerSpawnToggleProps) {
-  const { loading, saving, error, state, profile, setChoice, reload } =
-    useAutoFixPrSetting();
+  const {
+    loading,
+    saving,
+    error,
+    state,
+    profile,
+    unconfirmed,
+    setChoice,
+    reload,
+  } = useAutoFixPrSetting();
   const labelId = useId();
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -90,7 +98,9 @@ export function FixerSpawnToggle({
   };
 
   const unsupported = !loading && !error && state === null;
-  const current = dialChoice(state);
+  // While a write's outcome is open, `state` is the value from BEFORE it, so
+  // no position is pressed until the re-read settles which one coord holds.
+  const current = unconfirmed ? null : dialChoice(state);
   const absent = ABSENT_DIAL[autoFixPrAbsence(profile)];
   // No arm claims how the value is treated: coord holds a last known value
   // while its read fails, so "Unknown" is all any of them can say.

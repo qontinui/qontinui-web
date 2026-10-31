@@ -12,7 +12,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const get = vi.fn();
@@ -469,6 +469,53 @@ describe("FixerSpawnToggle — write", () => {
     expect(get).toHaveBeenCalledTimes(1);
     expect(checked("default")).toBe("true");
   });
+
+  it.each([
+    ["a PATCH whose outcome is open", "reject"],
+    ["a 2xx that does not read back the value sent", "unconfirmed-2xx"],
+  ])(
+    "presses no position after %s until the re-read settles",
+    async (_label, mode) => {
+      get.mockResolvedValue(DEFAULT_ON);
+      if (mode === "reject") {
+        patch.mockRejectedValue(refusal(504, "timeout waiting for coord"));
+      } else {
+        patch.mockResolvedValue(DEFAULT_ON);
+      }
+      render(<FixerSpawnToggle canEdit />);
+      await tenantText();
+      expect(checked("default")).toBe("true");
+
+      let release: (v: unknown) => void = () => {};
+      get.mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            release = r;
+          })
+      );
+      await userEvent.click(screen.getByTestId("fixer-spawn-off"));
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+      // The held state is the PRE-write value: no position may claim it.
+      for (const position of POSITIONS) {
+        expect(checked(position), position).toBe("false");
+        expect(
+          screen.getByTestId(`fixer-spawn-${position}`).className
+        ).not.toContain("bg-primary");
+      }
+
+      await act(async () => {
+        release(
+          settings({
+            auto_fix_pr_tenant: false,
+            auto_fix_pr: false,
+            auto_fix_pr_source: "tenant",
+          })
+        );
+      });
+      await waitFor(() => expect(checked("off")).toBe("true"));
+      expect(checked("default")).toBe("false");
+    }
+  );
 
   it("a click during an in-flight save is dropped, not raced", async () => {
     get.mockResolvedValue(DEFAULT_ON);
