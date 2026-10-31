@@ -53,7 +53,7 @@ export const COORDINATION_OVERVIEW_CAPTIONS = {
       "Under the list, each area shows whether its watchers are running on time, so a quiet list can be told apart from a blind one.",
   },
   "coordination-overview.on-track": {
-    title: "Work by repository",
+    title: "Work by state",
     // One row per repository coord groups the units under (plus the units
     // that name none), its summary the four classes `groupSummary` prints.
     oneLiner: copy`Every repository's ${term("work_unit", "work units")} counted by state (shipped, in flight, waiting, or without a recorded change), with the current initiative below.`,

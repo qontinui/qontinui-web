@@ -8,7 +8,7 @@
  *   1. the strip — one derived headline, never green over a block not read;
  *   2. Needs you — operator forks, each as fork + recommendation;
  *   3. Degrading — open degradations with their onset, recently cleared folded;
- *   4. On track — class totals, then one row per repo expanding to named units;
+ *   4. Work by state — class totals, then one row per repo expanding to named units;
  *   5. Correct? — present from day one so its absence is visible;
  *   6. What this view does not know — always rendered, never collapsed.
  *
@@ -140,6 +140,7 @@ import {
   type PlaneView,
   type RepoGroup,
   type SourceCoverageView,
+  unitCountText,
 } from "@/components/admin/coord/coordHomeStatus";
 
 const HEADING =
@@ -966,7 +967,7 @@ export function DegradingSection({
 }
 
 // ---------------------------------------------------------------------------
-// 4. On track
+// 4. Work by state
 // ---------------------------------------------------------------------------
 
 function groupSummary(g: RepoGroup, windowSecs: number | null): string {
@@ -1147,9 +1148,7 @@ function RepoGroupRow({
         )
       }
       label={groupSummary(g, windowSecs)}
-      status={
-        <HomeBadge kind="repo_group" label={`${g.rowCount ?? "–"} units`} />
-      }
+      status={<HomeBadge kind="repo_group" label={unitCountText(g.rowCount)} />}
       attention={HOME_ATTENTION_BY_KIND.repo_group}
       expanded={expanded}
       onToggle={onToggle}
@@ -1373,10 +1372,13 @@ export function OnTrackSection({
     >
       <RegionCaption region="on-track" reading={{ generatedAt, kept: stale }} />
       <div className="flex items-baseline gap-2">
-        <h2 className={HEADING}>On track</h2>
-        <span className="text-xs text-muted-foreground tabular-nums">
+        <h2 className={HEADING}>Work by state</h2>
+        <span
+          className="text-xs text-muted-foreground tabular-nums"
+          data-testid="coord-home.on-track.count"
+        >
           {read
-            ? `${onTrack.rowCount ?? "–"} work units`
+            ? unitCountText(onTrack.rowCount, "work unit")
             : BLOCK_STATE_PHRASE[onTrack.state]}
         </span>
       </div>

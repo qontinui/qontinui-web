@@ -336,7 +336,7 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
         screen.getByTestId("coord-home.strip.no-change")
       ).toHaveTextContent(/–$/);
       expect(strip()).toHaveAttribute("data-health-level", "amber");
-      expect(strip()).toHaveTextContent("Not read: on track unknown.");
+      expect(strip()).toHaveTextContent("Not read: work by state unknown.");
       expect(screen.queryByText(/^No work units\.$/)).not.toBeInTheDocument();
     });
 
