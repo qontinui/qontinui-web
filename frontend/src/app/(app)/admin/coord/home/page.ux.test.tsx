@@ -793,6 +793,69 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       ).toHaveTextContent("Questions waiting on you: at least 2");
     });
 
+    it("asks the gates read to bypass the proxy cache on an explicit refresh, and only then", async () => {
+      answer(
+        {
+          [PROJECT_STATE]: unbuilt,
+          ...calmFleet,
+          [QUESTIONS]: () => json({ questions: [] }),
+        },
+        { [GATES]: () => overview([]) }
+      );
+      await renderPage();
+      await waitFor(() => expect(httpGet).toHaveBeenCalled());
+      expect(String(httpGet.mock.calls[0]?.[0])).not.toContain("refresh=1");
+      httpGet.mockClear();
+      screen.getByTestId("coord-home.refresh").click();
+      await waitFor(() => expect(httpGet).toHaveBeenCalled());
+      expect(String(httpGet.mock.calls[0]?.[0])).toContain("refresh=1");
+    });
+
+    it("reads the two lists at once when coord stops serving its needs block, not a poll later", async () => {
+      // The first read of the two lists (made before the project state
+      // landed) failed, and coord then served its needs block, so the page
+      // stopped asking. When coord stops serving it, the page must read the
+      // lists now — the refresh's own supplement read went out before the
+      // page learned it needs them, and the next poll is a minute away.
+      let needsServed = true;
+      let listsUp = false;
+      answer(
+        {
+          [PROJECT_STATE]: () =>
+            needsServed ? json(oneUnitBody()) : unbuilt(),
+          ...calmFleet,
+          [QUESTIONS]: () =>
+            listsUp
+              ? json({ questions: [{ id: "q" }], total: 4 })
+              : json({ error: "unavailable" }, 503),
+        },
+        {
+          [GATES]: () => {
+            if (!listsUp) throw new Error("GET gates failed: 503 - down");
+            return overview([
+              gate("operator_approval", "operator"),
+              gate("operator_approval", "operator"),
+            ]);
+          },
+        }
+      );
+      await renderPage();
+      expect(
+        screen.queryByTestId("coord-home.needs-you.counts")
+      ).not.toBeInTheDocument();
+      needsServed = false;
+      listsUp = true;
+      screen.getByTestId("coord-home.refresh").click();
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-home.needs-you.count.gates")
+        ).toHaveTextContent("Approvals waiting on you: 2")
+      );
+      expect(
+        screen.getByTestId("coord-home.needs-you.count.questions")
+      ).toHaveTextContent("Questions waiting on you: 4");
+    });
+
     it("stops asking the two lists once coord serves its needs block", async () => {
       answer({
         [PROJECT_STATE]: () => json(oneUnitBody()),
