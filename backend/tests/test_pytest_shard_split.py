@@ -11,7 +11,8 @@ separate things, and the third is the one with teeth:
    assignment, plus the fail-loud arms. These are the properties that make a
    sharded gate equivalent to the unsharded one.
 3. **The workflow wiring** — that ``backend-ci.yml``'s matrix length EQUALS the
-   ``--shards`` value the step passes. Nothing else in the repo can catch a
+   ``--shards`` value the step passes (and the same for
+   ``backend-coverage-producer.yml``, whose export job also counts shards). Nothing else in the repo can catch a
    drift there, and the failure is silent in the worst way: a 6-entry matrix
    passing ``--shards 5`` runs five sixths of the suite and reports green,
    because every shard that DID run passed. A gate that quietly stops covering
@@ -55,10 +56,21 @@ SCRIPT_REF = "scripts/ci/split_pytest_shards.py"
 SCRIPT_PATH = REPO_ROOT / SCRIPT_REF
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "backend-ci.yml"
 
-#: The ONE lane that invokes the splitter. `.qontinui/ci.toml` is deliberately
-#: absent: that manifest's own header records that backend-ci's `test` job
-#: cannot run on the runner-as-CI-node lane at all (it provisions no database).
-DECLARED_LANES = frozenset({".github/workflows/backend-ci.yml"})
+PRODUCER_WORKFLOW = (
+    REPO_ROOT / ".github" / "workflows" / "backend-coverage-producer.yml"
+)
+
+#: The TWO lanes that invoke the splitter: the gating suite and the non-gating
+#: per-test coverage producer, which shards the same suite the same way.
+#: `.qontinui/ci.toml` is deliberately absent: that manifest's own header
+#: records that backend-ci's `test` job cannot run on the runner-as-CI-node lane
+#: at all (it provisions no database), and the producer needs the same services.
+DECLARED_LANES = frozenset(
+    {
+        ".github/workflows/backend-ci.yml",
+        ".github/workflows/backend-coverage-producer.yml",
+    }
+)
 
 SELECT_STEP_NAME = "Select this shard's test files"
 COLLECT_STEP_NAME = "Collect the test suite"
@@ -2065,3 +2077,286 @@ def test_the_durations_file_covers_the_collected_suite():
         f"`shard-durations-proposed` artifact ({REFRESH_REF}). First few: "
         f"{unlisted[:10]}"
     )
+
+
+# --- the coverage producer's shard matrix -----------------------------------
+#
+# backend-coverage-producer.yml shards the SAME suite the SAME way so that it
+# fits its budget, then ONE export job combines the shards' coverage data and
+# POSTs once. Two invariants are new there, and both fail silently: a shard
+# count that disagrees with the matrix (a slice is never mapped), and a
+# cancelled shard leaking a truncated slice into a map published as whole.
+
+PRODUCER_SHARD_JOB = "produce"
+PRODUCER_EXPORT_JOB = "export"
+COMPLETENESS_STEP_NAME = "Check every shard delivered its slice"
+
+
+def _producer() -> dict:
+    doc = yaml.safe_load(PRODUCER_WORKFLOW.read_text(encoding="utf-8"))
+    assert isinstance(doc, dict), f"{PRODUCER_WORKFLOW} did not parse as a mapping"
+    return doc
+
+
+def _producer_job(job_id: str) -> dict:
+    job = _producer()["jobs"].get(job_id)
+    assert isinstance(job, dict), f"backend-coverage-producer.yml has no {job_id!r} job"
+    return job
+
+
+def _producer_step(job_id: str, name: str) -> dict:
+    for step in _producer_job(job_id).get("steps") or []:
+        if step.get("name") == name:
+            return step
+    raise AssertionError(f"the producer's {job_id!r} job has no step named {name!r}")
+
+
+def test_producer_matrix_shards_and_export_count_agree():
+    """Matrix length == `--shards` == the export's EXPECTED_SHARDS.
+
+    The first pair is backend-ci's invariant; the third is the producer's own.
+    An EXPECTED_SHARDS above the matrix never exports (every run looks
+    partial); one below it exports a map whose missing slice nobody checked.
+    """
+    job = _producer_job(PRODUCER_SHARD_JOB)
+    matrix = job["strategy"]["matrix"]["shard"]
+    assert isinstance(matrix, list) and matrix == list(range(1, len(matrix) + 1)), (
+        f"the producer's shard matrix must be 1..N with no gaps, got {matrix}"
+    )
+    assert job["strategy"].get("fail-fast") is False, (
+        "fail-fast would cancel five shards for one failing test, and a "
+        "cancelled shard means the whole run exports nothing"
+    )
+    run = _producer_step(PRODUCER_SHARD_JOB, SELECT_STEP_NAME)["run"]
+    declared = re.findall(r"--shards\s+(\d+)", run)
+    assert declared and {int(d) for d in declared} == {len(matrix)}, (
+        f"the producer matrix has {len(matrix)} entries but its select step "
+        f"passes --shards {declared}"
+    )
+    assert "${{ matrix.shard }}" in run
+    assert re.search(r"--durations\s+tests/shard-durations\.json", run), (
+        "the producer must deal by the same committed durations as the gate"
+    )
+    expected = (_producer_job(PRODUCER_EXPORT_JOB).get("env") or {}).get(
+        "EXPECTED_SHARDS"
+    )
+    assert str(expected) == str(len(matrix)), (
+        f"export EXPECTED_SHARDS={expected!r} but the matrix has {len(matrix)} shards"
+    )
+    assert "${{ matrix.shard }}" in str(job.get("name", "")), (
+        "each producer shard must name itself per shard"
+    )
+
+
+def test_producer_collects_and_selects_exactly_as_the_gate_does():
+    """The collect + select steps are byte-identical to backend-ci's.
+
+    The collect step carries the truncation floors that stop a broken
+    collection from being sharded; a producer copy that drifted from them is a
+    second, unguarded implementation of the rule this file pins once.
+    """
+    for name in (COLLECT_STEP_NAME, SELECT_STEP_NAME):
+        gate = _step(_shard_job(), name)
+        producer = _producer_step(PRODUCER_SHARD_JOB, name)
+        assert producer["run"] == gate["run"], (
+            f"the producer's {name!r} step has drifted from backend-ci's"
+        )
+        assert producer.get("env") == gate.get("env"), name
+
+
+def test_producer_shards_never_fall_back_to_the_whole_directory():
+    for step in _producer_job(PRODUCER_SHARD_JOB).get("steps") or []:
+        run = str(step.get("run") or "")
+        if "poetry run pytest" not in run or step.get("name") == COLLECT_STEP_NAME:
+            continue
+        assert "pytest tests/" not in run, (
+            f"producer step {step.get('name')!r} runs the whole tests/ directory"
+        )
+        assert '"${SHARD_FILES[@]}"' in run
+
+
+def test_producer_shards_write_shard_unique_coverage_and_junit_files():
+    step = _producer_step(PRODUCER_SHARD_JOB, "Run tests with coverage")
+    run = step["run"]
+    for flag in ("--cov=app", "--cov-context=test"):
+        assert flag in run, f"the producer's pytest must pass {flag}"
+    assert "--junitxml=junit-results-shard-${{ matrix.shard }}.xml" in run
+    cov_file = str((step.get("env") or {}).get("COVERAGE_FILE", ""))
+    assert "${{ matrix.shard }}" in cov_file, (
+        f"COVERAGE_FILE must be shard-unique, got {cov_file!r}"
+    )
+    assert not cov_file.startswith("."), (
+        "upload-artifact skips hidden files by default, so a dot-named data "
+        "file uploads as nothing and every run reads as partial"
+    )
+
+
+def test_a_cancelled_producer_shard_uploads_nothing():
+    """`!cancelled()`, never `always()`: a cancelled shard's db is truncated."""
+    uploads = [
+        step
+        for step in _producer_job(PRODUCER_SHARD_JOB).get("steps") or []
+        if str(step.get("uses", "")).startswith("actions/upload-artifact")
+    ]
+    assert len(uploads) == 1, "exactly one producer shard upload expected"
+    step = uploads[0]
+    cond = " ".join(str(step.get("if", "")).split())
+    assert "!cancelled()" in cond and "always()" not in cond, (
+        f"the shard upload's condition is {cond!r}; it must run on a red shard "
+        "and never on a cancelled one"
+    )
+    run_env = _producer_step(PRODUCER_SHARD_JOB, "Run tests with coverage")["env"]
+    paths = str(step["with"]["path"])
+    assert f"./backend/{run_env['COVERAGE_FILE']}" in paths
+    assert "./backend/junit-results-shard-${{ matrix.shard }}.xml" in paths
+    assert step["with"].get("if-no-files-found") == "error"
+    assert step["with"]["name"] == "coverage-producer-shard-${{ matrix.shard }}"
+    # Every uploaded path shares the `./backend/` ancestor, so each file lands at
+    # the artifact ROOT; the download below nests each artifact under its name,
+    # which is the `shard-artifacts/<name>/<file>` tree the completeness check
+    # reads. A path outside `./backend/` moves the files one level down and the
+    # check then skips every export while these tests stay green.
+    for line in filter(None, (p.strip() for p in paths.splitlines())):
+        assert line.startswith("./backend/"), line
+    downloads = [
+        s
+        for s in _producer_job(PRODUCER_EXPORT_JOB).get("steps") or []
+        if str(s.get("uses", "")).startswith("actions/download-artifact")
+    ]
+    assert len(downloads) == 1, "exactly one shard download expected"
+    assert downloads[0]["with"] == {
+        "pattern": "coverage-producer-shard-*",
+        "path": "shard-artifacts",
+    }, downloads[0]["with"]
+
+
+def test_producer_exports_once_after_every_shard_and_only_when_complete():
+    job = _producer_job(PRODUCER_EXPORT_JOB)
+    needs = job.get("needs")
+    needs = [needs] if isinstance(needs, str) else list(needs or [])
+    assert needs == [PRODUCER_SHARD_JOB], needs
+    cond = " ".join(str(job.get("if", "")).split())
+    assert "!cancelled()" in cond and "always()" not in cond, (
+        f"export's condition is {cond!r}: it must run when a shard's tests "
+        "failed (a red-but-concluded suite still exports) and not on a "
+        "cancelled run"
+    )
+    exporting = [
+        step
+        for step in job.get("steps") or []
+        if "export_test_coverage.py" in str(step.get("run", ""))
+        or "coverage combine" in str(step.get("run", ""))
+    ]
+    assert len(exporting) == 2, [s.get("name") for s in exporting]
+    for step in exporting:
+        assert step.get("if") == "steps.complete.outputs.export == 'true'", (
+            f"{step.get('name')!r} must be gated on the completeness check"
+        )
+    assert _producer_step(PRODUCER_EXPORT_JOB, COMPLETENESS_STEP_NAME).get("id") == (
+        "complete"
+    )
+    export_run = exporting[-1]["run"]
+    assert "--self-test" in export_run
+    assert "--junit-xml" in export_run and "shard-junit-files.txt" in export_run
+    # Exactly one export across the whole workflow: the shards export nothing.
+    for jid, other in _producer()["jobs"].items():
+        if jid == PRODUCER_EXPORT_JOB:
+            continue
+        for step in other.get("steps") or []:
+            assert "export_test_coverage.py" not in str(step.get("run", "")), (
+                f"job {jid!r} step {step.get('name')!r} exports; only "
+                f"{PRODUCER_EXPORT_JOB!r} may, once per run"
+            )
+
+
+def test_producer_combines_with_the_locked_coverage_version():
+    """The combine must read the dbs with the coverage.py that wrote them."""
+    lock = (REPO_ROOT / "backend" / "poetry.lock").read_text(encoding="utf-8")
+    match = re.search(r'name = "coverage"\nversion = "([^"]+)"', lock)
+    assert match, "coverage is not in backend/poetry.lock"
+    run = _producer_step(PRODUCER_EXPORT_JOB, "Combine the shards' coverage data")[
+        "run"
+    ]
+    assert f"'coverage=={match.group(1)}'" in run, (
+        f"the export job must pin coverage=={match.group(1)} (poetry.lock)"
+    )
+
+
+def _run_completeness(
+    tmp_path: Path, delivered: dict[int, tuple[bool, bool]], result: str
+) -> tuple[subprocess.CompletedProcess, str, Path]:
+    """Run the shipped completeness step against a synthetic artifact tree."""
+    workspace = tmp_path / "ws"
+    backend = workspace / "backend"
+    backend.mkdir(parents=True)
+    for n, (cov, junit) in delivered.items():
+        d = workspace / "shard-artifacts" / f"coverage-producer-shard-{n}"
+        d.mkdir(parents=True)
+        if cov:
+            (d / f"coverage-data-shard-{n}").write_bytes(b"SQLite format 3\x00")
+        if junit:
+            (d / f"junit-results-shard-{n}.xml").write_text("<testsuites/>")
+    output = tmp_path / "github_output"
+    output.write_text("", encoding="utf-8")
+    step = _producer_step(PRODUCER_EXPORT_JOB, COMPLETENESS_STEP_NAME)
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "GITHUB_WORKSPACE": str(workspace),
+        "GITHUB_OUTPUT": str(output),
+        "PRODUCE_RESULT": result,
+        **{
+            str(k): str(v)
+            for k, v in (_producer_job(PRODUCER_EXPORT_JOB).get("env") or {}).items()
+        },
+    }
+    proc = subprocess.run(
+        [shutil.which("bash") or "bash", "-e", "-c", step["run"]],
+        cwd=backend,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    return proc, output.read_text(encoding="utf-8"), backend
+
+
+ALL_SIX = dict.fromkeys(range(1, 7), (True, True))
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="runs the step under bash")
+@pytest.mark.parametrize("result", ["success", "failure"])
+def test_completeness_exports_when_every_shard_delivered(tmp_path, result):
+    """`failure` included: a shard with failing tests still delivered a slice."""
+    proc, out, backend = _run_completeness(tmp_path, ALL_SIX, result)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "export=true" in out
+    covs = (backend / "shard-coverage-files.txt").read_text().split()
+    junits = (backend / "shard-junit-files.txt").read_text().split()
+    assert len(covs) == len(junits) == 6
+    assert covs[0].endswith("coverage-producer-shard-1/coverage-data-shard-1")
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="runs the step under bash")
+@pytest.mark.parametrize(
+    "delivered",
+    [
+        {n: v for n, v in ALL_SIX.items() if n != 4},  # shard 4 cancelled
+        {**ALL_SIX, 2: (False, True)},  # coverage data missing
+        {**ALL_SIX, 6: (True, False)},  # junit missing
+        {},  # every shard cancelled
+    ],
+    ids=["shard-absent", "no-coverage", "no-junit", "none"],
+)
+def test_completeness_exports_nothing_when_any_shard_is_missing(tmp_path, delivered):
+    proc, out, _ = _run_completeness(tmp_path, delivered, "failure")
+    assert proc.returncode == 0, (
+        "a partial run is not a failure of the export job: " + proc.stdout
+    )
+    assert "export=false" in out and "export=true" not in out
+    assert "Coverage export SKIPPED - the map would be partial" in proc.stdout
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="runs the step under bash")
+def test_completeness_refuses_a_cancelled_matrix_even_with_every_file(tmp_path):
+    proc, out, _ = _run_completeness(tmp_path, ALL_SIX, "cancelled")
+    assert proc.returncode == 0
+    assert "export=false" in out and "export=true" not in out

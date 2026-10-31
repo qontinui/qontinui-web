@@ -2,25 +2,52 @@ name: Backend Coverage Producer
 
 # Per-test -> touched-file coverage producer for coord.
 #
-# This is a NON-GATING, main-only job. It runs the SAME pytest suite the gating
-# Backend CI test job runs (same postgres+redis services, same schema/extension
-# bootstrap, same flags: --cov=app --cov-context=test --junitxml), then reads the
-# resulting .coverage SQLite db and POSTs the per-test coverage map + JUnit
-# results to coord's existing ingest routes. The map is cached per
-# (repo, head_sha) in coord and PR lanes only consume it; this producer never
-# blocks a PR and the export script itself is best-effort (exits 0 on any
-# failure), so this workflow going red cannot break the merge pipeline. It is
-# intentionally NOT a required check.
+# This is a NON-GATING, main-only workflow. It runs the SAME pytest suite the
+# gating Backend CI `test` job runs (same postgres+redis services, same
+# schema/extension bootstrap, same flags: --cov=app --cov-context=test
+# --junitxml), then reads the resulting coverage data and POSTs the per-test
+# coverage map + JUnit results to coord's existing ingest routes. The map is
+# cached per (repo, head_sha) in coord and PR lanes only consume it; this
+# producer never blocks a PR and the export script itself is best-effort (exits
+# 0 on any failure), so this workflow going red cannot break the merge pipeline.
+# It is intentionally NOT a required check.
+#
+# SHAPE: a six-way shard matrix (`produce`), then ONE `export` job. Each shard
+# runs one slice of the suite -- the SAME split backend-ci's `test` matrix uses
+# (`scripts/ci/split_pytest_shards.py`, dealt by `tests/shard-durations.json`,
+# behind the same collection/truncation floors) -- with a shard-unique coverage
+# data file and JUnit file, and uploads both. `export` downloads them,
+# `coverage combine`s the data files into one `.coverage` db (dynamic contexts
+# survive the combine, so per-test attribution is intact), hands every JUnit
+# file to the export script (which merges them into ONE results batch), and
+# POSTs ONCE.
+#
+# Why sharded: the unsharded suite outgrew its 90-minute budget. Of the 38
+# push-to-main runs 2026-10-24..10-31, 34 were cancelled at 90-91 min by the job
+# budget and the 4 successes took 84-88 min, so main's per-test map had
+# effectively stopped being exported. backend-ci's `test` job had already hit
+# the identical wall and solved it by sharding; this reuses that mechanism
+# rather than inventing a second one.
+#
+# A PARTIAL MAP IS NEVER PUBLISHED AS A WHOLE ONE. The unsharded contract was
+# "a cancelled run exports nothing" (its truncated db never reached the POST).
+# Sharding keeps that contract per shard and lifts it to the run: a shard
+# uploads its files only when it was NOT cancelled, and `export` exports only
+# when EVERY shard delivered BOTH files. One cancelled (or setup-failed) shard
+# means the whole run exports nothing, says so in a ::warning, and coord keeps
+# its last-known rows -- the same outcome a cancelled unsharded run had. A shard
+# whose TESTS failed still concluded, still has real contexts, and still counts
+# (see the export job).
 #
 # Why standalone: this used to ride Backend CI's test job on push-to-main, which
 # forced the ENTIRE gating workflow (lint, security-scan, build-test, tests) to
 # re-run on every main push, duplicating what already ran on the PR. Splitting it
-# out means a main push runs ONLY this single suite-then-export, and Backend CI
-# is back to develop-push + PR-only.
+# out means a main push runs ONLY this suite-then-export, and Backend CI is back
+# to develop-push + PR-only.
 #
-# The service config, env blocks, and schema-create step below are copied
-# verbatim from backend-ci.yml's `test` job — the suite needs them, and keeping
-# them byte-faithful avoids a drift-induced red first run.
+# The service config, env blocks, schema-create, collect and select steps below
+# are copied verbatim from backend-ci.yml's `test` job -- the suite needs them,
+# and keeping them byte-faithful avoids a drift-induced red first run.
 
 on:
   push:
@@ -35,8 +62,8 @@ on:
 # latest head_sha is the one worth mapping". Sound in isolation, self-defeating
 # here: a CANCELLED RUN MAPS NO HEAD AT ALL.
 #
-# This job runs the full backend pytest suite -- measured 54-80 min wall clock on
-# its own successful runs -- while `main` takes a `backend/**` push every 30-45
+# This job ran the full backend pytest suite -- measured 54-80 min wall clock on
+# its own successful runs, before the 2026-10-31 shard split -- while `main` takes a `backend/**` push every 30-45
 # min in working hours. Runtime exceeds inter-arrival time, so every run was
 # killed by the next push before it could export anything. Measured on the 8 runs
 # in the 2026-09-20 15:08-20:39Z window: 5 `cancelled`, 2 `failure`, 0 `success`.
@@ -120,23 +147,44 @@ permissions:
 
 jobs:
   produce:
-    name: Per-test coverage -> coord
+    name: Per-test coverage (shard ${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
-    # 45 until 2026-08-28, and that number was never measured. It was written
-    # with this workflow (d526e9e8, 2026-06-05) and called "generous"; it was in
-    # fact BELOW the median of the suite it budgets, so this job could only pass
-    # on the fast tail of its own distribution. Measured on the 15 newest
-    # push-on-main runs: 9 concluded `cancelled`, 6 of them consecutively, four
-    # at exactly 45m against the 45m budget -- while the two SUCCESSES took 43m
-    # and 45m. A coin flip, and the coin was weighted against us.
+    strategy:
+      # fail-fast OFF, for backend-ci's reason and one of this workflow's own.
+      # backend-ci's: a cancelled shard concludes `cancelled` with zero failing
+      # steps, the exact misleading signal the marker below exists to explain.
+      # Ours: `export` publishes only when EVERY shard delivered its files, so
+      # fail-fast would turn one shard's failing TEST -- which still yields a
+      # real, complete slice of the map -- into five cancelled shards and no
+      # export at all.
+      fail-fast: false
+      matrix:
+        # Kept in lockstep with the `--shards` value the select step passes AND
+        # with `EXPECTED_SHARDS` in the export job;
+        # backend/tests/test_pytest_shard_split.py asserts all three agree. A
+        # 5-entry matrix against `--shards 6` silently never maps a sixth of the
+        # suite, and the export's completeness check could not see it.
+        shard: [1, 2, 3, 4, 5, 6]
+    # 90 until the 2026-10-31 shard split, when it was the budget for the WHOLE
+    # suite (history: 45 until 2026-08-28, an unmeasured number below the
+    # suite's own median; then 90, copied from backend-ci's then-unsharded
+    # `test` job). By 2026-10-24..10-31 the whole suite needed 84-88 min on its
+    # 4 successes and 34 of 38 runs were cancelled AT 90 -- so the budget is
+    # now PER SHARD, sized from measurement rather than inherited.
     #
-    # 90 is not padding: it is the number backend-ci.yml's `test` job already
-    # carries for the BYTE-IDENTICAL pytest invocation (see the comment there),
-    # chosen from 40 consecutive green runs at p50 43.4 / p90 46.4 / max 56.9
-    # min. This job is a strict SUBSET of that one -- same suite, fewer steps --
-    # so 90 is if anything more generous here than where it was measured.
-    # Adopting it rather than inventing a third number also stops two lanes
-    # running the same suite from disagreeing about how long it takes.
+    # SIZED FOR ONE SHARD, from backend-ci's own shards, which run the
+    # byte-identical split, flags and service stack on the same `runs-on`: 30
+    # `Run Tests (shard N/6)` check runs over 5 merged PRs (#2012, #2014, #2015,
+    # #2024, #2029; 2026-10-30..10-31) took 7.3-43.3 min job wall-clock, most
+    # 25-37 min, max 43.3 min. (Their sum is ~1.9x the unsharded suite's 85 min
+    # -- the shards are not getting 1/6 of the work's time each, they are
+    # contending -- which is why the expected time is taken from measured shards
+    # and NOT computed as 85/6 + setup.) backend-ci's 45 is only 1.7 min above
+    # that max; copying it here would put this lane straight back on the tail
+    # of its own distribution, the failure mode this budget has now had twice.
+    # 60 is ~1.4x the worst measured shard. The soft budget below (45) fires at
+    # the worst measured shard, with 15 min still in hand. When it starts
+    # firing, the matrix length is the lever, not this number.
     #
     # Non-gating, so the wall-clock blocks nothing; but a budget this job cannot
     # meet is not "harmless slack": it is a coverage export that silently never
@@ -157,7 +205,7 @@ jobs:
     # the mistake look plausible). An unavailable context evaluates to EMPTY
     # rather than erroring, so `${{ env.X }}` here would silently restore
     # GitHub's 360-minute default with nothing in the log saying so.
-    timeout-minutes: 90
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: ./backend
@@ -349,6 +397,142 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS web;" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
+      # Collection is the shard split's ONLY input, and it is deliberately run
+      # per shard rather than once in an upstream job: every shard computes the
+      # SAME assignment from the SAME collected set, so no shard waits on
+      # another and there is no fan-out stage to serialize behind. ~30 s.
+      #
+      # `-o addopts=` is LOAD-BEARING and the reason is measured, not theoretical.
+      # pytest.ini's addopts carry `-v`, which CANCELS the `-q` below back to
+      # verbosity 0 -- and at verbosity 0 `--collect-only` prints the indented
+      # `<Module ...>` / `<Function ...>` TREE, not node ids. On the first CI run
+      # of this change that produced 5157 output lines and ZERO node ids, and the
+      # splitter refused (exit 2) rather than emitting an empty selection.
+      # Emptying addopts is stable against the ini's verbosity changing; `-q -q`
+      # also works today and would silently break the day a second `-v` is added.
+      # backend/tests/test_pytest_shard_split.py pins this flag for that reason.
+      #
+      # Emptying addopts also drops `--cov=app` and its three report formats, so
+      # the collection cannot leave a ~0% coverage report for the real run to
+      # overwrite. `--no-cov` stays as belt-and-braces if a future addopts change
+      # re-adds coverage by another route.
+      - name: Collect the test suite
+        env:
+          DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_ENABLED: true
+          TESTING: 1
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
+          ENVIRONMENT: development
+        run: |
+          # pytest writes collection ERRORS to stdout, and stdout is redirected
+          # into the file -- so a failed collection would otherwise show as a
+          # dead step with no reason in the log. Print what it said. This is the
+          # same misattribution class the marker step below exists to prevent.
+          if ! poetry run pytest tests/ --collect-only -q -o addopts= --no-cov > collected-nodeids.txt; then
+            echo "::error title=pytest collection failed::The collection command exited non-zero; its own output follows."
+            cat collected-nodeids.txt
+            exit 1
+          fi
+          echo "collection produced $(wc -l < collected-nodeids.txt) output lines"
+          # The emptiness AND truncation checks both live in the splitter, which
+          # already parses node ids. A second copy of that rule here was a real
+          # defect, not a hypothetical one: it accepted characters the splitter
+          # rejects and over-counted, and `$(grep -c … || true)` fed an EMPTY
+          # string into a numeric test, which fails OPEN without tripping `-e`.
+          # A tripwire that fails open is not a tripwire, so there is now exactly
+          # one parser and the comparison happens in Python.
+          #
+          # The floor is the on-disk FILE COUNT, not a constant. A hardcoded
+          # node-id floor is decoration: measured on this tree, 32 of 231 test
+          # files already clear 500 node ids, so a collection truncated to a
+          # seventh of the suite would pass it and six green shards would cover
+          # ~14% of the tests. Deriving it means it cannot go stale as the suite
+          # grows, and it makes the invariant the honest one: every `test_*.py`
+          # pytest would collect must actually appear in the collection.
+          expected_files=$(find tests -name 'test_*.py' -type f | wc -l)
+          # VALIDATE the derived value before trusting it. A pipeline takes its
+          # exit status from the LAST command, so `find … | wc -l` reports `wc`'s
+          # success even when `find` failed (missing or renamed `tests/`, wrong
+          # cwd): `expected_files` is then 0, the floor computes to 0, and the
+          # tripwire disarms itself while the log still prints a plausible
+          # number. Measured. This is the same fail-open class as the bash
+          # numeric test this design already deleted, so it gets the same
+          # treatment the tripwire step next door gives JOB_START_EPOCH: an
+          # implausible value is UNKNOWN and stops the job, never a silent pass.
+          if [ -z "${expected_files}" ] || [ -n "${expected_files//[0-9]/}" ] \
+              || [ "${expected_files}" -lt 100 ]; then
+            echo "::error title=Truncation floor UNKNOWN::find reported '${expected_files}' test files under tests/, which cannot be right for this suite (226 collectable of 231 on disk today). The floor was NOT applied and the collection was NOT checked, so this job stops rather than sharding an unverified collection."
+            exit 1
+          fi
+          # TWO floors, because one is not enough and the reason is measured.
+          #
+          # FILES: three quarters of the on-disk count. An EXACT floor is wrong -
+          # conftest.py sets `collect_ignore` (today `["integration"]`, 5 of 231
+          # test files), so requiring every `test_*.py` to appear reds a
+          # perfectly correct collection. Duplicating that ignore list here is
+          # the drift this design removed, so the floor absorbs it by ratio.
+          #
+          # NODE IDS: the file floor alone is materially loose, and by a number -
+          # dropping the 53 heaviest collectable files keeps 173 of 231 files and
+          # PASSES a 3/4 file floor while losing 2263 of 3601 test functions, 62%
+          # of the suite. A conftest import error under one heavy subtree is
+          # exactly that shape: most files present, most tests gone. At ~4141
+          # node ids over 231 files the suite averages ~18 per file, so a floor
+          # of 10x the file count (2310 today) sits well under a healthy
+          # collection and far above that 62% shape. The PAIR bounds the hole at
+          # ~36%, it does not close it: dropping the 18 heaviest files keeps 208
+          # files and exactly 2310 node ids while losing 1293 of 3603 tests. That
+          # residue needs every other file to collect normally, which is not what
+          # an import error or a plugin regression looks like - so it is accepted,
+          # and named here rather than left to be discovered.
+          min_files=$(( expected_files * 3 / 4 ))
+          min_nodeids=$(( expected_files * 10 ))
+          echo "test files on disk: ${expected_files}; floors: ${min_files} files, ${min_nodeids} node ids"
+          if ! python ../scripts/ci/split_pytest_shards.py \
+              --nodeids collected-nodeids.txt \
+              --count-only \
+              --min-files "${min_files}" \
+              --min-nodeids "${min_nodeids}"; then
+            echo "Last lines of the collection output, for context:"
+            tail -20 collected-nodeids.txt
+            exit 1
+          fi
+
+      # The split is a pure function of the collected set (see the script's
+      # docstring): complete, disjoint and order-independent, so the six shards
+      # partition the suite exactly. backend/tests/test_pytest_shard_split.py
+      # pins those properties AND pins `--shards` against the matrix length.
+      #
+      # This step passes no floors on purpose: the collect step above already
+      # gated the collection and exits 1 on a bad one, so a second copy of the
+      # floors here would be the duplication this design keeps removing. The
+      # splitter enforces them on the selection path too (there is a test for
+      # that), which matters for any OTHER caller - not for this workflow, where
+      # the selection is only reached after the gate passed.
+      #
+      # `--durations` deals the files by MEASURED SECONDS rather than by test
+      # count (plan
+      # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-carries-the-migration-tests-back-to-the-budget).
+      # Count balance put the alembic-harness files -- ~8% of the tests and
+      # ~75% of the seconds -- wherever LPT happened to drop them, so one shard
+      # ran at 2-4x its siblings. The map is committed (never cached: every
+      # shard must compute the SAME assignment from the SAME inputs) and is
+      # refreshed from the nightly's `shard-durations-proposed.json` artifact.
+      # An absent or corrupt map degrades to count weights, said on the
+      # splitter's verdict line; it cannot change which files run. Only THIS
+      # step takes the flag -- the collect step above is a pure collection
+      # check, and the splitter refuses `--durations` with `--count-only`.
+      - name: Select this shard's test files
+        run: |
+          python ../scripts/ci/split_pytest_shards.py \
+            --nodeids collected-nodeids.txt \
+            --shards 6 \
+            --shard ${{ matrix.shard }} \
+            --durations tests/shard-durations.json \
+            --out shard-files.txt
+
       - name: Run tests with coverage
         env:
           # conftest.py overrides this anyway, but keep aligned with the
@@ -360,14 +544,60 @@ jobs:
           TESTING: 1
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
           ENVIRONMENT: development
+          # A shard-UNIQUE coverage data file. pytest-cov hands COVERAGE_FILE to
+          # coverage.py, which writes the db there instead of `.coverage`; the
+          # export job combines all six. The name carries no leading dot on
+          # purpose: upload-artifact skips hidden files by default, and a
+          # `.coverage.shard-N` would upload as an EMPTY artifact -- which the
+          # export would then (correctly) read as a missing shard, every run.
+          COVERAGE_FILE: coverage-data-shard-${{ matrix.shard }}
         run: |
-          poetry run pytest tests/ -v \
+          # An EXPLICIT file list, never a directory. Handing pytest a bare
+          # directory here would make every shard run the entire suite, which is
+          # the one failure mode of sharding that still reports green -- so the
+          # empty case is a hard error rather than a fallback. The splitter
+          # already refuses to emit an empty list; this is the second guard,
+          # because the consequence is a silently multiplied bill or a silently
+          # narrowed gate.
+          mapfile -t SHARD_FILES < shard-files.txt
+          if [ "${#SHARD_FILES[@]}" -eq 0 ]; then
+            echo "::error::shard-files.txt is empty; refusing to invoke pytest without an explicit file list."
+            exit 1
+          fi
+          echo "shard ${{ matrix.shard }}/6 runs ${#SHARD_FILES[@]} test files"
+          poetry run pytest "${SHARD_FILES[@]}" -v \
             --cov=app \
             --cov-context=test \
             --cov-report=xml \
             --cov-report=html \
             --cov-report=term \
-            --junitxml=junit-results.xml
+            --junitxml=junit-results-shard-${{ matrix.shard }}.xml
+
+      # This shard's slice of the map: its coverage data file + its JUnit file.
+      #
+      # `!cancelled()` and NOT `always()` -- the unsharded export step's rule,
+      # moved to where the data now leaves the shard. A RED shard (failing tests)
+      # still uploads: `--cov-context=test` records which test touched which
+      # lines regardless of assertion outcome, and `--junitxml` is written either
+      # way, so its slice is real signal. A CANCELLED shard (external cancel, or
+      # its own job timeout, which also concludes `cancelled`) has a truncated
+      # db, and must not contribute it; skipping the upload is what makes its
+      # absence visible to the export job's completeness check, which then
+      # publishes nothing for the whole run.
+      #
+      # `if-no-files-found: error`: a shard that concluded without writing both
+      # files (a setup step failed before pytest ran) fails this step loudly
+      # rather than uploading a half-artifact that would look delivered.
+      - name: Upload this shard's coverage data and junit results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: coverage-producer-shard-${{ matrix.shard }}
+          path: |
+            ./backend/coverage-data-shard-${{ matrix.shard }}
+            ./backend/junit-results-shard-${{ matrix.shard }}.xml
+          if-no-files-found: error
+          retention-days: 3
 
       # Budget-creep tripwire. Raising `timeout-minutes` without this would
       # trade a LOUD wrong signal (a red lane blamed on an external cancel) for
@@ -395,16 +625,19 @@ jobs:
       - name: Warn if the job is approaching its budget
         if: success()
         env:
-          # Comfortably above the 56.9-min worst observed run of this suite,
-          # and 30 min below the job budget.
-          SOFT_BUDGET_MINUTES: '60'
-          JOB_TIMEOUT_MINUTES: '90'
+          # Per SHARD, not per suite. 45 is the worst measured backend-ci shard
+          # running this same split (43.3 min, see `timeout-minutes` above),
+          # rounded up, and 15 min below the 60-minute job budget: it speaks the
+          # first time a shard runs slower than any yet observed, with a quarter
+          # of the hard budget still in hand.
+          SOFT_BUDGET_MINUTES: '45'
+          JOB_TIMEOUT_MINUTES: '60'
           # The only per-site text in an otherwise byte-identical body. Keeping
           # the prose in `env` is what lets the two carriers share one script:
           # the marker next door is carried by eight copies precisely because
           # they are identical, and a tripwire that forked its wording at two
           # sites would start the same drift over again at a smaller scale.
-          JOB_LABEL: Backend Coverage Producer
+          JOB_LABEL: Backend Coverage Producer shard
           BUDGET_STAKES: >-
             This lane is non-gating, so a timeout here does not block a PR - it costs the coverage export and reds the main baseline instead.
         run: |
@@ -437,45 +670,6 @@ jobs:
           if [ "$elapsed_min" -ge "$SOFT_BUDGET_MINUTES" ]; then
             echo "::warning title=${JOB_LABEL} is approaching its job budget::This job took ${elapsed_min} min, at or past the ${SOFT_BUDGET_MINUTES}-minute soft budget and closing on the ${JOB_TIMEOUT_MINUTES}-minute job budget. This run PASSED - this is an early warning, not a failure. ${BUDGET_STAKES} Act on it before it becomes a timeout: this repo has already paid for a budget set below this suite's own median - every main push then produced a 'cancelled' run and no coverage export, which coord discards without writing, so main's baseline froze on its last conclusive verdict and no later run could clear it. Either make the suite faster (sharding is the obvious lever) or raise BOTH 'timeout-minutes' and 'JOB_TIMEOUT_MINUTES' together."
           fi
-
-      # Per-test -> touched-file coverage producer. Best-effort (the script
-      # exits 0 on any failure), so it cannot fail this lane even when coord is
-      # unreachable. The `--cov-context=test` flag above makes coverage.py record
-      # which test touched each line; this step reads that .coverage SQLite db and
-      # POSTs the observations + the JUnit results to coord's existing ingest
-      # routes.
-      - name: Export per-test coverage to coord (best-effort)
-        # Run on a RED suite too. A step with no `if:` defaults to `if: success()`,
-        # which silently skipped this export whenever the tests failed -- verified
-        # on both runs that actually concluded in the 2026-09-20 window
-        # (35528617045, 35520123562): `Run tests with coverage` failure, this step
-        # `skipped`. Serializing the workflow (see `concurrency` above) lets runs
-        # CONCLUDE; without this `if:` a concluding-but-red run would still export
-        # nothing, so the fix above would not have met its own goal.
-        #
-        # A failing test still has coverage contexts: `--cov-context=test` records
-        # which test touched which lines regardless of assertion outcome, and
-        # `--junitxml` is written either way. A partial map is real signal --
-        # coord's reader unions the freshest row PER TEST
-        # (`edit_effects::read_test_coverage_context`), so tests missing from one
-        # run keep their last-known rows rather than being erased.
-        #
-        # `!cancelled()` and NOT `always()`: a cancelled run (external cancel, or a
-        # job timeout, which this file's marker step below notes also concludes as
-        # `cancelled`) has a truncated `.coverage` db, and POSTing from it would
-        # publish a partial map as if it were a whole one.
-        if: ${{ !cancelled() }}
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-          # COORD_HTTP_URL defaults to https://coord.qontinui.io inside the
-          # script; override here only if a non-prod coord is targeted.
-        run: |
-          # Prove the extractor's own correctness on every run before trusting
-          # it against the real db (fast, no network).
-          python scripts/export_test_coverage.py --self-test
-          python scripts/export_test_coverage.py \
-            --coverage-db .coverage \
-            --junit-xml junit-results.xml
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
@@ -526,11 +720,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JOB_STATUS: ${{ job.status }}
-          # declared at this job's `timeout-minutes`. !! Must equal it. !!
+          # declared at this job's `timeout-minutes` -- now the PER-SHARD budget.
+          # !! Must equal it. !!
           # See the lockstep note there for why this cannot be an expression.
           # If these two drift, `budget_floor` is computed from the wrong number
           # and the job-timeout arm misfires or fails to fire.
-          JOB_TIMEOUT_MINUTES: '90'
+          JOB_TIMEOUT_MINUTES: '60'
           EXTERNAL_CANCEL_NOTE: >-
             this workflow declares `concurrency: cancel-in-progress: false`, so a RUNNING job is never auto-superseded - only a run still PENDING is cancelled when a newer push to the same ref supersedes the run, which costs no runner minutes and never reaches this step; for a job that got this far, a manual cancel is the external cause
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
@@ -819,3 +1014,148 @@ jobs:
           # non-cancelled path above has already returned. Kept so an unforeseen
           # state says what it knows instead of falling through silently.
           echo "::notice title=No infrastructure verdict::Job status '$JOB_STATUS', no apt-dependent step red the job, none mid-flight. This marker has nothing to add about the code under test. $ref"
+
+  # ONE export for the whole run, after every shard has concluded.
+  #
+  # `!cancelled()` and NOT the default `success()`: a shard whose TESTS failed
+  # concludes `failure`, which under `success()` would skip this job and export
+  # nothing -- the defect the unsharded export step's `if:` was added to fix
+  # (verified 2026-09-20 on runs 35528617045 and 35520123562: suite failure,
+  # export `skipped`). Serializing the workflow (see `concurrency` above) lets
+  # runs CONCLUDE; this `if:` is what makes a concluding-but-red run export.
+  #
+  # A failing test still has coverage contexts, and a red-but-complete map is
+  # real signal: coord's reader unions the freshest row PER TEST
+  # (`edit_effects::read_test_coverage_context`), so tests missing from one run
+  # keep their last-known rows rather than being erased.
+  #
+  # What `!cancelled()` does NOT decide is whether a shard was cancelled: a
+  # shard that hit its own job timeout concludes `cancelled` while the RUN is
+  # not, so this job can still start. That case is the completeness check's
+  # job, below, and it does not depend on how GitHub folds six shard
+  # conclusions into `needs.produce.result` -- it counts the files. (If GitHub
+  # instead skips this job for a cancelled need, the outcome is the same: no
+  # export.)
+  export:
+    name: Per-test coverage -> coord
+    needs: produce
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    # Download six small artifacts, one pip install, a combine and two POSTs:
+    # minutes, not tens of them. Bounded because every job here declares a
+    # budget it chose rather than inheriting GitHub's 360-minute default.
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ./backend
+    env:
+      # The `produce` matrix length. Pinned equal to it (and to the select
+      # step's `--shards`) by backend/tests/test_pytest_shard_split.py: a
+      # count that disagreed with the matrix would either never export or
+      # export a map missing a shard.
+      EXPECTED_SHARDS: '6'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # `continue-on-error`: a run whose shards were ALL cancelled or failed in
+      # setup uploaded nothing, and the download then has nothing to fetch. The
+      # completeness check below is what says so; this step reding first would
+      # only hide that sentence behind a less specific one.
+      - name: Download the shards' coverage data and junit results
+        continue-on-error: true
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          pattern: coverage-producer-shard-*
+          path: shard-artifacts
+
+      # The run-level form of "a cancelled run exports nothing". Every shard
+      # must have delivered BOTH its coverage data file and its JUnit file;
+      # a shard that was cancelled (its upload is `!cancelled()`) or that died
+      # before pytest wrote them (its upload is `if-no-files-found: error`)
+      # leaves a hole, and a map with a hole published under this head would
+      # read as the whole suite's. So any hole means: export NOTHING, and say
+      # which shards were missing. Not a failure of this job -- coord keeps its
+      # last-known rows, exactly as it did for a cancelled unsharded run.
+      #
+      # `needs.produce.result` is read too, as a second, stricter guard: a
+      # `cancelled` aggregate refuses even if every file somehow arrived.
+      - name: Check every shard delivered its slice
+        id: complete
+        env:
+          PRODUCE_RESULT: ${{ needs.produce.result }}
+        run: |
+          set -uo pipefail
+          root="$GITHUB_WORKSPACE/shard-artifacts"
+          missing=""
+          : > shard-coverage-files.txt
+          : > shard-junit-files.txt
+          for n in $(seq 1 "$EXPECTED_SHARDS"); do
+            dir="$root/coverage-producer-shard-$n"
+            if [ -s "$dir/coverage-data-shard-$n" ] && [ -s "$dir/junit-results-shard-$n.xml" ]; then
+              echo "$dir/coverage-data-shard-$n" >> shard-coverage-files.txt
+              echo "$dir/junit-results-shard-$n.xml" >> shard-junit-files.txt
+            else
+              missing="${missing:+$missing, }$n"
+            fi
+          done
+          echo "produce matrix result: ${PRODUCE_RESULT}; shards expected: ${EXPECTED_SHARDS}; missing: ${missing:-none}"
+          if [ -n "$missing" ]; then
+            echo "::warning title=Coverage export SKIPPED - the map would be partial::Shard(s) ${missing} of ${EXPECTED_SHARDS} delivered no coverage data and/or junit file (cancelled, timed out, or failed before pytest wrote them), so this run exports NOTHING rather than publishing a partial map as if it were the whole suite. coord keeps its last-known rows for every test. Read each missing shard's own budget/cancel marker for why."
+            echo "export=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$PRODUCE_RESULT" = "cancelled" ]; then
+            echo "::warning title=Coverage export SKIPPED - a shard was cancelled::Every shard's files arrived, but the produce matrix concluded 'cancelled', so at least one shard did not finish cleanly. Exporting nothing rather than trusting a slice whose job was cancelled."
+            echo "export=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "export=true" >> "$GITHUB_OUTPUT"
+
+      # Same coverage.py as the shards wrote with: a db written by one coverage
+      # version is combined by that version, so the pin tracks backend's
+      # poetry.lock (asserted by backend/tests/test_pytest_shard_split.py). Only
+      # coverage is installed -- the combine needs nothing from the app's
+      # dependency tree, and the export script is stdlib only.
+      - name: Combine the shards' coverage data
+        if: steps.complete.outputs.export == 'true'
+        run: |
+          python -m pip install --disable-pip-version-check 'coverage==7.14.0'
+          mapfile -t COVERAGE_FILES < shard-coverage-files.txt
+          python -m coverage combine --keep --data-file=.coverage "${COVERAGE_FILES[@]}"
+
+      # Per-test -> touched-file coverage producer. Best-effort (the script
+      # exits 0 on any failure), so it cannot fail this lane even when coord is
+      # unreachable. The `--cov-context=test` flag on every shard makes
+      # coverage.py record which test touched each line; this step reads the
+      # combined .coverage SQLite db and POSTs the observations, then merges the
+      # shards' JUnit files into ONE results batch and POSTs that.
+      - name: Export per-test coverage to coord (best-effort)
+        if: steps.complete.outputs.export == 'true'
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          # COORD_HTTP_URL defaults to https://coord.qontinui.io inside the
+          # script; override here only if a non-prod coord is targeted.
+        run: |
+          # Prove the extractor's own correctness on every run before trusting
+          # it against the real db (fast, no network).
+          python scripts/export_test_coverage.py --self-test
+          # Only main's heads are mapped. A `workflow_dispatch` from a branch
+          # (how a change to this file is proven before it lands) runs every
+          # shard, the completeness check and the combine, but must not POST a
+          # branch head's map into coord beside main's.
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::notice title=Export skipped off main::This run is on ${GITHUB_REF}, not refs/heads/main, so the combined map was built and checked but NOT posted to coord."
+            exit 0
+          fi
+          junit_args=()
+          while IFS= read -r f; do junit_args+=(--junit-xml "$f"); done < shard-junit-files.txt
+          python scripts/export_test_coverage.py \
+            --coverage-db .coverage \
+            "${junit_args[@]}"
