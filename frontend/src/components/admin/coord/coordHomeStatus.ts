@@ -1973,23 +1973,25 @@ export function deriveHomeStrip(
     !rosterCutHidesHealth(machines.cut) &&
     unlistedDegrading === 0 &&
     mc.noVerdict === 0;
-  // The roster WAS read, is current, withholds nothing and shows nothing
-  // degrading or without a verdict, and still is not calm: its cut hides
-  // machines, or no graded machine is live. The headline says which, never
-  // that the roster was not read.
-  const rosterReadNotCalm: "cut" | "no_live" | null =
+  // The roster WAS read, is current and withholds nothing, and still is not
+  // calm: some machines have no verdict, its cut hides machines, or no graded
+  // machine is live. The headline says which, never that the roster was not
+  // read. (A degrading machine never reaches it: `somethingDegrading` answers
+  // first.) A machine with no verdict is named before the cut, since "no
+  // listed machine is degrading" is not known of it.
+  const rosterReadNotCalm: "no_verdict" | "cut" | "no_live" | null =
     machines === null ||
     mc === null ||
     machines.stale ||
-    !isRosterComplete(machines.exclusions) ||
-    unlistedDegrading > 0 ||
-    mc.noVerdict > 0
+    !isRosterComplete(machines.exclusions)
       ? null
-      : rosterCutHidesHealth(machines.cut)
-        ? "cut"
-        : noLiveMachine(mc)
-          ? "no_live"
-          : null;
+      : mc.noVerdict > 0
+        ? "no_verdict"
+        : rosterCutHidesHealth(machines.cut)
+          ? "cut"
+          : noLiveMachine(mc)
+            ? "no_live"
+            : null;
   const somethingDegrading =
     (open !== null && open.length > 0) || machinesDegrading;
 
@@ -2063,10 +2065,13 @@ export function deriveHomeStrip(
     // Coord's needs and degradations blocks were read and are empty, and so
     // was the roster: say what keeps it from calm, not "not read". Any other
     // gap is a clause, as above; the detail names it.
+    const noVerdict = mc?.noVerdict ?? 0;
     headline =
-      rosterReadNotCalm === "no_live"
-        ? "Nothing needs you and no live machine reports — none can be called healthy"
-        : `Nothing needs you and no listed machine is degrading — coord's roster ${machines?.cut.kind === "may_be_cut" ? "may be" : "is"} cut off`;
+      rosterReadNotCalm === "no_verdict"
+        ? `Nothing needs you, but ${noVerdict} ${noVerdict === 1 ? "machine has" : "machines have"} no health verdict — ${noVerdict === 1 ? "its" : "their"} health is unknown`
+        : rosterReadNotCalm === "no_live"
+          ? "Nothing needs you and no live machine reports — none can be called healthy"
+          : `Nothing needs you and no listed machine is degrading — coord's roster ${machines?.cut.kind === "may_be_cut" ? "may be" : "is"} cut off`;
     if (
       unread.length > 0 ||
       unknownSources === null ||

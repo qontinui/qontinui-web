@@ -8,6 +8,8 @@
 import {
   readRosterCut,
   summarizeMachineHealth,
+  type RosterCut,
+  type RosterExclusions,
 } from "@/components/admin/coord/machineHealth";
 import { describe, expect, it } from "vitest";
 import {
@@ -395,6 +397,152 @@ describe("the strip over the machine roster", () => {
       "2 machines not reporting healthy are not degradations: the 2 abandoned named above — see Dev Ops."
     );
     expect(s.detail).not.toContain("2 abandoned —");
+  });
+
+  it("an empty roster coord withheld nothing from and did not cut says no live machine reports", () => {
+    const s = deriveHomeStrip(calm(), machines([]));
+    expect(s.level).toBe("amber");
+    expect(s.headline).toBe(
+      "Nothing needs you and no live machine reports — none can be called healthy"
+    );
+    expect(s.detail).toContain(
+      "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy."
+    );
+  });
+
+  it("says some machines have no health verdict, never that the roster was not read", () => {
+    const one = deriveHomeStrip(calm(), machines(["healthy", null]));
+    expect(one.level).toBe("amber");
+    expect(one.headline).toBe(
+      "Nothing needs you, but 1 machine has no health verdict — its health is unknown"
+    );
+    expect(one.detail).toContain("1 machine has no health verdict — unknown.");
+    const two = deriveHomeStrip(calm(), machines(["unknown", null, "healthy"]));
+    expect(two.headline).toBe(
+      "Nothing needs you, but 2 machines have no health verdict — their health is unknown"
+    );
+    for (const s of [one, two]) {
+      expect(s.headline).not.toMatch(/not read|nothing is degrading/);
+    }
+  });
+
+  describe("the read-but-not-calm headline holds only where each guard allows it", () => {
+    /** A roster of `states`, as `over` overrides its fields. */
+    const roster = (
+      states: Array<string | null>,
+      over: Partial<{
+        stale: boolean;
+        exclusions: RosterExclusions;
+        cut: RosterCut;
+      }> = {}
+    ) => {
+      const devs = devices(...states);
+      return {
+        stale: false,
+        counts: summarizeMachineHealth(devs),
+        exclusions: { kind: "none_withheld" } as RosterExclusions,
+        cut: { kind: "whole" } as RosterCut,
+        ...over,
+      };
+    };
+    const CUT: RosterCut = { kind: "reported_cut", listed: 1, total: null };
+    /** The calm view with `over` replacing its top-level blocks. */
+    const viewWith = (over: Record<string, unknown>) =>
+      parseProjectState({
+        generated_at: "2026-10-31T00:00:00Z",
+        on_track: {
+          state: "read",
+          totals: { row_count: 0, classes: {} },
+          groups: [],
+        },
+        correctness: { state: "read" },
+        needs_me: { state: "read", items: [], total: 0, omitted: 0 },
+        degradations: {
+          state: "read",
+          headline: "none",
+          open: [],
+          declared: [],
+        },
+        does_not_know: [{ source: "work_units", state: "read" }],
+        ...over,
+      });
+
+    it("never says no live machine reports when coord withheld machines", () => {
+      const s = deriveHomeStrip(calm(), {
+        machines: roster(["abandoned", "abandoned"], {
+          exclusions: { kind: "withheld", unbound: 1, boundToOtherTenant: 0 },
+        }),
+      });
+      expect(s.level).toBe("amber");
+      expect(s.headline).toBe("Cannot tell — part of this view is not read");
+    });
+
+    it("names a machine with no verdict before the cut, never 'no listed machine is degrading'", () => {
+      const s = deriveHomeStrip(calm(), {
+        machines: roster(["healthy", null], { cut: CUT }),
+      });
+      expect(s.headline).toBe(
+        "Nothing needs you, but 1 machine has no health verdict — its health is unknown"
+      );
+      expect(s.detail).toContain(
+        "Coord reports its roster was cut after 1 row — machine health beyond it is unknown."
+      );
+    });
+
+    it("never states a cut from the roster's last good read as current", () => {
+      const s = deriveHomeStrip(calm(), {
+        machines: roster(["healthy"], { stale: true, cut: CUT }),
+      });
+      expect(s.headline).toBe("Cannot tell — part of this view is not read");
+      expect(s.detail).toContain("Machine health is from its last good read.");
+    });
+
+    it("never says no listed machine is degrading from a stale degradations block", () => {
+      const s = deriveHomeStrip(
+        viewWith({
+          degradations: {
+            state: "stale",
+            headline: "none",
+            open: [],
+            declared: [],
+          },
+        }),
+        { machines: roster(["healthy"], { cut: CUT }) }
+      );
+      expect(s.headline).toBe("Cannot tell — part of this view is not read");
+    });
+
+    it("never says nothing needs you from the queue counts", () => {
+      const s = deriveHomeStrip(viewWith({ needs_me: { state: "unknown" } }), {
+        machines: roster(["healthy"], { cut: CUT }),
+        queues: { count: 0, exact: true, stale: false, notRead: [] },
+      });
+      expect(s.headline).toBe("Cannot tell — part of this view is not read");
+    });
+
+    it.each([
+      ["serves no list of what it could not read", { does_not_know: null }],
+      [
+        "could not read a source",
+        { does_not_know: [{ source: "work_units", state: "could_not_read" }] },
+      ],
+    ])("adds the not-read clause when coord %s", (_label, over) => {
+      const s = deriveHomeStrip(viewWith(over), {
+        machines: roster(["healthy"], { cut: CUT }),
+      });
+      expect(s.headline).toBe(
+        "Nothing needs you and no listed machine is degrading — coord's roster is cut off; part of this view is not read"
+      );
+    });
+
+    it("leaves the clause off when every block and source was read", () => {
+      const s = deriveHomeStrip(viewWith({}), {
+        machines: roster(["healthy"], { cut: CUT }),
+      });
+      expect(s.headline).toBe(
+        "Nothing needs you and no listed machine is degrading — coord's roster is cut off"
+      );
+    });
   });
 
   it("is never green, and never says nothing is degrading, with the roster unread", () => {
