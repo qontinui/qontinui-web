@@ -24,12 +24,16 @@ snapshot table is left exactly as it is.
 
 * ``session_pct`` / ``weekly_pct`` are PERCENT (the runner wire sends
   fractions; the ingest multiplies by 100), nullable. A NULL is UNKNOWN (not
-  reported, or the probe failed), never 0.
-* A failed probe is still a row: ``error = true`` with every figure NULL. It is
-  not a reading, but its ``status`` (a provider ``rejected``) is the
-  ``provider_rejected`` HOLD signal, exactly as the shipped helper keeps it. This mirrors ``coord.prepaid_balances`` and avoids the
-  ``NOT NULL DEFAULT 0`` defect that ``coord_prepaid_balances_01`` documents for
+  reported, or the probe failed), never 0. This mirrors
+  ``coord.prepaid_balances`` and avoids the ``NOT NULL DEFAULT 0`` defect that
+  ``coord_prepaid_balances_01`` documents for
   ``claude_account_usage.weekly_utilization``.
+* A failed probe is still a row: ``error = true`` with both figures NULL,
+  enforced by ``ck_account_usage_samples_error_carries_no_figures`` (the runner
+  fills ``utilization: 1.0`` as a placeholder on a failed fetch, and storing it
+  would book a phantom 100%). It is not a reading, but its ``status`` (a
+  provider ``rejected``, once the runner wire carries it; plan Phase 3) is the
+  ``provider_rejected`` HOLD signal, as the shipped helper keeps it.
 * ``model_limits`` keeps the per-model weekly caps verbatim (the shipped helper's
   ``model_budget`` HOLD reads them). It is pinned to a JSON array. Each entry's
   ``utilization`` stays a FRACTION as the runner sent it; only the two top-level
@@ -119,6 +123,8 @@ def upgrade() -> None:
                 CHECK (session_pct IS NULL OR session_pct >= 0),
             CONSTRAINT ck_account_usage_samples_weekly_pct_nonneg
                 CHECK (weekly_pct IS NULL OR weekly_pct >= 0),
+            CONSTRAINT ck_account_usage_samples_error_carries_no_figures
+                CHECK (NOT error OR (session_pct IS NULL AND weekly_pct IS NULL)),
             CONSTRAINT ck_account_usage_samples_model_limits_array
                 CHECK (jsonb_typeof(model_limits) = 'array')
         )

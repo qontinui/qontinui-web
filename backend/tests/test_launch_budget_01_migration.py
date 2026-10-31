@@ -105,6 +105,10 @@ _EXPECTED_SAMPLE_CONSTRAINTS: dict[str, tuple[str, str]] = {
         "c",
         "CHECK (((weekly_pct IS NULL) OR (weekly_pct >= (0)::double precision)))",
     ),
+    "ck_account_usage_samples_error_carries_no_figures": (
+        "c",
+        "CHECK (((NOT error) OR ((session_pct IS NULL) AND (weekly_pct IS NULL))))",
+    ),
     "ck_account_usage_samples_model_limits_array": (
         "c",
         "CHECK ((jsonb_typeof(model_limits) = 'array'::text))",
@@ -171,9 +175,9 @@ _INSERT_SAMPLE = text(
     """
     INSERT INTO coord.account_usage_samples
         (tenant_id, device_id, account_label, account_hash,
-         session_pct, weekly_pct, model_limits)
+         session_pct, weekly_pct, model_limits, error)
     VALUES (:tid, :device, :label, :hash, :session_pct, :weekly_pct,
-            CAST(:model_limits AS jsonb))
+            CAST(:model_limits AS jsonb), :error)
     """
 )
 
@@ -197,6 +201,7 @@ def _sample(**overrides: object) -> dict[str, object]:
         "session_pct": None,
         "weekly_pct": None,
         "model_limits": "[]",
+        "error": False,
     }
     params.update(overrides)
     return params
@@ -388,6 +393,15 @@ def test_launch_budget_01_creates_both_tables_and_enforces_their_contract() -> N
             _INSERT_SAMPLE,
             _sample(model_limits='{"model": "Fable"}'),
             "ck_account_usage_samples_model_limits_array",
+        )
+
+        # 5b. An error row stores no figures; a placeholder 100% is refused.
+        _insert(engine, _INSERT_SAMPLE, _sample(error=True))
+        _refused(
+            engine,
+            _INSERT_SAMPLE,
+            _sample(error=True, weekly_pct=100.0),
+            "ck_account_usage_samples_error_carries_no_figures",
         )
 
         # 6. Ledger defaults: open, not pending, work_type unknown.
