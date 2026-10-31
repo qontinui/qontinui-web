@@ -443,17 +443,25 @@ describe("describeRoleWriteError", () => {
     );
   });
   it("coord's sentence under detail, in the envelope the backend emits, is shown", () => {
-    // Captured verbatim from `http_exception_handler` for coord's
-    // `{"error": "reason_required", "detail": "…"}` refusal: the dict's
-    // fields are spread first, then the envelope's own four.
-    const body =
-      '{"detail":"a role change moves where coord sends work, so say why",' +
-      '"error":"reason_required","message":"reason_required",' +
-      '"timestamp":1793436820.870933,' +
-      '"path":"http://testserver/api/v1/operations/fleet/dispatch-role"}';
-    expect(describeRoleWriteError(422, body).message).toBe(
-      "HTTP 422 — reason_required — a role change moves where coord sends " +
-        "work, so say why"
+    // The envelope `http_exception_handler` builds for coord's
+    // `reason_required` refusal: coord answers it with 400 and the `detail`
+    // below (`validate_put` in qontinui-coord
+    // `crates/coord/src/dispatch_role_routes.rs`), the passthrough keeps that
+    // status, and the handler spreads the dict's fields first, then the
+    // envelope's own four. `timestamp` and `path` are sample values.
+    const detail =
+      "a role change moves where coord sends work (and, from plan Phase 4, " +
+      "GitHub routing); the version history records why, so `reason` is " +
+      "required and may not be blank";
+    const body = JSON.stringify({
+      detail,
+      error: "reason_required",
+      message: "reason_required",
+      timestamp: 1793436820.870933,
+      path: "http://testserver/api/v1/operations/fleet/dispatch-role",
+    });
+    expect(describeRoleWriteError(400, body).message).toBe(
+      `HTTP 400 — reason_required — ${detail}`
     );
   });
   it("the current envelope (message is the code itself) prints the code once", () => {
