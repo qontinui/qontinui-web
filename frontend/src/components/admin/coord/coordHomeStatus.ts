@@ -349,6 +349,79 @@ function parseGroup(raw: unknown): RepoGroup | null {
   };
 }
 
+/** The classes coord names units for, per repository group (`named`). */
+export const NAMED_UNIT_CLASSES: ReadonlySet<UnitClass> = new Set([
+  "stalled",
+  "waiting_on_gate",
+]);
+
+/**
+ * What a repository group's expanded detail says about the units it counts.
+ *
+ * Coord's project state serves every class's COUNT per group, but names the
+ * units of only two classes (`named.stalled`, `named.waiting_on_gate`). So
+ * the detail accounts for every unit the badge counts: each class with a
+ * count, in coord's order (`counted`); the classes coord served no count for
+ * (`unserved`, never a zero); and how many counted units sit in a class whose
+ * units coord does not name here (`unnamed`, null when any of those classes
+ * is unserved) — those are on the Work units page, not on this one.
+ */
+export interface GroupBreakdown {
+  counted: ReadonlyArray<{ cls: UnitClass; count: number }>;
+  unserved: readonly UnitClass[];
+  unnamed: number | null;
+}
+
+export function groupBreakdown(g: RepoGroup): GroupBreakdown {
+  const counted: { cls: UnitClass; count: number }[] = [];
+  const unserved: UnitClass[] = [];
+  let unnamed: number | null = 0;
+  for (const cls of UNIT_CLASSES) {
+    const n = g.classes[cls];
+    if (n === null) {
+      unserved.push(cls);
+      if (!NAMED_UNIT_CLASSES.has(cls)) unnamed = null;
+      continue;
+    }
+    if (n > 0) counted.push({ cls, count: n });
+    if (!NAMED_UNIT_CLASSES.has(cls) && unnamed !== null) unnamed += n;
+  }
+  return { counted, unserved, unnamed };
+}
+
+/** The breakdown as one sentence: "By state: not started 1 · shipped 2." */
+export function groupBreakdownSentence(
+  b: GroupBreakdown,
+  windowSecs: number | null
+): string {
+  const label = (cls: UnitClass) => unitClassLabel(cls, windowSecs);
+  const parts: string[] = [];
+  parts.push(
+    b.counted.length === 0
+      ? "By state: no class holds a unit."
+      : `By state: ${b.counted.map((c) => `${label(c.cls)} ${c.count}`).join(" · ")}.`
+  );
+  if (b.unserved.length > 0) {
+    parts.push(
+      `Coord served no count for ${b.unserved.map(label).join(", ")} — unknown, not zero.`
+    );
+  }
+  return parts.join(" ");
+}
+
+/**
+ * The sentence for the units coord does not name on this page, or null when
+ * every counted unit is in a named class. `count` null: some such class was
+ * not counted, so how many is unknown.
+ */
+export function unnamedUnitsSentence(count: number | null): string | null {
+  if (count === 0) return null;
+  if (count === null) {
+    return "Coord names units here only when they have no recorded change or wait on a condition; how many of this repository's other units exist is unknown.";
+  }
+  return `Coord names units here only when they have no recorded change or wait on a condition, so ${count === 1 ? "the 1 other unit is" : `the ${count} other units are`} not listed here`;
+}
+
 /** Work attributed to an initiative item (or a bucket), as coord counts it. */
 export interface AttributedUnits {
   total: number | null;

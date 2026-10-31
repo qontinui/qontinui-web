@@ -8,7 +8,10 @@
 import { describe, expect, it } from "vitest";
 import {
   deriveHomeStrip,
+  groupBreakdown,
+  groupBreakdownSentence,
   noRecordedChangeBadgeLabel,
+  unnamedUnitsSentence,
   parseProjectState,
   unitCountText,
 } from "./coordHomeStatus";
@@ -67,5 +70,76 @@ describe("the strip's no-recorded-change badge", () => {
     for (const s of [deriveHomeStrip(null), deriveHomeStrip(view)]) {
       expect(s.badges.map((b) => b.label).join(" ")).not.toMatch(/\b\d+ d\b/);
     }
+  });
+});
+
+describe("a repository group's account of its units", () => {
+  const group = (classes: Record<string, unknown>) =>
+    parseProjectState({
+      on_track: {
+        state: "read",
+        totals: { row_count: 0, classes: {} },
+        groups: [{ key: "r", kind: "repo", row_count: 0, classes }],
+      },
+    })!.onTrack.groups![0]!;
+  const ALL_ZERO = {
+    shipped: 0,
+    in_flight: 0,
+    stalled: 0,
+    blocked_on_dependency: 0,
+    waiting_on_gate: 0,
+    not_started: 0,
+    closed_other: 0,
+    off_vocabulary: 0,
+    unset: 0,
+  };
+
+  it("names every class that holds a unit, with its count", () => {
+    const b = groupBreakdown(
+      group({ ...ALL_ZERO, not_started: 1, shipped: 2, stalled: 1 })
+    );
+    expect(b.counted).toEqual([
+      { cls: "shipped", count: 2 },
+      { cls: "stalled", count: 1 },
+      { cls: "not_started", count: 1 },
+    ]);
+    expect(groupBreakdownSentence(b, 14 * 86_400)).toBe(
+      "By state: shipped 2 · no recorded change in 14 days 1 · not started 1."
+    );
+  });
+
+  it("counts the units in classes coord does not name here, and only those", () => {
+    expect(
+      groupBreakdown(group({ ...ALL_ZERO, not_started: 1, stalled: 3 })).unnamed
+    ).toBe(1);
+    expect(
+      groupBreakdown(group({ ...ALL_ZERO, waiting_on_gate: 2, stalled: 3 }))
+        .unnamed
+    ).toBe(0);
+  });
+
+  it("says a class coord served no count for is unknown, and the unnamed total with it", () => {
+    const b = groupBreakdown(group({ ...ALL_ZERO, in_flight: null }));
+    expect(b.unserved).toEqual(["in_flight"]);
+    expect(b.unnamed).toBeNull();
+    expect(groupBreakdownSentence(b, null)).toContain(
+      "Coord served no count for in flight — unknown, not zero."
+    );
+    expect(unnamedUnitsSentence(null)).toMatch(/is unknown\.$/);
+  });
+
+  it("an unserved NAMED class leaves the unnamed total known", () => {
+    expect(
+      groupBreakdown(group({ ...ALL_ZERO, stalled: null, not_started: 2 }))
+        .unnamed
+    ).toBe(2);
+  });
+
+  it("says nothing about unnamed units when there are none", () => {
+    expect(unnamedUnitsSentence(0)).toBeNull();
+    expect(unnamedUnitsSentence(1)).toContain("the 1 other unit is not listed");
+    expect(unnamedUnitsSentence(4)).toContain(
+      "the 4 other units are not listed"
+    );
   });
 });
