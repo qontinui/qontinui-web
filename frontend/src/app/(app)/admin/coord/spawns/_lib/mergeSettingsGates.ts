@@ -33,9 +33,11 @@ import {
 } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
 import {
   ON_OFF_TEXT,
+  onOffVerdict,
   unknownCell,
   withWrite,
   type GateCell,
+  type GateVerdict,
   type MatrixGate,
   type MergeSettingsRead,
   type SwitchWrite,
@@ -129,6 +131,16 @@ export function fixerDialGate(
     };
   }
   const shown = withWrite(effective, write, askedText, presenting);
+  // The dial's position may be "follow the default"; what it ALLOWS is the
+  // value coord resolved, and only while the cell shows a read value.
+  const verdict: GateVerdict =
+    shown.tone === "unknown" ||
+    read.dial === null ||
+    read.dial.source === "unknown"
+      ? "unknown"
+      : read.dial.effective
+        ? "on"
+        : "off";
   return {
     key: "dial:auto_fix_pr",
     title: "Fixer dial for stuck PRs",
@@ -147,6 +159,7 @@ export function fixerDialGate(
         : "Coord starts no PR fixer while the dial resolves off.",
     },
     effective: shown,
+    verdict,
     // Still settable while the value is unknown, with no position selected:
     // what a write left unknown is not the position the last read held.
     write:
@@ -198,6 +211,7 @@ export function redMainKnobGate(
       stale: false,
     };
   }
+  const knob = withWrite(value, write, ON_OFF_TEXT, presenting);
   return {
     key: "knob:auto_fix_red_main",
     title: "Fixer knob for failing main branches",
@@ -215,7 +229,8 @@ export function redMainKnobGate(
         ? "While it is off, a failing main branch is not handed to a fixer."
         : "Coord checks it before it consults the red-main fixer at all (gate 3): with it off for a repository, a failing main gets no fixer.",
     },
-    effective: withWrite(value, write, ON_OFF_TEXT, presenting),
+    effective: knob,
+    verdict: onOffVerdict(knob),
     write: known
       ? { door: "auto_fix_red_main", current: raw as boolean }
       : null,
@@ -288,6 +303,7 @@ export function admissionStallKnobGate(
         : "Coord checks it before it consults the stalled-train responder at all (gate 3): with it off, a stalled merge queue gets no responder.",
     },
     effective,
+    verdict: onOffVerdict(effective),
     write: null,
     readOnly: presenting
       ? "Changed by the operator outside this page."

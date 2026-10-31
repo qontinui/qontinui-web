@@ -40,6 +40,7 @@ import type {
 import type { EnforcedBy, ServedPathWords } from "./spawnPathCatalog";
 import {
   ON_OFF_TEXT,
+  onOffVerdict,
   unknownCell,
   withWrite,
   type GateCell,
@@ -262,6 +263,7 @@ export function registryEnforcement(
 export function registryGate(input: RegistryGateInput): MatrixGate {
   const { name, presenting } = input;
   const value = registryValue(input);
+  const effective = withWrite(value.cell, input.write, ON_OFF_TEXT, presenting);
   return {
     key: `registry:${name}`,
     title: "Agent registry switch",
@@ -270,7 +272,8 @@ export function registryGate(input: RegistryGateInput): MatrixGate {
       : `Agent registry row ${name} — the tenant default (PUT /coord/agent-registry/${name}).`,
     scope: "tenant",
     enforced: registryEnforcement(input.words, presenting),
-    effective: withWrite(value.cell, input.write, ON_OFF_TEXT, presenting),
+    effective,
+    verdict: onOffVerdict(effective),
     preference: preferenceCell(input),
     write:
       value.current === null
@@ -290,6 +293,7 @@ export function mirrorGate(
   input: Omit<RegistryGateInput, "write"> & { mirrorLabel: string }
 ): MatrixGate {
   const { name, presenting } = input;
+  const effective = registryEffectiveCell({ ...input, write: undefined });
   return {
     key: `mirror:${name}`,
     title: `${input.mirrorLabel} switch`,
@@ -298,7 +302,8 @@ export function mirrorGate(
       : `Agent registry row ${name}, which has its own row on this matrix; it is written there.`,
     scope: "tenant",
     enforced: registryEnforcement(input.words, presenting),
-    effective: registryEffectiveCell({ ...input, write: undefined }),
+    effective,
+    verdict: onOffVerdict(effective),
     write: null,
     readOnly: presenting
       ? `Set on the "${input.mirrorLabel}" line.`

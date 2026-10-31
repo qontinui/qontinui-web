@@ -27,6 +27,26 @@ import type {
   MatrixGate,
 } from "../_lib/spawnPathGates";
 import type { LastSpawnedCell } from "../_lib/spawnPathLastSpawned";
+import type { PathVerdict } from "../_lib/spawnPathVerdict";
+
+/** A path's verdict across every switch that governs it (`spawnPathVerdict.ts`). */
+export function PathVerdictValue({ verdict }: { verdict: PathVerdict }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "w-fit text-xs font-semibold",
+        verdict.state === "unknown" || verdict.stale ? UNKNOWN_AMBER : INERT
+      )}
+      title={verdict.title}
+      data-testid="coord-spawns-path-verdict"
+      data-verdict={verdict.state}
+    >
+      {verdict.text}
+      {verdict.stale ? " (stale)" : ""}
+    </Badge>
+  );
+}
 
 function toneClass(cell: GateCell): string {
   if (cell.tone === "contradiction") return AUTHOR_RED;
