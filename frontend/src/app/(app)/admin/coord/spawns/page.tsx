@@ -40,8 +40,12 @@
  * ## What this page will not say
  *
  * - **"No spawns" when the ledger is not deployed.** coord answers
- *   `{available: false}` while its tables are absent, and the page says
- *   exactly that — the strip, the counts and the chart all read UNKNOWN.
+ *   `{available: false}` while its tables are absent (or does not serve the
+ *   route, or has it switched off), and the page says exactly that ONCE, in
+ *   the strip's place (`LedgerUnservedNotice`), naming every section that
+ *   rests on the ledger — the strip, each path's Last spawned, in flight per
+ *   machine, the counts, the placement and the chart — none of which renders
+ *   as a column or a section of UNKNOWNs while it holds.
  * - **0 for a number coord could not state.** A share over no ended request, a
  *   percentile over no started one, a device with no wait sample: `unknown`.
  * - **"Finished" for a session whose outcome nobody reported.** The row status
@@ -112,12 +116,14 @@ import { MachineStatusSection } from "./_components/MachineStatusSection";
 import { SpawnPathMatrixSection } from "./_components/SpawnPathMatrix";
 import { SpawnRateChart } from "./_components/SpawnRateChart";
 import { LedgerReadBanners } from "./_components/LedgerReadBanners";
+import { LedgerUnservedNotice } from "./_components/LedgerUnservedNotice";
 import { SpawnActivitySummary } from "./_components/SpawnActivitySummary";
 import {
   machineListStale,
   machineListUnknown,
   machineStatusLines,
 } from "./_lib/machineStatus";
+import { ledgerUnserved } from "./_lib/ledgerServed";
 import { deriveSpawnPathMatrix } from "./_lib/spawnPathMatrix";
 import {
   SPAWN_WINDOWS,
@@ -182,6 +188,8 @@ export default function CoordSpawnsPage() {
     [list, spec.ms]
   );
   const listIssue = ledger.list.issue;
+  // coord does not serve the ledger at all: said once (`ledgerServed.ts`).
+  const unserved = ledgerUnserved(ledger);
 
   const matrix = useMemo(
     () =>
@@ -269,20 +277,31 @@ export default function CoordSpawnsPage() {
       {/* Presentation mode only: what the page shows and why, before data. */}
       <Caption id="agentic-activity.page" />
 
-      <HealthStrip
-        data-testid="coord-spawns-health"
-        level={health.level}
-        headline={health.headline}
-        detail={health.detail}
-        badges={health.badges}
-      />
-      {/* Where the strip's figures come from, and when — presentation only. */}
-      <span className="contents" data-testid="coord-spawns-strip-provenance">
-        <Provenance
-          source={SPAWNS_SOURCES.ledger}
-          asOf={ledger.stats.data?.as_of ?? null}
-        />
-      </span>
+      {unserved !== null ? (
+        // The ledger is not served: one statement, in the strip's place, with
+        // every ledger-backed section collapsed under it.
+        <LedgerUnservedNotice issue={unserved} presenting={presenting} />
+      ) : (
+        <>
+          <HealthStrip
+            data-testid="coord-spawns-health"
+            level={health.level}
+            headline={health.headline}
+            detail={health.detail}
+            badges={health.badges}
+          />
+          {/* Where the strip's figures come from, and when — presentation only. */}
+          <span
+            className="contents"
+            data-testid="coord-spawns-strip-provenance"
+          >
+            <Provenance
+              source={SPAWNS_SOURCES.ledger}
+              asOf={ledger.stats.data?.as_of ?? null}
+            />
+          </span>
+        </>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <RefreshButton
@@ -362,7 +381,9 @@ export default function CoordSpawnsPage() {
         </OperatorOnly>
       </div>
 
-      <LedgerReadBanners ledger={ledger} presenting={presenting} />
+      {unserved === null && (
+        <LedgerReadBanners ledger={ledger} presenting={presenting} />
+      )}
 
       <SpawnPathMatrixSection
         matrix={matrix}
@@ -374,6 +395,7 @@ export default function CoordSpawnsPage() {
           busy,
         }}
         presenting={presenting}
+        showLastSpawned={unserved === null}
         sources={[
           { source: SPAWNS_SOURCES.registry, asOf: switches.effective.asOfMs },
           {
@@ -389,11 +411,15 @@ export default function CoordSpawnsPage() {
             source: SPAWNS_SOURCES.followupScopes,
             asOf: switches.followupAsOfMs,
           },
-          { source: SPAWNS_SOURCES.ledger, asOf: list?.as_of ?? null },
+          // Last spawned's read, while it has a column to feed.
+          ...(unserved === null
+            ? [{ source: SPAWNS_SOURCES.ledger, asOf: list?.as_of ?? null }]
+            : []),
         ]}
       />
 
       <MachineStatusSection
+        showInFlight={unserved === null}
         lines={machines.lines}
         listUnknown={machines.unknown}
         listStale={machines.stale}
@@ -406,40 +432,47 @@ export default function CoordSpawnsPage() {
         ]}
       />
 
-      <SpawnActivitySummary
-        ledger={ledger}
-        windowId={windowId}
-        windowLabel={spec.label}
-        requestSources={[
-          { source: SPAWNS_SOURCES.ledger, asOf: list?.as_of ?? null },
-          {
-            source: SPAWNS_SOURCES.ledgerWaiting,
-            asOf: ledger.pending.data?.as_of ?? null,
-          },
-        ]}
-        placementSources={[
-          {
-            source: SPAWNS_SOURCES.ledger,
-            asOf: ledger.stats.data?.as_of ?? null,
-          },
-        ]}
-      />
+      {unserved === null && (
+        <>
+          <SpawnActivitySummary
+            ledger={ledger}
+            windowId={windowId}
+            windowLabel={spec.label}
+            requestSources={[
+              { source: SPAWNS_SOURCES.ledger, asOf: list?.as_of ?? null },
+              {
+                source: SPAWNS_SOURCES.ledgerWaiting,
+                asOf: ledger.pending.data?.as_of ?? null,
+              },
+            ]}
+            placementSources={[
+              {
+                source: SPAWNS_SOURCES.ledger,
+                asOf: ledger.stats.data?.as_of ?? null,
+              },
+            ]}
+          />
 
-      <section className="space-y-2" data-testid="coord-spawns-rate-section">
-        <SectionCaption
-          id="agentic-activity.rate"
-          sources={[
-            { source: SPAWNS_SOURCES.ledger, asOf: list?.as_of ?? null },
-          ]}
-        />
-        <SpawnRateChart
-          series={series}
-          windowLabel={spec.label}
-          shown={list?.items.length ?? null}
-          total={list?.total ?? null}
-          forceOpen={presenting}
-        />
-      </section>
+          <section
+            className="space-y-2"
+            data-testid="coord-spawns-rate-section"
+          >
+            <SectionCaption
+              id="agentic-activity.rate"
+              sources={[
+                { source: SPAWNS_SOURCES.ledger, asOf: list?.as_of ?? null },
+              ]}
+            />
+            <SpawnRateChart
+              series={series}
+              windowLabel={spec.label}
+              shown={list?.items.length ?? null}
+              total={list?.total ?? null}
+              forceOpen={presenting}
+            />
+          </section>
+        </>
+      )}
     </div>
   );
 }

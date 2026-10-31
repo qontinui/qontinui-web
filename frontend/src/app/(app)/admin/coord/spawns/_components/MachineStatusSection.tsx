@@ -75,7 +75,13 @@ export function MachineStatusSection({
   listStale,
   presenting,
   sources,
+  showInFlight = true,
 }: {
+  /**
+   * `false` while coord does not serve the spawn ledger: the page's one
+   * statement of that names the in-flight figure too (`LedgerUnservedNotice`).
+   */
+  showInFlight?: boolean;
   /** `null` while the roster is unknown — `listUnknown` says why. */
   lines: MachineStatusLine[] | null;
   listUnknown: string | null;
@@ -116,13 +122,17 @@ export function MachineStatusSection({
           {title}
         </h2>
       )}
-      <p
-        className="text-xs text-muted-foreground m-0"
-        data-testid="coord-spawns-inflight-note"
-      >
-        In flight against ceiling, and the reasons work was held: UNKNOWN —{" "}
-        {presenting ? IN_FLIGHT_UNKNOWN.presented : IN_FLIGHT_UNKNOWN.operator}
-      </p>
+      {showInFlight && (
+        <p
+          className="text-xs text-muted-foreground m-0"
+          data-testid="coord-spawns-inflight-note"
+        >
+          In flight against ceiling, and the reasons work was held: UNKNOWN —{" "}
+          {presenting
+            ? IN_FLIGHT_UNKNOWN.presented
+            : IN_FLIGHT_UNKNOWN.operator}
+        </p>
+      )}
       {listStale && (
         <UnknownNote role="status" data-testid="coord-spawns-machines-stale">
           {listStale}
@@ -153,7 +163,11 @@ export function MachineStatusSection({
                 <th className="py-1 pr-3 font-medium">Machine</th>
                 <th className="py-1 pr-3 font-medium">New work</th>
                 <th className="py-1 pr-3 font-medium">Dispatch role</th>
-                <th className="py-1 pr-3 font-medium">In flight vs ceiling</th>
+                {showInFlight && (
+                  <th className="py-1 pr-3 font-medium">
+                    In flight vs ceiling
+                  </th>
+                )}
                 <th className="py-1 pr-3 font-medium">Sessions open now</th>
               </tr>
             </thead>
@@ -210,12 +224,14 @@ export function MachineStatusSection({
                       testId="coord-spawns-machine-role"
                     />
                   </td>
-                  <td className="py-1.5 pr-3">
-                    <CellValue
-                      cell={line.inFlight}
-                      testId="coord-spawns-machine-inflight"
-                    />
-                  </td>
+                  {showInFlight && (
+                    <td className="py-1.5 pr-3">
+                      <CellValue
+                        cell={line.inFlight}
+                        testId="coord-spawns-machine-inflight"
+                      />
+                    </td>
+                  )}
                   <td className="py-1.5 pr-3">
                     <CellValue
                       cell={line.sessions}
