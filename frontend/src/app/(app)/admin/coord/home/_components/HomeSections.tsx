@@ -105,7 +105,7 @@ import {
   degradingCoverage,
   isRosterBindingFault,
   isRosterComplete,
-  isRosterCut,
+  rosterCutHidesHealth,
   noLiveMachine,
   notDegradationsSentence,
   placeholdersSentence,
@@ -1119,7 +1119,7 @@ export function DegradingSection({
                           ((machines.exclusions !== null &&
                             !isRosterComplete(machines.exclusions)) ||
                             (machines.cut !== null &&
-                              isRosterCut(machines.cut)))
+                              rosterCutHidesHealth(machines.cut)))
                         ? "No open degradation was served, but coord's roster may be missing machines, so this view cannot say nothing is degrading — see Machines below."
                         : machines.state === "read" &&
                             machines.counts !== null &&

@@ -93,11 +93,11 @@ import {
   degradingCoverage,
   emptyRosterSentence,
   isRosterComplete,
-  isRosterCut,
   noLiveMachine,
   noLiveMachineSentence,
   notDegradationsSentence,
   placeholdersSentence,
+  rosterCutHidesHealth,
   rosterCutSentence,
   rosterIncompleteSentence,
   type MachineHealthCounts,
@@ -1782,7 +1782,7 @@ export interface HomeStripMachines {
   counts: MachineHealthCounts;
   /** What coord said it withheld from the roster; only `none_withheld` is complete. */
   exclusions: RosterExclusions;
-  /** Whether the roster may be cut off at coord's row limit; only `whole` is complete. */
+  /** Whether coord cut the roster at its row limit; complete unless it hides health. */
   cut: RosterCut;
 }
 
@@ -1968,11 +1968,28 @@ export function deriveHomeStrip(
     // abandoned one does not report, so a roster of only those is not calm.
     !noLiveMachine(mc) &&
     // Nor is a roster coord withheld machines from, or could not say, or one
-    // that may be cut off at coord's row limit.
+    // whose cut at coord's row limit may hide a degrading machine.
     isRosterComplete(machines.exclusions) &&
-    !isRosterCut(machines.cut) &&
+    !rosterCutHidesHealth(machines.cut) &&
     unlistedDegrading === 0 &&
     mc.noVerdict === 0;
+  // The roster WAS read, is current, withholds nothing and shows nothing
+  // degrading or without a verdict, and still is not calm: its cut hides
+  // machines, or no graded machine is live. The headline says which, never
+  // that the roster was not read.
+  const rosterReadNotCalm: "cut" | "no_live" | null =
+    machines === null ||
+    mc === null ||
+    machines.stale ||
+    !isRosterComplete(machines.exclusions) ||
+    unlistedDegrading > 0 ||
+    mc.noVerdict > 0
+      ? null
+      : rosterCutHidesHealth(machines.cut)
+        ? "cut"
+        : noLiveMachine(mc)
+          ? "no_live"
+          : null;
   const somethingDegrading =
     (open !== null && open.length > 0) || machinesDegrading;
 
@@ -2037,6 +2054,26 @@ export function deriveHomeStrip(
     // The clause stays generic: the detail line names what is not read.
     headline = "Nothing needs you and nothing is degrading";
     if (attention === "waiting") headline += " — part of this view is not read";
+  } else if (
+    nothingNeedsYou &&
+    degradedRead &&
+    open !== null &&
+    rosterReadNotCalm !== null
+  ) {
+    // Coord's needs and degradations blocks were read and are empty, and so
+    // was the roster: say what keeps it from calm, not "not read". Any other
+    // gap is a clause, as above; the detail names it.
+    headline =
+      rosterReadNotCalm === "no_live"
+        ? "Nothing needs you and no live machine reports — none can be called healthy"
+        : `Nothing needs you and no listed machine is degrading — coord's roster ${machines?.cut.kind === "may_be_cut" ? "may be" : "is"} cut off`;
+    if (
+      unread.length > 0 ||
+      unknownSources === null ||
+      (unknownSources ?? 0) > 0
+    ) {
+      headline += "; part of this view is not read";
+    }
   } else if (attention === "waiting") {
     headline = "Cannot tell — part of this view is not read";
   } else {

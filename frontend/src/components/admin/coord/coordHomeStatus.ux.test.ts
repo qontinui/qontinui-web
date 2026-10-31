@@ -267,50 +267,134 @@ describe("the strip over the machine roster", () => {
     expect(deriveHomeStrip(calm(), machines(["healthy"])).level).toBe("green");
   });
 
+  /** The strip over `n` healthy machines, with nothing withheld, cut as `extra` says. */
+  const cutStrip = (n: number, extra: Record<string, unknown>) => {
+    const devs = devices(...Array<string>(n).fill("healthy"));
+    return deriveHomeStrip(calm(), {
+      machines: {
+        stale: false,
+        counts: summarizeMachineHealth(devs),
+        exclusions: { kind: "none_withheld" },
+        cut: readRosterCut({ devices: devs, ...extra }),
+      },
+    });
+  };
+
   it.each([
     [
-      "is at coord's row limit",
+      "is at an older coord's row limit",
       1000,
       {},
-      "Coord's roster lists 1000 rows, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
+      "Coord's roster lists 1000 rows, at coord's limit of 1000, so it may be cut off — machine health beyond it is unknown.",
+      "Nothing needs you and no listed machine is degrading — coord's roster may be cut off",
     ],
     [
-      "is flagged truncated",
+      "is flagged truncated with no degradable count",
       1,
       { truncated: true },
-      "Coord's roster lists 1 row, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
+      "Coord reports its roster was cut after 1 row — machine health beyond it is unknown.",
+      "Nothing needs you and no listed machine is degrading — coord's roster is cut off",
     ],
     [
       "has a larger total",
       2,
       { total: 9 },
-      "Coord's roster lists 2 rows of 9, so it is cut off at coord's limit — the health of the other 7 is unknown.",
+      "Coord reports its roster was cut: it lists 2 rows of 9 — the health of the other 7 is unknown.",
+      "Nothing needs you and no listed machine is degrading — coord's roster is cut off",
+    ],
+    [
+      "withheld machines that could be degrading",
+      4,
+      {
+        truncated: true,
+        total: 12,
+        degradable_dropped: 3,
+        row_cap: { soft: 2, hard: 4 },
+      },
+      "Coord's roster lists 4 rows of 12, and coord withheld 3 machines that could be degrading past its row limit of 4 — their health is unknown, so this view is partial.",
+      "Nothing needs you and no listed machine is degrading — coord's roster is cut off",
     ],
   ] as const)(
-    "is never calm when the roster %s, with nothing withheld",
-    (_label, n, extra, sentence) => {
-      const devs = devices(...Array<string>(n).fill("healthy"));
-      const s = deriveHomeStrip(calm(), {
-        machines: {
-          stale: false,
-          counts: summarizeMachineHealth(devs),
-          exclusions: { kind: "none_withheld" },
-          cut: readRosterCut({ devices: devs, ...extra }),
-        },
-      });
+    "is never calm when the roster %s, with nothing withheld, and says the roster was read",
+    (_label, n, extra, sentence, headline) => {
+      const s = cutStrip(n, extra);
       expect(s.level).toBe("amber");
       expect(s.headline).not.toMatch(/nothing is degrading/i);
+      // The roster was read: the headline says what keeps it from calm.
+      expect(s.headline).toBe(headline);
+      expect(s.headline).not.toMatch(/not read/);
       expect(s.detail).toContain(sentence);
     }
   );
 
-  it("is never calm when every machine coord grades is abandoned", () => {
+  it("is calm when coord cut only rows that cannot degrade, and names them", () => {
+    const s = cutStrip(3, {
+      truncated: true,
+      total: 5,
+      degradable_dropped: 0,
+      row_cap: { soft: 3, hard: 30 },
+    });
+    expect(s.level).toBe("green");
+    expect(s.headline).toBe("Nothing needs you and nothing is degrading");
+    expect(s.detail).toContain(
+      "Coord's roster lists 3 rows of 5: the other 2 are abandoned or placeholder rows past coord's limit of 3, not listed here — coord says none of them could be degrading."
+    );
+  });
+
+  it("is calm on `truncated: false` past the old limit", () => {
+    const s = cutStrip(1500, {
+      truncated: false,
+      total: 1500,
+      degradable_dropped: 0,
+      row_cap: { soft: 1000, hard: 10000 },
+    });
+    expect(s.level).toBe("green");
+    expect(s.headline).toBe("Nothing needs you and nothing is degrading");
+    expect(s.detail ?? "").not.toMatch(/cut/);
+  });
+
+  it("keeps the not-read clause when another part of the view was not read", () => {
+    const view = parseProjectState({
+      generated_at: "2026-10-31T00:00:00Z",
+      on_track: {
+        state: "read",
+        totals: { row_count: 0, classes: {} },
+        groups: [],
+      },
+      correctness: { state: "unknown" },
+      needs_me: { state: "read", items: [], total: 0, omitted: 0 },
+      degradations: { state: "read", headline: "none", open: [], declared: [] },
+      does_not_know: [{ source: "work_units", state: "read" }],
+    });
+    const devs = devices("healthy");
+    const s = deriveHomeStrip(view, {
+      machines: {
+        stale: false,
+        counts: summarizeMachineHealth(devs),
+        exclusions: { kind: "none_withheld" },
+        cut: readRosterCut({ devices: devs, truncated: true }),
+      },
+    });
+    expect(s.headline).toBe(
+      "Nothing needs you and no listed machine is degrading — coord's roster is cut off; part of this view is not read"
+    );
+  });
+
+  it("is never calm when every machine coord grades is abandoned, and names them once", () => {
     const s = deriveHomeStrip(calm(), machines(["abandoned", "abandoned"]));
     expect(s.level).toBe("amber");
     expect(s.headline).not.toMatch(/nothing is degrading/i);
+    expect(s.headline).toBe(
+      "Nothing needs you and no live machine reports — none can be called healthy"
+    );
     expect(s.detail).toContain(
       "All 2 machines coord grades are abandoned, so no live machine reports — there is no machine this view can call healthy."
     );
+    // The reconcile line points back rather than counting them again.
+    expect(s.detail).toContain(
+      "2 machines not reporting healthy are not degradations: the 2 abandoned named above — see Dev Ops."
+    );
+    expect(s.detail).not.toContain("2 abandoned —");
   });
 
   it("is never green, and never says nothing is degrading, with the roster unread", () => {

@@ -562,19 +562,30 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
 
     it.each([
       [
-        "is at coord's row limit",
+        "is at an older coord's row limit",
         () => roster(...Array<string>(1000).fill("healthy")),
-        "Coord's roster lists 1000 rows, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
+        "Coord's roster lists 1000 rows, at coord's limit of 1000, so it may be cut off — machine health beyond it is unknown.",
       ],
       [
         "says it cut the roster off",
         () => ({ ...roster("healthy"), truncated: true }),
-        "Coord's roster lists 1 row, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
+        "Coord reports its roster was cut after 1 row — machine health beyond it is unknown.",
       ],
       [
         "serves a total larger than the rows it lists",
         () => ({ ...roster("healthy", "healthy"), total: 5 }),
-        "Coord's roster lists 2 rows of 5, so it is cut off at coord's limit — the health of the other 3 is unknown.",
+        "Coord reports its roster was cut: it lists 2 rows of 5 — the health of the other 3 is unknown.",
+      ],
+      [
+        "withheld machines that could be degrading",
+        () => ({
+          ...roster("healthy", "healthy"),
+          total: 9,
+          truncated: true,
+          degradable_dropped: 4,
+          row_cap: { soft: 1, hard: 2 },
+        }),
+        "Coord's roster lists 2 rows of 9, and coord withheld 4 machines that could be degrading past its row limit of 2 — their health is unknown, so this view is partial.",
       ],
     ])(
       "never reads a roster calm when coord %s, even with nothing withheld",
@@ -600,6 +611,46 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
         expect(strip).toHaveTextContent(sentence);
       }
     );
+
+    it.each([
+      [
+        "cut only rows that cannot degrade",
+        () => ({
+          ...roster("healthy", "healthy"),
+          total: 7,
+          truncated: true,
+          degradable_dropped: 0,
+          row_cap: { soft: 2, hard: 20 },
+        }),
+        "Coord's roster lists 2 rows of 7: the other 5 are abandoned or placeholder rows past coord's limit of 2, not listed here — coord says none of them could be degrading.",
+      ],
+      [
+        "says nothing was cut past the old limit",
+        () => ({
+          ...roster(...Array<string>(1001).fill("healthy")),
+          total: 1001,
+          truncated: false,
+          degradable_dropped: 0,
+          row_cap: { soft: 1000, hard: 10000 },
+        }),
+        "All 1001 machines report healthy.",
+      ],
+    ])("reads a roster calm when coord %s", async (_label, body, sentence) => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () => json(body()),
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() => expect(machines).toHaveTextContent(sentence));
+      expect(
+        screen.getByTestId("coord-home.degrading.empty")
+      ).toHaveTextContent("Nothing is degrading");
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveAttribute("data-health-level", "green");
+      expect(strip).not.toHaveTextContent(/cannot tell|may be cut/i);
+    });
 
     it("reads an older coord's unstated exclusions as maybe incomplete, with no binding-fault attribute", async () => {
       answer({
@@ -666,6 +717,14 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       expect(strip).toHaveAttribute("data-health-level", "amber");
       expect(strip).not.toHaveTextContent(/nothing is degrading/i);
       expect(strip).toHaveTextContent("so no live machine reports");
+      // The roster was read: the headline says so, never "not read".
+      expect(strip).not.toHaveTextContent(/part of this view is not read/);
+      // Named once, then pointed back at.
+      expect(
+        screen.getByTestId("coord-home.degrading.machines-reconcile")
+      ).toHaveTextContent(
+        "2 machines not reporting healthy are not degradations: the 2 abandoned named above"
+      );
     });
 
     it("says machine health is unknown, never calm, when the roster cannot be read", async () => {
