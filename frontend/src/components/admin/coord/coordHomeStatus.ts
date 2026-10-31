@@ -185,6 +185,18 @@ export function unitCountText(n: number | null, noun = "unit"): string {
   return `${n === null ? "–" : n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
+/**
+ * The strip's badge for the stall class, in plain words with its unit:
+ * "3 units with no recorded change in 14 days"; "– units …" when coord
+ * served no count. Never "stalled", and never an abbreviation ("14 d").
+ */
+export function noRecordedChangeBadgeLabel(
+  count: number | null,
+  windowSecs: number | null
+): string {
+  return `${unitCountText(count)} with no recorded change in ${stallWindowDays(windowSecs)} days`;
+}
+
 /** Whole days in a stall window, for the label. */
 export function stallWindowDays(windowSecs: number | null): number {
   return Math.round((windowSecs ?? DEFAULT_STALL_WINDOW_SECS) / 86_400);
@@ -1674,7 +1686,7 @@ export function deriveHomeStrip(
         },
         {
           key: "no-change",
-          label: `no change ${stallWindowDays(null)} d –`,
+          label: noRecordedChangeBadgeLabel(null, null),
           tone: "muted",
           testId: "coord-home.strip.no-change",
         },
@@ -1810,7 +1822,10 @@ export function deriveHomeStrip(
       },
       {
         key: "no-change",
-        label: `no change ${stallWindowDays(view.onTrack.stallWindowSecs)} d ${countText(stalled)}`,
+        label: noRecordedChangeBadgeLabel(
+          stalled,
+          view.onTrack.stallWindowSecs
+        ),
         tone: stalled === null ? "muted" : "default",
         testId: "coord-home.strip.no-change",
       },

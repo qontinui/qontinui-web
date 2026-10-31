@@ -164,4 +164,19 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       );
     });
   });
+
+  describe("the no-recorded-change wording", () => {
+    it("is plain words with the unit, on the strip and on a repository row", async () => {
+      answer({ [PROJECT_STATE]: () => json(oneUnitBody()) });
+      await renderPage();
+      expect(
+        screen.getByTestId("coord-home.strip.no-change")
+      ).toHaveTextContent(/^0 units with no recorded change in 14 days$/);
+      const group = screen.getByTestId("coord-home.on-track.group");
+      expect(group).toHaveTextContent("no recorded change in 14 days 0");
+      for (const el of [screen.getByTestId("coord-home.strip"), group]) {
+        expect(el).not.toHaveTextContent(/\b14 d\b/);
+      }
+    });
+  });
 });

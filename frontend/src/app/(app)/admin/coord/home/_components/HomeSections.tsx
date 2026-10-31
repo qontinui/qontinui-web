@@ -980,7 +980,7 @@ function groupSummary(g: RepoGroup, windowSecs: number | null): string {
   return [
     `shipped ${n(c.shipped)}`,
     `in flight ${n(c.in_flight)}`,
-    `no recorded change ${stallWindowDays(windowSecs)} d ${n(c.stalled)}`,
+    `no recorded change in ${stallWindowDays(windowSecs)} days ${n(c.stalled)}`,
     `waiting ${n(waiting)}`,
   ].join(" · ");
 }

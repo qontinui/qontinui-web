@@ -6,7 +6,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { unitCountText } from "./coordHomeStatus";
+import {
+  deriveHomeStrip,
+  noRecordedChangeBadgeLabel,
+  parseProjectState,
+  unitCountText,
+} from "./coordHomeStatus";
 
 describe("unitCountText", () => {
   it("names one unit in the singular", () => {
@@ -23,5 +28,44 @@ describe("unitCountText", () => {
   it("writes a count coord did not serve as a dash, never a zero", () => {
     expect(unitCountText(null)).toBe("– units");
     expect(unitCountText(null, "work unit")).toBe("– work units");
+  });
+});
+
+describe("the strip's no-recorded-change badge", () => {
+  it("says what it counts and the window in whole words", () => {
+    expect(noRecordedChangeBadgeLabel(3, 14 * 86_400)).toBe(
+      "3 units with no recorded change in 14 days"
+    );
+    expect(noRecordedChangeBadgeLabel(1, 7 * 86_400)).toBe(
+      "1 unit with no recorded change in 7 days"
+    );
+  });
+
+  it("is a dash, never a zero, when coord served no count", () => {
+    expect(noRecordedChangeBadgeLabel(null, null)).toBe(
+      "– units with no recorded change in 14 days"
+    );
+  });
+
+  it("is the label the strip renders, before and after a read", () => {
+    const label = (s: ReturnType<typeof deriveHomeStrip>) =>
+      s.badges.find((b) => b.key === "no-change")?.label;
+    expect(label(deriveHomeStrip(null))).toBe(
+      "– units with no recorded change in 14 days"
+    );
+    const view = parseProjectState({
+      on_track: {
+        state: "read",
+        totals: { row_count: 2, classes: { stalled: 2 } },
+        groups: [],
+        stall_window_secs: 21 * 86_400,
+      },
+    });
+    expect(label(deriveHomeStrip(view))).toBe(
+      "2 units with no recorded change in 21 days"
+    );
+    for (const s of [deriveHomeStrip(null), deriveHomeStrip(view)]) {
+      expect(s.badges.map((b) => b.label).join(" ")).not.toMatch(/\b\d+ d\b/);
+    }
   });
 });
