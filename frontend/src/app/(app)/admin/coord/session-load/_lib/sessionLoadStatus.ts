@@ -65,7 +65,12 @@ import type {
   ConcurrencyBucket,
   SessionRunsWindow,
 } from "@/lib/api/operations/coordSessionRuns";
-import { formatDuration } from "../../spawns/_lib/spawnStatus";
+import type { SpawnStatsWindow } from "@/lib/api/operations/coordSpawns";
+import {
+  SPAWN_REQUESTS_HREF,
+  spawnRequestsHref,
+} from "../../spawns/_lib/spawnRequestsRoute";
+import { SPAWN_WINDOWS, formatDuration } from "../../spawns/_lib/spawnStatus";
 
 // ---------------------------------------------------------------------------
 // Windows
@@ -1675,8 +1680,28 @@ export interface RunLink {
   id: string;
 }
 
-/** The records a run points at that the console can open. */
-export function runLinks(run: SessionRunWire): RunLink[] {
+/**
+ * The narrowest spawn requests window that holds a run's start, or `null`
+ * when the start is unreadable or older than the widest window: the request
+ * that spawned a run was created at or before its start, so the window that
+ * holds the start is the narrowest the request can be in.
+ */
+export function spawnWindowForRun(
+  run: SessionRunWire,
+  nowMs: number
+): SpawnStatsWindow | null {
+  const started = Date.parse(run.started_at);
+  if (!Number.isFinite(started)) return null;
+  const age = Math.max(0, nowMs - started);
+  return SPAWN_WINDOWS.find((w) => age <= w.ms)?.id ?? null;
+}
+
+/**
+ * The records a run points at that the console can open. The spawn request
+ * opens the spawn requests view (the per-request list), at the window that
+ * holds the run's start where one does.
+ */
+export function runLinks(run: SessionRunWire, nowMs: number): RunLink[] {
   const links: RunLink[] = [];
   if (run.gate_id) {
     links.push({
@@ -1687,10 +1712,11 @@ export function runLinks(run: SessionRunWire): RunLink[] {
     });
   }
   if (run.spawn_request_id) {
+    const window = spawnWindowForRun(run, nowMs);
     links.push({
       key: "spawn",
-      label: "Spawn request (Spawns page)",
-      href: "/admin/coord/spawns",
+      label: "Find the spawn request",
+      href: window ? spawnRequestsHref(window) : SPAWN_REQUESTS_HREF,
       id: run.spawn_request_id,
     });
   }
