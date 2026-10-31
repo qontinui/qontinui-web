@@ -25,6 +25,7 @@ import {
   findPresentationViolations,
   renderInPresentationMode,
 } from "@/test/presentation";
+import { attributesNaming } from "@/test/attributesNaming";
 import type { NavItem } from "./types";
 
 const fx = vi.hoisted(() => {
@@ -32,7 +33,7 @@ const fx = vi.hoisted(() => {
   return {
     DEVICE,
     EMAIL: "presenter@example.test",
-    OWN_PROJECT: "Qontinui Fleet",
+    OWN_PROJECT: "Acme Corp rollout",
     OTHER_PROJECT: "Partner Portal",
     RUNNER_NAME: "build-box-07",
     RUNNER_HOST: "build-box-07.lan",
@@ -76,7 +77,7 @@ vi.mock("@/contexts/product-mode-context", () => ({
 vi.mock("@/contexts/tenant-context", () => ({
   useTenant: () => ({
     tenants: [
-      { id: "t-own", name: fx.OWN_PROJECT, slug: "qontinui-fleet" },
+      { id: "t-own", name: fx.OWN_PROJECT, slug: "acme-corp-rollout" },
       { id: "t-other", name: fx.OTHER_PROJECT, slug: "partner-portal" },
     ],
     activeTenantId: "t-own",
@@ -194,21 +195,28 @@ beforeEach(() => {
 });
 
 describe("UnifiedSidebar in presentation mode", () => {
-  it("is safe to show: no enabled write control, no write registration, no cost", async () => {
+  it("is safe to show: no enabled write control, no write registration, no cost, no project name", async () => {
     const view = renderInPresentationMode(<UnifiedSidebar />);
     await screen.findByTestId("coord-project-presented");
-    expect(findPresentationViolations(view)).toEqual([]);
+    expect(
+      findPresentationViolations(view, {
+        forbidden: [fx.OWN_PROJECT, fx.OTHER_PROJECT],
+      })
+    ).toEqual([]);
   });
 
-  it("names the active project only: no switcher of the viewer's other projects, no New project", async () => {
-    const { container } = renderInPresentationMode(<UnifiedSidebar />);
+  it("withholds every project's name, the active one included: no switcher, no New project", async () => {
+    renderInPresentationMode(<UnifiedSidebar />);
     const project = await screen.findByTestId("coord-project-presented");
-    expect(project).toHaveTextContent(fx.OWN_PROJECT);
-    // Truncated to the rail, so the whole name is its tooltip.
-    expect(project.querySelector(`[title="${fx.OWN_PROJECT}"]`)).not.toBeNull();
+    // The home page's tenant strip renders the same descriptor ("Project").
+    expect(project).toHaveTextContent("Active project: Project");
     expect(screen.queryByTestId("coord-project-new")).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
-    expect(container.innerHTML).not.toContain(fx.OTHER_PROJECT);
+    // Text, and every attribute (href and data-* included).
+    for (const name of [fx.OWN_PROJECT, fx.OTHER_PROJECT]) {
+      expect(document.body.textContent).not.toContain(name);
+      expect(attributesNaming(document.body, name)).toEqual([]);
+    }
   });
 
   it("aliases the runner's machine and shows no account menu or email", async () => {
@@ -262,7 +270,7 @@ describe("UnifiedSidebar in operator mode", () => {
       </FixedPresentationMode>
     );
     expect(await screen.findByTestId("coord-project-new")).toBeInTheDocument();
-    expect(screen.getByRole("combobox")).toBeInTheDocument();
+    expect(screen.getByRole("combobox")).toHaveTextContent(fx.OWN_PROJECT);
     expect(container).toHaveTextContent(`Runner: ${fx.RUNNER_NAME}`);
     expect(container.innerHTML).toContain(fx.EMAIL);
     expect(screen.getByRole("button", { name: "Costs" })).toBeInTheDocument();
