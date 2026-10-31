@@ -27,6 +27,7 @@ among them) from the device session Ask the Twin runs on.
 """
 
 import asyncio
+import math
 import time
 from typing import Any
 from uuid import UUID
@@ -145,13 +146,57 @@ def _classify(verdict: dict[str, Any]) -> str:
     return "partial"
 
 
-def _envelope_metrics(verdict: dict[str, Any]) -> dict[str, Any]:
-    """The goal-#3/#4 surface: the credibility/usefulness numbers, verbatim."""
+def _class_bucket_age(envelope: dict[str, Any]) -> int | float | None:
+    """The age in seconds of the bucket an ``envelope`` door's drift class
+    comes from, or ``None`` when that age cannot be known.
+
+    coord's admin outbound door (``OutboundBudgetResponse``,
+    ``outbound_budget_read.rs``) has no answer-level age. Each bucket carries
+    its own ``staleness_seconds``. ``get_outbound_budget`` sorts the buckets
+    worst-first and takes the envelope's ``drift_class`` from the first one.
+    So the first bucket's age dates the class, and no other age in the answer
+    does. The rule is checked here, not assumed: the age is carried only when
+    the first bucket's class IS the envelope's, and only when it is a finite,
+    non-negative number of seconds (coord clamps at 0). Anything else serves
+    no age, which the page shows as UNKNOWN. That includes an answer with no
+    bucket at all (coverage 0, class ``unknown``).
+    """
+    buckets = envelope.get("buckets")
+    if not isinstance(buckets, list) or not buckets:
+        return None
+    first = buckets[0]
+    if not isinstance(first, dict):
+        return None
+    if first.get("drift_class") != envelope.get("drift_class"):
+        return None
+    age = first.get("staleness_seconds")
+    if isinstance(age, bool) or not isinstance(age, int | float):
+        return None
+    if not math.isfinite(age) or age < 0:
+        return None
+    return age
+
+
+def _envelope_metrics(
+    verdict: dict[str, Any], door_shape: str | None
+) -> dict[str, Any]:
+    """The goal-#3/#4 surface: the credibility/usefulness numbers, verbatim.
+
+    One exception: an ``envelope`` door reports no answer-level
+    ``staleness_seconds``. Its ``staleness_seconds`` here is the age of the
+    bucket its drift class comes from (``_class_bucket_age``), and the page
+    names it as that bucket's age.
+    """
+    staleness = (
+        _class_bucket_age(verdict)
+        if door_shape == _ENVELOPE_DOOR
+        else verdict.get("staleness_seconds")
+    )
     return {
         "coverage": verdict.get("coverage"),
         "credibility": verdict.get("credibility"),
         "posterior": verdict.get("posterior"),
-        "staleness_seconds": verdict.get("staleness_seconds"),
+        "staleness_seconds": staleness,
         "provenance": verdict.get("provenance"),
         "drift_class": verdict.get("drift_class"),
     }
@@ -244,7 +289,8 @@ async def _probe_subspace(
       under ``verdict``.
     - ``envelope`` — the DriftVerdict fields sit at the top level (the admin
       outbound door's ``OutboundBudgetResponse``), graded by the same
-      ``_classify``.
+      ``_classify``. It has no answer-level age, so its metrics carry the age
+      of the bucket its drift class comes from (``_class_bucket_age``).
     - ``report`` — ``{subspace, tool, verdict}`` where ``verdict`` is the tool's
       own report, not a DriftVerdict. It carries no coverage or drift class, so
       it is not graded at all: the cell reads ``served`` ("coord answered, and
@@ -321,7 +367,7 @@ async def _probe_subspace(
         "id": subspace,
         "status": _classify(verdict),
         "tool": body.get("tool"),
-        "metrics": _envelope_metrics(verdict),
+        "metrics": _envelope_metrics(verdict, door_shape),
         "door_shape": door_shape,
     }
 

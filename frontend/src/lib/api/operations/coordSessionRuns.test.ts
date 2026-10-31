@@ -46,15 +46,16 @@ describe("coordSessionRuns", () => {
     ]);
   });
 
-  it("fetchSessionRuns sends work_type, device and cursor under coord's names", async () => {
+  it("fetchSessionRuns sends work_type, device, initiator and cursor under coord's names", async () => {
     fetchMock.mockResolvedValueOnce(json({ runs: [], as_of: "t" }));
     await fetchSessionRuns({
       workType: "post_merge",
       device: "d-1",
+      initiator: "runner_local",
       cursor: "c~1",
     });
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "/api/v1/operations/session-runs?work_type=post_merge&device=d-1&cursor=c%7E1"
+      "/api/v1/operations/session-runs?work_type=post_merge&device=d-1&initiator=runner_local&cursor=c%7E1"
     );
   });
 

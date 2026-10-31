@@ -90,9 +90,36 @@ export const LENS_TREES: readonly string[] = ["/admin/coord", "/digital-twin"];
  */
 export const PRESENTATION_READY_ROUTES: readonly PresentationReadyRoute[] = [
   { route: "/admin/coord", provenBy: "app/(app)/admin/coord/page.test.tsx" },
+  // The coordination overview (plan Phase 2): the one-screen page's
+  // presentation-mode render, over fixtures feeding every free-text carrier
+  // it can show, in every state its regions render.
+  {
+    route: "/admin/coord/home",
+    provenBy: "app/(app)/admin/coord/home/page.presentation.test.tsx",
+  },
   {
     route: "/admin/coord/ui-bridge",
     provenBy: "app/(app)/admin/coord/ui-bridge/page.presentation.test.tsx",
+  },
+  // Dev Ops (plan Phase 7): the page's presentation-mode render, over a
+  // fixture feeding every free-text carrier it can show.
+  {
+    route: "/admin/coord/devops",
+    provenBy: "app/(app)/admin/coord/devops/page.presentation.test.tsx",
+  },
+  // Phase 5: the digital twin explorer — the Twin map and every tab behind it,
+  // and the sub-space drawer. Its proof renders the page unmocked beyond its
+  // data hooks and walks all five tabs.
+  {
+    route: "/digital-twin",
+    provenBy: "app/(app)/digital-twin/page.presentation-proof.test.tsx",
+  },
+  // Phase 8: the tour's start page — its caption, the start link and every
+  // stop with its state, read from this list. Its proof renders the real page
+  // over the real registry.
+  {
+    route: "/admin/coord/tour",
+    provenBy: "app/(app)/admin/coord/tour/page.presentation.test.tsx",
   },
 ];
 

@@ -18,6 +18,11 @@
  * pipeline while UNMOUNTING the matrix (Radix Tabs unmounts inactive content),
  * so the two views register different ids for the same row and never collide.
  *
+ * The Twin map (the default tab since plan
+ * `2026-10-23-console-presentation-spaces` Phase 5) reads the work-unit list;
+ * its mock answers with the spec's own `/operations/plans` stub, walked to its
+ * one page — exactly what `useTwinWorkUnits` returns for that body.
+ *
  * A jsdom render is not a browser and is not the Spec CI executor; Spec CI's
  * own run stays the authoritative check.
  */
@@ -27,9 +32,13 @@ import { resolve } from "node:path";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
+import type { WalkOutcome } from "@/app/(app)/admin/coord/work-units/planWalk";
 import type { SubspacesProbeResponse, TwinCatalogResponse } from "./_lib/types";
 
 const state = vi.hoisted(() => ({
+  /** The work-unit walk the Twin map reads (`useTwinWorkUnits`). */
+  workUnits: undefined as unknown,
   probe: {
     data: undefined as SubspacesProbeResponse | undefined,
     isLoading: false,
@@ -69,6 +78,35 @@ vi.mock("./_hooks/useSubspaceRaw", () => ({
     error: null,
   }),
 }));
+vi.mock("./_hooks/useTwinWorkUnits", () => ({
+  useTwinWorkUnits: () => ({
+    data: state.workUnits,
+    isLoading: false,
+    isError: false,
+    error: null,
+    dataUpdatedAt: Date.parse("2026-10-23T12:00:00Z"),
+    errorUpdatedAt: 0,
+  }),
+}));
+// Spec CI runs with no connected runner, so the app twin has no device.
+vi.mock("./_hooks/useAppTwin", () => {
+  const idle = {
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    dataUpdatedAt: 0,
+    errorUpdatedAt: 0,
+  };
+  return {
+    useAppTwin: () => ({
+      deviceId: null,
+      online: true,
+      apps: idle,
+      graph: idle,
+    }),
+  };
+});
 vi.mock("./_hooks/useDeliveryVerdict", () => ({
   useDeliveryVerdict: (slug: string) => ({
     data: slug.trim() ? state.delivery : undefined,
@@ -196,20 +234,57 @@ beforeEach(() => {
     schema: stubBody("**/api/v1/digital-twin/subspace/schema/raw"),
   };
   state.delivery = stubBody("**/api/v1/digital-twin/delivery/verdict**");
+  // One page with no next_cursor: the walk reads it and stops, complete.
+  const plans = stubBody("**/api/v1/operations/plans**") as {
+    work_units: CoordPlanRow[];
+    next_cursor: unknown;
+  };
+  expect(plans.next_cursor).toBeNull();
+  state.workUnits = {
+    kind: "complete",
+    rows: plans.work_units,
+    bodySignal: null,
+    pages: 1,
+  } satisfies WalkOutcome;
   state.registry.clear();
   state.duplicates = [];
   state.askDrafts = [];
 });
 
+/** The matrix cell ids mounted right now (`digital-twin-cell-<id>`). */
+function mountedMatrixCells(): string[] {
+  return Array.from(state.registry.keys()).filter(
+    (id) => /^digital-twin-cell-/.test(id) && isMounted(id)
+  );
+}
+
 describe("DigitalTwinPage tabs", () => {
-  it("orders the tabs Completeness, Lifecycle, Delivery, UI Bridge", () => {
+  it("orders the tabs Twin map, Completeness, Lifecycle, Delivery, UI Bridge", () => {
     render(<DigitalTwinPage />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual([
+      "Twin map",
       "Completeness",
       "Lifecycle",
       "Delivery",
       "UI Bridge",
     ]);
+  });
+
+  it("opens on the Twin map, with the matrix one click away", async () => {
+    const user = userEvent.setup();
+    render(<DigitalTwinPage />);
+    expect(screen.getByRole("tab", { name: "Twin map" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    expect(isMounted("digital-twin-aspect-environment")).toBe(true);
+    expect(mountedMatrixCells()).toEqual([]);
+
+    await user.click(registered("digital-twin-tab-completeness"));
+    await waitFor(() =>
+      expect(isMounted("digital-twin-cell-schema")).toBe(true)
+    );
+    expect(isMounted("digital-twin-aspect-environment")).toBe(false);
   });
 
   it("registers every id the spec's initial-render states assert", () => {
@@ -221,12 +296,15 @@ describe("DigitalTwinPage tabs", () => {
   });
 
   it("walks every Spec CI transition in spec order, by the spec's own ids", async () => {
-    // The Lifecycle tab's transition is one of them, ahead of the drawer.
+    // Opening an aspect runs first, on the initial render; the Lifecycle
+    // tab's transition is one of the tab switches, all ahead of the drawer.
     const order = SPEC.transitions.map((t) => t.id);
+    expect(order[0]).toBe("digital-twin-aspect-open");
     expect(order).toContain("digital-twin-lifecycle-view");
     expect(order.indexOf("digital-twin-lifecycle-view")).toBeLessThan(
       order.indexOf("digital-twin-open-drawer")
     );
+    expect(order.at(-1)).toBe("digital-twin-open-drawer");
 
     const user = userEvent.setup();
     render(<DigitalTwinPage />);
@@ -245,10 +323,16 @@ describe("DigitalTwinPage tabs", () => {
     const user = userEvent.setup();
     render(<DigitalTwinPage />);
 
+    // The matrix mounts on the Completeness tab: note its cells' ids.
+    await user.click(registered("digital-twin-tab-completeness"));
+    await waitFor(() =>
+      expect(isMounted("digital-twin-cell-schema")).toBe(true)
+    );
+    const matrixIds = mountedMatrixCells();
+    expect(matrixIds.length).toBeGreaterThan(0);
+
     // The transition's first action switches to the Lifecycle tab.
     await perform(user, lifecycle.actions[0]!);
-    const matrixIds = initialRenderIds("digital-twin-matrix");
-    expect(matrixIds.length).toBeGreaterThan(0);
     for (const id of matrixIds) {
       // The matrix cell is gone, and its row is present under stage-scoped ids.
       expect(isMounted(id), id).toBe(false);
@@ -292,7 +376,10 @@ describe("DigitalTwinPage drawer navigation", () => {
     const user = userEvent.setup();
     render(<DigitalTwinPage />);
 
-    await user.click(registered("digital-twin-cell-delivery"));
+    await user.click(registered("digital-twin-tab-completeness"));
+    await user.click(
+      await waitFor(() => registered("digital-twin-cell-delivery"))
+    );
     expect(isMounted("digital-twin-drawer-ask")).toBe(false);
     await user.click(registered("digital-twin-drawer-open-delivery"));
 
@@ -306,6 +393,10 @@ describe("DigitalTwinPage drawer navigation", () => {
     const user = userEvent.setup();
     render(<DigitalTwinPage />);
 
+    await user.click(registered("digital-twin-tab-completeness"));
+    await waitFor(() =>
+      expect(isMounted("digital-twin-cell-schema")).toBe(true)
+    );
     for (const id of ["ast", "schema"]) {
       await user.click(registered(`digital-twin-cell-${id}`));
       await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());

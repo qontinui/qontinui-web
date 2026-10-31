@@ -17,7 +17,11 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AlertTriangle, Send } from "lucide-react";
 import { usePolicyAutoPublishPolicy } from "../_hooks/usePolicyAutoPublishPolicy";
 import type { PublishAllState } from "../_hooks/usePublishAll";
-import { describeObservedPass } from "../_lib/observedWorker";
+import {
+  describeObservedPass,
+  describeObservedReconcile,
+  type ObservedReading,
+} from "../_lib/observedWorker";
 import {
   type AutoPublishWorkerObservation,
   POLICY_AUTO_PUBLISH_CONFIRMED_LEVELS,
@@ -27,7 +31,7 @@ import {
   type PolicyAutoPublishLevel,
 } from "../types";
 
-/** What the page's auto-publish status read observed of the publication pass. */
+/** What the page's auto-publish status read observed of the two workers. */
 export interface AutoPublishObserved {
   /** True once the status read has answered or failed. */
   settled: boolean;
@@ -35,6 +39,8 @@ export interface AutoPublishObserved {
   unavailable: boolean;
   /** `worker.pass` from that read; `undefined` is UNKNOWN. */
   pass: AutoPublishWorkerObservation | undefined;
+  /** `worker.recovery_reconcile` from that read; `undefined` is UNKNOWN. */
+  reconcile: AutoPublishWorkerObservation | undefined;
 }
 
 /**
@@ -52,7 +58,43 @@ export function observedFromPublishAll(
     // the dial shows no observation at all.
     unavailable: state.unavailable !== null,
     pass: state.worker?.pass,
+    reconcile: state.worker?.recovery_reconcile,
   };
+}
+
+/** One "Observed" line under the dial's level. */
+function ObservedLine({
+  reading,
+  testId,
+}: {
+  reading: ObservedReading;
+  testId: string;
+}) {
+  return (
+    <p
+      className={
+        reading.tone === "nominal"
+          ? "text-sm text-muted-foreground"
+          : "text-sm text-amber-700 dark:text-amber-400"
+      }
+      data-testid={testId}
+      data-observed-tone={reading.tone}
+      title={reading.title}
+    >
+      {reading.tone === "nominal" ? null : (
+        <AlertTriangle
+          className="mr-1 inline size-4 align-text-bottom"
+          aria-hidden
+        />
+      )}
+      {reading.text}
+      {reading.reason ? (
+        <span className="ml-1 text-xs text-muted-foreground">
+          ({reading.reason})
+        </span>
+      ) : null}
+    </p>
+  );
 }
 
 /**
@@ -105,7 +147,8 @@ export function observedFromPublishAll(
  * Plan `2026-10-17-auto-publish-lands-via-coord-2290-adoption` D5 / Phase 4.
  * The level says what the worker MAY do, and a bare "In force: on" over a loop
  * no replica runs looks exactly like a working one. So beside it the dial
- * states what coord's worker ledger observed of the publication pass, read off
+ * states what coord's worker ledger observed of the publication pass, and of
+ * the recovery reconcile the copy above promises keeps running, both read off
  * the page's ONE auto-publish status read (the list's badges come from the
  * same response). See `../_lib/observedWorker.ts` for the sentence per status.
  * It renders nothing when the page has not wired the observation, before the
@@ -125,8 +168,8 @@ export function PolicyAutoPublishDialControl({
    */
   onLevelChanged?: () => void;
   /**
-   * What coord observed of the publication pass. Omitted, the dial shows no
-   * observation line (it is mounted outside the page that owns the read).
+   * What coord observed of the two workers. Omitted, the dial shows no
+   * observation lines (it is mounted outside the page that owns the read).
    */
   observed?: AutoPublishObserved;
 } = {}) {
@@ -156,10 +199,7 @@ export function PolicyAutoPublishDialControl({
 
   const canEdit = policy?.can_edit ?? false;
 
-  const observedReading =
-    observed && observed.settled && !observed.unavailable
-      ? describeObservedPass(observed.pass)
-      : null;
+  const showObserved = observed && observed.settled && !observed.unavailable;
 
   // Coord resolves most-specific-first (repo < tenant < system). A `repo` row
   // winning is the one case where a tenant write lands and changes nothing;
@@ -306,30 +346,17 @@ export function PolicyAutoPublishDialControl({
         </div>
       ) : null}
 
-      {observedReading ? (
-        <p
-          className={
-            observedReading.tone === "nominal"
-              ? "text-sm text-muted-foreground"
-              : "text-sm text-amber-700 dark:text-amber-400"
-          }
-          data-testid="policy-auto-publish-observed"
-          data-observed-tone={observedReading.tone}
-          title={observedReading.title}
-        >
-          {observedReading.tone === "nominal" ? null : (
-            <AlertTriangle
-              className="mr-1 inline size-4 align-text-bottom"
-              aria-hidden
-            />
-          )}
-          {observedReading.text}
-          {observedReading.reason ? (
-            <span className="ml-1 text-xs text-muted-foreground">
-              ({observedReading.reason})
-            </span>
-          ) : null}
-        </p>
+      {showObserved ? (
+        <>
+          <ObservedLine
+            reading={describeObservedPass(observed.pass)}
+            testId="policy-auto-publish-observed"
+          />
+          <ObservedLine
+            reading={describeObservedReconcile(observed.reconcile)}
+            testId="policy-auto-publish-observed-reconcile"
+          />
+        </>
       ) : null}
 
       {/* A NARROWER row is winning, and this control only writes the tenant band. */}

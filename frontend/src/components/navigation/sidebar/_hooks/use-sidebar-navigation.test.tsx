@@ -102,11 +102,13 @@ describe("useSidebarNavigation — AI Dev menu", () => {
       "Access",
     ]);
     expect(top.filter((i) => i.group === "Coord").map((i) => i.label)).toEqual([
+      "Home",
       "Pipeline",
       "Pull Requests",
       "Gates",
       "Notifications",
       "Action items",
+      "Tour",
       "Work",
       "Merge",
       "Intent",

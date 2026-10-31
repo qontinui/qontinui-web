@@ -18,8 +18,12 @@
  * | `PresentationModeToggle` | the header control; the "Presentation mode" chip while presenting |
  * | `Caption` + `./captions` | captions from ONE registry composed of one file per lens surface (D5) |
  * | `LENS_SURFACES`, `TOUR_SURFACE` | the five lens pages in tour order, and the tour |
+ * | `TourBar`, `tourView`, `tourStops`, `TourLink`, `defaultTourStore` | the tour (`tour/`): its stops are the lens surfaces, reached only where presentable; the bar `PresentationLens` mounts while presenting on the tour; the tab's tour state; the tour's links (`?present=1&tour=1`, navigation-only to the UI Bridge) |
  * | `usePresentationHref`, `presentationHref` | a link to a lens page that carries `?present=1` while presenting, so a new tab opened from it still presents |
+ * | `LensLink`, `lensLinkTarget` | a link to a page that may not be presentable: while presenting it carries `?present=1` where its page can be presented, and is plain text where it cannot (out of the lens trees, or not registered ready) — never a click out of the lens or into a withheld page (D3) |
  * | `Provenance` | source + as-of beside a number; UNKNOWN when either is unknown |
+ * | `HeadlineFigures` | a lens page's few screen-share-sized figures, each known with its as-of or UNKNOWN with the reason |
+ * | `SectionCaption` | a section's caption plus one provenance chip per source behind its numbers |
  * | `OperatorOnly` | the boundary every write control sits inside (D3.2) |
  * | `RedactedText`, `useRedactor`, `PresentationScopeProvider` | free text only when provably first-party (D3.3); fails closed while the scope is unknown |
  * | `usePresentationScope`, `defaultPresentationScopeStore` | the tenant's scope, read from `GET /api/v1/presentation/scope` only while presenting — the lens's one read (D3.4) |
@@ -108,11 +112,13 @@ export {
   CAPTIONS,
   CAPTION_SURFACES,
   captionEntry,
+  captionPlainText,
   captionSegments,
   copy,
   isCaptionKey,
   term,
 } from "./captions";
+export { TOUR_LABELS } from "./captions/tourCaptions";
 export type {
   CaptionEntry,
   CaptionKey,
@@ -131,7 +137,53 @@ export {
 } from "./lensSurfaces";
 export type { LensSurface, LensSurfaceId } from "./lensSurfaces";
 
-export { lensLinkHref, usePresentationHref } from "./presentationLinks";
+export {
+  lensLinkHref,
+  lensLinkTarget,
+  usePresentationHref,
+} from "./presentationLinks";
+
+export { LensLink } from "./LensLink";
+export type { LensLinkProps } from "./LensLink";
+
+export { TourBar } from "./tour/TourBar";
+export type { TourBarProps } from "./tour/TourBar";
+export { TourLink, TOUR_LINK_ACTION_DESCRIPTION } from "./tour/TourLink";
+export type { TourLinkProps } from "./tour/TourLink";
+export {
+  TOUR_MARKER,
+  TOUR_PARAM,
+  isReachableStop,
+  isTourMarker,
+  tourHref,
+  tourStart,
+  tourStops,
+  tourView,
+} from "./tour/tourModel";
+export type {
+  ReachableTourStop,
+  TourMissingReason,
+  TourPlace,
+  TourStop,
+  TourTarget,
+  TourView,
+} from "./tour/tourModel";
+export {
+  OFF_TOUR_SNAPSHOT,
+  TOUR_STORAGE_KEY,
+  createTourStore,
+  decodeTourState,
+  defaultTourStore,
+  encodeTourState,
+} from "./tour/tourStore";
+export type { TourState, TourStore, TourStoreOptions } from "./tour/tourStore";
+export {
+  ARROW_KEY_WIDGET_ROLES,
+  ARROW_KEY_WIDGET_SELECTOR,
+  focusKeepsArrowKeys,
+  tourKeyDirection,
+} from "./tour/tourKeys";
+export type { TourDirection, TourKeyEvent } from "./tour/tourKeys";
 
 export {
   PROVENANCE_UNKNOWN,
@@ -144,6 +196,16 @@ export {
   PRESENTATION_CLOCK_TICK_MS,
   usePresentationClock,
 } from "./presentationClock";
+
+export { HeadlineFigures } from "./HeadlineFigures";
+export type {
+  HeadlineFigure,
+  HeadlineFiguresProps,
+  HeadlineValue,
+} from "./HeadlineFigures";
+
+export { SectionCaption } from "./SectionCaption";
+export type { SectionCaptionProps, SectionSource } from "./SectionCaption";
 
 export { OperatorOnly } from "./OperatorOnly";
 export type { OperatorOnlyProps } from "./OperatorOnly";
@@ -185,6 +247,7 @@ export {
 } from "./redaction";
 export type {
   RedactionDescriptor,
+  RedactionDescriptorField,
   RedactionInput,
   RedactionReason,
   RedactionVerdict,

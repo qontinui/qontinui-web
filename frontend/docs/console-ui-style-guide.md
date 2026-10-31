@@ -1601,7 +1601,7 @@ are recorded rather than shipped silently:
 | **A free-text field that only changes the view** | `_components/SpecGraphPanel.tsx` | The app-id field (the registries' ids as a `datalist`) carries `NAVIGATION_ONLY_PROPS` and sits inside `OperatorOnly`; the placeholder shows the app being displayed through `RedactedText`. | The marker is true — typing changes only what is shown — but the field's VALUE is free text that may name another client (D3.3), so while presenting the page shows the redacted name instead of the input. |
 | **A reason that quotes the outside world is the operator's** | `ui-bridge/_lib/relaySource.ts` (`quotes`, `issueStatusWord`, `noRunnerReason`), `_components/SourceUnknown.tsx` (`withheldStatus`) | A failed read's cause QUOTES on every arm but one — a stale pairing's device id, the runner's own refusal (its `app-not-found` names the app id typed), a transport error's request path, a status detail the page has never seen; only the relay's "runner not connected" is explained in fixed sentences. A quoting reason, and the page's own sentence that quotes a typed id ("not a valid app id"), renders through `RedactedText` bound to NO repository: verbatim for the operator, always withheld while presenting in favour of `Reason · … · <status word>`, the UNKNOWN badge kept. While presenting, a no-runner reason is the target's fixed phrase, never the dispatch refusal's sentence, which names the runner the operator picked; and the web backend's own refusal (`BackendErrorMessage`) is `OperatorOnly`, as is a failed read's request id line (`SourceUnknown`): the relay mints it as a UUID, an internal identifier the lens never shows. | D3.3 is written for titles and names. Error text is where a device id or a client's name reaches a lens page without anyone deciding to show it, so the rule is applied there as an allow-list of the one fixed arm — a new or reworded failure fails closed. No repository can clear a quoting reason: what it quotes is not the subject's own text (a reason about the runner's own app can still name a device). |
 | **A total over a source that did not answer is a floor** | `ui-bridge/_lib/appRegistryStatus.ts` (`appTotalOf`) | The app total across the web and runner registries is exact only when both answered; with one unread it is `≥N` — the spelling `ci/_lib/ciDashboardStatus.ts` uses for its refused-job floor — titled with the registry that was not read; a floor of zero, or neither registry answering, is `–`. The strip, the panel's counts and its collapsed summary read the same total. | R6 covers a count that was not fetched (`–`). This is a count that WAS fetched from one of its two sources: neither `0` nor the answered side's count is true of it, and while no relay carries the runner's own app list, it is a floor on every runner (and while presenting neither registry is read — the next row — so it is `–`). |
-| **A read that is not partitioned by project is made only for staff, and never while presenting** | `ui-bridge/_lib/useUiBridgeDashboard.ts` (`webRegistryAccessOf`, `useFleetAppsRead`, `useRunnerAppListRead`, `appRegistryReadsOf`), `ui-bridge/_lib/appRegistryStatus.ts` (`RegistryRead`, `WEB_REGISTRY_NOT_IN_LENS`, `WEB_REGISTRY_STAFF_ONLY`, `RUNNER_APP_LIST_NOT_IN_LENS`) | The web's `GET /api/v1/fleet/apps` returns every row of `project.apps` to any signed-in user, and a runner on the shared database lists that same table from its own `GET /apps`. A menu entry cannot keep a viewer from the web read — any signed-in member can open the URL, and the leaf's `coordAdminOnly` (`coordNavModel.ts`) only decides who the menu offers the page to — so the page decides it in one place (`webRegistryAccessOf`): staff only (`is_superuser`) until the route is scoped to the acting organisation, and nobody while presenting. A viewer who is not staff reads the web half as a `not-read` UNKNOWN that says why. While presenting, neither query is active (the web read has no function, `skipToken`; the runner list's hook is handed no device), and Refresh re-reads only active queries — which is also what leaves unasked the runner list an operator-mode render already ran, cached with its function and watched by nothing. Each half is a `not-read` read the panel renders as UNKNOWN with its reason in plain words; a value already in the cache is not shown either. | D3.4 says a lens page fetches only the acting organisation's data; it does not say what a page shows for a read it declines. Hiding the panel would hide the reason, and showing an operator-mode value already read would be the same leak one step later, so the half reads UNKNOWN and says why. |
+| **A read that is not partitioned by project is made only for staff, and never while presenting** | `ui-bridge/_lib/useUiBridgeDashboard.ts` (`webRegistryAccessOf`, `useFleetAppsRead`, `useRunnerAppListRead`, `appRegistryReadsOf`), `ui-bridge/_lib/appRegistryStatus.ts` (`RegistryRead`, `WEB_REGISTRY_NOT_IN_LENS`, `WEB_REGISTRY_STAFF_ONLY`, `RUNNER_APP_LIST_NOT_IN_LENS`) | The web's `GET /api/v1/fleet/apps` returns every row of `project.apps` to an active platform admin and refuses anyone else 403 (`require_admin`), and a runner on the shared database lists that same table from its own `GET /apps`. A menu entry cannot keep a viewer from the web read — any signed-in member can open the URL, and the leaf's `coordAdminOnly` (`coordNavModel.ts`) only decides who the menu offers the page to — so the page decides it in one place (`webRegistryAccessOf`): staff only (`is_superuser`, the population the route admits; anyone else would only be refused), and nobody while presenting. A viewer who is not staff reads the web half as a `not-read` UNKNOWN that says why. While presenting, neither query is active (the web read has no function, `skipToken`; the runner list's hook is handed no device), and Refresh re-reads only active queries — which is also what leaves unasked the runner list an operator-mode render already ran, cached with its function and watched by nothing. Each half is a `not-read` read the panel renders as UNKNOWN with its reason in plain words; a value already in the cache is not shown either. | D3.4 says a lens page fetches only the acting organisation's data; it does not say what a page shows for a read it declines. Hiding the panel would hide the reason, and showing an operator-mode value already read would be the same leak one step later, so the half reads UNKNOWN and says why. |
 
 While presenting, every panel is held open (`CollapsiblePanel` `forceOpen`): a
 collapsed section would hide its caption and figures from the audience. Each
@@ -1610,6 +1610,129 @@ presentation headline cannot name a section two ways. The strip's figures carry
 their provenance too: while presenting, one `Provenance` chip per read behind
 them — the component registry, the runner's health, and the two app registries
 — sits on the line under the strip, beside the runner it reads.
+
+
+### 3.11 The Dev Ops presentation layer — recorded under §6.4
+
+`/admin/coord/devops` in presentation mode (plan
+`2026-10-23-console-presentation-spaces` Phase 7) is rendered through the
+presentation lens end to end — the same route and reads,
+captions on, provenance on, density down, write controls unmounted, machines
+aliased, free text redacted. It composes the lens's primitives
+(`components/presentation/`: `Caption`, `Provenance`, `OperatorOnly`,
+`RedactedText`, `MachineName` / `useMachineAliaser`) and the console's, and it
+added two primitives to the lens — `HeadlineFigures` and `SectionCaption` —
+recorded in the first two rows below; the lens itself is §6.5. The page renders
+in presentation mode because it is registered in `PRESENTATION_READY_ROUTES`
+(`presentationReadiness.ts`) on the strength of `page.presentation.test.tsx`,
+the run-proven page test §6.5 describes. **Operator mode is unchanged**: every pattern below renders nothing,
+or the original, outside presentation mode, so §5's budgets are still measured
+on the operator console. Eight things are recorded rather than shipped
+silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **A headline strip, in presentation mode only** | `presentation/HeadlineFigures.tsx`; the page's is `operations/DevOpsHeadlineStrip.tsx` over `operations/devOpsHeadline.ts` | A few figures an evaluator can say aloud ("2 of 3 machines healthy"), above the health strip, at screen-share size. Each is KNOWN — value, a detail line naming what the rest are, and its provenance — or UNKNOWN on `UNKNOWN_AMBER` with the reason, never `0`, a dash or a blank. Each figure decides alone, because its read can fail alone. The derivations are pure and tested without a DOM. | R1 says a page opens with its health strip; this sits above it only while presenting, so R1 still holds for the operator. The strip's mono badge cluster is built for the tenth read of the page today; an evaluator reads it once. |
+| **A section caption with one provenance chip per read** | `presentation/SectionCaption.tsx` | A section opens with its registry caption and one `Provenance` chip per read its numbers come from, stated once for the section the way a column header serves a column — the machine list names six (runner inventory, coord fleet health, CI-runner mirror, disk telemetry, drain states, device status). | R9 keeps chrome off the operator surface, and R2 dates each record; neither says how a whole section states where its numbers came from. A chip per cell would be a dozen identical chips (served policy `ux-priorities` `repeated-chrome-must-earn-its-space-by-varying`). |
+| **A read is dated only by its answers** | `useFleetHealth`, `useFleetDispatchRoles`, `useFleetDrain` (`asOfMs`, through `operations/servedAsOf.ts`), `FleetOverview`'s inventory as-of, `devOpsHeadline.ts` `latestInstant` | A body that states when it was true is dated by that (coord's `as_of` on fleet health, drain and dispatch roles, validated and never later than the answer's arrival; the CI mirror's `as_of`; fault-to-visibility's `computed_at`); a body with no timestamp is dated when the answer arrived; a body that dates its rows (disk telemetry's `observed_at`, device status's `updated_at`) is dated by its newest row. Each is stamped on an answer ONLY. A read that has not answered is dated UNKNOWN; so is one whose latest poll failed where its section shows nothing from it (drain, roles, the audit feed), while a section that keeps showing the last answer's rows, and says they are last-known, keeps that answer's date (fleet health, resource samples, worktree slots). A headline figure is UNKNOWN on a failed latest poll either way. A refresh loop's own clock is never an as-of: it ticks when the read fails. | R2's time slot dates one record. A section-level as-of is new, and the shape that made it necessary — an "updated 2 s ago" over a read that just failed — is the `silent-empty-is-unknown` failure in a time slot. |
+| **Positions, not names, for what can name a machine** | `MachineCard` ("Runner 2", "Volume 1"), `FleetResourceStrip` ("instance 1", and the disk figure without its mount), `CiRunPanel` ("service 1"), `CiRunnerBadge` (routing labels and a count) | Machines read as their session alias everywhere (`MachineName` / `useMachineAliaser`, fed every identifier the row holds so one machine is one letter on every panel). What is not a machine but can name one — a runner's name, a lane instance's `<runner>/<repo>`, a volume's mount or label, a per-machine runner label — reads as its position or a count, or is left out where the figure beside it already says what the reader needs (a sample's disk mount beside its free-space figure). | D3.3 lists machine identities and free text; a mount point or a label someone typed is neither, and can carry a person's or a client's name. Over-redaction costs a position, never a fact. |
+| **A failed read says it failed, in fixed words** | `operations/presentedFailure.ts` | For the operator, a panel shows its read's own failure text. In presentation mode the panel still says the read failed — the UNKNOWN floor holds — and the reason is replaced by fixed words, because `GET <url> failed …`, coord's error body and coord's own `reason` can carry a resource key or name a machine. Applied ONCE by whoever owns the read: the page for the reads it owns, a panel for its own. | R6's dash rule and R3's ignorance floor say what to render for an unmeasured value; neither says what to do with an error string nobody wrote for an outsider. |
+| **One shell, one guard per hidden thing** | `DeviceDrainControl.tsx` | The drain block is the same shell in both modes. The lever and its consent dialog are inside `OperatorOnly`, and that is the only thing that unmounts them; the target line (coord hostname, device id) has its own guard; the presented state line carries no actor and no reason; the block's testid becomes `device-drain-status`. | A component that returns a separate presented branch early leaves its `OperatorOnly` unreachable: a guard no test can turn red. One guard per hidden thing is what makes "remove it and a test goes red" true for each. |
+| **An allowlist, not a blocklist, for values shown verbatim** | `OperatorAuditPanel.tsx` (`PresentedAuditRow`), `operations/auditPresentation.ts` (`VERBATIM_BLAST_KEYS`, `auditScope`) | The presented audit feed says what happened and when in fixed words. A blast-radius value is shown as it is only when its key is vouched for as coord's fixed vocabulary, a time or a number; repositories, scopes (coord's `tenant` / `repo:<owner>/<name>`), devices, tenants and people each have a redacting arm, and a key added later without one is withheld. | D3's "a blocklist alone fails open", applied to a key list: a default arm that shows every value it does not recognise shows coord's `repo:` scope — a partner's repository — the first time a kill switch is pulled on one. |
+| **Coord's vocabulary stays with the operator** | `presentedAuditActionLabel` (`auditPresentation.ts`), `presentedUnknownReason` (`runnerReportStatus.ts`), the audit feed's presented nil-operator cell (`OperatorAuditPanel.tsx`), the device-status tile's connection line (`DeviceStatusTile.tsx`), the roles lane table, the Conditions panel's labels and titles (`FleetConditionsPanel.tsx` over `fleetConditions.ts`), `faultToVisibilityBadge`'s `plainKinds`; guarded by the page test's `ENGINEERING_VOCABULARY` scan | While presenting, nothing the page shows — its text behind every disclosure, every `title`, every `aria-label` — is a coord token (`closed_by_role`), an action id or family (`pr_merge.kill_switch`, `fleet.*`), a variable, a table, a route or the transport a list updates over (`WS`): each is said in words, or not said. Where the console holds a closed table — an audit action's label and family, an unknown report's reason — a value the table does not know reads in fixed words ("A recorded change", "no report arrived for this machine"), never as itself. A role lane's state, a slowest fault kind, and a condition domain or setting kind the Conditions panel has no label for are coord's own closed vocabularies, which name no machine and no person: they read as coord's word with its underscores (and, for a domain or a setting kind, its hyphens) replaced by spaces ("closed by role"). The operator keeps every token, because to the operator it is a filter term and a fact. The resource strip's hover cards, which explain each figure's formula in coord's column names, are left as evidence one hover down, and the scan does not read them. | R8 keeps internal vocabulary off a primary surface; an evaluator reads every surface as primary, and `audience_profile/external-evaluator` names "internal status words shown without translation" as something it will not tolerate. |
+
+### 3.12 The presentation tour — recorded under §6.4
+
+`/admin/coord/tour` and the tour bar (plan
+`2026-10-23-console-presentation-spaces` D5, Phase 8) walk the lens surfaces in
+presentation mode. Each stop is the surface's own route (`LENS_SURFACES`, in
+that order), opened with `?present=1&tour=1`: never embedded, re-rendered or
+forked. The page composes the lens's primitives (`Caption`, with the new
+`untitled` option recorded below) and the console's (`Badge` on `INERT`,
+`buttonVariants`); the bar lives in the lens itself
+(`components/presentation/tour/`), mounted once by `PresentationLens`. The page
+renders in presentation mode because it is registered in
+`PRESENTATION_READY_ROUTES` on the strength of `tour/page.presentation.test.tsx`,
+the run-proven page test §6.5 describes. Nine things are recorded rather than
+shipped silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **Chrome the lens owns, and the height that comes with it** | `presentation/PresentationLens.tsx`, `presentation/tour/TourBar.tsx`, both lens layouts' roots | The tour bar is mounted ONCE, by `PresentationLens`, above the layout and outside its `PresentationPage` gate: a withheld stop keeps its bar, and pressing the bar never unmounts it (the toggle's rule, §6.5). It takes a row, so the lens is a column (`flex h-full flex-col`: the bar, then the layout in the space left) and a lens layout's root fills it (`h-full`). A root fixed at `h-[calc(100vh-44px)]` under a bar would overflow the shell's `overflow-hidden` `<main>` and cut the bottom off every scroll area. In operator mode the bar renders nothing and the layout fills `<main>`. | R9 governs a page's own chrome. This is chrome of the lens, shared by two trees, so it can live in neither layout. |
+| **A sequence whose reach is the readiness registry** | `presentation/tour/tourModel.ts` (`tourStops`, `tourView`, `tourHref`) | The tour keeps no list of its own. Its stops are `LENS_SURFACES`, titled from the caption registry, and a stop is reachable only where `lensLinkTarget` lets its page be presented. A stop that is not stays in its place on the page and in the strip, labelled "Not yet presentable", and is never linked; previous and next skip it. A page joins the tour by itself the day its phase registers it. | `LensLink` (§6.5) withholds ONE link. A sequence also has to keep the withheld member visible in its place, or its order and count would change silently in front of the audience. |
+| **Position derived, never stored** | `tourView` | The current stop is the page on screen: the path, normalised, EXACTLY a stop's route. A page below a stop's route (a detail page) is "off the tour route", because readiness is exact and that page is withheld under any bar that called it the stop. The one thing remembered is the last presentable stop shown, as the way back from off the route. | A stored position can disagree with the page under it; a derived one cannot. Served policy `ux-priorities` `a-status-signal-must-observe-the-state-it-names`, applied to "you are here". |
+| **A count that names its population** | `TourBar` (`TourPosition`), `TOUR_LABELS` in `captions/tourCaptions.ts` | "Stop k of N" counts the presentable stops. While any stop is not presentable the bar says how many more there are, beside the count ("Stop 2 of 3 · 2 more are not yet presentable"), because the strip under it shows all of them. The strip carries no numbers, so no stop has two. | Served policy `ux-priorities` `a-label-names-one-referent-and-a-quantity-names-its-unit`: a bare "of 3" above a strip of five reads either way. |
+| **A control with nowhere to go is disabled, and says why** | `tour/TourStepControl.tsx` | With a target, previous and next are tour links, each declaring its arrow key (`aria-keyshortcuts`). Without one, each is a DISABLED button whose accessible name begins with its visible word and says why ("Previous: this is the first stop"). It is never a dead link, and it makes no UI Bridge registration. Next at the last stop leads back to the tour's start. | R6's dash rule covers a count nobody read. This is its control form: say there is nothing there, never imply a way on. |
+| **Keys that never take one the page is using** | `tour/tourKeys.ts`, `tour/useTourKeys.ts` | ArrowLeft and ArrowRight follow the previous and next LINK on screen, so a key goes exactly where the control says. They act only when nothing handled the press first, no modifier is held, it is not a repeat or a composition, and focus is not in an editable control or a composite widget (the twin's tabs move on the arrows themselves). The window listener exists only while the bar renders. | No console surface bound a global key before. |
+| **Tab-scoped state, never a preference** | `tour/tourStore.ts` | "On the tour" belongs to the tab: sessionStorage mirrored in memory, every access guarded. The `?tour=1` marker every tour link carries sets it, and End tour clears it and drops the marker from the URL. It never touches localStorage, and `?present=0` turns the bar off whatever it says. | It follows the pattern of the mode store's tab half (§6.5), in a store and a sessionStorage key of its own (`qontinui.presentation-tour`), for a second fact. The viewer-convenience half is deliberately not followed: a tour is never remembered for the next tab. |
+| **Two calm states, told apart in words** | `tour/_components/TourStopList.tsx`, `tour/TourProgress.tsx` | "Ready to present" is `INERT`. "Not yet presentable" is `INERT` with the dashed edge `draft` uses: provisional, not wrong. Neither is anyone's move now, so neither is red or amber. The stop on screen takes the toggle's active treatment (`bg-primary`), and a key under the list explains each state that occurs. | R3 assigns hues by whose move it is; this records that a known, self-describing state the audience is shown takes no attention hue at all. |
+| **A caption whose title is already on screen** | `Caption` `untitled`; `TourStart.tsx`, `TourStopList.tsx` | The start link's text is `tour.start`'s title, and each state badge's text is its caption's title, so their sentences render `untitled` beneath them: one entry, one title on screen. A stop that is not presentable shows its page caption `brief`, because why its content matters would describe content the tour does not show (the rule `PresentationPage`'s placeholder follows). | §6.5's captions always lead with their title. A control or a badge that IS the title would repeat it. |
+
+Every tour control that does something is navigation-only, and says so twice.
+On screen it is a link that keeps the presentation, or End tour, the one
+enabled button, which carries `NAVIGATION_ONLY_PROPS` and changes only what the
+tab shows. To the UI Bridge it registers where it renders with one custom
+action declared `effect: "read"`: a link's action follows the anchor itself,
+and End tour's does what pressing it does. A previous or next with nowhere to
+go does nothing: it is a disabled button that makes no registration (the row
+"A control with nowhere to go is disabled, and says why"). The bar does not
+repeat a stop's one sentence: the stop page renders its own `<surface>.page`
+caption, and that IS the stop's sentence.
+
+### 3.13 The session-flow console — recorded under §6.4
+
+`/admin/coord/overlord/flow` (plan
+`2026-10-23-the-overlord-keeps-no-record-of-session-flow-so-its-development-runs-on-anecdote`
+Phase 4) composes `HealthStrip`, `StatCluster`, `RecordList`/`RecordRow`/
+`RecordDetail`, `RowTime`, `CollapsiblePanel` and `RefreshButton`. It declares
+no attention table (its rows are not classified, so `RecordRow`'s `attention`
+is ABSENT, not `"none"`), and records two things rather than shipping them
+silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **Metric tiles are headed `StatCluster`s, not a tile component** | `overlord/flow/page.tsx` (`MetricTile`) | Each metric (time-to-close, nudge → progress, nudge → finished, latest UNKNOWN share) is an `h2` + one `<StatCluster>` + a one-line explanation, two per row from `sm` up. Every value is one of THREE things (`overlordFlowStatus.ts`): a measured number; coord's explicit `null`, rendered as the words `no data` with a `title` saying why nothing was measurable; or unknown (field absent, read failed), rendered as `–`. | R6 says an unfetched count is `–`. This page also receives a value coord ANSWERED as not measurable (a median over no closed session, a rate over no nudge), and rendering that as `–` would call an answer unknown, while `0` would claim a measurement. A bordered tile per metric would be a new card shape (§6.4); the cluster already is the console's count vocabulary. |
+| **A categorical series palette, validated, in `config/theme.ts`** | `chartCategorical` (`config/theme.ts`), used by `overlord/flow/_components/VerdictHistogramChart.tsx` | The console's first multi-series stacked chart: one bar per triage pass, three verdicts on fixed categorical slots (a slot follows the verdict, never its rank), every other verdict folded into a neutral "other", UNKNOWN in muted grey, and the full per-pass breakdown in the tooltip and an `sr-only` table. Built like §3.8's count chart otherwise. | `colors.brand.*` fails as a categorical set on the console's dark surfaces (slate blue vs muted violet: ΔE 11.9 normal, 5.9 deutan), so a chart that needs more than one identity hue needs slots that pass. The slots are identity, never severity — they are not R3 families and must not be read as such. |
+
+### 3.14 The coordination overview's presentation layer — recorded under §6.4
+
+`/admin/coord/home` in presentation mode (plan
+`2026-10-23-console-presentation-spaces` Phase 2; the page itself is plan
+`2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen`
+Phase 4) is rendered through the presentation lens over the page's one read
+of coord's project state — captions on, provenance on, controls off,
+redaction on. It composes the lens's primitives (`Caption`, `SectionCaption`,
+`Provenance`, `RedactedText` / `useRedactor`, `useMachineAliaser`,
+`OperatorOnly`, `LensLink`) over the console's, and adds no primitive: the
+console's `RefreshButton` gained an optional `ref`; `coordHomeStatus.ts` now
+keeps coord's `subject.kind` on a degradation, exports `isWatcherSource`, and
+exports two own-property predicates over its tables (`isKnownDecisionDomain`,
+`isLabelledSource`) and its not-a-project-state sentence; the lens's
+descriptor gained `notApplicable` (§6.5, "Redaction on"); and the page's
+captions and its readiness entry are its own. The page renders in
+presentation mode because it is
+registered in `PRESENTATION_READY_ROUTES` (`presentationReadiness.ts`) on the
+strength of `home/page.presentation.test.tsx`, the run-proven page test §6.5
+describes, over fixtures that feed every free-text carrier the page can show
+in every state its regions render — the decision kinds coord's `needs_me` work
+(qontinui-coord#3053 and its successor) parses out of question text among them,
+one with a client's name and one with none.
+**Operator mode is unchanged**: every pattern below renders nothing, or the
+original, outside presentation mode. Ten things are recorded rather than
+shipped silently:
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **One read, one chip per region** | `home/_components/HomeLens.tsx` (`RegionCaption`), `home/_lib/homeLens.ts` (`regionSources`) | Every figure on the page comes from one read, so each of the six regions opens with its `SectionCaption` carrying ONE `Provenance` chip — "coord's project state", dated by the answer's `generated_at` — the way §3.11's section caption serves a column. With nothing read, the chip's time is UNKNOWN on `UNKNOWN_AMBER`, and every region still says what it could not read. The strip's caption sits just before the strip, whose row is a flex line; every other region's caption opens its section. | §3.11 records a section caption with one chip per READ behind the section; here one read is behind six regions, and naming the other regions' sources in each would be chrome that cannot vary. |
+| **A kept reading names itself, led by the failure** | `HomeLens.tsx` (`KeptReadingNotice`), `homeLens.ts` (`PROJECT_STATE_KEPT_SOURCE`) | After a failed refresh the page keeps the last answer (#1999's R6 stale arm). While presenting, a notice leads the page — the latest read failed, why (the next row), and everything below is its last reading, not a current one — and every region's chip names "coord's project state, last read", still dated by that answer, never by now. The strip keeps its own "at the last good read" headline, and its "Last failure" says the same why. | §6.5's "A kept reading" says where the dot goes for a panel and for a list of rows; this is the same rule for a whole page whose regions are one reading. |
+| **A failed read says why in the page's own words, or withholds why** | `useProjectState.ts` (`presentableError`), `homeLens.ts` (`presentableProjectStateFailure`, `presentedHomeFailure`) | A failure is recorded in two registers in one state: its own words for the operator, and words that quote nothing. The second is decided from the failure's STRUCTURE, never its text — the 404/405/501 arm (the page's "does not serve the project-state door yet"), the `route_disabled` arm, coord's read deadline (its budget; not the loader coord names), the web proxy's own `coord_unreachable` and `coord_timeout` refusal envelopes (fixed words, never the refusal's rendered sentence with its discriminator token), and an answer that is no project state. Every other failure — a status the page does not explain, an unstructured body, a network error — reads "reason withheld in presentation mode". One decision serves the unread line, the strip's "Last failure" and the kept-reading notice. | §3.10's "a reason that quotes the outside world" is the same allow-list for a relay's reasons; here it is a single read's, and the arm a presentation meets before the door's coord half lands is one of the explained ones — "unknown, and here is why" is the evaluator's evidence that the instrument is real. |
+| **Every free-text carrier, and what its descriptor is built from** | `HomeSections.tsx`; `homeLens.ts` (`needsDescriptor`, `degradationDescriptor`, `subjectDescriptor`, `namedUnitDescriptor`, `reasonDescriptor`, `TENANT_DESCRIPTOR`, `REPOSITORY_DESCRIPTOR`, `INITIATIVE_ITEM_DESCRIPTOR`, `INITIATIVE_KEYS_DESCRIPTOR`) | A question's or an approval's text, its recommendation, consequence and options, and the work unit it blocks; a degradation's headline and subject; a repository; a unit's title (or its slug); an initiative's items and the keys of items it does not list; coord's own reasons (an exclusion, a parse error, why no initiative is live); and the tenant's name — each renders through `RedactedText`, or `useRedactor` for a row's reason slot and a `title`, with a descriptor built from the item's own fixed fields: what it is, its area (a degradation's plane), the word its badge shows, its age — the referent's own, so the unit a decision blocks reads "Work unit · area unknown · blocked · age unknown", never the question's status word or asked-at age — and without a field its kind does not have (`notApplicable`): the tenant reads "Project", a withheld repository "Repository", an initiative item "Initiative item · in scope", a reason "Reason · excluded · 2m ago". Only a degradation whose subject coord names as a repository, a repository group and a named unit are bound to a repository; everything else belongs to none — a service or alert key named like a first-party repository included — so it is a descriptor while presenting however harmless it reads. | §6.5's redaction bullet names a plan, PR, session or finding title; this page's carriers are its own, and each descriptor's fields are ones its row already shows. |
+| **A value read against the page's own table shows only when the table names it** | `homeLens.ts` (`presentedDecisionDomains`, `presentedSourceLabel`, `presentedPlaneWords`, `presentedPlaneName`, `presentedPlaneLabel`), `HomeLens.tsx` (`usePlaneLabel`, `usePlaneWords`), `coordHomeStatus.ts` (`isKnownDecisionDomain`, `isLabelledSource`, `isKnownPlane`) | Needs-you's "By kind of decision" line shows coord's `needs_me.by_domain` keys through the page's label table. Coord's `needs_me` work (qontinui-coord#3053 and its successor) fills its own buckets (`operator_gate`, `unscanned`, `unclassified`), but every other key is the domain it parsed out of an escalation question's TEXT, which that work calls caller-controlled — a substring of a question the page withholds everywhere else. While presenting, a key shows only when the table names it; every other key is folded into ONE entry in fixed words, last, with their summed count ("kinds not named here 2"), so the questions stay counted and none of their words is on screen. A does-not-know source the table does not label reads "A source this view has no name for" rather than coord's identifier with its underscores spaced, its row and figures kept. A degradation's area the table does not name reads "area withheld" on its row, on its watcher line and in its descriptor; in a list of areas — the gap sentence and a watcher source's label — such areas are COUNTED rather than folded into one ("the reading for 1 area not named here could not be taken", "readings for 2 areas not named here could not be taken", "not every watcher is fresh (merge train, and 2 areas not named here)", "Watcher feeding runner and 1 area not named here"), so the sentence never says less is missing than is. Its `data-plane` is dropped while presenting, decided by the table rather than by the rendered words, so the operator keeps the key even of a plane coord names `withheld`; the operator keeps coord's key with its underscores spaced. All three are own-property checks, so a key spelled `constructor` is not one the table names. | §3.11 words a value a console table does not know in fixed words; this applies the rule to a COUNT keyed by caller text, where the folded entry has to keep the count true. |
+| **A unit's repositories are bounded, or the unit is withheld** | `homeLens.ts` (`namedUnitRepos`) | Coord names a unit under each repository group it belongs to, but not its whole repository list. A unit's class is its own, so it sits in the same named list of every group it belongs to — named there unless that list was cut short. Its repositories are therefore the groups that name it plus, failing closed, every group whose list of the same kind was cut short (`omitted` above zero, or unknown) or not served. A unit under the unattributed group, or under a group whose repository is unknown, is withheld. A unit is linked only when its name and its slug both clear the scope, because its URL carries its slug and a slug can name a client under a title that does not. A unit that fails is not even handed to `LensLink`, whose plain-text arm would turn into an anchor carrying the slug the day the work-unit page is registered; the page tests pin that by asking for neither an anchor nor a `data-lens-link` (which `LensLink` puts on both of its arms, `"linked"` on the anchor), and by scanning every attribute for the slug. Coord groups units by their `metadata.repos`, which names repositories bare today, with no owner to vouch for them, so every unit title reads as its descriptor until an owner is served — the same answer the digital twin's plan list gives over the same field. | D3.3 says text that belongs to any repository off the first-party list is withheld; this is how a list that names a unit once per group is made to say every group the unit may span. |
+| **A subject by what coord says it is** | `HomeLens.tsx` (`useSubjectText`), `coordHomeStatus.ts` (`DegradationView.subjectKind`) | A degradation subject coord names as a `device` reads as its session alias (`Machine A`, one letter however many rows name it); a `repo` reads as its name when the scope clears it; a `service` or an alert `key` reads as its descriptor. The parser now keeps coord's `subject.kind`, which it used to drop. | §3.11 aliases a machine from the identifiers a row holds; here the subject's declared kind decides which of three rules applies. |
+| **Raw lines, raw-id titles and quoted errors stay with the operator** | `HomeSections.tsx` (each `RecordDetail` `raw`, `NotRead`, the strip's tenant, the gap sentence, the watcher lines, the source labels, the `RecordList` keys) | R8 puts raw ids on an expanded detail's last line; while presenting that line is not rendered at all (the slot stays empty, so no wrapper is left behind), and neither is a `title` holding a raw id or coord's own words: the tenant's UUID, coord's reason for an incomplete view, watcher names, a source's id. A block coord could not read still says so, and that coord reported an error, with the chain withheld; a source row with an error says the same instead of pointing at a last line that is not there. List rows are keyed while presenting by an alias of the operator's key (`homeLens.ts` `RowKeyAliases`, `HomeLens.tsx` `useRowKey`), so `data-row-key` carries no question, gate, device or source id and no repository's name — and not by position: the key is also what expansion compares, and a positional key would keep "row 2" open when a poll removes the row above it, silently showing another record's detail. The alias is of the WHOLE operator key, index suffix included, so a presented row opens, stays open and collapses exactly when the operator's would. | R8 decides what a primary surface shows; an evaluator reads every line, the last one included. §3.10's "a reason that quotes the outside world" covers a failed read's reason, not R8's raw line. |
+| **Shapes, not words, for a tenant's typed values** | `homeLens.ts` (`presentedInitiativeStatus`, `presentedInitiativeDate`, `presentedPlanPhase`) | The initiative's frontmatter is typed by hand: while presenting, its status reads `live` or `not live` (the one distinction coord's alignment makes), a start or end date shows only as an ISO date and otherwise reads `withheld`, and the plan phase a decision blocks shows only as a number. A status or date coord serves as null, absent or blank reads `unknown` in both modes: `withheld` would say a value exists, and nothing was typed. | §3.11's allowlist governs which audit KEYS show their values; this is the same allowlist for values a tenant typed. |
+| **The refresh declares its effect; answering is the operator's** | `HomeLens.tsx` (`HomeRefreshButton`), `console/RefreshButton.tsx` (`ref`) | The page's one control besides its disclosures is registered with the UI Bridge on the button itself (`coord-home.refresh`), its one custom action, `refresh`, declared `read`, so an automated walk sees what pressing it does; it stays live while presenting, navigation-only by construction. Answering a decision is a write on another page, so the "Answer it" link is `OperatorOnly`; every other link is a `LensLink`, and an ACTION whose page cannot be presented — a degradation's "Open pipeline ↗", the unserved line's "open Questions", the unread line's pointer at Questions and Gates — is left out while presenting rather than shown as link-shaped text that opens nothing (`useLinkOpens`, `LensLink`'s own decision; it returns by itself the day its page is registered). "Correct?" has no write control in either mode: one read-only row, whose toggle is a disclosure. | §6.5 says a lens page's UI Bridge registrations declare an effect; this page had none, and the refresh is the control an automated tour would press. |
 
 ---
 
@@ -1926,7 +2049,20 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   (`usePresentationHref`: `?present=1` on its URL), so one opened in a new tab —
   which starts with no tab choice of its own — still presents. The page check
   below fails a lens link that does not (`presentation-dropping-link`), so a page
-  added later cannot forget it.
+  added later cannot forget it. A link whose destination may not be
+  presentable goes through `LensLink` (its decision is `lensLinkTarget`, both in
+  the presentation barrel): while presenting, a destination outside the lens
+  trees, or a lens page not yet in `PRESENTATION_READY_ROUTES`, renders as plain
+  text (`data-lens-link="unlinked"`) — never a click that leaves the lens or
+  lands on "Shown in the operator view only" — and the link returns by itself
+  the day its destination is registered.
+- The tour (`/admin/coord/tour`, §3.12) walks the lens surfaces while
+  presenting. Its bar is the lens's own chrome, mounted once by
+  `PresentationLens` outside the page gate, and it renders only while
+  presenting on the tour (`?tour=1`, then the tab's state). Operator mode and
+  `?present=0` never show it. Because the bar takes a row, the lens owns the
+  height: a lens layout's root fills the lens (`h-full`) instead of fixing its
+  own.
 - It applies on the lens trees (`LENS_TREES`: `/admin/coord`, `/digital-twin`) and
   to the app shell beside them (`PresentationShell`, in `app/(app)/layout.tsx`):
   while presenting, the sidebar names only the active project, aliases the runner,
@@ -1967,7 +2103,9 @@ lists. In operator mode every rule above holds unchanged. The pieces live in
   the router); and the state the proof checks the page in, which is the proof's
   to choose (a fixture that never loads data proves the empty page). The
   console's landing redirect (`/admin/coord`, one sentence) is registered from
-  the start: a withheld page never mounts, so it would never redirect.
+  the start: a withheld page never mounts, so it would never redirect. Where it
+  lands, the coordination overview (`/admin/coord/home`), is registered on its
+  own proof (§3.14), so a presenting arrival lands on a presented page.
 
 **Captions before data** (the departure from R1 and R9). `Caption` renders a page's
 or a panel's `{ title, oneLiner, whyItMatters }` ahead of its data: in presentation
@@ -1977,7 +2115,8 @@ three lines of chrome above R1's health strip. That is the point of the lens —
 evaluator does not share the vocabulary, and the caption is the translation — and
 it is why it is confined to presentation mode: in operator mode a caption renders
 nothing (or, `persistent`, the title and one-liner at the console's sizes, for a
-page whose own heading is its caption). Copy lives in ONE registry composed of one
+page whose own heading is its caption; or, `untitled`, its sentences alone, beneath
+the control or badge whose text is its title, §3.12). Copy lives in ONE registry composed of one
 file per lens surface (`captions/`); product terms in it go through `GlossaryTerm`
 via `term(...)`, never as plain text (the registry's test fails a glossary term's
 name left plain, singular or plural — a synonym, such as "machine" for a device,
@@ -1994,9 +2133,109 @@ seconds count the tick would leave behind; and a render with no client clock (se
 hydration) states the instant in UTC to the minute, so the HTML and the first client
 render agree.
 
-**Density down.** Presentation mode never adds a row to a page: what it changes is
-which of the page's own elements render, and how large a caption is. A page does not
-grow a second presentation layout.
+**A kept reading, and two reads of one thing.** R6's stale arm holds on a lens
+surface too, in both modes. A reading kept after its latest read failed (react-query
+keeps a query's data when a refetch fails) is named as the last read. The failure
+leads, the reading is introduced as the last one read, it is never headed "Live", and
+its own staleness is worded as of when it was read ("its data was 30s stale when
+read"). An age that was not served is UNKNOWN, never "live": a missing
+`staleness_seconds` means a live answer only on coord's DriftVerdict, and the admin
+outbound door's envelope is not one. That door has no answer-level age. Each bucket
+carries its own, and its drift class is its worst (first) bucket's. So the web backend
+serves that bucket's age (`digital_twin.py` `_class_bucket_age`), and every sentence
+that shows it names the bucket: "its worst bucket's data was 12s stale when read" in
+the drawer, after "classified", and "worst bucket 12s stale when read" on the matrix
+cell, whose title says the bucket is the one its drift class comes from. On the Twin
+map the Staleness detail begins "the oldest of N answering readings", beside which
+"worst" would read as "oldest". Coord orders the buckets by drift severity, then by
+the share of budget left, never by age, so another bucket may be older. The map
+therefore names the bucket by what makes it that one: "outbound's reading is dated
+by the bucket its drift class comes from" (`digital-twin/_lib/status-presentation.ts`
+`readingAge`, `datesWorstBucket`, `CLASS_BUCKET`). With no age served (no bucket
+observed, or a backend that predates carrying it) all three read UNKNOWN with the
+reason "no age was served for this reading". That reason is true whichever half
+deploys first, and blames no one.
+
+Where a kept reading's dot goes depends on what carries it:
+
+- **A panel that states a verdict on one reading** draws the dot on the ignorance
+  floor, because the dot says what is true now. The sub-space drawer's Status reads
+  "Last answer: Live" on the amber ring.
+- **A list of rows under a page notice** keeps R6's row arm instead. The Completeness
+  matrix's and the Lifecycle view's cells keep their last answer's hue and label.
+  `CoordUnreachableBanner` above them says they show the probe's last answer, not a
+  current reading. In operator mode it says the cells "fall back to their last
+  status". While presenting it says "the live statuses below are not a current
+  reading". The drawer covers that notice, so it says so itself.
+- **The Twin map** has a notice of its own above its cards, worded for the map
+  (`TwinMapHeldNotice`), in both modes. Its live-probed part rows keep R6's row arm
+  under it. Its probe figures, which draw no dot, keep the last answer's values. The
+  notice names both as that answer, and only for the twins whose figures the answer
+  decides (`digital-twin/_lib/twin-aspects.ts` `probeFedAspects`). Under coord's
+  catalog those are the twins with a part it declares. A twin with none shows its
+  probe figures as UNKNOWN because nothing in it is probed live, whatever coord
+  answered or refused and whether or not the probe holds a reading, as the Lifecycle
+  view says of a stage nothing probes. The catalog says that, not the answer, so the
+  notice never calls those figures that answer. With the catalog unread, the
+  manifest's `snapshot` rows and the rows the answer has a cell for are the
+  live-probed ones (`resolve.ts`), so the answer decides every twin's figures, even
+  that a twin has no live-probed part, and the notice names every twin. Under a
+  catalog that declares no intent row it reads "the Observed, Coverage and Staleness
+  figures of the environment twin and the process twin, and the statuses of the
+  live-probed parts below, are its last answer, not a current reading", and a
+  `Provenance` chip dates it. With no twin to name, nothing on the map is the
+  probe's answer, and there is no notice. A probe holding no reading at all needs no
+  notice there either: every probe figure of a twin with a live-probed part, and
+  every live part, is then UNKNOWN with the reason.
+  An answer in which coord refused every reading is an answer, but no observer was
+  read in it. The other views replace themselves with the access notice; the map
+  keeps its cards, and both its probe figures and its live parts say UNKNOWN, naming
+  that refusal, in both modes (`digital-twin/_lib/probe-read.ts` `probeReadOf`). A
+  part never reads "Restricted" then: that status's meaning is a refusal of one
+  sub-space, the others unaffected, which is false of an answer that refused them
+  all.
+  The map's Staleness figure is worded as of the read ("15m stale when read"), since
+  in operator mode no chip dates it.
+- **A figure with no notice above it** keeps no reading. On the Twin map the Honesty
+  figure (coord's twin self-check) and the UI Bridge app twin's Observed and Coverage
+  figures (the runner's app registry and its model of its own interface) stand alone.
+  Nothing on their card could name a kept answer as the last one, so a read whose
+  latest attempt failed makes its figure UNKNOWN, dated by that attempt: "the
+  runner's app registry could not be read (HTTP 503)". That holds even where
+  react-query keeps an earlier answer beside the failure
+  (`digital-twin/_lib/twin-aspects.ts` `runnerAnswer`,
+  `digital-twin/_lib/twin-fidelity.ts` `readFidelity`). A read with no answer, no
+  failure and none in flight is not worded as a failure: "no read of the runner's
+  app registry has answered: this browser is offline". The UI Bridge tab reads the
+  same runner reads the same way. Its App field's suggestions and its graph counts
+  are the runner's only while their latest read answered
+  (`digital-twin/_components/UiBridgePanel.tsx`). Its live snapshot is a capture,
+  not a count, read only when Capture asks: never by a mount, a runner switch or a
+  reconnect (`digital-twin/_hooks/useUiBridge.ts` `useRunnerSnapshot`). What the
+  card says of it follows that read's own state, which react-query keeps for the
+  runner across mounts, never a flag of the mount that asked, so it says the same
+  after the operator leaves the tab and comes back. A capture carries the time it
+  was taken and a failed attempt the time it failed, each on a `persistent`
+  `Provenance` chip, and one kept after a re-capture failed stays under the failure,
+  introduced as "As last captured, before that failure:".
+
+Where one panel shows two reads of one thing, every line about a read says which read
+it is about. It does so by name ("Coord's live probe's latest read failed", "This
+drawer's own read of the live verdict failed") or by pointing back at the line before
+it ("As last read, before that failure:"). A reading names its read as the source of
+its own `Provenance` chip, and that chip dates it, `persistent` because nothing else
+in the panel does. The sub-space drawer's Status is the page probe's answer, and its
+Summary the drawer's own read (`digital-twin/_lib/drawer-status.ts`,
+`drawer-reading.ts`). Every state of both reads that can occur, in both modes, is a
+row of `SubspaceDetail.matrix.test.tsx`, including the outbound door's real answer,
+with its worst bucket's age served and without. That file's docblock names the
+combinations it leaves out because they cannot occur.
+
+**Density down.** Presentation mode never adds a record row to a page: what it changes
+is which of the page's own elements render, and how large a caption is. A headline
+strip (`HeadlineFigures`, §3.11) is one such element: a page may render it only while
+presenting, above its health strip, which departs from R1 the way a caption does. A
+page does not grow a second presentation layout.
 
 **Controls off.** Every control that writes renders inside `OperatorOnly` — not
 hidden, unmounted, so its UI Bridge registration goes with it; a `placeholder` that
@@ -2025,16 +2264,30 @@ is not a safety control — the co-pilot banner's "Disable for this account" is 
 
 **Redaction on.**
 
-- `RedactedText` / `useRedactor`: free text (a plan, PR, session or finding title)
+- `RedactedText` / `useRedactor`: free text (a plan, PR, session or finding title;
+  on the coordination overview also a question or an approval, a recommendation, a
+  degradation's headline and subject, an initiative item, coord's own reasons and
+  the tenant's name — §3.14)
   renders only when every repository it belongs to has a first-party owner and it
   holds none of the confidential terms; otherwise the descriptor
   `kind · area · status · age`, with `withheld` for a field that may name someone
-  the scope cannot clear. An unknown scope withholds everything. The two lists are
+  the scope cannot clear, and without a field the item's KIND does not have
+  (`notApplicable` — a tenant's name has no area, status or age of its own;
+  "unknown" would claim a value exists and was not read). An unknown scope
+  withholds everything, and when a read failed or the project has no first-party
+  owners the `PresentationModeToggle` says so beside itself, in fixed copy that
+  never carries the failure's own wording. A value read against a console table rather than shown
+  as text, unless it is one of the closed vocabularies §3.11 lets read spaced —
+  on the coordination overview, a decision kind parsed out of a question's text
+  (coord's `needs_me` work, qontinui-coord#3053 and its successor), or a source
+  the page does not label — shows only when the table names it, and in fixed
+  words otherwise (§3.11, §3.14). The two lists are
   tenant data, edited in operator mode on `/admin/coord/tenant-policy`.
 - `MachineName` / `useMachineName` / `useMachineAliaser`: a machine renders as
   `Machine A`, `B`… — one letter per computer for the session, on every panel,
-  however each panel identifies it (device id, hostname); two letters that turn out
-  to be one machine merge to the earlier.
+  however each panel identifies it (device id, hostname; on the coordination
+  overview, a degradation subject coord names as a device — §3.14); two letters
+  that turn out to be one machine merge to the earlier.
 - `CostFigure` is the only component that renders a per-task cost, always beside
   "list-price equivalent, not your bill", and in presentation mode never — a
   descriptor instead. `costRenders.test.ts` (over `src/test/costRenderScan.ts`)

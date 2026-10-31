@@ -238,6 +238,15 @@ describe("parseAuditPayload", () => {
     expect(parseAuditPayload({ audit: "nope" }).state).toBe("unavailable");
   });
 
+  it("carries coord's truncated flag, and UNKNOWN (null) — never false — when the body does not say", () => {
+    const cut = parseAuditPayload({ audit: [row()], count: 1, truncated: true });
+    const whole = parseAuditPayload({ audit: [row()], count: 1, truncated: false });
+    const silent = parseAuditPayload({ audit: [row()], count: 1 });
+    expect(cut.state === "ok" && cut.truncated).toBe(true);
+    expect(whole.state === "ok" && whole.truncated).toBe(false);
+    expect(silent.state === "ok" ? silent.truncated : "not ok").toBeNull();
+  });
+
   it("an ABSENT `audit` key is UNAVAILABLE too", () => {
     const read = parseAuditPayload({ count: 0 });
     expect(read.state).toBe("unavailable");

@@ -35,10 +35,11 @@
  * - **0 for a number it could not read.** A missing count is `–`.
  * - **Another project's applications.** Neither app registry is partitioned
  *   by project, so while presenting neither is read, and each half reads
- *   UNKNOWN and says why (`appRegistryReadsOf`). The web registry answers any
- *   signed-in user with every row, and any signed-in member can open this
- *   URL, so in operator mode too it is read only for staff; for every other
- *   viewer its half reads UNKNOWN and says why (`webRegistryAccessOf`).
+ *   UNKNOWN and says why (`appRegistryReadsOf`). The web registry answers
+ *   only an active platform admin (anyone else gets a 403), and any
+ *   signed-in member can open this URL, so in operator mode it is read only
+ *   for staff; for every other viewer its half reads UNKNOWN and says why
+ *   (`webRegistryAccessOf`) instead of showing the refusal.
  *
  * Presentation mode (plan D1–D3) changes the rendering — captions before
  * each panel, provenance beside every figure, every panel held open, the app

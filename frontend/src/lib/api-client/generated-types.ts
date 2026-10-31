@@ -3803,7 +3803,7 @@ export interface paths {
         };
         /**
          * Get active constraints
-         * @description Proxy to runner: returns active constraints for a project path.
+         * @description Proxy to the co-located runner: the active constraints for a project. Platform admins only.
          */
         get: operations["api_v1_constraints_active_get"];
         put?: never;
@@ -3823,13 +3823,13 @@ export interface paths {
         };
         /**
          * Get constraint config
-         * @description Proxy to runner: returns the constraint TOML config for a project path.
+         * @description Proxy to the co-located runner: the constraint TOML config found from a project path. Platform admins only.
          */
         get: operations["api_v1_constraints_config_get"];
         put?: never;
         /**
          * Write constraint config
-         * @description Proxy to runner: writes a new constraint TOML config.
+         * @description Proxy to the co-located runner: writes a constraint TOML config, whose command checks the runner's workflow loop executes. Platform admins only.
          */
         post: operations["api_v1_constraints_config_post"];
         delete?: never;
@@ -3847,7 +3847,7 @@ export interface paths {
         };
         /**
          * Get constraint results
-         * @description Proxy to runner: returns constraint evaluation results for a task run.
+         * @description Proxy to the co-located runner: constraint evaluation results for a task run. Platform admins only.
          */
         get: operations["api_v1_constraints_results_task_run_id_get"];
         put?: never;
@@ -3869,7 +3869,7 @@ export interface paths {
         put?: never;
         /**
          * Validate constraint config
-         * @description Proxy to runner: validates a TOML config string without writing it.
+         * @description Proxy to the co-located runner: validates a TOML config string without writing it. Platform admins only.
          */
         post: operations["api_v1_constraints_validate_post"];
         delete?: never;
@@ -5024,7 +5024,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5051,7 +5054,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5078,7 +5084,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5105,7 +5114,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -5134,7 +5146,10 @@ export interface paths {
          *     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
          *       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
          *       async httpx path below. Used by the demo box where the runner is
-         *       on the same host as the backend.
+         *       on the same host as the backend. **Platform admins only**: the hop
+         *       reaches whichever runner listens on this host, with full local trust,
+         *       so any other caller is refused 403 before a port is looked up or a
+         *       byte is forwarded.
          *     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
          *       is relayed HTTP-over-WebSocket through the runner's existing outbound
          *       ``/devices/ws`` connection. This lets a mobile client on a *different*
@@ -7548,11 +7563,12 @@ export interface paths {
         };
         /**
          * List Apps
-         * @description List registered apps + their fleet-fresh config.
+         * @description List registered apps + their fleet-fresh config. Platform admins only.
          *
          *     ``project.apps`` is not user-partitioned (it is the runner-local app
          *     registry mirrored on shared Postgres), so this returns every registered
-         *     app — the fleet UI is an operator surface.
+         *     app, build and start commands included — which is why it is gated on
+         *     :func:`require_admin` rather than on any signed-in user.
          */
         get: operations["api_v1_fleet_apps_get"];
         put?: never;
@@ -7578,10 +7594,15 @@ export interface paths {
         head?: never;
         /**
          * Update App Config
-         * @description Edit an app's update strategy + build/start commands.
+         * @description Edit an app's update strategy + build/start commands. Platform admins only.
          *
          *     Fields left ``None`` are unchanged. ``build_command`` / ``start_command``
          *     are cleared by sending a blank value (empty or whitespace-only).
+         *
+         *     Gated on :func:`require_admin`: a stored command is executed by the
+         *     auto-fresh engine on every fleet machine that auto-freshes this app, and
+         *     ``project.apps`` is shared across tenants. The refusal comes from the
+         *     dependency, before this body reads or touches the row.
          */
         patch: operations["api_v1_fleet_apps_app_id_patch"];
         trace?: never;
@@ -10880,6 +10901,89 @@ export interface paths {
          *     verdict, never a default. Error bodies pass through verbatim.
          */
         get: operations["api_v1_operations_coord_operator_touches_constraint_verdict_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/overlord/flow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlord Flow
+         * @description Proxy coord's ``GET /coord/overlord/flow`` (tenant-scoped).
+         *
+         *     Response shape is coord-authored and passed through untouched —
+         *     ``window``, ``truncated``, ``passes_considered``,
+         *     ``full_passes_considered``, ``time_to_close`` (``median_secs`` /
+         *     ``p90_secs`` are ``null`` when ``count == 0``), ``nudge`` (rates ``null``
+         *     when ``nudged == 0``), ``unchanged``, ``unknown_share`` (``share`` ``null``
+         *     over an empty pass), ``verdict_series`` and, with
+         *     ``group_by=overlord_version``, ``groups``. A ``null`` is coord saying
+         *     "not measurable", and must reach the page as ``null`` — never a ``0``.
+         *
+         *     Every parameter is a STRING forwarded unchanged; coord's typed 422/503
+         *     bodies pass through verbatim — see the section note.
+         */
+        get: operations["api_v1_operations_coord_overlord_flow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/overlord/passes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Overlord Passes
+         * @description Proxy coord's ``GET /coord/overlord/passes`` (tenant-scoped list).
+         *
+         *     Answers ``{ok, passes, total_matching, truncated, limit, offset}``, newest
+         *     ``started_at`` first, each pass WITHOUT its rows. Filters are strings
+         *     forwarded unchanged (``scope`` ``full|filtered``, ``mode``
+         *     ``report|act``, ``since`` RFC 3339, ``limit`` ≤ 200 — coord validates);
+         *     error bodies pass through verbatim.
+         */
+        get: operations["api_v1_operations_coord_overlord_passes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/overlord/passes/{pass_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlord Pass
+         * @description Proxy coord's ``GET /coord/overlord/passes/{pass_id}`` (tenant-scoped).
+         *
+         *     Answers ``{ok, pass: {<pass fields>, rows: [...]}}``; a pass absent in the
+         *     caller's tenant is coord's ``404 {"error": "pass_not_found"}``, passed
+         *     through verbatim. ``pass_id`` is typed ``UUID`` because it is spliced into
+         *     the coord URL path — see the section note.
+         */
+        get: operations["api_v1_operations_coord_overlord_passes_pass_id_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -15366,6 +15470,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/pr-merge/onboarding/repo-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pr Merge Onboarding Repo Bindings
+         * @description List the repo-tenant bindings visible to the active tenant.
+         *
+         *     Proxies coord's ``GET /coord/onboarding/repo-bindings[?repo=]``. The 200
+         *     body is ``{"bindings": [...], "measured_at": <rfc3339>}``; each binding
+         *     carries ``caller_side: "bound" | "org"`` — whether the active tenant is the
+         *     tenant the repo is bound TO, or the tenant of the org it was bound AWAY
+         *     from. ``repo`` is forwarded only when supplied. Status + body verbatim.
+         */
+        get: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_get"];
+        put?: never;
+        /**
+         * Post Pr Merge Onboarding Repo Binding
+         * @description Bind a repo to a tenant (or rebind it to another one).
+         *
+         *     Proxies coord's ``POST /coord/onboarding/repo-bindings``. Coord moves the
+         *     repo's ``tenant_repos`` / profile / canonical rows, writes the binding, one
+         *     audit row per affected tenant and an operator notification, and answers
+         *     ``{repo, from_tenant, to_tenant, governed_by: "binding", moved:
+         *     {tenant_repos, profile, canonical}, binding_written, binding_deleted,
+         *     tombstone_cleared, audit_ids, notified, idempotent, enrollment_spawned}``;
+         *     a repeated bind answers ``idempotent: true`` with nothing written.
+         *     ``decision_ref`` is omitted from the wire when absent. Status, body and
+         *     ``Retry-After`` verbatim (``503 schema_settling`` is a bind-only refusal).
+         */
+        post: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_post"];
+        /**
+         * Delete Pr Merge Onboarding Repo Binding
+         * @description Unbind a repo, returning its governance to the org's tenant.
+         *
+         *     Proxies coord's ``DELETE /coord/onboarding/repo-bindings`` with the body
+         *     ``{repo, reason}``. An admin of either the bound tenant (release) or the
+         *     org's tenant (reclaim) may unbind; coord decides. The 200 body has the
+         *     bind response's shape with ``governed_by: "org"`` and ``binding_deleted:
+         *     true``; ``404 binding_not_found`` when there is no binding visible to the
+         *     active tenant. Status + body verbatim.
+         */
+        delete: operations["api_v1_operations_pr_merge_onboarding_repo_bindings_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/pr-merge/onboarding/repos/{repo}/restore": {
         parameters: {
             query?: never;
@@ -15844,6 +15999,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/project-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project State
+         * @description Return coord's project-state synthesis for the operator's tenant.
+         *
+         *     Plan
+         *     ``2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen``
+         *     Phase 4. A plain pass-through of coord's operator route
+         *     ``GET /coord/project-state`` — the same shared core that serves the
+         *     ``coord_project_state`` MCP tool and its device/agent twin
+         *     ``GET /coord/agent-project-state``, so the page and every agent read one
+         *     answer. No composition and no reshaping here: ``/admin/coord/home`` and
+         *     the ``/overview`` progress panel render coord's bytes.
+         *
+         *     The wire, as coord serves it (``schema: 1``): ``generated_at``,
+         *     ``tenant_id``, ``scope`` (``"operator"``, the one built scope), and four
+         *     blocks — ``on_track``, ``correctness``, ``needs_me``, ``degradations`` —
+         *     each carrying a ``state`` in ``read | could_not_read | stale |
+         *     not_implemented | unknown`` that is DISTINCT from its counts. A block
+         *     whose state is not ``read`` carries no counts, and a caller must render
+         *     it as unknown rather than as zero (``[policy: silent-empty-is-unknown]``)
+         *     — with ONE exception: a ``stale`` ``degradations`` block still carries its
+         *     ``open`` / ``declared`` / ``recently_cleared`` ROWS, because a known fault
+         *     stays true behind a lagging watcher. Those rows are real but are not known
+         *     to be all of them, so no count may be taken from them.
+         *     ``does_not_know`` lists every source the door read or tried to read,
+         *     plus a ``watcher:<name>`` row for each feeding watcher that is not
+         *     fresh, each with ``state``, ``as_of``, ``freshness_bound_secs``, rows
+         *     considered / excluded and why, and its ``error``. On a watcher row,
+         *     ``as_of`` is the watcher's last successful run and
+         *     ``freshness_bound_secs`` the threshold its freshness verdict applies,
+         *     not the age of any data.
+         *
+         *     ``on_track.totals`` is ``{row_count, classes, excluded}``. ``classes``
+         *     is a closed, exhaustive-with-zeros class set (``shipped``,
+         *     ``in_flight``, ``stalled``, ``blocked_on_dependency``,
+         *     ``waiting_on_gate``, ``not_started``, ``closed_other``,
+         *     ``off_vocabulary``, ``unset``) whose sum coord asserts equals
+         *     ``row_count``. ``excluded`` is ``{merge_shepherd_bookkeeping}``: coord's
+         *     own merge-shepherd bookkeeping units, left out of ``row_count`` and
+         *     every class, and counted in ``excluded`` (and in ``does_not_know``'s
+         *     ``work_units`` row as ``rows_excluded``); the ``/overview`` panel states
+         *     that count. ``stalled`` is a MECHANICAL absence-of-recorded-change class
+         *     (``stall_rule`` / ``stall_window_secs`` ride the wire); it is not a
+         *     verdict and the page does not render the word.
+         *
+         *     Declares no ``response_model``, so nothing here filters a field coord
+         *     adds. This docstring is what FastAPI renders into the committed,
+         *     drift-gated OpenAPI snapshots, so it is this repo's contract of record
+         *     for the route.
+         */
+        get: operations["api_v1_operations_project_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/prs/{owner}/{repo}/{number}/hold": {
         parameters: {
             query?: never;
@@ -15965,6 +16186,44 @@ export interface paths {
          * @description Deregister a canonical repository.
          */
         delete: operations["api_v1_operations_repos_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/secrets-broker/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Secrets Broker Device
+         * @description Read the tenant's designated secrets-broker device.
+         *
+         *     ``can_edit`` is the operator's admin role in the EFFECTIVE tenant (plus the
+         *     superuser bypass), the same rule ``require_coord_tenant_admin`` applies to
+         *     this door's PUT, which writes through coord's device-only
+         *     ``PUT /coord/fleet-policy/secrets-broker-device`` (coord re-checks admin).
+         *     ``GET /fleet-policy``'s docstring says why ``identity.is_admin`` would be
+         *     wrong.
+         */
+        get: operations["api_v1_operations_secrets_broker_device_get"];
+        /**
+         * Put Secrets Broker Device
+         * @description Designate (or clear) the tenant's secrets-broker device, then READ BACK.
+         *
+         *     Tenant-admin gated web-side; coord re-checks admin and the device's tenant
+         *     binding. The order is: prove the binding, write the device column alone,
+         *     re-read. A failed proof writes nothing; nothing but the device is ever
+         *     sent, so no level is read, carried or overwritten. A coord without the
+         *     route (404/405) is an error, never "written". A failed re-read after a
+         *     landed write is UNKNOWN (``readback_error``), not "applied".
+         */
+        put: operations["api_v1_operations_secrets_broker_device_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -17150,6 +17409,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/overview/cost-categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Cost Categories */
+        get: operations["api_v1_overview_cost_categories_get"];
+        put?: never;
+        /** Create Cost Categories */
+        post: operations["api_v1_overview_cost_categories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/cost-categories/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cost Categories */
+        get: operations["api_v1_overview_cost_categories_record_id_get"];
+        put?: never;
+        post?: never;
+        /** Delete Cost Categories */
+        delete: operations["api_v1_overview_cost_categories_record_id_delete"];
+        options?: never;
+        head?: never;
+        /** Update Cost Categories */
+        patch: operations["api_v1_overview_cost_categories_record_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/overview/cost-entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Cost Entries */
+        get: operations["api_v1_overview_cost_entries_get"];
+        put?: never;
+        /** Create Cost Entries */
+        post: operations["api_v1_overview_cost_entries_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/cost-entries/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cost Entries */
+        get: operations["api_v1_overview_cost_entries_record_id_get"];
+        put?: never;
+        post?: never;
+        /** Delete Cost Entries */
+        delete: operations["api_v1_overview_cost_entries_record_id_delete"];
+        options?: never;
+        head?: never;
+        /** Update Cost Entries */
+        patch: operations["api_v1_overview_cost_entries_record_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/overview/costs/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Cost Summary
+         * @description What the project has spent, per currency; the month-by-category table;
+         *     and every recurring period that has fallen due, recorded or not. Computed
+         *     on read against today (UTC); readable by any member.
+         */
+        get: operations["api_v1_overview_costs_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/overview/estimates": {
         parameters: {
             query?: never;
@@ -17523,6 +17878,43 @@ export interface paths {
         head?: never;
         /** Update Phase Progress */
         patch: operations["api_v1_overview_phase_progress_record_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/overview/recurring-costs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Recurring Costs */
+        get: operations["api_v1_overview_recurring_costs_get"];
+        put?: never;
+        /** Create Recurring Costs */
+        post: operations["api_v1_overview_recurring_costs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/overview/recurring-costs/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Recurring Costs */
+        get: operations["api_v1_overview_recurring_costs_record_id_get"];
+        put?: never;
+        post?: never;
+        /** Delete Recurring Costs */
+        delete: operations["api_v1_overview_recurring_costs_record_id_delete"];
+        options?: never;
+        head?: never;
+        /** Update Recurring Costs */
+        patch: operations["api_v1_overview_recurring_costs_record_id_patch"];
         trace?: never;
     };
     "/api/v1/overview/resources": {
@@ -22085,10 +22477,18 @@ export interface paths {
         };
         /**
          * Get Screenshot
-         * @description Serve a screenshot file.
+         * @description Serve one verification screenshot image.
          *
-         *     Attempts to resolve the path locally first (from the .dev-logs directory),
-         *     then falls back to proxying from the runner HTTP API.
+         *     ``path`` is the image's path as the runner recorded it (a leading
+         *     ``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.
+         *     It is served from this workspace's ``.dev-logs`` when this backend runs
+         *     from a checkout and the image is there, and asked of the co-located
+         *     runner otherwise. The runner writes its screenshots into its own
+         *     dev-logs directory, which is this ``.dev-logs`` only where its
+         *     ``dev_logs_dir`` setting says so, and serves none under
+         *     ``/screenshots/`` (qontinui-runner ``5dc3f37f``): at its default, every
+         *     runner screenshot is a 404. So is anything that is not an image file
+         *     under ``.dev-logs``.
          */
         get: operations["api_v1_screenshots_path_get"];
         put?: never;
@@ -29496,6 +29896,10 @@ export interface components {
             version_after: number | null;
             /** Version Before */
             version_before: number | null;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** ChangeLogPage */
         ChangeLogPage: {
@@ -31407,6 +31811,218 @@ export interface components {
             plan_count: number;
             scan_roots: components["schemas"]["ScanRootListResponse"];
         };
+        /** CostCategoriesItem */
+        CostCategoriesItem: {
+            /** Can Edit */
+            can_edit: boolean;
+            item: components["schemas"]["CostCategoryRead"];
+        };
+        /** CostCategoriesList */
+        CostCategoriesList: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Degraded */
+            degraded?: string | null;
+            /** Items */
+            items: components["schemas"]["CostCategoryRead"][];
+            /** Total */
+            total: number;
+        };
+        /** CostCategoryCreate */
+        CostCategoryCreate: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Name */
+            name: string;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+        };
+        /** CostCategoryRead */
+        CostCategoryRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Sort Order */
+            sort_order: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string | null;
+            /** Version */
+            version: number;
+        };
+        /** CostCategoryUpdate */
+        CostCategoryUpdate: {
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Sort Order */
+            sort_order?: number | null;
+        };
+        /** CostEntriesItem */
+        CostEntriesItem: {
+            /** Can Edit */
+            can_edit: boolean;
+            item: components["schemas"]["CostEntryRead"];
+        };
+        /** CostEntriesList */
+        CostEntriesList: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Degraded */
+            degraded?: string | null;
+            /** Items */
+            items: components["schemas"]["CostEntryRead"][];
+            /** Total */
+            total: number;
+        };
+        /** CostEntryCreate */
+        CostEntryCreate: {
+            /** Amount Micros */
+            amount_micros: number;
+            /** Category Id */
+            category_id?: string | null;
+            /** Currency */
+            currency: string;
+            /** Description */
+            description: string;
+            /**
+             * Expects Delivery
+             * @default false
+             */
+            expects_delivery: boolean;
+            /**
+             * Incurred On
+             * Format: date
+             */
+            incurred_on: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /**
+             * Order Ref
+             * @default
+             */
+            order_ref: string;
+            /** Period Start */
+            period_start?: string | null;
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number;
+            /** Received On */
+            received_on?: string | null;
+            /** Recurring Cost Id */
+            recurring_cost_id?: string | null;
+            /**
+             * Vendor
+             * @default
+             */
+            vendor: string;
+        };
+        /** CostEntryRead */
+        CostEntryRead: {
+            /** Amount Micros */
+            amount_micros: number;
+            /** Category Id */
+            category_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Currency */
+            currency: string;
+            /** Description */
+            description: string;
+            /** Expects Delivery */
+            expects_delivery: boolean;
+            /** Id */
+            id: string;
+            /**
+             * Incurred On
+             * Format: date
+             */
+            incurred_on: string;
+            /** Notes */
+            notes: string;
+            /** Order Ref */
+            order_ref: string;
+            /** Period Start */
+            period_start: string | null;
+            /** Quantity */
+            quantity: number;
+            /** Received On */
+            received_on: string | null;
+            /** Recurring Cost Id */
+            recurring_cost_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string | null;
+            /** Vendor */
+            vendor: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * CostEntryUpdate
+         * @description Every field optional; ``null`` clears ``category_id`` or
+         *     ``received_on``. Which recurring period an entry records is fixed when it
+         *     is created.
+         */
+        CostEntryUpdate: {
+            /** Amount Micros */
+            amount_micros?: number | null;
+            /** Category Id */
+            category_id?: string | null;
+            /** Currency */
+            currency?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Expects Delivery */
+            expects_delivery?: boolean | null;
+            /** Incurred On */
+            incurred_on?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Order Ref */
+            order_ref?: string | null;
+            /** Quantity */
+            quantity?: number | null;
+            /** Received On */
+            received_on?: string | null;
+            /** Vendor */
+            vendor?: string | null;
+        };
         /** CostLineRead */
         CostLineRead: {
             /** Basis */
@@ -31462,6 +32078,26 @@ export interface components {
             phase_code?: string | null;
             /** Run Model */
             run_model?: string | null;
+        };
+        /** CostSummary */
+        CostSummary: {
+            /** Awaiting Amount Count */
+            awaiting_amount_count: number;
+            /** Awaiting Delivery Count */
+            awaiting_delivery_count: number;
+            /** Base Currency */
+            base_currency: string;
+            /** Currencies */
+            currencies: components["schemas"]["CurrencyTotals"][];
+            /** Months */
+            months: components["schemas"]["MonthCategoryTotal"][];
+            /** Periods */
+            periods: components["schemas"]["RecurringPeriod"][];
+            /**
+             * Today
+             * Format: date
+             */
+            today: string;
         };
         /**
          * CostTrendDataPoint
@@ -31774,6 +32410,23 @@ export interface components {
              * @default Mobile Chat
              */
             task_name: string;
+        };
+        /**
+         * CurrencyTotals
+         * @description Every figure in one currency. Currencies are never added together:
+         *     there is no exchange rate the page could honestly apply.
+         */
+        CurrencyTotals: {
+            /** Awaiting Delivery Micros */
+            awaiting_delivery_micros: number;
+            /** Currency */
+            currency: string;
+            /** Scheduled Micros */
+            scheduled_micros: number;
+            /** Spent To Date Micros */
+            spent_to_date_micros: number;
+            /** This Month Micros */
+            this_month_micros: number;
         };
         /**
          * CustomFunctionListResponse
@@ -41965,6 +42618,22 @@ export interface components {
             /** Search All Monitors */
             search_all_monitors?: boolean | null;
         };
+        /** MonthCategoryTotal */
+        MonthCategoryTotal: {
+            /** Category Id */
+            category_id: string | null;
+            /** Currency */
+            currency: string;
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /** Recorded Micros */
+            recorded_micros: number;
+            /** Scheduled Micros */
+            scheduled_micros: number;
+        };
         /**
          * MouseSettingsSchema
          * @description Mouse action configuration schema.
@@ -43192,6 +43861,12 @@ export interface components {
             related?: string[];
             /** Slug */
             slug?: string | null;
+            /** Source Path */
+            source_path?: string | null;
+            /** Source Repo */
+            source_repo?: string | null;
+            /** Source Sha */
+            source_sha?: string | null;
             /** Title */
             title: string;
         };
@@ -43231,6 +43906,12 @@ export interface components {
             related: string[];
             /** Slug */
             slug: string;
+            /** Source Path */
+            source_path: string | null;
+            /** Source Repo */
+            source_repo: string | null;
+            /** Source Sha */
+            source_sha: string | null;
             /** Title */
             title: string;
             /**
@@ -43242,6 +43923,10 @@ export interface components {
             updated_by: string | null;
             /** Version */
             version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** PageRef */
         PageRef: {
@@ -43262,6 +43947,11 @@ export interface components {
          * @description Absent fields are left alone; ``null`` clears the metadata fields.
          *     ``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:
          *     links name it, and renaming would orphan every one of them.
+         *
+         *     ``source_repo`` + ``source_path`` do not CHANGE a page's source: they name
+         *     the source the writer believes the page mirrors, and a page whose source
+         *     is absent or different refuses the write (409 ``source_mismatch``).
+         *     ``source_sha`` is the commit the new content mirrors.
          */
         PageUpdate: {
             /** Body Md */
@@ -43274,6 +43964,12 @@ export interface components {
             owner?: string | null;
             /** Related */
             related?: string[] | null;
+            /** Source Path */
+            source_path?: string | null;
+            /** Source Repo */
+            source_repo?: string | null;
+            /** Source Sha */
+            source_sha?: string | null;
             /** Title */
             title?: string | null;
         };
@@ -43301,10 +43997,16 @@ export interface components {
             doc_status: string | null;
             /** Owner */
             owner: string | null;
+            /** Source Sha */
+            source_sha: string | null;
             /** Title */
             title: string;
             /** Version */
             version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** PageVersionSummary */
         PageVersionSummary: {
@@ -43315,10 +44017,16 @@ export interface components {
             created_at: string;
             /** Created By */
             created_by: string | null;
+            /** Source Sha */
+            source_sha: string | null;
             /** Title */
             title: string;
             /** Version */
             version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** PagesItem */
         PagesItem: {
@@ -46400,6 +47108,169 @@ export interface components {
          * @enum {string}
          */
         RecordingStatusEnum: "uploaded" | "validating" | "processing" | "completed" | "failed" | "cancelled";
+        /** RecurringCostCreate */
+        RecurringCostCreate: {
+            /**
+             * Amount Kind
+             * @default fixed
+             * @enum {string}
+             */
+            amount_kind: "fixed" | "variable";
+            /** Amount Micros */
+            amount_micros?: number | null;
+            /**
+             * Cadence
+             * @default monthly
+             * @enum {string}
+             */
+            cadence: "monthly" | "quarterly" | "annual";
+            /** Category Id */
+            category_id?: string | null;
+            /** Currency */
+            currency: string;
+            /** End Date */
+            end_date?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * Vendor
+             * @default
+             */
+            vendor: string;
+        };
+        /** RecurringCostRead */
+        RecurringCostRead: {
+            /**
+             * Amount Kind
+             * @enum {string}
+             */
+            amount_kind: "fixed" | "variable";
+            /** Amount Micros */
+            amount_micros: number | null;
+            /**
+             * Cadence
+             * @enum {string}
+             */
+            cadence: "monthly" | "quarterly" | "annual";
+            /** Category Id */
+            category_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Currency */
+            currency: string;
+            /** End Date */
+            end_date: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Notes */
+            notes: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string | null;
+            /** Vendor */
+            vendor: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * RecurringCostUpdate
+         * @description Every field optional; ``null`` clears ``category_id``, ``amount_micros``
+         *     or ``end_date``. The cross-field rules are checked by the store on the
+         *     record as it will stand.
+         */
+        RecurringCostUpdate: {
+            /** Amount Kind */
+            amount_kind?: ("fixed" | "variable") | null;
+            /** Amount Micros */
+            amount_micros?: number | null;
+            /** Cadence */
+            cadence?: ("monthly" | "quarterly" | "annual") | null;
+            /** Category Id */
+            category_id?: string | null;
+            /** Currency */
+            currency?: string | null;
+            /** End Date */
+            end_date?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Start Date */
+            start_date?: string | null;
+            /** Vendor */
+            vendor?: string | null;
+        };
+        /** RecurringCostsItem */
+        RecurringCostsItem: {
+            /** Can Edit */
+            can_edit: boolean;
+            item: components["schemas"]["RecurringCostRead"];
+        };
+        /** RecurringCostsList */
+        RecurringCostsList: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Degraded */
+            degraded?: string | null;
+            /** Items */
+            items: components["schemas"]["RecurringCostRead"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * RecurringPeriod
+         * @description One period of a recurring cost that has fallen due (``period_start``
+         *     on or before ``today``).
+         */
+        RecurringPeriod: {
+            /** Amount Micros */
+            amount_micros: number | null;
+            /** Currency */
+            currency: string;
+            /** Entry Id */
+            entry_id: string | null;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /**
+             * Recurring Cost Id
+             * Format: uuid
+             */
+            recurring_cost_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "recorded" | "scheduled" | "awaiting_amount";
+        };
         /**
          * RedisHealth
          * @description Redis health status and metrics.
@@ -46885,6 +47756,32 @@ export interface components {
             viewport_width?: number | null;
         };
         /**
+         * RepoBindRequest
+         * @description Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).
+         *
+         *     ``repo`` is ``owner/name`` (a ``.git`` suffix or a github.com URL is
+         *     accepted too); coord normalizes it to its lowercase key and answers ``400
+         *     invalid_repo`` for anything else. ``target_tenant`` is the tenant uuid the
+         *     repo is bound to; it is a plain string here so a malformed value reaches
+         *     coord and comes back as coord's own ``400 invalid_target_tenant`` rather
+         *     than a web-side validation shape. ``reason`` (required, non-blank — coord
+         *     decides blankness) is recorded on the binding and in the audit rows coord
+         *     writes per affected tenant; ``decision_ref`` is optional free text, and
+         *     coord reads a blank one as absent. Each field is length-capped (see
+         *     ``REPO_BINDING_*_MAX``) no tighter than coord: an over-long value is a
+         *     web-side 422, never forwarded.
+         */
+        RepoBindRequest: {
+            /** Decision Ref */
+            decision_ref?: string | null;
+            /** Reason */
+            reason: string;
+            /** Repo */
+            repo: string;
+            /** Target Tenant */
+            target_tenant: string;
+        };
+        /**
          * RepoCiRow
          * @description One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.
          *
@@ -47021,6 +47918,20 @@ export interface components {
             name: string;
             /** Owner */
             owner: string;
+        };
+        /**
+         * RepoUnbindRequest
+         * @description Body for ``DELETE /pr-merge/onboarding/repo-bindings`` (coord ``UnbindRequest``).
+         *
+         *     Unbinding returns governance to the org's tenant. ``reason`` is required
+         *     and must be non-blank; coord enforces that and records it in the audit.
+         *     Both fields carry the bind body's length caps.
+         */
+        RepoUnbindRequest: {
+            /** Reason */
+            reason: string;
+            /** Repo */
+            repo: string;
         };
         /**
          * ReposApplyDispatchRequest
@@ -47299,7 +48210,10 @@ export interface components {
             hostname: string;
             /** Instance Name */
             instance_name?: string | null;
-            /** Ip */
+            /**
+             * Ip
+             * @description The runner's IPv4 or IPv6 address literal, with no zone id.
+             */
             ip: string;
             /** Lan Reachable */
             lan_reachable?: boolean | null;
@@ -48377,6 +49291,58 @@ export interface components {
              * @description Similarity score (0-1)
              */
             similarity_score: number;
+        };
+        /**
+         * SecretsBrokerDevicePut
+         * @description Closed body for the broker-device write.
+         *
+         *     ``device_id: null`` clears the designation (every broker report is then
+         *     refused). The field is REQUIRED, so an empty body is a 422 rather than a
+         *     silent clear.
+         */
+        SecretsBrokerDevicePut: {
+            /** Device Id */
+            device_id: string | null;
+        };
+        /**
+         * SecretsBrokerDeviceView
+         * @description The tenant's designated secrets-broker device, as coord resolves it.
+         */
+        SecretsBrokerDeviceView: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Device Id */
+            device_id?: string | null;
+            /** Effective Level */
+            effective_level: string;
+            /** Master Enabled */
+            master_enabled: boolean;
+            /** Reported */
+            reported: boolean;
+            /** Resolved Scope */
+            resolved_scope: string;
+        };
+        /**
+         * SecretsBrokerDeviceWriteResult
+         * @description What was written, and, separately, what coord now resolves.
+         *
+         *     ``effective`` is ``None`` with ``readback_error`` set when the write landed
+         *     but the re-read failed. That is UNKNOWN, not "applied".
+         */
+        SecretsBrokerDeviceWriteResult: {
+            effective?: components["schemas"]["SecretsBrokerDeviceView"] | null;
+            /** Ok */
+            ok: boolean;
+            /** Readback Error */
+            readback_error?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+            /** Version */
+            version?: number | null;
+            /** Versioned */
+            versioned?: boolean | null;
+            /** Written Device Id */
+            written_device_id: string | null;
         };
         /**
          * SectionDrift
@@ -62697,9 +63663,9 @@ export interface operations {
     };
     api_v1_constraints_active_get: {
         parameters: {
-            query: {
-                /** @description Absolute path to the project */
-                project_path: string;
+            query?: {
+                /** @description Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root. */
+                project_path?: string | null;
             };
             header?: never;
             path?: never;
@@ -62729,9 +63695,9 @@ export interface operations {
     };
     api_v1_constraints_config_get: {
         parameters: {
-            query: {
-                /** @description Absolute path to the project */
-                project_path: string;
+            query?: {
+                /** @description Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root. */
+                project_path?: string | null;
             };
             header?: never;
             path?: never;
@@ -62800,6 +63766,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
             };
             cookie?: never;
@@ -73686,6 +74653,110 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_coord_overlord_flow_get: {
+        parameters: {
+            query?: {
+                window_hours?: string | null;
+                device_id?: string | null;
+                runner_port?: string | null;
+                unchanged_min_passes?: string | null;
+                nudge_window_passes?: string | null;
+                group_by?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_overlord_passes_get: {
+        parameters: {
+            query?: {
+                device_id?: string | null;
+                runner_port?: string | null;
+                scope?: string | null;
+                mode?: string | null;
+                since?: string | null;
+                limit?: string | null;
+                offset?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_overlord_passes_pass_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pass_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_coord_policies_get: {
         parameters: {
             query?: {
@@ -76003,6 +77074,7 @@ export interface operations {
     api_v1_operations_fleet_runners_runner_id_output_get: {
         parameters: {
             query: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
                 tail_chars?: number;
             };
@@ -76039,6 +77111,7 @@ export interface operations {
     api_v1_operations_fleet_runners_runner_id_workflow_state_get: {
         parameters: {
             query: {
+                /** @description A runner task-run id: letters, digits, '-' and '_' only. */
                 task_run_id: string;
             };
             header?: never;
@@ -78256,6 +79329,104 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_get: {
+        parameters: {
+            query?: {
+                /** @description Narrow the list to one `owner/name` repository. */
+                repo?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoBindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_pr_merge_onboarding_repo_bindings_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoUnbindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_pr_merge_onboarding_repos_repo_restore_post: {
         parameters: {
             query?: never;
@@ -78779,6 +79950,26 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_project_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     api_v1_operations_prs_owner_repo_number_hold_post: {
         parameters: {
             query?: never;
@@ -78957,6 +80148,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_secrets_broker_device_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretsBrokerDeviceView"];
+                };
+            };
+        };
+    };
+    api_v1_operations_secrets_broker_device_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretsBrokerDevicePut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretsBrokerDeviceWriteResult"];
                 };
             };
             /** @description Validation Error */
@@ -80499,6 +81743,8 @@ export interface operations {
                 /** @description A registry name, e.g. intent_documents */
                 resource: string;
                 record_id?: string | null;
+                /** @description Only writes from this surface (X-Overview-Source). */
+                source?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -80523,6 +81769,334 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCategoriesList"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_categories_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCategoryCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCategoriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_categories_record_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCategoriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_categories_record_id_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_categories_record_id_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCategoryUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCategoriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_entries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostEntriesList"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_entries_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostEntryCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostEntriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_entries_record_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostEntriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_entries_record_id_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_cost_entries_record_id_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostEntryUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostEntriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_costs_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostSummary"];
                 };
             };
         };
@@ -81529,6 +83103,160 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PhaseProgressItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_recurring_costs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringCostsList"];
+                };
+            };
+        };
+    };
+    api_v1_overview_recurring_costs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecurringCostCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringCostsItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_recurring_costs_record_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringCostsItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_recurring_costs_record_id_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_recurring_costs_record_id_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecurringCostUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringCostsItem"];
                 };
             };
             /** @description Validation Error */

@@ -129,8 +129,17 @@ vi.mock("@/services/service-factory", () => ({
 
 import CoordLayout from "./layout";
 
+/**
+ * The page the console is entered on: a lens surface that is NOT yet in
+ * `PRESENTATION_READY_ROUTES`, so the layout's `PresentationPage` withholds it
+ * and stands the surface's caption in its place. (Dev Ops registered itself in
+ * Phase 7, which is why this is no longer `/admin/coord/devops`; the next
+ * phase to register this surface moves this to one still unprepared.)
+ */
+const UNPREPARED_SURFACE = "/admin/coord/spawns";
+
 function visit(search: string) {
-  window.history.replaceState(null, "", `/admin/coord/devops${search}`);
+  window.history.replaceState(null, "", `${UNPREPARED_SURFACE}${search}`);
 }
 
 beforeEach(() => {
@@ -168,6 +177,10 @@ describe("CoordLayout — entered through a console URL", () => {
     expect(container.innerHTML).not.toContain("client-org");
     expect(container.innerHTML).not.toContain("deploy");
     expect(wire.urls.some((u) => u.includes("/presentation/scope"))).toBe(true);
+    // The scope was read, so nothing says it is unknown.
+    expect(
+      screen.queryByTestId("presentation-scope-failed-notice")
+    ).toBeNull();
     expect(
       screen.getByRole("button", { name: "Presentation mode" })
     ).toHaveAttribute("aria-pressed", "true");
@@ -193,7 +206,7 @@ describe("CoordLayout — entered through a console URL", () => {
     // its caption and a plain statement stand in for it.
     expect(screen.queryByText("Console page")).toBeNull();
     expect(
-      screen.getByRole("heading", { level: 1, name: "Dev Ops" })
+      screen.getByRole("heading", { level: 1, name: "Agentic activity" })
     ).toBeTruthy();
     expect(screen.getByText("Shown in the operator view only")).toBeTruthy();
   });

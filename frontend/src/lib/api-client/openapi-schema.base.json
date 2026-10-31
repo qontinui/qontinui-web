@@ -7695,6 +7695,29 @@
               }
             ],
             "title": "Version Before"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -7708,7 +7731,9 @@
           "version_before",
           "version_after",
           "before",
-          "after"
+          "after",
+          "via_device",
+          "via_session"
         ],
         "title": "ChangeLogEntry",
         "type": "object"
@@ -12080,6 +12105,672 @@
         "title": "CorpusHealth",
         "type": "object"
       },
+      "CostCategoriesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/CostCategoryRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "CostCategoriesItem",
+        "type": "object"
+      },
+      "CostCategoriesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CostCategoryRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "CostCategoriesList",
+        "type": "object"
+      },
+      "CostCategoryCreate": {
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CostCategoryCreate",
+        "type": "object"
+      },
+      "CostCategoryRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by",
+          "id",
+          "name",
+          "description",
+          "sort_order"
+        ],
+        "title": "CostCategoryRead",
+        "type": "object"
+      },
+      "CostCategoryUpdate": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": -1000000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          }
+        },
+        "title": "CostCategoryUpdate",
+        "type": "object"
+      },
+      "CostEntriesItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/CostEntryRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "CostEntriesItem",
+        "type": "object"
+      },
+      "CostEntriesList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CostEntryRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "CostEntriesList",
+        "type": "object"
+      },
+      "CostEntryCreate": {
+        "properties": {
+          "amount_micros": {
+            "maximum": 9007199254740991.0,
+            "minimum": -9007199254740991.0,
+            "title": "Amount Micros",
+            "type": "integer"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Currency",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "expects_delivery": {
+            "default": false,
+            "title": "Expects Delivery",
+            "type": "boolean"
+          },
+          "incurred_on": {
+            "format": "date",
+            "formatMaximum": "2200-12-31",
+            "formatMinimum": "1970-01-01",
+            "title": "Incurred On",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Notes",
+            "type": "string"
+          },
+          "order_ref": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Order Ref",
+            "type": "string"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "quantity": {
+            "default": 1,
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "received_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received On"
+          },
+          "recurring_cost_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurring Cost Id"
+          },
+          "vendor": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incurred_on",
+          "description",
+          "amount_micros",
+          "currency"
+        ],
+        "title": "CostEntryCreate",
+        "type": "object"
+      },
+      "CostEntryRead": {
+        "properties": {
+          "amount_micros": {
+            "title": "Amount Micros",
+            "type": "integer"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "expects_delivery": {
+            "title": "Expects Delivery",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "incurred_on": {
+            "format": "date",
+            "title": "Incurred On",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "order_ref": {
+            "title": "Order Ref",
+            "type": "string"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "received_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received On"
+          },
+          "recurring_cost_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurring Cost Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by",
+          "id",
+          "incurred_on",
+          "description",
+          "vendor",
+          "category_id",
+          "amount_micros",
+          "currency",
+          "quantity",
+          "expects_delivery",
+          "received_on",
+          "order_ref",
+          "notes",
+          "recurring_cost_id",
+          "period_start"
+        ],
+        "title": "CostEntryRead",
+        "type": "object"
+      },
+      "CostEntryUpdate": {
+        "description": "Every field optional; ``null`` clears ``category_id`` or\n``received_on``. Which recurring period an entry records is fixed when it\nis created.",
+        "properties": {
+          "amount_micros": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": -9007199254740991.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "expects_delivery": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expects Delivery"
+          },
+          "incurred_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incurred On"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "order_ref": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Ref"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "received_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received On"
+          },
+          "vendor": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor"
+          }
+        },
+        "title": "CostEntryUpdate",
+        "type": "object"
+      },
       "CostLineRead": {
         "properties": {
           "basis": {
@@ -12277,6 +12968,59 @@
           "label"
         ],
         "title": "CostLineWrite",
+        "type": "object"
+      },
+      "CostSummary": {
+        "properties": {
+          "awaiting_amount_count": {
+            "title": "Awaiting Amount Count",
+            "type": "integer"
+          },
+          "awaiting_delivery_count": {
+            "title": "Awaiting Delivery Count",
+            "type": "integer"
+          },
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "currencies": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencyTotals"
+            },
+            "title": "Currencies",
+            "type": "array"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/MonthCategoryTotal"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/RecurringPeriod"
+            },
+            "title": "Periods",
+            "type": "array"
+          },
+          "today": {
+            "format": "date",
+            "title": "Today",
+            "type": "string"
+          }
+        },
+        "required": [
+          "today",
+          "base_currency",
+          "currencies",
+          "months",
+          "periods",
+          "awaiting_delivery_count",
+          "awaiting_amount_count"
+        ],
+        "title": "CostSummary",
         "type": "object"
       },
       "CostTrendDataPoint": {
@@ -12662,6 +13406,40 @@
           }
         },
         "title": "CreateChatBody",
+        "type": "object"
+      },
+      "CurrencyTotals": {
+        "description": "Every figure in one currency. Currencies are never added together:\nthere is no exchange rate the page could honestly apply.",
+        "properties": {
+          "awaiting_delivery_micros": {
+            "title": "Awaiting Delivery Micros",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "scheduled_micros": {
+            "title": "Scheduled Micros",
+            "type": "integer"
+          },
+          "spent_to_date_micros": {
+            "title": "Spent To Date Micros",
+            "type": "integer"
+          },
+          "this_month_micros": {
+            "title": "This Month Micros",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "spent_to_date_micros",
+          "scheduled_micros",
+          "this_month_micros",
+          "awaiting_delivery_micros"
+        ],
+        "title": "CurrencyTotals",
         "type": "object"
       },
       "CustomFunctionListResponse": {
@@ -33607,6 +34385,48 @@
         "title": "MonitorSettingsSchema",
         "type": "object"
       },
+      "MonthCategoryTotal": {
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "month": {
+            "format": "date",
+            "title": "Month",
+            "type": "string"
+          },
+          "recorded_micros": {
+            "title": "Recorded Micros",
+            "type": "integer"
+          },
+          "scheduled_micros": {
+            "title": "Scheduled Micros",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "category_id",
+          "currency",
+          "recorded_micros",
+          "scheduled_micros"
+        ],
+        "title": "MonthCategoryTotal",
+        "type": "object"
+      },
       "MouseSettingsSchema": {
         "description": "Mouse action configuration schema.",
         "properties": {
@@ -36075,6 +36895,42 @@
             ],
             "title": "Slug"
           },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "maxLength": 200,
             "minLength": 1,
@@ -36195,6 +37051,39 @@
             "title": "Slug",
             "type": "string"
           },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -36218,6 +37107,29 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -36235,7 +37147,12 @@
           "created_at",
           "updated_at",
           "created_by",
-          "updated_by"
+          "updated_by",
+          "source_repo",
+          "source_path",
+          "source_sha",
+          "via_device",
+          "via_session"
         ],
         "title": "PageRead",
         "type": "object"
@@ -36273,7 +37190,7 @@
         "type": "object"
       },
       "PageUpdate": {
-        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.",
+        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.\n\n``source_repo`` + ``source_path`` do not CHANGE a page's source: they name\nthe source the writer believes the page mirrors, and a page whose source\nis absent or different refuses the write (409 ``source_mismatch``).\n``source_sha`` is the commit the new content mirrors.",
         "properties": {
           "body_md": {
             "anyOf": [
@@ -36337,6 +37254,42 @@
               }
             ],
             "title": "Related"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
           },
           "title": {
             "anyOf": [
@@ -36431,6 +37384,17 @@
             ],
             "title": "Owner"
           },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -36438,6 +37402,29 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -36445,6 +37432,9 @@
           "title",
           "created_at",
           "created_by",
+          "source_sha",
+          "via_device",
+          "via_session",
           "body_md",
           "doc_number",
           "doc_status",
@@ -36471,6 +37461,17 @@
             ],
             "title": "Created By"
           },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -36478,13 +37479,39 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
           "version",
           "title",
           "created_at",
-          "created_by"
+          "created_by",
+          "source_sha",
+          "via_device",
+          "via_session"
         ],
         "title": "PageVersionSummary",
         "type": "object"
@@ -43482,6 +44509,499 @@
         "title": "RecordingStatusEnum",
         "type": "string"
       },
+      "RecurringCostCreate": {
+        "properties": {
+          "amount_kind": {
+            "default": "fixed",
+            "enum": [
+              "fixed",
+              "variable"
+            ],
+            "title": "Amount Kind",
+            "type": "string"
+          },
+          "amount_micros": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "cadence": {
+            "default": "monthly",
+            "enum": [
+              "monthly",
+              "quarterly",
+              "annual"
+            ],
+            "title": "Cadence",
+            "type": "string"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Currency",
+            "type": "string"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Notes",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "formatMaximum": "2200-12-31",
+            "formatMinimum": "1970-01-01",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "vendor": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "currency",
+          "start_date"
+        ],
+        "title": "RecurringCostCreate",
+        "type": "object"
+      },
+      "RecurringCostRead": {
+        "properties": {
+          "amount_kind": {
+            "enum": [
+              "fixed",
+              "variable"
+            ],
+            "title": "Amount Kind",
+            "type": "string"
+          },
+          "amount_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "cadence": {
+            "enum": [
+              "monthly",
+              "quarterly",
+              "annual"
+            ],
+            "title": "Cadence",
+            "type": "string"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by",
+          "id",
+          "name",
+          "vendor",
+          "category_id",
+          "cadence",
+          "amount_kind",
+          "amount_micros",
+          "currency",
+          "start_date",
+          "end_date",
+          "notes"
+        ],
+        "title": "RecurringCostRead",
+        "type": "object"
+      },
+      "RecurringCostUpdate": {
+        "description": "Every field optional; ``null`` clears ``category_id``, ``amount_micros``\nor ``end_date``. The cross-field rules are checked by the store on the\nrecord as it will stand.",
+        "properties": {
+          "amount_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fixed",
+                  "variable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Kind"
+          },
+          "amount_micros": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "cadence": {
+            "anyOf": [
+              {
+                "enum": [
+                  "monthly",
+                  "quarterly",
+                  "annual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cadence"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "formatMaximum": "2200-12-31",
+                "formatMinimum": "1970-01-01",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "vendor": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor"
+          }
+        },
+        "title": "RecurringCostUpdate",
+        "type": "object"
+      },
+      "RecurringCostsItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/RecurringCostRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "RecurringCostsItem",
+        "type": "object"
+      },
+      "RecurringCostsList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RecurringCostRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "RecurringCostsList",
+        "type": "object"
+      },
+      "RecurringPeriod": {
+        "description": "One period of a recurring cost that has fallen due (``period_start``\non or before ``today``).",
+        "properties": {
+          "amount_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Micros"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "entry_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Id"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "recurring_cost_id": {
+            "format": "uuid",
+            "title": "Recurring Cost Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "recorded",
+              "scheduled",
+              "awaiting_amount"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recurring_cost_id",
+          "period_start",
+          "state",
+          "entry_id",
+          "amount_micros",
+          "currency"
+        ],
+        "title": "RecurringPeriod",
+        "type": "object"
+      },
       "RegisteredRunner": {
         "description": "A runner in the fleet.",
         "properties": {
@@ -44491,6 +46011,45 @@
         "title": "RenderLogWithImages",
         "type": "object"
       },
+      "RepoBindRequest": {
+        "description": "Body for ``POST /pr-merge/onboarding/repo-bindings`` (coord ``BindRequest``).\n\n``repo`` is ``owner/name`` (a ``.git`` suffix or a github.com URL is\naccepted too); coord normalizes it to its lowercase key and answers ``400\ninvalid_repo`` for anything else. ``target_tenant`` is the tenant uuid the\nrepo is bound to; it is a plain string here so a malformed value reaches\ncoord and comes back as coord's own ``400 invalid_target_tenant`` rather\nthan a web-side validation shape. ``reason`` (required, non-blank \u2014 coord\ndecides blankness) is recorded on the binding and in the audit rows coord\nwrites per affected tenant; ``decision_ref`` is optional free text, and\ncoord reads a blank one as absent. Each field is length-capped (see\n``REPO_BINDING_*_MAX``) no tighter than coord: an over-long value is a\nweb-side 422, never forwarded.",
+        "properties": {
+          "decision_ref": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Ref"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "title": "Reason",
+            "type": "string"
+          },
+          "repo": {
+            "maxLength": 256,
+            "title": "Repo",
+            "type": "string"
+          },
+          "target_tenant": {
+            "maxLength": 64,
+            "title": "Target Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "target_tenant",
+          "reason"
+        ],
+        "title": "RepoBindRequest",
+        "type": "object"
+      },
       "RepoCiRow": {
         "description": "One repo's CI status, mirroring coord's ``RepoCiRow`` wire shape.\n\n``main_verdict`` is coord's ``MainCiStatus`` rendering (``green`` /\n``red`` / ``unknown`` / ``vacuously_green``); any amber tone is a frontend\nderivation from ``open_pr_checks`` counts, not a backend value.\n``vacuously_green`` is coord's zero-baseline arm \u2014 no required check has\never reported on main, so \"green\" is an absence of evidence, not a pass.\n\nThe two ``*_observed_at`` stamps are the freshness of the facts the row\ncarries (plan ``2026-10-04-ci-dashboard-in-the-dev-ops-console`` Phase 3):\n``main_verdict_observed_at`` is ``max(updated_at)`` over the\n``ci_baselines`` rows coord's verdict read, and ``pr_checks_observed_at``\nis the newest ``pr_check_runs`` row counted. They MUST be declared here:\n``response_model`` filtering drops every undeclared key, so an undeclared\nstamp would leave the page an unbounded read of \"the latest observation\"\nwith no way to say how old it is. ``None`` is coord saying it has no\nobservation to date the value by (the vacuously-green / memo arms, or no\nchecks at all) \u2014 and also an older coord that sends no stamp; both read\nas UNKNOWN freshness on the page, never as \"just now\".\n\nThe stamps are ``str`` pass-through, not ``datetime``: coord's RFC 3339\ntext reaches the page byte-for-byte (no re-serialisation that rewrites\nthe offset or the precision), and a value this model cannot parse is\nstill delivered rather than 500-ing the whole read.",
         "properties": {
@@ -44721,6 +46280,27 @@
           "name"
         ],
         "title": "RepoRefRequest",
+        "type": "object"
+      },
+      "RepoUnbindRequest": {
+        "description": "Body for ``DELETE /pr-merge/onboarding/repo-bindings`` (coord ``UnbindRequest``).\n\nUnbinding returns governance to the org's tenant. ``reason`` is required\nand must be non-blank; coord enforces that and records it in the audit.\nBoth fields carry the bind body's length caps.",
+        "properties": {
+          "reason": {
+            "maxLength": 2000,
+            "title": "Reason",
+            "type": "string"
+          },
+          "repo": {
+            "maxLength": 256,
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "reason"
+        ],
+        "title": "RepoUnbindRequest",
         "type": "object"
       },
       "ReposApplyDispatchRequest": {
@@ -45271,6 +46851,7 @@
             "title": "Instance Name"
           },
           "ip": {
+            "description": "The runner's IPv4 or IPv6 address literal, with no zone id.",
             "title": "Ip",
             "type": "string"
           },
@@ -47924,6 +49505,156 @@
           "similarity_score"
         ],
         "title": "SearchResultItem",
+        "type": "object"
+      },
+      "SecretsBrokerDevicePut": {
+        "additionalProperties": false,
+        "description": "Closed body for the broker-device write.\n\n``device_id: null`` clears the designation (every broker report is then\nrefused). The field is REQUIRED, so an empty body is a 422 rather than a\nsilent clear.",
+        "properties": {
+          "device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          }
+        },
+        "required": [
+          "device_id"
+        ],
+        "title": "SecretsBrokerDevicePut",
+        "type": "object"
+      },
+      "SecretsBrokerDeviceView": {
+        "description": "The tenant's designated secrets-broker device, as coord resolves it.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "effective_level": {
+            "title": "Effective Level",
+            "type": "string"
+          },
+          "master_enabled": {
+            "title": "Master Enabled",
+            "type": "boolean"
+          },
+          "reported": {
+            "title": "Reported",
+            "type": "boolean"
+          },
+          "resolved_scope": {
+            "title": "Resolved Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reported",
+          "effective_level",
+          "master_enabled",
+          "resolved_scope",
+          "can_edit"
+        ],
+        "title": "SecretsBrokerDeviceView",
+        "type": "object"
+      },
+      "SecretsBrokerDeviceWriteResult": {
+        "description": "What was written, and, separately, what coord now resolves.\n\n``effective`` is ``None`` with ``readback_error`` set when the write landed\nbut the re-read failed. That is UNKNOWN, not \"applied\".",
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SecretsBrokerDeviceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "versioned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versioned"
+          },
+          "written_device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Device Id"
+          }
+        },
+        "required": [
+          "ok",
+          "written_device_id"
+        ],
+        "title": "SecretsBrokerDeviceWriteResult",
         "type": "object"
       },
       "SectionDrift": {
@@ -76330,18 +78061,25 @@
     },
     "/api/v1/constraints/active": {
       "get": {
-        "description": "Proxy to runner: returns active constraints for a project path.",
+        "description": "Proxy to the co-located runner: the active constraints for a project. Platform admins only.",
         "operationId": "api_v1_constraints_active_get",
         "parameters": [
           {
-            "description": "Absolute path to the project",
+            "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
             "in": "query",
             "name": "project_path",
-            "required": true,
+            "required": false,
             "schema": {
-              "description": "Absolute path to the project",
-              "title": "Project Path",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
+              "title": "Project Path"
             }
           }
         ],
@@ -76380,18 +78118,25 @@
     },
     "/api/v1/constraints/config": {
       "get": {
-        "description": "Proxy to runner: returns the constraint TOML config for a project path.",
+        "description": "Proxy to the co-located runner: the constraint TOML config found from a project path. Platform admins only.",
         "operationId": "api_v1_constraints_config_get",
         "parameters": [
           {
-            "description": "Absolute path to the project",
+            "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
             "in": "query",
             "name": "project_path",
-            "required": true,
+            "required": false,
             "schema": {
-              "description": "Absolute path to the project",
-              "title": "Project Path",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Absolute path of the project on the runner's host. Omitted, the runner uses its own workspace root.",
+              "title": "Project Path"
             }
           }
         ],
@@ -76428,7 +78173,7 @@
         ]
       },
       "post": {
-        "description": "Proxy to runner: writes a new constraint TOML config.",
+        "description": "Proxy to the co-located runner: writes a constraint TOML config, whose command checks the runner's workflow loop executes. Platform admins only.",
         "operationId": "api_v1_constraints_config_post",
         "requestBody": {
           "content": {
@@ -76475,14 +78220,18 @@
     },
     "/api/v1/constraints/results/{task_run_id}": {
       "get": {
-        "description": "Proxy to runner: returns constraint evaluation results for a task run.",
+        "description": "Proxy to the co-located runner: constraint evaluation results for a task run. Platform admins only.",
         "operationId": "api_v1_constraints_results_task_run_id_get",
         "parameters": [
           {
+            "description": "A runner task-run id: letters, digits, '-' and '_' only.",
             "in": "path",
             "name": "task_run_id",
             "required": true,
             "schema": {
+              "description": "A runner task-run id: letters, digits, '-' and '_' only.",
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9_-]+$",
               "title": "Task Run Id",
               "type": "string"
             }
@@ -76541,7 +78290,7 @@
     },
     "/api/v1/constraints/validate": {
       "post": {
-        "description": "Proxy to runner: validates a TOML config string without writing it.",
+        "description": "Proxy to the co-located runner: validates a TOML config string without writing it. Platform admins only.",
         "operationId": "api_v1_constraints_validate_post",
         "requestBody": {
           "content": {
@@ -79897,7 +81646,7 @@
     },
     "/api/v1/device-bridge/runner-proxy/{path}": {
       "delete": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend. **Platform admins only**: the hop\n  reaches whichever runner listens on this host, with full local trust,\n  so any other caller is refused 403 before a port is looked up or a\n  byte is forwarded.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_delete",
         "parameters": [
           {
@@ -79941,7 +81690,7 @@
         ]
       },
       "get": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend. **Platform admins only**: the hop\n  reaches whichever runner listens on this host, with full local trust,\n  so any other caller is refused 403 before a port is looked up or a\n  byte is forwarded.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_get",
         "parameters": [
           {
@@ -79985,7 +81734,7 @@
         ]
       },
       "patch": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend. **Platform admins only**: the hop\n  reaches whichever runner listens on this host, with full local trust,\n  so any other caller is refused 403 before a port is looked up or a\n  byte is forwarded.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_patch",
         "parameters": [
           {
@@ -80029,7 +81778,7 @@
         ]
       },
       "post": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend. **Platform admins only**: the hop\n  reaches whichever runner listens on this host, with full local trust,\n  so any other caller is refused 403 before a port is looked up or a\n  byte is forwarded.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_post",
         "parameters": [
           {
@@ -80073,7 +81822,7 @@
         ]
       },
       "put": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend. **Platform admins only**: the hop\n  reaches whichever runner listens on this host, with full local trust,\n  so any other caller is refused 403 before a port is looked up or a\n  byte is forwarded.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_put",
         "parameters": [
           {
@@ -87059,7 +88808,7 @@
     },
     "/api/v1/fleet/apps": {
       "get": {
-        "description": "List registered apps + their fleet-fresh config.\n\n``project.apps`` is not user-partitioned (it is the runner-local app\nregistry mirrored on shared Postgres), so this returns every registered\napp \u2014 the fleet UI is an operator surface.",
+        "description": "List registered apps + their fleet-fresh config. Platform admins only.\n\n``project.apps`` is not user-partitioned (it is the runner-local app\nregistry mirrored on shared Postgres), so this returns every registered\napp, build and start commands included \u2014 which is why it is gated on\n:func:`require_admin` rather than on any signed-in user.",
         "operationId": "api_v1_fleet_apps_get",
         "responses": {
           "200": {
@@ -87090,7 +88839,7 @@
     },
     "/api/v1/fleet/apps/{app_id}": {
       "patch": {
-        "description": "Edit an app's update strategy + build/start commands.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\nare cleared by sending a blank value (empty or whitespace-only).",
+        "description": "Edit an app's update strategy + build/start commands. Platform admins only.\n\nFields left ``None`` are unchanged. ``build_command`` / ``start_command``\nare cleared by sending a blank value (empty or whitespace-only).\n\nGated on :func:`require_admin`: a stored command is executed by the\nauto-fresh engine on every fleet machine that auto-freshes this app, and\n``project.apps`` is shared across tenants. The refusal comes from the\ndependency, before this body reads or touches the row.",
         "operationId": "api_v1_fleet_apps_app_id_patch",
         "parameters": [
           {
@@ -95972,6 +97721,320 @@
         ]
       }
     },
+    "/api/v1/operations/coord/overlord/flow": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/overlord/flow`` (tenant-scoped).\n\nResponse shape is coord-authored and passed through untouched \u2014\n``window``, ``truncated``, ``passes_considered``,\n``full_passes_considered``, ``time_to_close`` (``median_secs`` /\n``p90_secs`` are ``null`` when ``count == 0``), ``nudge`` (rates ``null``\nwhen ``nudged == 0``), ``unchanged``, ``unknown_share`` (``share`` ``null``\nover an empty pass), ``verdict_series`` and, with\n``group_by=overlord_version``, ``groups``. A ``null`` is coord saying\n\"not measurable\", and must reach the page as ``null`` \u2014 never a ``0``.\n\nEvery parameter is a STRING forwarded unchanged; coord's typed 422/503\nbodies pass through verbatim \u2014 see the section note.",
+        "operationId": "api_v1_operations_coord_overlord_flow_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window_hours",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window Hours"
+            }
+          },
+          {
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "runner_port",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Runner Port"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unchanged_min_passes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Unchanged Min Passes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "nudge_window_passes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Nudge Window Passes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group By"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Overlord Flow",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/overlord/passes": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/overlord/passes`` (tenant-scoped list).\n\nAnswers ``{ok, passes, total_matching, truncated, limit, offset}``, newest\n``started_at`` first, each pass WITHOUT its rows. Filters are strings\nforwarded unchanged (``scope`` ``full|filtered``, ``mode``\n``report|act``, ``since`` RFC 3339, ``limit`` \u2264 200 \u2014 coord validates);\nerror bodies pass through verbatim.",
+        "operationId": "api_v1_operations_coord_overlord_passes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "runner_port",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Runner Port"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mode"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Overlord Passes",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/overlord/passes/{pass_id}": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/overlord/passes/{pass_id}`` (tenant-scoped).\n\nAnswers ``{ok, pass: {<pass fields>, rows: [...]}}``; a pass absent in the\ncaller's tenant is coord's ``404 {\"error\": \"pass_not_found\"}``, passed\nthrough verbatim. ``pass_id`` is typed ``UUID`` because it is spliced into\nthe coord URL path \u2014 see the section note.",
+        "operationId": "api_v1_operations_coord_overlord_passes_pass_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pass_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pass Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Overlord Pass",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/policies": {
       "get": {
         "description": "List the tenant's automation policies (rules).\n\nRead-only, any authenticated tenant member (``get_tenant_id``, NOT\n``require_coord_tenant_admin``): coord's ``GET /coord/policies`` gates on\ntenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin role,\nand scopes the list to the caller's tenant \u2014 so the console's read view is\nvisible to developers. Writes below stay admin-gated.\n\n``kind`` / ``repo`` / ``enabled`` are coord's own ``ListPoliciesQuery``\nfilters (coord ``policies/routes.rs::ListPoliciesQuery``), forwarded when\nPRESENT.\n\nFor the two STRING filters that includes an empty string, which is a real\nfilter to coord and not a synonym for \"unfiltered\" (``?repo=`` selects the\ndegenerate empty-repo rows; ``?kind=`` earns coord's 400 for an unknown\nkind, which is a better answer than silently listing everything).\n``enabled`` is the exception and is NOT reachable that way: it is a\n``bool``, so FastAPI rejects ``?enabled=`` with a 422 before this function\nruns (measured \u2014 ``?repo=`` and ``?kind=`` reach the handler as ``\"\"``;\n``?enabled=`` does not reach it at all). Only ``?enabled=true`` /\n``?enabled=false`` are expressible, which costs nothing: an empty\n``enabled`` has no meaning to coord, whose own field is an\n``Option<bool>``. Until this route\naccepted them no query string reached coord at all, so coord applied its ``enabled`` default of ``true`` on every call and\na tenant's DISABLED rules were **not listable from the console** \u2014 the\n``/admin/coord/automation-rules`` enable/disable switch could therefore\nwrite a row it could never read back, and the row was unrecoverable through\nthe product.\n\n``enabled`` is an EQUALITY filter server-side, not a \"show everything\"\nswitch: coord's resolver binds it as ``AND enabled = $2`` against the\ntenant's own rules. ``enabled=false`` therefore lists the DISABLED rules\nonly. A caller wanting both states issues both requests and unions them by\n``policy_id`` \u2014 coord's system built-ins come back on BOTH arms (its\nsystem-band query hardcodes ``enabled = true``), so the union must dedupe.",
@@ -99982,10 +102045,14 @@
             }
           },
           {
+            "description": "A runner task-run id: letters, digits, '-' and '_' only.",
             "in": "query",
             "name": "task_run_id",
             "required": true,
             "schema": {
+              "description": "A runner task-run id: letters, digits, '-' and '_' only.",
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9_-]+$",
               "title": "Task Run Id",
               "type": "string"
             }
@@ -100051,10 +102118,14 @@
             }
           },
           {
+            "description": "A runner task-run id: letters, digits, '-' and '_' only.",
             "in": "query",
             "name": "task_run_id",
             "required": true,
             "schema": {
+              "description": "A runner task-run id: letters, digits, '-' and '_' only.",
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9_-]+$",
               "title": "Task Run Id",
               "type": "string"
             }
@@ -103562,6 +105633,147 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/onboarding/repo-bindings": {
+      "delete": {
+        "description": "Unbind a repo, returning its governance to the org's tenant.\n\nProxies coord's ``DELETE /coord/onboarding/repo-bindings`` with the body\n``{repo, reason}``. An admin of either the bound tenant (release) or the\norg's tenant (reclaim) may unbind; coord decides. The 200 body has the\nbind response's shape with ``governed_by: \"org\"`` and ``binding_deleted:\ntrue``; ``404 binding_not_found`` when there is no binding visible to the\nactive tenant. Status + body verbatim.",
+        "operationId": "api_v1_operations_pr_merge_onboarding_repo_bindings_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoUnbindRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Pr Merge Onboarding Repo Binding",
+        "tags": [
+          "operations"
+        ]
+      },
+      "get": {
+        "description": "List the repo-tenant bindings visible to the active tenant.\n\nProxies coord's ``GET /coord/onboarding/repo-bindings[?repo=]``. The 200\nbody is ``{\"bindings\": [...], \"measured_at\": <rfc3339>}``; each binding\ncarries ``caller_side: \"bound\" | \"org\"`` \u2014 whether the active tenant is the\ntenant the repo is bound TO, or the tenant of the org it was bound AWAY\nfrom. ``repo`` is forwarded only when supplied. Status + body verbatim.",
+        "operationId": "api_v1_operations_pr_merge_onboarding_repo_bindings_get",
+        "parameters": [
+          {
+            "description": "Narrow the list to one `owner/name` repository.",
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow the list to one `owner/name` repository.",
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Pr Merge Onboarding Repo Bindings",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Bind a repo to a tenant (or rebind it to another one).\n\nProxies coord's ``POST /coord/onboarding/repo-bindings``. Coord moves the\nrepo's ``tenant_repos`` / profile / canonical rows, writes the binding, one\naudit row per affected tenant and an operator notification, and answers\n``{repo, from_tenant, to_tenant, governed_by: \"binding\", moved:\n{tenant_repos, profile, canonical}, binding_written, binding_deleted,\ntombstone_cleared, audit_ids, notified, idempotent, enrollment_spawned}``;\na repeated bind answers ``idempotent: true`` with nothing written.\n``decision_ref`` is omitted from the wire when absent. Status, body and\n``Retry-After`` verbatim (``503 schema_settling`` is a bind-only refusal).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_repo_bindings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoBindRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Pr Merge Onboarding Repo Binding",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/onboarding/repos/{repo}/restore": {
       "post": {
         "description": "Clear a repo's un-enrollment tombstone and re-enroll it.\n\nProxies coord's ``POST /coord/onboarding/repos/{owner/name}/restore``\n(body-less), substituting the ``owner/name`` path param verbatim \u2014 it is a\n``{repo:path}`` here because it carries a slash. Backs the \"Re-enroll\"\naction on an un-enrolled row of the Connected Organizations card.\n\nAuthz \u2014 ``require_coord_tenant_admin``, exactly like the enroll proxy: a\nrestore re-opens enrollment (profile writes, a possible bootstrap PR), a\nconsequential write.\n\nContract \u2014 coord clears the tombstone synchronously, spawns the enroll, and\nanswers immediately (default ``_COORD_TIMEOUT``):\n  * ``202 {\"restored\": bool, \"enrolled\": \"spawned\", \"installation_id\", \"repo\"}``\n    \u2014 the UI re-polls ``GET /pr-merge/onboarding/accounts`` until the row\n    flips from ``state: \"unenrolled\"`` to ``\"enrolled\"``.\n  * ``404 {\"error\": \"no_installation_for_owner\", \"owner\", \"restored\": bool}``\n    \u2014 no App installation is bound to the repo's owner (``restored`` says\n    whether the tombstone was cleared anyway).\n  * ``400 {\"error\": \"invalid_repo\"}`` \u2014 answered HERE for a path that is\n    not ``owner/name``; nothing reaches coord.\n\nCoord's status code AND JSON body pass through VERBATIM (not via\n``_proxy_coord_post``, which would stringify a \u2265400 body and rewrite the\n``202`` to ``200``). Transport errors mirror the shared helpers\n(ConnectError \u2192 502, TimeoutException \u2192 504).",
@@ -104366,6 +106578,28 @@
         ]
       }
     },
+    "/api/v1/operations/project-state": {
+      "get": {
+        "description": "Return coord's project-state synthesis for the operator's tenant.\n\nPlan\n``2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen``\nPhase 4. A plain pass-through of coord's operator route\n``GET /coord/project-state`` \u2014 the same shared core that serves the\n``coord_project_state`` MCP tool and its device/agent twin\n``GET /coord/agent-project-state``, so the page and every agent read one\nanswer. No composition and no reshaping here: ``/admin/coord/home`` and\nthe ``/overview`` progress panel render coord's bytes.\n\nThe wire, as coord serves it (``schema: 1``): ``generated_at``,\n``tenant_id``, ``scope`` (``\"operator\"``, the one built scope), and four\nblocks \u2014 ``on_track``, ``correctness``, ``needs_me``, ``degradations`` \u2014\neach carrying a ``state`` in ``read | could_not_read | stale |\nnot_implemented | unknown`` that is DISTINCT from its counts. A block\nwhose state is not ``read`` carries no counts, and a caller must render\nit as unknown rather than as zero (``[policy: silent-empty-is-unknown]``)\n\u2014 with ONE exception: a ``stale`` ``degradations`` block still carries its\n``open`` / ``declared`` / ``recently_cleared`` ROWS, because a known fault\nstays true behind a lagging watcher. Those rows are real but are not known\nto be all of them, so no count may be taken from them.\n``does_not_know`` lists every source the door read or tried to read,\nplus a ``watcher:<name>`` row for each feeding watcher that is not\nfresh, each with ``state``, ``as_of``, ``freshness_bound_secs``, rows\nconsidered / excluded and why, and its ``error``. On a watcher row,\n``as_of`` is the watcher's last successful run and\n``freshness_bound_secs`` the threshold its freshness verdict applies,\nnot the age of any data.\n\n``on_track.totals`` is ``{row_count, classes, excluded}``. ``classes``\nis a closed, exhaustive-with-zeros class set (``shipped``,\n``in_flight``, ``stalled``, ``blocked_on_dependency``,\n``waiting_on_gate``, ``not_started``, ``closed_other``,\n``off_vocabulary``, ``unset``) whose sum coord asserts equals\n``row_count``. ``excluded`` is ``{merge_shepherd_bookkeeping}``: coord's\nown merge-shepherd bookkeeping units, left out of ``row_count`` and\nevery class, and counted in ``excluded`` (and in ``does_not_know``'s\n``work_units`` row as ``rows_excluded``); the ``/overview`` panel states\nthat count. ``stalled`` is a MECHANICAL absence-of-recorded-change class\n(``stall_rule`` / ``stall_window_secs`` ride the wire); it is not a\nverdict and the page does not render the word.\n\nDeclares no ``response_model``, so nothing here filters a field coord\nadds. This docstring is what FastAPI renders into the committed,\ndrift-gated OpenAPI snapshots, so it is this repo's contract of record\nfor the route.",
+        "operationId": "api_v1_operations_project_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Project State Api V1 Operations Project State Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Project State",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/prs/{owner}/{repo}/{number}/hold": {
       "post": {
         "description": "Place or release a coord hold on a PR (the operator's hold control).\n\nProxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``\n(plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced\nthe ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),\nso it works on private repos on GitHub Free, which have no draft PRs.\n\nBody: ``{\"held\": bool, \"reason\"?: str, \"kind\"?: str, \"gate_id\"?: str}``.\n``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;\n``held: false`` releases. Release authority is coord's: the holder, or an\nadmin-role operator for any hold; a ``security_tier`` hold is the\noperator's alone.\n\nAuth mirrors the gate-action stack: the operator's Cognito bearer is\nforwarded (``require_coord_tenant_admin`` \u2192 ``tenant_id=``) and coord\nderives the tenant, role and repo authority server-side. Only the four\ncontract keys are forwarded.\n\n``structured_errors=True``: coord's typed refusal object (``{\"error\",\n\"message\"}``) becomes the ``HTTPException.detail`` dict, which the app's\n``http_exception_handler`` splices into the top level of its envelope, so\nthe browser receives ``error`` as coord's code (400 invalid_input,\n403 not_holder / security_tier_operator_only, 404 not_found,\n500 internal) rather than a JSON string inside ``message``. A coord error\nbody that is not a JSON object still falls back to its text.",
@@ -104667,6 +106901,78 @@
           }
         },
         "summary": "Register Repo",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/secrets-broker/device": {
+      "get": {
+        "description": "Read the tenant's designated secrets-broker device.\n\n``can_edit`` is the operator's admin role in the EFFECTIVE tenant (plus the\nsuperuser bypass), the same rule ``require_coord_tenant_admin`` applies to\nthis door's PUT, which writes through coord's device-only\n``PUT /coord/fleet-policy/secrets-broker-device`` (coord re-checks admin).\n``GET /fleet-policy``'s docstring says why ``identity.is_admin`` would be\nwrong.",
+        "operationId": "api_v1_operations_secrets_broker_device_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretsBrokerDeviceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Secrets Broker Device",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Designate (or clear) the tenant's secrets-broker device, then READ BACK.\n\nTenant-admin gated web-side; coord re-checks admin and the device's tenant\nbinding. The order is: prove the binding, write the device column alone,\nre-read. A failed proof writes nothing; nothing but the device is ever\nsent, so no level is read, carried or overwritten. A coord without the\nroute (404/405) is an error, never \"written\". A failed re-read after a\nlanded write is UNKNOWN (``readback_error``), not \"applied\".",
+        "operationId": "api_v1_operations_secrets_broker_device_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretsBrokerDevicePut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretsBrokerDeviceWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Secrets Broker Device",
         "tags": [
           "operations"
         ]
@@ -107582,6 +109888,25 @@
             }
           },
           {
+            "description": "Only writes from this surface (X-Overview-Source).",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(ui|api|import)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only writes from this surface (X-Overview-Source).",
+              "title": "Source"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -107619,9 +109944,569 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Change Log",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/cost-categories": {
+      "get": {
+        "operationId": "api_v1_overview_cost_categories_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostCategoriesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Cost Categories",
+        "tags": [
+          "overview",
+          "overview:cost-categories"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_cost_categories_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostCategoryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostCategoriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Cost Categories",
+        "tags": [
+          "overview",
+          "overview:cost-categories"
+        ]
+      }
+    },
+    "/api/v1/overview/cost-categories/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_cost_categories_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Cost Categories",
+        "tags": [
+          "overview",
+          "overview:cost-categories"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_cost_categories_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostCategoriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Cost Categories",
+        "tags": [
+          "overview",
+          "overview:cost-categories"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_cost_categories_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostCategoryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostCategoriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Cost Categories",
+        "tags": [
+          "overview",
+          "overview:cost-categories"
+        ]
+      }
+    },
+    "/api/v1/overview/cost-entries": {
+      "get": {
+        "operationId": "api_v1_overview_cost_entries_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Cost Entries",
+        "tags": [
+          "overview",
+          "overview:cost-entries"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_cost_entries_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostEntryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Cost Entries",
+        "tags": [
+          "overview",
+          "overview:cost-entries"
+        ]
+      }
+    },
+    "/api/v1/overview/cost-entries/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_cost_entries_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Cost Entries",
+        "tags": [
+          "overview",
+          "overview:cost-entries"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_cost_entries_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Cost Entries",
+        "tags": [
+          "overview",
+          "overview:cost-entries"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_cost_entries_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostEntryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostEntriesItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Cost Entries",
+        "tags": [
+          "overview",
+          "overview:cost-entries"
+        ]
+      }
+    },
+    "/api/v1/overview/costs/summary": {
+      "get": {
+        "description": "What the project has spent, per currency; the month-by-category table;\nand every recurring period that has fallen due, recorded or not. Computed\non read against today (UTC); readable by any member.",
+        "operationId": "api_v1_overview_costs_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Cost Summary",
         "tags": [
           "overview"
         ]
@@ -107645,6 +110530,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Estimates",
@@ -107708,6 +110596,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Estimates",
@@ -107757,6 +110648,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Forecast",
@@ -107807,6 +110701,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Rollup",
@@ -107863,6 +110760,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Estimates",
@@ -107909,6 +110809,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Estimates",
@@ -107981,6 +110884,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Estimates",
@@ -108008,6 +110914,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Files",
@@ -108072,6 +110981,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Upload File",
@@ -108128,6 +111040,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Download File",
@@ -108184,6 +111099,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Files",
@@ -108230,6 +111148,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Files",
@@ -108257,6 +111178,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Intent Documents",
@@ -108320,6 +111244,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Intent Documents",
@@ -108368,6 +111295,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Intent Documents",
@@ -108440,6 +111370,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Intent Documents",
@@ -108467,6 +111400,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Milestones",
@@ -108530,6 +111466,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Milestones",
@@ -108587,6 +111526,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Milestones",
@@ -108633,6 +111575,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Milestones",
@@ -108705,6 +111650,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Milestones",
@@ -108732,6 +111680,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Pages",
@@ -108795,6 +111746,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Pages",
@@ -108848,6 +111802,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Page Backlinks",
@@ -108896,6 +111853,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Page Versions",
@@ -108952,6 +111912,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Page Version",
@@ -109025,6 +111988,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Revert Page",
@@ -109081,6 +112047,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Pages",
@@ -109127,6 +112096,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Pages",
@@ -109199,6 +112171,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Pages",
@@ -109226,6 +112201,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Phase Progress",
@@ -109274,6 +112252,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Phase Progress",
@@ -109346,12 +112327,280 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Phase Progress",
         "tags": [
           "overview",
           "overview:phase-progress"
+        ]
+      }
+    },
+    "/api/v1/overview/recurring-costs": {
+      "get": {
+        "operationId": "api_v1_overview_recurring_costs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringCostsList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Recurring Costs",
+        "tags": [
+          "overview",
+          "overview:recurring-costs"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_recurring_costs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringCostCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringCostsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Recurring Costs",
+        "tags": [
+          "overview",
+          "overview:recurring-costs"
+        ]
+      }
+    },
+    "/api/v1/overview/recurring-costs/{record_id}": {
+      "delete": {
+        "operationId": "api_v1_overview_recurring_costs_record_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Recurring Costs",
+        "tags": [
+          "overview",
+          "overview:recurring-costs"
+        ]
+      },
+      "get": {
+        "operationId": "api_v1_overview_recurring_costs_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringCostsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Recurring Costs",
+        "tags": [
+          "overview",
+          "overview:recurring-costs"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_recurring_costs_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringCostUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringCostsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Recurring Costs",
+        "tags": [
+          "overview",
+          "overview:recurring-costs"
         ]
       }
     },
@@ -109374,6 +112623,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Catalog",
@@ -109401,6 +112653,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Settings",
@@ -109446,6 +112701,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Write Settings",
@@ -123307,7 +126565,7 @@
     },
     "/api/v1/screenshots/{path}": {
       "get": {
-        "description": "Serve a screenshot file.\n\nAttempts to resolve the path locally first (from the .dev-logs directory),\nthen falls back to proxying from the runner HTTP API.",
+        "description": "Serve one verification screenshot image.\n\n``path`` is the image's path as the runner recorded it (a leading\n``.dev-logs/`` is optional), ending in .png, .jpg, .jpeg, .webp or .gif.\nIt is served from this workspace's ``.dev-logs`` when this backend runs\nfrom a checkout and the image is there, and asked of the co-located\nrunner otherwise. The runner writes its screenshots into its own\ndev-logs directory, which is this ``.dev-logs`` only where its\n``dev_logs_dir`` setting says so, and serves none under\n``/screenshots/`` (qontinui-runner ``5dc3f37f``): at its default, every\nrunner screenshot is a 404. So is anything that is not an image file\nunder ``.dev-logs``.",
         "operationId": "api_v1_screenshots_path_get",
         "parameters": [
           {

@@ -11,9 +11,20 @@ Backs the fleet UI's three write/read surfaces (see plan
   ``auto_fresh`` (``coord.test_targets`` via
   :class:`app.models.test_target.TestTarget`).
 
-Reads are scoped to the caller's owned devices (``Device.user_id ==
-current_user.id``). The designation WRITES (PUT / DELETE) have exactly one
-writer: coord's binding-checked ``POST /coord/trees/test-targets/upsert`` and
+The app-config read and write are for ACTIVE platform admins only
+(:func:`app.api.admin_deps.require_admin`). ``project.apps`` is not
+partitioned by tenant, and its ``build_command`` / ``start_command`` are what
+the runner's auto-fresh engine runs with ``sh -c`` / ``cmd /C`` on every fleet
+machine that auto-freshes the app — so a write here is code execution on
+machines the caller does not own, and the read discloses every tenant's
+registry. Coord finding ``b27adf71-4de5-49bc-ad89-7a8acd372035``: both routes
+used to accept any signed-in user. Partitioning the table by tenant is the
+lasting fix; until it lands, the platform-admin gate is the whole of the
+access control.
+
+The freshness and designation reads are scoped to the caller's owned devices
+(``Device.user_id == current_user.id``). The designation WRITES (PUT / DELETE)
+have exactly one writer: coord's binding-checked ``POST /coord/trees/test-targets/upsert`` and
 ``DELETE /coord/trees/test-targets/:device_id/:app_id``, reached through the
 ``operations`` proxy helpers with the caller's bearer and
 ``X-Qontinui-Active-Tenant`` forwarded (``get_tenant_id`` captures both). coord
@@ -42,6 +53,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.admin_deps import require_admin
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.api.v1.endpoints.operations import (
     COORD_TIMEOUT_DETAIL,
@@ -76,13 +88,14 @@ logger = structlog.get_logger(__name__)
 @router.get("/apps", response_model=list[AppConfig])
 async def list_apps(
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_active_user_async),
+    _admin: User = Depends(require_admin),
 ) -> list[AppConfig]:
-    """List registered apps + their fleet-fresh config.
+    """List registered apps + their fleet-fresh config. Platform admins only.
 
     ``project.apps`` is not user-partitioned (it is the runner-local app
     registry mirrored on shared Postgres), so this returns every registered
-    app — the fleet UI is an operator surface.
+    app, build and start commands included — which is why it is gated on
+    :func:`require_admin` rather than on any signed-in user.
     """
     result = await db.execute(select(App).order_by(App.display_name))
     return [AppConfig.model_validate(row) for row in result.scalars().all()]
@@ -115,12 +128,17 @@ async def update_app_config(
     app_id: str,
     body: AppConfigUpdate,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_active_user_async),
+    _admin: User = Depends(require_admin),
 ) -> AppConfig:
-    """Edit an app's update strategy + build/start commands.
+    """Edit an app's update strategy + build/start commands. Platform admins only.
 
     Fields left ``None`` are unchanged. ``build_command`` / ``start_command``
     are cleared by sending a blank value (empty or whitespace-only).
+
+    Gated on :func:`require_admin`: a stored command is executed by the
+    auto-fresh engine on every fleet machine that auto-freshes this app, and
+    ``project.apps`` is shared across tenants. The refusal comes from the
+    dependency, before this body reads or touches the row.
     """
     app = await db.get(App, app_id)
     if app is None:

@@ -26,6 +26,7 @@ import {
   type NavViewer,
 } from "./coordNavModel";
 import { isActiveTenantCoordAdmin, isCoordAdminUser } from "@/lib/coord-admin";
+import { TOUR_SURFACE, isLensTreePath } from "@/components/presentation";
 
 function group(id: string): NavGroup {
   const found = GROUPS.find((g) => g.id === id);
@@ -47,14 +48,30 @@ const visibleLabels = (id: string, viewer: NavViewer) =>
 const memberLabels = (id: string) => visibleLabels(id, MEMBER);
 
 describe("coordNavModel", () => {
-  it("keeps the five daily destinations as direct tabs", () => {
+  it("opens with Home, then the five daily destinations, as direct tabs, and the tour after them", () => {
     expect(DIRECT_TABS.map((t) => [t.label, t.href])).toEqual([
+      ["Home", "/admin/coord/home"],
       ["Pipeline", "/admin/coord/pipeline"],
       ["Pull Requests", "/admin/coord/prs"],
       ["Gates", "/admin/coord/gates"],
       ["Notifications", "/admin/coord/notifications"],
       ["Action items", "/admin/coord/action-items"],
+      ["Tour", "/admin/coord/tour"],
     ]);
+  });
+
+  it("offers the tour to every member, in the lens tree the sidebar keeps while presenting", () => {
+    // Plan `2026-10-23-console-presentation-spaces` Phase 8: the presenter's
+    // way in, one click from anywhere in the console.
+    const tour = DIRECT_TABS.find((t) => t.href === "/admin/coord/tour");
+    expect(tour?.label).toBe("Tour");
+    expect(tour?.testId).toBe("coord-nav-tour");
+    expect(navEntryVisibleTo(tour!, MEMBER)).toBe(true);
+    expect(isLensTreePath(tour!.href)).toBe(true);
+    expect(tour!.href).toBe(TOUR_SURFACE.route);
+    const active = findActiveLeaf("/admin/coord/tour");
+    expect(active?.group).toBeNull();
+    expect(active?.leaf.label).toBe("Tour");
   });
 
   it("orders the groups Work · Merge · Intent · Dev Ops · Access", () => {
@@ -85,6 +102,7 @@ describe("coordNavModel", () => {
       "Verification",
       "Agents",
       "Unfinished Sessions",
+      "Session Flow",
       "Agent Commands",
       "Agent Skills",
       "Prompt Log",

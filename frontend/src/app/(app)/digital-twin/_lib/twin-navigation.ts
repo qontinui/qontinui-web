@@ -14,7 +14,15 @@ import { createContext, useContext } from "react";
 import type { ResolvedSubspace } from "./types";
 
 /** The Explorer's tabs, by their `TabsTrigger` value. */
-export type TwinTab = "completeness" | "lifecycle" | "delivery" | "ui-bridge";
+export type TwinTab =
+  | "twin-map"
+  | "completeness"
+  | "lifecycle"
+  | "delivery"
+  | "ui-bridge";
+
+/** The tab the Explorer opens on: the Twin map (plan `2026-10-23-console-presentation-spaces` Phase 5). */
+export const DEFAULT_TWIN_TAB: TwinTab = "twin-map";
 
 export interface TwinNavigation {
   /** Open the Completeness tab with `question` typed into Ask the Twin. */

@@ -133,4 +133,38 @@ describe("the page's one auto-publish status read", () => {
     expect(putMock).toHaveBeenCalledTimes(1);
     expect(statusGet).toHaveBeenCalledTimes(2);
   });
+
+  it("carries the recovery reconcile's failure to the dial, beside a healthy pass", async () => {
+    const served = aliveStatus("ran:nothing_due");
+    statusGet.mockResolvedValueOnce({
+      ...served,
+      worker: {
+        ...served.worker,
+        recovery_reconcile: {
+          status: "erroring",
+          unknown_reason: "the coord log names the tenants",
+          nominal: false,
+          reason: "last_pass_failed",
+          last_tick_at: new Date().toISOString(),
+          last_work_tick_at: null,
+          last_decision_code: "recovery:not_due_after_errors",
+        },
+      },
+    });
+    render(<PromptDocumentsPage />);
+
+    const line = await screen.findByTestId(
+      "policy-auto-publish-observed-reconcile"
+    );
+    expect(line).toHaveTextContent(
+      "Observed reconcile: running but failing (last decision: recovery:not_due_after_errors)"
+    );
+    expect(line).toHaveTextContent("the coord log names the tenants");
+    expect(line).toHaveAttribute("data-observed-tone", "attention");
+    expect(screen.getByTestId("policy-auto-publish-observed")).toHaveAttribute(
+      "data-observed-tone",
+      "nominal"
+    );
+    expect(statusGet).toHaveBeenCalledTimes(1);
+  });
 });
