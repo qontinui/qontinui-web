@@ -261,7 +261,10 @@ export function followupScopeGate(
     title: "Follow-up scope, per repository",
     where: presenting
       ? "A per-repository setting: every merge, code changes only, or never."
-      : "Per repository, under Agent registry → Per-repo follow-up dials (PUT /post-merge-followup-scope); the rollout mode is coord's COORD_POST_MERGE_SCOPE_MODE.",
+      : "Per repository, on the agent registry page under Per-repo follow-up dials; whether coord acts on it is coord's rollout mode.",
+    whereDetail: presenting
+      ? undefined
+      : "Written with PUT /post-merge-followup-scope; the rollout mode is coord's COORD_POST_MERGE_SCOPE_MODE.",
     scope: "repo",
     enforced,
     effective,
@@ -285,6 +288,7 @@ export function runnerGate(
     key: `runner:${key}`,
     title: "Runner switch",
     where: presenting ? where.presented : where.operator,
+    whereDetail: presenting ? undefined : where.detail,
     scope: "device",
     enforced: {
       kind: "runner-only",

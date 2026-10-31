@@ -269,7 +269,10 @@ export function registryGate(input: RegistryGateInput): MatrixGate {
     title: "Agent registry switch",
     where: presenting
       ? "A switch in the agent registry, for the whole project."
-      : `Agent registry row ${name} — the tenant default (PUT /coord/agent-registry/${name}).`,
+      : "The agent registry, for the whole project (the tenant default).",
+    whereDetail: presenting
+      ? undefined
+      : `Registry row ${name}; written with PUT /coord/agent-registry/${name}.`,
     scope: "tenant",
     enforced: registryEnforcement(input.words, presenting),
     effective,
@@ -299,7 +302,8 @@ export function mirrorGate(
     title: `${input.mirrorLabel} switch`,
     where: presenting
       ? `The "${input.mirrorLabel}" switch, which has its own line.`
-      : `Agent registry row ${name}, which has its own row on this matrix; it is written there.`,
+      : `The agent registry: the "${input.mirrorLabel}" switch, which has its own line on this table and is set there.`,
+    whereDetail: presenting ? undefined : `Registry row ${name}.`,
     scope: "tenant",
     enforced: registryEnforcement(input.words, presenting),
     effective,

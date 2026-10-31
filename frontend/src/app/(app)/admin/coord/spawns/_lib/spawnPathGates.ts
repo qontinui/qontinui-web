@@ -295,8 +295,14 @@ export interface MatrixGate {
   key: string;
   /** The switch, named. */
   title: string;
-  /** Where it is set. */
+  /** Where it is set, in plain words: no route, variable or setting key. */
   where: string;
+  /**
+   * Operator mode only: the exact route, variable or setting key behind
+   * {@link MatrixGate.where} — shown on demand (a tooltip), never as the
+   * default view, and never built while presenting.
+   */
+  whereDetail?: string;
   scope: GateScope;
   /** A second scope that can override it, in words. */
   scopeNote?: string;

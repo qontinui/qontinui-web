@@ -267,7 +267,16 @@ function GateTable({
               >
                 <td className="py-1.5 pr-3 font-medium">{gate.title}</td>
                 <td className="py-1.5 pr-3 text-muted-foreground">
-                  {gate.where}
+                  <span
+                    data-testid="coord-spawns-gate-where"
+                    title={gate.whereDetail}
+                    className={cn(
+                      gate.whereDetail &&
+                        "cursor-help underline decoration-dotted underline-offset-2"
+                    )}
+                  >
+                    {gate.where}
+                  </span>
                 </td>
                 <td className="py-1.5 pr-3">
                   <span data-testid="coord-spawns-gate-scope">
@@ -309,6 +318,15 @@ function GateTable({
           </tbody>
         </table>
       </div>
+      {/* The registry name is the operator's vocabulary: on demand only. */}
+      {!presenting && row.startedBy === "coord" && (
+        <p
+          className="m-0 text-[11px] text-muted-foreground"
+          data-testid="coord-spawns-path-key"
+        >
+          Registry name: <span className="font-mono">{row.key}</span>
+        </p>
+      )}
     </div>
   );
 }
@@ -348,11 +366,6 @@ function PathLine({
               <Badge variant="outline" className={cn("text-[10px]", INERT)}>
                 class switch
               </Badge>
-            )}
-            {!presenting && row.startedBy === "coord" && (
-              <span className="font-mono text-[10px] text-muted-foreground/70">
-                {row.key}
-              </span>
             )}
           </span>
         </td>

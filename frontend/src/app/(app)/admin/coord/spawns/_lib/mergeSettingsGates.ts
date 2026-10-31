@@ -146,7 +146,10 @@ export function fixerDialGate(
     title: "Fixer dial for stuck PRs",
     where: presenting
       ? "A project setting: whether fixers start for stuck pull requests."
-      : "Merge settings: Spawn fixer sessions for stuck PRs (auto_fix_pr) — PATCH /pr-merge/settings.",
+      : "Merge settings, for the whole project: Spawn fixer sessions for stuck PRs.",
+    whereDetail: presenting
+      ? undefined
+      : "Setting auto_fix_pr; written with PATCH /pr-merge/settings.",
     scope: "tenant",
     scopeNote: presenting
       ? "A repository can also switch it off."
@@ -217,7 +220,10 @@ export function redMainKnobGate(
     title: "Fixer knob for failing main branches",
     where: presenting
       ? "A project setting: whether a failing main branch is handed to a fixer."
-      : "Merge settings: auto_fix_red_main for the tenant — PATCH /pr-merge/settings.",
+      : "Merge settings, for the whole project: hand a failing main branch to a fixer.",
+    whereDetail: presenting
+      ? undefined
+      : "Setting auto_fix_red_main for the tenant; written with PATCH /pr-merge/settings.",
     scope: "tenant",
     scopeNote: presenting
       ? "A repository can override it."
@@ -293,7 +299,10 @@ export function admissionStallKnobGate(
     title: "Responder knob for a stalled merge queue",
     where: presenting
       ? "A project setting: whether a stalled merge queue gets a responder."
-      : "Merge settings: rulebook_overrides → auto_fix_admission_stall (tenant only; no repository tier).",
+      : "Merge settings, for the whole project only: respond to a stalled merge queue.",
+    whereDetail: presenting
+      ? undefined
+      : "rulebook_overrides → auto_fix_admission_stall (tenant only; no repository tier).",
     scope: "tenant",
     enforced: {
       kind: "enforce",

@@ -146,7 +146,10 @@ export function autonomyGate(
     title: "Autonomy level",
     where: presenting
       ? "The project's autonomy setting for this decision."
-      : `Next-step settings, decision domain ${domain}${d ? ` ("${d.label}")` : ""} — PUT /coord/next-step-settings.`,
+      : "The project's next-step settings, for this decision.",
+    whereDetail: presenting
+      ? undefined
+      : `Decision domain ${domain}${d ? ` ("${d.label}")` : ""}; written with PUT /coord/next-step-settings.`,
     scope: "tenant",
     enforced: {
       kind: "enforce",
@@ -215,7 +218,10 @@ export function fleetFlagGate(
     title: "Fleet flag",
     where: presenting
       ? "A deployment setting of the coordination service."
-      : `Coord environment variable ${flag ?? "(coord did not name it)"}.`,
+      : "Coord's deployment settings: changed by redeploying coord.",
+    whereDetail: presenting
+      ? undefined
+      : `Environment variable ${flag ?? "(coord did not name it)"}.`,
     scope: "environment variable",
     enforced: {
       kind: "env-only",

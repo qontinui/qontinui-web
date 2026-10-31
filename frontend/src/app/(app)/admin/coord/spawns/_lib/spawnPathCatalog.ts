@@ -210,8 +210,10 @@ export function servedPathWords(
 
 /** Where a hand-kept path's switch lives, for each audience. */
 export interface SwitchWhere {
-  /** Operator mode: exact, naming the setting. */
+  /** Operator mode: plain words, naming no setting key. */
   readonly operator: string;
+  /** Operator mode, on demand: the exact setting or variable. */
+  readonly detail?: string;
   /** Presentation mode: plain words, naming no setting key. */
   readonly presented: string;
 }
@@ -269,7 +271,9 @@ export const UNSERVED_PATHS: readonly UnservedPath[] = [
       "a steward started from a runner's own window is recorded as an operator terminal, so the ledger names only some steward starts",
     where: {
       operator:
-        "On each runner: its steward controls start and stop one session per steward kind, and set that steward's own enable variable when they launch it.",
+        "On each runner: its steward controls start and stop one session per steward kind.",
+      detail:
+        "The controls also set that steward's own enable variable when they launch it.",
       presented: "Switched on each machine, by that machine's own runner.",
     },
   },
@@ -302,7 +306,8 @@ export const UNSERVED_PATHS: readonly UnservedPath[] = [
       "a migration moves a session that is already running, and the ledger records only requests to start one",
     where: {
       operator:
-        "On each runner: the setting claude_cli.auto_migrate_on_token_exhaustion, which does nothing on a machine with fewer than two accounts.",
+        "On each runner, in its settings; it does nothing on a machine with fewer than two accounts.",
+      detail: "Runner setting claude_cli.auto_migrate_on_token_exhaustion.",
       presented: "Switched on each machine, by that machine's own runner.",
     },
   },
