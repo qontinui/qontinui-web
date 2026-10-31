@@ -18,6 +18,7 @@ import { RefreshButton } from "@/components/console";
 import {
   Provenance,
   SectionCaption,
+  type SectionSource,
   lensLinkTarget,
   useMachineAliaser,
   usePresentationMode,
@@ -61,14 +62,21 @@ export type HomeRegion =
 export function RegionCaption({
   region,
   reading,
+  extraSources = [],
 }: {
   region: HomeRegion;
   reading: HomeReading;
+  /**
+   * Figures in the region read from somewhere other than the project state
+   * (`_lib/homeSupplements.ts`), each with its own source and time, so the
+   * region never dates them by the project state's read.
+   */
+  extraSources?: readonly SectionSource[];
 }) {
   return (
     <SectionCaption
       id={`coordination-overview.${region}`}
-      sources={regionSources(reading)}
+      sources={[...regionSources(reading), ...extraSources]}
       data-testid={`coord-home.${region}.caption`}
     />
   );

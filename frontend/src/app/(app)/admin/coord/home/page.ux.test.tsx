@@ -327,6 +327,341 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
     });
   });
 
+  describe("Degrading, beside the machine roster the nav counts", () => {
+    const FLEET = "/api/v1/operations/fleet/health";
+    const QUESTIONS = "/api/v1/operations/agent-questions/pending";
+    const roster = (...states: Array<string | null>) => ({
+      as_of: new Date().toISOString(),
+      devices: states.map((state, i) => ({
+        device_id: `d-${i}`,
+        hostname: `example-host-${i}`,
+        ...(state === null ? {} : { state }),
+      })),
+    });
+    const quiet = { [QUESTIONS]: () => json({ questions: [] }) };
+
+    it("does not read calm while machines are not healthy or report no state", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () =>
+          json(roster("healthy", "degraded", "partitioned", null, "healthy")),
+        ...quiet,
+      });
+      await renderPage();
+      const deg = screen.getByTestId("coord-home.degrading");
+      const line = await within(deg).findByText(/2 of 5 machines/);
+      expect(line.closest("p")).toHaveTextContent(
+        "Machines: 2 of 5 machines are in a state other than healthy; 1 reports no health state, so its health is unknown. See them on Dev Ops."
+      );
+      expect(
+        within(deg).getByRole("link", { name: "See them on Dev Ops" })
+      ).toHaveAttribute("href", "/admin/coord/devops");
+      expect(deg).not.toHaveTextContent("Nothing is degrading");
+      expect(
+        within(deg).getByTestId("coord-home.degrading.machines-not-calm")
+      ).toHaveTextContent("not every machine is healthy");
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveAttribute("data-health-level", "amber");
+      expect(strip).toHaveTextContent("Something is degrading");
+      expect(strip).toHaveTextContent(
+        "2 machines are in a state other than healthy. 1 machine reports no health state."
+      );
+      expect(screen.getByTestId("coord-home.strip.machines")).toHaveTextContent(
+        /^machines not healthy 2$/
+      );
+    });
+
+    it("says machine health is unknown, never calm, when the roster cannot be read", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () => json({ error: "unavailable" }, 503),
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() =>
+        expect(machines).toHaveAttribute(
+          "data-machines-state",
+          "could_not_read"
+        )
+      );
+      expect(machines).toHaveTextContent(
+        "Machine health could not be read — unknown, so this view cannot say no machine is degrading."
+      );
+      expect(machines).not.toHaveTextContent(/\b0\b/);
+      const deg = screen.getByTestId("coord-home.degrading");
+      expect(deg).not.toHaveTextContent("Nothing is degrading");
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveAttribute("data-health-level", "amber");
+      expect(strip).not.toHaveTextContent(/nothing is degrading/i);
+      expect(strip).toHaveTextContent("Machine health was not read.");
+      expect(screen.getByTestId("coord-home.strip.machines")).toHaveTextContent(
+        /^machines not healthy –$/
+      );
+    });
+
+    it("reads a roster answer with no device list as unknown, not as no machines", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () => json({ as_of: new Date().toISOString() }),
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() =>
+        expect(machines).toHaveAttribute(
+          "data-machines-state",
+          "could_not_read"
+        )
+      );
+      expect(machines).not.toHaveTextContent("Coord lists no machines.");
+    });
+
+    it("says nothing is degrading only when every machine reports healthy", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () => json(roster("healthy", "healthy")),
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() =>
+        expect(machines).toHaveTextContent("All 2 machines report healthy.")
+      );
+      expect(
+        screen.getByTestId("coord-home.degrading.empty")
+      ).toHaveTextContent("Nothing is degrading");
+      expect(screen.getByTestId("coord-home.strip.health")).toHaveAttribute(
+        "data-health-level",
+        "green"
+      );
+    });
+
+    it("keeps the last good machine counts through a failed refresh, and says so", async () => {
+      let fail = false;
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () =>
+          fail ? json({}, 503) : json(roster("healthy", "degraded")),
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() =>
+        expect(machines).toHaveTextContent("1 of 2 machines")
+      );
+      fail = true;
+      screen.getByTestId("coord-home.refresh").click();
+      await waitFor(() =>
+        expect(machines).toHaveTextContent(
+          "At the last good read, 1 of 2 machines is in a state other than healthy."
+        )
+      );
+      expect(screen.getByTestId("coord-home.strip.health")).toHaveTextContent(
+        "Machine health is from its last good read."
+      );
+    });
+  });
+
+  describe("Needs you, until coord serves its needs block", () => {
+    const FLEET = "/api/v1/operations/fleet/health";
+    const QUESTIONS = "/api/v1/operations/agent-questions/pending";
+    const GATES = "/api/v1/admin-dev/overview";
+    const calmFleet = {
+      [FLEET]: () => json({ devices: [{ device_id: "d", state: "healthy" }] }),
+    };
+    const unbuilt = () =>
+      json(oneUnitBody({ needs_me: { state: "not_implemented" } }));
+    const gate = (
+      kind: string,
+      audience: string,
+      verdict = "open"
+    ): Record<string, unknown> => ({
+      gate_id: `g-${kind}-${audience}-${verdict}`,
+      verdict,
+      clearance_audience: audience,
+      predicate: { kind },
+    });
+    const overview = (
+      gates: Record<string, unknown>[],
+      extra: Record<string, unknown> = {}
+    ) => ({
+      generated_at: new Date().toISOString(),
+      gates,
+      counts: { open: gates.length },
+      ...extra,
+    });
+
+    it("counts open operator approvals and operator questions from the Gates and Questions lists, each linking there", async () => {
+      answer(
+        {
+          [PROJECT_STATE]: unbuilt,
+          ...calmFleet,
+          [QUESTIONS]: () =>
+            json({ questions: [{ id: "q1" }, { id: "q2" }], total: 7 }),
+        },
+        {
+          [GATES]: () =>
+            overview([
+              gate("operator_approval", "operator"),
+              gate("operator_approval", "operator"),
+              gate("operator_approval", "agent"),
+              gate("pr_merged", "operator"),
+            ]),
+        }
+      );
+      await renderPage();
+      const gates = screen.getByTestId("coord-home.needs-you.count.gates");
+      const questions = screen.getByTestId(
+        "coord-home.needs-you.count.questions"
+      );
+      await waitFor(() =>
+        expect(gates).toHaveTextContent("Approvals waiting on you: 2 · Gates")
+      );
+      expect(questions).toHaveTextContent(
+        "Questions waiting on you: 7 · Questions"
+      );
+      expect(within(gates).getByRole("link")).toHaveAttribute(
+        "href",
+        "/admin/coord/gates"
+      );
+      expect(within(questions).getByRole("link")).toHaveAttribute(
+        "href",
+        "/admin/coord/questions"
+      );
+      // The questions read asks for the operator's queue, as the page does.
+      const asked = httpFetch.mock.calls
+        .map((c) => String(c[0]))
+        .find((u) => u.startsWith(QUESTIONS));
+      expect(asked).toContain("audience=operator");
+      expect(String(httpGet.mock.calls[0]?.[0])).toContain("verdict=open");
+    });
+
+    it("says UNKNOWN, and why, never 0, for a list that cannot be read", async () => {
+      answer(
+        {
+          [PROJECT_STATE]: unbuilt,
+          ...calmFleet,
+          [QUESTIONS]: () => json({ not: "a list" }),
+        },
+        {}
+      );
+      await renderPage();
+      const gates = screen.getByTestId("coord-home.needs-you.count.gates");
+      const questions = screen.getByTestId(
+        "coord-home.needs-you.count.questions"
+      );
+      await waitFor(() =>
+        expect(gates).toHaveAttribute("data-count-state", "could_not_read")
+      );
+      await waitFor(() =>
+        expect(questions).toHaveAttribute("data-count-state", "could_not_read")
+      );
+      expect(gates).toHaveTextContent(
+        "Approvals waiting on you: UNKNOWN — the gates list could not be read"
+      );
+      expect(questions).toHaveTextContent(
+        "Questions waiting on you: UNKNOWN — the questions list could not be read"
+      );
+      for (const el of [gates, questions]) {
+        expect(el).not.toHaveTextContent(/: 0\b/);
+      }
+    });
+
+    it("reads the web proxy's cold-start envelope as unknown, not as no gates", async () => {
+      answer(
+        {
+          [PROJECT_STATE]: unbuilt,
+          ...calmFleet,
+          [QUESTIONS]: () => json({ questions: [] }),
+        },
+        { [GATES]: () => overview([], { coord_error: "coord unreachable" }) }
+      );
+      await renderPage();
+      const gates = screen.getByTestId("coord-home.needs-you.count.gates");
+      await waitFor(() =>
+        expect(gates).toHaveAttribute("data-count-state", "could_not_read")
+      );
+      // An empty questions page at offset 0 IS an empty queue.
+      expect(
+        screen.getByTestId("coord-home.needs-you.count.questions")
+      ).toHaveTextContent("Questions waiting on you: 0");
+    });
+
+    it("marks a kept (reconnecting) gates list as its last good read", async () => {
+      answer(
+        {
+          [PROJECT_STATE]: unbuilt,
+          ...calmFleet,
+          [QUESTIONS]: () => json({ questions: [] }),
+        },
+        {
+          [GATES]: () =>
+            overview([gate("operator_approval", "operator")], {
+              coord_error: "reconnecting",
+              coord_reconnecting: true,
+            }),
+        }
+      );
+      await renderPage();
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-home.needs-you.count.gates")
+        ).toHaveTextContent(
+          "Approvals waiting on you: 1 (at its last good read)"
+        )
+      );
+    });
+
+    it("says 'at least' when a list may hold more than it returned", async () => {
+      const page = Array.from({ length: 500 }, () =>
+        gate("operator_approval", "operator")
+      );
+      answer(
+        {
+          [PROJECT_STATE]: unbuilt,
+          ...calmFleet,
+          [QUESTIONS]: () =>
+            json({ questions: [{ id: "a" }, { id: "b" }], truncated: true }),
+        },
+        { [GATES]: () => ({ ...overview(page), counts: { open: 640 } }) }
+      );
+      await renderPage();
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-home.needs-you.count.gates")
+        ).toHaveTextContent("Approvals waiting on you: at least 500")
+      );
+      expect(
+        screen.getByTestId("coord-home.needs-you.count.questions")
+      ).toHaveTextContent("Questions waiting on you: at least 2");
+    });
+
+    it("stops asking the two lists once coord serves its needs block", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        ...calmFleet,
+        [QUESTIONS]: () => json({ questions: [] }),
+      });
+      await renderPage();
+      expect(
+        screen.queryByTestId("coord-home.needs-you.counts")
+      ).not.toBeInTheDocument();
+      httpFetch.mockClear();
+      httpGet.mockClear();
+      screen.getByTestId("coord-home.refresh").click();
+      await waitFor(() =>
+        expect(
+          httpFetch.mock.calls.some((c) => String(c[0]).startsWith(FLEET))
+        ).toBe(true)
+      );
+      expect(
+        httpFetch.mock.calls.some((c) => String(c[0]).startsWith(QUESTIONS))
+      ).toBe(false);
+      expect(httpGet).not.toHaveBeenCalled();
+    });
+  });
+
   describe("the no-recorded-change wording", () => {
     it("is plain words with the unit, on the strip and on a repository row", async () => {
       answer({ [PROJECT_STATE]: () => json(oneUnitBody()) });

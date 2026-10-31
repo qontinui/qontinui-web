@@ -205,3 +205,73 @@ describe("a clause coord did not state, said once per list", () => {
     expect(unstatedSummary([])).toBeNull();
   });
 });
+
+describe("the strip over the machine roster", () => {
+  const calm = () =>
+    parseProjectState({
+      generated_at: "2026-10-31T00:00:00Z",
+      on_track: {
+        state: "read",
+        totals: { row_count: 0, classes: {} },
+        groups: [],
+      },
+      correctness: { state: "read" },
+      needs_me: { state: "read", items: [], total: 0, omitted: 0 },
+      degradations: { state: "read", headline: "none", open: [], declared: [] },
+      does_not_know: [{ source: "work_units", state: "read" }],
+    });
+  const machines = (notHealthy: number, noState: number, stale = false) => ({
+    machines: { notHealthy, noState, stale },
+  });
+
+  it("is green only with the roster read and every machine healthy", () => {
+    expect(deriveHomeStrip(calm(), machines(0, 0)).level).toBe("green");
+  });
+
+  it("is never green, and never says nothing is degrading, with the roster unread", () => {
+    for (const s of [
+      deriveHomeStrip(calm()),
+      deriveHomeStrip(calm(), { machines: null }),
+    ]) {
+      expect(s.level).toBe("amber");
+      expect(s.headline).not.toMatch(/nothing is degrading/i);
+      expect(s.detail).toContain("Machine health was not read.");
+      expect(s.badges.find((b) => b.key === "machines")?.label).toBe(
+        "machines not healthy –"
+      );
+    }
+  });
+
+  it("says something is degrading when a machine is not healthy", () => {
+    const s = deriveHomeStrip(calm(), machines(2, 0));
+    expect(s.level).toBe("amber");
+    expect(s.headline).toBe("Something is degrading");
+    expect(s.detail).toContain("2 machines are in a state other than healthy.");
+    expect(s.badges.find((b) => b.key === "machines")?.label).toBe(
+      "machines not healthy 2"
+    );
+  });
+
+  it("is amber, not calm, when a machine reports no health state or the counts are kept", () => {
+    const noState = deriveHomeStrip(calm(), machines(0, 1));
+    expect(noState.level).toBe("amber");
+    expect(noState.headline).not.toMatch(/nothing is degrading/i);
+    expect(noState.detail).toContain("1 machine reports no health state.");
+    const kept = deriveHomeStrip(calm(), machines(0, 0, true));
+    expect(kept.level).toBe("amber");
+    expect(kept.headline).not.toMatch(/nothing is degrading/i);
+    expect(kept.detail).toContain("Machine health is from its last good read.");
+  });
+
+  it("an operator decision still outranks a machine", () => {
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        omitted: 0,
+        items: [{ id: "q", fork: "Pick", shape: "open_question" }],
+      },
+    });
+    expect(deriveHomeStrip(view, machines(3, 0)).level).toBe("red");
+  });
+});

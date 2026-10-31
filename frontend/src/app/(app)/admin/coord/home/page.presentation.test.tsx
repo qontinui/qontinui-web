@@ -116,9 +116,16 @@ import { HOME_REFRESH_ACTION, HOME_REFRESH_ID } from "./_components/HomeLens";
  * `Response`: a body can be read only once.
  */
 const httpFetch = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
-}));
+// The page's reads beside the project state (machine roster, the queue
+// counts) are answered calm by `supplementReads` unless a test says otherwise.
+vi.mock("@/services/service-factory", async () => {
+  const s = await import("./__fixtures__/supplementReads");
+  return {
+    httpClient: s.homeTransport(
+      (...args: unknown[]) => httpFetch(...args) as Promise<Response>
+    ),
+  };
+});
 
 // The tenant list the strip names the tenant from — the fixture's tenant,
 // whose name carries a client's.
@@ -196,12 +203,20 @@ function leakedIdentifiers(): string[] {
 }
 
 /** The provenance chips a region's caption carries. */
+/**
+ * A region's project-state chips. A region whose figures also come from a
+ * read beside the project state (machine health, the queue counts —
+ * `_lib/homeSupplements.ts`) carries a chip for each of those too; those are
+ * pinned in `page.ux.presentation.test.tsx`.
+ */
 function regionChips(region: (typeof REGIONS)[number]): HTMLElement[] {
   const caption = document.querySelector<HTMLElement>(
     `[data-presentation-section="coordination-overview.${region}"]`
   );
   if (!caption) throw new Error(`region ${region} has no caption`);
-  return [...caption.querySelectorAll<HTMLElement>("[data-provenance]")];
+  return [...caption.querySelectorAll<HTMLElement>("[data-provenance]")].filter(
+    (chip) => /coord's project state/.test(chip.textContent ?? "")
+  );
 }
 
 /**
@@ -352,10 +367,14 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
       expect(notRead).toHaveAttribute("data-block-state", state);
       expect(notRead.textContent).not.toBe("");
       // Neither Questions nor Gates is presentation-ready, so naming them
-      // would send an evaluator to two pages that open nothing.
+      // would send an evaluator to two pages that open nothing: the counts
+      // read from their lists name what is counted instead.
       expect(notRead.textContent).not.toMatch(
         /Pending decisions|Questions|Gates/
       );
+      expect(
+        within(notRead).getByTestId("coord-home.needs-you.counts")
+      ).toHaveTextContent("Approvals waiting on the operator: 0");
       expect(within(notRead).queryByRole("link")).toBeNull();
       expect(notRead.querySelector("[data-lens-link]")).toBeNull();
       expectPresentationSafe(view, {
@@ -1105,7 +1124,7 @@ describe("/admin/coord/home?present=1 — the console's page gate renders it", (
 describe("/admin/coord/home for the operator — the console is unchanged", () => {
   beforeEach(resetEnvironment);
 
-  it("points at Questions and Gates when the needs block was not read", async () => {
+  it("counts what waits on the operator from the Questions and Gates lists when the needs block was not read", async () => {
     httpFetch.mockImplementation(async () =>
       jsonResponse(fullBody({ needs_me: { state: "not_implemented" } }))
     );
@@ -1114,11 +1133,13 @@ describe("/admin/coord/home for the operator — the console is unchanged", () =
         <CoordHomePage />
       </FixedPresentationMode>
     );
-    const pendingAt = await screen.findByTestId(
-      "coord-home.needs-you.pending-at"
+    // The counts the Gates and Questions pages read, each linking there.
+    const pendingAt = await screen.findByTestId("coord-home.needs-you.counts");
+    await waitFor(() =>
+      expect(pendingAt).toHaveTextContent("Approvals waiting on you: 0 · Gates")
     );
     expect(pendingAt).toHaveTextContent(
-      "Pending decisions are listed at Questions and Gates."
+      "Questions waiting on you: 0 · Questions"
     );
     expect(
       within(pendingAt).getByRole("link", { name: "Questions" })

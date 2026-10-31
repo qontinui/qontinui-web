@@ -32,9 +32,16 @@ import {
  * `Response`, because a body can be read only once.
  */
 const httpFetch = vi.fn();
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { fetch: (...args: unknown[]) => httpFetch(...args) },
-}));
+// The page's reads beside the project state (machine roster, the queue
+// counts) are answered calm by `supplementReads` unless a test says otherwise.
+vi.mock("@/services/service-factory", async () => {
+  const s = await import("./__fixtures__/supplementReads");
+  return {
+    httpClient: s.homeTransport(
+      (...args: unknown[]) => httpFetch(...args) as Promise<Response>
+    ),
+  };
+});
 
 /** An answer carrying `body` as JSON. */
 function jsonResponse(body: unknown, status = 200): Response {
@@ -67,6 +74,12 @@ vi.mock("next/link", () => ({
 }));
 
 import { openSourcesRead } from "./__fixtures__/homePageDriver";
+import {
+  fleetHealth,
+  gatesOverview,
+  pendingQuestions,
+  resetSupplements,
+} from "./__fixtures__/supplementReads";
 import CoordHomePage from "./page";
 
 const REGIONS = [
@@ -207,16 +220,21 @@ async function renderWith(body: unknown) {
 describe("/admin/coord/home", () => {
   beforeEach(() => {
     httpFetch.mockReset();
+    resetSupplements();
   });
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("reads the project-state proxy, and nothing else", async () => {
+  it("reads the project-state proxy once, and beside it only the machine roster and the two queue lists", async () => {
     await renderWith(doorBody());
     expect(httpFetch.mock.calls.map((c) => c[0])).toEqual([
       "/api/v1/operations/project-state",
     ]);
+    // `supplementReads` answered the rest: each read once on mount.
+    expect(fleetHealth).toHaveBeenCalledTimes(1);
+    expect(pendingQuestions).toHaveBeenCalledTimes(1);
+    expect(gatesOverview).toHaveBeenCalledTimes(1);
   });
 
   it("renders every region with its ui-bridge id and testid", async () => {

@@ -91,6 +91,17 @@ import {
   useSubjectText,
 } from "./HomeLens";
 import {
+  GATES_SOURCE,
+  MACHINES_SOURCE,
+  QUESTIONS_SOURCE,
+  machineHealthSentence,
+  machinesAllHealthy,
+  queueCountText,
+  supplementSource,
+  type MachineHealthView,
+  type QueueCount,
+} from "../_lib/homeSupplements";
+import {
   BLOCK_STATE_PHRASE,
   HOME_ATTENTION_BY_KIND,
   HOME_STATUS_PALETTE,
@@ -490,12 +501,119 @@ function NeedsYouRow({
   );
 }
 
+/** One queue count's line: the figure, why it is unknown, and its page. */
+function QueueCountLine({
+  label,
+  what,
+  q,
+  href,
+  page,
+  testId,
+}: {
+  label: string;
+  /** The list, for the unknown sentence: "the gates list". */
+  what: string;
+  q: QueueCount;
+  href: string;
+  page: string;
+  testId: string;
+}) {
+  const opens = useLinkOpens();
+  const text = queueCountText(q);
+  const why =
+    q.state === "read"
+      ? q.stale
+        ? " (at its last good read)"
+        : ""
+      : q.state === "could_not_read"
+        ? ` — ${what} could not be read`
+        : ` — ${what} has not been read yet`;
+  // `what` names a list, never a page: "the gates list", "the questions list".
+  return (
+    <li data-testid={testId} data-count-state={q.state}>
+      {label}: <span className="tabular-nums text-foreground">{text}</span>
+      {why}
+      {/* While presenting, a page that cannot be presented is a dead end,
+          so its link is left out (`useLinkOpens`). */}
+      {opens(href) && (
+        <>
+          {" · "}
+          <LensLink href={href} className="underline">
+            {page}
+          </LensLink>
+        </>
+      )}
+    </li>
+  );
+}
+
+/**
+ * What waits on the operator, counted from the Gates and Questions pages'
+ * reads until coord serves its `needs_me` block. Each count is the page's own
+ * source and links there; an unread source says UNKNOWN and why, never 0.
+ */
+function QueueCounts({
+  gates,
+  questions,
+}: {
+  gates: QueueCount;
+  questions: QueueCount;
+}) {
+  // While presenting, the Gates and Questions pages cannot be shown, so the
+  // lines name what is counted, not the pages that list it.
+  const { presenting } = usePresentationMode();
+  return (
+    <div className="space-y-1" data-testid="coord-home.needs-you.counts">
+      <p className="m-0">
+        {presenting
+          ? "Counted from coord's lists of open approvals and pending agent questions:"
+          : "Meanwhile, counted from the lists the Gates and Questions pages read:"}
+      </p>
+      <ul className="m-0 pl-4 list-disc space-y-0.5">
+        <QueueCountLine
+          label={
+            presenting
+              ? "Approvals waiting on the operator"
+              : "Approvals waiting on you"
+          }
+          what="the gates list"
+          q={gates}
+          href="/admin/coord/gates"
+          page="Gates"
+          testId="coord-home.needs-you.count.gates"
+        />
+        <QueueCountLine
+          label={
+            presenting
+              ? "Agent questions waiting on the operator"
+              : "Questions waiting on you"
+          }
+          what="the questions list"
+          q={questions}
+          href="/admin/coord/questions"
+          page="Questions"
+          testId="coord-home.needs-you.count.questions"
+        />
+      </ul>
+    </div>
+  );
+}
+
 export function NeedsYouSection({
   needs,
+  gates,
+  questions,
   stale = false,
   generatedAt = null,
 }: {
   needs: NeedsMeView;
+  /**
+   * Open operator approvals and pending operator questions, read from the
+   * Gates and Questions pages' own sources (`_lib/homeSupplements.ts`) —
+   * shown while coord's `needs_me` block is not read.
+   */
+  gates: QueueCount;
+  questions: QueueCount;
   /** The latest poll failed; this is the last good read (style guide R6). */
   stale?: boolean;
   generatedAt?: string | null;
@@ -524,6 +642,14 @@ export function NeedsYouSection({
       <RegionCaption
         region="needs-you"
         reading={{ generatedAt, kept: stale }}
+        extraSources={
+          read
+            ? []
+            : [
+                supplementSource(GATES_SOURCE, gates),
+                supplementSource(QUESTIONS_SOURCE, questions),
+              ]
+        }
       />
       <div className="flex items-baseline gap-2">
         <h2 className={HEADING}>Needs you</h2>
@@ -618,21 +744,7 @@ export function NeedsYouSection({
           state={needs.state}
           testId="coord-home.needs-you.not-read"
         >
-          {/* While presenting, two page names that open nothing are a dead
-              end, so the pointer shows only when both pages can open. */}
-          {opens("/admin/coord/questions") && opens("/admin/coord/gates") && (
-            <p className="m-0" data-testid="coord-home.needs-you.pending-at">
-              Pending decisions are listed at{" "}
-              <LensLink href="/admin/coord/questions" className="underline">
-                Questions
-              </LensLink>{" "}
-              and{" "}
-              <LensLink href="/admin/coord/gates" className="underline">
-                Gates
-              </LensLink>
-              .
-            </p>
-          )}
+          <QueueCounts gates={gates} questions={questions} />
         </NotRead>
       )}
     </section>
@@ -752,13 +864,54 @@ function DegradationRow({
   );
 }
 
+/**
+ * The machines line under the degradations: how many machines coord reports
+ * in a state other than healthy and how many report none, from the roster
+ * the `Dev Ops ▾` badge counts — so this section cannot read calm while the
+ * nav counts unhealthy machines. Counts only, never a machine's name; the
+ * machines themselves are on Dev Ops, linked where that page opens.
+ */
+function MachineHealthLine({ machines }: { machines: MachineHealthView }) {
+  const opens = useLinkOpens();
+  const read = machines.state === "read" && machines.counts !== null;
+  return (
+    <p
+      className="m-0 text-sm"
+      data-testid="coord-home.degrading.machines"
+      data-ui-bridge-id="coord-home.degrading.machines"
+      data-machines-state={machines.state}
+    >
+      <span className="text-muted-foreground">Machines: </span>
+      {read && machines.stale ? "At the last good read, " : ""}
+      {machineHealthSentence(machines)}
+      {read && opens("/admin/coord/devops") && (
+        <>
+          {" "}
+          <LensLink href="/admin/coord/devops" className="underline">
+            See them on Dev Ops
+          </LensLink>
+          .
+        </>
+      )}
+    </p>
+  );
+}
+
 export function DegradingSection({
   deg,
+  machines,
   sources = null,
   stale = false,
   generatedAt = null,
 }: {
   deg: DegradationsView;
+  /**
+   * Coord's machine roster, read beside the project state
+   * (`_lib/homeSupplements.ts`): coord's project state reads the same roster
+   * but serves no per-machine verdict, so this decides whether a machine is
+   * degrading.
+   */
+  machines: MachineHealthView;
   /**
    * What the view does not know (`does_not_know`): the gap sentence names the
    * degradation sources coord did not fully read from it.
@@ -793,6 +946,7 @@ export function DegradingSection({
       <RegionCaption
         region="degrading"
         reading={{ generatedAt, kept: stale }}
+        extraSources={[supplementSource(MACHINES_SOURCE, machines)]}
       />
       <div className="flex items-baseline gap-2">
         <h2 className={HEADING}>Degrading</h2>
@@ -844,14 +998,27 @@ export function DegradingSection({
           {rows.length === 0 ? (
             open === null ? null : deg.state === "read" &&
               deg.headline === "none" ? (
-              <p
-                className="m-0 text-sm"
-                data-testid="coord-home.degrading.empty"
-              >
-                {stale
-                  ? `Nothing was degrading ${lastGoodReadPhrase(generatedAt)}`
-                  : "Nothing is degrading"}
-              </p>
+              machinesAllHealthy(machines) ? (
+                <p
+                  className="m-0 text-sm"
+                  data-testid="coord-home.degrading.empty"
+                >
+                  {stale
+                    ? `Nothing was degrading ${lastGoodReadPhrase(generatedAt)}`
+                    : "Nothing is degrading"}
+                </p>
+              ) : (
+                <p
+                  className="m-0 text-sm text-muted-foreground"
+                  data-testid="coord-home.degrading.machines-not-calm"
+                >
+                  {machines.state === "read" &&
+                  machines.counts !== null &&
+                  machines.counts.notHealthy > 0
+                    ? "No open degradation was served, but not every machine is healthy — see Machines below."
+                    : "No open degradation was served, but machine health is not fully known, so this view cannot say nothing is degrading."}
+                </p>
+              )
             ) : (
               <p className="m-0 text-sm text-muted-foreground">
                 No open degradation was served, but coord cannot say none exist.
@@ -925,6 +1092,7 @@ export function DegradingSection({
           </CollapsiblePanel>
         </>
       )}
+      <MachineHealthLine machines={machines} />
       <div
         className="space-y-0.5 text-xs text-muted-foreground"
         data-testid="coord-home.degrading.planes"

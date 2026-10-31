@@ -84,6 +84,7 @@ import {
   type FleetHealthPayload,
 } from "@/lib/api/operations/coordFleet";
 import { DEFAULT_WINDOW_SECS } from "@/components/operations/useFleetResourceSamples";
+import { isNotHealthyDevice } from "@/components/admin/coord/machineHealth";
 
 const log = createLogger("useFleetAlarmBadge");
 
@@ -297,7 +298,8 @@ export function useFleetAlarmBadge(): FleetAlarm {
     );
     return {
       ...admission,
-      unhealthy: devices.filter((d) => d.state && d.state !== "healthy").length,
+      // The one predicate home's Degrading section counts with too.
+      unhealthy: devices.filter(isNotHealthyDevice).length,
     };
   }, [health, samples, fetchedAtMs, nowMs]);
 
