@@ -73,7 +73,7 @@ export function homeTransport(rest: (...args: unknown[]) => Promise<Response>) {
   return {
     fetch: async (...args: unknown[]) => {
       const url = String(args[0]);
-      const path = url.split("?")[0];
+      const path = url.split("?")[0] ?? url;
       if (path.endsWith(FLEET_HEALTH_ROUTE)) return json(await fleetHealth());
       if (path.endsWith(QUESTIONS_ROUTE)) {
         return json(await pendingQuestions());
@@ -81,7 +81,9 @@ export function homeTransport(rest: (...args: unknown[]) => Promise<Response>) {
       return rest(...args);
     },
     get: async (url: string) => {
-      if (url.split("?")[0].endsWith(GATES_ROUTE)) return gatesOverview();
+      if ((url.split("?")[0] ?? url).endsWith(GATES_ROUTE)) {
+        return gatesOverview();
+      }
       throw new Error(`GET ${url} failed: 404 - not mocked`);
     },
   };
