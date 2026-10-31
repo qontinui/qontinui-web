@@ -342,6 +342,7 @@
   "tests/test_overview_05_page_sources_migration.py": 47.7,
   "tests/test_overview_agent_publishing.py": 36.1,
   "tests/test_overview_authoring.py": 9.8,
+  "tests/test_overview_costs.py": 14.5,
   "tests/test_overview_documents.py": 11.0,
   "tests/test_overview_estimates_api.py": 24.3,
   "tests/test_overview_timeline.py": 15.9,

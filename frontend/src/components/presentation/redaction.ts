@@ -85,6 +85,19 @@ export const WITHHELD = "withheld";
 const DESCRIPTOR_SEPARATOR = " · ";
 
 /**
+ * A project's (coord tenant's) name, which no repository can vouch for — so
+ * while presenting it is always withheld, and its line is its kind alone: a
+ * project has no area, status or age of its own. One descriptor for every
+ * surface that names the active project, the home page's tenant strip and
+ * the app shell's project selector alike, so an audience reads one word for
+ * one referent (D3.3).
+ */
+export const PROJECT_NAME_DESCRIPTOR: RedactionDescriptor = {
+  kind: "Project",
+  notApplicable: ["area", "status", "at"],
+};
+
+/**
  * The owner segment of a repository reference, lower-cased; `null` when there
  * is none to read. Accepts `owner/name`, `owner/name#123`, an
  * `https://github.com/owner/name` URL and `git@github.com:owner/name.git`.
