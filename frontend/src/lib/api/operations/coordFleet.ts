@@ -122,6 +122,15 @@ export interface FleetHealthDevice {
    */
   ci_runner_status?: string | null;
   /**
+   * Coord's tri-state liveness evidence (`fleet_health.rs`
+   * `DispatchLiveness`): `within_dispatch_window` | `outside_dispatch_window`
+   * | `unknown`. `unknown` marks a placeholder row coord has never had a
+   * liveness signal from — not a machine coord grades, so coord's project
+   * state raises no degradation for it (`machineHealth.ts`). Absent on a
+   * coord predating the field.
+   */
+  dispatch_liveness?: string;
+  /**
    * Is this device inside coord's dispatch/liveness window right now —
    * probe-reachable, or heartbeated within `COORD_DEVICE_HEARTBEAT_TTL_SECS`
    * (`fleet_health.rs` `DeviceHealthSnapshot::within_dispatch_window`). Coord

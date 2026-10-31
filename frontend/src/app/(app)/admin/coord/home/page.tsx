@@ -79,11 +79,7 @@ export default function CoordHomePage() {
   const stripMachines = useMemo(
     () =>
       machines.state === "read" && machines.counts !== null
-        ? {
-            stale: machines.stale,
-            notHealthy: machines.counts.notHealthy,
-            noState: machines.counts.noState,
-          }
+        ? { stale: machines.stale, counts: machines.counts }
         : null,
     [machines.state, machines.counts, machines.stale]
   );

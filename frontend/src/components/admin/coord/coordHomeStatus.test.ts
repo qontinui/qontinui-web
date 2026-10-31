@@ -14,6 +14,7 @@
  * - the surface's palette agrees with its attention table.
  */
 
+import { summarizeMachineHealth } from "@/components/admin/coord/machineHealth";
 import { describe, expect, it } from "vitest";
 import { paletteDisagreements } from "@/components/console/attention";
 import {
@@ -96,7 +97,10 @@ function calmBody(): Record<string, unknown> {
  * unread or unhealthy roster does is pinned in `coordHomeStatus.ux.test.ts`.
  */
 const CALM_MACHINES = {
-  machines: { stale: false, notHealthy: 0, noState: 0 },
+  machines: {
+    stale: false,
+    counts: summarizeMachineHealth([{ device_id: "d-0", state: "healthy" }]),
+  },
 } as const;
 
 const BLOCK_KEY: Record<HomeBlock, string> = {

@@ -340,7 +340,7 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
     });
     const quiet = { [QUESTIONS]: () => json({ questions: [] }) };
 
-    it("does not read calm while machines are not healthy or report no state", async () => {
+    it("does not read calm while a machine is degrading or has no verdict", async () => {
       answer({
         [PROJECT_STATE]: () => json(oneUnitBody()),
         [FLEET]: () =>
@@ -351,7 +351,7 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       const deg = screen.getByTestId("coord-home.degrading");
       const line = await within(deg).findByText(/2 of 5 machines/);
       expect(line.closest("p")).toHaveTextContent(
-        "Machines: 2 of 5 machines are in a state other than healthy; 1 reports no health state, so its health is unknown. See them on Dev Ops."
+        "Machines: 2 of 5 machines are in a degrading state — not in coord's list above; 1 has no health verdict, so its health is unknown. See them on Dev Ops."
       );
       expect(
         within(deg).getByRole("link", { name: "See them on Dev Ops" })
@@ -359,15 +359,113 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       expect(deg).not.toHaveTextContent("Nothing is degrading");
       expect(
         within(deg).getByTestId("coord-home.degrading.machines-not-calm")
-      ).toHaveTextContent("not every machine is healthy");
+      ).toHaveTextContent("a machine is in a degrading state");
       const strip = screen.getByTestId("coord-home.strip.health");
       expect(strip).toHaveAttribute("data-health-level", "amber");
       expect(strip).toHaveTextContent("Something is degrading");
       expect(strip).toHaveTextContent(
-        "2 machines are in a state other than healthy. 1 machine reports no health state."
+        "2 machines are in a degrading state. 1 machine has no health verdict — unknown."
       );
       expect(screen.getByTestId("coord-home.strip.machines")).toHaveTextContent(
         /^machines not healthy 2$/
+      );
+    });
+
+    it("never calls an abandoned or verdict-less machine degrading, and reconciles with the nav by state", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () => json(roster("healthy", "abandoned", "unknown")),
+        ...quiet,
+      });
+      await renderPage();
+      const reconcile = await screen.findByTestId(
+        "coord-home.degrading.machines-reconcile"
+      );
+      expect(reconcile).toHaveTextContent(
+        "2 machines not reporting healthy are not degradations: 1 abandoned, 1 with no verdict — see Dev Ops."
+      );
+      expect(
+        within(reconcile).getByRole("link", { name: "Dev Ops" })
+      ).toHaveAttribute("href", "/admin/coord/devops");
+      expect(
+        screen.getByTestId("coord-home.degrading.machines")
+      ).toHaveTextContent(
+        "Machines: 1 of 3 machines has no health verdict, so its health is unknown."
+      );
+      const deg = screen.getByTestId("coord-home.degrading");
+      expect(deg).not.toHaveTextContent("Nothing is degrading");
+      expect(
+        within(deg).getByTestId("coord-home.degrading.machines-not-calm")
+      ).toHaveTextContent("machine health is not fully known");
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveAttribute("data-health-level", "amber");
+      expect(strip).not.toHaveTextContent("Something is degrading");
+      expect(strip).not.toHaveTextContent(/nothing is degrading/i);
+      // The nav's number, so the two read the same.
+      expect(screen.getByTestId("coord-home.strip.machines")).toHaveTextContent(
+        /^machines not healthy 2$/
+      );
+    });
+
+    it("says nothing is degrading beside an abandoned machine, and still says why the nav counts it", async () => {
+      answer({
+        [PROJECT_STATE]: () => json(oneUnitBody()),
+        [FLEET]: () => json(roster("healthy", "abandoned")),
+        ...quiet,
+      });
+      await renderPage();
+      await screen.findByTestId("coord-home.degrading.machines-reconcile");
+      expect(
+        screen.getByTestId("coord-home.degrading.empty")
+      ).toHaveTextContent("Nothing is degrading");
+      expect(screen.getByTestId("coord-home.strip.health")).toHaveTextContent(
+        "1 machine not reporting healthy is not a degradation: 1 abandoned — see Dev Ops."
+      );
+    });
+
+    it("does not count a machine coord already lists as a degradation twice", async () => {
+      answer({
+        [PROJECT_STATE]: () =>
+          json(
+            oneUnitBody({
+              degradations: {
+                state: "read",
+                headline: "degrading",
+                open: [
+                  {
+                    id: "fleet_health:state:d-1",
+                    plane: "runner",
+                    source: "fleet_health",
+                    subject: {
+                      kind: "device",
+                      name: "example-host-1",
+                      id: "d-1",
+                    },
+                    headline: "A machine has stopped heartbeating to coord",
+                    declared: false,
+                  },
+                ],
+                declared: [],
+                recently_cleared: [],
+                planes: [],
+              },
+            })
+          ),
+        [FLEET]: () => json(roster("healthy", "partitioned")),
+        ...quiet,
+      });
+      await renderPage();
+      const machines = screen.getByTestId("coord-home.degrading.machines");
+      await waitFor(() =>
+        expect(machines).toHaveTextContent(
+          "1 of 2 machines is in a degrading state — listed above."
+        )
+      );
+      const strip = screen.getByTestId("coord-home.strip.health");
+      expect(strip).toHaveTextContent("Something is degrading");
+      expect(strip).not.toHaveTextContent("in a degrading state");
+      expect(screen.getByTestId("coord-home.strip.degraded")).toHaveTextContent(
+        /^degraded 1$/
       );
     });
 
@@ -454,7 +552,7 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       screen.getByTestId("coord-home.refresh").click();
       await waitFor(() =>
         expect(machines).toHaveTextContent(
-          "At the last good read, 1 of 2 machines is in a state other than healthy."
+          "At the last good read, 1 of 2 machines is in a degrading state — not in coord's list above."
         )
       );
       expect(screen.getByTestId("coord-home.strip.health")).toHaveTextContent(

@@ -89,6 +89,11 @@ import {
   describeCoordPollError,
 } from "@/components/operations/coordPollError";
 import { readErrorBody } from "@/lib/errors/backend-error-message";
+import {
+  degradingCoverage,
+  notDegradationsSentence,
+  type MachineHealthCounts,
+} from "@/components/admin/coord/machineHealth";
 
 /** Poll cadence — the profile's "the right altitude, not the fastest feed". */
 export const PROJECT_STATE_POLL_MS = 60_000;
@@ -1722,10 +1727,8 @@ export interface HomeStripReadState {
 export interface HomeStripMachines {
   /** A later read failed; these are the last good counts. */
   stale: boolean;
-  /** Machines coord reports in a state other than healthy. */
-  notHealthy: number;
-  /** Machines with no health state — unknown. */
-  noState: number;
+  /** The roster's counts (`machineHealth.ts` says what each one is). */
+  counts: MachineHealthCounts;
 }
 
 /** "1 machine is" / "2 machines are". */
@@ -1841,15 +1844,24 @@ export function deriveHomeStrip(
     view.degradations.state === "read" || view.degradations.state === "stale";
   const degradedRead = view.degradations.state === "read";
   const stalled = view.onTrack.totals?.stalled ?? null;
-  // Coord's project state serves no per-machine verdict: the roster the page
-  // read beside it decides whether a machine is degrading. Unread is UNKNOWN.
+  // Coord's project state already lists a degrading machine as a row of its
+  // own (`machineHealth.ts`); the roster read beside it adds only the
+  // degrading machines that list does not show — never one twice — and says
+  // which machines have no verdict. An abandoned machine is a decision, not a
+  // degradation. Unread is UNKNOWN.
   const machines = read.machines ?? null;
-  const machinesDegrading = machines !== null && machines.notHealthy > 0;
+  const mc = machines?.counts ?? null;
+  const unlistedDegrading =
+    mc === null
+      ? 0
+      : degradingCoverage(mc, degRowsServed ? (open ?? null) : null).unlisted;
+  const machinesDegrading = unlistedDegrading > 0;
   const machinesCalm =
     machines !== null &&
+    mc !== null &&
     !machines.stale &&
-    machines.notHealthy === 0 &&
-    machines.noState === 0;
+    unlistedDegrading === 0 &&
+    mc.noVerdict === 0;
   const somethingDegrading =
     (open !== null && open.length > 0) || machinesDegrading;
 
@@ -1928,19 +1940,21 @@ export function deriveHomeStrip(
       "Coord served no list of open degradations — cannot say whether any exist."
     );
   }
-  if (machines === null) {
+  if (machines === null || mc === null) {
     detailParts.push("Machine health was not read.");
   } else {
-    if (machines.notHealthy > 0) {
+    if (unlistedDegrading > 0) {
       detailParts.push(
-        `${machinesAre(machines.notHealthy)} in a state other than healthy.`
+        `${machinesAre(unlistedDegrading)} in a degrading state.`
       );
     }
-    if (machines.noState > 0) {
+    if (mc.noVerdict > 0) {
       detailParts.push(
-        `${machines.noState} ${machines.noState === 1 ? "machine reports" : "machines report"} no health state.`
+        `${mc.noVerdict} ${mc.noVerdict === 1 ? "machine has" : "machines have"} no health verdict — unknown.`
       );
     }
+    const reconcile = notDegradationsSentence(mc, { seeDevOps: true });
+    if (reconcile) detailParts.push(reconcile);
     if (machines.stale) {
       detailParts.push("Machine health is from its last good read.");
     }
@@ -1997,7 +2011,9 @@ export function deriveHomeStrip(
 function machinesBadge(machines: HomeStripMachines | null): HomeStripBadge {
   return {
     key: "machines",
-    label: `machines not healthy ${countText(machines === null ? null : machines.notHealthy)}`,
+    // The nav's count, so the two read the same number; the detail line says
+    // which of them are not degradations.
+    label: `machines not healthy ${countText(machines === null ? null : machines.counts.notHealthy)}`,
     tone: machines === null ? "muted" : "default",
     testId: "coord-home.strip.machines",
   };

@@ -159,7 +159,7 @@ describe("/admin/coord/home?present=1 — the 2026-10-31 UX pass", () => {
       const line = screen.getByTestId("coord-home.degrading.machines");
       await waitFor(() =>
         expect(line).toHaveTextContent(
-          "1 of 3 machines is in a state other than healthy; 1 reports no health state"
+          "1 of 3 machines is in a degrading state — not in coord's list above; 1 has no health verdict"
         )
       );
       // Dev Ops is presentation-ready, so the link opens there.
