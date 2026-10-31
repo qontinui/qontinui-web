@@ -17,7 +17,7 @@
  * generated api-client snapshot regen).
  */
 
-import type { HttpOptions } from "@/services/http-client";
+import { readAnswerJson, type HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
 import {
@@ -161,7 +161,7 @@ async function handleResponse<T>(
       served !== null
     );
   }
-  return response.json() as Promise<T>;
+  return readAnswerJson<T>(response);
 }
 
 /** The current user's effective agent list.
