@@ -301,6 +301,32 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     );
   });
 
+  it("counts only the devices that took a placement, and labels the count so", async () => {
+    const good = statsFx();
+    routes.stats = () => ({
+      body: statsFx(
+        {},
+        {
+          per_device: [
+            ...good.per_device,
+            {
+              ...good.per_device[1]!,
+              device_id: "host-c",
+              placed: 0,
+              started: 0,
+            },
+          ],
+        }
+      ),
+    });
+    await renderPage();
+    expect(countOf("placed")).toBe("38");
+    expect(countOf("devices")).toBe("2");
+    expect(screen.getByTestId("coord-spawns-count-devices").textContent).toBe(
+      "2devices with a placement"
+    );
+  });
+
   it("renders an empty window as a measured empty, with zero counts", async () => {
     routes.stats = () => ({
       body: statsFx(
@@ -442,6 +468,40 @@ describe("/admin/coord/spawns — the failure arms", () => {
     for (const cls of UNKNOWN_AMBER.split(" ")) {
       expect(stale.classList.contains(cls)).toBe(true);
     }
+  });
+
+  it("never says dashes are at the last good read when the stats read failed with nothing retained", async () => {
+    routes.stats = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await renderPage();
+    expect(countOf("placed")).toBe("unknown");
+    expect(countOf("devices")).toBe("unknown");
+    expect(screen.queryByTestId("coord-spawns-placement-stale")).toBeNull();
+  });
+
+  it("never says malformed placement counts are at the last good read when a refresh then fails", async () => {
+    const good = statsFx();
+    routes.stats = () => ({
+      body: statsFx(
+        {},
+        {
+          per_device: [
+            { ...good.per_device[0]!, placed: null as never },
+            good.per_device[1]!,
+          ],
+        }
+      ),
+    });
+    await renderPage();
+    routes.stats = () => ({
+      status: 502,
+      body: { detail: "coord unreachable" },
+    });
+    await refresh();
+    expect(countOf("placed")).toBe("unknown");
+    expect(screen.queryByTestId("coord-spawns-placement-stale")).toBeNull();
   });
 
   it("gives the window's counts a dash, never 0, when only the window's list fails", async () => {

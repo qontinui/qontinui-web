@@ -71,9 +71,12 @@ function Count({
 }
 
 /**
- * How many were placed, and on how many devices; `null` while unread, and
- * `null` when any device's `placed` is not a number — a total that skipped it
- * would undercount, and one that counted it as 0 would say nothing went there.
+ * How many were placed, and how many devices took at least one; `null` while
+ * unread, and `null` when any device's `placed` is not a number — a total
+ * that skipped it would undercount, and one that counted it as 0 would say
+ * nothing went there. A device coord lists with `placed: 0` (considered, but
+ * given nothing in the window) is not one the requests went to, so it is not
+ * counted, and the label says "with a placement" so the count reads that way.
  */
 export function placementCounts(
   stats: SpawnStatsWire | null
@@ -114,9 +117,15 @@ export function SpawnActivitySummary({
       ),
     [list, pending]
   );
-  const placement = placementCounts(ledger.stats.data);
-  // Counts from a retained read while the latest stats read failed.
-  const placementStale = placement !== null && ledger.stats.issue !== null;
+  // The stale flag lives ON the counts, so it can only exist where there are
+  // counts to qualify: dashes never carry "these counts are at the last good
+  // read". It is set when the counts come from a retained read while the
+  // latest stats read failed.
+  const counted = placementCounts(ledger.stats.data);
+  const placement =
+    counted === null
+      ? null
+      : { ...counted, stale: ledger.stats.issue !== null };
   const label = (id: string) =>
     SPAWN_FILTERS.find((f) => f.id === id)?.label.toLowerCase() ?? id;
 
@@ -190,7 +199,11 @@ export function SpawnActivitySummary({
           />
           <Count
             value={placement?.devices ?? null}
-            label={placement?.devices === 1 ? "device" : "devices"}
+            label={
+              placement?.devices === 1
+                ? "device with a placement"
+                : "devices with a placement"
+            }
             testId="coord-spawns-count-devices"
           />
           {/* The investigation view is the operator's, never a lens page. */}
@@ -205,7 +218,7 @@ export function SpawnActivitySummary({
             </Link>
           </OperatorOnly>
         </p>
-        {placementStale && (
+        {placement?.stale && (
           <UnknownNote
             role="status"
             className="text-xs"

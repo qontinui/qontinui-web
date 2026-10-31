@@ -488,6 +488,10 @@ describe("/admin/coord/spawns/requests — reached from the agentic-activity pag
       expect(ledgerWindows()[0]).toBeNull();
       expect(ledgerWindows()).not.toContain("7d");
       expect(ledgerWindows()).toContain("24h");
+      // The select and the labels name the linked window, not the default.
+      const trigger = screen.getByTestId("coord-spawns-window");
+      expect(trigger.textContent).toContain("last 24 hours");
+      expect(trigger.textContent).not.toContain("last 7 days");
       const user = userEvent.setup();
       await user.click(screen.getByTestId("coord-spawns-window"));
       await user.click(
@@ -496,6 +500,25 @@ describe("/admin/coord/spawns/requests — reached from the agentic-activity pag
       await settle();
       await waitFor(() =>
         expect(calls).toContain("/api/v1/operations/spawns/stats?window=30d")
+      );
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("falls back to the default window, read once, when the link carried one it does not offer", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/admin/coord/spawns/requests?window=1y"
+    );
+    try {
+      await renderPage();
+      const statsReads = calls.filter((c) => c.includes("/spawns/stats"));
+      expect(statsReads).toEqual(["/api/v1/operations/spawns/stats?window=7d"]);
+      expect(ledgerWindows()).toContain("7d");
+      expect(screen.getByTestId("coord-spawns-window").textContent).toContain(
+        "last 7 days"
       );
     } finally {
       window.history.replaceState(null, "", "/");
