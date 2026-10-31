@@ -59,7 +59,11 @@ async def api_user(async_db_session: AsyncSession):
 
 
 def _app(db: AsyncSession, user, tenant: UUID, roles: tuple[str, ...]) -> FastAPI:
-    from app.api.deps import current_active_user, get_async_db
+    from app.api.deps import (
+        current_active_user,
+        current_active_user_optional,
+        get_async_db,
+    )
     from app.api.v1.endpoints.overview import router as overview_router
     from app.middleware.security_headers import SecurityHeadersMiddleware
     from app.overview.permissions import OverviewCaller, get_overview_caller
@@ -68,7 +72,11 @@ def _app(db: AsyncSession, user, tenant: UUID, roles: tuple[str, ...]) -> FastAP
     app = FastAPI()
     # As in production, so a route's own headers are tested against it.
     app.add_middleware(SecurityHeadersMiddleware)
-    app.dependency_overrides[current_active_user] = lambda: user
+    # The overview principal resolves a Cognito user through the OPTIONAL
+    # dependency (a device JWT is its other arm), so both are stood in for.
+    app.dependency_overrides[current_active_user] = app.dependency_overrides[
+        current_active_user_optional
+    ] = lambda: user
 
     async def _db():
         yield db
@@ -534,6 +542,70 @@ class TestFiles:
         assert clean_filename("report\u202efdp.exe") == "reportfdp.exe"
         long = clean_filename("x" * 400 + ".docx")
         assert len(long) == MAX_FILENAME and long.endswith(".docx")
+
+    async def test_a_display_name_keeps_the_format_characters_that_spell_it(
+        self,
+    ) -> None:
+        """The joiners and the soft hyphen are spelling, as on a page's
+        source path, so a Persian plural and an emoji ZWJ sequence keep them.
+        A bidi override beside them is still stripped."""
+        from app.overview.files import clean_filename
+
+        persian = "\u06a9\u062a\u0627\u0628\u200c\u0647\u0627.md"  # books, with a ZWNJ
+        assert clean_filename(persian) == persian
+        emoji = "\U0001f469\u200d\U0001f4bb.pdf"  # one glyph, joined by a ZWJ
+        assert clean_filename(emoji) == emoji
+        assert clean_filename("co\u00adop.docx") == "co\u00adop.docx"
+        assert clean_filename("report\u202efdp\u200d.exe") == "reportfdp.exe"
+
+    async def test_a_display_name_has_no_invisible_stem_or_extension(
+        self,
+    ) -> None:
+        """The extension keeps no format character at all, so the shown and
+        the real extension stay the same, and the joiners and soft hyphen spell
+        nothing at a stem's ends. A stem of only those is therefore no name: it
+        loses its dot like any hidden-file name, so the upload has no extension
+        and is refused."""
+        from app.overview.files import MAX_FILENAME, clean_filename, extension_of
+
+        assert clean_filename("report.pdf\u200d") == "report.pdf"
+        assert clean_filename("report.pd\u00adf") == "report.pdf"
+        assert clean_filename("\u200creport\u200d.pdf") == "report.pdf"
+        assert clean_filename("\u200d.pdf") == "pdf"
+        assert extension_of(clean_filename("\u00ad.md")) == ""
+        # A trailing dot does not hide the extension, and spaces do not shield
+        # an invisible stem or a leading joiner.
+        assert clean_filename("report.pd\u00adf.") == "report.pdf"
+        assert extension_of(clean_filename(" \u200d \u200d .pdf")) == ""
+        assert clean_filename(" \u200dreport.pdf") == "report.pdf"
+        # Nor does a format character shielding that trailing dot.
+        assert clean_filename("report.pd\u00adf.\u200d") == "report.pdf"
+        # A space before the extension's dot is a stem edge too.
+        assert clean_filename("My Report .pdf") == "My Report.pdf"
+        # The name is trimmed before it is split, so a leading dot is not an
+        # extension's dot, and a stem keeps its soft hyphen.
+        assert clean_filename(".b\u00ada") == "b\u00ada"
+        # A visible number sign spells a stem, never an extension.
+        assert clean_filename("report.pdf\u0600") == "report.pdf"
+        # Shortening a long name can end its stem in a blank character, which
+        # goes too.
+        for blank in (" ", "\u200d", "\u00ad"):
+            long = clean_filename("a" * 195 + blank + "b" * 10 + ".pdf")
+            assert long == "a" * 195 + ".pdf"
+            assert clean_filename(long) == long
+        # An "extension" too long to sit beside the stem is no extension: the
+        # name is cut to the limit like a name without one.
+        long = clean_filename("a." + "b" * 300)
+        assert len(long) <= MAX_FILENAME and clean_filename(long) == long
+
+    async def test_cleaning_a_crafted_display_name_is_one_pass(self) -> None:
+        """Each layer of these shapes used to need its own pass over the whole
+        name. Cleaning them is one scan from each end, so 100,000 layers clean
+        in milliseconds. A pass per layer would outlast any CI job."""
+        from app.overview.files import clean_filename
+
+        assert clean_filename("a" + ".\u0600" * 100_000) == "a"
+        assert clean_filename(". \u200d" * 100_000 + "x.pdf") == "x.pdf"
 
     async def test_attaching_to_a_document_and_listing_by_it(
         self, admin: httpx.AsyncClient
