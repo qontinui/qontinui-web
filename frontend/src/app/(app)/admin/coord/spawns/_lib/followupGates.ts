@@ -228,8 +228,11 @@ function followupEffective(
  * What the scopes allow, under the rollout mode in force. Shadow or off: coord
  * reads the scopes but acts on none (`not_governing`). Otherwise: `off` when no
  * repository's merge would start a follow-up, `on` when at least one would —
- * and, with the mode itself unknown, `on` only when no repository's scope
- * could stop one, since then it does not matter whether coord acts on them.
+ * and, with the mode itself unknown, `on` only when no repository's scope is
+ * `none`: then every repository's merges start one (all of them, or those
+ * that change code) whether coord enforces the scopes or not, so the mode no
+ * longer decides whether the path starts sessions. One `none` makes it
+ * `unknown`, since an enforcing coord would start no follow-up there.
  */
 export function followupScopeVerdict(
   read: FollowupRead,

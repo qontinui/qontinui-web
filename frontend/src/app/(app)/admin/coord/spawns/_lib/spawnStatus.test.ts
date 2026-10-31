@@ -239,6 +239,23 @@ describe("reading a body", () => {
     });
     expect(readSpawnStats(statsFx(), "7d").kind).toBe("ok");
   });
+
+  it("refuses a stats body with no per-device list, which would read as nothing placed", () => {
+    const { per_device: _dropped, ...noPerDevice } = statsFx();
+    for (const body of [
+      noPerDevice,
+      statsFx({}, { per_device: null as never }),
+      statsFx({}, { per_device: {} as never }),
+    ]) {
+      expect(readSpawnStats(body, "7d")).toEqual({
+        kind: "issue",
+        issue: { kind: "malformed" },
+      });
+    }
+    expect(readSpawnStats(statsFx({}, { per_device: [] }), "7d").kind).toBe(
+      "ok"
+    );
+  });
 });
 
 describe("classifySpawnError", () => {

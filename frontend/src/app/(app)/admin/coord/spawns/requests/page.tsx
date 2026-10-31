@@ -49,20 +49,25 @@ import {
 /** The agentic-activity page this view investigates for. */
 const SPAWNS_HREF = "/admin/coord/spawns";
 
+/** The window shown when the link carried none this view offers. */
+const DEFAULT_WINDOW: SpawnStatsWindow = "7d";
+
 /** Stable identity for "no devices", so memos keyed on it hold. */
 const NO_DEVICES: never[] = [];
 
 export default function CoordSpawnRequestsPage() {
   const { presenting } = usePresentationMode();
-  const [windowId, setWindowId] = useState<SpawnStatsWindow>("7d");
+  // `null` until `?window=` is read: the ledger reads nothing before then, so
+  // its first read is the linked window's rather than a default one's.
+  const [chosenWindow, setWindowId] = useState<SpawnStatsWindow | null>(null);
   // `?window=` is read once on mount from `window.location`, as
   // `/admin/coord/findings?id=` does: a one-shot read is not worth putting a
   // client page behind the Suspense boundary `useSearchParams` needs.
   useEffect(() => {
-    const linked = windowFromQuery(window.location.search);
-    if (linked !== null) setWindowId(linked);
+    setWindowId(windowFromQuery(window.location.search) ?? DEFAULT_WINDOW);
   }, []);
-  const ledger = useSpawnLedger(windowId);
+  const windowId = chosenWindow ?? DEFAULT_WINDOW;
+  const ledger = useSpawnLedger(chosenWindow);
   const fleet = useFleetHealth();
   const dispatchRoles = useFleetDispatchRoles();
   const roster = useMemo(() => fleet.data?.devices ?? NO_DEVICES, [fleet.data]);
@@ -120,7 +125,11 @@ export default function CoordSpawnRequestsPage() {
         </Select>
       </div>
 
-      <LedgerReadBanners ledger={ledger} presenting={presenting} />
+      <LedgerReadBanners
+        ledger={ledger}
+        presenting={presenting}
+        retainedSubject="the rows below"
+      />
 
       <SpawnRequestList
         // A new window is a new list: its filter and open row start over.

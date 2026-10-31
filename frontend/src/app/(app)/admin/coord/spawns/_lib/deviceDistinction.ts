@@ -12,9 +12,12 @@
  * line whose name another line shares carries a distinguisher:
  *
  * - **operator** — the device id's first eight characters;
- * - **presenting** — no id at all (D3.3): "device 1", "device 2", ranked by
- *   the order the session's registry first saw each device id, so the numbers
- *   hold while the page re-renders and every other panel's letter is untouched.
+ * - **presenting** — no id at all (D3.3): "device 1", "device 2", ranked
+ *   within the group by the order the session's registry first saw each
+ *   device id. The numbers are ranks, not ids: they hold across re-renders
+ *   only while the set of devices sharing that name holds — with three, if
+ *   device 1 leaves, device 2 becomes "device 1". Every other panel's letter
+ *   is untouched.
  *
  * A name no other line shares gets nothing: the distinguisher is the exception,
  * not chrome on every line.

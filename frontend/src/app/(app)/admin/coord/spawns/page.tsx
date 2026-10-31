@@ -43,9 +43,11 @@
  *   `{available: false}` while its tables are absent (or does not serve the
  *   route, or has it switched off), and the page says exactly that ONCE, in
  *   the strip's place (`LedgerUnservedNotice`), naming every section that
- *   rests on the ledger — the strip, each path's Last spawned, in flight per
- *   machine, the counts, the placement and the chart — none of which renders
- *   as a column or a section of UNKNOWNs while it holds.
+ *   rests on the ledger — the strip, each path's Last spawned, the counts,
+ *   the placement and the chart — none of which renders as a column or a
+ *   section of UNKNOWNs while it holds. The notice also says that in flight
+ *   per machine is not shown, for its own reason, which does not rest on the
+ *   ledger: the one `IN_FLIGHT_UNKNOWN` (`machineStatus.ts`) states.
  * - **0 for a number coord could not state.** A share over no ended request, a
  *   percentile over no started one, a device with no wait sample: `unknown`.
  * - **"Finished" for a session whose outcome nobody reported.** The row status
@@ -382,7 +384,11 @@ export default function CoordSpawnsPage() {
       </div>
 
       {unserved === null && (
-        <LedgerReadBanners ledger={ledger} presenting={presenting} />
+        <LedgerReadBanners
+          ledger={ledger}
+          presenting={presenting}
+          retainedSubject="the counts below"
+        />
       )}
 
       <SpawnPathMatrixSection
