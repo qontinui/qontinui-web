@@ -272,9 +272,11 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
         ).toHaveTextContent(
           "Not known — coord gave no reading of the decisions waiting on you."
         );
+        // The queues beside it are read (calm by default here), so the
+        // strip's figure is theirs — marked so, and never "nothing needs you".
         expect(
           screen.getByTestId("coord-home.strip.needs-you")
-        ).toHaveTextContent(/^needs you –$/);
+        ).toHaveTextContent(/^needs you 0 \(from queues\)$/);
         expect(strip()).toHaveAttribute("data-health-level", "amber");
         expect(strip()).toHaveTextContent(
           "Cannot tell — part of this view is not read"
@@ -308,9 +310,10 @@ describe("/admin/coord/home renders every read failure as a labelled UNKNOWN", (
       ).toHaveTextContent(
         "Not known — coord does not serve the decisions waiting on you on this view yet."
       );
+      // The queue counts beside it are read: the figure is theirs, marked.
       expect(
         screen.getByTestId("coord-home.strip.needs-you")
-      ).toHaveTextContent(/^needs you –$/);
+      ).toHaveTextContent(/^needs you 0 \(from queues\)$/);
       expect(strip()).toHaveAttribute("data-health-level", "amber");
       expect(strip()).toHaveTextContent(
         "Cannot tell — part of this view is not read"

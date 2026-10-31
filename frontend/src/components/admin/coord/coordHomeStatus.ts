@@ -1731,6 +1731,24 @@ export interface HomeStripReadState {
    * floors at amber: correctness is not known.
    */
   correctnessLeftOut?: boolean;
+  /**
+   * The Gates and Questions queues' counts of what waits on the operator,
+   * summed — read beside the project state while coord serves no readable
+   * `needs_me` block (`_lib/homeSupplements.ts`). Used only while that block
+   * is unread, and marked as counts from the queues wherever it shows. Null
+   * or absent unless BOTH queues were read.
+   */
+  queues?: HomeStripQueues | null;
+}
+
+/** The two queue counts as the strip uses them. */
+export interface HomeStripQueues {
+  /** Open operator gates plus pending operator questions. */
+  count: number;
+  /** Both counts are whole queues; false: at least `count`. */
+  exact: boolean;
+  /** Either count is a last good reading after a failed read. */
+  stale: boolean;
 }
 
 /** The machine roster's counts, for the strip. */
@@ -1852,8 +1870,15 @@ export function deriveHomeStrip(
   // The displayable count: null when absent OR contradicted by the list.
   const needsTotal = needsDisplayCount(view.needsMe);
   const needsListed = needsRead ? (view.needsMe.items?.length ?? 0) : 0;
-  const needsSomething =
-    needsRead && ((needsTotal ?? 0) > 0 || needsListed > 0);
+  // With coord's needs block unread, the queue counts stand in for it —
+  // marked as theirs in the headline, the detail and the badge.
+  const queues = needsRead ? null : (read.queues ?? null);
+  const needsSomething = needsRead
+    ? (needsTotal ?? 0) > 0 || needsListed > 0
+    : queues !== null && queues.count > 0;
+  // Only coord's own block answers "nothing needs you": the queue counts
+  // give a figure, never that answer.
+  const nothingNeedsYou = needsRead && needsTotal !== null;
   const open = openDegradations(view.degradations);
   const degRowsServed =
     view.degradations.state === "read" || view.degradations.state === "stale";
@@ -1910,7 +1935,10 @@ export function deriveHomeStrip(
     .join("; ");
 
   let headline: string;
-  if (attention === "author") {
+  if (attention === "author" && queues !== null) {
+    const n = queues.count;
+    headline = `${queues.exact ? "" : "At least "}${n} ${n === 1 ? "decision needs" : "decisions need"} you — counted from the Gates and Questions queues`;
+  } else if (attention === "author") {
     headline =
       // Never "0 decisions need you" beside listed items: a total that is
       // absent, or smaller than what was listed, is not a count to print.
@@ -1926,8 +1954,7 @@ export function deriveHomeStrip(
     headline = "Cannot tell now — the latest read failed";
   } else if (
     !stale &&
-    needsRead &&
-    needsTotal !== null &&
+    nothingNeedsYou &&
     degradedRead &&
     open !== null &&
     machinesCalm
@@ -1956,6 +1983,11 @@ export function deriveHomeStrip(
   if (needsRead && needsTotal === null) {
     detailParts.push(
       "Coord gave no usable count of the decisions that need you."
+    );
+  }
+  if (queues !== null) {
+    detailParts.push(
+      `Needs you is counted from the Gates and Questions queues, since coord's needs block is not read${queues.stale ? " — at their last good read" : ""}.`
     );
   }
   if (degRowsServed && open === null) {
@@ -2006,8 +2038,15 @@ export function deriveHomeStrip(
     badges: [
       {
         key: "needs",
-        label: `needs you ${countText(needsTotal)}`,
-        tone: needsSomething ? "attention" : needsRead ? "default" : "muted",
+        label:
+          queues !== null
+            ? `needs you ${queues.exact ? "" : "≥"}${queues.count} (from queues)`
+            : `needs you ${countText(needsTotal)}`,
+        tone: needsSomething
+          ? "attention"
+          : needsRead || queues !== null
+            ? "default"
+            : "muted",
         testId: "coord-home.strip.needs-you",
       },
       {
