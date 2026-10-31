@@ -81,6 +81,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+def _scalar_text(value: Any) -> str | None:
+    """A detail field's value as text, when it is a plain scalar."""
+    if isinstance(value, bool | int | float):
+        return str(value)
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
 def _detail_message(detail: Any, status_code: int) -> str:
     """The prose ``message`` for an HTTPException detail — never a repr.
 
@@ -88,9 +97,14 @@ def _detail_message(detail: Any, status_code: int) -> str:
     the proxies forward as ``detail``) gives its string ``message``, else its
     string ``error``: coord's registry 500s carry only
     ``{"error": "failed to upsert agent registry row"}``, and ``str()`` of that
-    dict used to reach the operator as ``{'error': '...'}``. Anything else
-    (a list, a dict with neither field) names the status rather than printing
-    Python's rendering of the value.
+    dict used to reach the operator as ``{'error': '...'}``.
+
+    A dict with neither still says what it carries, because its fields are
+    what a client shows. A relayed coord answer (``coord_status`` /
+    ``coord_body``, e.g. the pair-code redeem's 502) names coord's status and
+    quotes its body; any other dict lists its scalar fields as ``key=value``.
+    Only a detail with nothing scalar to say (a list, a dict of nested
+    values) names the status alone.
     """
     if isinstance(detail, str):
         return detail
@@ -99,6 +113,19 @@ def _detail_message(detail: Any, status_code: int) -> str:
             value = detail.get(key)
             if isinstance(value, str) and value:
                 return value
+        coord_status = _scalar_text(detail.get("coord_status"))
+        if coord_status is not None:
+            coord_body = _scalar_text(detail.get("coord_body"))
+            if coord_body is None:
+                return f"coord answered HTTP {coord_status} with no body"
+            return f"coord answered HTTP {coord_status}: {coord_body}"
+        fields = [
+            f"{key}={text}"
+            for key, value in detail.items()
+            if (text := _scalar_text(value)) is not None
+        ]
+        if fields:
+            return f"HTTP {status_code}: " + ", ".join(fields)
     return f"HTTP {status_code} with no message"
 
 
@@ -129,7 +156,14 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     else:
         error_code = get_default_error_code(exc.status_code).value
         message = _detail_message(detail_value, exc.status_code)
-        metadata = {}
+        # A dict detail without ``error`` keeps every other field too — a
+        # client reads ``code``, ``coord_status``, ``current_version`` … at
+        # the top level, exactly as the ``error`` branch spreads them.
+        metadata = (
+            {k: v for k, v in detail_value.items() if k != "message"}
+            if isinstance(detail_value, dict)
+            else {}
+        )
 
     content = {
         "error": error_code,

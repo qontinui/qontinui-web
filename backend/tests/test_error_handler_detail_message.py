@@ -48,8 +48,7 @@ def test_a_dict_detail_prefers_its_message() -> None:
     "detail",
     [
         {"error": {"code": "nested"}},
-        {"error": 7, "message": None},
-        {"code": "no_error_key"},
+        {"nested": {"code": "no_error_key"}},
         ["a", "list"],
     ],
 )
@@ -57,6 +56,62 @@ def test_no_detail_shape_renders_as_a_repr(detail: Any) -> None:
     body = _envelope(502, detail)
     assert body["message"] == "HTTP 502 with no message"
     assert "{" not in body["message"] and "[" not in body["message"]
+
+
+# The three dict shapes without an ``error`` key that real raise sites send
+# (``pair_codes.py`` redeem 502, ``devenv*.py`` / ``fleet_targets.py`` typed
+# refusals, ``projects.py`` version conflict). Every field reaches the client
+# at the top level, and the message says what the dict carries.
+
+
+def test_a_relayed_coord_answer_keeps_coord_status_and_body() -> None:
+    coord_body = '{"error":"code_already_redeemed"}'
+    body = _envelope(502, {"coord_status": 409, "coord_body": coord_body})
+    assert body["error"] == "BAD_GATEWAY"
+    assert body["message"] == f"coord answered HTTP 409: {coord_body}"
+    assert body["coord_status"] == 409
+    assert body["coord_body"] == coord_body
+
+
+def test_a_relayed_coord_status_without_a_body_says_so() -> None:
+    body = _envelope(502, {"coord_status": 503})
+    assert body["message"] == "coord answered HTTP 503 with no body"
+    assert body["coord_status"] == 503
+
+
+def test_a_typed_refusal_keeps_its_code_at_the_top_level() -> None:
+    body = _envelope(
+        401,
+        {"code": "invalid_machine_key", "message": "Missing or malformed machine key."},
+    )
+    assert body["message"] == "Missing or malformed machine key."
+    assert body["code"] == "invalid_machine_key"
+
+
+def test_a_version_conflict_keeps_both_versions() -> None:
+    body = _envelope(
+        409,
+        {
+            "message": "Version conflict: project was modified",
+            "expected_version": 3,
+            "current_version": 5,
+        },
+    )
+    assert body["message"] == "Version conflict: project was modified"
+    assert body["expected_version"] == 3
+    assert body["current_version"] == 5
+
+
+def test_a_non_string_error_is_listed_rather_than_dropped() -> None:
+    body = _envelope(502, {"error": 7, "message": None})
+    assert body["message"] == "HTTP 502: error=7"
+
+
+def test_a_dict_with_neither_message_nor_error_lists_its_scalar_fields() -> None:
+    body = _envelope(502, {"code": "no_agent_host", "attempts": 2})
+    assert body["message"] == "HTTP 502: code=no_agent_host, attempts=2"
+    assert body["code"] == "no_agent_host"
+    assert body["attempts"] == 2
 
 
 def test_a_string_detail_is_the_message() -> None:
