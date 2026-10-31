@@ -1,7 +1,7 @@
 """overview.* — the Costs page's ledger: categories, recurring costs, entries
 
 Revision ID: overview_05_cost_ledger
-Revises: coord_policy_outcome_counts_01
+Revises: overview_05_page_sources
 Create Date: 2026-10-27
 
 The money a project has actually spent, entered by hand on the Costs page
@@ -36,7 +36,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "overview_05_cost_ledger"
-down_revision: str | Sequence[str] | None = "coord_policy_outcome_counts_01"
+down_revision: str | Sequence[str] | None = "overview_05_page_sources"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
