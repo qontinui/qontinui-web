@@ -227,8 +227,28 @@ describe("pairConfirmErrorMessage", () => {
   });
   it("names another coord status", () => {
     expect(
-      pairConfirmErrorMessage({ detail: { coord_status: 500 } }, 502)
-    ).toBe("Pairing was refused (coord HTTP 500).");
+      pairConfirmErrorMessage({ detail: { coord_status: 409 } }, 502)
+    ).toBe("Pairing was refused (coord HTTP 409).");
+  });
+  it("shows a coord 5xx as the backend's retry sentence, never as a refusal", () => {
+    // `_coord_refusal_detail` in `devices.py` relays a coord 5xx as its
+    // status and this fixed sentence; the app's handler spreads it to the
+    // top level, a bare app nests it under `detail`.
+    const sentence =
+      "Coord failed to complete pairing (HTTP 500). Retry; if it persists, check coord.";
+    const relayed = {
+      error: "BAD_GATEWAY",
+      coord_status: 500,
+      message: sentence,
+    };
+    expect(pairConfirmErrorMessage(relayed, 502)).toBe(sentence);
+    expect(pairConfirmErrorMessage({ detail: relayed }, 502)).toBe(sentence);
+    // A 5xx relayed without the sentence still says retry, not "refused".
+    expect(
+      pairConfirmErrorMessage({ detail: { coord_status: 503 } }, 502)
+    ).toBe(
+      "Coord failed to complete pairing (HTTP 503). Retry; if it persists, check coord."
+    );
   });
   it("keeps a coord outage's retry advice", () => {
     expect(
