@@ -8000,6 +8000,29 @@
               }
             ],
             "title": "Version Before"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -8013,7 +8036,9 @@
           "version_before",
           "version_after",
           "before",
-          "after"
+          "after",
+          "via_device",
+          "via_session"
         ],
         "title": "ChangeLogEntry",
         "type": "object"
@@ -36682,6 +36707,42 @@
             ],
             "title": "Slug"
           },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "maxLength": 200,
             "minLength": 1,
@@ -36802,6 +36863,39 @@
             "title": "Slug",
             "type": "string"
           },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -36825,6 +36919,29 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -36842,7 +36959,12 @@
           "created_at",
           "updated_at",
           "created_by",
-          "updated_by"
+          "updated_by",
+          "source_repo",
+          "source_path",
+          "source_sha",
+          "via_device",
+          "via_session"
         ],
         "title": "PageRead",
         "type": "object"
@@ -36880,7 +37002,7 @@
         "type": "object"
       },
       "PageUpdate": {
-        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.",
+        "description": "Absent fields are left alone; ``null`` clears the metadata fields.\n``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:\nlinks name it, and renaming would orphan every one of them.\n\n``source_repo`` + ``source_path`` do not CHANGE a page's source: they name\nthe source the writer believes the page mirrors, and a page whose source\nis absent or different refuses the write (409 ``source_mismatch``).\n``source_sha`` is the commit the new content mirrors.",
         "properties": {
           "body_md": {
             "anyOf": [
@@ -36944,6 +37066,42 @@
               }
             ],
             "title": "Related"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
           },
           "title": {
             "anyOf": [
@@ -37038,6 +37196,17 @@
             ],
             "title": "Owner"
           },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -37045,6 +37214,29 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
@@ -37052,6 +37244,9 @@
           "title",
           "created_at",
           "created_by",
+          "source_sha",
+          "via_device",
+          "via_session",
           "body_md",
           "doc_number",
           "doc_status",
@@ -37078,6 +37273,17 @@
             ],
             "title": "Created By"
           },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -37085,13 +37291,39 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "via_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Device"
+          },
+          "via_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Session"
           }
         },
         "required": [
           "version",
           "title",
           "created_at",
-          "created_by"
+          "created_by",
+          "source_sha",
+          "via_device",
+          "via_session"
         ],
         "title": "PageVersionSummary",
         "type": "object"
@@ -107254,6 +107486,28 @@
         ]
       }
     },
+    "/api/v1/operations/project-state": {
+      "get": {
+        "description": "Return coord's project-state synthesis for the operator's tenant.\n\nPlan\n``2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen``\nPhase 4. A plain pass-through of coord's operator route\n``GET /coord/project-state`` \u2014 the same shared core that serves the\n``coord_project_state`` MCP tool and its device/agent twin\n``GET /coord/agent-project-state``, so the page and every agent read one\nanswer. No composition and no reshaping here: ``/admin/coord/home`` and\nthe ``/overview`` progress panel render coord's bytes.\n\nThe wire, as coord serves it (``schema: 1``): ``generated_at``,\n``tenant_id``, ``scope`` (``\"operator\"``, the one built scope), and four\nblocks \u2014 ``on_track``, ``correctness``, ``needs_me``, ``degradations`` \u2014\neach carrying a ``state`` in ``read | could_not_read | stale |\nnot_implemented | unknown`` that is DISTINCT from its counts. A block\nwhose state is not ``read`` carries no counts, and a caller must render\nit as unknown rather than as zero (``[policy: silent-empty-is-unknown]``)\n\u2014 with ONE exception: a ``stale`` ``degradations`` block still carries its\n``open`` / ``declared`` / ``recently_cleared`` ROWS, because a known fault\nstays true behind a lagging watcher. Those rows are real but are not known\nto be all of them, so no count may be taken from them.\n``does_not_know`` lists every source the door read or tried to read,\nplus a ``watcher:<name>`` row for each feeding watcher that is not\nfresh, each with ``state``, ``as_of``, ``freshness_bound_secs``, rows\nconsidered / excluded and why, and its ``error``. On a watcher row,\n``as_of`` is the watcher's last successful run and\n``freshness_bound_secs`` the threshold its freshness verdict applies,\nnot the age of any data.\n\n``on_track.totals`` is ``{row_count, classes, excluded}``. ``classes``\nis a closed, exhaustive-with-zeros class set (``shipped``,\n``in_flight``, ``stalled``, ``blocked_on_dependency``,\n``waiting_on_gate``, ``not_started``, ``closed_other``,\n``off_vocabulary``, ``unset``) whose sum coord asserts equals\n``row_count``. ``excluded`` is ``{merge_shepherd_bookkeeping}``: coord's\nown merge-shepherd bookkeeping units, left out of ``row_count`` and\nevery class, and counted in ``excluded`` (and in ``does_not_know``'s\n``work_units`` row as ``rows_excluded``); the ``/overview`` panel states\nthat count. ``stalled`` is a MECHANICAL absence-of-recorded-change class\n(``stall_rule`` / ``stall_window_secs`` ride the wire); it is not a\nverdict and the page does not render the word.\n\nDeclares no ``response_model``, so nothing here filters a field coord\nadds. This docstring is what FastAPI renders into the committed,\ndrift-gated OpenAPI snapshots, so it is this repo's contract of record\nfor the route.",
+        "operationId": "api_v1_operations_project_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Project State Api V1 Operations Project State Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Project State",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/prs/{owner}/{repo}/{number}/hold": {
       "post": {
         "description": "Place or release a coord hold on a PR (the operator's hold control).\n\nProxies coord's ``POST /coord/repos/{owner}/{repo}/pull-requests/{number}/hold``\n(plan 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced\nthe ``/draft-state`` proxy: a coord hold is coord state (``coord.pr_holds``),\nso it works on private repos on GitHub Free, which have no draft PRs.\n\nBody: ``{\"held\": bool, \"reason\"?: str, \"kind\"?: str, \"gate_id\"?: str}``.\n``held: true`` places a hold and coord REQUIRES a non-blank ``reason``;\n``held: false`` releases. Release authority is coord's: the holder, or an\nadmin-role operator for any hold; a ``security_tier`` hold is the\noperator's alone.\n\nAuth mirrors the gate-action stack: the operator's Cognito bearer is\nforwarded (``require_coord_tenant_admin`` \u2192 ``tenant_id=``) and coord\nderives the tenant, role and repo authority server-side. Only the four\ncontract keys are forwarded.\n\n``structured_errors=True``: coord's typed refusal object (``{\"error\",\n\"message\"}``) becomes the ``HTTPException.detail`` dict, which the app's\n``http_exception_handler`` splices into the top level of its envelope, so\nthe browser receives ``error`` as coord's code (400 invalid_input,\n403 not_holder / security_tier_operator_only, 404 not_found,\n500 internal) rather than a JSON string inside ``message``. A coord error\nbody that is not a JSON object still falls back to its text.",
@@ -110667,6 +110921,25 @@
             }
           },
           {
+            "description": "Only writes from this surface (X-Overview-Source).",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(ui|api|import)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only writes from this surface (X-Overview-Source).",
+              "title": "Source"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -110704,6 +110977,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Change Log",
@@ -110730,6 +111006,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Estimates",
@@ -110793,6 +111072,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Estimates",
@@ -110842,6 +111124,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Forecast",
@@ -110892,6 +111177,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Rollup",
@@ -110948,6 +111236,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Estimates",
@@ -110994,6 +111285,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Estimates",
@@ -111066,6 +111360,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Estimates",
@@ -111093,6 +111390,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Files",
@@ -111157,6 +111457,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Upload File",
@@ -111213,6 +111516,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Download File",
@@ -111269,6 +111575,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Files",
@@ -111315,6 +111624,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Files",
@@ -111342,6 +111654,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Intent Documents",
@@ -111405,6 +111720,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Intent Documents",
@@ -111453,6 +111771,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Intent Documents",
@@ -111525,6 +111846,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Intent Documents",
@@ -111552,6 +111876,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Milestones",
@@ -111615,6 +111942,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Milestones",
@@ -111672,6 +112002,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Milestones",
@@ -111718,6 +112051,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Milestones",
@@ -111790,6 +112126,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Milestones",
@@ -111817,6 +112156,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Pages",
@@ -111880,6 +112222,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Create Pages",
@@ -111933,6 +112278,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Page Backlinks",
@@ -111981,6 +112329,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Page Versions",
@@ -112037,6 +112388,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Page Version",
@@ -112110,6 +112464,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Revert Page",
@@ -112166,6 +112523,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Delete Pages",
@@ -112212,6 +112572,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Pages",
@@ -112284,6 +112647,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Pages",
@@ -112311,6 +112677,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Phase Progress",
@@ -112359,6 +112728,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Get Phase Progress",
@@ -112431,6 +112803,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Update Phase Progress",
@@ -112459,6 +112834,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Catalog",
@@ -112486,6 +112864,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Read Settings",
@@ -112531,6 +112912,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Write Settings",

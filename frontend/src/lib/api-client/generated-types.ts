@@ -15999,6 +15999,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/project-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project State
+         * @description Return coord's project-state synthesis for the operator's tenant.
+         *
+         *     Plan
+         *     ``2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen``
+         *     Phase 4. A plain pass-through of coord's operator route
+         *     ``GET /coord/project-state`` — the same shared core that serves the
+         *     ``coord_project_state`` MCP tool and its device/agent twin
+         *     ``GET /coord/agent-project-state``, so the page and every agent read one
+         *     answer. No composition and no reshaping here: ``/admin/coord/home`` and
+         *     the ``/overview`` progress panel render coord's bytes.
+         *
+         *     The wire, as coord serves it (``schema: 1``): ``generated_at``,
+         *     ``tenant_id``, ``scope`` (``"operator"``, the one built scope), and four
+         *     blocks — ``on_track``, ``correctness``, ``needs_me``, ``degradations`` —
+         *     each carrying a ``state`` in ``read | could_not_read | stale |
+         *     not_implemented | unknown`` that is DISTINCT from its counts. A block
+         *     whose state is not ``read`` carries no counts, and a caller must render
+         *     it as unknown rather than as zero (``[policy: silent-empty-is-unknown]``)
+         *     — with ONE exception: a ``stale`` ``degradations`` block still carries its
+         *     ``open`` / ``declared`` / ``recently_cleared`` ROWS, because a known fault
+         *     stays true behind a lagging watcher. Those rows are real but are not known
+         *     to be all of them, so no count may be taken from them.
+         *     ``does_not_know`` lists every source the door read or tried to read,
+         *     plus a ``watcher:<name>`` row for each feeding watcher that is not
+         *     fresh, each with ``state``, ``as_of``, ``freshness_bound_secs``, rows
+         *     considered / excluded and why, and its ``error``. On a watcher row,
+         *     ``as_of`` is the watcher's last successful run and
+         *     ``freshness_bound_secs`` the threshold its freshness verdict applies,
+         *     not the age of any data.
+         *
+         *     ``on_track.totals`` is ``{row_count, classes, excluded}``. ``classes``
+         *     is a closed, exhaustive-with-zeros class set (``shipped``,
+         *     ``in_flight``, ``stalled``, ``blocked_on_dependency``,
+         *     ``waiting_on_gate``, ``not_started``, ``closed_other``,
+         *     ``off_vocabulary``, ``unset``) whose sum coord asserts equals
+         *     ``row_count``. ``excluded`` is ``{merge_shepherd_bookkeeping}``: coord's
+         *     own merge-shepherd bookkeeping units, left out of ``row_count`` and
+         *     every class, and counted in ``excluded`` (and in ``does_not_know``'s
+         *     ``work_units`` row as ``rows_excluded``); the ``/overview`` panel states
+         *     that count. ``stalled`` is a MECHANICAL absence-of-recorded-change class
+         *     (``stall_rule`` / ``stall_window_secs`` ride the wire); it is not a
+         *     verdict and the page does not render the word.
+         *
+         *     Declares no ``response_model``, so nothing here filters a field coord
+         *     adds. This docstring is what FastAPI renders into the committed,
+         *     drift-gated OpenAPI snapshots, so it is this repo's contract of record
+         *     for the route.
+         */
+        get: operations["api_v1_operations_project_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/prs/{owner}/{repo}/{number}/hold": {
         parameters: {
             query?: never;
@@ -29697,6 +29763,10 @@ export interface components {
             version_after: number | null;
             /** Version Before */
             version_before: number | null;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** ChangeLogPage */
         ChangeLogPage: {
@@ -43393,6 +43463,12 @@ export interface components {
             related?: string[];
             /** Slug */
             slug?: string | null;
+            /** Source Path */
+            source_path?: string | null;
+            /** Source Repo */
+            source_repo?: string | null;
+            /** Source Sha */
+            source_sha?: string | null;
             /** Title */
             title: string;
         };
@@ -43432,6 +43508,12 @@ export interface components {
             related: string[];
             /** Slug */
             slug: string;
+            /** Source Path */
+            source_path: string | null;
+            /** Source Repo */
+            source_repo: string | null;
+            /** Source Sha */
+            source_sha: string | null;
             /** Title */
             title: string;
             /**
@@ -43443,6 +43525,10 @@ export interface components {
             updated_by: string | null;
             /** Version */
             version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** PageRef */
         PageRef: {
@@ -43463,6 +43549,11 @@ export interface components {
          * @description Absent fields are left alone; ``null`` clears the metadata fields.
          *     ``title`` and ``body_md`` can be changed, never cleared. The slug is fixed:
          *     links name it, and renaming would orphan every one of them.
+         *
+         *     ``source_repo`` + ``source_path`` do not CHANGE a page's source: they name
+         *     the source the writer believes the page mirrors, and a page whose source
+         *     is absent or different refuses the write (409 ``source_mismatch``).
+         *     ``source_sha`` is the commit the new content mirrors.
          */
         PageUpdate: {
             /** Body Md */
@@ -43475,6 +43566,12 @@ export interface components {
             owner?: string | null;
             /** Related */
             related?: string[] | null;
+            /** Source Path */
+            source_path?: string | null;
+            /** Source Repo */
+            source_repo?: string | null;
+            /** Source Sha */
+            source_sha?: string | null;
             /** Title */
             title?: string | null;
         };
@@ -43502,10 +43599,16 @@ export interface components {
             doc_status: string | null;
             /** Owner */
             owner: string | null;
+            /** Source Sha */
+            source_sha: string | null;
             /** Title */
             title: string;
             /** Version */
             version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** PageVersionSummary */
         PageVersionSummary: {
@@ -43516,10 +43619,16 @@ export interface components {
             created_at: string;
             /** Created By */
             created_by: string | null;
+            /** Source Sha */
+            source_sha: string | null;
             /** Title */
             title: string;
             /** Version */
             version: number;
+            /** Via Device */
+            via_device: string | null;
+            /** Via Session */
+            via_session: string | null;
         };
         /** PagesItem */
         PagesItem: {
@@ -79277,6 +79386,26 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_project_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     api_v1_operations_prs_owner_repo_number_hold_post: {
         parameters: {
             query?: never;
@@ -81050,6 +81179,8 @@ export interface operations {
                 /** @description A registry name, e.g. intent_documents */
                 resource: string;
                 record_id?: string | null;
+                /** @description Only writes from this surface (X-Overview-Source). */
+                source?: string | null;
                 limit?: number;
             };
             header?: never;

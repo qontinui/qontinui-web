@@ -852,6 +852,14 @@ class ChangeLog(Base):
     before: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     after: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The coord device the write came through, from the VERIFIED device JWT's
+    #: ``device_id`` claim — ``None`` for a person's own Cognito session
+    #: (``overview_05_page_sources``).
+    via_device: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    #: The session the client REPORTED in ``X-Overview-Session`` — a
+    #: volunteered label, shape-checked, never proof and never an
+    #: authorization input.
+    via_session: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -882,6 +890,12 @@ class Page(Base):
 
     ``current_version`` moves on every content write and is the version a
     write must name. Every such write also appends :class:`PageVersion`.
+
+    ``source_repo`` / ``source_path`` / ``source_sha`` (``overview_05_page_sources``)
+    say which repository file a published page mirrors, and at which commit.
+    ``(tenant_id, kind, source_repo, source_path)`` is unique among pages that
+    have a source (``uq_overview_pages_source``), so re-publishing a file finds
+    and updates the same page rather than making another.
     """
 
     __tablename__ = "pages"
@@ -892,6 +906,27 @@ class Page(Base):
         UniqueConstraint("tenant_id", "kind", "slug", name="uq_overview_pages_slug"),
         Index("ix_overview_pages_tenant_kind", "tenant_id", "kind", "title"),
         Index("ix_overview_pages_search", "search_tsv", postgresql_using="gin"),
+        Index(
+            "uq_overview_pages_source",
+            "tenant_id",
+            "kind",
+            "source_repo",
+            "source_path",
+            unique=True,
+            postgresql_where=text("source_repo IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "source_repo IS NULL OR source_repo = lower(source_repo)",
+            name="ck_overview_pages_source_repo_lowercase",
+        ),
+        CheckConstraint(
+            "(source_repo IS NULL) = (source_path IS NULL)",
+            name="ck_overview_pages_source_pair",
+        ),
+        CheckConstraint(
+            "source_sha IS NULL OR source_repo IS NOT NULL",
+            name="ck_overview_pages_source_sha_needs_source",
+        ),
         {"schema": _SCHEMA},
     )
 
@@ -911,6 +946,9 @@ class Page(Base):
     doc_number: Mapped[str | None] = mapped_column(Text, nullable=True)
     doc_status: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_repo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_sha: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_version: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("1"), default=1
     )
@@ -965,6 +1003,14 @@ class PageVersion(Base):
     doc_number: Mapped[str | None] = mapped_column(Text, nullable=True)
     doc_status: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The source commit this version mirrored (``overview_05_page_sources``).
+    source_sha: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Who wrote this version, beyond ``created_by``: the coord device it came
+    #: through and the session the client reported — the same two values the
+    #: write's change-log row carries, kept here so a page read can say who
+    #: published its current version without searching the change log.
+    via_device: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    via_session: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

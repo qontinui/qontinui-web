@@ -24,7 +24,9 @@ The contract, uniformly
   one is ``409`` whose body carries the server's current copy, so a client can
   show both sides instead of only saying "somebody else saved".
 * **Every write appends ``overview.change_log``** with who, the source
-  (``X-Overview-Source``: ui / api / import), and the record before and after.
+  (``X-Overview-Source``: ui / api / import), and the record before and after
+  — and, for an agent's write, the coord device it came through and the
+  session it reported (``X-Overview-Session``).
 """
 
 # No ``from __future__ import annotations`` here: the per-resource handlers
@@ -46,7 +48,15 @@ from app.overview import http as contract_http
 from app.overview.estimates import router as estimates_routes
 from app.overview.files import router as files_routes
 from app.overview.pages import router as pages_routes
-from app.overview.permissions import OverviewAccess, get_overview_access, require_edit
+from app.overview.permissions import (
+    OverviewAccess,
+    OverviewPrincipal,
+    get_overview_access,
+    get_overview_principal,
+    refuse_device_on_operator_only,
+    require_edit,
+    require_read,
+)
 from app.overview.phase_progress import router as timeline_routes
 from app.overview.registry import REGISTRY
 from app.overview.resource import (
@@ -147,6 +157,12 @@ class ChangeLogEntry(BaseModel):
     version_after: int | None
     before: dict[str, Any] | None
     after: dict[str, Any] | None
+    #: The coord device the write came through (from its verified token);
+    #: ``None`` for a person's own session.
+    via_device: UUID | None
+    #: The session the client reported (``X-Overview-Session``) — a label,
+    #: never proof.
+    via_session: str | None
 
 
 class ChangeLogPage(BaseModel):
@@ -155,11 +171,33 @@ class ChangeLogPage(BaseModel):
     truncated: bool
 
 
+async def _change_log_device_gate(
+    request: Request,
+    principal: OverviewPrincipal = Depends(get_overview_principal),
+) -> None:
+    """The refusal the resource's own routes make, applied to its history: a
+    device reads nothing of a resource whose rule refuses it (coord-backed
+    resources and the project settings). Declared before ``access`` so it runs
+    before the project is resolved, as :func:`permissions.device_gate` does.
+    ``resource`` is read from the raw query string so the route's own
+    parameter stays the only declared one; an unknown name is left to the
+    route's 404."""
+    spec = REGISTRY.get(request.query_params.get("resource") or "")
+    if spec is not None:
+        refuse_device_on_operator_only(principal, spec.permission)
+
+
 @router.get("/change-log", response_model=ChangeLogPage)
 async def read_change_log(
     resource: str = Query(..., description="A registry name, e.g. intent_documents"),
     record_id: str | None = Query(default=None),
+    source: str | None = Query(
+        default=None,
+        pattern="^(ui|api|import)$",
+        description="Only writes from this surface (X-Overview-Source).",
+    ),
     limit: int = Query(default=20, ge=1, le=100),
+    _gate: None = Depends(_change_log_device_gate),
     access: OverviewAccess = Depends(get_overview_access),
     db: AsyncSession = Depends(get_async_db),
 ) -> ChangeLogPage:
@@ -172,6 +210,7 @@ async def read_change_log(
         resource=resource,
         record_id=record_id,
         limit=limit,
+        source=source,
     )
     return ChangeLogPage(
         entries=[
@@ -187,6 +226,8 @@ async def read_change_log(
                 version_after=r.version_after,
                 before=r.before,
                 after=r.after,
+                via_device=r.via_device,
+                via_session=r.via_session,
             )
             for r in rows[:limit]
         ],
@@ -251,7 +292,7 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
 
         async def list_records(
             request: Request,
-            access: OverviewAccess = Depends(get_overview_access),
+            access: OverviewAccess = Depends(require_read(spec.permission)),
             db: AsyncSession = Depends(get_async_db),
             store: Any = Depends(store_dep),
         ) -> Any:
@@ -279,7 +320,7 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
             record_id: str,
             request: Request,
             response: Response,
-            access: OverviewAccess = Depends(get_overview_access),
+            access: OverviewAccess = Depends(require_read(spec.permission)),
             db: AsyncSession = Depends(get_async_db),
             store: Any = Depends(store_dep),
         ) -> Any:
@@ -349,21 +390,30 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                 if existing is None:
                     return _refused(exc)
                 created, adopted = existing, True
+            # An adopted record whose create the change log already holds is
+            # not created again: a second ``create`` row would claim a write
+            # that never happened. (A coord-stored record adopted because its
+            # log row was lost has none, and gets the row it is owed.) The
+            # action vocabulary is create / update / delete, so an adopt is
+            # recorded by writing nothing.
+            already_logged = adopted and await change_log.has_create(
+                db, tenant_id=access.tenant_id, resource=spec.name, record_id=created.id
+            )
             try:
-                await change_log.record(
-                    db,
-                    tenant_id=access.tenant_id,
-                    resource=spec.name,
-                    record_id=created.id,
-                    action="create",
-                    source=change_log.change_source(request),
-                    actor=access.actor,
-                    actor_user_id=access.user_id,
-                    before=None,
-                    after=_audit(spec, created),
-                    version_after=created.version,
-                    idempotency_key=key,
-                )
+                if not already_logged:
+                    await change_log.record(
+                        db,
+                        tenant_id=access.tenant_id,
+                        resource=spec.name,
+                        record_id=created.id,
+                        action="create",
+                        source=change_log.change_source(request),
+                        **change_log.attribution(access, request),
+                        before=None,
+                        after=_audit(spec, created),
+                        version_after=created.version,
+                        idempotency_key=key,
+                    )
                 await db.commit()
                 await _run_after_commit(context)
             except IntegrityError:
@@ -448,8 +498,7 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                     record_id=after.id,
                     action="update",
                     source=change_log.change_source(request),
-                    actor=access.actor,
-                    actor_user_id=access.user_id,
+                    **change_log.attribution(access, request),
                     before=_audit(spec, before),
                     after=_audit(spec, after),
                     version_before=before.version,
@@ -496,8 +545,7 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                 record_id=before.id,
                 action="delete",
                 source=change_log.change_source(request),
-                actor=access.actor,
-                actor_user_id=access.user_id,
+                **change_log.attribution(access, request),
                 before=before,
                 after=None,
                 version_before=before.version,
