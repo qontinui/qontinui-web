@@ -136,6 +136,41 @@ describe("applyCrawlWaivers — the crawl lane uses the same rule", () => {
   });
 });
 
+describe("applyCrawlWaivers — a status-scoped per-route entry", () => {
+  const REGISTRY = "http://localhost:3001/api/v1/agent-registry/admin/registry";
+  const PER_USER = "http://localhost:3001/api/v1/agent-registry";
+
+  it.each(["/admin/coord/agent-registry", "/admin/coord/spawns"])(
+    "drops the 502/504 a missing coord gives %s, and keeps a 500",
+    (route) => {
+      const { unwaivedServer } = applyCrawlWaivers(
+        route,
+        [],
+        [entry(REGISTRY, 502), entry(REGISTRY, 504), entry(REGISTRY, 500)]
+      );
+      expect(unwaivedServer.map((e) => e.status)).toEqual([500]);
+    }
+  );
+
+  it("keeps the old any-5xx rule for an entry with no serverStatuses", () => {
+    const { unwaivedServer } = applyCrawlWaivers(
+      "/admin/coord/gates",
+      [],
+      [entry("http://localhost:3001/api/v1/admin-dev/overview", 500)]
+    );
+    expect(unwaivedServer).toEqual([]);
+  });
+
+  it("still gates the per-user registry route on the spawns page", () => {
+    const { unwaivedServer } = applyCrawlWaivers(
+      "/admin/coord/spawns",
+      [],
+      [entry(PER_USER, 502)]
+    );
+    expect(unwaivedServer.map((e) => e.url)).toEqual([PER_USER]);
+  });
+});
+
 describe("GLOBAL_SERVER_WAIVERS — the registry itself", () => {
   it("lists only server-error statuses in any `statuses` field", () => {
     // A 4xx here would be dead: the gate only ever records same-origin 5xx.

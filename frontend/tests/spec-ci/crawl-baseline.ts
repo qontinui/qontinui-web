@@ -78,6 +78,13 @@ export interface PerRouteWaiver {
   consolePatterns?: readonly string[];
   /** Same-origin-5xx URL patterns expected on this route (substring or regex). */
   serverPatterns?: readonly string[];
+  /**
+   * The ONLY statuses `serverPatterns` tolerates, as `statuses` does on a
+   * GlobalServerWaiver. Absent means every 5xx on a matching URL is waived.
+   * An entry that exists because coord is absent in CI should list the
+   * statuses that absence produces, so a handler crash on the same URL gates.
+   */
+  serverStatuses?: readonly number[];
   /** Allow this route's navigation to fail (goto throw) without gating. Rare —
    *  only for a route that legitimately cannot load in the CI environment. */
   allowNavFail?: boolean;
@@ -249,6 +256,9 @@ export const GLOBAL_SERVER_WAIVERS: readonly GlobalServerWaiver[] = [
 export const PER_ROUTE_WAIVERS: Readonly<Record<string, PerRouteWaiver>> = {
   "/admin/coord/agent-registry": {
     serverPatterns: ["/api/v1/agent-registry/admin/"],
+    // Status-scoped: a missing coord gives 502 (connect error) or 504
+    // (timeout); a 500 from the handler itself still gates.
+    serverStatuses: [502, 504],
     class: "ci-env",
     note:
       "CI-ENV-UNAVOIDABLE (hermetic lane). /api/v1/agent-registry/admin/* are " +
@@ -258,8 +268,8 @@ export const PER_ROUTE_WAIVERS: Readonly<Record<string, PerRouteWaiver>> = {
       "coord runs in the hermetic Spec CI stack, so that dependency 502s and " +
       "the page's on-mount read never reaches its own handler. Same class as " +
       "the /api/v1/operations/ global waiver — a coord-backed /admin/coord/* " +
-      "dashboard with no IR spec. Route-scoped because exactly one crawl route " +
-      "owns these endpoints. " +
+      "dashboard with no IR spec. Route-scoped to the two crawl routes that " +
+      "read these endpoints (this one and /admin/coord/spawns). " +
       "The pattern is deliberately anchored on the /admin/ segment: the " +
       "PER-USER routes on the same router (/api/v1/agent-registry and " +
       "/api/v1/agent-registry/prefs/*, which /settings/agents drives) are NOT " +
@@ -267,6 +277,27 @@ export const PER_ROUTE_WAIVERS: Readonly<Record<string, PerRouteWaiver>> = {
       "Strictly stronger follow-up: give this page an IR spec + prod-parity " +
       "hermetic stub, which would assert the authored render instead of only " +
       "tolerating the 5xx.",
+  },
+  "/admin/coord/spawns": {
+    serverPatterns: ["/api/v1/agent-registry/admin/"],
+    // Status-scoped: a missing coord gives 502 (connect error) or 504
+    // (timeout); a 500 from the handler itself still gates.
+    serverStatuses: [502, 504],
+    class: "ci-env",
+    note:
+      "CI-ENV-UNAVOIDABLE (hermetic lane), the same endpoints and cause as " +
+      "the /admin/coord/agent-registry waiver above: the spawn path matrix " +
+      "reads the registry's admin rows (GET /api/v1/agent-registry/admin/" +
+      "registry) to show each spawn path's registry switch, and that proxy " +
+      "depends on require_coord_tenant_admin, which resolves the operator's " +
+      "tenant via coord before the handler runs. No coord runs in the hermetic " +
+      "Spec CI stack, so it 502s. The page never renders the failure as off: it " +
+      "shows UNKNOWN, or a served value (the last good read, or the default " +
+      "from the caller's own effective fold) marked as such. Anchored on the " +
+      "/admin/ segment, so the per-user registry routes stay gated. Strictly " +
+      "stronger follow-up: a hermetic coord stub serving /admin/coord/me and " +
+      "/coord/agent-registry, which would retire this entry and the " +
+      "agent-registry one.",
   },
   "/admin/coord/gates": {
     serverPatterns: ["/api/v1/admin-dev/overview"],
@@ -381,6 +412,9 @@ export function applyCrawlWaivers(
   const waiver = PER_ROUTE_WAIVERS[routePath];
   const routeConsole = compilePatterns(waiver?.consolePatterns ?? []);
   const routeServer = compilePatterns(waiver?.serverPatterns ?? []);
+  const routeStatuses = waiver?.serverStatuses
+    ? new Set(waiver.serverStatuses)
+    : undefined;
 
   const unwaivedConsole = consoleErrors.filter(
     (e) => !routeConsole.some((rx) => rx.test(e.text))
@@ -388,7 +422,10 @@ export function applyCrawlWaivers(
   const unwaivedServer = serverErrors.filter(
     (e) =>
       !isGloballyWaivedServerUrl(e.url, e.status) &&
-      !routeServer.some((rx) => rx.test(e.url))
+      !(
+        routeServer.some((rx) => rx.test(e.url)) &&
+        (routeStatuses === undefined || routeStatuses.has(e.status))
+      )
   );
 
   return {
