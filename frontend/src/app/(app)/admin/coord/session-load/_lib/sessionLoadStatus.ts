@@ -66,11 +66,12 @@ import type {
   SessionRunsWindow,
 } from "@/lib/api/operations/coordSessionRuns";
 import type { SpawnStatsWindow } from "@/lib/api/operations/coordSpawns";
+import { spawnRequestsHref } from "../../spawns/_lib/spawnRequestsRoute";
 import {
-  SPAWN_REQUESTS_HREF,
-  spawnRequestsHref,
-} from "../../spawns/_lib/spawnRequestsRoute";
-import { SPAWN_WINDOWS, formatDuration } from "../../spawns/_lib/spawnStatus";
+  SPAWN_WINDOWS,
+  formatDuration,
+  windowSpec,
+} from "../../spawns/_lib/spawnStatus";
 
 // ---------------------------------------------------------------------------
 // Windows
@@ -1680,26 +1681,52 @@ export interface RunLink {
   id: string;
 }
 
+/** The spawn requests window a run's request link opens. */
+export interface SpawnRequestWindow {
+  window: SpawnStatsWindow;
+  /**
+   * The run started before the widest window (or its start is unreadable),
+   * so the request may be older than anything the view can show.
+   */
+  mayBeOlderThanView: boolean;
+}
+
 /**
- * The narrowest spawn requests window that holds a run's start, or `null`
- * when the start is unreadable or older than the widest window: the request
- * that spawned a run was created at or before its start, so the window that
- * holds the start is the narrowest the request can be in.
+ * The spawn requests window to open for a run's request, from the run's
+ * start alone. The view filters requests by when they were FIRST requested,
+ * and a request is made at or before its run starts — possibly long before,
+ * when it was deferred. So the narrowest window that holds the start is only
+ * a lower bound: a request made 25 h ago and deferred 2 h has a run that
+ * started 23 h ago, and the 24 h view would not list it. The link therefore
+ * opens the NEXT wider window, which also absorbs the page clock moving
+ * between this render and the click. That holds every request made up to
+ * the gap between the two windows before its run started (6 days past a
+ * 24 h start, 23 days past a 7 d start). A start already past 7 days opens
+ * the widest window, 30 days, which is the most the view offers; a start
+ * older than that, or unreadable, opens 30 days too and says the request
+ * may be older than the view. `nowMs` is the caller's clock, passed in so
+ * the row and its link agree on what "now" is.
  */
 export function spawnWindowForRun(
   run: SessionRunWire,
   nowMs: number
-): SpawnStatsWindow | null {
-  const started = Date.parse(run.started_at);
-  if (!Number.isFinite(started)) return null;
-  const age = Math.max(0, nowMs - started);
-  return SPAWN_WINDOWS.find((w) => age <= w.ms)?.id ?? null;
+): SpawnRequestWindow {
+  const widest = SPAWN_WINDOWS.length - 1;
+  // An unreadable start is NaN, which no window holds: the beyond-view arm.
+  const age = Math.max(0, nowMs - Date.parse(run.started_at));
+  const narrowest = SPAWN_WINDOWS.findIndex((w) => age <= w.ms);
+  if (narrowest < 0)
+    return { window: SPAWN_WINDOWS[widest]!.id, mayBeOlderThanView: true };
+  return {
+    window: SPAWN_WINDOWS[Math.min(narrowest + 1, widest)]!.id,
+    mayBeOlderThanView: false,
+  };
 }
 
 /**
  * The records a run points at that the console can open. The spawn request
- * opens the spawn requests view (the per-request list), at the window that
- * holds the run's start where one does.
+ * opens the spawn requests view (the per-request list), at the window
+ * `spawnWindowForRun` picks.
  */
 export function runLinks(run: SessionRunWire, nowMs: number): RunLink[] {
   const links: RunLink[] = [];
@@ -1712,11 +1739,13 @@ export function runLinks(run: SessionRunWire, nowMs: number): RunLink[] {
     });
   }
   if (run.spawn_request_id) {
-    const window = spawnWindowForRun(run, nowMs);
+    const { window, mayBeOlderThanView } = spawnWindowForRun(run, nowMs);
     links.push({
       key: "spawn",
-      label: "Find the spawn request",
-      href: window ? spawnRequestsHref(window) : SPAWN_REQUESTS_HREF,
+      label: mayBeOlderThanView
+        ? `Find the spawn request (it may be older than the ${windowSpec(window).label}, the widest view)`
+        : "Find the spawn request",
+      href: spawnRequestsHref(window),
       id: run.spawn_request_id,
     });
   }
