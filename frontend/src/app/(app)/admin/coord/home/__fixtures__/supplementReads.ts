@@ -21,9 +21,11 @@
 
 import { vi } from "vitest";
 
-export const FLEET_HEALTH_URL = "/api/v1/operations/fleet/health";
-export const QUESTIONS_URL = "/api/v1/operations/agent-questions/pending";
-export const GATES_URL = "/api/v1/admin-dev/overview";
+// Matched by the route's tail, so this fixture types no `/operations` URL
+// (`lib/api/operations/ratchet.test.ts`): the client modules own those.
+export const FLEET_HEALTH_ROUTE = "/fleet/health";
+export const QUESTIONS_ROUTE = "/agent-questions/pending";
+export const GATES_ROUTE = "/admin-dev/overview";
 
 /** A roster of machines in the given states (absent = no health state). */
 export function roster(...states: Array<string | null>) {
@@ -72,12 +74,14 @@ export function homeTransport(rest: (...args: unknown[]) => Promise<Response>) {
     fetch: async (...args: unknown[]) => {
       const url = String(args[0]);
       const path = url.split("?")[0];
-      if (path === FLEET_HEALTH_URL) return json(await fleetHealth());
-      if (path === QUESTIONS_URL) return json(await pendingQuestions());
+      if (path.endsWith(FLEET_HEALTH_ROUTE)) return json(await fleetHealth());
+      if (path.endsWith(QUESTIONS_ROUTE)) {
+        return json(await pendingQuestions());
+      }
       return rest(...args);
     },
     get: async (url: string) => {
-      if (url.split("?")[0] === GATES_URL) return gatesOverview();
+      if (url.split("?")[0].endsWith(GATES_ROUTE)) return gatesOverview();
       throw new Error(`GET ${url} failed: 404 - not mocked`);
     },
   };
