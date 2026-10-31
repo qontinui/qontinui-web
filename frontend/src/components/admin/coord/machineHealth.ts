@@ -295,9 +295,13 @@ export interface RosterExclusionsRef {
   excluded_error?: unknown;
 }
 
-/** A count coord serialized as an `i64`: a finite, non-negative integer. */
+/**
+ * A count coord serialized as an `i64`: a non-negative safe integer. A
+ * larger number is not a count this view can print or subtract exactly
+ * (`1e21` prints as "1e+21"), so it reads as malformed.
+ */
 const isCount = (v: unknown): v is number =>
-  typeof v === "number" && Number.isInteger(v) && v >= 0;
+  typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 
 /**
  * Coord serializes `excluded` as exactly two `i64` counts, or `null` beside
@@ -489,11 +493,15 @@ function rowCapField(rowCap: unknown, key: "soft" | "hard"): number | null {
 
 /**
  * Read the cut. A malformed field is treated as absent, never as complete,
- * and fields that contradict each other are resolved toward a cut: a
- * `total` below the rows listed is dropped; `truncated: false` beside a
- * larger `total`, a non-zero `degradable_dropped`, or either one malformed,
- * is dropped; and `truncated: true` beside a `total` equal to the rows
- * listed keeps the reported cut, with no `total` to print.
+ * and fields that contradict each other are resolved toward a cut:
+ * - a `total` below the rows listed is dropped;
+ * - a non-zero `degradable_dropped`, or a `total` above the rows listed, is
+ *   read as a cut BEFORE the flag is consulted, so `truncated: false` beside
+ *   either never reads whole;
+ * - `truncated: false` beside a malformed `total` or `degradable_dropped` is
+ *   dropped, so the flag alone does not vouch for completeness;
+ * - `truncated: true` beside a `total` equal to the rows listed keeps the
+ *   reported cut, with no `total` to print.
  */
 export function readRosterCut(body: RosterCutRef): RosterCut {
   const listed = body.devices.length;
@@ -563,7 +571,18 @@ export function rosterCutSentence(c: RosterCut): string | null {
       return null;
     case "cut_tail_only": {
       const n = c.total - c.listed;
-      return `Coord's roster lists ${rowsText(c.listed)} of ${c.total}: the other ${n} ${n === 1 ? "is an abandoned or placeholder row" : "are abandoned or placeholder rows"} past coord's limit of ${c.limit}, not listed here — coord says none of them could be degrading.`;
+      const rows =
+        n === 1
+          ? "is an abandoned or placeholder row"
+          : "are abandoned or placeholder rows";
+      // Coord lists every row that could degrade before it applies the soft
+      // limit, so more rows than the limit can be listed. "Past coord's limit
+      // of 1000" beside 1200 listed rows would read as a contradiction.
+      const where =
+        c.listed > c.limit
+          ? "coord left out of its list (it lists every machine that could degrade first)"
+          : `past coord's limit of ${c.limit}, not listed here`;
+      return `Coord's roster lists ${rowsText(c.listed)} of ${c.total}: the other ${n} ${rows} ${where} — coord says none of them could be degrading.`;
     }
     case "cut_degradable": {
       const d = c.degradableDropped;

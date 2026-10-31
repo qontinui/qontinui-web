@@ -466,6 +466,26 @@ describe("machine health", () => {
         );
       });
 
+      it("names the tail coord left out without a limit the listed rows exceed", () => {
+        // Coord lists every row that could degrade before its soft cap, so a
+        // tail-only cut can list more rows than the soft limit.
+        const c = readRosterCut(served(1200, 2400, 0));
+        expect(c).toEqual({
+          kind: "cut_tail_only",
+          listed: 1200,
+          total: 2400,
+          limit: 1000,
+        });
+        expect(rosterCutSentence(c)).toBe(
+          "Coord's roster lists 1200 rows of 2400: the other 1200 are abandoned or placeholder rows coord left out of its list (it lists every machine that could degrade first) — coord says none of them could be degrading."
+        );
+        expect(rosterCutSentence(c)).not.toContain("limit of 1000");
+        // At the limit exactly, the limit is still the reason given.
+        expect(rosterCutSentence(readRosterCut(served(1000, 1001, 0)))).toBe(
+          "Coord's roster lists 1000 rows of 1001: the other 1 is an abandoned or placeholder row past coord's limit of 1000, not listed here — coord says none of them could be degrading."
+        );
+      });
+
       it("is never calm when coord withheld machines that could be degrading, and says how many", () => {
         const m = view(served(10000, 10250, 30));
         expect(m.cut).toEqual({
@@ -570,6 +590,32 @@ describe("machine health", () => {
         const m = view({ devices: healthy(1000), ...extra });
         expect(rosterCutHidesHealth(m.cut!)).toBe(true);
         expect(machinesAllHealthy(m)).toBe(false);
+      });
+
+      it("a count past the safe-integer range is not a figure to print", () => {
+        // `1e21` is an integer to `Number.isInteger`, and prints as "1e+21".
+        for (const total of [1e21, Number.MAX_SAFE_INTEGER + 1]) {
+          const c = readRosterCut({
+            devices: healthy(3),
+            truncated: true,
+            total,
+          });
+          expect(c).toEqual({ kind: "reported_cut", listed: 3, total: null });
+          expect(rosterCutSentence(c)).not.toMatch(/e\+|9007/);
+        }
+        expect(
+          readRosterCut({
+            devices: healthy(3),
+            truncated: true,
+            total: 5,
+            degradable_dropped: 1e21,
+          })
+        ).toEqual({ kind: "reported_cut", listed: 3, total: 5 });
+        expect(
+          readRosterExclusions({
+            excluded: { unbound: 1e21, bound_to_other_tenant: 0 },
+          })
+        ).toEqual({ kind: "withheld_unmeasured", reason: null });
       });
 
       it("a fractional total is not a figure to print", () => {
