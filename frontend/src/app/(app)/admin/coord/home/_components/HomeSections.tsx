@@ -105,6 +105,8 @@ import {
   degradingCoverage,
   isRosterBindingFault,
   isRosterComplete,
+  isRosterCut,
+  noLiveMachine,
   notDegradationsSentence,
   placeholdersSentence,
 } from "@/components/admin/coord/machineHealth";
@@ -1114,10 +1116,16 @@ export function DegradingSection({
                         machines.counts.total === 0
                       ? "No open degradation was served, but coord lists no machines, so this view cannot say nothing is degrading — see Machines below."
                       : machines.state === "read" &&
-                          machines.exclusions !== null &&
-                          !isRosterComplete(machines.exclusions)
+                          ((machines.exclusions !== null &&
+                            !isRosterComplete(machines.exclusions)) ||
+                            (machines.cut !== null &&
+                              isRosterCut(machines.cut)))
                         ? "No open degradation was served, but coord's roster may be missing machines, so this view cannot say nothing is degrading — see Machines below."
-                        : "No open degradation was served, but machine health is not fully known, so this view cannot say nothing is degrading."}
+                        : machines.state === "read" &&
+                            machines.counts !== null &&
+                            noLiveMachine(machines.counts)
+                          ? "No open degradation was served, but no live machine reports, so this view cannot say nothing is degrading — see Machines below."
+                          : "No open degradation was served, but machine health is not fully known, so this view cannot say nothing is degrading."}
                 </p>
               )
             ) : (

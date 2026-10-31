@@ -95,9 +95,21 @@ export default function CoordHomePage() {
             stale: machines.stale,
             counts: machines.counts,
             exclusions: machines.exclusions ?? { kind: "not_stated" as const },
+            // Unstated is never "whole": a read view always carries one.
+            cut: machines.cut ?? {
+              kind: "may_be_cut" as const,
+              listed: machines.counts.total + machines.counts.placeholders,
+              total: null,
+            },
           }
         : null,
-    [machines.state, machines.counts, machines.stale, machines.exclusions]
+    [
+      machines.state,
+      machines.counts,
+      machines.stale,
+      machines.exclusions,
+      machines.cut,
+    ]
   );
   // With coord's needs block unread, the strip's needs-you figure is the
   // queue counts' — exact when both were read, a lower bound naming the

@@ -5,7 +5,10 @@
  * half is `app/(app)/admin/coord/home/page.ux.test.tsx`.
  */
 
-import { summarizeMachineHealth } from "@/components/admin/coord/machineHealth";
+import {
+  readRosterCut,
+  summarizeMachineHealth,
+} from "@/components/admin/coord/machineHealth";
 import { describe, expect, it } from "vitest";
 import {
   deriveHomeStrip,
@@ -232,6 +235,7 @@ describe("the strip over the machine roster", () => {
       stale,
       counts: summarizeMachineHealth(devices(...states)),
       exclusions: { kind: "none_withheld" as const },
+      cut: { kind: "whole" as const },
     },
   });
   const degradingRow = (deviceId: string) => ({
@@ -261,6 +265,52 @@ describe("the strip over the machine roster", () => {
 
   it("is green only with the roster read and every machine healthy", () => {
     expect(deriveHomeStrip(calm(), machines(["healthy"])).level).toBe("green");
+  });
+
+  it.each([
+    [
+      "is at coord's row limit",
+      1000,
+      {},
+      "Coord's roster lists 1000 rows, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
+    ],
+    [
+      "is flagged truncated",
+      1,
+      { truncated: true },
+      "Coord's roster lists 1 row, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
+    ],
+    [
+      "has a larger total",
+      2,
+      { total: 9 },
+      "Coord's roster lists 2 rows of 9, so it is cut off at coord's limit — the health of the other 7 is unknown.",
+    ],
+  ] as const)(
+    "is never calm when the roster %s, with nothing withheld",
+    (_label, n, extra, sentence) => {
+      const devs = devices(...Array<string>(n).fill("healthy"));
+      const s = deriveHomeStrip(calm(), {
+        machines: {
+          stale: false,
+          counts: summarizeMachineHealth(devs),
+          exclusions: { kind: "none_withheld" },
+          cut: readRosterCut({ devices: devs, ...extra }),
+        },
+      });
+      expect(s.level).toBe("amber");
+      expect(s.headline).not.toMatch(/nothing is degrading/i);
+      expect(s.detail).toContain(sentence);
+    }
+  );
+
+  it("is never calm when every machine coord grades is abandoned", () => {
+    const s = deriveHomeStrip(calm(), machines(["abandoned", "abandoned"]));
+    expect(s.level).toBe("amber");
+    expect(s.headline).not.toMatch(/nothing is degrading/i);
+    expect(s.detail).toContain(
+      "All 2 machines coord grades are abandoned, so no live machine reports — there is no machine this view can call healthy."
+    );
   });
 
   it("is never green, and never says nothing is degrading, with the roster unread", () => {
@@ -356,6 +406,7 @@ describe("the strip over the machine roster", () => {
           { device_id: "d-2", dispatch_liveness: "unknown" },
         ]),
         exclusions: { kind: "none_withheld" },
+        cut: { kind: "whole" },
       },
     });
     expect(s.badges.find((b) => b.key === "machines")?.label).toBe(
@@ -409,6 +460,7 @@ describe("the strip over the machine roster", () => {
           { device_id: "p-1", state: "healthy", dispatch_liveness: "unknown" },
         ]),
         exclusions: { kind: "none_withheld" },
+        cut: { kind: "whole" },
       },
     });
     expect(s.level).toBe("green");
@@ -430,6 +482,7 @@ describe("the strip over the machine roster", () => {
           },
         ]),
         exclusions: { kind: "none_withheld" },
+        cut: { kind: "whole" },
       },
     });
     expect(s.level).toBe("amber");
@@ -437,7 +490,7 @@ describe("the strip over the machine roster", () => {
     expect(s.headline).not.toBe("Something is degrading");
     expect(s.detail).toContain("Coord's roster holds no machine it grades.");
     expect(s.detail).toContain(
-      "1 machine not reporting healthy is not a degradation: 1 placeholder row — see Dev Ops."
+      "1 row not reporting healthy is not a degradation: the 1 placeholder row named above — see Dev Ops."
     );
   });
 
@@ -467,6 +520,7 @@ describe("the strip over the machine roster", () => {
             { device_id: "d", state: "healthy" },
           ]),
           exclusions,
+          cut: { kind: "whole" },
         },
       });
       expect(s.level).toBe("amber");
@@ -480,7 +534,7 @@ describe("the strip over the machine roster", () => {
   it("says, by state, what the nav counts that home does not call degrading", () => {
     const s = deriveHomeStrip(calm(), machines(["abandoned", "unknown", null]));
     expect(s.detail).toContain(
-      "2 machines not reporting healthy are not degradations: 1 abandoned, 1 with no verdict — see Dev Ops."
+      "2 machines not reporting healthy are not degradations: 1 abandoned, 1 of the 2 with no verdict named above — see Dev Ops."
     );
     expect(s.badges.find((b) => b.key === "machines")?.label).toBe(
       "machines not healthy 2"
@@ -493,6 +547,7 @@ describe("the strip over the machine roster", () => {
         stale: false,
         counts: summarizeMachineHealth([]),
         exclusions: { kind: "none_withheld" },
+        cut: { kind: "whole" },
       },
     });
     expect(none.level).toBe("amber");
@@ -504,6 +559,7 @@ describe("the strip over the machine roster", () => {
       machines: {
         stale: false,
         counts: summarizeMachineHealth([]),
+        cut: { kind: "whole" },
         exclusions: {
           kind: "withheld_unmeasured",
           reason: "pool timed out",
@@ -558,6 +614,7 @@ describe("the strip over a Correct? section the page leaves out", () => {
     stale: false,
     counts: summarizeMachineHealth([{ device_id: "d", state: "healthy" }]),
     exclusions: { kind: "none_withheld" as const },
+    cut: { kind: "whole" as const },
   };
 
   it("names no 'correct?' and says correctness is not measured, staying amber", () => {
@@ -601,6 +658,7 @@ describe("the strip's needs-you figure from the queues, while coord's needs bloc
     stale: false,
     counts: summarizeMachineHealth([{ device_id: "d", state: "healthy" }]),
     exclusions: { kind: "none_withheld" as const },
+    cut: { kind: "whole" as const },
   };
   const badge = (s: ReturnType<typeof deriveHomeStrip>) =>
     s.badges.find((b) => b.key === "needs");
@@ -717,6 +775,7 @@ describe("the strip while presenting", () => {
     stale: false,
     counts: summarizeMachineHealth([{ device_id: "d", state: "healthy" }]),
     exclusions: { kind: "none_withheld" as const },
+    cut: { kind: "whole" as const },
   };
 
   it("says 'not built yet' in operator mode, as before", () => {
@@ -735,8 +794,10 @@ describe("the strip while presenting", () => {
       "2 decisions need you — counted from coord's lists of open approvals and pending agent questions"
     );
     expect(s.detail).toContain(
-      "Needs you is counted from coord's lists of open approvals and pending agent questions, since coord's needs block is not read."
+      "Needs you is counted from coord's lists of open approvals and pending agent questions."
     );
+    // Coord's needs block is left out while presenting: named nowhere.
+    expect(`${s.headline} ${s.detail}`).not.toMatch(/needs block/);
     expect(`${s.headline} ${s.detail}`).not.toMatch(/Gates|Questions/);
     const none = deriveHomeStrip(unbuilt, {
       machines,
@@ -748,6 +809,22 @@ describe("the strip while presenting", () => {
     expect(none.detail).toContain(
       "Needs you is unknown: coord's lists of open approvals and pending agent questions were not read."
     );
+  });
+
+  it("names a queue that was not read in the presented words, never Gates or Questions", () => {
+    for (const [notRead, name] of [
+      ["gates", "The list of open approvals was not read"],
+      ["questions", "The list of pending agent questions was not read"],
+    ] as const) {
+      const s = deriveHomeStrip(unbuilt, {
+        machines,
+        presenting: true,
+        queues: { count: 1, exact: false, stale: false, notRead: [notRead] },
+      });
+      expect(s.detail).toContain(name);
+      expect(`${s.headline} ${s.detail}`).not.toMatch(/Gates|Questions/);
+      expect(`${s.headline} ${s.detail}`).not.toMatch(/needs block/);
+    }
   });
 
   it("still names an unread needs block coord could build", () => {

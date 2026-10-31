@@ -9,9 +9,13 @@ import type { DevOverview } from "@/services/admin-dev-service";
 import {
   degradingCoverage,
   isNotHealthyDevice,
+  COORD_ROSTER_ROW_LIMIT,
   isRosterBindingFault,
   isRosterComplete,
+  isRosterCut,
+  readRosterCut,
   readRosterExclusions,
+  rosterIncompleteSentence,
   machineVerdict,
   notDegradationsSentence,
   placeholdersSentence,
@@ -52,6 +56,7 @@ const read = (
   asOf: null,
   stale,
   exclusions,
+  cut: { kind: "whole" },
 });
 
 describe("machine health", () => {
@@ -131,7 +136,7 @@ describe("machine health", () => {
     ]);
     expect(c.notHealthy).toBe(1);
     expect(notDegradationsSentence(c, { seeDevOps: false })).toBe(
-      "1 machine not reporting healthy is not a degradation: 1 placeholder row."
+      "1 row not reporting healthy is not a degradation: the 1 placeholder row named above."
     );
   });
 
@@ -191,7 +196,7 @@ describe("machine health", () => {
         seeDevOps: true,
       })
     ).toBe(
-      "2 machines not reporting healthy are not degradations: 1 abandoned, 1 with no verdict — see Dev Ops."
+      "2 machines not reporting healthy are not degradations: 1 abandoned, the 1 with no verdict named above — see Dev Ops."
     );
     expect(
       notDegradationsSentence(read(["abandoned"]).counts!, {
@@ -247,13 +252,16 @@ describe("machine health", () => {
         asOf: null,
         stale: false,
         exclusions: p!.exclusions,
+        cut: p!.cut,
       };
     };
 
     it("reads coord's exclusion fields into one of four arms", () => {
-      expect(readRosterExclusions({ excluded: { unbound: 0 } })).toEqual({
-        kind: "none_withheld",
-      });
+      expect(
+        readRosterExclusions({
+          excluded: { unbound: 0, bound_to_other_tenant: 0 },
+        })
+      ).toEqual({ kind: "none_withheld" });
       expect(
         readRosterExclusions({
           excluded: { unbound: 2, bound_to_other_tenant: 1 },
@@ -282,13 +290,15 @@ describe("machine health", () => {
       expect(
         parseMachineHealth({
           devices: [{ state: "healthy" }],
-          excluded: { unbound: 3 },
+          excluded: { unbound: 3, bound_to_other_tenant: 0 },
         })?.exclusions
       ).toEqual({ kind: "withheld", unbound: 3, boundToOtherTenant: 0 });
     });
 
     it("is a binding fault, UNKNOWN with the reason, when coord withheld devices or could not count them", () => {
-      const withheld = empty({ excluded: { unbound: 1 } });
+      const withheld = empty({
+        excluded: { unbound: 1, bound_to_other_tenant: 0 },
+      });
       expect(isRosterBindingFault(withheld.exclusions!)).toBe(true);
       expect(machinesAllHealthy(withheld)).toBe(false);
       expect(machineHealthSentence(withheld)).toBe(
@@ -333,11 +343,15 @@ describe("machine health", () => {
         asOf: null,
         stale: false,
         exclusions: p!.exclusions,
+        cut: p!.cut,
       };
     };
 
     it("says how many coord withheld, with counts, and is not calm", () => {
-      const m = parsed({ excluded: { unbound: 2 }, excluded_error: null });
+      const m = parsed({
+        excluded: { unbound: 2, bound_to_other_tenant: 0 },
+        excluded_error: null,
+      });
       expect(machinesAllHealthy(m)).toBe(false);
       expect(isRosterBindingFault(m.exclusions!)).toBe(true);
       expect(machineHealthSentence(m)).toBe(
@@ -370,6 +384,188 @@ describe("machine health", () => {
       expect(machinesAllHealthy(m)).toBe(true);
       expect(machineHealthSentence(m)).toBe("The 1 machine reports healthy.");
     });
+  });
+
+  describe("a roster at coord's row limit may be cut off, and is never calm", () => {
+    const healthy = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        device_id: `d-${i}`,
+        state: "healthy",
+      }));
+    const view = (body: Record<string, unknown>): MachineHealthView => {
+      const p = parseMachineHealth({
+        excluded: { unbound: 0, bound_to_other_tenant: 0 },
+        excluded_error: null,
+        ...body,
+      });
+      return {
+        state: "read",
+        counts: p!.counts,
+        asOf: null,
+        stale: false,
+        exclusions: p!.exclusions,
+        cut: p!.cut,
+      };
+    };
+
+    it("names coord's LIMIT as one constant", () => {
+      expect(COORD_ROSTER_ROW_LIMIT).toBe(1000);
+    });
+
+    it("reads each of the three signals as may be cut off, and nothing else", () => {
+      expect(readRosterCut({ devices: healthy(999) })).toEqual({
+        kind: "whole",
+      });
+      expect(readRosterCut({ devices: healthy(1000) })).toEqual({
+        kind: "may_be_cut",
+        listed: 1000,
+        total: null,
+      });
+      expect(readRosterCut({ devices: healthy(3), truncated: true })).toEqual({
+        kind: "may_be_cut",
+        listed: 3,
+        total: null,
+      });
+      expect(readRosterCut({ devices: healthy(3), total: 7 })).toEqual({
+        kind: "may_be_cut",
+        listed: 3,
+        total: 7,
+      });
+      // A total no larger than the list, or `truncated: false`, says no cut.
+      expect(readRosterCut({ devices: healthy(3), total: 3 })).toEqual({
+        kind: "whole",
+      });
+      expect(readRosterCut({ devices: healthy(3), truncated: false })).toEqual({
+        kind: "whole",
+      });
+      // Coord saying "not truncated" does not lift the cap reading.
+      expect(
+        isRosterCut(readRosterCut({ devices: healthy(1000), truncated: false }))
+      ).toBe(true);
+    });
+
+    it.each([
+      [
+        "at the limit",
+        { devices: healthy(1000) },
+        "All 1000 machines report healthy. Coord's roster lists 1000 rows, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
+      ],
+      [
+        "flagged truncated",
+        { devices: healthy(2), truncated: true },
+        "All 2 machines report healthy. Coord's roster lists 2 rows, so it may be cut off at coord's limit of 1000 — machine health beyond it is unknown.",
+      ],
+      [
+        "with a larger total",
+        { devices: healthy(1), total: 4 },
+        "The 1 machine reports healthy. Coord's roster lists 1 row of 4, so it is cut off at coord's limit — the health of the other 3 is unknown.",
+      ],
+    ])("is not calm, and says so, %s", (_label, body, sentence) => {
+      const m = view(body);
+      expect(isRosterComplete(m.exclusions!)).toBe(true);
+      expect(machinesAllHealthy(m)).toBe(false);
+      expect(machineHealthSentence(m)).toBe(sentence);
+    });
+
+    it("is calm one row under the limit", () => {
+      expect(machinesAllHealthy(view({ devices: healthy(999) }))).toBe(true);
+    });
+  });
+
+  describe("a roster with no live machine is never calm", () => {
+    it("says no live machine reports when every graded machine is abandoned", () => {
+      const m = read(["abandoned", "abandoned", "abandoned"]);
+      expect(machinesAllHealthy(m)).toBe(false);
+      expect(machineHealthSentence(m)).toBe(
+        "All 3 machines coord grades are abandoned, so no live machine reports — there is no machine this view can call healthy."
+      );
+      const one = read(["abandoned"]);
+      expect(machinesAllHealthy(one)).toBe(false);
+      expect(machineHealthSentence(one)).toBe(
+        "The 1 machine coord grades is abandoned, so no live machine reports — there is no machine this view can call healthy."
+      );
+    });
+
+    it("counts placeholders beside abandoned machines as no live machine either", () => {
+      const m: MachineHealthView = {
+        ...read([]),
+        counts: summarizeMachineHealth([
+          { device_id: "a", state: "abandoned" },
+          { device_id: "p", state: "healthy", dispatch_liveness: "unknown" },
+        ]),
+      };
+      expect(machinesAllHealthy(m)).toBe(false);
+      expect(machineHealthSentence(m)).toContain("no live machine reports");
+    });
+
+    it("is still calm with one live healthy machine beside abandoned ones", () => {
+      expect(machinesAllHealthy(read(["abandoned", "healthy"]))).toBe(true);
+    });
+  });
+
+  describe("a malformed `excluded` is UNKNOWN, never a complete roster", () => {
+    it.each([
+      ["{}", {}],
+      ["[]", []],
+      ["null counts", { unbound: null, bound_to_other_tenant: null }],
+      ["string counts", { unbound: "0", bound_to_other_tenant: "0" }],
+      ["a missing count", { unbound: 0 }],
+      ["a negative count", { unbound: -1, bound_to_other_tenant: 0 }],
+      ["a fractional count", { unbound: 0.5, bound_to_other_tenant: 0 }],
+      ["a non-finite count", { unbound: 0, bound_to_other_tenant: NaN }],
+      ["a string", "none"],
+      ["a number", 0],
+    ])("reads %s as withheld_unmeasured", (_label, excluded) => {
+      const e = readRosterExclusions({ excluded });
+      expect(e).toEqual({ kind: "withheld_unmeasured", reason: null });
+      expect(isRosterComplete(e)).toBe(false);
+      const p = parseMachineHealth({
+        devices: [{ device_id: "d", state: "healthy" }],
+        excluded,
+        excluded_error: null,
+      } as never);
+      expect(
+        machinesAllHealthy({
+          state: "read",
+          counts: p!.counts,
+          asOf: null,
+          stale: false,
+          exclusions: p!.exclusions,
+          cut: p!.cut,
+        })
+      ).toBe(false);
+    });
+  });
+
+  it("words a single withheld machine in the singular", () => {
+    expect(
+      rosterIncompleteSentence(
+        { kind: "withheld", unbound: 0, boundToOtherTenant: 1 },
+        { withReason: false }
+      )
+    ).toBe(
+      "Coord also withheld 1 machine from its roster (1 bound to another tenant), so the roster is incomplete and its health is unknown."
+    );
+  });
+
+  it("never counts a placeholder or verdict-less row twice: the reconcile line points back, in rows", () => {
+    const c = summarizeMachineHealth([
+      { device_id: "h", state: "healthy" },
+      { device_id: "a", state: "abandoned" },
+      { device_id: "u", state: "unknown" },
+      { device_id: "p", state: "partitioned", dispatch_liveness: "unknown" },
+    ]);
+    expect(notDegradationsSentence(c, { seeDevOps: false })).toBe(
+      "3 rows not reporting healthy are not degradations: 1 abandoned, the 1 with no verdict named above, the 1 placeholder row named above."
+    );
+    // Without a placeholder the subject stays machines.
+    expect(
+      notDegradationsSentence(read(["abandoned", "abandoned"]).counts!, {
+        seeDevOps: false,
+      })
+    ).toBe(
+      "2 machines not reporting healthy are not degradations: 2 abandoned."
+    );
   });
 
   it("words each arm, an unread one as unknown", () => {
