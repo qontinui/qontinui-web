@@ -224,6 +224,7 @@ def verified_devices(
     tokens: dict[str, dict[str, Any]] = {
         token: {
             "sub_type": "device",
+            "mint_provenance": "paired",
             "device_id": str(DEVICE),
             "user_id": str(owner.id),
             "tenant_id": str(TENANT_T2),  # never consulted for the tenant
@@ -608,6 +609,41 @@ class TestDevicePrincipal:
         assert _code(response) == "not_a_device_principal"
         assert coord.requests == []
 
+    @pytest.mark.parametrize("provenance", ["bootstrap", "unknown", None])
+    async def test_only_a_pairing_issued_device_token_is_a_device(
+        self, async_db_session, coord: FakeCoord, verified_devices, owner, provenance
+    ) -> None:
+        """The same allowlist as ``deps.get_paired_device``, decided here and
+        not left to coord's memberships door alone."""
+        claims: dict[str, Any] = {
+            "sub_type": "device",
+            "device_id": str(DEVICE),
+            "user_id": str(owner.id),
+        }
+        if provenance is not None:
+            claims["mint_provenance"] = provenance
+        verified_devices({"unpaired": claims})
+        coord.memberships["unpaired"] = [(TENANT_T, ["admin"])]
+        async with _client(_app(async_db_session), token="unpaired") as client:
+            response = await _create(client, _publish())
+        assert response.status_code == 403, response.text
+        assert _code(response) == "device_token_provenance_refused"
+        assert coord.requests == []
+
+    async def test_a_superusers_device_gets_only_its_bindings_roles(
+        self, async_db_session, coord: FakeCoord, verified_devices, owner
+    ) -> None:
+        """Staff's cross-project edit belongs to the person, not to every
+        device acting for them."""
+        owner.is_superuser = True
+        await async_db_session.commit()
+        async with _client(_app(async_db_session), token=VIEWER_TOKEN) as client:
+            listing = await client.get(f"{API}/pages")
+            assert listing.json()["can_edit"] is False
+            response = await _create(client, _publish())
+        assert response.status_code == 403, response.text
+        assert response.json()["detail"]["error"] == "not_permitted"
+
     async def test_a_non_coord_token_is_a_plain_401_that_never_reaches_the_verifier(
         self, async_db_session, coord: FakeCoord, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -973,6 +1009,46 @@ class TestUpsertBySource:
         await _create(agent, _publish())
         assert await self._find(agent, path=PATH[:-3]) == []
         assert len(await self._find(agent)) == 1
+
+    async def test_a_repo_filter_with_nothing_usable_matches_nothing(
+        self, agent: httpx.AsyncClient
+    ) -> None:
+        await _create(agent, _publish())
+        listing = await agent.get(
+            f"{API}/pages", params={"source_repo": "  ", "source_path": PATH}
+        )
+        assert listing.status_code == 200, listing.text
+        assert listing.json()["items"] == []
+
+    async def test_new_content_without_a_sha_no_longer_claims_the_old_commit(
+        self, agent: httpx.AsyncClient
+    ) -> None:
+        made = (await _create(agent, _publish(sha="a" * 40))).json()["item"]
+        edited = await agent.patch(
+            f"{API}/pages/{made['id']}",
+            json={
+                "source_repo": REPO,
+                "source_path": PATH,
+                "body_md": "# CI server runbook\n\nEdited by hand.\n",
+            },
+            headers={"If-Match": '"1"'},
+        )
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["item"]["source_sha"] is None
+        # A change that leaves the body alone keeps the commit it mirrors.
+        made2 = (
+            await _create(
+                agent,
+                _publish(sha="c" * 40, path="runbooks/other.md", title="Other"),
+            )
+        ).json()["item"]
+        retitled = await agent.patch(
+            f"{API}/pages/{made2['id']}",
+            json={"title": "Other runbook"},
+            headers={"If-Match": '"1"'},
+        )
+        assert retitled.status_code == 200, retitled.text
+        assert retitled.json()["item"]["source_sha"] == "c" * 40
 
     async def test_the_same_sha_is_a_no_op(
         self, agent: httpx.AsyncClient, async_db_session

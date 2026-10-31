@@ -608,8 +608,10 @@ class PageStore:
         if slugs:
             stmt = stmt.where(Page.slug.in_(slugs))
         # Exact matches: a source is an identity, not a search term.
-        repos = [normalize_source_repo(v) for v in filters.get("source_repo", [])]
-        if any(repos):
+        # A filter that was given matches exactly, even when nothing of it
+        # survives normalisation: an unusable repo matches no page, never all.
+        if filters.get("source_repo"):
+            repos = [normalize_source_repo(v) for v in filters["source_repo"]]
             stmt = stmt.where(Page.source_repo.in_([r for r in repos if r]))
         paths = [v.strip() for v in filters.get("source_path", []) if v.strip()]
         if paths:
@@ -825,6 +827,15 @@ class PageStore:
         # ``source_sha`` stays in ``changes`` because it IS content.
         changes.pop("source_repo", None)
         changes.pop("source_path", None)
+        # New content that names no commit no longer mirrors the stored one:
+        # the sha becomes unknown rather than vouching for a body it never
+        # produced (the same rule ``revert`` keeps).
+        if (
+            page.source_sha is not None
+            and "source_sha" not in changes
+            and changes.get("body_md", page.body_md) != page.body_md
+        ):
+            changes["source_sha"] = None
         new_related = related
         if "related" in changes:
             if page.kind != "document":

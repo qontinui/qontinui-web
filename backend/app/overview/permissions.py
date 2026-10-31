@@ -219,6 +219,16 @@ async def get_overview_principal(
             "This door accepts a person's session or a paired device's token; "
             "this token is neither.",
         )
+    # The same allowlist as `deps.get_paired_device`: only a pairing-issued
+    # token acts as a device here. Coord's memberships door refuses an
+    # unpaired device too; this does not lean on that alone.
+    if claims.get("mint_provenance") != api_deps.PAIRED_MINT_PROVENANCE:
+        raise _refusal(
+            403,
+            "device_token_provenance_refused",
+            "This door accepts only a pairing-issued device token "
+            "(mint_provenance=paired).",
+        )
     context = DeviceTokenContext(claims=claims, user=device_user, token=token)
     return OverviewPrincipal(
         kind="device",
@@ -390,7 +400,11 @@ async def get_overview_access(
             if settings is not None and settings.editing_roles is not None
             else ("admin",)
         ),
-        qontinui_staff=bool(getattr(user, "is_superuser", False)),
+        # Staff's cross-project edit is a person's: a device acting for a
+        # superuser gets only the roles its tenant binding gives it.
+        qontinui_staff=(
+            principal.kind != "device" and bool(getattr(user, "is_superuser", False))
+        ),
         user_id=getattr(user, "id", None),
         actor=(user.email or str(user.id)) if user is not None else None,
         kind=principal.kind,
