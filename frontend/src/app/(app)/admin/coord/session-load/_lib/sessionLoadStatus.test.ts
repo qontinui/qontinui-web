@@ -779,7 +779,7 @@ describe("runs", () => {
     const nowMs = Date.parse("2026-10-26T10:30:00Z");
     expect(runLinks(run(), nowMs).map((l) => [l.key, l.href])).toEqual([
       ["gate", "/admin/coord/gates?gate=2d2c3b4a-0000-4000-8000-000000000002"],
-      ["spawn", "/admin/coord/spawns/requests?window=24h"],
+      ["spawn", "/admin/coord/spawns/requests?window=7d"],
       ["session", "/sessions/1d2c3b4a-0000-4000-8000-000000000001"],
     ]);
     expect(
@@ -829,28 +829,39 @@ describe("runs", () => {
     ).toEqual([]);
   });
 
-  it("opens a spawn request in the narrowest requests window that holds the run's start", () => {
+  it("opens a spawn request one window wider than the run's start needs, and 30 days at most", () => {
     const start = Date.parse("2026-10-26T10:00:00Z");
-    const spawnHref = (nowMs: number, over = {}) =>
-      runLinks(run(over), nowMs).find((l) => l.key === "spawn")?.href;
-    const day = 24 * 3600_000;
-    expect(spawnHref(start + day)).toBe(
-      "/admin/coord/spawns/requests?window=24h"
-    );
-    expect(spawnHref(start + day + 1)).toBe(
+    const spawn = (nowMs: number, over = {}) =>
+      runLinks(run(over), nowMs).find((l) => l.key === "spawn");
+    const href = (nowMs: number, over = {}) => spawn(nowMs, over)?.href;
+    const hour = 3600_000;
+    const day = 24 * hour;
+    // A start inside 24 h opens 7 d: the request may predate its run (a
+    // request made 25 h ago and deferred 2 h starts its run 23 h ago).
+    expect(href(start + 23 * hour)).toBe(
       "/admin/coord/spawns/requests?window=7d"
     );
-    expect(spawnHref(start + 7 * day + 1)).toBe(
+    expect(href(start + day)).toBe("/admin/coord/spawns/requests?window=7d");
+    // Past 24 h, inside 7 d: 30 d.
+    expect(href(start + day + 1)).toBe(
       "/admin/coord/spawns/requests?window=30d"
     );
-    // Older than every window, or a start nobody can read: the view at its
-    // own default window, never a window that cannot hold the request.
-    expect(spawnHref(start + 30 * day + 1)).toBe(
-      "/admin/coord/spawns/requests"
+    // Past 7 d, inside 30 d: 30 d is the widest window, and holds the start.
+    expect(href(start + 30 * day)).toBe(
+      "/admin/coord/spawns/requests?window=30d"
     );
-    expect(spawnHref(start, { started_at: "not a date" })).toBe(
-      "/admin/coord/spawns/requests"
-    );
+    expect(spawn(start + 30 * day)?.label).toBe("Find the spawn request");
+    // Older than every window, or a start nobody can read: still 30 d, never
+    // the 7 d default, and the link says the request may be older than it.
+    for (const old of [
+      spawn(start + 30 * day + 1),
+      spawn(start, { started_at: "not a date" }),
+    ]) {
+      expect(old?.href).toBe("/admin/coord/spawns/requests?window=30d");
+      expect(old?.label).toBe(
+        "Find the spawn request (it may be older than the last 30 days, the widest view)"
+      );
+    }
   });
 
   it("says when a finished run is still holding its slot, and only then", () => {

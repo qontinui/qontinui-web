@@ -269,6 +269,26 @@ describe("/admin/coord/session-load", () => {
     ).toBe("/admin/coord/gates?gate=2d2c3b4a-0000-4000-8000-000000000002");
   });
 
+  it("a run's spawn request link reads the page's clock to pick its window", async () => {
+    // Started two hours before the page's own clock: the narrowest window
+    // holding the start is 24 h, so the link opens the next wider, 7 d. A
+    // row that read no clock (or a stale one) would land on 30 d.
+    const started = new Date(Date.now() - 2 * 3600_000).toISOString();
+    routes.runs = () => ({
+      body: runListFx([runFx({ started_at: started })]),
+    });
+    await renderPage();
+    const run = screen.getByTestId("coord-session-load-run-row");
+    await act(async () => {
+      fireEvent.click(within(run).getByRole("button", { expanded: false }));
+    });
+    const link = screen.getByTestId("coord-session-load-run-link-spawn");
+    expect(link.getAttribute("href")).toBe(
+      "/admin/coord/spawns/requests?window=7d"
+    );
+    expect(link.textContent).toBe("Find the spawn request");
+  });
+
   it("an open run past its finish says so on the row; a run's session always links", async () => {
     routes.runs = () => ({
       body: runListFx([
