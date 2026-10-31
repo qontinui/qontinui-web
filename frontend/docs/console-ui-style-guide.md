@@ -2344,7 +2344,13 @@ is not a safety control — the co-pilot banner's "Disable for this account" is 
   `Machine A`, `B`… — one letter per computer for the session, on every panel,
   however each panel identifies it (device id, hostname; on the coordination
   overview, a degradation subject coord names as a device — §3.14); two letters
-  that turn out to be one machine merge to the earlier.
+  that turn out to be one machine merge to the earlier. A surface that lists
+  DEVICES, one line per device id, tells apart two devices that share a letter
+  with `useDeviceOrdinals` ("Machine A, device 1", "…, device 2", ranked by the
+  session's first-seen order of each device id), and in operator view gives two
+  lines that share a hostname each its short device id — the spawns Machines list
+  (`spawns/_lib/deviceDistinction.ts`). The letter stays the computer's on every
+  other panel.
 - `CostFigure` is the only component that renders a per-task cost, always beside
   "list-price equivalent, not your bill", and in presentation mode never — a
   descriptor instead. `costRenders.test.ts` (over `src/test/costRenderScan.ts`)
