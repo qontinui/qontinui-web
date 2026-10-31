@@ -6,11 +6,16 @@
  * Phase 4:
  *
  *   1. the strip — one derived headline, never green over a block not read;
- *   2. Needs you — operator forks, each as fork + recommendation;
- *   3. Degrading — open degradations with their onset, recently cleared folded;
- *   4. Work by state — class totals, then one row per repo expanding to named units;
- *   5. Correct? — present from day one so its absence is visible;
- *   6. What this view does not know — always rendered, never collapsed.
+ *   2. Needs you — operator forks, each as fork + recommendation; until coord
+ *      serves that block, the Gates and Questions lists' counts;
+ *   3. Degrading — open degradations with their onset, recently cleared
+ *      folded, and the machines coord reports not healthy;
+ *   4. Work by state — class totals, then one row per repo expanding to its
+ *      class counts and named units;
+ *   5. Correct? — present from day one so its absence is visible (to the
+ *      operator; a presentation leaves it out while nothing measures it);
+ *   6. What this view does not know — always rendered: the sources not read
+ *      listed, the ones read behind one disclosure.
  *
  * Composition only (style guide §6.4): every visual element here is a console
  * primitive. Every derivation — the strip, the labels, the "may we say nothing
