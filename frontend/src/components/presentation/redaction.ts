@@ -31,6 +31,9 @@
 import { presentationAge } from "./presentationClock";
 import type { PresentationScopeState } from "./presentationScope";
 
+/** A descriptor field that some kinds of item do not have. */
+export type RedactionDescriptorField = "area" | "status" | "at";
+
 /** The structured description shown in place of withheld free text. */
 export interface RedactionDescriptor {
   /** What the item is, in the reader's words: "Plan", "Pull request", "Session". */
@@ -41,6 +44,17 @@ export interface RedactionDescriptor {
   readonly status?: string | null;
   /** When the item last changed (ISO-8601); rendered as an age. */
   readonly at?: string | null;
+  /**
+   * The fields this KIND of item does not have — a tenant's name has no area,
+   * status or age of its own, nor does a line of a document an area. The line
+   * leaves them out rather than calling them unknown: "area unknown" says an
+   * area exists and was not read, which is false of an item that has none
+   * (served policy `ux-priorities`
+   * `a-label-names-one-referent-and-a-quantity-names-its-unit`). A field the
+   * item has but the page was not served stays "unknown". A field listed here
+   * is left out whatever it holds; `kind` is never left out.
+   */
+  readonly notApplicable?: readonly RedactionDescriptorField[];
 }
 
 /** An item's free text and the repositories it belongs to. */
@@ -69,6 +83,19 @@ export type RedactionVerdict =
 export const WITHHELD = "withheld";
 
 const DESCRIPTOR_SEPARATOR = " · ";
+
+/**
+ * A project's (coord tenant's) name, which no repository can vouch for — so
+ * while presenting it is always withheld, and its line is its kind alone: a
+ * project has no area, status or age of its own. One descriptor for every
+ * surface that names the active project, the home page's tenant strip and
+ * the app shell's project selector alike, so an audience reads one word for
+ * one referent (D3.3).
+ */
+export const PROJECT_NAME_DESCRIPTOR: RedactionDescriptor = {
+  kind: "Project",
+  notApplicable: ["area", "status", "at"],
+};
 
 /**
  * The owner segment of a repository reference, lower-cased; `null` when there
@@ -171,8 +198,9 @@ function presentField(value: string | null | undefined): string | null {
 /**
  * The descriptor line, `kind · area · status · age`. A missing field says it
  * is unknown; a field that may name someone the scope cannot clear says
- * `withheld`. The age is `presentationAge`'s: `now` defaults to the clock,
- * and `null` — a server or hydration render — states the instant instead.
+ * `withheld`; a field the item's kind does not have (`notApplicable`) is left
+ * out. The age is `presentationAge`'s: `now` defaults to the clock, and
+ * `null` — a server or hydration render — states the instant instead.
  */
 export function describeRedacted(
   descriptor: RedactionDescriptor,
@@ -182,25 +210,37 @@ export function describeRedacted(
   const terms = scope.status === "ready" ? scope.scope.confidentialTerms : null;
   const checked = (value: string) =>
     terms !== null && containsConfidentialTerm(value, terms) ? WITHHELD : value;
+  const applies = (field: RedactionDescriptorField) =>
+    !(descriptor.notApplicable ?? []).includes(field);
 
   const kind = presentField(descriptor.kind);
   const area = presentField(descriptor.area);
   const status = presentField(descriptor.status);
   const parts = [
     kind === null ? "item" : checked(kind),
-    area === null
-      ? "area unknown"
-      : terms === null
-        ? `area ${WITHHELD}`
-        : checked(area) === WITHHELD
+    !applies("area")
+      ? null
+      : area === null
+        ? "area unknown"
+        : terms === null
           ? `area ${WITHHELD}`
-          : area,
-    status === null ? "status unknown" : checked(status),
-    presentationAge(
-      descriptor.at,
-      options.now === undefined ? Date.now() : options.now,
-      "age unknown"
-    ),
+          : checked(area) === WITHHELD
+            ? `area ${WITHHELD}`
+            : area,
+    !applies("status")
+      ? null
+      : status === null
+        ? "status unknown"
+        : checked(status),
+    !applies("at")
+      ? null
+      : presentationAge(
+          descriptor.at,
+          options.now === undefined ? Date.now() : options.now,
+          "age unknown"
+        ),
   ];
-  return parts.join(DESCRIPTOR_SEPARATOR);
+  return parts
+    .filter((part): part is string => part !== null)
+    .join(DESCRIPTOR_SEPARATOR);
 }

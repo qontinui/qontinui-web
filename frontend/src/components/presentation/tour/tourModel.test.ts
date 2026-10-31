@@ -29,7 +29,7 @@ import {
 const ready = (...routes: string[]): PresentationReadyRoute[] =>
   routes.map((route) => ({ route, provenBy: "x.test.tsx" }));
 
-/** Today's shape: the twin, the UI Bridge and Dev Ops ready; the overview and agentic activity not. */
+/** A partly ready shape, as when the tour landed (hence the name): the twin, the UI Bridge and Dev Ops ready; the overview and agentic activity not. */
 const TODAY = ready(
   "/digital-twin",
   "/admin/coord/ui-bridge",
@@ -69,7 +69,10 @@ describe("the tour's links", () => {
       "/admin/coord/devops?present=1&tour=1"
     );
     expect(
-      tourHref("/admin/coord/devops?window=24h#rows", ready("/admin/coord/devops"))
+      tourHref(
+        "/admin/coord/devops?window=24h#rows",
+        ready("/admin/coord/devops")
+      )
     ).toBe("/admin/coord/devops?window=24h&present=1&tour=1#rows");
   });
 
@@ -100,9 +103,7 @@ describe("tourStops", () => {
   });
 
   it("reaches exactly the stops the registry lets it present", () => {
-    expect(
-      tourStops(TODAY).map((s) => [s.surface.id, s.href])
-    ).toEqual([
+    expect(tourStops(TODAY).map((s) => [s.surface.id, s.href])).toEqual([
       ["digital-twin", href("/digital-twin")],
       ["coordination-overview", null],
       ["agentic-activity", null],
@@ -169,9 +170,9 @@ describe("tourView — at a stop", () => {
   });
 
   it("reads the stop from the path, ignoring the query, the hash and a trailing slash", () => {
-    expect(viewAt("/admin/coord/devops/?present=1&tour=1#x").current?.surface.id).toBe(
-      "dev-ops"
-    );
+    expect(
+      viewAt("/admin/coord/devops/?present=1&tour=1#x").current?.surface.id
+    ).toBe("dev-ops");
   });
 
   it("marks a stop it cannot present as the stop on screen, uncounted, with its neighbours", () => {

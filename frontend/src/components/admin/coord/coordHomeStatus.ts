@@ -1,0 +1,2335 @@
+/**
+ * coordHomeStatus — everything `/admin/coord/home` DERIVES from coord's
+ * project-state door, as pure functions, plus R3's audited severity table for
+ * the surface.
+ *
+ * Plan
+ * `2026-09-20-what-is-the-state-of-my-projects-and-what-needs-me-is-answerable-from-one-screen`
+ * Phase 4. The page answers the operator's three questions — *is this on
+ * track, is it correct, does it need me* — from ONE read,
+ * `GET /api/v1/operations/project-state`, a plain proxy of coord's
+ * `GET /coord/project-state`. The same shared core serves the
+ * `coord_project_state` MCP tool, so what the operator sees is what an agent
+ * reads.
+ *
+ * ## Wire shape source
+ *
+ * Field names follow coord's `crates/coord/src/project_state.rs` (the Phase 1–2
+ * door: `on_track`, `degradations`, `correctness`, `does_not_know`), and the
+ * plan's Phase 3 wire shape for `needs_me`, which coord serves as
+ * `{state: "not_implemented"}` until that phase lands.
+ *
+ * ## Every block's `state` is the gate
+ *
+ * Coord serves `state ∈ {read, could_not_read, stale, not_implemented,
+ * unknown}` on every block, DISTINCT from its counts. A block that is not
+ * `read` carries no counts — with ONE exception: a `stale` degradations block
+ * still carries its `open` / `declared` / `recently_cleared` ROWS (below). The
+ * parser holds the same line on this side of the wire:
+ *
+ * - counts are taken ONLY from a `read` block — a count on any other state is
+ *   dropped, never trusted;
+ * - a missing or non-numeric count is `null` (rendered `–`), never `0`
+ *   (`[policy: silent-empty-is-unknown]`);
+ * - an unrecognised state string reads `unknown`, never `read`.
+ *
+ * The one deliberate exception is degradation ROWS on a `stale` block: coord
+ * serves them because *"a positive fact survives a stale watcher"*. Their rows
+ * render (they are true), but no COUNT is shown for them — not the strip badge
+ * and not the recently-cleared tally — because the rows are not known to be
+ * all of them.
+ *
+ * ## A failed latest poll forces amber (style guide R6)
+ *
+ * The page keeps the last good view when a poll fails, and
+ * {@link deriveHomeStrip} is told so (`stale`): the strip is then amber at the
+ * least, its headline says the reading is "at the last good read (T)", and the
+ * two calm empty states ("Nothing needs you", "Nothing is degrading") are
+ * worded in the past tense at T rather than as a present fact.
+ *
+ * ## R8 — no internal vocabulary on the primary surface
+ *
+ * Wire keys never reach the screen. `waiting_on_gate` renders "waiting on a
+ * condition", `off_vocabulary` "status not recognised", and **`stalled`
+ * renders "no recorded change in N days"** — served policy `ux-priorities`
+ * `a-label-names-one-referent-and-a-quantity-names-its-unit` ("A label may not
+ * assert a judgement the data does not carry"): the class is a mechanical
+ * absence-of-recorded-history measure and "stalled" is a verdict it does not
+ * compute. The wire key stays `stalled`; this is a rendering rule, pinned by
+ * `coordHomeStatus.test.ts`.
+ *
+ * ## The strip is never green over what it does not know
+ *
+ * {@link deriveHomeStrip} escalates across the blocks with
+ * `escalateAttention`: an operator fork on the list is red (someone must act
+ * now), an open degradation is amber, and ANY block that is not `read` — or any
+ * `does_not_know` source that is not `read` — floors the strip at amber
+ * "cannot tell" (style guide R3, "amber also covers we do not know"; served
+ * policy `ux-priorities` `a-status-signal-must-observe-the-state-it-names`).
+ * Green is reachable only when every block was read, nothing needs the
+ * operator and nothing is degrading.
+ */
+
+import {
+  escalateAttention,
+  type Attention,
+} from "@/components/console/attention";
+import type { HealthStripLevel } from "@/components/console/HealthStrip";
+import { absoluteTime } from "@/components/console/time";
+import type { StatusPalette } from "@/components/console/statusRow";
+import {
+  AUTHOR_RED,
+  INERT,
+  UNKNOWN_AMBER,
+  WAITING_AMBER,
+} from "@/components/console/statusRow";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  classifyCoordError,
+  describeCoordPollError,
+} from "@/components/operations/coordPollError";
+import { readErrorBody } from "@/lib/errors/backend-error-message";
+import {
+  degradingCoverage,
+  emptyRosterSentence,
+  isRosterComplete,
+  noLiveMachine,
+  noLiveMachineSentence,
+  notDegradationsSentence,
+  placeholdersSentence,
+  rosterCutHidesHealth,
+  rosterCutSentence,
+  rosterIncompleteSentence,
+  type MachineHealthCounts,
+  type RosterCut,
+  type RosterExclusions,
+} from "@/components/admin/coord/machineHealth";
+
+/** Poll cadence — the profile's "the right altitude, not the fastest feed". */
+export const PROJECT_STATE_POLL_MS = 60_000;
+
+// ---------------------------------------------------------------------------
+// Block states
+// ---------------------------------------------------------------------------
+
+export const BLOCK_STATES = [
+  "read",
+  "could_not_read",
+  "stale",
+  "not_implemented",
+  "unknown",
+] as const;
+
+export type BlockState = (typeof BLOCK_STATES)[number];
+
+/** An unrecognised or absent state is `unknown` — never `read`. */
+export function parseBlockState(raw: unknown): BlockState {
+  return typeof raw === "string" &&
+    (BLOCK_STATES as readonly string[]).includes(raw)
+    ? (raw as BlockState)
+    : "unknown";
+}
+
+/** Plain words for a state that is not `read`, for the strip and the list. */
+export const BLOCK_STATE_PHRASE: Readonly<Record<BlockState, string>> = {
+  read: "read",
+  could_not_read: "could not be read",
+  stale: "incomplete or stale",
+  not_implemented: "not built yet",
+  unknown: "unknown",
+};
+
+// ---------------------------------------------------------------------------
+// Defensive field readers — an absent or wrong-typed field is null, never 0
+// ---------------------------------------------------------------------------
+
+type Json = Record<string, unknown>;
+
+function obj(v: unknown): Json | null {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+    ? (v as Json)
+    : null;
+}
+
+function num(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function str(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+
+function bool(v: unknown): boolean | null {
+  return typeof v === "boolean" ? v : null;
+}
+
+function arr(v: unknown): unknown[] | null {
+  return Array.isArray(v) ? v : null;
+}
+
+// ---------------------------------------------------------------------------
+// on_track
+// ---------------------------------------------------------------------------
+
+/** The door's closed, exhaustive work-unit class set, in its report order. */
+export const UNIT_CLASSES = [
+  "shipped",
+  "in_flight",
+  "stalled",
+  "blocked_on_dependency",
+  "waiting_on_gate",
+  "not_started",
+  "closed_other",
+  "off_vocabulary",
+  "unset",
+] as const;
+
+export type UnitClass = (typeof UNIT_CLASSES)[number];
+
+/** Per class: a count, or `null` when coord did not serve one. */
+export type ClassCounts = Readonly<Record<UnitClass, number | null>>;
+
+/** Coord's compiled stall window (14 days) — used only when the wire omits it. */
+export const DEFAULT_STALL_WINDOW_SECS = 14 * 24 * 3600;
+
+/**
+ * A count of work units with its unit, singular for one: "1 unit",
+ * "3 units", "– units" when coord served no count (never a zero).
+ */
+export function unitCountText(n: number | null, noun = "unit"): string {
+  return `${n === null ? "–" : n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * The strip's badge for the stall class, in plain words with its unit:
+ * "3 units with no recorded change in 14 days"; "– units …" when coord
+ * served no count. Never "stalled", and never an abbreviation ("14 d").
+ */
+export function noRecordedChangeBadgeLabel(
+  count: number | null,
+  windowSecs: number | null
+): string {
+  return `${unitCountText(count)} with no recorded change in ${stallWindowDays(windowSecs)} days`;
+}
+
+/** Whole days in a stall window, for the label. */
+export function stallWindowDays(windowSecs: number | null): number {
+  return Math.round((windowSecs ?? DEFAULT_STALL_WINDOW_SECS) / 86_400);
+}
+
+/**
+ * The on-screen label per class (R8). `stalled` is worded as the measurement
+ * it is — see the module doc; the word "stalled" never reaches the screen.
+ *
+ * Each label is true of EVERY unit in its class, as coord's `class_rules`
+ * define it. `blocked_on_dependency` holds two kinds of unit: one with an
+ * upstream in the dependency graph that is not finished, and one whose own
+ * status is `blocked` ("a self-declared block coord cannot name"). "waiting on
+ * other work" is true only of the first, so the label names both.
+ */
+export function unitClassLabel(
+  cls: UnitClass,
+  windowSecs: number | null
+): string {
+  switch (cls) {
+    case "shipped":
+      return "shipped";
+    case "in_flight":
+      return "in flight";
+    case "stalled":
+      return `no recorded change in ${stallWindowDays(windowSecs)} days`;
+    case "blocked_on_dependency":
+      return "blocked or waiting on other work";
+    case "waiting_on_gate":
+      return "waiting on a condition";
+    case "not_started":
+      return "not started";
+    case "closed_other":
+      return "closed without shipping";
+    case "off_vocabulary":
+      return "status not recognised";
+    case "unset":
+      return "no status set";
+  }
+}
+
+/**
+ * R8 for coord's own free text (an `exclusion_reason`, a `headline_reason`):
+ * those sentences are written for agents and may name the `stalled` class by
+ * its wire key. The page words that class as the measurement it is, so the
+ * word is replaced here, in the one place every such sentence passes through.
+ */
+export function withoutVerdictWords(text: string): string {
+  return text
+    .replace(/\bjudged stalled\b/gi, "judged as having no recorded change")
+    .replace(/\bstalled\b/gi, "without recorded change");
+}
+
+function parseClassCounts(raw: unknown): ClassCounts {
+  const o = obj(raw);
+  const out = {} as Record<UnitClass, number | null>;
+  for (const c of UNIT_CLASSES) out[c] = o ? num(o[c]) : null;
+  return out;
+}
+
+export interface NamedUnit {
+  slug: string;
+  title: string | null;
+  firstInProgressAt: string | null;
+  lastRecordedChangeAt: string | null;
+  ageSecs: number | null;
+  /** `last_recorded_change` or `first_in_progress` — what `ageSecs` counts from. */
+  ageBasis: string | null;
+}
+
+export interface NamedList {
+  units: NamedUnit[];
+  /** How many more units of this class the door did not name; null = unknown. */
+  omitted: number | null;
+}
+
+function parseNamedList(raw: unknown): NamedList | null {
+  const o = obj(raw);
+  if (!o) return null;
+  const units = (arr(o.units) ?? []).flatMap((u): NamedUnit[] => {
+    const r = obj(u);
+    const slug = r ? str(r.slug) : null;
+    if (!r || !slug) return [];
+    return [
+      {
+        slug,
+        title: str(r.title),
+        firstInProgressAt: str(r.first_in_progress_at),
+        lastRecordedChangeAt: str(r.last_recorded_change_at),
+        ageSecs: num(r.age_secs),
+        ageBasis: str(r.age_basis),
+      },
+    ];
+  });
+  return { units, omitted: num(o.omitted) };
+}
+
+/**
+ * A named unit's age, worded by what coord measured it from (`age_basis`).
+ *
+ * Coord names two lists (`named_list` in `project_state.rs`). `stalled` is
+ * aged from the last recorded status change. `waiting_on_gate` is aged from
+ * `first_in_progress_at` — the first recorded move into `in_progress` — and it
+ * holds ANY in-vocabulary, unfinished unit with an open gate, a draft, vetted
+ * or ready one included. Such a unit's age is not "in progress for X": it may
+ * never have started (`first_in_progress_at` null, age null), or have started
+ * and moved back. "First in progress X ago" is true whatever the unit's
+ * status is now.
+ */
+export function namedUnitAgePhrase(u: NamedUnit): string {
+  if (u.ageBasis === "last_recorded_change") {
+    return u.ageSecs === null
+      ? "no recorded change time"
+      : `last change ${durationText(u.ageSecs)} ago`;
+  }
+  if (u.ageBasis === "first_in_progress") {
+    if (u.firstInProgressAt === null) return "never recorded in progress";
+    return u.ageSecs === null
+      ? `first in progress ${absoluteTime(u.firstInProgressAt)}`
+      : `first in progress ${durationText(u.ageSecs)} ago`;
+  }
+  return "age not stated";
+}
+
+export interface RepoGroup {
+  /** The repo name, or null for the unattributed group. */
+  key: string | null;
+  kind: "repo" | "unattributed_repo" | "unknown";
+  rowCount: number | null;
+  classes: ClassCounts;
+  named: { stalled: NamedList | null; waitingOnGate: NamedList | null };
+}
+
+function parseGroup(raw: unknown): RepoGroup | null {
+  const o = obj(raw);
+  if (!o) return null;
+  const kindRaw = str(o.kind);
+  const kind =
+    kindRaw === "repo" || kindRaw === "unattributed_repo" ? kindRaw : "unknown";
+  const named = obj(o.named);
+  return {
+    key: str(o.key),
+    kind,
+    rowCount: num(o.row_count),
+    classes: parseClassCounts(o.classes),
+    named: {
+      stalled: parseNamedList(named?.stalled),
+      waitingOnGate: parseNamedList(named?.waiting_on_gate),
+    },
+  };
+}
+
+/** The classes coord names units for, per repository group (`named`). */
+export const NAMED_UNIT_CLASSES: ReadonlySet<UnitClass> = new Set([
+  "stalled",
+  "waiting_on_gate",
+]);
+
+/**
+ * What a repository group's expanded detail says about the units it counts.
+ *
+ * Coord's project state serves every class's COUNT per group, but names the
+ * units of only two classes (`named.stalled`, `named.waiting_on_gate`). So
+ * the detail accounts for every unit the badge counts: each class with a
+ * count, in coord's order (`counted`); the classes coord served no count for
+ * (`unserved`, never a zero); and how many counted units sit in a class whose
+ * units coord does not name here (`unnamed`, null when any of those classes
+ * is unserved) — those are on the Work units page, not on this one.
+ */
+export interface GroupBreakdown {
+  counted: ReadonlyArray<{ cls: UnitClass; count: number }>;
+  unserved: readonly UnitClass[];
+  unnamed: number | null;
+}
+
+export function groupBreakdown(g: RepoGroup): GroupBreakdown {
+  const counted: { cls: UnitClass; count: number }[] = [];
+  const unserved: UnitClass[] = [];
+  let unnamed: number | null = 0;
+  for (const cls of UNIT_CLASSES) {
+    const n = g.classes[cls];
+    if (n === null) {
+      unserved.push(cls);
+      if (!NAMED_UNIT_CLASSES.has(cls)) unnamed = null;
+      continue;
+    }
+    if (n > 0) counted.push({ cls, count: n });
+    if (!NAMED_UNIT_CLASSES.has(cls) && unnamed !== null) unnamed += n;
+  }
+  return { counted, unserved, unnamed };
+}
+
+/** The breakdown as one sentence: "By state: not started 1 · shipped 2." */
+export function groupBreakdownSentence(
+  b: GroupBreakdown,
+  windowSecs: number | null
+): string {
+  const label = (cls: UnitClass) => unitClassLabel(cls, windowSecs);
+  const parts: string[] = [];
+  parts.push(
+    b.counted.length === 0
+      ? "By state: no class holds a unit."
+      : `By state: ${b.counted.map((c) => `${label(c.cls)} ${c.count}`).join(" · ")}.`
+  );
+  if (b.unserved.length > 0) {
+    parts.push(
+      `Coord served no count for ${b.unserved.map(label).join(", ")} — unknown, not zero.`
+    );
+  }
+  return parts.join(" ");
+}
+
+/**
+ * The sentence for the units coord does not name on this page, or null when
+ * every counted unit is in a named class. `count` null: some such class was
+ * not counted, so how many is unknown.
+ */
+export function unnamedUnitsSentence(count: number | null): string | null {
+  if (count === 0) return null;
+  if (count === null) {
+    return "Coord names units here only when they have no recorded change or wait on a condition; how many of this repository's other units exist is unknown.";
+  }
+  return `Coord names units here only when they have no recorded change or wait on a condition, so ${count === 1 ? "the 1 other unit is" : `the ${count} other units are`} not listed here`;
+}
+
+/** Work attributed to an initiative item (or a bucket), as coord counts it. */
+export interface AttributedUnits {
+  total: number | null;
+  inFlight: number | null;
+  shipped: number | null;
+}
+
+function parseAttributed(raw: unknown): AttributedUnits | null {
+  const o = obj(raw);
+  return o
+    ? {
+        total: num(o.total),
+        inFlight: num(o.in_flight),
+        shipped: num(o.shipped),
+      }
+    : null;
+}
+
+export interface InitiativeItem {
+  text: string;
+  key: string | null;
+  /**
+   * Units whose `metadata.initiative_item` equals this item's key — served
+   * only when coord's alignment is `read`; null otherwise (not attributable
+   * yet), never a zero.
+   */
+  units: AttributedUnits | null;
+}
+
+export interface InitiativeView {
+  /** `read`, `could_not_read`, … or `unparseable` (malformed frontmatter). */
+  state: BlockState | "unparseable";
+  status: string | null;
+  starts: string | null;
+  ends: string | null;
+  /** `unknown` (no declared link yet), `no_live_initiative`, … */
+  alignment: string | null;
+  reason: string | null;
+  inScope: InitiativeItem[] | null;
+  /** Units carrying no initiative link; null = not counted. */
+  unattributed: AttributedUnits | null;
+  /** Units whose link names no in-scope item, with those keys. */
+  unknownKey: (AttributedUnits & { keys: string[] }) | null;
+  error: string | null;
+}
+
+/** "N units, X in flight, Y shipped" — each unknown part a dash. */
+export function attributedText(u: AttributedUnits): string {
+  const n = (v: number | null) => (v === null ? "–" : String(v));
+  return `${n(u.total)} unit${u.total === 1 ? "" : "s"}, ${n(u.inFlight)} in flight, ${n(u.shipped)} shipped`;
+}
+
+/**
+ * How much in-flight work is attributed to the initiative (plan question 8).
+ * Only an alignment of `read` carries counts, and nothing else is a zero.
+ * Coord serves `unknown` for two different reasons, told apart by its
+ * `reason` token (`initiative_block` in coord#3053's `project_state.rs`):
+ * `no_declared_link` (no unit carries a link yet) is "not yet attributable";
+ * `work_units_could_not_read` (the unit read failed this time) is not about
+ * "yet" at all. An alignment coord did not state is unknown.
+ */
+export function initiativeAttributionPhrase(i: InitiativeView): string {
+  if (i.alignment !== "read") {
+    if (i.alignment !== "unknown") return "work attributed to it: unknown";
+    return i.reason?.startsWith("work_units_could_not_read")
+      ? "work attributed to it: the work units could not be read, so it was not counted"
+      : "work attributed to it: not yet attributable";
+  }
+  const items = i.inScope ?? [];
+  const parts = items.map((it) => it.units?.inFlight ?? null);
+  if (items.length === 0 || parts.some((p) => p === null)) {
+    return "work attributed to it: counts not served — unknown";
+  }
+  const inFlight = (parts as number[]).reduce((a, b) => a + b, 0);
+  return `work attributed to it: ${inFlight} in flight`;
+}
+
+function parseInitiative(raw: unknown): InitiativeView | null {
+  const o = obj(raw);
+  if (!o) return null;
+  const stateRaw = str(o.state);
+  const state =
+    stateRaw === "unparseable" ? "unparseable" : parseBlockState(stateRaw);
+  const inScopeRaw = arr(o.in_scope);
+  return {
+    state,
+    // Frontmatter typed by hand: a blank value says nothing, the same as an
+    // absent one, so it reads as unknown rather than as an empty clause.
+    status: nonBlank(str(o.status)),
+    starts: nonBlank(str(o.starts)),
+    ends: nonBlank(str(o.ends)),
+    alignment: str(o.alignment),
+    reason: str(o.reason),
+    inScope: inScopeRaw
+      ? inScopeRaw.flatMap((i): InitiativeItem[] => {
+          // coord serves `{text, key, units, reason}`; a bare string is read too
+          if (typeof i === "string")
+            return [{ text: i, key: null, units: null }];
+          const r = obj(i);
+          const text = r ? str(r.text) : null;
+          return r && text
+            ? [{ text, key: str(r.key), units: parseAttributed(r.units) }]
+            : [];
+        })
+      : null,
+    unattributed: parseAttributed(o.unattributed),
+    unknownKey: (() => {
+      const u = obj(o.unknown_key);
+      const base = parseAttributed(u);
+      return u && base
+        ? {
+            ...base,
+            keys: (arr(u.keys) ?? []).filter(
+              (k): k is string => typeof k === "string"
+            ),
+          }
+        : null;
+    })(),
+    error: typeof o.error === "string" ? o.error : null,
+  };
+}
+
+export interface OnTrackView {
+  state: BlockState;
+  error: string | null;
+  /** Totals — present ONLY when `state === "read"`. */
+  rowCount: number | null;
+  totals: ClassCounts | null;
+  /** Per-repo groups — present ONLY when `state === "read"`. */
+  groups: RepoGroup[] | null;
+  initiative: InitiativeView | null;
+  stallWindowSecs: number | null;
+  /** In-progress units with no recorded history (classed in flight). */
+  historyNotRecorded: number | null;
+  /**
+   * Coord's own merge-shepherd bookkeeping units, left out of every count
+   * (`totals.excluded.merge_shepherd_bookkeeping`). Null = not stated.
+   */
+  excludedBookkeeping: number | null;
+}
+
+function parseOnTrack(raw: unknown): OnTrackView {
+  const o = obj(raw) ?? {};
+  const state = parseBlockState(o.state);
+  const read = state === "read";
+  const totals = read ? obj(o.totals) : null;
+  const groups = read ? arr(o.groups) : null;
+  return {
+    state,
+    error: str(o.error),
+    rowCount: totals ? num(totals.row_count) : null,
+    totals: totals ? parseClassCounts(totals.classes) : null,
+    groups: groups
+      ? groups.flatMap((g) => {
+          const p = parseGroup(g);
+          return p ? [p] : [];
+        })
+      : null,
+    initiative: parseInitiative(o.initiative),
+    stallWindowSecs: num(o.stall_window_secs),
+    historyNotRecorded: read ? num(o.history_not_recorded) : null,
+    excludedBookkeeping: totals
+      ? num(obj(totals.excluded)?.merge_shepherd_bookkeeping)
+      : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// needs_me (plan Phase 3 wire shape)
+// ---------------------------------------------------------------------------
+
+export interface NeedsMeItem {
+  source: string | null;
+  id: string;
+  askedAt: string | null;
+  ageSecs: number | null;
+  /** The decision being asked — the question text, or the gate's title. */
+  fork: string | null;
+  /** The offered answers; `null` when coord served options this page cannot read. */
+  options: string[] | null;
+  recommendation: string | null;
+  ifOverturned: string | null;
+  /** `fork_with_recommendation` | `open_question`, derived coord-side. */
+  shape: string | null;
+  /** The console page where the existing write door answers it. */
+  answerAt: string | null;
+  /** What the decision blocks, when coord says. */
+  blocking: { workUnitSlug: string | null; planPhase: string | null } | null;
+}
+
+export interface NeedsMeView {
+  state: BlockState;
+  /** Oldest first, as coord serves them — present ONLY when read. */
+  items: NeedsMeItem[] | null;
+  total: number | null;
+  omitted: number | null;
+  shapeShare: {
+    withRecommendation: number | null;
+    total: number | null;
+  } | null;
+  /** Admitted decisions per decision domain; null = not served. */
+  byDomain: Readonly<Record<string, number>> | null;
+  /**
+   * Whether coord can retire a question whose premise died. `unsupported`
+   * means the list may hold questions whose condition already resolved;
+   * `unknown` (coord's schema-readiness probe has not yet looked, or the field
+   * was not served) is NEVER read as supported.
+   */
+  retirement: "supported" | "unsupported" | "unknown";
+  error: string | null;
+}
+
+/** One option: a bare string, or `{label, ...}`. Anything else is unreadable. */
+function optionLabel(v: unknown): string | null {
+  if (typeof v === "string") return v;
+  const o = obj(v);
+  return o ? str(o.label) : null;
+}
+
+/**
+ * Coord's `options` is "an array of `{label, ...}` or bare strings", and may
+ * arrive as a single object. Absent → no options. Any entry this page cannot
+ * read makes the whole list `null` ("options not readable") rather than
+ * silently dropping it.
+ */
+export function parseOptions(raw: unknown): string[] | null {
+  if (raw === undefined || raw === null) return [];
+  const a = arr(raw);
+  if (a) {
+    const labels = a.map(optionLabel);
+    return labels.every((l): l is string => l !== null)
+      ? (labels as string[])
+      : null;
+  }
+  const o = obj(raw);
+  if (!o) return null;
+  const single = str(o.label);
+  if (single !== null) return [single];
+  const labels = Object.values(o).map(optionLabel);
+  return labels.length > 0 && labels.every((l) => l !== null)
+    ? (labels as string[])
+    : null;
+}
+
+function parseByDomain(raw: unknown): Record<string, number> | null {
+  const o = obj(raw);
+  if (!o) return null;
+  const counts: [string, number][] = [];
+  for (const [k, v] of Object.entries(o)) {
+    const n = num(v);
+    if (n === null) return null;
+    counts.push([k, n]);
+  }
+  // `fromEntries` defines each key as the map's own. Assigning `out[k]` loses a
+  // count keyed `__proto__`, and nothing rules that key out: coord's `needs_me`
+  // work (qontinui-coord#3053 and its successor) parses these keys out of
+  // question text.
+  return Object.fromEntries(counts);
+}
+
+function parseNeedsMe(raw: unknown): NeedsMeView {
+  const o = obj(raw) ?? {};
+  const state = parseBlockState(o.state);
+  const read = state === "read";
+  const itemsRaw = read ? arr(o.items) : null;
+  const share = read ? obj(o.shape_share) : null;
+  return {
+    state,
+    items: itemsRaw
+      ? itemsRaw.flatMap((i, index): NeedsMeItem[] => {
+          const r = obj(i);
+          if (!r) return [];
+          const id =
+            str(r.id) ?? (typeof r.id === "number" ? String(r.id) : null);
+          const blocking = obj(r.blocking);
+          return [
+            {
+              source: str(r.source),
+              id: id ?? `item-${index}`,
+              askedAt: str(r.asked_at),
+              ageSecs: num(r.age_secs),
+              fork: str(r.fork),
+              options: parseOptions(r.options),
+              // coord counts a recommendation only when non-blank after trim
+              // (its `shape`); a whitespace-only one is no recommendation.
+              recommendation: nonBlank(str(r.recommendation)),
+              ifOverturned: str(r.if_overturned),
+              shape: str(r.shape),
+              answerAt: str(r.answer_at),
+              blocking: blocking
+                ? {
+                    workUnitSlug: str(blocking.work_unit_slug),
+                    planPhase: idString(blocking.plan_phase),
+                  }
+                : null,
+            },
+          ];
+        })
+      : null,
+    total: read ? num(o.total) : null,
+    omitted: read ? num(o.omitted) : null,
+    shapeShare: share
+      ? {
+          withRecommendation: num(share.with_recommendation),
+          total: num(share.total),
+        }
+      : null,
+    byDomain: read ? parseByDomain(o.by_domain) : null,
+    retirement:
+      o.retirement === "supported" || o.retirement === "unsupported"
+        ? o.retirement
+        : "unknown",
+    error: str(o.error),
+  };
+}
+
+/**
+ * Whether "Nothing needs you" may render. ONLY on a `read` block that served
+ * an exact zero — never on `not_implemented`, `could_not_read`, a missing
+ * total, or anything else. This predicate is the whole rule; the page renders
+ * that sentence behind it and nowhere else.
+ */
+export function nothingNeedsYou(needs: NeedsMeView): boolean {
+  return (
+    needs.state === "read" &&
+    needs.total === 0 &&
+    (needs.items?.length ?? 0) === 0
+  );
+}
+
+/**
+ * The one displayable count of decisions waiting on the operator: the served
+ * total, but ONLY when it is at least what was listed. A missing total, or a
+ * total below the listed items, is not a count to print — it is `null`
+ * (rendered "–" / "an unknown number"), never a misleading "0".
+ */
+export function needsDisplayCount(needs: NeedsMeView): number | null {
+  if (needs.state !== "read") return null;
+  const listed = needs.items?.length ?? 0;
+  return needs.total !== null && needs.total >= listed ? needs.total : null;
+}
+
+/**
+ * The sentence for a read needs_me block that counted decisions but served
+ * none of them. `count` is {@link needsDisplayCount}; `null` is an unknown
+ * number, never a zero. One decision is singular ("1 decision … did not
+ * serve it"), never "1 decisions".
+ */
+export function unservedDecisionsSentence(count: number | null): string {
+  return count === 1
+    ? "Coord counted 1 decision for you but did not serve it"
+    : `Coord counted ${count ?? "an unknown number of"} decisions for you but served none of them`;
+}
+
+/** A link target coord served, kept only when it is an in-app path. */
+export function internalHref(v: string | null): string | null {
+  // `//host` and `/\host` both leave the site in a browser.
+  return v !== null && /^\/(?![/\\])/.test(v) ? v : null;
+}
+
+/** A window in seconds as a short label ("24 h", "7 d"); null when unknown. */
+export function windowLabel(secs: number | null): string | null {
+  if (secs === null || secs <= 0) return null;
+  return secs % 86_400 === 0 && secs >= 2 * 86_400
+    ? `${secs / 86_400} d`
+    : `${Math.round(secs / 3600)} h`;
+}
+
+/** `null` for a string that is empty or whitespace-only. */
+function nonBlank(v: string | null): string | null {
+  return v !== null && v.trim() !== "" ? v : null;
+}
+
+/** A needs-you row's `reason`: the recommendation, or the literal label. */
+export function needsYouReason(item: NeedsMeItem): string {
+  if (item.recommendation !== null) return item.recommendation;
+  // A gate is an approval, not a question: coord serves it with no
+  // recommendation, and calling it an "open question" would misname it.
+  return item.source === "operator_gate"
+    ? "approval — no recommendation"
+    : "open question — no recommendation";
+}
+
+// ---------------------------------------------------------------------------
+// degradations
+// ---------------------------------------------------------------------------
+
+export interface DegradationView {
+  id: string;
+  plane: string | null;
+  /**
+   * What the subject IS — coord's `subject.kind`: `device`, `repo`, `service`
+   * or `key` (`project_state.rs` `DegradationRow`). The presentation lens
+   * names a device by its alias and binds a repository's text to it; null
+   * when coord did not say.
+   */
+  subjectKind: string | null;
+  subjectName: string | null;
+  subjectId: string | null;
+  headline: string | null;
+  /** The onset coord OBSERVED (`first_seen_at`), not the fault's true start. */
+  onsetObservedAt: string | null;
+  lastSeenAt: string | null;
+  ageSecs: number | null;
+  autoRemediation: { bound: boolean | null; response: string | null } | null;
+  drill: string | null;
+  /** A drain: a decision, shown muted, never counted as a fault. */
+  declared: boolean;
+  resolvedAt: string | null;
+  durationSecs: number | null;
+}
+
+function idString(v: unknown): string | null {
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  return null;
+}
+
+function parseDegradation(raw: unknown, index: number): DegradationView | null {
+  const o = obj(raw);
+  if (!o) return null;
+  const subject = obj(o.subject);
+  const rem = obj(o.auto_remediation);
+  return {
+    id: str(o.id) ?? `degradation-${index}`,
+    plane: str(o.plane),
+    subjectKind: subject ? str(subject.kind) : null,
+    subjectName: subject ? idString(subject.name) : null,
+    subjectId: subject ? idString(subject.id) : null,
+    headline: str(o.headline),
+    onsetObservedAt: str(o.onset_observed_at),
+    lastSeenAt: str(o.last_seen_at),
+    ageSecs: num(o.age_secs),
+    autoRemediation: rem
+      ? { bound: bool(rem.bound), response: str(rem.response) }
+      : null,
+    drill: str(o.drill),
+    declared: o.declared === true,
+    resolvedAt: str(o.resolved_at),
+    durationSecs: num(o.duration_secs),
+  };
+}
+
+function parseDegradationList(raw: unknown): DegradationView[] | null {
+  const a = arr(raw);
+  if (!a) return null;
+  return a.flatMap((r, i) => {
+    const p = parseDegradation(r, i);
+    return p ? [p] : [];
+  });
+}
+
+export interface WatcherView {
+  name: string;
+  /** `fresh` | `stale` | `unknown` — coord's verdict. */
+  state: string;
+  asOf: string | null;
+  reason: string | null;
+}
+
+export interface PlaneView {
+  plane: string;
+  /** Every watcher feeding the plane is fresh; null = not stated. */
+  fresh: boolean | null;
+  watchers: WatcherView[];
+  detectionBoundSecs: number | null;
+}
+
+function parsePlanes(raw: unknown): PlaneView[] | null {
+  const o = obj(raw);
+  if (!o) return null;
+  return Object.entries(o).flatMap(([plane, v]): PlaneView[] => {
+    const p = obj(v);
+    if (!p) return [];
+    return [
+      {
+        plane,
+        fresh: bool(p.fresh),
+        watchers: (arr(p.watchers) ?? []).flatMap((w): WatcherView[] => {
+          const r = obj(w);
+          const name = r ? str(r.name) : null;
+          if (!r || !name) return [];
+          return [
+            {
+              name,
+              state: str(r.state) ?? "unknown",
+              asOf: str(r.as_of),
+              reason: str(r.reason),
+            },
+          ];
+        }),
+        detectionBoundSecs: num(p.detection_bound_secs),
+      },
+    ];
+  });
+}
+
+/**
+ * Coord's watcher-freshness reason tokens, in plain words (R8). Each says only
+ * what coord's heartbeat table can show (qontinui-coord
+ * `crates/coord/src/project_state.rs` `watcher_freshness`, over
+ * `worker_ledger`'s `coord.worker_heartbeats`):
+ *
+ * - `no_successful_tick` — the watcher has heartbeat rows, but none whose
+ *   last outcome is a clean success. A row keeps only its replica's LAST
+ *   outcome, so this is "no successful run on record", not "never ran".
+ * - `no_heartbeat_row` — no row at all. Coord deletes a departed replica's row
+ *   seven days after its last tick, so this is "no heartbeat on record", not
+ *   "never reported".
+ * - `last_success_older_than_3x_interval` — the freshest clean success is
+ *   older than three times the watcher's effective interval.
+ */
+const WATCHER_REASON_WORDS: Readonly<Record<string, string>> = {
+  no_successful_tick: "no successful run on record",
+  last_success_older_than_3x_interval: "last run is overdue",
+  heartbeat_read_failed: "status could not be read",
+  no_declared_interval: "no expected interval declared",
+  no_heartbeat_row: "no heartbeat on record",
+};
+
+/** Coord's watcher states, in plain words, for when no reason is given. */
+const WATCHER_STATE_WORDS: Readonly<Record<string, string>> = {
+  stale: "stale",
+  fresh: "fresh",
+};
+
+/**
+ * `table[key]` when the table itself holds `key`. Every key these tables are
+ * read with is a string coord served, so a bare `table[key]` answers
+ * `constructor`, `toString` or `__proto__` with what `Object.prototype`
+ * carries: a function or an object where the caller's fallback was owed, which
+ * would then render as source text or "[object Object]".
+ */
+export function ownEntry(
+  table: Readonly<Record<string, string>>,
+  key: string
+): string | undefined {
+  return Object.prototype.hasOwnProperty.call(table, key)
+    ? table[key]
+    : undefined;
+}
+
+/**
+ * One watcher's reason in plain words. A known reason token wins; with none,
+ * the watcher's own state is worded (`stale` ⇒ "stale"); "state unknown" only
+ * when neither is known.
+ */
+export function watcherReasonWords(
+  reason: string | null,
+  state: string | null = null
+): string {
+  return (
+    (reason && ownEntry(WATCHER_REASON_WORDS, reason)) ||
+    (state && ownEntry(WATCHER_STATE_WORDS, state)) ||
+    "state unknown"
+  );
+}
+
+/**
+ * One plane's watcher freshness, in words. Watcher names are internal
+ * vocabulary, so they are NOT in this sentence — see
+ * {@link planeWatcherNames}, which the page puts in a `title` only.
+ *
+ * A plane coord feeds with NO watcher (`disk`, `PLANE_WATCHERS`
+ * `(InfraPlane::Disk, &[])`) is only as fresh as the reading that is its sole
+ * evidence: coord's `fresh` is whether the fleet roster was read with its
+ * resource dimension scraped. Not fresh there is a reading that could not be
+ * taken — no watcher is involved, so none is named as missing or stale.
+ */
+export function planeFreshnessPhrase(p: PlaneView): string {
+  if (p.watchers.length === 0) {
+    if (p.fresh === true) return "read directly, no watcher";
+    if (p.fresh === false) return "no watcher; its reading could not be taken";
+    return "no watcher; freshness not stated";
+  }
+  if (p.fresh === true) {
+    return p.watchers.length === 1
+      ? "its watcher is fresh"
+      : "every watcher fresh";
+  }
+  const notFresh = p.watchers.filter((w) => w.state !== "fresh");
+  if (notFresh.length === 0) return "freshness not stated";
+  const reasons = [
+    ...new Set(notFresh.map((w) => watcherReasonWords(w.reason, w.state))),
+  ];
+  const noun = p.watchers.length === 1 ? "watcher" : "watchers";
+  return `${notFresh.length} of ${p.watchers.length} ${noun} not fresh — ${reasons.join("; ")}`;
+}
+
+/** The raw watcher names behind a plane, for a `title` only. */
+export function planeWatcherNames(p: PlaneView): string {
+  return p.watchers
+    .map((w) => `${w.name}: ${w.state}${w.reason ? ` (${w.reason})` : ""}`)
+    .join(", ");
+}
+
+/** Human names for coord's decision domains; unknown keys are spaced. */
+const DECISION_DOMAIN_LABEL: Readonly<Record<string, string>> = {
+  pr_fix: "fixing a pull request",
+  red_main_fix: "fixing a red main branch",
+  repo_pull: "pulling a repository",
+  implementation: "implementation",
+  policy_gap: "policy gap",
+  unclassified: "unclassified",
+  operator_gate: "operator approval gate",
+  unscanned: "not yet scanned",
+};
+
+export function decisionDomainLabel(domain: string): string {
+  return ownEntry(DECISION_DOMAIN_LABEL, domain) ?? domain.replace(/_/g, " ");
+}
+
+/**
+ * Whether the page's table names `domain` — its own key, never one inherited
+ * from `Object.prototype`. In coord's `needs_me` work (qontinui-coord#3053 and
+ * its successor) a key it does not name is a parse of an escalation question's
+ * text (`escalation_domain` there), which that work calls caller-controlled:
+ * the presentation lens folds every such key into fixed words
+ * (`_lib/homeLens.ts` `presentedDecisionDomains`).
+ */
+export function isKnownDecisionDomain(domain: string): boolean {
+  return ownEntry(DECISION_DOMAIN_LABEL, domain) !== undefined;
+}
+
+export interface DegradationsView {
+  state: BlockState;
+  /** `degraded` | `none` | `unknown` — coord's own headline rule. */
+  headline: "degraded" | "none" | "unknown";
+  headlineReason: string | null;
+  /** Rows — served on `read` and on `stale` (positive facts survive). */
+  open: DegradationView[] | null;
+  declared: DegradationView[] | null;
+  recentlyCleared: DegradationView[] | null;
+  /** The recently-cleared window coord applied, in seconds; null = not served. */
+  recentlyClearedWindowSecs: number | null;
+  /** Per-plane watcher freshness; null = not served. */
+  planes: PlaneView[] | null;
+  error: string | null;
+}
+
+function parseDegradations(raw: unknown): DegradationsView {
+  const o = obj(raw) ?? {};
+  const state = parseBlockState(o.state);
+  const rowsServed = state === "read" || state === "stale";
+  const h = str(o.headline);
+  return {
+    state,
+    headline: h === "degraded" || h === "none" ? h : "unknown",
+    headlineReason: str(o.headline_reason),
+    open: rowsServed ? parseDegradationList(o.open) : null,
+    declared: rowsServed ? parseDegradationList(o.declared) : null,
+    recentlyCleared: rowsServed
+      ? parseDegradationList(o.recently_cleared)
+      : null,
+    recentlyClearedWindowSecs: num(o.recently_cleared_window_secs),
+    planes: parsePlanes(o.planes),
+    error: str(o.error),
+  };
+}
+
+/** Human names for the operator planes coord classifies degradations into. */
+const PLANE_LABEL: Readonly<Record<string, string>> = {
+  runner: "runner",
+  disk: "disk",
+  merge_train: "merge train",
+  credential: "credential",
+  build_capacity: "build capacity",
+  cloud_service: "cloud service",
+  coord_itself: "coord",
+};
+
+export function planeLabel(plane: string | null): string {
+  if (!plane) return "unclassified";
+  return ownEntry(PLANE_LABEL, plane) ?? plane.replace(/_/g, " ");
+}
+
+/**
+ * Whether the page's table names this plane. An own-property check, so a key
+ * spelled `constructor` is not one it names.
+ */
+export function isKnownPlane(plane: string): boolean {
+  return ownEntry(PLANE_LABEL, plane) !== undefined;
+}
+
+/**
+ * How a caller words a plane in a list of areas: words, or `null` for an area
+ * the list must not name. The operator's is {@link planeLabel}, which names
+ * every plane; the presentation lens's names only the table's planes.
+ */
+export type PlaneWords = (plane: string | null) => string | null;
+
+/** "1 area not named here" / "2 areas not named here"; with `other`, "2 other areas not named here". */
+export function areasNotNamedHere(count: number, other = false): string {
+  const kind = other ? "other " : "";
+  return `${count} ${kind}${count === 1 ? "area" : "areas"} not named here`;
+}
+
+/**
+ * The areas of `planes` as `words` names them, in order, and how many it
+ * would not name. Those are counted, never collapsed into one: two areas not
+ * named are two areas missing from the view. (Coord serves planes as an
+ * object's keys, so each plane is a distinct area.)
+ */
+function wordedAreas(
+  planes: readonly PlaneView[],
+  words: PlaneWords
+): { named: string[]; unnamed: number } {
+  const named: string[] = [];
+  let unnamed = 0;
+  for (const p of planes) {
+    const w = words(p.plane);
+    if (w === null) unnamed += 1;
+    else named.push(w);
+  }
+  return { named, unnamed };
+}
+
+/**
+ * A degradation's subject for the collapsed row (R8): its name only. Coord's
+ * subject id — a device UUID beside a hostname — is a raw id, so it goes to
+ * the expanded detail's last line ({@link degradationRawLine}).
+ */
+export function degradationSubjectText(d: DegradationView): string {
+  return d.subjectName ?? "unnamed subject";
+}
+
+/** The expanded detail's last line: the row id, subject id and response. */
+export function degradationRawLine(d: DegradationView): string {
+  return [
+    d.id,
+    d.subjectId !== null ? `subject ${d.subjectId}` : null,
+    d.autoRemediation?.response ?? null,
+  ]
+    .filter((p): p is string => p !== null && p !== "")
+    .join(" · ");
+}
+
+/** Plain words for a degradation's remediation binding. */
+export function remediationPhrase(d: DegradationView): string {
+  if (d.declared) return "declared by an operator — not a fault";
+  const rem = d.autoRemediation;
+  if (!rem || rem.bound === null) return "remediation binding unknown";
+  if (rem.bound) return "an agent response is bound to it";
+  if (rem.response?.startsWith("operator:"))
+    return "no automatic response — it waits on an operator";
+  if (rem.response === "setting") return "caused by a setting, not a fault";
+  return "no automatic response is bound";
+}
+
+/**
+ * The sources coord's degradations block reads, by their exact
+ * `does_not_know` ids (qontinui-coord `crates/coord/src/project_state.rs`
+ * `degradations_block`), in words that fit mid-sentence (R8). Each one that
+ * coord does not serve as `read` (or `not_implemented`) is a partial source:
+ * coord's own `partial` test is exactly "a source failed or was truncated, or
+ * the heartbeats could not be read", and every such case marks its row here.
+ */
+const DEGRADATION_SOURCE_WORDS: Readonly<Record<string, string>> = {
+  "coord.alerts (operator-plane kinds)": "infrastructure alerts",
+  "fleet_health roster": "machines in the fleet",
+  "train_health (per authority repo)": "merge train health",
+  "infra_health_observations (cloud, latest per resource)":
+    "cloud service health",
+  fleet_drain: "machine drains",
+  worker_heartbeats: "watcher heartbeats",
+};
+
+/**
+ * A degradation source state that leaves the block partial. `not_implemented`
+ * is not one: coord serves it for the cloud breach read when the caller may
+ * not see operator-global infra, and does not count that as partial.
+ */
+const PARTIAL_SOURCE_STATES: ReadonlySet<BlockState> = new Set([
+  "could_not_read",
+  "stale",
+  "unknown",
+]);
+
+/**
+ * Why a `stale` degradations block is incomplete: the clause the page prints
+ * after "Incomplete view —".
+ *
+ * Built from STRUCTURE coord serves beside the block, never from its
+ * `headline_reason` prose. That reason explains the HEADLINE, not the
+ * staleness — on a block with an open row it is "at least one operator-plane
+ * degradation is open", a false cause for the gap — and on the `unknown`
+ * headline it quotes coord's raw source ids (R8). The causes coord's
+ * `assemble_degradations_rows` folds into `stale` are each visible here:
+ *
+ * - a plane with watchers served `fresh: false` — a watcher feeding it is
+ *   stale or unknown;
+ * - a plane with NO watcher served `fresh: false` (`disk`) — its reading
+ *   could not be taken; no watcher is involved, so none is blamed;
+ * - a degradation source in `sources` (`does_not_know`) that is not read — a
+ *   failed or truncated read, named in words.
+ *
+ * Failing all three (a coord that serves neither), it is worded from what
+ * `stale` itself guarantees.
+ *
+ * Each area is worded by `label`; an area it will not name (`null`, the
+ * presentation lens's answer for a plane off the page's table) is COUNTED —
+ * "the reading for 1 area not named here", "2 areas not named here" — so the
+ * sentence never says less is missing than is. When the watcher clause has
+ * already counted some, the reading clause's are "other" areas, so two
+ * counts never read as one.
+ */
+export function degradationsGapPhrase(
+  deg: DegradationsView,
+  sources: SourceCoverageView[] | null = null,
+  label: PlaneWords = planeLabel
+): string {
+  const planes = deg.planes ?? [];
+  const parts: string[] = [];
+  const notFresh = planes.filter((p) => p.fresh === false);
+  const watched = wordedAreas(
+    notFresh.filter((p) => p.watchers.length > 0),
+    label
+  );
+  const watchedAreas = [
+    watched.named.join(", "),
+    watched.unnamed > 0 ? areasNotNamedHere(watched.unnamed) : "",
+  ]
+    .filter(Boolean)
+    .join(" and ");
+  if (watchedAreas) {
+    parts.push(`not every watcher is fresh (${watchedAreas})`);
+  }
+  const unwatched = wordedAreas(
+    notFresh.filter((p) => p.watchers.length === 0),
+    label
+  );
+  for (const area of unwatched.named) {
+    parts.push(`the ${area} reading could not be taken`);
+  }
+  // When the watcher clause already counted unnamed areas, these are others:
+  // "1 area not named here" twice would read as one area, under-reading the gap.
+  const others = areasNotNamedHere(unwatched.unnamed, watched.unnamed > 0);
+  if (unwatched.unnamed === 1) {
+    parts.push(`the reading for ${others} could not be taken`);
+  } else if (unwatched.unnamed > 1) {
+    parts.push(`readings for ${others} could not be taken`);
+  }
+  const partial = [
+    ...new Set(
+      (sources ?? []).flatMap((s) => {
+        const words = ownEntry(DEGRADATION_SOURCE_WORDS, s.source);
+        return words !== undefined && PARTIAL_SOURCE_STATES.has(s.state)
+          ? [words]
+          : [];
+      })
+    ),
+  ];
+  if (partial.length > 0) parts.push(`not fully read: ${partial.join(", ")}`);
+  if (parts.length > 0) return parts.join("; ");
+  return "a source feeding it was not fully read, or a watcher feeding it is not fresh";
+}
+
+/**
+ * The `title` of the "Incomplete view" line: coord's `headline_reason`, and
+ * ONLY on the `unknown` headline — null otherwise.
+ *
+ * Coord's reason explains its HEADLINE. On `unknown` that reason is the list
+ * of why the block is partial (a stale watcher, a source not fully read, a
+ * row ceiling hit), so it explains the gap, in coord's own words — kept for
+ * the title because it names raw source ids (R8). A stale block that carries
+ * an open row is headlined `degraded`, whose reason is "at least one
+ * operator-plane degradation is open": hovering the gap sentence would offer
+ * that as the gap's cause, the false cause {@link degradationsGapPhrase}
+ * keeps out of the sentence.
+ */
+export function degradationsGapTitle(deg: DegradationsView): string | null {
+  if (deg.headline !== "unknown" || deg.headlineReason === null) return null;
+  return withoutVerdictWords(deg.headlineReason);
+}
+
+// ---------------------------------------------------------------------------
+// correctness + does_not_know
+// ---------------------------------------------------------------------------
+
+export interface CorrectnessView {
+  state: BlockState;
+  reason: string | null;
+}
+
+/**
+ * Does coord say NO source measures correctness yet? That is the one case in
+ * which "Not measured — no trust-calibration source" is true: coord serves
+ * `reason: "verification_metrics_door_absent"` because the verification door
+ * does not exist in its build. A block that could not be read, a stale one, or
+ * one absent from the body (which the parser folds into `unknown`) says
+ * nothing about whether a source exists, so it is worded as not read instead.
+ */
+export function correctnessHasNoSource(c: CorrectnessView): boolean {
+  return c.state !== "read" && c.reason === "verification_metrics_door_absent";
+}
+
+export interface SourceCoverageView {
+  source: string;
+  state: BlockState;
+  asOf: string | null;
+  freshnessBoundSecs: number | null;
+  rowsConsidered: number | null;
+  rowsExcluded: number | null;
+  exclusionReason: string | null;
+  error: string | null;
+}
+
+function parseSource(raw: unknown, index: number): SourceCoverageView | null {
+  const o = obj(raw);
+  if (!o) return null;
+  return {
+    source: str(o.source) ?? `source ${index + 1}`,
+    state: parseBlockState(o.state),
+    asOf: str(o.as_of),
+    freshnessBoundSecs: num(o.freshness_bound_secs),
+    rowsConsidered: num(o.rows_considered),
+    rowsExcluded: num(o.rows_excluded),
+    exclusionReason: str(o.exclusion_reason),
+    error: str(o.error),
+  };
+}
+
+/**
+ * Human labels for the sources coord lists in `does_not_know` (R8). Coord's
+ * `source` strings are its own identifiers — table names, metric names,
+ * `watcher:<name>` — so the page labels each row with words, and the raw id
+ * goes only in the row's `title` and in the expanded detail's last line.
+ * Keyed by coord's exact strings in qontinui-coord
+ * `crates/coord/src/project_state.rs` (the one-screen door and its needs_me
+ * phase). A source this table does not know gets {@link humanised} words, the
+ * way {@link decisionDomainLabel} spaces an unknown domain.
+ */
+const SOURCE_LABEL: Readonly<Record<string, string>> = {
+  "prompt_documents:initiative/current-initiative": "Current initiative",
+  work_unit_dependency_frontier: "Work unit dependencies",
+  work_units: "Work units",
+  work_unit_status_history: "Work unit status changes",
+  "work_unit_pr_citations (cited PR state)":
+    "Pull requests the work units cite",
+  "coord.alerts (operator-plane kinds)": "Infrastructure alerts",
+  "coord.alerts visibility (operator-plane kinds this caller can be served)":
+    "Which infrastructure alerts the operator can be shown",
+  "fleet_health roster": "Machines in the fleet",
+  "fleet_health resource headroom (live machines)":
+    "Spare capacity on live machines",
+  "train_health (per authority repo)": "Merge train health, per repository",
+  "infra_health_observations (cloud, latest per resource)":
+    "Cloud service health",
+  fleet_drain: "Machine drains",
+  worker_heartbeats: "Watcher heartbeats",
+  fault_to_visibility_metric: "Time for a fault to reach this view",
+  verification_metrics: "Verification measurements",
+  "needs_me (agent_questions operator audience + operator gates)":
+    "Decisions waiting on you",
+  "agent_questions (pending, audience operator)": "Questions waiting on you",
+  "gates (open operator_approval, clearance_audience operator)":
+    "Approvals waiting on you",
+  "agent_questions.recommendation / if_overturned":
+    "Recommendations on your questions",
+  "agent_questions.withdrawn_at": "Whether questions were withdrawn",
+};
+
+/**
+ * The prefix of a `does_not_know` row coord adds for each watcher that is not
+ * fresh (`watcher:<name>`). Its `error` is the watcher's reason TOKEN.
+ */
+const WATCHER_SOURCE_PREFIX = "watcher:";
+
+/** Whether a `does_not_know` row is a watcher's (`watcher:<name>`). */
+export function isWatcherSource(source: string): boolean {
+  return source.startsWith(WATCHER_SOURCE_PREFIX);
+}
+
+/**
+ * Whether the page's table labels `source` — its own key, never one inherited
+ * from `Object.prototype`. A source it does not label reads as coord's own
+ * identifier, {@link humanised}; the presentation lens words such a row in
+ * fixed words instead (`_lib/homeLens.ts` `presentedSourceLabel`).
+ */
+export function isLabelledSource(source: string): boolean {
+  return ownEntry(SOURCE_LABEL, source) !== undefined;
+}
+
+/** Underscores spaced and the first letter capitalised. */
+function humanised(text: string): string {
+  const spaced = text.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/**
+ * The words a `does_not_know` row is labelled with. A watcher row is named by
+ * the area(s) it feeds, read from the degradations planes coord served
+ * beside it (the watcher's own name is internal vocabulary). A watcher coord
+ * lists without a plane, or with no planes served, still feeds the Degrading
+ * block, which is how coord chose to list it. An area `label` will not name
+ * is counted, as {@link degradationsGapPhrase} counts it.
+ */
+export function sourceLabel(
+  source: string,
+  planes: PlaneView[] | null = null,
+  label: PlaneWords = planeLabel
+): string {
+  const known = ownEntry(SOURCE_LABEL, source);
+  if (known) return known;
+  if (isWatcherSource(source)) {
+    const name = source.slice(WATCHER_SOURCE_PREFIX.length);
+    const fed = wordedAreas(
+      (planes ?? []).filter((p) => p.watchers.some((w) => w.name === name)),
+      label
+    );
+    if (fed.unnamed > 0) {
+      const unnamed = areasNotNamedHere(fed.unnamed);
+      return fed.named.length > 0
+        ? `Watcher feeding ${fed.named.join(", ")} and ${unnamed}`
+        : `Watcher feeding ${unnamed}`;
+    }
+    return fed.named.length > 0
+      ? `Watcher feeding ${fed.named.join(", ")}`
+      : "Watcher feeding Degrading";
+  }
+  return humanised(source);
+}
+
+/**
+ * A row's `error` in words. A watcher row's error is coord's reason TOKEN, so
+ * it is worded like the plane line's ({@link watcherReasonWords}). Any other
+ * row's error is coord's own error chain — an `anyhow` context such as
+ * "SELECT coord.work_units (project-state class split): …", internal
+ * vocabulary — so the row only says coord reported one, and the chain itself
+ * goes to the expanded detail's last line ({@link sourceRawLine}, R8).
+ */
+export function sourceErrorWords(s: SourceCoverageView): string | null {
+  if (s.error === null) return null;
+  return isWatcherSource(s.source)
+    ? watcherReasonWords(s.error, s.state)
+    : "coord reported an error";
+}
+
+/** The expanded detail's sentence for a row's `error`; null when none. */
+export function sourceErrorSentence(s: SourceCoverageView): string | null {
+  if (s.error === null) return null;
+  if (!isWatcherSource(s.source)) {
+    return "Coord reported an error; it is quoted on the last line.";
+  }
+  const words = watcherReasonWords(s.error, s.state);
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}.`;
+}
+
+/**
+ * What a row's `freshness_bound_secs` says, in words true of its kind of row.
+ *
+ * - A watcher row: coord copies the watcher's `bound_secs`, the THRESHOLD its
+ *   freshness verdict applies (3 x the effective interval) — not the age of
+ *   any data. Coord lists the row because the watcher is not fresh, so for
+ *   `last_success_older_than_3x_interval` its last success is OLDER than the
+ *   bound; for any other reason the bound is stated only as the threshold.
+ * - Any other row coord read in full: a maximum age (train health's per-repo
+ *   verdicts may come from its memo, up to one memo TTL old).
+ * - Any other row not read in full: the bound is stated as a bound. No age is
+ *   promised for data the row may not hold.
+ *
+ * The bound is written with {@link boundText}, to the second: coord's bounds
+ * are not whole minutes (train health's is its 20 s memo TTL, and a watcher's
+ * is at least 3 x the ledger's 30 s throttle floor, 90 s).
+ */
+export function sourceAgePhrase(s: SourceCoverageView): string {
+  const bound = s.freshnessBoundSecs;
+  if (isWatcherSource(s.source)) {
+    if (bound === null) return "freshness bound not stated";
+    return s.error === "last_success_older_than_3x_interval"
+      ? `last success older than its ${boundText(bound)} freshness bound`
+      : `freshness bound ${boundText(bound)}`;
+  }
+  if (bound === null) return "maximum age not stated";
+  return s.state === "read"
+    ? `may be up to ${boundText(bound)} old`
+    : `freshness bound ${boundText(bound)}`;
+}
+
+/**
+ * The collapsed row's reason, in words: why it was not read (when coord said),
+ * what its freshness bound says ({@link sourceAgePhrase}), and how many rows
+ * it left out. A field coord did not state is said to be not stated — never a
+ * dash, never a zero.
+ */
+export function sourceRowReason(
+  s: SourceCoverageView,
+  { omitUnstated = false }: { omitUnstated?: boolean } = {}
+): string {
+  const parts: string[] = [];
+  const error = sourceErrorWords(s);
+  if (error !== null) parts.push(error);
+  // With `omitUnstated`, a field coord did not state is left off the row: the
+  // list says it once for every row it applies to (`unstatedSummary`), rather
+  // than repeat the identical clause on each.
+  if (!(omitUnstated && s.freshnessBoundSecs === null)) {
+    parts.push(sourceAgePhrase(s));
+  }
+  if (s.rowsExcluded !== null) parts.push(`${s.rowsExcluded} excluded`);
+  else if (!omitUnstated) parts.push("exclusions not stated");
+  return parts.join(" · ");
+}
+
+/**
+ * The one line a list of sources says in place of a "not stated" clause on
+ * every row (`sourceRowReason` with `omitUnstated`): how many of `sources`
+ * coord gave no age bound for, and how many no exclusion count — or null
+ * when it stated both for every one. Counted, never dropped: a field coord
+ * did not state is still said to be not stated.
+ */
+export function unstatedSummary(
+  sources: readonly SourceCoverageView[]
+): string | null {
+  const n = sources.length;
+  const noBound = sources.filter((s) => s.freshnessBoundSecs === null).length;
+  const noExcl = sources.filter((s) => s.rowsExcluded === null).length;
+  const of = (k: number) =>
+    k === n ? (n === 1 ? "it" : `all ${n}`) : `${k} of ${n}`;
+  const parts: string[] = [];
+  if (noBound > 0) parts.push(`no age bound for ${of(noBound)}`);
+  if (noExcl > 0) parts.push(`no count of excluded rows for ${of(noExcl)}`);
+  if (parts.length === 0) return null;
+  return `Coord stated ${parts.join(", and ")}.`;
+}
+
+/**
+ * The expanded detail's last line (R8: raw ids only there): coord's source id,
+ * then its error — a watcher's reason token, or another row's error chain with
+ * the stalled class reworded, since that word never reaches the screen.
+ */
+export function sourceRawLine(s: SourceCoverageView): string {
+  if (s.error === null) return s.source;
+  const error = isWatcherSource(s.source)
+    ? s.error
+    : withoutVerdictWords(s.error);
+  return `${s.source} · ${error}`;
+}
+
+/**
+ * How a row's `as_of` is captioned. A source's `as_of` is when coord read it.
+ * A watcher row's is coord's copy of the watcher's own `as_of` — the time of
+ * its freshest SUCCESSFUL run — which is not a read at all.
+ */
+export function sourceTimeWords(s: SourceCoverageView): {
+  verb: string;
+  absentLabel: string;
+  absentTitle: string;
+} {
+  return isWatcherSource(s.source)
+    ? {
+        verb: "Last successful run",
+        absentLabel: "last success: unknown",
+        absentTitle: "No successful run time was served for this watcher",
+      }
+    : {
+        verb: "Read",
+        absentLabel: "as of: unknown",
+        absentTitle: "Coord recorded no read time",
+      };
+}
+
+// ---------------------------------------------------------------------------
+// The whole view
+// ---------------------------------------------------------------------------
+
+export interface ProjectStateView {
+  schema: number | null;
+  generatedAt: string | null;
+  tenantId: string | null;
+  onTrack: OnTrackView;
+  correctness: CorrectnessView;
+  needsMe: NeedsMeView;
+  degradations: DegradationsView;
+  /** `null` when coord served no list — UNKNOWN, not "nothing unknown". */
+  doesNotKnow: SourceCoverageView[] | null;
+}
+
+/**
+ * Parse coord's body. Returns null for a body that is not an object at all
+ * (the caller treats that as a read that delivered nothing). Every field is
+ * read defensively; see the module doc.
+ */
+export function parseProjectState(raw: unknown): ProjectStateView | null {
+  const o = obj(raw);
+  return o ? parseBody(o) : null;
+}
+
+function parseBody(o: Json): ProjectStateView {
+  const corr = obj(o.correctness) ?? {};
+  const dnk = arr(o.does_not_know);
+  return {
+    schema: num(o.schema),
+    generatedAt: str(o.generated_at),
+    tenantId: str(o.tenant_id),
+    onTrack: parseOnTrack(o.on_track),
+    correctness: {
+      state: parseBlockState(corr.state),
+      reason: str(corr.reason),
+    },
+    needsMe: parseNeedsMe(o.needs_me),
+    degradations: parseDegradations(o.degradations),
+    doesNotKnow: dnk
+      ? dnk.flatMap((s, i) => {
+          const p = parseSource(s, i);
+          return p ? [p] : [];
+        })
+      : null,
+  };
+}
+
+/**
+ * What the page's regions render before any read has delivered: every block
+ * `unknown`, no counts, no source list — exactly what the parser makes of a
+ * coord that said nothing, so each region shows its not-read sentence rather
+ * than disappearing.
+ */
+export const NOTHING_READ: ProjectStateView = parseBody({});
+
+// ---------------------------------------------------------------------------
+// The strip
+// ---------------------------------------------------------------------------
+
+export type HomeBlock =
+  | "needs_me"
+  | "degradations"
+  | "on_track"
+  | "correctness";
+
+/** The block names as the page shows them. */
+export const HOME_BLOCK_LABEL: Readonly<Record<HomeBlock, string>> = {
+  needs_me: "needs you",
+  degradations: "degrading",
+  on_track: "work by state",
+  correctness: "correct?",
+};
+
+export function blockStates(
+  view: ProjectStateView
+): ReadonlyArray<{ block: HomeBlock; state: BlockState }> {
+  return [
+    { block: "needs_me", state: view.needsMe.state },
+    { block: "degradations", state: view.degradations.state },
+    { block: "on_track", state: view.onTrack.state },
+    { block: "correctness", state: view.correctness.state },
+  ];
+}
+
+export interface HomeStripBadge {
+  key: string;
+  label: string;
+  tone: "default" | "muted" | "attention";
+  testId: string;
+}
+
+export interface HomeStrip {
+  level: HealthStripLevel;
+  attention: Attention;
+  headline: string;
+  detail: string | null;
+  badges: HomeStripBadge[];
+}
+
+const LEVEL_BY_ATTENTION: Readonly<Record<Attention, HealthStripLevel>> = {
+  author: "red",
+  waiting: "amber",
+  none: "green",
+};
+
+/** A count badge's value: the number, or `–` for anything not measured. */
+function countText(n: number | null): string {
+  return n === null ? "–" : String(n);
+}
+
+/** Open (non-declared) degradation rows. */
+export function openDegradations(
+  d: DegradationsView
+): DegradationView[] | null {
+  return d.open === null ? null : d.open.filter((r) => !r.declared);
+}
+
+/** How the page's last read went — the strip must know a poll failed. */
+export interface HomeStripReadState {
+  /**
+   * The latest poll did not replace `view` (style guide R6): the numbers are
+   * the last good read's, and the strip is amber at the least.
+   */
+  stale?: boolean;
+  /**
+   * Coord's machine roster as the page read it beside the project state
+   * (`_lib/homeSupplements.ts`), the source the `Dev Ops ▾` badge counts
+   * from. Absent or null: not read — UNKNOWN, so the strip is never green and
+   * never says nothing is degrading.
+   */
+  machines?: HomeStripMachines | null;
+  /**
+   * The page leaves its Correct? section out (while presenting, with nothing
+   * built behind it). The strip then names no "correct?" in what it did not
+   * read — there is no section to look at — and says in one plain line that
+   * correctness is not measured yet, so the reader still learns it. It still
+   * floors at amber: correctness is not known.
+   */
+  correctnessLeftOut?: boolean;
+  /**
+   * The page is presenting. The strip then speaks of what waits on the
+   * operator in the presented Needs-you section's own words: it names no
+   * Gates or Questions page (neither can be shown), and while coord has not
+   * built its needs block — which the presented section leaves out, with its
+   * "not built yet" wording — the strip does not name that block either. It
+   * still floors at amber: the block is not read.
+   */
+  presenting?: boolean;
+  /**
+   * The Gates and Questions queues' counts of what waits on the operator,
+   * summed — read beside the project state while coord serves no readable
+   * `needs_me` block (`_lib/homeSupplements.ts`). Used only while that block
+   * is unread, and marked as counts from the queues wherever it shows. Null
+   * or absent unless AT LEAST ONE queue was read; with one unread the sum is
+   * a lower bound (`notRead`).
+   */
+  queues?: HomeStripQueues | null;
+}
+
+/** The two queue counts as the strip uses them. */
+export interface HomeStripQueues {
+  /** Open operator gates plus pending operator questions, of those read. */
+  count: number;
+  /** Both counts were read and are whole queues; false: at least `count`. */
+  exact: boolean;
+  /** Either count is a last good reading after a failed read. */
+  stale: boolean;
+  /** The queues whose read did not land; their share is unknown. */
+  notRead: readonly HomeQueue[];
+}
+
+/** One of the two queues the strip may count from. */
+export type HomeQueue = "gates" | "questions";
+
+/** The machine roster's counts, for the strip. */
+export interface HomeStripMachines {
+  /** A later read failed; these are the last good counts. */
+  stale: boolean;
+  /** The roster's counts (`machineHealth.ts` says what each one is). */
+  counts: MachineHealthCounts;
+  /** What coord said it withheld from the roster; only `none_withheld` is complete. */
+  exclusions: RosterExclusions;
+  /** Whether coord cut the roster at its row limit; complete unless it hides health. */
+  cut: RosterCut;
+}
+
+/** "1 machine is" / "2 machines are". */
+function machinesAre(n: number): string {
+  return `${n} ${n === 1 ? "machine is" : "machines are"}`;
+}
+
+/** Where the strip says the queue counts come from, in the mode's words. */
+function queuesSourceText(presenting: boolean): string {
+  return presenting
+    ? "coord's lists of open approvals and pending agent questions"
+    : "the Gates and Questions queues";
+}
+
+/** One queue, named as the mode names it. */
+function queueName(q: HomeQueue, presenting: boolean): string {
+  if (presenting) {
+    return q === "gates"
+      ? "the list of open approvals"
+      : "the list of pending agent questions";
+  }
+  return q === "gates" ? "the Gates queue" : "the Questions queue";
+}
+
+function capitalizeFirst(s: string): string {
+  return s.length === 0 ? s : s[0]!.toUpperCase() + s.slice(1);
+}
+
+/**
+ * The queue figure on the badge: exact, `≥N`, or — for a lower bound of
+ * zero — "none counted yet", never "≥0".
+ */
+function queuesFigure(q: HomeStripQueues): string {
+  if (q.exact) return String(q.count);
+  return q.count === 0 ? "none counted yet" : `≥${q.count}`;
+}
+
+/** "at the last good read (T)" — the qualifier a stale view carries. */
+export function lastGoodReadPhrase(generatedAt: string | null): string {
+  return `at the last good read (${absoluteTime(generatedAt)})`;
+}
+
+/** The strip's one line for a Correct? section the page leaves out. */
+export const CORRECTNESS_NOT_MEASURED_TEXT = "Correctness is not measured yet.";
+
+/** The page's words for a deployment that does not serve the door yet. */
+export const PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT =
+  "this deployment does not serve the project-state door yet — unknown";
+
+/** The page's words for an answer that parsed as no project state. */
+export const NOT_A_PROJECT_STATE_TEXT =
+  "coord answered with a body that is not a project state";
+
+/**
+ * Why a read of the door delivered nothing, as the clause the unread line
+ * ("…could not be read: <this>.") and the stale strip ("Last failure:
+ * <this>.") print. Each adds its own full stop, so none is kept here.
+ *
+ * The shared classifier's arms that name a known coord answer come first —
+ * coord's read deadline, an operator's route switch, a deployment without the
+ * route. Then a body carrying the `Refusal` envelope is rendered through
+ * `lib/errors` (`readErrorBody`, i.e. `Refusal::render()`'s sentence): the web
+ * proxy's own `504 coord_timeout` and `502 coord_unreachable` carry one, and
+ * the raw JSON envelope is not a reason anyone can read. Anything else is the
+ * rejection's own message, as before.
+ */
+export function projectStateErrorText(err: unknown): string {
+  const status = httpStatusOf(err);
+  const body = httpBodyOf(err);
+  let text: string | null = null;
+  if (status !== null && classifyCoordError(status, body).kind === "other") {
+    const reading = readErrorBody(body ?? "", status);
+    if (reading.kind !== "unstructured") text = reading.sentence;
+  }
+  text ??= describeCoordPollError(err, {
+    routeUnavailableText: PROJECT_STATE_ROUTE_UNAVAILABLE_TEXT,
+  });
+  return text.replace(/\.\s*$/, "");
+}
+
+/**
+ * The single derived headline (R1). Pure. `view === null` means no read has
+ * delivered a project state. Three cases look like that: the first read has
+ * not finished, every read failed, or coord answered with something that is
+ * not a project state. The strip then says it cannot tell, in words true of
+ * all three (the page names which one under the strip), and every badge is
+ * `–`. `read.stale` means the latest poll failed and `view` is the last good
+ * one: the strip is then never green, and says so in its headline.
+ */
+export function deriveHomeStrip(
+  view: ProjectStateView | null,
+  read: HomeStripReadState = {}
+): HomeStrip {
+  if (!view) {
+    return {
+      level: "amber",
+      attention: "waiting",
+      headline: "Cannot tell — coord's project state has not been read",
+      detail:
+        "Nothing on this page has been read yet; every count is a dash, not a zero.",
+      badges: [
+        {
+          key: "needs",
+          label: "needs you –",
+          tone: "muted",
+          testId: "coord-home.strip.needs-you",
+        },
+        {
+          key: "degraded",
+          label: "degraded –",
+          tone: "muted",
+          testId: "coord-home.strip.degraded",
+        },
+        {
+          key: "no-change",
+          label: noRecordedChangeBadgeLabel(null, null),
+          tone: "muted",
+          testId: "coord-home.strip.no-change",
+        },
+        {
+          key: "unknown",
+          label: "unknown sources –",
+          tone: "muted",
+          testId: "coord-home.strip.unknown-sources",
+        },
+        machinesBadge(read.machines ?? null),
+      ],
+    };
+  }
+
+  const stale = read.stale === true;
+  const unread = blockStates(view).filter((b) => b.state !== "read");
+  const unknownSources =
+    view.doesNotKnow === null
+      ? null
+      : view.doesNotKnow.filter((s) => s.state !== "read").length;
+
+  const presenting = read.presenting === true;
+  const needsRead = view.needsMe.state === "read";
+  // While presenting, the Needs-you section leaves an unbuilt block out, so
+  // the strip names it nowhere either (`presenting` above).
+  const needsLeftOut = presenting && view.needsMe.state === "not_implemented";
+  // The displayable count: null when absent OR contradicted by the list.
+  const needsTotal = needsDisplayCount(view.needsMe);
+  const needsListed = needsRead ? (view.needsMe.items?.length ?? 0) : 0;
+  // With coord's needs block unread, the queue counts stand in for it —
+  // marked as theirs in the headline, the detail and the badge.
+  const queues = needsRead ? null : (read.queues ?? null);
+  const needsSomething = needsRead
+    ? (needsTotal ?? 0) > 0 || needsListed > 0
+    : queues !== null && queues.count > 0;
+  // Only coord's own block answers "nothing needs you": the queue counts
+  // give a figure, never that answer.
+  const nothingNeedsYou = needsRead && needsTotal !== null;
+  const open = openDegradations(view.degradations);
+  const degRowsServed =
+    view.degradations.state === "read" || view.degradations.state === "stale";
+  const degradedRead = view.degradations.state === "read";
+  const stalled = view.onTrack.totals?.stalled ?? null;
+  // Coord's project state already lists a degrading machine as a row of its
+  // own (`machineHealth.ts`); the roster read beside it adds only the
+  // degrading machines that list does not show — never one twice — and says
+  // which machines have no verdict. An abandoned machine is a decision, not a
+  // degradation. Unread is UNKNOWN.
+  const machines = read.machines ?? null;
+  const mc = machines?.counts ?? null;
+  const unlistedDegrading =
+    mc === null
+      ? 0
+      : degradingCoverage(mc, degRowsServed ? (open ?? null) : null).unlisted;
+  const machinesDegrading = unlistedDegrading > 0;
+  const listedDegrading =
+    mc === null || !degRowsServed
+      ? 0
+      : degradingCoverage(mc, open ?? null).listed;
+  const machinesCalm =
+    machines !== null &&
+    mc !== null &&
+    !machines.stale &&
+    // Zero machines are not a calm fleet: an empty roster never answers
+    // "nothing is degrading". Placeholder rows are not machines, and an
+    // abandoned one does not report, so a roster of only those is not calm.
+    !noLiveMachine(mc) &&
+    // Nor is a roster coord withheld machines from, or could not say, or one
+    // whose cut at coord's row limit may hide a degrading machine.
+    isRosterComplete(machines.exclusions) &&
+    !rosterCutHidesHealth(machines.cut) &&
+    unlistedDegrading === 0 &&
+    mc.noVerdict === 0;
+  // The roster WAS read, is current and withholds nothing, and still is not
+  // calm: some machines have no verdict, its cut hides machines, or no graded
+  // machine is live. The headline says which, never that the roster was not
+  // read. (A degrading machine never reaches it: `somethingDegrading` answers
+  // first.) A machine with no verdict is named before the cut, since "no
+  // listed machine is degrading" is not known of it.
+  const rosterReadNotCalm: "no_verdict" | "cut" | "no_live" | null =
+    machines === null ||
+    mc === null ||
+    machines.stale ||
+    !isRosterComplete(machines.exclusions)
+      ? null
+      : mc.noVerdict > 0
+        ? "no_verdict"
+        : rosterCutHidesHealth(machines.cut)
+          ? "cut"
+          : noLiveMachine(mc)
+            ? "no_live"
+            : null;
+  const somethingDegrading =
+    (open !== null && open.length > 0) || machinesDegrading;
+
+  let attention: Attention = "none";
+  if (needsSomething) attention = escalateAttention(attention, "author");
+  if (somethingDegrading) {
+    attention = escalateAttention(attention, "waiting");
+  }
+  // Ignorance floors at amber: never green over a block or source not read,
+  // over a read block missing the number it exists to report, or over a view
+  // the latest poll failed to replace.
+  if (
+    unread.length > 0 ||
+    unknownSources === null ||
+    unknownSources > 0 ||
+    (needsRead && needsTotal === null) ||
+    (degRowsServed && open === null) ||
+    !machinesCalm ||
+    stale
+  ) {
+    attention = escalateAttention(attention, "waiting");
+  }
+
+  const correctnessLeftOut = read.correctnessLeftOut === true;
+  const unreadPhrase = unread
+    .filter((b) => !(correctnessLeftOut && b.block === "correctness"))
+    .filter((b) => !(needsLeftOut && b.block === "needs_me"))
+    .map((b) => `${HOME_BLOCK_LABEL[b.block]} ${BLOCK_STATE_PHRASE[b.state]}`)
+    .join("; ");
+
+  let headline: string;
+  if (attention === "author" && queues !== null) {
+    const n = queues.count;
+    headline = `${queues.exact ? "" : "At least "}${n} ${n === 1 ? "decision needs" : "decisions need"} you — counted from ${queuesSourceText(presenting)}`;
+  } else if (attention === "author") {
+    headline =
+      // Never "0 decisions need you" beside listed items: a total that is
+      // absent, or smaller than what was listed, is not a count to print.
+      needsTotal === null
+        ? "Decisions need you — how many is unknown"
+        : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you`;
+  } else if (somethingDegrading) {
+    headline = "Something is degrading";
+  } else if (stale) {
+    // The failed poll is the cause; name it whatever else is unread (coord
+    // always serves at least `correctness` unread today, so gating this on
+    // `unread.length === 0` made it unreachable). The detail lists the rest.
+    headline = "Cannot tell now — the latest read failed";
+  } else if (
+    !stale &&
+    nothingNeedsYou &&
+    degradedRead &&
+    open !== null &&
+    machinesCalm
+  ) {
+    // Both blocks the question is about were READ and are empty: answer it,
+    // and name what else is unread as a clause rather than replacing the
+    // answer. coord always serves `correctness` as unknown until the
+    // verification-metrics door deploys, so a headline that let ANY unread
+    // block override this would read "cannot tell" on every calm fleet. The
+    // amber floor above still holds — the level is never green over a gap.
+    // The clause stays generic: the detail line names what is not read.
+    headline = "Nothing needs you and nothing is degrading";
+    if (attention === "waiting") headline += " — part of this view is not read";
+  } else if (
+    nothingNeedsYou &&
+    degradedRead &&
+    open !== null &&
+    rosterReadNotCalm !== null
+  ) {
+    // Coord's needs and degradations blocks were read and are empty, and so
+    // was the roster: say what keeps it from calm, not "not read". Any other
+    // gap is a clause, as above; the detail names it.
+    const noVerdict = mc?.noVerdict ?? 0;
+    // The cut is named after the machines with no verdict, never dropped:
+    // "1 machine has no verdict" alone reads as the only thing unknown.
+    const cutClause =
+      machines !== null && rosterCutHidesHealth(machines.cut)
+        ? `, and coord's roster ${machines.cut.kind === "may_be_cut" ? "may be" : "is"} cut off`
+        : "";
+    headline =
+      rosterReadNotCalm === "no_verdict"
+        ? `Nothing needs you, but ${noVerdict} ${noVerdict === 1 ? "machine has" : "machines have"} no health verdict — ${noVerdict === 1 ? "its" : "their"} health is unknown${cutClause}`
+        : rosterReadNotCalm === "no_live"
+          ? "Nothing needs you and no live machine reports — none can be called healthy"
+          : `Nothing needs you and no listed machine is degrading — coord's roster ${machines?.cut.kind === "may_be_cut" ? "may be" : "is"} cut off`;
+    if (
+      unread.length > 0 ||
+      unknownSources === null ||
+      (unknownSources ?? 0) > 0
+    ) {
+      headline += "; part of this view is not read";
+    }
+  } else if (attention === "waiting") {
+    headline = "Cannot tell — part of this view is not read";
+  } else {
+    headline = "Nothing needs you and nothing is degrading";
+  }
+  if (stale) headline = `${headline}, ${lastGoodReadPhrase(view.generatedAt)}`;
+
+  const detailParts: string[] = [];
+  if (unreadPhrase) detailParts.push(`Not read: ${unreadPhrase}.`);
+  if (correctnessLeftOut && view.correctness.state !== "read") {
+    detailParts.push(CORRECTNESS_NOT_MEASURED_TEXT);
+  }
+  if (needsRead && needsTotal === null) {
+    detailParts.push(
+      "Coord gave no usable count of the decisions that need you."
+    );
+  }
+  if (queues !== null) {
+    // While presenting, coord's unbuilt needs block is named nowhere (the
+    // section leaves it out), so the presented line says only the source.
+    detailParts.push(
+      `Needs you is counted from ${queuesSourceText(presenting)}${presenting ? "" : ", since coord's needs block is not read"}${queues.stale ? " — at their last good read" : ""}.`
+    );
+    if (queues.notRead.length > 0) {
+      const names = queues.notRead.map((q) => queueName(q, presenting));
+      detailParts.push(
+        `${capitalizeFirst(names.join(" and "))} ${names.length === 1 ? "was" : "were"} not read, so ${names.length === 1 ? "its" : "their"} share is unknown and ${queues.count === 0 ? "none is counted yet" : "the figure is a lower bound"}.`
+      );
+    }
+  } else if (needsLeftOut) {
+    detailParts.push(
+      `Needs you is unknown: ${queuesSourceText(true)} were not read.`
+    );
+  }
+  if (degRowsServed && open === null) {
+    detailParts.push(
+      "Coord served no list of open degradations — cannot say whether any exist."
+    );
+  }
+  if (machines === null || mc === null) {
+    detailParts.push("Machine health was not read.");
+  } else {
+    // Never coord's error text here: the strip is shown in every mode.
+    if (mc.total === 0 && mc.placeholders === 0) {
+      detailParts.push(
+        emptyRosterSentence(machines.exclusions, { withReason: false })
+      );
+    } else {
+      if (mc.total === 0) {
+        detailParts.push("Coord's roster holds no machine it grades.");
+      } else if (noLiveMachine(mc)) {
+        detailParts.push(noLiveMachineSentence(mc));
+      }
+      const incomplete = rosterIncompleteSentence(machines.exclusions, {
+        withReason: false,
+      });
+      if (incomplete) detailParts.push(incomplete);
+      const cut = rosterCutSentence(machines.cut);
+      if (cut) detailParts.push(cut);
+    }
+    // Every machine the badge counts is named once below: listed, unlisted,
+    // or in the reconcile line.
+    if (listedDegrading > 0) {
+      detailParts.push(
+        `${listedDegrading} ${listedDegrading === 1 ? "machine" : "machines"} in a degrading state ${listedDegrading === 1 ? "is" : "are"} among the open degradations.`
+      );
+    }
+    if (unlistedDegrading > 0) {
+      detailParts.push(
+        `${machinesAre(unlistedDegrading)} in a degrading state.`
+      );
+    }
+    if (mc.noVerdict > 0) {
+      detailParts.push(
+        `${mc.noVerdict} ${mc.noVerdict === 1 ? "machine has" : "machines have"} no health verdict — unknown.`
+      );
+    }
+    const placeholders = placeholdersSentence(mc);
+    if (placeholders) detailParts.push(placeholders);
+    const reconcile = notDegradationsSentence(mc, { seeDevOps: true });
+    if (reconcile) detailParts.push(reconcile);
+    if (machines.stale) {
+      detailParts.push("Machine health is from its last good read.");
+    }
+  }
+  if (unknownSources === null) {
+    detailParts.push("Coord served no list of what it could not read.");
+  } else if (unknownSources > 0) {
+    detailParts.push(
+      `${unknownSources} source${unknownSources === 1 ? "" : "s"} not read — see “What this view does not know”.`
+    );
+  }
+
+  return {
+    level: LEVEL_BY_ATTENTION[attention],
+    attention,
+    headline,
+    detail: detailParts.length > 0 ? detailParts.join(" ") : null,
+    badges: [
+      {
+        key: "needs",
+        label:
+          queues !== null
+            ? `needs you ${queuesFigure(queues)} (from queues)`
+            : `needs you ${countText(needsTotal)}`,
+        tone: needsSomething
+          ? "attention"
+          : needsRead || queues !== null
+            ? "default"
+            : "muted",
+        testId: "coord-home.strip.needs-you",
+      },
+      {
+        key: "degraded",
+        // Only a READ block's rows are known to be all of them, and only when
+        // the list was served at all.
+        label: `degraded ${countText(degradedRead && open !== null ? open.length : null)}`,
+        tone: degradedRead && open !== null ? "default" : "muted",
+        testId: "coord-home.strip.degraded",
+      },
+      {
+        key: "no-change",
+        label: noRecordedChangeBadgeLabel(
+          stalled,
+          view.onTrack.stallWindowSecs
+        ),
+        tone: stalled === null ? "muted" : "default",
+        testId: "coord-home.strip.no-change",
+      },
+      {
+        key: "unknown",
+        label: `unknown sources ${countText(unknownSources)}`,
+        tone: unknownSources === null ? "muted" : "default",
+        testId: "coord-home.strip.unknown-sources",
+      },
+      machinesBadge(machines),
+    ],
+  };
+}
+
+/** The strip's machine badge: a dash, never a zero, for a roster not read. */
+function machinesBadge(machines: HomeStripMachines | null): HomeStripBadge {
+  return {
+    key: "machines",
+    // The nav's count, so the two read the same number; the detail line says
+    // which of them are not degradations.
+    label: `machines not healthy ${countText(machines === null ? null : machines.counts.notHealthy)}`,
+    tone: machines === null ? "muted" : "default",
+    testId: "coord-home.strip.machines",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// R3 — the audited attention table for the surface's rows
+// ---------------------------------------------------------------------------
+
+/** Every row kind the page paints a badge for. */
+export type HomeRowKind =
+  | "needs_you"
+  | "degrading"
+  | "declared"
+  | "cleared"
+  | "waiting_on_condition"
+  | "no_recorded_change"
+  | "repo_group"
+  | "source_read"
+  | "source_not_read";
+
+/**
+ * Who must act on each row kind. A needs-you row is an operator fork (red);
+ * a degradation is watched, and clears with its condition (amber); a named
+ * unit waiting on a condition waits on something else (amber); a source not
+ * read is ignorance, which floors at amber (R3's exception). A unit with no
+ * recorded change is a MEASUREMENT, not a claim that someone must act —
+ * calm, with the measurement stated in words.
+ */
+export const HOME_ATTENTION_BY_KIND: Readonly<Record<HomeRowKind, Attention>> =
+  {
+    needs_you: "author",
+    degrading: "waiting",
+    declared: "none",
+    cleared: "none",
+    waiting_on_condition: "waiting",
+    no_recorded_change: "none",
+    repo_group: "none",
+    source_read: "none",
+    source_not_read: "waiting",
+  };
+
+export const HOME_KIND_CLASS: Readonly<Record<HomeRowKind, string>> = {
+  needs_you: AUTHOR_RED,
+  degrading: WAITING_AMBER,
+  declared: INERT,
+  cleared: INERT,
+  waiting_on_condition: WAITING_AMBER,
+  no_recorded_change: INERT,
+  repo_group: INERT,
+  source_read: INERT,
+  source_not_read: UNKNOWN_AMBER,
+};
+
+/** Red ⇔ the colourblind-safe `✕`: exactly the `author` kinds. */
+export const HOME_AUTHOR_GLYPH_KINDS: ReadonlySet<HomeRowKind> = new Set(
+  (Object.keys(HOME_ATTENTION_BY_KIND) as HomeRowKind[]).filter(
+    (k) => HOME_ATTENTION_BY_KIND[k] === "author"
+  )
+);
+
+export const HOME_STATUS_PALETTE: StatusPalette<HomeRowKind> = {
+  badgeClass: HOME_KIND_CLASS,
+  authorGlyphKinds: HOME_AUTHOR_GLYPH_KINDS,
+};
+
+/** Human duration for an age in seconds: `3d 4h`, `5h 12m`, `40m`. */
+export function durationText(secs: number | null): string {
+  if (secs === null) return "unknown";
+  const m = Math.floor(secs / 60);
+  const h = Math.floor(m / 60);
+  const d = Math.floor(h / 24);
+  if (d > 0) return `${d}d ${h % 24}h`;
+  if (h > 0) return `${h}h ${m % 60}m`;
+  return `${Math.max(m, 0)}m`;
+}
+
+/**
+ * A bound coord states in seconds, written EXACTLY: `20s`, `1m 30s`, `5m`,
+ * `1h 1m 30s`, `3d`. Every non-zero unit is kept and nothing is rounded.
+ *
+ * {@link durationText} rounds an AGE down to the minute, which is fine for
+ * "open for 40m" and false for a bound: it turned train health's 20 s memo
+ * TTL into "may be up to 0m old" and a watcher's 90 s bound into "1m". A
+ * value coord's integer seconds cannot produce (negative or fractional) is
+ * quoted as the number of seconds it is, never rounded into a different one.
+ */
+export function boundText(secs: number): string {
+  if (!Number.isInteger(secs) || secs < 0) return `${secs}s`;
+  if (secs === 0) return "0s";
+  const parts: string[] = [];
+  const d = Math.floor(secs / 86_400);
+  const h = Math.floor((secs % 86_400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  if (s > 0) parts.push(`${s}s`);
+  return parts.join(" ");
+}

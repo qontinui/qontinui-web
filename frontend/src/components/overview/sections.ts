@@ -62,8 +62,8 @@ export const OVERVIEW_SECTIONS: readonly OverviewSection[] = [
     label: "Costs",
     route: "/overview/financials",
     icon: Wallet,
-    description: "What the project has cost, compared with its estimate",
-    available: false,
+    description: "What the project has cost, by month and category",
+    available: true,
   },
   {
     id: "overview-team",

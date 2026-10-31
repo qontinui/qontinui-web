@@ -67,6 +67,17 @@ describe("CoordNav", () => {
     );
   });
 
+  it("renders the console landing page's crumb as Home", () => {
+    // `/admin/coord` redirects to `/admin/coord/home` (the operator's one
+    // screen), so this is the crumb an operator lands on.
+    pathname = "/admin/coord/home";
+    render(<CoordNav />);
+
+    const crumb = screen.getByTestId("coord-nav-crumb");
+    expect(crumb).toHaveTextContent(/^Home$/);
+    expect(crumb).toContainElement(screen.getByTestId("coord-nav-home-active"));
+  });
+
   it("names the group and the page for a grouped page", () => {
     pathname = "/admin/coord/lands";
     render(<CoordNav />);
@@ -692,6 +703,35 @@ describe("CoordNav", () => {
       ]) {
         expect(trigger).toContainElement(screen.getByTestId(id));
       }
+    });
+
+    it("counts a machine with no state as no verdict, never as unhealthy", async () => {
+      // The nav's predicate needs a verdict: coord sent `state` for d-1 and
+      // d-3 only. Home follows a different predicate (`machineHealth.ts`);
+      // this pins that the nav's own did not move with it.
+      routeFleet(
+        {
+          devices: [
+            coordDevice("d-1", "msi", "healthy"),
+            coordDevice("d-2", "nuc"),
+            coordDevice("d-3", "box", "abandoned"),
+          ],
+        },
+        {
+          latest: [
+            sample("d-1", null, "ok"),
+            sample("d-2", null, "ok"),
+            sample("d-3", null, "ok"),
+          ],
+          history: [],
+        }
+      );
+      render(<CoordNav />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-nav-devops-unhealthy-badge")
+        ).toHaveTextContent("1 unhealthy")
+      );
     });
 
     it("shows `unknown`, not silence, when the fleet's telemetry has gone dark", async () => {

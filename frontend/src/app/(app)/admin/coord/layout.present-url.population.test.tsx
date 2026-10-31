@@ -177,6 +177,10 @@ describe("CoordLayout — entered through a console URL", () => {
     expect(container.innerHTML).not.toContain("client-org");
     expect(container.innerHTML).not.toContain("deploy");
     expect(wire.urls.some((u) => u.includes("/presentation/scope"))).toBe(true);
+    // The scope was read, so nothing says it is unknown.
+    expect(
+      screen.queryByTestId("presentation-scope-failed-notice")
+    ).toBeNull();
     expect(
       screen.getByRole("button", { name: "Presentation mode" })
     ).toHaveAttribute("aria-pressed", "true");

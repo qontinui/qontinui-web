@@ -238,6 +238,7 @@ export type {
 } from "./presentationScopeLoader";
 
 export {
+  PROJECT_NAME_DESCRIPTOR,
   WITHHELD,
   containsConfidentialTerm,
   describeRedacted,
@@ -247,6 +248,7 @@ export {
 } from "./redaction";
 export type {
   RedactionDescriptor,
+  RedactionDescriptorField,
   RedactionInput,
   RedactionReason,
   RedactionVerdict,

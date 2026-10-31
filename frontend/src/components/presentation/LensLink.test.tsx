@@ -48,6 +48,7 @@ describe("LensLink — presenting", () => {
     const link = renderLink("/digital-twin", "presenting");
     expect(link.tagName).toBe("A");
     expect(link).toHaveAttribute("href", "/digital-twin?present=1");
+    expect(link).toHaveAttribute("data-lens-link", "linked");
     expect(link).toHaveClass("a-class");
     expect(link).toHaveTextContent("the label");
   });
@@ -84,6 +85,7 @@ describe("LensLink — operator mode and no lens", () => {
       const link = renderLink(href, "operator");
       expect(link.tagName, href).toBe("A");
       expect(link, href).toHaveAttribute("href", href);
+      expect(link, href).toHaveAttribute("data-lens-link", "linked");
       expect(link, href).toHaveClass("a-class");
       cleanup();
     }

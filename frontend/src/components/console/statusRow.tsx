@@ -124,7 +124,11 @@ export const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
   "checks-failing": AUTHOR_RED,
   // --- waiting on something else → amber ------------------------------------
   blocked: WAITING_AMBER,
-  "needs-rebase": WAITING_AMBER,
+  // UNKNOWN_AMBER, not WAITING_AMBER: the row's text says whether coord's
+  // freshen will act is UNKNOWN, so the badge must not draw a self-clearing
+  // promise (plan
+  // `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`).
+  "needs-rebase": UNKNOWN_AMBER,
   // A true conflict, de-escalated because coord won't reach this PR for a
   // while: "resolve just-before-merge", not "act now".
   "conflict-deferred": WAITING_AMBER,
@@ -135,6 +139,17 @@ export const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
   // cap the wait is demonstrably not ending on its own — red.
   "needs-rebase-stale": AUTHOR_RED,
   "blocked-stale": AUTHOR_RED,
+  // BEHIND and held by another predicate block: one kind per attention grade
+  // (prPipeline `behindHeldStatus`) — red for an author-owned block, CI
+  // yellow for running CI, and the ignorance-floor amber for every waiting
+  // hold. That last one is deliberately NOT token-exact parity with
+  // `/admin/coord/prs`: there `awaiting-specialist-review` alone is
+  // WAITING_AMBER, but one kind cannot carry two ambers, and the floor is the
+  // honest choice for a grade most of whose members name no clearer.
+  "behind-held-author": AUTHOR_RED,
+  "behind-held-waiting": UNKNOWN_AMBER,
+  "behind-held-none": CI_YELLOW,
+  "behind-held-stale": AUTHOR_RED,
   // --- in flight / terminal, nobody is blocked → never red or amber ---------
   "awaiting-ci": CI_YELLOW,
   "checks-pending": CI_YELLOW,
@@ -167,6 +182,8 @@ export const AUTHOR_GLYPH_KINDS: ReadonlySet<UnifiedStatusKind> = new Set([
   "blocked-stale",
   "checks-failing",
   "requirements",
+  "behind-held-author",
+  "behind-held-stale",
 ]);
 
 /**
