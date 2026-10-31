@@ -15,8 +15,12 @@
  * block, so they run only while the page says it needs them (`needsQueues`):
  * once coord serves that block, the page stops asking.
  *
- * `refresh()` re-reads now, joining a read already out, so the page's one
- * refresh button re-reads everything it shows.
+ * `refresh()` re-reads now, so the page's one refresh button re-reads
+ * everything it shows — and asks the gates read to bypass the web proxy's
+ * short cache (`refresh: true`), so an explicit refresh is never served a
+ * cached gate list. A read already out is joined only when it covers the
+ * new one (a refresh, and the queues when they are now needed); otherwise
+ * the new read runs after it.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -125,90 +129,115 @@ export function useHomeSupplements({
   const { issue: issueG, settle: settleG } = gatesAxis;
   const { issue: issueQ, settle: settleQ } = questionsAxis;
 
-  const readOnce = useCallback(async () => {
-    const queues = wantQueues.current;
-    const seqM = issueM();
-    const seqG = queues ? issueG() : null;
-    const seqQ = queues ? issueQ() : null;
-    const [m, g, q] = await Promise.allSettled([
-      fetchFleetHealth(COORD_DASHBOARD_POLL_OPTIONS),
-      queues
-        ? adminDevService.getOverview({
-            verdict: "open",
-            limit: GATES_PAGE_SIZE,
-          })
-        : Promise.resolve(null),
-      queues
-        ? fetchPendingAgentQuestions(
-            { limit: QUESTIONS_PAGE_SIZE, audience: "operator" },
-            COORD_DASHBOARD_POLL_OPTIONS
-          )
-        : Promise.resolve(null),
-    ]);
-    if (cancelled.current) return;
-    const machines =
-      m.status === "fulfilled" ? parseMachineHealth(m.value) : null;
-    settleM(seqM, machines ? { value: machines } : null);
-    const next = {
-      machines: machines === null,
-      gates: false,
-      questions: false,
-    };
-    if (seqG !== null) {
-      const overview = g.status === "fulfilled" ? g.value : null;
-      const gates = overview ? countOpenOperatorGates(overview) : null;
-      settleG(
-        seqG,
-        gates
-          ? {
-              value: {
-                ...gates,
-                asOf:
-                  typeof overview?.generated_at === "string"
-                    ? overview.generated_at
-                    : null,
-              },
-            }
-          : null
-      );
-      next.gates = gates === null;
-    }
-    if (seqQ !== null) {
-      const questions =
-        q.status === "fulfilled"
-          ? countPendingOperatorQuestions(q.value)
-          : null;
-      settleQ(
-        seqQ,
-        questions
-          ? {
-              value: {
-                ...questions,
-                kept: false,
-                // The questions list carries no generation time: the figure
-                // is dated by when this page read it.
-                asOf: new Date().toISOString(),
-              },
-            }
-          : null
-      );
-      next.questions = questions === null;
-    }
-    setFailed((prev) => ({
-      machines: next.machines,
-      gates: seqG === null ? prev.gates : next.gates,
-      questions: seqQ === null ? prev.questions : next.questions,
-    }));
-  }, [issueM, issueG, issueQ, settleM, settleG, settleQ]);
+  const readOnce = useCallback(
+    async (fresh: boolean) => {
+      const queues = wantQueues.current;
+      const seqM = issueM();
+      const seqG = queues ? issueG() : null;
+      const seqQ = queues ? issueQ() : null;
+      const [m, g, q] = await Promise.allSettled([
+        fetchFleetHealth(COORD_DASHBOARD_POLL_OPTIONS),
+        queues
+          ? adminDevService.getOverview({
+              verdict: "open",
+              limit: GATES_PAGE_SIZE,
+              ...(fresh ? { refresh: true } : {}),
+            })
+          : Promise.resolve(null),
+        queues
+          ? fetchPendingAgentQuestions(
+              { limit: QUESTIONS_PAGE_SIZE, audience: "operator" },
+              COORD_DASHBOARD_POLL_OPTIONS
+            )
+          : Promise.resolve(null),
+      ]);
+      if (cancelled.current) return;
+      const machines =
+        m.status === "fulfilled" ? parseMachineHealth(m.value) : null;
+      settleM(seqM, machines ? { value: machines } : null);
+      const next = {
+        machines: machines === null,
+        gates: false,
+        questions: false,
+      };
+      if (seqG !== null) {
+        const overview = g.status === "fulfilled" ? g.value : null;
+        const gates = overview ? countOpenOperatorGates(overview) : null;
+        settleG(
+          seqG,
+          gates
+            ? {
+                value: {
+                  ...gates,
+                  asOf:
+                    typeof overview?.generated_at === "string"
+                      ? overview.generated_at
+                      : null,
+                },
+              }
+            : null
+        );
+        next.gates = gates === null;
+      }
+      if (seqQ !== null) {
+        const questions =
+          q.status === "fulfilled"
+            ? countPendingOperatorQuestions(q.value)
+            : null;
+        settleQ(
+          seqQ,
+          questions
+            ? {
+                value: {
+                  ...questions,
+                  kept: false,
+                  // The questions list carries no generation time: the figure
+                  // is dated by when this page read it.
+                  asOf: new Date().toISOString(),
+                },
+              }
+            : null
+        );
+        next.questions = questions === null;
+      }
+      setFailed((prev) => ({
+        machines: next.machines,
+        gates: seqG === null ? prev.gates : next.gates,
+        questions: seqQ === null ? prev.questions : next.questions,
+      }));
+    },
+    [issueM, issueG, issueQ, settleM, settleG, settleQ]
+  );
 
-  const read = useCallback((): Promise<void> => {
-    if (inFlight.current) return inFlight.current;
-    const pending = readOnce().finally(() => {
-      inFlight.current = null;
-    });
-    inFlight.current = pending;
-    return pending;
-  }, [readOnce]);
+  const inFlightFresh = useRef(false);
+  const inFlightQueues = useRef(false);
+  // A read already out is joined only when it covers this one: a refresh
+  // when this is one, and the queues when the page now needs them (a read
+  // issued before coord stopped serving `needs_me` did not ask for them).
+  // Otherwise this read runs after it.
+  const run = useCallback(
+    (fresh: boolean): Promise<void> => {
+      const prior = inFlight.current;
+      const covers =
+        (!fresh || inFlightFresh.current) &&
+        (!wantQueues.current || inFlightQueues.current);
+      if (prior && covers) return prior;
+      const pending: Promise<void> = (prior ?? Promise.resolve())
+        // A poll that failed does not stop the refresh behind it.
+        .catch(() => undefined)
+        .then(() => readOnce(fresh))
+        .finally(() => {
+          if (inFlight.current === pending) inFlight.current = null;
+        });
+      inFlight.current = pending;
+      inFlightFresh.current = fresh;
+      inFlightQueues.current = wantQueues.current;
+      return pending;
+    },
+    [readOnce]
+  );
+  const read = useCallback(() => run(false), [run]);
+  const refresh = useCallback(() => run(true), [run]);
 
   useEffect(() => {
     cancelled.current = false;
@@ -230,6 +259,6 @@ export function useHomeSupplements({
     machines: machinesView(machinesAxis, failed.machines),
     gates: queueView(gatesAxis, failed.gates),
     questions: queueView(questionsAxis, failed.questions),
-    refresh: read,
+    refresh,
   };
 }
