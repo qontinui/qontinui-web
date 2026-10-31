@@ -503,18 +503,13 @@ export function readRosterCut(body: RosterCutRef): RosterCut {
     ? body.degradable_dropped
     : null;
   const limit = rowCapField(body.row_cap, "soft") ?? COORD_ROSTER_ROW_LIMIT;
-  // `truncated: false` is a completeness claim: trusted only when nothing
-  // served beside it is malformed or says otherwise.
+  // `truncated: false` is a completeness claim: not trusted beside a
+  // malformed sibling. (A larger `total` or a non-zero `degradable_dropped`
+  // beside it is a cut, read below before the flag is.)
   const totalMalformed = body.total !== undefined && total === null;
   const droppedMalformed =
     body.degradable_dropped !== undefined && degradableDropped === null;
-  if (
-    truncated === false &&
-    (totalMalformed ||
-      droppedMalformed ||
-      (total !== null && total > listed) ||
-      (degradableDropped !== null && degradableDropped > 0))
-  ) {
+  if (truncated === false && (totalMalformed || droppedMalformed)) {
     truncated = null;
   }
   const cutTotal = total !== null && total > listed ? total : null;
