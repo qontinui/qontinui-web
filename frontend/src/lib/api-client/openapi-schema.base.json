@@ -59067,6 +59067,89 @@
         "title": "TenantCreateIn",
         "type": "object"
       },
+      "TenantGithubHostPut": {
+        "description": "Body of ``PUT /tenant/github-host`` \u2014 coord's ``PutGithubHostRequest``.\n\nCoord validates the shape (https, a host, no credentials, query, fragment;\n``web_base`` an origin) and that the host is public; the console does not\npre-judge either, so coord's ``invalid_github_host`` detail is the one\nmessage the operator sees.",
+        "properties": {
+          "api_base": {
+            "minLength": 1,
+            "title": "Api Base",
+            "type": "string"
+          },
+          "web_base": {
+            "minLength": 1,
+            "title": "Web Base",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_base",
+          "web_base"
+        ],
+        "title": "TenantGithubHostPut",
+        "type": "object"
+      },
+      "TenantGithubHostView": {
+        "description": "The tenant's effective GitHub host, as coord resolves it.\n\n``configured`` is ``None`` when coord's answer did not carry it \u2014 UNKNOWN,\nnever \"the github.com default\". The bases are ``None`` on the same terms.",
+        "properties": {
+          "api_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Base"
+          },
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "configured": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configured"
+          },
+          "graphql_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graphql Url"
+          },
+          "web_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Web Base"
+          }
+        },
+        "required": [
+          "api_base",
+          "web_base",
+          "graphql_url",
+          "configured",
+          "can_edit"
+        ],
+        "title": "TenantGithubHostView",
+        "type": "object"
+      },
       "TenantRenameIn": {
         "description": "Body for ``PATCH /operations/tenants/{tenant_id}`` \u2014 a partial rename.\n\nBoth fields are optional and at least one must be present (a body with\nneither is a 422 here, before any coord round-trip; coord would answer\n``400 empty_patch``). Only the fields the caller sent are forwarded, so a\ndisplay-name-only rename never pays coord's slug validation.\n\nUnlike ``TenantCreateIn`` the slug IS supplied by the caller, and it is\ncanonical-or-refused (plan ``2026-09-17-tenant-rename`` D4): these bounds\nmirror coord's so an obviously malformed slug costs no round-trip, but\ncoord stays the authority \u2014 it also runs the reserved-name, historical,\npinned and group-mapped checks nothing here can mirror.",
         "properties": {
@@ -108737,6 +108820,103 @@
           }
         ],
         "summary": "Patch Tenant Resume Unfinished",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/tenant/github-host": {
+      "delete": {
+        "description": "Return the tenant to github.com. Idempotent.\n\nCoord refuses with ``repos_registered_on_another_host`` (409) while the\ntenant still has repos enrolled on the configured host.",
+        "operationId": "api_v1_operations_tenant_github_host_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantGithubHostView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Tenant Github Host",
+        "tags": [
+          "operations"
+        ]
+      },
+      "get": {
+        "description": "Read the tenant's effective GitHub host (github.com when unconfigured).\n\n``can_edit`` follows :func:`get_fleet_policy` exactly \u2014 the operator's\nroles in the EFFECTIVE tenant plus the superuser bypass \u2014 because the\nwrites go through ``require_coord_tenant_admin``.",
+        "operationId": "api_v1_operations_tenant_github_host_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantGithubHostView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Tenant Github Host",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Set the tenant's GitHub host (GitHub Enterprise Server or GHE.com).\n\nTenant-admin gated web-side; coord re-checks and answers the typed\nrefusals listed above, which pass through as structured ``detail``.\nCoord's echo is the stored row, so it is returned rather than re-read.",
+        "operationId": "api_v1_operations_tenant_github_host_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantGithubHostPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantGithubHostView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Tenant Github Host",
         "tags": [
           "operations"
         ]
