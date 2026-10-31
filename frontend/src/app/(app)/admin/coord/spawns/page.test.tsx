@@ -92,6 +92,16 @@ async function renderPage() {
 }
 
 /** A summary count as rendered: its number, or `unknown` for a dash. */
+/**
+ * The label beside a summary count: the `Count`'s last child span, read on
+ * its own so the assertion pins the copy, not how the value and label sit
+ * together in the markup.
+ */
+function labelOf(id: string): string | null {
+  const count = screen.getByTestId(`coord-spawns-count-${id}`);
+  return count.lastElementChild?.textContent ?? null;
+}
+
 function countOf(id: string): string | null {
   return screen
     .getByTestId(`coord-spawns-count-${id}`)
@@ -322,9 +332,7 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     await renderPage();
     expect(countOf("placed")).toBe("38");
     expect(countOf("devices")).toBe("2");
-    expect(screen.getByTestId("coord-spawns-count-devices").textContent).toBe(
-      "2devices with a placement"
-    );
+    expect(labelOf("devices")).toBe("devices with a placement");
   });
 
   it("names a single device with a placement in the singular", async () => {
@@ -342,9 +350,7 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     });
     await renderPage();
     expect(countOf("devices")).toBe("1");
-    expect(screen.getByTestId("coord-spawns-count-devices").textContent).toBe(
-      "1device with a placement"
-    );
+    expect(labelOf("devices")).toBe("device with a placement");
   });
 
   it("renders an empty window as a measured empty, with zero counts", async () => {
