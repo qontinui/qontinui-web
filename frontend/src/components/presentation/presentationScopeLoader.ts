@@ -39,7 +39,9 @@
  *   first-party owners are unknown (coord could not list the registered
  *   repositories) is `error` too — an empty list would be a decision nobody
  *   made. Both withhold every title. A failed read is retried after
- *   {@link PRESENTATION_SCOPE_RETRY_MS}.
+ *   {@link PRESENTATION_SCOPE_RETRY_MS}, and the failure stands until a read
+ *   answers: a retry in flight has learned nothing yet, and the toggle's notice
+ *   reads this state, so it would blink off on every retry.
  *
  * The tenant-policy page's form (`PresentationScopePanel`, operator mode only)
  * reads the same store (`record`) — asking for the read itself, since nothing
@@ -229,8 +231,12 @@ export function createPresentationScopeStore(
     controller = ac;
     const held = snapshot;
     const sameProject = held.selection === selection;
-    // A refresh of a ready scope for the same project keeps serving it.
-    if (!(held.state.status === "ready" && sameProject)) {
+    // A refresh of a ready scope for the same project keeps serving it, and a
+    // retry of a failed one keeps saying it failed.
+    const keepsState =
+      sameProject &&
+      (held.state.status === "ready" || held.state.status === "error");
+    if (!keepsState) {
       set({
         ...(sameProject ? held : NOTHING_READ),
         state: LOADING,
@@ -374,9 +380,10 @@ export function usePresentationScope(
     return () => clearTimeout(timer);
   }, [active, store, snapshot]);
 
-  // A scope read under another project selection is not this page's.
+  // A scope read under another project selection is not this page's, and nor
+  // is a failure: nothing has been asked about the project selected now.
   if (
-    snapshot.state.status === "ready" &&
+    (snapshot.state.status === "ready" || snapshot.state.status === "error") &&
     snapshot.selection !== store.currentSelection()
   ) {
     return LOADING;

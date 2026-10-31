@@ -247,6 +247,7 @@ export {
 } from "./redaction";
 export type {
   RedactionDescriptor,
+  RedactionDescriptorField,
   RedactionInput,
   RedactionReason,
   RedactionVerdict,
