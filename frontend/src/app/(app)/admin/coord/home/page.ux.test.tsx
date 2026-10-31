@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
+import { expandRow } from "./__fixtures__/homePageDriver";
 
 const httpFetch = vi.fn();
 const httpGet = vi.fn();
@@ -162,6 +163,68 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       expect(within(group).getByText(/^1 units?$/)).toHaveTextContent(
         /^1 unit$/
       );
+    });
+  });
+
+  describe("a repository group, expanded", () => {
+    it("accounts for every unit its badge counts, and points to the page that lists the rest", async () => {
+      answer({ [PROJECT_STATE]: () => json(oneUnitBody()) });
+      await renderPage();
+      const row = expandRow(
+        screen.getByTestId("coord-home.on-track"),
+        "example-repo"
+      );
+      expect(
+        within(row).getByTestId("coord-home.on-track.group.classes")
+      ).toHaveTextContent("By state: not started 1.");
+      const unnamed = within(row).getByTestId(
+        "coord-home.on-track.group.unnamed"
+      );
+      expect(unnamed).toHaveTextContent(
+        "the 1 other unit is not listed here; it is on Work units."
+      );
+      expect(
+        within(unnamed).getByRole("link", { name: "Work units" })
+      ).toHaveAttribute("href", "/admin/coord/work-units");
+    });
+
+    it("says nothing about other units when coord named all of them", async () => {
+      const classes = { ...CLASSES, not_started: 0, stalled: 1 };
+      const body = oneUnitBody();
+      const onTrack = body.on_track as {
+        groups: Array<Record<string, unknown>>;
+      };
+      onTrack.groups[0] = {
+        ...onTrack.groups[0],
+        classes,
+        named: {
+          stalled: {
+            units: [
+              {
+                slug: "2026-10-01-example-unit",
+                title: "Example unit",
+                age_secs: 20 * 86_400,
+                age_basis: "last_recorded_change",
+              },
+            ],
+            omitted: 0,
+          },
+          waiting_on_gate: { units: [], omitted: 0 },
+        },
+      };
+      answer({ [PROJECT_STATE]: () => json(body) });
+      await renderPage();
+      const row = expandRow(
+        screen.getByTestId("coord-home.on-track"),
+        "example-repo"
+      );
+      expect(
+        within(row).getByTestId("coord-home.on-track.group.classes")
+      ).toHaveTextContent("By state: no recorded change in 14 days 1.");
+      expect(
+        within(row).queryByTestId("coord-home.on-track.group.unnamed")
+      ).not.toBeInTheDocument();
+      expect(row).toHaveTextContent("Example unit");
     });
   });
 

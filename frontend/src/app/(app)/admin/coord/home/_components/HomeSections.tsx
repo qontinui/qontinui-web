@@ -141,6 +141,9 @@ import {
   type RepoGroup,
   type SourceCoverageView,
   unitCountText,
+  groupBreakdown,
+  groupBreakdownSentence,
+  unnamedUnitsSentence,
 } from "@/components/admin/coord/coordHomeStatus";
 
 const HEADING =
@@ -1109,6 +1112,48 @@ function NamedUnits({
   );
 }
 
+/**
+ * Every unit a repository group counts, accounted for one click down: each
+ * class's count (`groupBreakdown`), and — because coord names the units of
+ * only two classes here — how many of the counted units are listed on the
+ * Work units page instead, with the link where it opens (`useLinkOpens`).
+ */
+function GroupUnitsAccount({
+  g,
+  windowSecs,
+}: {
+  g: RepoGroup;
+  windowSecs: number | null;
+}) {
+  const opens = useLinkOpens();
+  const b = groupBreakdown(g);
+  const unnamed = unnamedUnitsSentence(b.unnamed);
+  return (
+    <div
+      className="space-y-1 text-muted-foreground"
+      data-testid="coord-home.on-track.group.classes"
+    >
+      <p className="m-0">{groupBreakdownSentence(b, windowSecs)}</p>
+      {unnamed !== null && (
+        <p className="m-0" data-testid="coord-home.on-track.group.unnamed">
+          {unnamed}
+          {b.unnamed === null ? null : opens("/admin/coord/work-units") ? (
+            <>
+              {b.unnamed === 1 ? "; it is on" : "; they are on"}{" "}
+              <LensLink href="/admin/coord/work-units" className="underline">
+                Work units
+              </LensLink>
+              .
+            </>
+          ) : (
+            "."
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function RepoGroupRow({
   g,
   windowSecs,
@@ -1164,6 +1209,7 @@ function RepoGroupRow({
         }
         problems={
           <div className="space-y-2">
+            <GroupUnitsAccount g={g} windowSecs={windowSecs} />
             <NamedUnits
               title={`No recorded change in ${days} days`}
               list={g.named.stalled}
