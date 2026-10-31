@@ -614,6 +614,18 @@ describe("machine health", () => {
         }
       );
 
+      it("a cut is tail-only only with `truncated: true` beside it", () => {
+        // A larger `total` and `degradable_dropped: 0` with no flag is a cut
+        // coord did not fully describe: UNKNOWN past it, never calm.
+        const c = readRosterCut({
+          devices: healthy(3),
+          total: 5,
+          degradable_dropped: 0,
+        });
+        expect(c).toEqual({ kind: "reported_cut", listed: 3, total: 5 });
+        expect(rosterCutHidesHealth(c)).toBe(true);
+      });
+
       it("truncated: true beside a total equal to the list keeps the reported cut", () => {
         expect(
           readRosterCut({

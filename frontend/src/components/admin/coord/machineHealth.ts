@@ -492,14 +492,13 @@ function rowCapField(rowCap: unknown, key: "soft" | "hard"): number | null {
  * and fields that contradict each other are resolved toward a cut: a
  * `total` below the rows listed is dropped; `truncated: false` beside a
  * larger `total`, a non-zero `degradable_dropped`, or either one malformed,
- * is dropped; and
- * `truncated: true` beside a `total` equal to the rows listed keeps the
- * reported cut and drops the `total`.
+ * is dropped; and `truncated: true` beside a `total` equal to the rows
+ * listed keeps the reported cut, with no `total` to print.
  */
 export function readRosterCut(body: RosterCutRef): RosterCut {
   const listed = body.devices.length;
   let truncated = typeof body.truncated === "boolean" ? body.truncated : null;
-  let total = isCount(body.total) && body.total >= listed ? body.total : null;
+  const total = isCount(body.total) && body.total >= listed ? body.total : null;
   const degradableDropped = isCount(body.degradable_dropped)
     ? body.degradable_dropped
     : null;
@@ -518,7 +517,6 @@ export function readRosterCut(body: RosterCutRef): RosterCut {
   ) {
     truncated = null;
   }
-  if (truncated === true && total === listed) total = null;
   const cutTotal = total !== null && total > listed ? total : null;
   if (degradableDropped !== null && degradableDropped > 0) {
     return {
