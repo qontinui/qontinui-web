@@ -284,7 +284,8 @@ export default function CoordAgentRegistryPage() {
   const reads = useRef(createReadSequence());
 
   /**
-   * Resolves with whether the read answered. `afterWrite` is a save's re-read:
+   * Resolves with whether what is on screen is a read issued at or after this
+   * one — the answer a save's re-read needs. `afterWrite` is a save's re-read:
    * its failure is reported by that save, beside the write's outcome, so a 403
    * on it does not replace the page — and that text — with the panel for a
    * reader who may not read the page at all.
@@ -296,13 +297,20 @@ export default function CoordAgentRegistryPage() {
       const next = await listAdminAgentRegistry();
       if (seq.settle(ticket, true)) {
         setRows(next);
-        setLoadError(null);
-        setForbidden(false);
+        // A NEWER read that failed still stands: an older answer may show its
+        // rows, but must not clear that failure's banner or panel.
+        if (!seq.isStale()) {
+          setLoadError(null);
+          setForbidden(false);
+        }
       }
       return true;
     } catch (err) {
       seq.settle(ticket, false);
-      if (seq.hasDelivered() && !seq.isStale()) return false;
+      // A newer read has delivered since this one was issued, so the screen
+      // holds a read made after it: for the save waiting on this re-read,
+      // that is the answer it needed, not a failed re-read.
+      if (seq.hasDelivered() && !seq.isStale()) return true;
       // The web tier gates both proxies, so a non-admin lands here with
       // `not_coord_tenant_admin` rather than an opaque coord body. Say what
       // the page is instead of showing an empty registry, which would read as
