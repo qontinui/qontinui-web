@@ -143,7 +143,9 @@ export function fixerDialGate(
         : "off";
   return {
     key: "dial:auto_fix_pr",
-    title: "Fixer dial for stuck PRs",
+    title: presenting
+      ? "Fixers for stuck pull requests"
+      : "Fixer dial for stuck PRs",
     where: presenting
       ? "A project setting: whether fixers start for stuck pull requests."
       : "Merge settings, for the whole project: Spawn fixer sessions for stuck PRs.",
@@ -217,7 +219,9 @@ export function redMainKnobGate(
   const knob = withWrite(value, write, ON_OFF_TEXT, presenting);
   return {
     key: "knob:auto_fix_red_main",
-    title: "Fixer knob for failing main branches",
+    title: presenting
+      ? "Fixers for a failing main branch"
+      : "Fixer knob for failing main branches",
     where: presenting
       ? "A project setting: whether a failing main branch is handed to a fixer."
       : "Merge settings, for the whole project: hand a failing main branch to a fixer.",
@@ -296,7 +300,9 @@ export function admissionStallKnobGate(
   }
   return {
     key: "knob:auto_fix_admission_stall",
-    title: "Responder knob for a stalled merge queue",
+    title: presenting
+      ? "A responder for a stalled merge queue"
+      : "Responder knob for a stalled merge queue",
     where: presenting
       ? "A project setting: whether a stalled merge queue gets a responder."
       : "Merge settings, for the whole project only: respond to a stalled merge queue.",

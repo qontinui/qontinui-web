@@ -1,7 +1,7 @@
 /**
  * /admin/coord/spawns in presentation mode — plan
- * `2026-10-23-console-presentation-spaces` Phase 4, and the proof
- * `PRESENTATION_READY_ROUTES` names for this route.
+ * `2026-10-23-console-presentation-spaces` Phase 4 — the proof this route
+ * registers with once the spawn ledger is served (see 5).
  *
  * It renders the real page through the presentation helper
  * (`renderInPresentationMode`: the real UI Bridge provider, a fixed presenting
@@ -29,7 +29,10 @@
  *  4. the operator console is unchanged: the same fixtures in operator mode
  *     show the real names, the controls and the launcher — so their absence
  *     above is the lens's doing, not an empty render;
- *  5. the route is registered presentation-ready.
+ *  5. the route is NOT registered presentation-ready: safe, but withheld until
+ *     coord serves the spawn ledger, since without it the page presents no
+ *     activity (`presentationReadiness.ts` says why). Registering it again is
+ *     one entry naming this file as its proof.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -641,6 +644,29 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(screen.queryByTestId("coord-spawns-machines-stale")).toBeNull();
   });
 
+  it("says its switches in plain words, behind every disclosure: no gate jargon and no gate chips", async () => {
+    renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
+    await settle();
+    expect(screen.queryAllByTestId("coord-spawns-path-chip")).toHaveLength(0);
+    await openEverything();
+    // The operator's words for a switch, which no glossary term reads.
+    const JARGON =
+      /\b(?:class switch|knob|dial|enforce|env-only|runner-only|shadow|workhorse|bench|ci node|dispatch role|agent registry|fleet flag|autonomy level)\b/i;
+    const words = pageWords();
+    expect(words.match(JARGON)?.[0] ?? null).toBeNull();
+    // Each switch still says whether it applies, in what it does.
+    const enforced = screen
+      .getAllByTestId("coord-spawns-path-enforced")
+      .map((e) => e.textContent);
+    expect(enforced).toContain("Applied");
+    expect(enforced).toContain("Each machine decides");
+    expect(
+      screen
+        .getAllByTestId("coord-spawns-machine-role")
+        .map((r) => r.textContent)
+    ).toEqual(["Takes sessions and builds", "Takes no new work"]);
+  });
+
   it("tells apart two devices on one host without naming either device", async () => {
     routes.fleet = () => ({
       body: {
@@ -760,8 +786,10 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(unknownChips).toHaveLength(1);
   });
 
-  it("is registered presentation-ready", () => {
-    expect(isPresentationReady("/admin/coord/spawns")).toBe(true);
+  it("is withheld from presentation until the spawn ledger is served: not registered ready", () => {
+    // Safe to present (every test above), but with no ledger it would show no
+    // activity, so the lens withholds it and the tour does not link it.
+    expect(isPresentationReady("/admin/coord/spawns")).toBe(false);
   });
 });
 

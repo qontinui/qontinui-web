@@ -266,9 +266,9 @@ export function registryGate(input: RegistryGateInput): MatrixGate {
   const effective = withWrite(value.cell, input.write, ON_OFF_TEXT, presenting);
   return {
     key: `registry:${name}`,
-    title: "Agent registry switch",
+    title: presenting ? "The path's own switch" : "Agent registry switch",
     where: presenting
-      ? "A switch in the agent registry, for the whole project."
+      ? "A switch for this path, for the whole project."
       : "The agent registry, for the whole project (the tenant default).",
     whereDetail: presenting
       ? undefined

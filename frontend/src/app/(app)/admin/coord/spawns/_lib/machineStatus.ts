@@ -42,8 +42,11 @@
 
 import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 import {
+  LANES,
+  ROLE_OPENS,
   describeRole,
   type DispatchRolesRead,
+  type RoleMachine,
 } from "@/components/operations/fleetDispatchRoles";
 import {
   formatDrainRemaining,
@@ -156,6 +159,38 @@ function drainCell(
   }
 }
 
+/**
+ * A machine's role in an outsider's words. "Workhorse", "Bench" and "CI node"
+ * are the operator's names and no glossary term reads them, so while
+ * presenting a role is said as what it lets the machine take (`ROLE_OPENS`,
+ * the role's whole definition).
+ */
+export function presentedRoleText(m: RoleMachine): string {
+  if (m.unrecognisedRole !== null) return "Role not recognised";
+  if (m.role === null) {
+    // As `describeRole`: another tenant's role may close a lane this tenant's
+    // absent row would open.
+    const closedElsewhere = m.lanes
+      ? LANES.filter(
+          (l) => !(l === "agent" && m.hostOnly) && m.lanes![l].role === "closed"
+        )
+      : [];
+    if (closedElsewhere.length > 0)
+      return "Limited by another project's setting";
+  }
+  const opens = m.role === null ? ROLE_OPENS.workhorse : ROLE_OPENS[m.role];
+  const takes =
+    opens.agent && opens.ci
+      ? "Takes sessions and builds"
+      : opens.ci
+        ? "Takes builds only"
+        : opens.agent
+          ? "Takes sessions only"
+          : "Takes no new work";
+  if (m.role === null) return `${takes} (no role set)`;
+  return m.registered ? takes : `${takes} (not yet registered)`;
+}
+
 function roleCell(
   read: DispatchRolesRead,
   deviceId: string,
@@ -183,7 +218,7 @@ function roleCell(
   }
   return {
     state: m.role ?? "unassigned",
-    text: describeRole(m),
+    text: presenting ? presentedRoleText(m) : describeRole(m),
     unknown: false,
   };
 }

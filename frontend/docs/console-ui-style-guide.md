@@ -1580,8 +1580,10 @@ gates `registryGates.ts`, `nextStepGates.ts`, `mergeSettingsGates.ts` and
 (`_components/MachineStatusSection.tsx` over `_lib/machineStatus.ts`) — both plain
 tables (the `FleetWorktreeSlotsSection` classes, horizontally scrollable at phone
 width), and made the whole page a presentation lens surface (agentic activity),
-registered in `PRESENTATION_READY_ROUTES` on the strength of
-`page.presentation.test.tsx`. It adds no primitive and no palette (a switch's value
+proven safe by `page.presentation.test.tsx` but **withheld** from
+`PRESENTATION_READY_ROUTES` until coord serves the spawn ledger — without it the page
+presents no activity, which cannot answer an evaluator's "is it real?" — so the lens
+shows its "not prepared" placeholder and the tour lists the stop unlinked. It adds no primitive and no palette (a switch's value
 is drawn from `statusRow`'s constants directly: `INERT` for on and off alike,
 `UNKNOWN_AMBER` for what could not be read or is stale, `AUTHOR_RED` for a write
 coord did not read back as asked). Six more things are recorded:
@@ -1632,7 +1634,16 @@ no device id, coord reason, event reason, raw id, setting key or member preferen
 renders, and a sentence names "the coordination service" rather than coord; write
 controls and the launcher link are unmounted, and where a switch's control would be,
 a fixed sentence says it is changed by the operator in the console; the session-load
-link is a `LensLink`; and the rate chart is held open.
+link is a `LensLink`; and the rate chart is held open. A switch's operator words have
+no glossary term and no plain reading, so they are translated or withheld: each gate
+carries a presented title ("The path's own switch", "Fixers for stuck pull
+requests", "Deployment setting"); the Enforced? badge says what the switch does
+("Applied", "Recorded only", "Set at deployment", "Each machine decides"); a class
+row's badge reads "governs several paths"; a machine's dispatch role reads as the work
+it may take ("Takes sessions and builds", "Takes no new work"), under the header
+"Work it may take"; and the gate chips (class, dial, knob, flag, autonomy) are not
+rendered — the path's verdict already reads every switch, and opening the line names
+each in full.
 
 ### 3.9 The session-load console — recorded under §6.4
 

@@ -143,7 +143,7 @@ export function autonomyGate(
   const effective = withWrite(value, write, levelText, presenting);
   return {
     key: `autonomy:${domain}`,
-    title: "Autonomy level",
+    title: presenting ? "How far it acts on its own" : "Autonomy level",
     where: presenting
       ? "The project's autonomy setting for this decision."
       : "The project's next-step settings, for this decision.",
@@ -215,7 +215,7 @@ export function fleetFlagGate(
   }
   return {
     key: `flag:${domain}`,
-    title: "Fleet flag",
+    title: presenting ? "Deployment setting" : "Fleet flag",
     where: presenting
       ? "A deployment setting of the coordination service."
       : "Coord's deployment settings: changed by redeploying coord.",

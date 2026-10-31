@@ -258,7 +258,9 @@ export function followupScopeGate(
   const effective = followupEffective(read, readings, presenting);
   return {
     key: "scope:post_merge_followup",
-    title: "Follow-up scope, per repository",
+    title: presenting
+      ? "Which merges get a follow-up, per repository"
+      : "Follow-up scope, per repository",
     where: presenting
       ? "A per-repository setting: every merge, code changes only, or never."
       : "Per repository, on the agent registry page under Per-repo follow-up dials; whether coord acts on it is coord's rollout mode.",
@@ -286,7 +288,7 @@ export function runnerGate(
 ): MatrixGate {
   return {
     key: `runner:${key}`,
-    title: "Runner switch",
+    title: presenting ? "Each machine's own setting" : "Runner switch",
     where: presenting ? where.presented : where.operator,
     whereDetail: presenting ? undefined : where.detail,
     scope: "device",

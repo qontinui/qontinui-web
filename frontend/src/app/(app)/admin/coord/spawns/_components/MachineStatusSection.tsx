@@ -162,7 +162,9 @@ export function MachineStatusSection({
               <tr className="text-left text-[11px] text-muted-foreground">
                 <th className="py-1 pr-3 font-medium">Machine</th>
                 <th className="py-1 pr-3 font-medium">New work</th>
-                <th className="py-1 pr-3 font-medium">Dispatch role</th>
+                <th className="py-1 pr-3 font-medium">
+                  {presenting ? "Work it may take" : "Dispatch role"}
+                </th>
                 {showInFlight && (
                   <th className="py-1 pr-3 font-medium">
                     In flight vs ceiling
