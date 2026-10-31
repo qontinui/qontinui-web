@@ -7,7 +7,10 @@
  * means for a WRITE through these proxies.
  */
 
-import { NO_CONNECTION_MESSAGE } from "@/services/http-client";
+import {
+  NO_CONNECTION_MESSAGE,
+  REQUEST_TIMEOUT_MESSAGE,
+} from "@/services/http-client";
 import { httpBodyOf, httpStatusOf } from "./httpStatus";
 
 /**
@@ -70,6 +73,66 @@ function proxyDetailOf(body: string | null): string | null {
   const { detail, message } = parsed as { detail?: unknown; message?: unknown };
   if (typeof detail === "string") return detail;
   return typeof message === "string" ? message : null;
+}
+
+/**
+ * A detail fit to quote: coord's body text the proxy forwarded verbatim is JSON
+ * (`{"error": …}`), and is quoted by its `message` or `error` field rather than
+ * raw. Empty or unreadable text quotes nothing.
+ */
+function quotableDetail(detail: string | null): string | null {
+  if (detail === null || detail.trim() === "") return null;
+  if (!detail.trimStart().startsWith("{")) return detail;
+  try {
+    const parsed: unknown = JSON.parse(detail);
+    if (parsed !== null && typeof parsed === "object") {
+      for (const key of ["message", "error"] as const) {
+        const value = (parsed as Record<string, unknown>)[key];
+        if (typeof value === "string" && value !== "") return value;
+      }
+    }
+  } catch {
+    // Not JSON after all: nothing readable to quote.
+  }
+  return null;
+}
+
+/**
+ * Why a write's outcome is open, in words fit to put beside "unknown".
+ *
+ * The client's own texts are not: the timeout says "Please try again", which
+ * invites the blind retry this module exists to prevent, and a client's
+ * fallback ("Failed to save …") or a rejected fetch ("Failed to fetch") says
+ * the write failed, which nobody knows. So those are replaced, and only a
+ * detail the server actually gave is quoted. An error with a numeric `status`
+ * and `detailServed: false` (`AgentPrefError` over a body with no reason)
+ * carries the client's fallback as its message, and quotes nothing.
+ */
+export function outcomeUnknownReason(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message === REQUEST_TIMEOUT_MESSAGE) {
+    return "no answer came back within the client's time limit";
+  }
+  const typed = err as { status?: unknown; detailServed?: unknown } | null;
+  const parsedStatus = httpStatusOf(err);
+  if (parsedStatus !== null) {
+    return (
+      quotableDetail(proxyDetailOf(httpBodyOf(err))) ??
+      `HTTP ${parsedStatus} with no readable reason`
+    );
+  }
+  if (
+    typed !== null &&
+    typeof typed === "object" &&
+    typeof typed.status === "number"
+  ) {
+    const served = typed.detailServed !== false;
+    return (
+      (served ? quotableDetail(message) : null) ??
+      `HTTP ${typed.status} with no readable reason`
+    );
+  }
+  return "no answer reached the browser";
 }
 
 /**

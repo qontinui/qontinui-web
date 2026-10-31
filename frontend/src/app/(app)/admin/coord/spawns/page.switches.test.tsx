@@ -804,8 +804,12 @@ describe("a write that lost its answer is not a refusal", () => {
     expect(
       effectiveOf("registry:merge_shepherd").getAttribute("title")
     ).toContain(
-      "could not confirm whether your change to off landed (Failed to fetch)"
+      "could not confirm whether your change to off landed (no answer reached the browser, so it may have landed)"
     );
+    // An open outcome never says the write failed.
+    expect(
+      effectiveOf("registry:merge_shepherd").getAttribute("title")
+    ).not.toMatch(/fail/i);
     await release();
     expect(effectiveOf("registry:merge_shepherd").textContent).toBe("Off");
     expect(readBackOf("registry:merge_shepherd")?.dataset.readback).toBe(
@@ -873,6 +877,25 @@ describe("a write that lost its answer is not a refusal", () => {
     expect(writeNoteOf("dial:auto_fix_pr")?.textContent).toContain(
       "could not confirm the write itself"
     );
+  });
+
+  it("words a dial PATCH that threw as an open outcome, never as failed", async () => {
+    await renderPage();
+    await openPath("pr_fix_dispatch");
+    throwOnWrite = { method: "PATCH", error: new TypeError("Failed to fetch") };
+    routes.merge = () => ({
+      body: mergeSettingsBody({
+        tenant: false,
+        resolved: false,
+        source: "tenant",
+      }),
+    });
+    const release = holdReads("pr-merge/settings");
+    await click(screen.getByTestId("coord-spawns-path-fixer-dial-off"));
+    const title = effectiveOf("dial:auto_fix_pr").getAttribute("title");
+    expect(title).toContain("landed (no answer reached the browser);");
+    expect(title).not.toMatch(/fail|try again/i);
+    await release();
   });
 
   it("stays a refusal when the browser is offline", async () => {

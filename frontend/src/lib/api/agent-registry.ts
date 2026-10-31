@@ -82,16 +82,24 @@ export type AgentPrefErrorCode =
 export class AgentPrefError extends Error {
   readonly code: AgentPrefErrorCode | null;
   readonly status: number;
+  /**
+   * Whether `message` is the server's reason. `false` means the body gave none
+   * and `message` is this client's fallback ("Failed to save …"), which must
+   * not be quoted where the outcome is unknown (`outcomeUnknownReason`).
+   */
+  readonly detailServed: boolean;
 
   constructor(
     message: string,
     code: AgentPrefErrorCode | null,
-    status: number
+    status: number,
+    detailServed = true
   ) {
     super(message);
     this.name = "AgentPrefError";
     this.code = code;
     this.status = status;
+    this.detailServed = detailServed;
   }
 }
 
@@ -110,8 +118,8 @@ function extractErrorCode(body: unknown): AgentPrefErrorCode | null {
 
 /** The reason in an error body: FastAPI's own `{detail}`, or what the backend's
  *  error handler serves in production, `{error, message, timestamp, path}`. */
-function extractMessage(body: unknown, fallback: string): string {
-  if (typeof body !== "object" || body === null) return fallback;
+function extractMessage(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
   const { detail, message } = body as { detail?: unknown; message?: unknown };
   if (typeof detail === "string") return detail;
   if (
@@ -122,7 +130,7 @@ function extractMessage(body: unknown, fallback: string): string {
   ) {
     return (detail as { message: string }).message;
   }
-  return typeof message === "string" ? message : fallback;
+  return typeof message === "string" ? message : null;
 }
 
 /**
@@ -145,10 +153,12 @@ async function handleResponse<T>(
 ): Promise<T> {
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => ({}));
+    const served = extractMessage(body);
     throw new AgentPrefError(
-      extractMessage(body, fallback),
+      served ?? fallback,
       extractErrorCode(body),
-      response.status
+      response.status,
+      served !== null
     );
   }
   return response.json() as Promise<T>;

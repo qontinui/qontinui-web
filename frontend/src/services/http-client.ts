@@ -304,6 +304,14 @@ export const NO_CONNECTION_MESSAGE =
   "No internet connection. Please check your network.";
 
 /**
+ * What a request rejects with when the client's own timeout fired. Exported so
+ * a caller that must not invite a retry (a write whose outcome is open) can
+ * word it differently.
+ */
+export const REQUEST_TIMEOUT_MESSAGE =
+  "Request timeout - backend may be starting up. Please try again.";
+
+/**
  * Default client-side fetch timeout. Sized to cover an Elastic Beanstalk
  * cold-start (~10-15s) plus normal request latency, but small enough that a
  * truly stuck request fails fast. Per-request `timeoutMs` overrides this.
@@ -831,9 +839,7 @@ export class HttpClient {
       }
 
       if ((error as Error).name === "AbortError") {
-        throw new Error(
-          "Request timeout - backend may be starting up. Please try again."
-        );
+        throw new Error(REQUEST_TIMEOUT_MESSAGE);
       }
 
       if (typeof navigator !== "undefined" && !navigator.onLine) {

@@ -167,7 +167,9 @@ describe("/admin/coord/agent-registry", () => {
   });
 
   it("shows a save failure inline rather than reverting silently", async () => {
-    putAgentRegistryDefaults.mockRejectedValue(new Error("coord said no"));
+    putAgentRegistryDefaults.mockRejectedValue(
+      new AgentPrefError("coord said no", null, 409)
+    );
     render(<CoordAgentRegistryPage />);
     await userEvent.click(
       await screen.findByLabelText("Default-enable code-reviewer")
@@ -214,6 +216,39 @@ describe("/admin/coord/agent-registry", () => {
           `Whether this change was applied is unknown (${detail}). What is shown is a read made after it.`
         )
       );
+    }
+  );
+
+  it.each([
+    [
+      "the client's timeout",
+      new Error(
+        "Request timeout - backend may be starting up. Please try again."
+      ),
+      "no answer came back within the client's time limit",
+    ],
+    [
+      "a 5xx with no readable body",
+      new AgentPrefError("Failed to save the tenant default", null, 503, false),
+      "HTTP 503 with no readable reason",
+    ],
+  ])(
+    "an open outcome from %s neither invites a retry nor says failed",
+    async (_label, error, reason) => {
+      putAgentRegistryDefaults.mockRejectedValue(error);
+      render(<CoordAgentRegistryPage />);
+      await userEvent.click(
+        await screen.findByLabelText("Default-enable code-reviewer")
+      );
+      const said = await screen.findByTestId(
+        "agent-registry-save-error-code-reviewer"
+      );
+      await waitFor(() =>
+        expect(said).toHaveTextContent(
+          `Whether this change was applied is unknown (${reason}).`
+        )
+      );
+      expect(said.textContent).not.toMatch(/fail|try again/i);
     }
   );
 

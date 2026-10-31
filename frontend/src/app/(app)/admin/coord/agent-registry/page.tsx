@@ -56,6 +56,7 @@ import {
   putAgentRegistryDefaults,
   type AdminAgentRegistryRow,
 } from "@/lib/api/agent-registry";
+import { outcomeUnknownReason } from "@/components/admin/coord/writeOutcome";
 import { RepoFollowupDialsPanel } from "./_components/RepoFollowupDialsPanel";
 
 // R3 — the colour families, IMPORTED. They used to be re-declared here,
@@ -329,7 +330,7 @@ export default function CoordAgentRegistryPage() {
       if (isWriteOutcomeUnknown(err)) {
         // The change may have landed, so "failed" beside the old value would be
         // a claim nobody can make: only a re-read can say.
-        const unknown = `Whether this change was applied is unknown (${message}).`;
+        const unknown = `Whether this change was applied is unknown (${outcomeUnknownReason(err)}).`;
         setSaveError(`${unknown} Re-reading what coord serves.`);
         setSaveError(
           (await refresh())

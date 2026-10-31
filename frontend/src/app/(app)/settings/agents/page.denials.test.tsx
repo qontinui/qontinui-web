@@ -209,6 +209,33 @@ describe("/settings/agents — account-level refusals", () => {
     }
   );
 
+  it.each([
+    [
+      "the client's timeout",
+      new Error(
+        "Request timeout - backend may be starting up. Please try again."
+      ),
+      "no answer came back within the client's time limit",
+    ],
+    [
+      "a 5xx with no readable body",
+      new AgentPrefError("Failed to save agent preference", null, 500, false),
+      "HTTP 500 with no readable reason",
+    ],
+  ])(
+    "an open outcome from %s neither invites a retry nor says failed",
+    async (_label, error, reason) => {
+      putAgentPref.mockRejectedValue(error);
+      await renderAndToggle();
+      await waitFor(() => expect(toastError).toHaveBeenCalled());
+      const said = String(toastError.mock.calls[0]?.[0]);
+      expect(said).toContain(
+        `code-reviewer: whether this change was saved is unknown (${reason}).`
+      );
+      expect(said).not.toMatch(/fail|try again/i);
+    }
+  );
+
   it("says what is shown may be out of date when that re-read fails too", async () => {
     putAgentPref.mockRejectedValue(
       new AgentPrefError("timeout waiting for coord", null, 504)

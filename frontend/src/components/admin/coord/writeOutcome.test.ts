@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { NO_CONNECTION_MESSAGE } from "@/services/http-client";
 import {
+  NO_CONNECTION_MESSAGE,
+  REQUEST_TIMEOUT_MESSAGE,
+} from "@/services/http-client";
+import {
+  outcomeUnknownReason,
   PROXY_NOT_REACHABLE_DETAIL,
   PROXY_ROUTE_ABSENT_PREFIX,
   isOutcomeUnknownStatus,
@@ -95,5 +99,65 @@ describe("isWriteFailureUnknown", () => {
     );
     expect(isWriteFailureUnknown("thrown text")).toBe(true);
     expect(isWriteFailureUnknown(new Error(NO_CONNECTION_MESSAGE))).toBe(false);
+  });
+});
+
+describe("outcomeUnknownReason", () => {
+  const failed = (status: number, body: string) =>
+    new Error(`PUT /api/v1/x failed: ${status} - ${body}`);
+  const typed = (message: string, status: number, detailServed: boolean) =>
+    Object.assign(new Error(message), { status, detailServed });
+
+  it("never invites a retry or says the write failed for the client's own texts", () => {
+    for (const err of [
+      new Error(REQUEST_TIMEOUT_MESSAGE),
+      new TypeError("Failed to fetch"),
+      failed(503, "<html>Service Unavailable</html>"),
+      failed(500, ""),
+      typed("Failed to save the tenant default", 502, false),
+    ]) {
+      const reason = outcomeUnknownReason(err);
+      expect(reason, String(err)).not.toMatch(/fail|try again|retry/i);
+    }
+  });
+
+  it("names the status when the server gave no readable reason", () => {
+    expect(outcomeUnknownReason(failed(503, "<html/>"))).toBe(
+      "HTTP 503 with no readable reason"
+    );
+    expect(
+      outcomeUnknownReason(
+        typed("Failed to save the tenant default", 502, false)
+      )
+    ).toBe("HTTP 502 with no readable reason");
+    expect(outcomeUnknownReason(new Error(REQUEST_TIMEOUT_MESSAGE))).toBe(
+      "no answer came back within the client's time limit"
+    );
+    expect(outcomeUnknownReason(new TypeError("Failed to fetch"))).toBe(
+      "no answer reached the browser"
+    );
+  });
+
+  it("quotes a reason the server gave, and coord's forwarded JSON by its field", () => {
+    expect(
+      outcomeUnknownReason(
+        failed(504, JSON.stringify({ message: "timeout waiting for coord" }))
+      )
+    ).toBe("timeout waiting for coord");
+    expect(
+      outcomeUnknownReason(
+        failed(
+          503,
+          JSON.stringify({
+            error: "SERVICE_UNAVAILABLE",
+            message: JSON.stringify({
+              error: "auto_fix_pr_column_unavailable",
+              written: null,
+            }),
+          })
+        )
+      )
+    ).toBe("auto_fix_pr_column_unavailable");
+    expect(outcomeUnknownReason(typed("busy", 503, true))).toBe("busy");
   });
 });

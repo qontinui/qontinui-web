@@ -90,6 +90,7 @@ import {
 } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
 import { useRepoFollowupDials } from "@/app/(app)/admin/coord/agent-registry/_hooks/useRepoFollowupDials";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { outcomeUnknownReason } from "@/components/admin/coord/writeOutcome";
 import {
   switchWriteResult,
   type FollowupRead,
@@ -172,7 +173,7 @@ function unconfirmedReason(err: unknown): string {
   const status = err instanceof AgentPrefError ? err.status : httpStatusOf(err);
   return status !== null
     ? `no usable answer from coord (HTTP ${status}), so it may have landed`
-    : switchReadErrorText(err);
+    : `${outcomeUnknownReason(err)}, so it may have landed`;
 }
 
 /** A re-read after a write: the value it gave the switch, or why it failed. */

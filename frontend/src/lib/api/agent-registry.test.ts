@@ -32,6 +32,8 @@ const {
   listAdminAgentRegistry,
   putAgentRegistryDefaults,
 } = await import("./agent-registry");
+const { outcomeUnknownReason } =
+  await import("@/components/admin/coord/writeOutcome");
 
 function respondWith(body: unknown, status = 200) {
   fetchMock.mockResolvedValueOnce(
@@ -218,5 +220,37 @@ describe("what a failed write says", () => {
     expect(isWriteOutcomeUnknown(new Error("PUT /x failed: 503 - busy"))).toBe(
       true
     );
+  });
+
+  it("quotes coord's 500 by its error when the envelope carries it (error_handler)", async () => {
+    // Coord's registry 500 is `{"error": "failed to upsert agent registry row"}`;
+    // the handler now gives that `error` as the message rather than a repr.
+    const err = await failure(
+      {
+        error: "failed to upsert agent registry row",
+        message: "failed to upsert agent registry row",
+      },
+      500
+    );
+    expect((err as Error).message).toBe("failed to upsert agent registry row");
+    expect((err as AgentPrefError).detailServed).toBe(true);
+    expect(isWriteOutcomeUnknown(err)).toBe(true);
+    expect(outcomeUnknownReason(err)).toBe(
+      "failed to upsert agent registry row"
+    );
+  });
+
+  it("does not quote its own fallback where the outcome is open", async () => {
+    // A 5xx with no JSON body: the message is this client's "Failed to save …".
+    fetchMock.mockResolvedValueOnce(
+      new Response("<html>503</html>", { status: 503 })
+    );
+    const err = await putAgentRegistryDefaults("code-reviewer", {
+      default_enabled: true,
+    }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe("Failed to save the tenant default");
+    expect((err as AgentPrefError).detailServed).toBe(false);
+    expect(isWriteOutcomeUnknown(err)).toBe(true);
+    expect(outcomeUnknownReason(err)).toBe("HTTP 503 with no readable reason");
   });
 });
