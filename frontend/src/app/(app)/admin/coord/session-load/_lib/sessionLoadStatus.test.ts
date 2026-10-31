@@ -829,7 +829,7 @@ describe("runs", () => {
     ).toEqual([]);
   });
 
-  it("opens a spawn request one window wider than the run's start needs, and 30 days at most", () => {
+  it("opens a spawn request one window wider than the run's start needs, and 30 days at most, flagged when none is wider", () => {
     const start = Date.parse("2026-10-26T10:00:00Z");
     const spawn = (nowMs: number, over = {}) =>
       runLinks(run(over), nowMs).find((l) => l.key === "spawn");
@@ -842,18 +842,21 @@ describe("runs", () => {
       "/admin/coord/spawns/requests?window=7d"
     );
     expect(href(start + day)).toBe("/admin/coord/spawns/requests?window=7d");
-    // Past 24 h, inside 7 d: 30 d.
+    expect(spawn(start + day)?.label).toBe("Find the spawn request");
+    // Past 24 h, inside 7 d: 30 d, which is still one window wider.
     expect(href(start + day + 1)).toBe(
       "/admin/coord/spawns/requests?window=30d"
     );
-    // Past 7 d, inside 30 d: 30 d is the widest window, and holds the start.
-    expect(href(start + 30 * day)).toBe(
-      "/admin/coord/spawns/requests?window=30d"
-    );
-    expect(spawn(start + 30 * day)?.label).toBe("Find the spawn request");
-    // Older than every window, or a start nobody can read: still 30 d, never
-    // the 7 d default, and the link says the request may be older than it.
+    expect(spawn(start + 7 * day)?.label).toBe("Find the spawn request");
+    // Past 7 d (inside 30 d), older than every window, or a start nobody can
+    // read: no window is wider than the one holding the start, so 30 d —
+    // never the 7 d default — and the link says the request may be older
+    // than it. A run started 29 d 23 h ago from a request deferred 2 h is
+    // the case the 7–30 d band covers.
     for (const old of [
+      spawn(start + 7 * day + 1),
+      spawn(start + 29 * day + 23 * hour),
+      spawn(start + 30 * day),
       spawn(start + 30 * day + 1),
       spawn(start, { started_at: "not a date" }),
     ]) {
