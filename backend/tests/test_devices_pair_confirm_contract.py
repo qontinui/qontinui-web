@@ -373,7 +373,8 @@ class TestPairConfirmSendsCoordArmB:
         )
 
     @pytest.mark.parametrize(
-        "hint", ["restart pairing; pool exhausted", "Restart pairing", "", 7]
+        "hint",
+        ["restart pairing; pool exhausted", "Restart pairing", "", 7, [], {}],
     )
     def test_coord_5xx_drops_a_hint_that_is_not_a_static_value(
         self, client: TestClient, hint: object
