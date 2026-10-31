@@ -181,6 +181,12 @@ describe("machine health", () => {
         kind: "withheld_unmeasured",
         reason: null,
       });
+      // An error with no count field beside it is still coord saying it
+      // could not count: never read as a coord that stated nothing.
+      expect(readEmptyRoster({ excluded_error: "pool timed out" })).toEqual({
+        kind: "withheld_unmeasured",
+        reason: "pool timed out",
+      });
       expect(readEmptyRoster({})).toEqual({ kind: "not_stated" });
       expect(
         parseMachineHealth({
