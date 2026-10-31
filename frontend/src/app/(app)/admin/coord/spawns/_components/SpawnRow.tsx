@@ -38,6 +38,7 @@ import {
   type SpawnRowWire,
 } from "../_lib/spawnStatus";
 import { useSpawnDetail } from "../_lib/useSpawnLedger";
+import { UnknownNote } from "./UnknownNote";
 
 /** A wire token in words: an outsider reads `continuation`, not `re_try_class`. */
 function tokenWords(token: string): string {
@@ -86,8 +87,8 @@ function Timeline({
   }
   if (read.kind === "issue") {
     return (
-      <p
-        className="text-xs text-amber-200 m-0"
+      <UnknownNote
+        className="text-xs"
         data-testid="coord-spawn-timeline-unknown"
         data-issue={read.issue.kind}
       >
@@ -96,7 +97,7 @@ function Timeline({
           "where this request was sent",
           presenting
         )}
-      </p>
+      </UnknownNote>
     );
   }
   const events: SpawnEventWire[] = read.detail.events;

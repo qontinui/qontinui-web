@@ -117,6 +117,7 @@ import { MachineStatusSection } from "./_components/MachineStatusSection";
 import { SpawnPathMatrixSection } from "./_components/SpawnPathMatrix";
 import { SpawnRateChart } from "./_components/SpawnRateChart";
 import { SpawnRow } from "./_components/SpawnRow";
+import { UnknownNote } from "./_components/UnknownNote";
 import {
   machineListStale,
   machineListUnknown,
@@ -450,8 +451,7 @@ export default function CoordSpawnsPage() {
       </div>
 
       {listIssue && (
-        <p
-          className="text-sm text-amber-200"
+        <UnknownNote
           role="status"
           data-testid="coord-spawns-unknown-banner"
           data-issue={listIssue.kind}
@@ -464,11 +464,10 @@ export default function CoordSpawnsPage() {
             "which spawns were requested",
             presenting
           )}
-        </p>
+        </UnknownNote>
       )}
       {pendingIssue && pendingIssue.kind !== listIssue?.kind && (
-        <p
-          className="text-sm text-amber-200"
+        <UnknownNote
           role="status"
           data-testid="coord-spawns-pending-banner"
           data-issue={pendingIssue.kind}
@@ -478,7 +477,7 @@ export default function CoordSpawnsPage() {
             "which older requests are still waiting",
             presenting
           )}
-        </p>
+        </UnknownNote>
       )}
 
       <SpawnPathMatrixSection

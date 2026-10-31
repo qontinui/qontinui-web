@@ -26,6 +26,7 @@ import {
   type SectionSource,
 } from "@/components/presentation";
 import { cn } from "@/lib/utils";
+import { UnknownNote } from "./UnknownNote";
 import {
   IN_FLIGHT_UNKNOWN,
   type MachineCell,
@@ -102,13 +103,9 @@ export function MachineStatusSection({
         {presenting ? IN_FLIGHT_UNKNOWN.presented : IN_FLIGHT_UNKNOWN.operator}
       </p>
       {listStale && (
-        <p
-          className="text-sm text-amber-200 m-0"
-          role="status"
-          data-testid="coord-spawns-machines-stale"
-        >
+        <UnknownNote role="status" data-testid="coord-spawns-machines-stale">
           {listStale}
-        </p>
+        </UnknownNote>
       )}
       {lines === null ? (
         <p
