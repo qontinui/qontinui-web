@@ -7,6 +7,9 @@
  *    and the save's own text rather than swapping in the administrator panel,
  *    whether the write's outcome is open or the write answered 2xx.
  * 3. **The interim line** says the open outcome is being re-read while it is.
+ * 4. **A superseded re-read is not a failed one.** A save's re-read that fails
+ *    after a newer read has delivered reports the newer read, and an older
+ *    success landing after a newer failure keeps that failure's banner.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -55,10 +58,12 @@ function row(overrides: Record<string, unknown> = {}) {
 
 function deferred<T>() {
   let resolve: (v: T) => void = () => {};
-  const promise = new Promise<T>((r) => {
-    resolve = r;
+  let reject: (e: unknown) => void = () => {};
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 const toggle = (name: string) =>
@@ -135,6 +140,106 @@ describe("/admin/coord/agent-registry — re-reads", () => {
     });
     expect(screen.queryByTestId("coord-agent-registry-error")).toBeNull();
     expect(toggle("code-reviewer").checked).toBe(true);
+  });
+
+  it("a saved write whose re-read fails after a newer read delivered is not 'the re-read failed'", async () => {
+    putAgentRegistryDefaults.mockResolvedValueOnce(undefined);
+    render(<CoordAgentRegistryPage />);
+    await screen.findByLabelText("Default-enable code-reviewer");
+    const saveRead = deferred<unknown>();
+    listAdminAgentRegistry.mockImplementationOnce(() => saveRead.promise);
+    await userEvent.click(toggle("code-reviewer"));
+    await waitFor(() =>
+      expect(listAdminAgentRegistry).toHaveBeenCalledTimes(2)
+    );
+
+    // A refresh issued after the save's re-read delivers first.
+    listAdminAgentRegistry.mockResolvedValueOnce([
+      row({ default_enabled: true }),
+    ]);
+    await userEvent.click(screen.getByTestId("coord-agent-registry-refresh"));
+    await waitFor(() => expect(toggle("code-reviewer").checked).toBe(true));
+
+    await act(async () => {
+      saveRead.reject(new AgentPrefError("busy", null, 503));
+    });
+    expect(saveText("code-reviewer")).toBeNull();
+    expect(screen.queryByTestId("coord-agent-registry-error")).toBeNull();
+    expect(toggle("code-reviewer").checked).toBe(true);
+  });
+
+  it("an open outcome whose re-read is superseded by a newer delivered read says what is shown is after it", async () => {
+    putAgentRegistryDefaults.mockRejectedValueOnce(
+      new AgentPrefError("timeout waiting for coord", null, 504)
+    );
+    render(<CoordAgentRegistryPage />);
+    await screen.findByLabelText("Default-enable code-reviewer");
+    const saveRead = deferred<unknown>();
+    listAdminAgentRegistry.mockImplementationOnce(() => saveRead.promise);
+    await userEvent.click(toggle("code-reviewer"));
+    await waitFor(() =>
+      expect(saveText("code-reviewer")).toHaveTextContent(
+        "Re-reading what coord serves."
+      )
+    );
+    listAdminAgentRegistry.mockResolvedValueOnce([
+      row({ default_enabled: true }),
+    ]);
+    await userEvent.click(screen.getByTestId("coord-agent-registry-refresh"));
+    await waitFor(() => expect(toggle("code-reviewer").checked).toBe(true));
+
+    await act(async () => {
+      saveRead.reject(new AgentPrefError("busy", null, 503));
+    });
+    await waitFor(() =>
+      expect(saveText("code-reviewer")).toHaveTextContent(
+        "Whether this change was applied is unknown (timeout waiting for coord). What is shown is a read made after it."
+      )
+    );
+  });
+
+  it("an older success landing after a newer failure keeps that failure's banner", async () => {
+    render(<CoordAgentRegistryPage />);
+    await screen.findByLabelText("Default-enable code-reviewer");
+    const older = deferred<unknown>();
+    listAdminAgentRegistry.mockImplementationOnce(() => older.promise);
+    await userEvent.click(screen.getByTestId("coord-agent-registry-refresh"));
+    listAdminAgentRegistry.mockRejectedValueOnce(
+      new AgentPrefError("coord is down", null, 503)
+    );
+    await userEvent.click(screen.getByTestId("coord-agent-registry-refresh"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-agent-registry-error")
+      ).toHaveTextContent("coord is down")
+    );
+
+    await act(async () => {
+      older.resolve([row({ default_enabled: true })]);
+    });
+    expect(screen.getByTestId("coord-agent-registry-error")).toHaveTextContent(
+      "coord is down"
+    );
+  });
+
+  it("an older 2xx landing after a newer 403 keeps the administrator panel", async () => {
+    render(<CoordAgentRegistryPage />);
+    await screen.findByLabelText("Default-enable code-reviewer");
+    const older = deferred<unknown>();
+    listAdminAgentRegistry.mockImplementationOnce(() => older.promise);
+    await userEvent.click(screen.getByTestId("coord-agent-registry-refresh"));
+    listAdminAgentRegistry.mockRejectedValueOnce(
+      new AgentPrefError("not_coord_tenant_admin", null, 403)
+    );
+    await userEvent.click(screen.getByTestId("coord-agent-registry-refresh"));
+    await screen.findByTestId("coord-agent-registry-forbidden");
+
+    await act(async () => {
+      older.resolve([row({ default_enabled: true })]);
+    });
+    expect(
+      screen.getByTestId("coord-agent-registry-forbidden")
+    ).toBeInTheDocument();
   });
 
   it("keeps the page and the open outcome's text when the re-read is a 403", async () => {
