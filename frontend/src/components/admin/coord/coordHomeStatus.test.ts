@@ -892,6 +892,55 @@ describe("round-8 review — the partial and unread captions say what is true", 
     );
   });
 
+  it.each([
+    [0, 2, "readings for 2 areas not named here could not be taken"],
+    [
+      1,
+      2,
+      "not every watcher is fresh (1 area not named here); readings for 2 other areas not named here could not be taken",
+    ],
+    [
+      2,
+      1,
+      "not every watcher is fresh (2 areas not named here); the reading for 1 other area not named here could not be taken",
+    ],
+  ])(
+    "counts %i watched and %i unwatched areas not named here as distinct",
+    (watchedCount, unwatchedCount, expected) => {
+      const planes: Record<string, typeof NO_WATCHER> = {};
+      for (let i = 0; i < watchedCount; i += 1) {
+        planes[`watched_${i}`] = STALE_MERGE_TRAIN.merge_train;
+      }
+      for (let i = 0; i < unwatchedCount; i += 1) {
+        planes[`unwatched_${i}`] = NO_WATCHER;
+      }
+      const phrase = degradationsGapPhrase(
+        deg({ state: "stale", planes }),
+        null,
+        onlyMergeTrain
+      );
+      expect(phrase).toBe(expected);
+    }
+  );
+
+  it("lists several named watched areas before the count, without a serial comma", () => {
+    const phrase = degradationsGapPhrase(
+      deg({
+        state: "stale",
+        planes: {
+          merge_train: STALE_MERGE_TRAIN.merge_train,
+          build_capacity: STALE_MERGE_TRAIN.merge_train,
+          cloud_service: STALE_MERGE_TRAIN.merge_train,
+        },
+      }),
+      null,
+      (plane) => (plane === "cloud_service" ? null : planeLabel(plane))
+    );
+    expect(phrase).toBe(
+      "not every watcher is fresh (merge train, build capacity and 1 area not named here)"
+    );
+  });
+
   it("names the areas its label names beside the count of those it will not", () => {
     const phrase = degradationsGapPhrase(
       deg({

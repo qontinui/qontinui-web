@@ -1021,8 +1021,9 @@ export function isKnownPlane(plane: string): boolean {
 export type PlaneWords = (plane: string | null) => string | null;
 
 /** "1 area not named here" / "2 areas not named here". */
-export function areasNotNamedHere(count: number): string {
-  return `${count} ${count === 1 ? "area" : "areas"} not named here`;
+export function areasNotNamedHere(count: number, other = false): string {
+  const kind = other ? "other " : "";
+  return `${count} ${kind}${count === 1 ? "area" : "areas"} not named here`;
 }
 
 /**
@@ -1130,7 +1131,9 @@ const PARTIAL_SOURCE_STATES: ReadonlySet<BlockState> = new Set([
  * Each area is worded by `label`; an area it will not name (`null`, the
  * presentation lens's answer for a plane off the page's table) is COUNTED —
  * "the reading for 1 area not named here", "2 areas not named here" — so the
- * sentence never says less is missing than is.
+ * sentence never says less is missing than is. When the watcher clause has
+ * already counted some, the reading clause's are "other" areas, so two
+ * counts never read as one.
  */
 export function degradationsGapPhrase(
   deg: DegradationsView,
@@ -1162,15 +1165,11 @@ export function degradationsGapPhrase(
   }
   // When the watcher clause already counted unnamed areas, these are others:
   // "1 area not named here" twice would read as one area, under-reading the gap.
-  const other = watched.unnamed > 0 ? "other " : "";
+  const others = areasNotNamedHere(unwatched.unnamed, watched.unnamed > 0);
   if (unwatched.unnamed === 1) {
-    parts.push(
-      `the reading for 1 ${other}area not named here could not be taken`
-    );
+    parts.push(`the reading for ${others} could not be taken`);
   } else if (unwatched.unnamed > 1) {
-    parts.push(
-      `readings for ${unwatched.unnamed} ${other}areas not named here could not be taken`
-    );
+    parts.push(`readings for ${others} could not be taken`);
   }
   const partial = [
     ...new Set(
