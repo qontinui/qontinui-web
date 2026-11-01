@@ -928,8 +928,9 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
     ),
     # The cost ledger (operator decision 2026-11-01: agents enter the
     # project's costs). Every reference to a category or a recurring cost is
-    # ``ondelete=RESTRICT`` — a delete still referenced is a 409 — so a
-    # re-create from the change log's deleted shape loses nothing but the id.
+    # ``ondelete=RESTRICT`` and the stores refuse a referenced delete with a
+    # 409 (``category_in_use``, ``periods_recorded``), so a re-create from the
+    # change log's deleted shape loses nothing but the id.
     **_overview_record_rows(
         f"{_OVERVIEW}/cost-categories", create=(), update=(), deletion=None
     ),

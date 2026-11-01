@@ -1711,7 +1711,7 @@ class TestCostLedgerDeviceWrites:
             assert by_name[name]["can_edit"] is True, name
 
     async def test_an_admin_device_creates_updates_and_deletes_the_ledger(
-        self, async_db_session, coord: FakeCoord, verified_devices
+        self, async_db_session, coord: FakeCoord, verified_devices, owner
     ) -> None:
         async with _client(_app(async_db_session)) as device:
             category = await device.post(
@@ -1731,6 +1731,9 @@ class TestCostLedgerDeviceWrites:
                     headers={"If-Match": '"1"'},
                 )
                 assert edited.status_code == 200, edited.text
+                # The device acts as its owning user.
+                item = edited.json()["item"]
+                assert item["created_by"] == item["updated_by"] == owner.email
             # Children before the category they reference.
             for path in ("cost-entries", "recurring-costs", "cost-categories"):
                 gone = await device.delete(
@@ -1751,17 +1754,32 @@ class TestCostLedgerDeviceWrites:
         assert {e["via_device"] for e in served} == {str(DEVICE)}
 
     async def test_a_viewer_device_writes_nothing_to_the_ledger(
-        self, async_db_session, coord: FakeCoord, verified_devices
+        self, async_db_session, coord: FakeCoord, verified_devices, owner
     ) -> None:
+        made = await self._seed(async_db_session, owner)
+        logged = {
+            name: len(await _rows(async_db_session, name)) for name in self._RESOURCES
+        }
+        bodies = self._bodies(made["cost-categories"]["id"])
+        attempts: list[httpx.Response] = []
         async with _client(_app(async_db_session), token=VIEWER_TOKEN) as viewer:
-            response = await viewer.post(
-                f"{API}/cost-categories", json={"name": "Cloud"}
-            )
-            listed = await viewer.get(f"{API}/cost-categories")
-        assert response.status_code == 403, response.text
-        assert response.json()["detail"]["error"] == "not_permitted"
-        assert listed.json()["can_edit"] is False
-        assert await _rows(async_db_session, "cost_categories") == []
+            for path, record in made.items():
+                item = f"{API}/{path}/{record['id']}"
+                attempts += [
+                    await viewer.post(f"{API}/{path}", json=bodies[path]),
+                    await viewer.patch(
+                        item, json=self._EDITS[path], headers={"If-Match": '"1"'}
+                    ),
+                    await viewer.delete(item, headers={"If-Match": '"1"'}),
+                ]
+                listed = await viewer.get(f"{API}/{path}")
+                assert listed.json()["can_edit"] is False
+        assert len(attempts) == 9
+        for response in attempts:
+            assert response.status_code == 403, response.text
+            assert response.json()["detail"]["error"] == "not_permitted"
+        for name in self._RESOURCES:
+            assert len(await _rows(async_db_session, name)) == logged[name], name
 
     async def test_a_person_still_writes_the_ledger(
         self, async_db_session, coord: FakeCoord, verified_devices, owner
@@ -1782,7 +1800,8 @@ class TestCostLedgerDeviceWrites:
                 )
                 assert gone.status_code == 204, gone.text
         for name in self._RESOURCES:
-            actions = [r.action for r in await _rows(async_db_session, name)]
-            assert actions == ["create", "update", "delete"], name
+            rows = await _rows(async_db_session, name)
+            assert [r.action for r in rows] == ["create", "update", "delete"], name
+            assert all(r.via_device is None for r in rows), name
         assert coord.calls_to("/coord/devices/me/memberships") == []
         assert verified_devices.calls == []  # type: ignore[attr-defined]
