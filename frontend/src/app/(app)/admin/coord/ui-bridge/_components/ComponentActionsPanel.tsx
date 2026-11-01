@@ -174,8 +174,8 @@ function ActionLine({
           className="text-xs text-muted-foreground"
           data-testid="coord-ui-bridge-action-unreadable"
         >
-          (the runner sent an entry here that is not an action, so it counts
-          as undeclared)
+          (the runner sent an entry here that is not an action, so it counts as
+          undeclared)
         </span>
       )}
       {!presenting && action.description && (
@@ -369,7 +369,9 @@ export function ComponentActionsPanel({
           </div>
           <RecordList
             items={visible}
-            itemKey={(c) => c.key}
+            // Written to each row's `data-row-key`: while presenting, the
+            // row's position, never the component's own key (it is its id).
+            itemKey={(c, index) => (presenting ? `component-${index}` : c.key)}
             expandedKey={expandedKey}
             onExpandedKeyChange={setExpandedKey}
             empty={

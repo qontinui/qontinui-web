@@ -132,6 +132,17 @@ const FORBIDDEN = [
   "operator@example.com",
   DRAIN_REASON,
   "10.0.0.5",
+];
+
+/**
+ * What an outsider must not READ — in text or a text-bearing attribute
+ * (`title`, `aria-label`, `aria-description`, `alt`, `placeholder`). Unlike
+ * {@link FORBIDDEN} these are not identities but the operator's vocabulary, so
+ * a `data-*` hook may still carry them: a path row's `data-path`, a gate's
+ * `data-gate` and a toggle's UI Bridge id are its registry name, which is what
+ * this file (and an automated walk) addresses a row by.
+ */
+const VOCABULARY = [
   // Registry names, variables, settings keys and files: the operator's vocabulary.
   "pr_fix_dispatch",
   "merge_shepherd",
@@ -143,6 +154,31 @@ const FORBIDDEN = [
   // A member's own preference is never a path's state in front of an audience.
   "Your preference",
 ];
+
+const READ_ATTRIBUTES = [
+  "title",
+  "aria-label",
+  "aria-description",
+  "alt",
+  "placeholder",
+];
+
+/** The page is presentation-safe, and none of {@link VOCABULARY} is read on it. */
+function expectSafe(view: PresentationView) {
+  expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+  const read = [
+    document.body.textContent ?? "",
+    ...[...document.body.querySelectorAll("*")].flatMap((el) =>
+      READ_ATTRIBUTES.map((a) => el.getAttribute(a) ?? "")
+    ),
+  ]
+    .join("\n")
+    .toLowerCase();
+  expect(
+    VOCABULARY.filter((v) => read.includes(v.toLowerCase())),
+    "operator vocabulary read on the presented page"
+  ).toEqual([]);
+}
 
 /** A request row that carries every free-text field the row and its detail show. */
 const SUPERSEDED = rowFx({
@@ -239,7 +275,7 @@ async function checkBehindEveryDisclosure(view: PresentationView) {
     expect(screen.getAllByTestId("coord-spawns-gate").length).toBeGreaterThan(
       0
     );
-    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+    expectSafe(view);
   }
   // The per-request list is the investigation view's, an operator page the
   // lens withholds: no request row, and so no request detail, is presented.
@@ -369,7 +405,7 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(
       screen.getByTestId("coord-spawns-count-all").getAttribute("data-count")
     ).toBe("2");
-    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+    expectSafe(view);
     await checkBehindEveryDisclosure(view);
     // No device id reaches the presented DOM, in text or in any attribute
     // (the per-device list it was carried on, as a share key, is gone).
@@ -692,7 +728,7 @@ describe("/admin/coord/spawns?present=1", () => {
       expect(dom).not.toContain(id);
       expect(dom).not.toContain(id.slice(0, 8));
     }
-    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+    expectSafe(view);
   });
 
   it("names what the matrix leaves out, and lists a row it cannot classify without its name", async () => {
@@ -763,7 +799,7 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(screen.getByTestId("coord-spawns-unknown-banner").textContent).toBe(
       "The record of spawn requests could not be read, so which spawns were requested is unknown."
     );
-    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+    expectSafe(view);
   });
 
   it("carries every section's caption and the provenance of its reads", async () => {

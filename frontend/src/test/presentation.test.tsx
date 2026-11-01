@@ -5,7 +5,7 @@
  * test leans on this file being right.
  */
 
-import type { ReactNode, Ref } from "react";
+import type { ReactElement, ReactNode, Ref } from "react";
 import { cleanup } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
@@ -613,6 +613,63 @@ describe("(e) no identity", () => {
         { forbidden }
       ).map((v) => v.kind)
     ).toEqual(["foreign-identity"]);
+  });
+
+  it("fails on an identity in an href or a data-* attribute", () => {
+    const cases: Array<[ReactElement, string]> = [
+      [
+        <a
+          key="u"
+          href="https://docs.example.test/q/0b9d6a54-0000-4000-8000-0000000000aa"
+        >
+          the question
+        </a>,
+        "identifier",
+      ],
+      [
+        <a key="m" href="mailto:presenter@example.test">
+          write
+        </a>,
+        "identifier",
+      ],
+      [
+        <div key="d" data-row-key="0b9d6a54-0000-4000-8000-0000000000aa">
+          row
+        </div>,
+        "identifier",
+      ],
+      [
+        <div key="f" data-app="partner-a portal">
+          row
+        </div>,
+        "foreign-identity",
+      ],
+    ];
+    for (const [node, kind] of cases) {
+      const view = renderInPresentationMode(node);
+      const found = findPresentationViolations(view, {
+        forbidden: ["partner-a"],
+      });
+      expect(found.map((v) => v.kind)).toEqual([kind]);
+      view.unmount();
+    }
+    // A name the test forbids in an href is caught too, ignoring case.
+    const linked = renderInPresentationMode(
+      <a href="/admin/coord/apps/Partner%20A?present=1">an app</a>
+    );
+    expect(
+      findPresentationViolations(linked, {
+        forbidden: ["PARTNER%20A"],
+      }).map((v) => v.kind)
+    ).toEqual(["foreign-identity"]);
+  });
+
+  it("does not read attributes outside text, href and data-* for identities", () => {
+    // `attributesNaming` remains the tool for every OTHER attribute.
+    expectPresentationSafe(
+      renderInPresentationMode(<p id="partner-a">row</p>),
+      { forbidden: ["partner-a"] }
+    );
   });
 
   it("fails on a forbidden name split across elements", () => {

@@ -212,7 +212,9 @@ export function AppRegistryPanel({
 
       <RecordList
         items={rows ?? []}
-        itemKey={(row) => row.appId}
+        // The key is written to each row's `data-row-key`: while presenting,
+        // the row's position, never its app id (D3.3 — the id names the app).
+        itemKey={(row, index) => (presenting ? `app-${index}` : row.appId)}
         loaded={
           rows !== null || (settledUnread(web) && runner.state !== "loading")
         }
