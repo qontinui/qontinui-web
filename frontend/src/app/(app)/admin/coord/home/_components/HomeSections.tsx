@@ -64,6 +64,7 @@ import {
   usePresentationMode,
   usePresentationScopeState,
   useRedactor,
+  useRowKey,
   type SectionSource,
 } from "@/components/presentation";
 import { FAILURE_SENTENCE_WITHHELD } from "@/components/operations/presentedFailure";
@@ -98,7 +99,6 @@ import {
   useLinkOpens,
   usePlaneLabel,
   usePlaneWords,
-  useRowKey,
   useSubjectText,
 } from "./HomeLens";
 import {

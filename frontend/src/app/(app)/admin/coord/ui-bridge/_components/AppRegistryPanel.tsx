@@ -34,6 +34,7 @@ import {
   Provenance,
   RedactedText,
   usePresentationMode,
+  useRowKey,
 } from "@/components/presentation";
 import { operationsErrorReading } from "@/lib/api/operations/base";
 import type { RegisteredApp } from "@/app/(app)/digital-twin/_lib/ui-bridge-types";
@@ -103,6 +104,7 @@ export function AppRegistryPanel({
   build,
 }: AppRegistryPanelProps) {
   const { presenting } = usePresentationMode();
+  const rowKey = useRowKey();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const webApps = value(web);
   const runnerApps = value(runner);
@@ -213,8 +215,9 @@ export function AppRegistryPanel({
       <RecordList
         items={rows ?? []}
         // The key is written to each row's `data-row-key`: while presenting,
-        // the row's position, never its app id (D3.3 — the id names the app).
-        itemKey={(row, index) => (presenting ? `app-${index}` : row.appId)}
+        // an alias of the app id (D3.3 — the id names the app), stable across
+        // a refresh, so the open row stays on its app.
+        itemKey={(row) => rowKey("apps", row.appId)}
         loaded={
           rows !== null || (settledUnread(web) && runner.state !== "loading")
         }
