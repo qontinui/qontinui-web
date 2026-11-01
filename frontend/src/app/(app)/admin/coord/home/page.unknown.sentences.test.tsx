@@ -320,12 +320,12 @@ const ARMS: Arm[] = [
     },
     region: NEEDS,
     says: [
-      "1 shown of 1 (may be incomplete)",
-      "By kind of decision: unclassified 1 (may be incomplete)",
+      "1 shown of 1 (may be off)",
+      "By kind of decision: unclassified 1 (may be off)",
       // The items still show (a row, its text or its descriptor).
       /1 shown of 1.*decide/,
     ],
-    never: [/shown of 1(?! \(may be incomplete\))/],
+    never: [/shown of 1(?! \(may be off\))/, /incomplete/],
   },
   {
     arm: "a stale needs_me scan that counted none",
@@ -340,8 +340,12 @@ const ARMS: Arm[] = [
       },
     },
     region: NEEDS,
-    says: [/how many decisions wait on you is not known/],
-    never: [/Nothing needs you/, /Nothing needed you/],
+    // One reading: coord's zero, qualified, in the header and the sentence.
+    says: [
+      "0 shown of 0 (may be off)",
+      "Coord counted no decisions for you, but says its count may be off",
+    ],
+    never: [/Nothing needs you/, /Nothing needed you/, /not known/],
   },
   {
     // Coord could not read the fork-shape columns: it serves `shape: "unknown"`

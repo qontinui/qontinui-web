@@ -824,27 +824,35 @@ export function needsDisplayCount(needs: NeedsMeView): number | null {
 
 /**
  * Whether coord said its needs_me counts may be off (`questions_coverage:
- * "stale"`): the count shows, but never as a definite total.
+ * "stale"`): the count shows, but never as a definite total. Off in EITHER
+ * direction — coord's stale causes include a scan that hit its cap, a pending
+ * set that moved while it paged, and an unreadable `effect_kind` that may
+ * count a gate twice — so the words never say "incomplete" (too low only).
  */
 export function needsCountMayBeOff(needs: NeedsMeView): boolean {
   return needs.state === "read" && needs.coverage === "stale";
 }
 
 /** The words a possibly-off needs_me count carries after it. */
-export const NEEDS_COUNT_MAY_BE_OFF_WORDS = "(may be incomplete)";
+export const NEEDS_COUNT_MAY_BE_OFF_WORDS = "(may be off)";
 
 /**
  * The sentence for a read needs_me block that counted decisions but served
  * none of them. `count` is {@link needsDisplayCount}; `null` is an unknown
  * number, never a zero. One decision is singular ("1 decision … did not
- * serve it"), never "1 decisions".
+ * serve it"), never "1 decisions". `mayBeOff` ({@link needsCountMayBeOff}):
+ * the count is still coord's figure, qualified — never "Nothing needs you",
+ * and never a second, contradicting "not known".
  */
 export function unservedDecisionsSentence(
   count: number | null,
   mayBeOff = false
 ): string {
+  if (mayBeOff && count === 0) {
+    return "Coord counted no decisions for you, but says its count may be off";
+  }
   if (mayBeOff) {
-    return "Coord's scan of the questions was incomplete, so how many decisions wait on you is not known, and it served none of them";
+    return `${unservedDecisionsSentence(count)}, and says its count may be off`;
   }
   return count === 1
     ? "Coord counted 1 decision for you but did not serve it"
@@ -2103,6 +2111,13 @@ export function deriveHomeStrip(
         : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you${needsMayBeOff ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""}`;
   } else if (somethingDegrading) {
     headline = "Something is degrading";
+  } else if (needsMayBeOff && needsTotal === 0 && !stale) {
+    // Coord's qualified zero: its figure, said with the qualification —
+    // never "Nothing needs you", and never "not read" (the block was read).
+    headline = `No decisions need you ${NEEDS_COUNT_MAY_BE_OFF_WORDS}`;
+    if (unread.length > 0 || unknownSources !== 0) {
+      headline += "; part of this view is not read";
+    }
   } else if (stale) {
     // The failed poll is the cause; name it whatever else is unread (coord
     // always serves at least `correctness` unread today, so gating this on
@@ -2171,7 +2186,7 @@ export function deriveHomeStrip(
     );
   } else if (needsMayBeOff) {
     detailParts.push(
-      "Coord's scan of the questions was incomplete, so its count of the decisions that need you may be off."
+      "Coord says its count of the decisions that need you may be off."
     );
   }
   if (queues !== null) {

@@ -1914,16 +1914,30 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
     expect(strip.level).not.toBe("green");
     expect(strip.headline).not.toMatch(/^Nothing needs you/);
     expect(strip.detail).toContain(
-      "Coord's scan of the questions was incomplete, so its count of the decisions that need you may be off."
+      "Coord says its count of the decisions that need you may be off."
     );
+    // ONE reading: coord's zero, qualified — never "nothing", never "not known".
+    expect(strip.headline).toBe("No decisions need you (may be off)");
     expect(strip.badges.find((b) => b.key === "needs")!.label).toBe(
-      "needs you 0 (may be incomplete)"
+      "needs you 0 (may be off)"
     );
-    expect(unservedDecisionsSentence(0, true)).toMatch(/not known/);
-    expect(unservedDecisionsSentence(0, true)).not.toMatch(/\b0\b/);
+    expect(unservedDecisionsSentence(0, true)).toBe(
+      "Coord counted no decisions for you, but says its count may be off"
+    );
+    expect(unservedDecisionsSentence(3, true)).toBe(
+      "Coord counted 3 decisions for you but served none of them, and says its count may be off"
+    );
+    // Off in either direction: never worded as "too low" only.
+    for (const words of [
+      strip.headline,
+      strip.detail ?? "",
+      unservedDecisionsSentence(0, true),
+    ]) {
+      expect(words).not.toMatch(/incomplete|not known|at least/i);
+    }
   });
 
-  it("marks a stale count as possibly incomplete in the headline", () => {
+  it("marks a stale count as possibly off in the headline", () => {
     const view = parseProjectState(
       staleBody({
         total: 2,
@@ -1946,9 +1960,7 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
       })
     )!;
     const strip = deriveHomeStrip(view, CALM_MACHINES);
-    expect(strip.headline).toMatch(
-      /^2 decisions need you \(may be incomplete\)/
-    );
+    expect(strip.headline).toMatch(/^2 decisions need you \(may be off\)/);
   });
 
   it("leaves a read (or unserved) coverage's zero as the definite answer", () => {
