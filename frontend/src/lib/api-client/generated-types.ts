@@ -12355,6 +12355,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/coord/verification/label-sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Verification Label Sample
+         * @description Return this week's verdicts for the operator to label.
+         *
+         *     coord's body is forwarded verbatim with its status: ``{iso_week,
+         *     population_cutoff, verdicts: [...]}``, or its typed refusal.
+         */
+        get: operations["api_v1_operations_coord_verification_label_sample_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/coord/verification/labels": {
         parameters: {
             query?: never;
@@ -12370,7 +12393,7 @@ export interface paths {
          *
          *     Forwards ``{label_source: "operator", verification_id, truth}`` with the
          *     operator's bearer; coord's status and body come back verbatim (see the
-         *     section comment for each status), except a coord ``401``.
+         *     section comment), except a coord ``401``.
          */
         post: operations["api_v1_operations_coord_verification_labels_post"];
         delete?: never;
@@ -76424,6 +76447,26 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_coord_verification_label_sample_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     api_v1_operations_coord_verification_labels_post: {
         parameters: {
             query?: never;
@@ -76438,7 +76481,7 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

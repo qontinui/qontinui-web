@@ -103020,9 +103020,29 @@
         ]
       }
     },
+    "/api/v1/operations/coord/verification/label-sample": {
+      "get": {
+        "description": "Return this week's verdicts for the operator to label.\n\ncoord's body is forwarded verbatim with its status: ``{iso_week,\npopulation_cutoff, verdicts: [...]}``, or its typed refusal.",
+        "operationId": "api_v1_operations_coord_verification_label_sample_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Coord Verification Label Sample",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/verification/labels": {
       "post": {
-        "description": "Record the operator's label on one verification verdict.\n\nForwards ``{label_source: \"operator\", verification_id, truth}`` with the\noperator's bearer; coord's status and body come back verbatim (see the\nsection comment for each status), except a coord ``401``.",
+        "description": "Record the operator's label on one verification verdict.\n\nForwards ``{label_source: \"operator\", verification_id, truth}`` with the\noperator's bearer; coord's status and body come back verbatim (see the\nsection comment), except a coord ``401``.",
         "operationId": "api_v1_operations_coord_verification_labels_post",
         "requestBody": {
           "content": {
@@ -103035,7 +103055,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {}

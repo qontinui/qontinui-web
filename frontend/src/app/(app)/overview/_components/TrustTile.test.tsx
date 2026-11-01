@@ -287,8 +287,24 @@ describe("TrustTile — verifier agreement", () => {
     renderTile();
     const line = agreementLine(await settled("populated"));
     expect(line.getAttribute("data-agreement-state")).toBe("insufficient");
-    expect(line.textContent).toContain("not enough labelled cases yet");
-    expect(line.textContent).not.toContain("κ");
+    expect(line.textContent).toBe(
+      "verifier agreement: not enough labelled cases yet"
+    );
+  });
+
+  it("coord's judge_agreement_error: a fixed sentence, never coord's raw error", async () => {
+    serve(
+      populated({
+        judge_agreement: null,
+        judge_agreement_error: "relation coord.judge_cases does not exist",
+      })
+    );
+    renderTile();
+    const line = agreementLine(await settled("populated"));
+    expect(line.getAttribute("data-agreement-state")).toBe("unknown");
+    expect(line.textContent).toBe(
+      "verifier agreement unknown — coord could not read the labelled cases"
+    );
   });
 
   it("door unreachable: explicit unknown, no number", async () => {

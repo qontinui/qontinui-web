@@ -43,8 +43,6 @@ export interface RefutedFinding {
   body?: string | null;
   created_at?: string | null;
   topic?: string | null;
-  /** coord names the refuting verdict here as `verification_id`. */
-  artifact_refs?: unknown;
 }
 
 export type RefutedRead =

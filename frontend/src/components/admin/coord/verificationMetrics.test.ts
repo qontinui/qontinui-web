@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   AGREEMENT_INSUFFICIENT_TEXT,
   NO_VERIFICATIONS_TEXT,
-  OPERATOR_LABELS_PER_WEEK,
+  choiceLabel,
   couldNotLookReason,
   interval,
-  isoWeekKey,
+  kappaText,
   ratePct,
+  deriveLabelSampleView,
   deriveTrustView,
   deriveVerificationHealth,
   deriveVerifierAgreement,
@@ -15,18 +16,16 @@ import {
   parseVerificationMetrics,
   refutedUnitFromFinding,
   refutedUnitsInWindow,
-  sampleForOperatorLabel,
   unknownsLine,
-  verificationIdOf,
   type VerificationMetrics,
 } from "./verificationMetrics";
 import {
   NOW,
   REFUTATION_FINDING,
-  REFUTATION_VERIFICATION_ID,
   degraded,
   freshLane,
   judgeAgreement,
+  labelSample,
   noVerifications,
   populated,
 } from "./verificationMetrics.fixture";
@@ -168,24 +167,7 @@ describe("refuted units", () => {
       label: "Widgets export to CSV",
       slug: "2026-09-01-widget-export",
       createdAt: REFUTATION_FINDING.created_at,
-      verificationId: REFUTATION_VERIFICATION_ID,
     });
-  });
-
-  it("reads the refuting verdict's id from artifact_refs, else from the body", () => {
-    expect(verificationIdOf(REFUTATION_FINDING)).toBe(
-      REFUTATION_VERIFICATION_ID
-    );
-    expect(verificationIdOf({ ...REFUTATION_FINDING, artifact_refs: {} })).toBe(
-      REFUTATION_VERIFICATION_ID
-    );
-    expect(
-      verificationIdOf({
-        ...REFUTATION_FINDING,
-        artifact_refs: { verification_id: "not-a-uuid" },
-        body: "no id here",
-      })
-    ).toBeNull();
   });
 
   it("falls back to the slug from the title when the body carries no plan title", () => {
@@ -286,7 +268,7 @@ describe("review round 1", () => {
 
 describe("deriveVerifierAgreement", () => {
   const ok = (metrics: VerificationMetrics) =>
-    deriveVerifierAgreement({ status: "ok", metrics });
+    deriveVerifierAgreement({ status: "ok", metrics }, "page");
 
   it("populated: the seeded kappa with its binary n, and the operator n", () => {
     expect(ok(populated({ judge_agreement: judgeAgreement() }))).toEqual({
@@ -295,7 +277,7 @@ describe("deriveVerifierAgreement", () => {
     });
   });
 
-  it("n<20: words, never a number", () => {
+  it("n<20: words only — no kappa and no count of any kind", () => {
     const v = ok(
       populated({
         judge_agreement: judgeAgreement({
@@ -306,9 +288,20 @@ describe("deriveVerifierAgreement", () => {
         }),
       })
     );
-    expect(v.state).toBe("insufficient");
-    expect(v.text).toContain(AGREEMENT_INSUFFICIENT_TEXT);
-    expect(v.text).not.toContain("κ");
+    expect(v).toEqual({
+      state: "insufficient",
+      text: `verifier agreement: ${AGREEMENT_INSUFFICIENT_TEXT}`,
+    });
+    expect(v.text).not.toMatch(/\d/);
+  });
+
+  it("a kappa that rounds to zero from below prints 0.00, never -0.00", () => {
+    expect(kappaText(-0.001)).toBe("0.00");
+    expect(kappaText(-0)).toBe("0.00");
+    expect(kappaText(-0.25)).toBe("-0.25");
+    expect(
+      ok(populated({ judge_agreement: judgeAgreement({ kappa: -0.004 }) })).text
+    ).toBe("verifier agreement κ 0.00 (seeded n=24) · operator n=6");
   });
 
   it("undefined: says so, with the binary n", () => {
@@ -334,22 +327,25 @@ describe("deriveVerifierAgreement", () => {
     expect(v.text).not.toMatch(/\d/);
   });
 
-  it("coord's judge_agreement_error is unknown and carries the error", () => {
-    const v = ok(
-      populated({
-        judge_agreement: null,
-        judge_agreement_error:
-          "relation coord.verification_judge_cases does not exist",
-      })
-    );
+  it("coord's judge_agreement_error is unknown; only the page quotes it", () => {
+    const metrics = populated({
+      judge_agreement: null,
+      judge_agreement_error:
+        "relation coord.verification_judge_cases does not exist",
+    });
+    const v = ok(metrics);
     expect(v.state).toBe("unknown");
     expect(v.text).toContain("verification_judge_cases does not exist");
     expect(v.text).not.toContain("κ");
+    expect(deriveVerifierAgreement({ status: "ok", metrics }, "tile")).toEqual({
+      state: "unknown",
+      text: "verifier agreement unknown — coord could not read the labelled cases",
+    });
   });
 
   it("an unreachable door, a degraded body and a malformed block are unknown", () => {
     expect(
-      deriveVerifierAgreement({ status: "error", reason: "HTTP 502" })
+      deriveVerifierAgreement({ status: "error", reason: "HTTP 502" }, "page")
     ).toEqual({
       state: "unknown",
       text: "verifier agreement unknown — the metrics door did not answer",
@@ -361,7 +357,7 @@ describe("deriveVerifierAgreement", () => {
       seeded: { n: "x" },
     } as unknown as VerificationMetrics["judge_agreement"];
     expect(ok(populated({ judge_agreement: malformed })).state).toBe("unknown");
-    expect(deriveVerifierAgreement({ status: "loading" }).state).toBe(
+    expect(deriveVerifierAgreement({ status: "loading" }, "page").state).toBe(
       "loading"
     );
   });
@@ -377,40 +373,76 @@ describe("deriveVerifierAgreement", () => {
   });
 });
 
-describe("operator label sampling", () => {
-  const ids = Array.from(
-    { length: 12 },
-    (_, i) => `9e000000-0000-4000-8000-${i.toString(16).padStart(12, "0")}`
-  );
-
-  it("isoWeekKey follows ISO-8601 (the week of the Thursday)", () => {
-    expect(isoWeekKey(Date.parse("2026-11-01T12:00:00Z"))).toBe("2026-W44");
-    expect(isoWeekKey(Date.parse("2026-01-01T00:00:00Z"))).toBe("2026-W01");
-    expect(isoWeekKey(Date.parse("2027-01-01T00:00:00Z"))).toBe("2026-W53");
-    expect(isoWeekKey(new Date("2024-12-30T00:00:00Z"))).toBe("2025-W01");
+describe("deriveLabelSampleView", () => {
+  it("reads coord's sample: slug, verdict, recorded_at and any label", () => {
+    const v = deriveLabelSampleView({ kind: "answered", body: labelSample() });
+    if (v.state !== "rows") throw new Error(v.state);
+    expect(v.isoWeek).toBe("2026-W44");
+    expect(v.rows.map((r) => r.verdict)).toEqual([
+      "survived",
+      "refuted",
+      "unverifiable",
+    ]);
+    expect(v.rows[0]).toMatchObject({
+      verificationId: "9e000000-0000-4000-8000-000000000001",
+      slug: "2026-10-01-widget-import",
+      operatorLabel: null,
+    });
+    expect(v.rows[1]?.operatorLabel?.truth).toBe("fails");
+    expect(v.rows[2]?.slug).toBeNull();
+    expect(choiceLabel("fails")).toBe("No");
   });
 
-  it("draws at most three, the same three on every call in a week", () => {
-    const a = sampleForOperatorLabel(ids, "2026-W44");
-    expect(a).toHaveLength(OPERATOR_LABELS_PER_WEEK);
-    expect(sampleForOperatorLabel([...ids].reverse(), "2026-W44")).toEqual(a);
-    expect(sampleForOperatorLabel(ids, "2026-W44")).toEqual(a);
-    for (const id of a) expect(ids).toContain(id);
+  it("an answered empty sample is empty, with the week", () => {
+    const v = deriveLabelSampleView({
+      kind: "answered",
+      body: { ...labelSample(), verdicts: [] },
+    });
+    expect(v).toEqual({
+      state: "empty",
+      isoWeek: "2026-W44",
+      text: "coord sampled no verdict to label in 2026-W44.",
+    });
   });
 
-  it("a different week draws again", () => {
-    const draws = ["2026-W44", "2026-W45", "2026-W46", "2026-W47"].map((w) =>
-      sampleForOperatorLabel(ids, w).join()
+  it("a 404, a 503 and no answer are unavailable — never nothing to label", () => {
+    const cases = [
+      { status: 404, code: null, message: "Not Found" },
+      {
+        status: 503,
+        code: "label_sample_unreadable",
+        message: "store down",
+      },
+      { status: null, code: null, message: "network" },
+      { status: 500, code: null, message: "boom" },
+    ];
+    for (const c of cases) {
+      const v = deriveLabelSampleView({ kind: "unavailable", ...c });
+      expect(v.state).toBe("unavailable");
+      if (v.state !== "unavailable") continue;
+      expect(v.text).toMatch(/^Label sample unavailable — /);
+      expect(v.text).toContain("Not the same as nothing to label.");
+    }
+    const v503 = deriveLabelSampleView({ kind: "unavailable", ...cases[1]! });
+    expect(v503.state === "unavailable" && v503.text).toContain(
+      "label_sample_unreadable: store down"
     );
-    expect(new Set(draws).size).toBeGreaterThan(1);
   });
 
-  it("fewer than three verdicts are all drawn, once each", () => {
-    const [a, b] = ids as [string, string];
-    expect(sampleForOperatorLabel([a, a, b], "2026-W44").sort()).toEqual(
-      [a, b].sort()
-    );
-    expect(sampleForOperatorLabel([], "2026-W44")).toEqual([]);
+  it("a body it cannot read is unavailable, not a shorter sample", () => {
+    const bad = labelSample();
+    bad.verdicts[1]!.verdict = "maybe";
+    for (const body of [
+      bad,
+      null,
+      { iso_week: "2026-W44" },
+      { verdicts: [] },
+    ]) {
+      expect(deriveLabelSampleView({ kind: "answered", body }).state).toBe(
+        "unavailable"
+      );
+    }
+    expect(deriveLabelSampleView(null)).toEqual({ state: "loading" });
   });
 });
 
@@ -422,7 +454,7 @@ describe("operatorLabelOutcome", () => {
         record: {
           id: "r",
           label_source: "operator",
-          verification_id: REFUTATION_VERIFICATION_ID,
+          verification_id: "9e000000-0000-4000-8000-000000000002",
           seed_class: null,
           truth: "fails",
           verifier_verdict: "refuted",
@@ -433,12 +465,14 @@ describe("operatorLabelOutcome", () => {
     ).toEqual({
       text: "Recorded: did not hold up (verifier said refuted)",
       attention: false,
+      retry: false,
     });
     expect(
       operatorLabelOutcome({ kind: "already_labelled", existingId: "r" })
     ).toEqual({
       text: "Already labelled — this verdict carries an operator label",
       attention: false,
+      retry: false,
     });
     expect(
       operatorLabelOutcome({
@@ -449,6 +483,7 @@ describe("operatorLabelOutcome", () => {
     ).toEqual({
       text: "Not recorded — coord refused it (operator_principal_required): m",
       attention: true,
+      retry: false,
     });
     expect(
       operatorLabelOutcome({
@@ -461,10 +496,23 @@ describe("operatorLabelOutcome", () => {
       operatorLabelOutcome({ kind: "not_found", code: null, message: "" }).text
     ).toMatch(/label door is not answering/);
     expect(
-      operatorLabelOutcome({ kind: "failed", status: 504, message: "slow" })
+      operatorLabelOutcome({
+        kind: "rejected",
+        status: 422,
+        code: "invalid_truth",
+        message: "m",
+      })
+    ).toEqual({
+      text: "Not recorded — HTTP 422 invalid_truth: m",
+      attention: true,
+      retry: false,
+    });
+    expect(
+      operatorLabelOutcome({ kind: "unknown", status: 504, message: "slow" })
     ).toEqual({
       text: "Not known to be recorded — HTTP 504: slow",
       attention: true,
+      retry: true,
     });
   });
 });
