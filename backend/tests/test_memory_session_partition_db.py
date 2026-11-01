@@ -1224,9 +1224,9 @@ class TestStaleSessionVectors:
         shared = uuid4()
 
         async def _go(s: AsyncSession) -> tuple[bool, int, bool, Any, Any]:
-            # One transaction, so the scheduler's own reindex sweep (which
-            # also runs during the suite) cannot degrade the row first and
-            # turn the positive control below into a vacuous pass.
+            # One transaction, so nothing outside it (another process on a
+            # shared test DB, say) can degrade the row before the positive
+            # control below reads the probe.
             for memory_id, scope, scope_ref, tag in (
                 (private, "session", _SESSION_REF, stale_tag),
                 (shared, "tenant", None, EMBEDDING_MODEL_TAG),

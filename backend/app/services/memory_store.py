@@ -4186,7 +4186,8 @@ async def degrade_stale_session_vectors(
             """
             UPDATE coord.memory_records
             SET embedding = NULL,
-                embedding_model = NULL
+                embedding_model = NULL,
+                updated_at = now()
             WHERE scope = 'session'
               AND is_tombstone = false
               AND embedding IS NOT NULL
