@@ -10,7 +10,115 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-const { fetchVerificationMetrics } = await import("./coordVerification");
+const { fetchVerificationMetrics, recordOperatorLabel } =
+  await import("./coordVerification");
+
+const VID = "5f0c2a8e-7d1b-4c3e-9a40-1b2c3d4e5f60";
+const json = (body: unknown, status: number) =>
+  new Response(JSON.stringify(body), { status });
+
+describe("recordOperatorLabel", () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("POSTs only the operator label body, and a 201 is the recorded row", async () => {
+    const record = {
+      id: "0d6a1f3e-1111-4c3e-9a40-1b2c3d4e5f60",
+      label_source: "operator",
+      verification_id: VID,
+      seed_class: null,
+      truth: "holds",
+      verifier_verdict: "refuted",
+      labelled_by: "operator:abc",
+      created_at: "2026-11-01T12:00:00Z",
+    };
+    fetchMock.mockResolvedValueOnce(json(record, 201));
+    await expect(recordOperatorLabel(VID, "holds")).resolves.toEqual({
+      kind: "recorded",
+      record,
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/v1/operations/coord/verification/labels");
+    expect(init.method).toBe("POST");
+    expect(init.idempotent).toBe(false);
+    expect(JSON.parse(init.body)).toEqual({
+      label_source: "operator",
+      verification_id: VID,
+      truth: "holds",
+    });
+  });
+
+  it("a 409 duplicate_label is 'already labelled', naming the existing row", async () => {
+    fetchMock.mockResolvedValueOnce(
+      json({ error: "duplicate_label", message: "m", id: "existing" }, 409)
+    );
+    await expect(recordOperatorLabel(VID, "fails")).resolves.toEqual({
+      kind: "already_labelled",
+      existingId: "existing",
+    });
+  });
+
+  it("a 409 for any other reason is a failure, not 'already labelled'", async () => {
+    fetchMock.mockResolvedValueOnce(
+      json({ error: "something_else", message: "busy" }, 409)
+    );
+    await expect(recordOperatorLabel(VID, "fails")).resolves.toEqual({
+      kind: "failed",
+      status: 409,
+      message: "busy",
+    });
+  });
+
+  it("a 403 is refused, with coord's code", async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(
+        { error: "operator_principal_required", message: "operators only" },
+        403
+      )
+    );
+    await expect(recordOperatorLabel(VID, "cannot_tell")).resolves.toEqual({
+      kind: "refused",
+      code: "operator_principal_required",
+      message: "operators only",
+    });
+  });
+
+  it("a 404 is not_found — coord's verification_not_found, or an absent door", async () => {
+    fetchMock.mockResolvedValueOnce(
+      json({ error: "verification_not_found", message: "no such verdict" }, 404)
+    );
+    await expect(recordOperatorLabel(VID, "holds")).resolves.toEqual({
+      kind: "not_found",
+      code: "verification_not_found",
+      message: "no such verdict",
+    });
+    fetchMock.mockResolvedValueOnce(json({ detail: "Not Found" }, 404));
+    await expect(recordOperatorLabel(VID, "holds")).resolves.toEqual({
+      kind: "not_found",
+      code: null,
+      message: "Not Found",
+    });
+  });
+
+  it("any other status, a bodyless 201 and no answer at all are failures", async () => {
+    fetchMock.mockResolvedValueOnce(json({ detail: "coord timed out" }, 504));
+    await expect(recordOperatorLabel(VID, "holds")).resolves.toEqual({
+      kind: "failed",
+      status: 504,
+      message: "coord timed out",
+    });
+    fetchMock.mockResolvedValueOnce(new Response("", { status: 201 }));
+    const bodyless = await recordOperatorLabel(VID, "holds");
+    expect(bodyless.kind).toBe("failed");
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const none = await recordOperatorLabel(VID, "holds");
+    expect(none).toMatchObject({ kind: "failed", status: null });
+    if (none.kind === "failed") {
+      expect(none.message).toContain("may or may not have been recorded");
+    }
+  });
+});
 
 describe("coordVerification", () => {
   afterEach(() => {

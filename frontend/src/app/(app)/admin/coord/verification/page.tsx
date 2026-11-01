@@ -23,6 +23,16 @@
  *
  * A failed or degraded read renders "could not look" with the reason and the
  * last good stamp. Numbers from an earlier read are never replayed.
+ *
+ * ## Verifier agreement and the operator's label
+ *
+ * Plan `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
+ * Phase 4. Under calibration, one line says how far the verifier agrees with
+ * labelled cases (`deriveVerifierAgreement`) — words, never a number, below 20
+ * cases or when it cannot be read. At most three verdicts a week, drawn by
+ * `sampleForOperatorLabel` from the verdicts this page lists, carry "Did this
+ * hold up? Yes · No · Can't tell" (`OperatorLabelControl`). The overview tile
+ * never carries it.
  */
 
 import { useMemo, useState } from "react";
@@ -38,6 +48,7 @@ import {
   type Stat,
 } from "@/components/console";
 import { useTenant } from "@/contexts/tenant-context";
+import { OperatorLabelControl } from "@/components/admin/coord/OperatorLabelControl";
 import { useVerificationMetrics } from "@/components/admin/coord/useVerificationMetrics";
 import {
   REFUTED_FINDING_TOPIC,
@@ -45,12 +56,16 @@ import {
   bpPct,
   deriveTrustView,
   deriveVerificationHealth,
+  deriveVerifierAgreement,
   findingHref,
   interval,
+  isoWeekKey,
   pct,
   ratePct,
   refutedUnitsInWindow,
+  sampleForOperatorLabel,
   unverifiableTotal,
+  type AgreementView,
   type PopulatedMetrics,
   type SeriesWeek,
   type VerificationLane,
@@ -193,7 +208,25 @@ function LaneBlock({ lane }: { lane: VerificationLane }) {
   );
 }
 
-function PopulatedBody({ m }: { m: PopulatedMetrics }) {
+function AgreementLine({ agreement }: { agreement: AgreementView }) {
+  return (
+    <p
+      className={`text-sm ${agreement.state === "populated" ? "text-foreground" : "text-muted-foreground"}`}
+      data-testid="coord-verification-agreement"
+      data-agreement-state={agreement.state}
+    >
+      {agreement.text}
+    </p>
+  );
+}
+
+function PopulatedBody({
+  m,
+  agreement,
+}: {
+  m: PopulatedMetrics;
+  agreement: AgreementView;
+}) {
   const tc = m.trust_calibration;
   const cov = m.independent_verification_coverage;
   const u = m.unknowns;
@@ -247,6 +280,7 @@ function PopulatedBody({ m }: { m: PopulatedMetrics }) {
           <KV k="Method">{tc.method}</KV>
           {tc.counts && <KV k="Counts">{tc.counts}</KV>}
         </dl>
+        <AgreementLine agreement={agreement} />
       </section>
 
       <section className="space-y-1" data-testid="coord-verification-coverage">
@@ -344,11 +378,20 @@ export default function CoordVerificationPage() {
   );
   const view = useMemo(() => deriveTrustView(read, lastGood), [read, lastGood]);
   const health = useMemo(() => deriveVerificationHealth(view), [view]);
+  const agreement = useMemo(() => deriveVerifierAgreement(read), [read]);
   const metrics = read.status === "ok" ? read.metrics : null;
   const refutedUnits = useMemo(() => {
     if (refuted.status !== "ok" || !metrics) return null;
     return refutedUnitsInWindow(refuted.findings, metrics.window.from);
   }, [refuted, metrics]);
+  // The verdicts carrying "Did this hold up?" this ISO week — a pure draw
+  // over the verdicts listed below, so a reload does not reshuffle it.
+  const labelled = useMemo(() => {
+    const ids = (refutedUnits ?? []).flatMap((u) =>
+      u.verificationId ? [u.verificationId] : []
+    );
+    return new Set(sampleForOperatorLabel(ids, isoWeekKey(Date.now())));
+  }, [refutedUnits]);
 
   return (
     <div className="p-3 sm:p-6 space-y-5" data-testid="coord-verification-page">
@@ -418,7 +461,13 @@ export default function CoordVerificationPage() {
         </p>
       )}
 
-      {metrics && !metrics.degraded && <PopulatedBody m={metrics} />}
+      {view.state === "could_not_look" && (
+        <AgreementLine agreement={agreement} />
+      )}
+
+      {metrics && !metrics.degraded && (
+        <PopulatedBody m={metrics} agreement={agreement} />
+      )}
 
       <section className="space-y-1" data-testid="coord-verification-refuted">
         <h2 className="text-sm font-medium">Refuted in this window</h2>
@@ -441,7 +490,8 @@ export default function CoordVerificationPage() {
               {refutedUnits.map((r) => (
                 <li
                   key={r.findingId}
-                  className="flex items-baseline gap-3 text-sm"
+                  className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm"
+                  data-testid="coord-verification-refuted-unit"
                 >
                   <Link
                     href={findingHref(r.findingId)}
@@ -457,6 +507,14 @@ export default function CoordVerificationPage() {
                   <span className="ml-auto text-xs text-muted-foreground">
                     <Stamp iso={r.createdAt} />
                   </span>
+                  {r.verificationId && labelled.has(r.verificationId) && (
+                    <span className="basis-full">
+                      <OperatorLabelControl
+                        key={r.verificationId}
+                        verificationId={r.verificationId}
+                      />
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
