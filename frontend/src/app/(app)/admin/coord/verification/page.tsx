@@ -386,7 +386,7 @@ export default function CoordVerificationPage() {
   }, [refuted, metrics]);
   // The verdicts carrying "Did this hold up?" this ISO week — a pure draw
   // over the verdicts listed below, so a reload does not reshuffle it.
-  const labelled = useMemo(() => {
+  const sampledForLabel = useMemo(() => {
     const ids = (refutedUnits ?? []).flatMap((u) =>
       u.verificationId ? [u.verificationId] : []
     );
@@ -507,14 +507,14 @@ export default function CoordVerificationPage() {
                   <span className="ml-auto text-xs text-muted-foreground">
                     <Stamp iso={r.createdAt} />
                   </span>
-                  {r.verificationId && labelled.has(r.verificationId) && (
-                    <span className="basis-full">
-                      <OperatorLabelControl
-                        key={r.verificationId}
-                        verificationId={r.verificationId}
-                      />
-                    </span>
-                  )}
+                  {r.verificationId &&
+                    sampledForLabel.has(r.verificationId) && (
+                      <span className="basis-full">
+                        <OperatorLabelControl
+                          verificationId={r.verificationId}
+                        />
+                      </span>
+                    )}
                 </li>
               ))}
             </ul>
