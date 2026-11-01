@@ -363,22 +363,39 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     "ops_passthrough": _PASSTHROUGH_FAMILY,
     # The POST arm (``client.post(json=body or {})``); same answer handling.
     "ops_passthrough_post": _PASSTHROUGH_FAMILY,
+    # Every transport and no-usable-answer arm is a typed refusal. A
+    # ConnectTimeout is raised before anything reached coord, so it is the 502
+    # "not reachable" arm here, not the 504 the shared transport family pins.
     "agent_registry_coord_request": {
-        **_transport(),
+        "connect_error": Cell(Raises(502, NOT_REACHABLE, RefusalHTTPException)),
+        "connect_timeout": Cell(Raises(502, NOT_REACHABLE, RefusalHTTPException)),
+        "read_timeout": Cell(Raises(504, TIMED_OUT, RefusalHTTPException)),
         # httpx.RequestError arm: a ReadError may follow a sent request, so it
         # is a 504 like ``_proxy_coord_write``'s; a 502 says nothing was sent.
         "read_error": Cell(
-            Raises(504, "coord's answer was lost in transit (ReadError)")
+            Raises(
+                504,
+                "coord's answer was lost in transit (ReadError)",
+                RefusalHTTPException,
+            )
         ),
         "coord_404_empty": Cell(Raises(404, "")),
         "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
         "coord_500_html": Cell(Raises(500, _HTML_BODY)),
         "ok_200_json": Cell(Returns(_OK_DICT)),
         # A 2xx with no usable body is a 504 as well: coord may have committed.
-        "ok_200_empty": Cell(Raises(504, "coord answered 200 with no body")),
-        "no_content_204": Cell(Raises(504, "coord answered 204 with no body")),
+        "ok_200_empty": Cell(
+            Raises(504, "coord answered 200 with no body", RefusalHTTPException)
+        ),
+        "no_content_204": Cell(
+            Raises(504, "coord answered 204 with no body", RefusalHTTPException)
+        ),
         "ok_200_text": Cell(
-            Raises(504, "coord answered 200 with a body that is not JSON")
+            Raises(
+                504,
+                "coord answered 200 with a body that is not JSON",
+                RefusalHTTPException,
+            )
         ),
     },
     # The private copies raise PLAIN HTTPException on transport failure —
