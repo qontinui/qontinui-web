@@ -173,12 +173,16 @@ describe("CoordVerificationPage — verifier agreement and the operator label", 
     expect(section.textContent).toContain("2026-W44");
     expect(rows[0]?.textContent).toContain("2026-10-01-widget-import");
     expect(rows[0]?.textContent).toContain("survived");
-    // The idle control's slot never shrinks or clips: the buttons stay whole.
-    const slot = within(rows[0] as HTMLElement).getByTestId(
+    // The idle button group is the row's own flex item and never shrinks or
+    // clips: the buttons stay whole and the label gives way.
+    const group = within(rows[0] as HTMLElement).getByTestId(
       "coord-verification-label-control"
-    ).parentElement as HTMLElement;
-    expect(slot.className).toContain("shrink-0");
-    expect(slot.className).not.toContain("truncate");
+    );
+    expect(group.parentElement).toBe(rows[0]);
+    expect(group.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["shrink-0", "max-w-[60ch]"])
+    );
+    expect(group.className).not.toMatch(/\b(truncate|min-w-0)\b/);
     expect(
       within(rows[0] as HTMLElement).getByTestId(
         "coord-verification-label-control"
@@ -280,6 +284,18 @@ describe("CoordVerificationPage — verifier agreement and the operator label", 
     let outcome = await screen.findByTestId("coord-verification-label-outcome");
     expect(outcome.getAttribute("data-label-outcome")).toBe("rejected");
     expect(outcome.textContent).toMatch(/^Not recorded/);
+    // Answered, the same row slot may shrink: min-w-0, never shrink-0, and
+    // the text truncates under its title.
+    expect(outcome.parentElement).toBe(first);
+    expect(outcome.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["min-w-0", "max-w-[60ch]"])
+    );
+    expect(outcome.className).not.toMatch(/\bshrink-0\b/);
+    const text = outcome.firstElementChild as HTMLElement;
+    expect(text.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["min-w-0", "truncate"])
+    );
+    expect(text.getAttribute("title")).toBe(text.textContent);
     // Final and known: muted, not amber, and not offered again.
     expect(outcome.className).toContain("text-muted-foreground");
     expect(outcome.className).not.toContain("amber");

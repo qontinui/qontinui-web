@@ -35,10 +35,20 @@ type ControlState =
   | { status: "sending"; truth: OperatorLabelTruth }
   | { status: "done"; result: OperatorLabelResult };
 
+/**
+ * Sizing is the control's own, by state, because it is meant to sit directly
+ * in a one-line flex row (console style R2): the idle button group is
+ * `shrink-0` (the buttons are never clipped — the row's label gives way), and
+ * the outcome is `min-w-0` with its text truncating under a `title`, so a long
+ * answer never pushes the row wider than a phone. `className` adds the
+ * caller's bound (e.g. a max width) to whichever state is showing.
+ */
 export function OperatorLabelControl({
   verificationId,
+  className,
 }: {
   verificationId: string;
+  className?: string;
 }) {
   const [state, setState] = useState<ControlState>({ status: "idle" });
 
@@ -53,10 +63,11 @@ export function OperatorLabelControl({
     return (
       <span
         className={cn(
-          "inline-flex max-w-full min-w-0 items-center gap-2 text-xs",
+          "inline-flex min-w-0 items-center gap-2 text-xs",
           outcome.attention
             ? "text-amber-700 dark:text-amber-300"
-            : "text-muted-foreground"
+            : "text-muted-foreground",
+          className
         )}
         role="status"
         data-testid="coord-verification-label-outcome"
@@ -69,7 +80,7 @@ export function OperatorLabelControl({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-2 text-xs"
+            className="h-6 shrink-0 px-2 text-xs"
             onClick={() => setState({ status: "idle" })}
             data-testid="coord-verification-label-again"
           >
@@ -82,7 +93,10 @@ export function OperatorLabelControl({
 
   return (
     <span
-      className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground",
+        className
+      )}
       role="group"
       aria-label="Did this hold up?"
       data-testid="coord-verification-label-control"
