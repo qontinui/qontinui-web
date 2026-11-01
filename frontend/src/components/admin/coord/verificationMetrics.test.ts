@@ -343,12 +343,17 @@ describe("deriveVerifierAgreement", () => {
     });
   });
 
-  it("an unreachable door, a degraded body and a malformed block are unknown", () => {
-    expect(
-      deriveVerifierAgreement({ status: "error", reason: "HTTP 502" }, "page")
-    ).toEqual({
+  it("a failed read, a degraded body and a malformed block are unknown", () => {
+    // `error` covers no answer, an unparseable body and an unloadable project
+    // list: neutral words, and only the page quotes the reason.
+    const failed = { status: "error", reason: "HTTP 502" } as const;
+    expect(deriveVerifierAgreement(failed, "page")).toEqual({
       state: "unknown",
-      text: "verifier agreement unknown — the metrics door did not answer",
+      text: "verifier agreement unknown — the metrics could not be read (HTTP 502)",
+    });
+    expect(deriveVerifierAgreement(failed, "tile")).toEqual({
+      state: "unknown",
+      text: "verifier agreement unknown — the metrics could not be read",
     });
     expect(ok(degraded()).text).toBe(
       "verifier agreement unknown — coord could not look"
@@ -360,6 +365,48 @@ describe("deriveVerifierAgreement", () => {
     expect(deriveVerifierAgreement({ status: "loading" }, "page").state).toBe(
       "loading"
     );
+  });
+
+  it("a degraded answer shows no kappa even when it carries a block", () => {
+    const v = ok({ ...degraded(), judge_agreement: judgeAgreement() });
+    expect(v).toEqual({
+      state: "unknown",
+      text: "verifier agreement unknown — coord could not look",
+    });
+  });
+
+  it("a kappa is shown only over at least 20 binary cases with no reason", () => {
+    // A kappa coord sent beside binary_n < 20 is still "not enough".
+    expect(
+      ok(
+        populated({
+          judge_agreement: judgeAgreement({ binary_n: 19, kappa: 0.9 }),
+        })
+      )
+    ).toEqual({
+      state: "insufficient",
+      text: "verifier agreement: not enough labelled cases yet",
+    });
+    // Exactly 20 is enough.
+    expect(
+      ok(populated({ judge_agreement: judgeAgreement({ binary_n: 20 }) })).state
+    ).toBe("populated");
+    // A kappa beside a reason contradicts itself: unknown, no number shown.
+    const contradicted = ok(
+      populated({
+        judge_agreement: judgeAgreement({ kappa: 0.5, reason: "undefined" }),
+      })
+    );
+    expect(contradicted.state).toBe("unknown");
+    expect(contradicted.text).not.toContain("κ");
+    // reason n<20 over 20+ cases with no kappa contradicts itself too.
+    expect(
+      ok(
+        populated({
+          judge_agreement: judgeAgreement({ kappa: null, reason: "n<20" }),
+        })
+      ).state
+    ).toBe("unknown");
   });
 
   it("an unreadable operator block does not hide the seeded figure", () => {
@@ -390,6 +437,8 @@ describe("deriveLabelSampleView", () => {
     });
     expect(v.rows[1]?.operatorLabel?.truth).toBe("fails");
     expect(v.rows[2]?.slug).toBeNull();
+    expect(v.rows[2]?.label).toBe("unnamed verdict");
+    expect(v.rows[0]?.label).toBe("2026-10-01-widget-import");
     expect(choiceLabel("fails")).toBe("No");
   });
 
@@ -482,7 +531,7 @@ describe("operatorLabelOutcome", () => {
       })
     ).toEqual({
       text: "Not recorded — coord refused it (operator_principal_required): m",
-      attention: true,
+      attention: false,
       retry: false,
     });
     expect(
@@ -492,6 +541,9 @@ describe("operatorLabelOutcome", () => {
         message: "m",
       }).text
     ).toBe("Not recorded — coord has no such verdict in this project");
+    expect(
+      operatorLabelOutcome({ kind: "not_found", code: null, message: "" })
+    ).toMatchObject({ attention: false, retry: false });
     expect(
       operatorLabelOutcome({ kind: "not_found", code: null, message: "" }).text
     ).toMatch(/label door is not answering/);
@@ -504,7 +556,7 @@ describe("operatorLabelOutcome", () => {
       })
     ).toEqual({
       text: "Not recorded — HTTP 422 invalid_truth: m",
-      attention: true,
+      attention: false,
       retry: false,
     });
     expect(

@@ -23,6 +23,15 @@ export interface OperatorLabelSampleState {
   reload: () => Promise<void>;
 }
 
+function projectsUnloadable(tenantError: string): LabelSampleAnswer {
+  return {
+    kind: "unavailable",
+    status: null,
+    code: null,
+    message: `the list of projects couldn’t be loaded (${tenantError})`,
+  };
+}
+
 export function useOperatorLabelSample(
   tenantId: string | null,
   /** Hold the read while the project selection is still loading. */
@@ -33,9 +42,18 @@ export function useOperatorLabelSample(
   const [answer, setAnswer] = useState<LabelSampleAnswer | null>(null);
   // A later read supersedes an earlier one still in flight.
   const generation = useRef(0);
+  // Read by `reload` too, so a manual refresh never fetches over the top of
+  // "there is no project to read for".
+  const tenantErrorRef = useRef(tenantError);
+  tenantErrorRef.current = tenantError;
 
   const reload = useCallback(async () => {
     const gen = ++generation.current;
+    const noProject = tenantErrorRef.current;
+    if (noProject !== null) {
+      setAnswer(projectsUnloadable(noProject));
+      return;
+    }
     setAnswer(null);
     const next = await fetchLabelSample();
     if (gen === generation.current) setAnswer(next);
@@ -44,12 +62,7 @@ export function useOperatorLabelSample(
   useEffect(() => {
     if (tenantError !== null) {
       ++generation.current;
-      setAnswer({
-        kind: "unavailable",
-        status: null,
-        code: null,
-        message: `the list of projects couldn’t be loaded (${tenantError})`,
-      });
+      setAnswer(projectsUnloadable(tenantError));
       return;
     }
     if (hold) return;

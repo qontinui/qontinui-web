@@ -308,3 +308,73 @@ class TestVerificationLabelSampleProxy:
         finally:
             patcher.stop()
         assert resp.status_code == 502
+
+
+class TestRefusalOrigin:
+    """The web's own refusal carries ``X-Qontinui-Refusal-Origin: web``; a
+    coord refusal passed through with the same envelope does not — so the
+    client can tell "never reached coord" (final) from "coord said 502"."""
+
+    @pytest.fixture()
+    def handled_client(self) -> TestClient:
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        from app.middleware.error_handler import http_exception_handler
+
+        app = _build_test_app()
+        app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
+        return TestClient(app)
+
+    def test_the_webs_own_connect_refusal_is_marked_web(self, handled_client):
+        from app.core.refusal import REFUSAL_ORIGIN_HEADER
+
+        patcher, _ = _mock_client(AsyncMock(side_effect=httpx.ConnectError("refused")))
+        try:
+            resp = handled_client.post(LABELS_URL, json=_body())
+        finally:
+            patcher.stop()
+        assert resp.status_code == 502
+        assert resp.headers[REFUSAL_ORIGIN_HEADER] == "web"
+        assert resp.json()["refusal"]["discriminator"] == "coord_unreachable"
+
+    def test_the_credential_refusal_is_marked_web(self, handled_client):
+        from app.core.refusal import REFUSAL_ORIGIN_HEADER
+
+        patcher, _ = _mock_client(
+            AsyncMock(return_value=_response(401, {"error": "unauthorized"}))
+        )
+        try:
+            resp = handled_client.get(SAMPLE_URL)
+        finally:
+            patcher.stop()
+        assert resp.status_code == 502
+        assert resp.headers[REFUSAL_ORIGIN_HEADER] == "web"
+        assert (
+            resp.json()["refusal"]["discriminator"]
+            == "coord_verification_label_credential_refused"
+        )
+
+    def test_a_passed_through_coord_502_is_not_marked(self, handled_client):
+        from app.core.refusal import REFUSAL_ORIGIN_HEADER
+
+        coord_body = {
+            "error": "upstream_unavailable",
+            "message": "m",
+            "refusal": {"discriminator": "coord_unreachable"},
+        }
+        upstream = _response(502, coord_body)
+        upstream.headers = httpx.Headers({REFUSAL_ORIGIN_HEADER: "web"})
+        patcher, _ = _mock_client(AsyncMock(return_value=upstream))
+        try:
+            resp = handled_client.post(LABELS_URL, json=_body())
+        finally:
+            patcher.stop()
+        assert resp.status_code == 502
+        assert resp.json() == coord_body
+        assert REFUSAL_ORIGIN_HEADER not in resp.headers
+
+    def test_the_header_is_published_to_cross_origin_readers(self):
+        from app.core.refusal import REFUSAL_ORIGIN_HEADER
+        from app.main import CORS_EXPOSE_HEADERS
+
+        assert REFUSAL_ORIGIN_HEADER in CORS_EXPOSE_HEADERS
