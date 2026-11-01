@@ -2115,7 +2115,16 @@ export function deriveHomeStrip(
     // Coord's qualified zero: its figure, said with the qualification —
     // never "Nothing needs you", and never "not read" (the block was read).
     headline = `No decisions need you ${NEEDS_COUNT_MAY_BE_OFF_WORDS}`;
-    if (unread.length > 0 || unknownSources !== 0) {
+    // It answers only the needs half: whatever else keeps the page from calm
+    // — an unread block or source, a machine roster not read calm, a
+    // degradations list served unreadable — is named, as the "Nothing needs
+    // you" headlines are gated on it.
+    if (
+      unread.length > 0 ||
+      unknownSources !== 0 ||
+      !machinesCalm ||
+      (degRowsServed && open === null)
+    ) {
       headline += "; part of this view is not read";
     }
   } else if (stale) {

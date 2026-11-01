@@ -162,7 +162,7 @@ const VOCABULARY = [
  * textarea's value.
  */
 function readText(root: Element = document.body): string {
-  const elements = [...document.body.querySelectorAll("*")];
+  const elements = [root, ...root.querySelectorAll("*")];
   return [
     root.textContent ?? "",
     ...elements.flatMap((el) =>
@@ -937,5 +937,17 @@ describe("the vocabulary check reads what the audience reads", () => {
     expect(read).toContain("merge_shepherd");
     expect(read).toContain("coord_x");
     unmount();
+  });
+
+  it("reads only what is under the root it is given", () => {
+    const outside = render(
+      <input readOnly title="auto_fix" value="rulebook" />
+    );
+    const inside = render(<p title="claude_cli">inside</p>);
+    const read = readText(inside.container);
+    expect(read).toContain("claude_cli");
+    expect(read).not.toMatch(/auto_fix|rulebook/);
+    inside.unmount();
+    outside.unmount();
   });
 });

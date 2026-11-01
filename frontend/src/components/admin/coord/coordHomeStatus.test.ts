@@ -1937,6 +1937,57 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
     }
   });
 
+  it.each([
+    ["the machine roster unread", {}, {}],
+    [
+      "a machine with no health verdict",
+      {
+        machines: {
+          ...CALM_MACHINES.machines,
+          counts: summarizeMachineHealth([{ device_id: "d-0", state: null }]),
+        },
+      },
+      {},
+    ],
+    [
+      "the degradations list served unreadable",
+      CALM_MACHINES,
+      { degradations: { state: "read", headline: "none", open: "garbled" } },
+    ],
+  ])(
+    "names what else is not read beside a stale zero: %s",
+    (_label, machines, over) => {
+      // Every coord block read (correctness included): only the roster or the
+      // degradations list keeps the page from calm.
+      const body = staleBody({
+        total: 0,
+        omitted: 0,
+        items: [],
+        questions_coverage: "stale",
+      });
+      Object.assign(body, over);
+      const strip = deriveHomeStrip(parseProjectState(body)!, machines);
+      expect(strip.headline).toBe(
+        "No decisions need you (may be off); part of this view is not read"
+      );
+    }
+  );
+
+  it("says the qualified zero alone when everything else is read and calm", () => {
+    const strip = deriveHomeStrip(
+      parseProjectState(
+        staleBody({
+          total: 0,
+          omitted: 0,
+          items: [],
+          questions_coverage: "stale",
+        })
+      )!,
+      CALM_MACHINES
+    );
+    expect(strip.headline).toBe("No decisions need you (may be off)");
+  });
+
   it("marks a stale count as possibly off in the headline", () => {
     const view = parseProjectState(
       staleBody({
