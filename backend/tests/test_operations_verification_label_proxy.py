@@ -378,3 +378,65 @@ class TestRefusalOrigin:
         from app.main import CORS_EXPOSE_HEADERS
 
         assert REFUSAL_ORIGIN_HEADER in CORS_EXPOSE_HEADERS
+
+    def test_the_header_name_is_the_literal_the_frontend_reads(self):
+        """Pinned to the same literal ``coordVerification.test.ts`` pins
+        ``REFUSAL_ORIGIN_HEADER`` to: renaming one side alone fails a test."""
+        from app.core.refusal import REFUSAL_ORIGIN_HEADER, REFUSAL_ORIGIN_WEB
+
+        assert REFUSAL_ORIGIN_HEADER == REFUSAL_ORIGIN_HEADER_LITERAL
+        assert REFUSAL_ORIGIN_WEB == "web"
+
+
+#: The wire name both sides agree on (see ``coordVerification.test.ts``).
+REFUSAL_ORIGIN_HEADER_LITERAL = "X-Qontinui-Refusal-Origin"
+_ALLOWED_ORIGIN = "http://localhost:3000"
+_REFUSAL_PROBE_PATH = "/_test/refusal-origin-probe"
+
+
+@pytest.fixture(scope="module")
+def real_app_client():
+    """The REAL app — its installed exception handler and ``CORSMiddleware`` —
+    plus one probe route that raises a refusal, in the style of
+    ``test_session_repository_export_headers.py``. No ``with``-block: lifespan
+    (DB init, scheduler) is not needed to exercise a handler and middleware."""
+    from app.core.refusal import NextActionKind, RefusalCode, refusal_error
+    from app.main import app
+
+    async def _probe() -> None:
+        raise refusal_error(
+            502,
+            RefusalCode.upstream_unavailable,
+            NextActionKind.retry_later,
+            "coord is not reachable",
+            discriminator="coord_unreachable",
+        )
+
+    app.add_api_route(_REFUSAL_PROBE_PATH, _probe, methods=["GET"])
+    try:
+        yield TestClient(app)
+    finally:
+        # The app object is shared session-wide — drop the probe route.
+        app.router.routes[:] = [
+            r
+            for r in app.router.routes
+            if getattr(r, "path", None) != _REFUSAL_PROBE_PATH
+        ]
+
+
+def test_a_web_refusal_carries_the_origin_header_through_cors(real_app_client):
+    """Emitted by the real handler AND named in Access-Control-Expose-Headers:
+    unexposed, a cross-origin browser reads ``None`` — the same answer as a
+    passed-through coord 502 — and every web 502 would read as ``unknown``."""
+    response = real_app_client.get(
+        _REFUSAL_PROBE_PATH, headers={"Origin": _ALLOWED_ORIGIN}
+    )
+    assert response.status_code == 502
+    assert response.headers[REFUSAL_ORIGIN_HEADER_LITERAL] == "web"
+    assert response.json()["refusal"]["discriminator"] == "coord_unreachable"
+    exposed = {
+        name.strip().lower()
+        for name in response.headers.get("access-control-expose-headers", "").split(",")
+        if name.strip()
+    }
+    assert REFUSAL_ORIGIN_HEADER_LITERAL.lower() in exposed

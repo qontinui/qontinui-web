@@ -10,8 +10,20 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-const { fetchLabelSample, fetchVerificationMetrics, recordOperatorLabel } =
-  await import("./coordVerification");
+const {
+  REFUSAL_ORIGIN_HEADER,
+  REFUSAL_ORIGIN_WEB,
+  fetchLabelSample,
+  fetchVerificationMetrics,
+  recordOperatorLabel,
+} = await import("./coordVerification");
+
+describe("REFUSAL_ORIGIN_HEADER", () => {
+  it("is the literal the backend sets (test_operations_verification_label_proxy.py pins the same)", () => {
+    expect(REFUSAL_ORIGIN_HEADER).toBe("X-Qontinui-Refusal-Origin");
+    expect(REFUSAL_ORIGIN_WEB).toBe("web");
+  });
+});
 
 const VID = "5f0c2a8e-7d1b-4c3e-9a40-1b2c3d4e5f60";
 const json = (body: unknown, status: number) =>

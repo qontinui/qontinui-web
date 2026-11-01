@@ -397,16 +397,30 @@ describe("deriveVerifierAgreement", () => {
         judge_agreement: judgeAgreement({ kappa: 0.5, reason: "undefined" }),
       })
     );
-    expect(contradicted.state).toBe("unknown");
-    expect(contradicted.text).not.toContain("κ");
-    // reason n<20 over 20+ cases with no kappa contradicts itself too.
+    expect(contradicted).toEqual({
+      state: "unknown",
+      text: "verifier agreement unknown — coord served a kappa beside a reason (undefined)",
+    });
+    // No kappa, and a reason that does not fit 20+ cases.
     expect(
       ok(
         populated({
           judge_agreement: judgeAgreement({ kappa: null, reason: "n<20" }),
         })
-      ).state
-    ).toBe("unknown");
+      )
+    ).toEqual({
+      state: "unknown",
+      text: "verifier agreement unknown — coord served no kappa and no reason this page recognises (n<20)",
+    });
+    expect(
+      ok(
+        populated({
+          judge_agreement: judgeAgreement({ kappa: null, reason: null }),
+        })
+      ).text
+    ).toBe(
+      "verifier agreement unknown — coord served no kappa and no reason this page recognises (none)"
+    );
   });
 
   it("an unreadable operator block does not hide the seeded figure", () => {
