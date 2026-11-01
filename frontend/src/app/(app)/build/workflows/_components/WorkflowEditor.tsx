@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useUIComponent } from "@qontinui/ui-bridge";
+import { useUIComponent } from "@qontinui/ui-bridge/react";
 import { useWorkflowBuilder } from "@/components/workflow-builder/WorkflowBuilderContext";
 import { StepConfigPanel } from "@/components/workflow-builder/StepConfigPanel";
 import { SettingsPanel } from "@/components/workflow-builder/SettingsPanel";
