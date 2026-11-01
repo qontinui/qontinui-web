@@ -1376,6 +1376,29 @@ class TestTransportStatusesSayWhetherCoordMayHaveActed:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
+        "never_sent", [httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout]
+    )
+    async def test_a_request_that_never_left_is_a_typed_502(self, never_sent) -> None:
+        """Raised before a byte reached coord: nothing changed, so a write is
+        never told it may have been applied — even for the two TimeoutExceptions
+        that are raised pre-send."""
+        from app.core.refusal import RefusalHTTPException
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise never_sent("not sent", request=request)
+
+        err = await self._status_of(handler)
+        assert isinstance(err, RefusalHTTPException)
+        assert err.status_code == 502
+        assert err.detail == "coord is not reachable"
+        assert "may have been applied" not in err.detail
+        assert err.refusal.code.value == "upstream_unavailable"
+        assert err.refusal.next_action.kind.value == "retry_later"
+        assert err.refusal.discriminator == "agent_registry_coord_unreachable"
+        assert [t.value for t in err.refusal.glossary_terms] == ["coord"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
         "lost",
         [httpx.ReadError, httpx.RemoteProtocolError, httpx.WriteError],
     )
