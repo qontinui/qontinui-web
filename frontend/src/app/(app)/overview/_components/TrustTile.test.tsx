@@ -247,10 +247,21 @@ describe("TrustTile — verifier agreement", () => {
   }
 
   it("populated: kappa with the seeded n and the operator n, and no label control", async () => {
-    serve(populated({ judge_agreement: judgeAgreement() }), {
-      available: true,
-      findings: [REFUTATION_FINDING],
-    });
+    // coord's wire shape, written out: this test reads the served body, not
+    // the fixture builder.
+    const row = { survived: 0, refuted: 0, unverifiable: 0 };
+    const matrix = { holds: row, fails: row, cannot_tell: row };
+    serve(
+      {
+        ...populated(),
+        judge_agreement: {
+          seeded: { n: 27, binary_n: 24, kappa: 0.712, reason: null, matrix },
+          operator: { n: 6, binary_n: 5, kappa: null, reason: "n<20", matrix },
+          consequence: { false_survived_count: 0 },
+        },
+      },
+      { available: true, findings: [REFUTATION_FINDING] }
+    );
     renderTile();
     const el = await settled("populated");
     expect(agreementLine(el).textContent).toBe(
