@@ -81,8 +81,10 @@ No credential → 401. Credential valid but no tenant resolvable → 403.
 
 The ``session`` partition is reachable only by the coord service token and
 an operator user (:func:`withheld_scopes`): a device JWT proves a device,
-never a session, so for it the list / by-id / graph reads hide session rows
-and query / write / supersede refuse them with 403.
+never a session, so for it the list / by-id / graph reads hide session rows,
+query and write refuse a ``session`` scope with 403, and a session row named
+by id (by-id read, hold, delete, supersede predecessor) answers the same 404
+as an unknown id.
 """
 
 from __future__ import annotations
@@ -833,6 +835,14 @@ def _withheld_duplicate_conflict() -> HTTPException:
     land as a second row, and deduping onto the withheld row would disclose
     its id and merge anchors into it. Raised from inside the request, so
     the session dependency rolls back anything the request already wrote.
+
+    **Accepted residual:** the 409 still tells a device that the exact
+    content it sent already exists in a partition it cannot read — an
+    equality check on session content. Closing it needs a migration (scope
+    in the unique live-content index, or a separate hash namespace for
+    session content); recorded as coord finding ``fd4ffbaa`` and as a
+    follow-up of plan
+    ``2026-10-30-memory-session-scope-clamp-trusts-an-unproven-caller-session``.
     """
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
@@ -2170,7 +2180,10 @@ async def memory_stats(
     scope :func:`withheld_scopes` withholds (``session``, for a device JWT)
     are excluded from its counts and its title sample. The quota fields
     (``row_count``, ``bytes``, ``lifecycle_held``) and ``embedding_coverage``
-    are tenant posture, not content, and still count every row.
+    are tenant posture, not content, and still count every row — an
+    accepted residual (coord finding ``fd4ffbaa``): a device can see
+    ``row_count`` move while its facets do not, which discloses the session
+    partition's size and write cadence, though none of its content.
     """
     usage = await store.get_usage(db, principal.tenant_id)
     coverage = await store.embedding_coverage(db, principal.tenant_id)

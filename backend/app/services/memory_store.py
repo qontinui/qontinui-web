@@ -4127,10 +4127,13 @@ async def fetch_reindex_batch(
     claims it, and the claimer is a device principal, which the session
     partition is withheld from. So a session row stays as embedded as its
     writer made it — a row written without a vector is FTS-only for its
-    whole life. That costs nothing measurable today: production held zero
-    session rows at the census (coord finding ``664e470a``). If session
-    rows ever need the vector arm, coord (which can prove the session) is
-    the writer to send the vector, not this sweep.
+    whole life. If session rows ever need the vector arm, coord (which can
+    prove the session) is the writer to send the vector, not this sweep.
+
+    A session row whose vector predates a model bump is therefore never
+    RE-embedded here either; ``degrade_stale_session_vectors`` drops that
+    vector instead, so the row falls back to FTS-only rather than holding
+    ``has_unmigrated_vectors`` True (and the tenant's cosine arm off) forever.
     """
     rows = await session.execute(
         text(
@@ -4159,6 +4162,40 @@ async def fetch_reindex_batch(
     return [
         (UUID(str(r.tenant_id)), UUID(str(r.memory_id)), str(r.content)) for r in rows
     ]
+
+
+async def degrade_stale_session_vectors(
+    session: AsyncSession, *, current_tag: str
+) -> int:
+    """Drop a ``session`` row's vector once it is not at the deployed tag.
+
+    ``fetch_reindex_batch`` never selects a session row (an embedding job
+    would hand its content to a device principal), so a session row's
+    vector written under an older model is never rewritten. Left alone it
+    would count in ``_UNMIGRATED_PROBE`` for good, and
+    ``has_unmigrated_vectors`` would keep the cosine arm off for EVERY
+    principal of that tenant. NULLing the vector and its tag degrades the
+    row to FTS-only — the same posture a session row written without a
+    vector already has — and lets the tenant's migration finish.
+
+    Returns the number of rows degraded. Tombstones are left alone: the
+    probe ignores them already.
+    """
+    result = await session.execute(
+        text(
+            """
+            UPDATE coord.memory_records
+            SET embedding = NULL,
+                embedding_model = NULL
+            WHERE scope = 'session'
+              AND is_tombstone = false
+              AND embedding IS NOT NULL
+              AND embedding_model IS DISTINCT FROM :current_tag
+            """
+        ),
+        {"current_tag": current_tag},
+    )
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def update_embeddings(

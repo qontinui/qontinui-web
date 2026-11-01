@@ -11,13 +11,23 @@ withheld it on every memory route that reads or writes a row:
 * ``GET /records/{id}``, ``PUT``/``DELETE /records/{id}/hold`` and
   ``DELETE /records/{id}`` answer the by-id not-found 404 for one, and write
   nothing;
-* ``POST /query``, ``POST /records`` and ``POST /records/{id}/supersede``
-  refuse with 403 when they name ``session`` scope or supersede a session row
-  — including the inheritance case, where the payload omits ``scope``;
+* ``POST /query`` and ``POST /records`` refuse with 403 when they name
+  ``session`` scope; ``POST /records/{id}/supersede`` refuses a ``session``
+  scope with 403 and answers a session PREDECESSOR with the same 404 as an
+  unknown id — including the inheritance case, where the payload omits
+  ``scope``;
+* ``GET /records/{id}`` never names a session row as ``superseded_by``;
 * ``GET /stats`` facets (and ``POST /query``'s ``live_row_count``) count
   and sample no session row;
 * a write or supersede whose CONTENT a live session row already holds is a
-  409 naming no id — never a dedupe onto that row or an anchor merge into it.
+  409 naming no id — never a dedupe onto that row or an anchor merge into it
+  (an accepted residual: the 409 still confirms the content exists);
+* link resolution (by id, content hash or title) never resolves to a session
+  row, and a session row never makes a title ambiguous;
+* a device never claims, completes or fails a job whose target is a session
+  row, and no lifecycle selector (cluster candidates, near-duplicate pairs,
+  reindex) feeds one to a job — a stale session vector is degraded to
+  FTS-only instead of being re-embedded.
 
 The coord service token and an operator user keep today's behaviour, and
 ``tenant`` (and ``agent``) rows are unchanged for every principal.
@@ -37,6 +47,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -46,6 +57,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 from app.api.v1.endpoints.memory import MemoryPrincipal, withheld_scopes
+from app.jobs.memory_lifecycle import reindex_once
 from app.services import memory_store as store
 from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
@@ -545,7 +557,7 @@ class TestSupersede:
 # ---------------------------------------------------------------------------
 
 
-def _stats_facets(mc: MemoryClient) -> dict[str, Any]:
+def _get_facets(mc: MemoryClient) -> dict[str, Any]:
     resp = mc.client.get("/api/v1/memory/stats")
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -559,7 +571,7 @@ class TestStats:
         self, mc: MemoryClient
     ) -> None:
         _Corpus(mc)
-        facets = _stats_facets(_as(mc, "device"))
+        facets = _get_facets(_as(mc, "device"))
         # The bucket stays (the contract is exhaustive) and reads 0: the
         # device can retrieve no session row.
         assert facets["by_scope"]["session"] == 0
@@ -574,7 +586,7 @@ class TestStats:
     @pytest.mark.parametrize("actor", ["coord_service", "operator"])
     def test_admitted_facets_are_unchanged(self, mc: MemoryClient, actor: str) -> None:
         _Corpus(mc)
-        facets = _stats_facets(_as(mc, actor))
+        facets = _get_facets(_as(mc, actor))
         assert facets["by_scope"]["session"] == 1
         assert facets["live_row_count"] == 4
         assert "the private session title" in facets["recent_titles"]
@@ -589,7 +601,7 @@ class TestStats:
         resp = mc.client.post("/api/v1/memory/query", json={"query_text": "wombat"})
         assert resp.status_code == 200, resp.text
         assert resp.json()["live_row_count"] == 3
-        assert resp.json()["live_row_count"] == _stats_facets(mc)["live_row_count"]
+        assert resp.json()["live_row_count"] == _get_facets(mc)["live_row_count"]
 
 
 # ---------------------------------------------------------------------------
@@ -1199,3 +1211,104 @@ class TestLifecycleSelectors:
                 assert frozenset({session_row, tenant_row}) not in pairs
         assert frozenset({s1, s2}) not in pairs
         assert frozenset({s1b, s2}) not in pairs
+
+
+class TestStaleSessionVectors:
+    def test_stale_session_vector_is_degraded_not_left_pinning_the_probe(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        tenant = mc.tenant_id
+        stale_tag = f"{EMBEDDING_MODEL_TAG}-previous"
+        vector = store.format_pgvector(_client_vector("a session vector"))
+        private = uuid4()
+        shared = uuid4()
+
+        async def _go(s: AsyncSession) -> tuple[bool, int, bool, Any, Any]:
+            # One transaction, so the scheduler's own reindex sweep (which
+            # also runs during the suite) cannot degrade the row first and
+            # turn the positive control below into a vacuous pass.
+            for memory_id, scope, scope_ref, tag in (
+                (private, "session", _SESSION_REF, stale_tag),
+                (shared, "tenant", None, EMBEDDING_MODEL_TAG),
+            ):
+                await s.execute(
+                    text(
+                        """
+                        INSERT INTO coord.memory_records
+                            (memory_id, tenant_id, scope, scope_ref, kind, title,
+                             content, content_hash, importance, embedding,
+                             embedding_model)
+                        VALUES
+                            (:memory_id, :tenant, :scope, :scope_ref, 'episode',
+                             't', :content, :content_hash, 0.5,
+                             CAST(:embedding AS vector), :tag)
+                        """
+                    ),
+                    {
+                        "memory_id": memory_id,
+                        "tenant": tenant,
+                        "scope": scope,
+                        "scope_ref": scope_ref,
+                        "content": f"content {memory_id}",
+                        "content_hash": f"hash-{memory_id}",
+                        "embedding": vector,
+                        "tag": tag,
+                    },
+                )
+            before = await store.has_unmigrated_vectors(
+                s, tenant_id=tenant, current_tag=EMBEDDING_MODEL_TAG
+            )
+            degraded = await store.degrade_stale_session_vectors(
+                s, current_tag=EMBEDDING_MODEL_TAG
+            )
+            after = await store.has_unmigrated_vectors(
+                s, tenant_id=tenant, current_tag=EMBEDDING_MODEL_TAG
+            )
+            rows = {
+                r.memory_id: r
+                for r in await s.execute(
+                    text(
+                        "SELECT memory_id, embedding IS NULL AS no_vec,"
+                        " embedding_model FROM coord.memory_records"
+                        " WHERE memory_id = ANY(:ids)"
+                    ),
+                    {"ids": [private, shared]},
+                )
+            }
+            return before, degraded, after, rows[private], rows[shared]
+
+        before, degraded, after, private_row, shared_row = _run(memory_engine, _go)
+        # Positive control: the stale session vector alone pins the probe.
+        assert before is True
+        assert degraded >= 1
+        assert after is False
+        assert private_row.no_vec is True
+        assert private_row.embedding_model is None
+        # A current-tag tenant row is untouched.
+        assert shared_row.no_vec is False
+        assert shared_row.embedding_model == EMBEDDING_MODEL_TAG
+
+    def test_reindex_sweep_degrades_and_reports_session_vectors(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        private = _seed_row(
+            memory_engine, mc.tenant_id, scope="session", scope_ref=_SESSION_REF
+        )
+        _exec(
+            memory_engine,
+            [
+                "UPDATE coord.memory_records SET embedding_model = :tag"
+                " WHERE memory_id = :memory_id"
+            ],
+            tag=f"{EMBEDDING_MODEL_TAG}-previous",
+            memory_id=private,
+        )
+        stats = _run(memory_engine, lambda s: reindex_once(s))
+        assert "degraded_session_vectors" in stats
+        no_vec = _scalar(
+            memory_engine,
+            "SELECT embedding IS NULL FROM coord.memory_records"
+            " WHERE memory_id = :memory_id",
+            memory_id=private,
+        )
+        assert no_vec is True
