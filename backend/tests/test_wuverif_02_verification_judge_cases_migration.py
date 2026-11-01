@@ -351,8 +351,11 @@ def test_defaults_and_the_cascade_back_to_the_verdict() -> None:
         assert has_created is True
 
         # A label of a verdict that does not exist is refused.
-        with pytest.raises(sqlalchemy.exc.IntegrityError):
-            _insert(engine, _labelled(uuid.uuid4()))
+        _refused_by(
+            engine,
+            _labelled(uuid.uuid4()),
+            "verification_judge_cases_verification_id_fkey",
+        )
 
         # Deleting the unit cascades through its verdict to the label; the
         # plant, which names no verdict, survives.

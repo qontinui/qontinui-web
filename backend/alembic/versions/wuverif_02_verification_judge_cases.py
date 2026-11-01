@@ -185,8 +185,9 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.verification_judge_cases.labelled_by IS
-        'Derived by coord from the authenticated identity (operator principal or '
-        'agent/device session id); never a request body field.'
+        'Operator principal id or agent/device session id, derived by coord from '
+        'the authenticated identity; coord::consequence for rows the in-process '
+        'consequence sweep writes. Never a request body field.'
         """
     )
 
