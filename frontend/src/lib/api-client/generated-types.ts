@@ -8718,6 +8718,12 @@ export interface paths {
          *     safe (the depth cap terminates the recursion; duplicate edges
          *     collapse). 404 when the root does not exist in the caller's tenant
          *     (cross-tenant ids are never disclosed).
+         *
+         *     A scope :func:`withheld_scopes` withholds from this principal
+         *     (``session``, for a device JWT) is invisible to the walk: such a root
+         *     answers the same 404 as an unknown one, and the walk never steps onto
+         *     such a node — so neither the node nor any edge into it, nor anything
+         *     reached only through it, is returned.
          */
         post: operations["api_v1_memory_graph_post"];
         delete?: never;
@@ -8789,6 +8795,11 @@ export interface paths {
          *     not match the job (wrong kind, wrong vector count, wrong dimension,
          *     unaccepted model tag), which leaves the job ``claimed`` so the runner
          *     can still post a correct result before its lease expires.
+         *
+         *     A job with a target in a scope :func:`withheld_scopes` withholds from
+         *     this principal is the same 404 as an unknown job, on the failure path
+         *     too: such a principal may not write onto that row, nor learn the job
+         *     exists.
          */
         post: operations["api_v1_memory_jobs_job_id_result_post"];
         delete?: never;
@@ -8875,6 +8886,10 @@ export interface paths {
          *
          *     The request body is ``extra="forbid"``: an unrecognized key is a 422
          *     naming the field rather than a silently wider query.
+         *
+         *     ``scopes`` naming a scope :func:`withheld_scopes` withholds from this
+         *     principal (``session``, for a device JWT) is a 403: the caller asked for
+         *     a partition this door cannot prove is theirs.
          */
         post: operations["api_v1_memory_query_post"];
         delete?: never;
@@ -8905,6 +8920,11 @@ export interface paths {
          *     ``created_at``, so the old ``memory_id`` UUID tiebreak paginated a
          *     batch in random order) and stable under concurrent writes (new rows
          *     only ever prepend).
+         *
+         *     Rows in a scope :func:`withheld_scopes` withholds from this principal
+         *     (``session``, for a device JWT) are LEFT OUT — filtered in SQL, so a
+         *     page is still ``limit`` rows of what the caller may see and the cursor
+         *     stays exact — and so is a visible row's link whose target is one.
          */
         get: operations["api_v1_memory_records_get"];
         put?: never;
@@ -8917,6 +8937,12 @@ export interface paths {
          *     ``(tenant_id, content_hash)`` against live rows only. Each record
          *     carries its own caller-computed ``embedding`` (+ ``embedding_model``)
          *     or neither, in which case that row is stored unvectorized.
+         *
+         *     A record naming a scope :func:`withheld_scopes` withholds from this
+         *     principal (``session``, for a device JWT) refuses the WHOLE batch with
+         *     403 before anything is written. A record whose CONTENT is already held
+         *     by a live row in such a scope refuses the batch with 409 and no id — see
+         *     :func:`_withheld_duplicate_conflict`.
          */
         post: operations["api_v1_memory_records_post"];
         delete?: never;
@@ -8944,8 +8970,9 @@ export interface paths {
          *     :class:`MemoryRecordByIdResponse` for the precedence. A tombstoned
          *     row's ``title`` and ``content`` are withheld (``null``).
          *
-         *     404 when the id does not exist OR belongs to another tenant — the two
-         *     are deliberately indistinguishable. Read-only: does not bump
+         *     404 when the id does not exist OR belongs to another tenant OR sits in
+         *     a scope :func:`withheld_scopes` withholds from this principal — the
+         *     three are deliberately indistinguishable. Read-only: does not bump
          *     ``access_count``.
          */
         get: operations["api_v1_memory_records_memory_id_get"];
@@ -8955,7 +8982,9 @@ export interface paths {
          * Delete Record
          * @description Tombstone a record (``is_tombstone = true, valid_until = now()``).
          *
-         *     404 for records that don't exist in the caller's tenant.
+         *     404 for records that don't exist in the caller's tenant, or that sit in
+         *     a scope :func:`withheld_scopes` withholds from this principal — the
+         *     same detail either way, and the withheld row is left untouched.
          */
         delete: operations["api_v1_memory_records_memory_id_delete"];
         options?: never;
@@ -8991,7 +9020,8 @@ export interface paths {
          *     passes.
          *
          *     404 for records that don't exist in the caller's tenant (cross-tenant
-         *     ids are never disclosed).
+         *     ids are never disclosed), or that sit in a scope :func:`withheld_scopes`
+         *     withholds from this principal — the same detail, and nothing written.
          */
         put: operations["api_v1_memory_records_memory_id_hold_put"];
         post?: never;
@@ -9008,7 +9038,8 @@ export interface paths {
          *
          *     Idempotent: releasing an unheld record is a no-op that reports
          *     ``held=False``. 404 only when the record does not exist in the
-         *     caller's tenant.
+         *     caller's tenant, or sits in a scope :func:`withheld_scopes` withholds
+         *     from this principal (the same detail; nothing written).
          */
         delete: operations["api_v1_memory_records_memory_id_hold_delete"];
         options?: never;
@@ -9037,6 +9068,13 @@ export interface paths {
          *     ``anchors`` ARE inherited when omitted (unlike ``embedding``) — see
          *     the comment on the insert below for why the two go opposite ways.
          *     This is the "superseded, or corrected" arm of the plan's Phase 6.
+         *
+         *     A predecessor in a scope :func:`withheld_scopes` withholds from this
+         *     principal is the same 404 as an unknown id — checked BEFORE the payload,
+         *     because an omitted ``scope``/``scope_ref`` INHERITS the predecessor's, so
+         *     checking only the payload would let a device supersede a peer's session
+         *     row by id and write the successor into that partition. A payload that
+         *     names a withheld scope itself is a 403.
          */
         post: operations["api_v1_memory_records_memory_id_supersede_post"];
         delete?: never;
@@ -9060,6 +9098,15 @@ export interface paths {
          *     "what is in here" — the read an agent needs BEFORE guessing at query
          *     vocabulary. ``corpus_complete`` distinguishes a genuinely small
          *     corpus from a facet read that degraded.
+         *
+         *     ``facets`` describes the corpus THIS principal can retrieve: rows in a
+         *     scope :func:`withheld_scopes` withholds (``session``, for a device JWT)
+         *     are excluded from its counts and its title sample. The quota fields
+         *     (``row_count``, ``bytes``, ``lifecycle_held``) and ``embedding_coverage``
+         *     are tenant posture, not content, and still count every row — an
+         *     accepted residual (coord finding ``fd4ffbaa``): a device can see
+         *     ``row_count`` move while its facets do not, which discloses the session
+         *     partition's size and write cadence, though none of its content.
          */
         get: operations["api_v1_memory_stats_get"];
         put?: never;
