@@ -75,9 +75,12 @@ export interface OperatorLabelRecord {
  * - `not_found` — `404`: `verification_not_found`, or no `code` at all when
  *   the door itself is not deployed;
  * - `rejected` — definitely NOT recorded: any other `4xx` (a `422`, a `409`
- *   that is not `duplicate_label`), or one of the web's own `502`s that says
- *   coord never took the write (`coord_unreachable`: coord was never reached;
- *   `coord_verification_label_credential_refused`: coord refused the bearer);
+ *   that is not `duplicate_label`), or one of the web backend's OWN `502`s
+ *   that says coord never took the write (`coord_unreachable`: coord was never
+ *   reached; `coord_verification_label_credential_refused`: coord refused the
+ *   bearer). "Own" is the {@link REFUSAL_ORIGIN_HEADER} header, which only the
+ *   web's exception handler sets: a coord `502` passed through with the same
+ *   discriminator is `unknown`;
  * - `unknown` — not known either way: no answer (`status: null`), a `504`,
  *   any other `5xx`, or a `201` whose body is not the requested row. Only
  *   this one is worth answering again.
@@ -98,6 +101,14 @@ const NOT_TAKEN_DISCRIMINATORS: readonly string[] = [
   "coord_unreachable",
   "coord_verification_label_credential_refused",
 ];
+
+/**
+ * Set (to {@link REFUSAL_ORIGIN_WEB}) by the web backend's exception handler on
+ * every refusal it raised itself (`app/core/refusal.py`), and never echoed from
+ * a proxied coord response.
+ */
+export const REFUSAL_ORIGIN_HEADER = "X-Qontinui-Refusal-Origin";
+export const REFUSAL_ORIGIN_WEB = "web";
 
 function asRecord(body: unknown): Record<string, unknown> | null {
   return typeof body === "object" && body !== null && !Array.isArray(body)
@@ -216,9 +227,12 @@ export async function recordOperatorLabel(
   if (res.status === 403) return { kind: "refused", code, message: said };
   if (res.status === 404) return { kind: "not_found", code, message: said };
   const discriminator = refusalDiscriminator(body);
+  const raisedByWeb =
+    res.headers.get(REFUSAL_ORIGIN_HEADER) === REFUSAL_ORIGIN_WEB;
   if (
     (res.status >= 400 && res.status < 500) ||
     (res.status === 502 &&
+      raisedByWeb &&
       discriminator !== null &&
       NOT_TAKEN_DISCRIMINATORS.includes(discriminator))
   ) {

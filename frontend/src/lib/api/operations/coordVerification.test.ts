@@ -28,16 +28,29 @@ const RECORD = {
   created_at: "2026-11-01T12:00:00Z",
 };
 
-/** The web backend's refusal envelope, as production renders a 5xx it raised. */
-const webRefusal = (discriminator: string, status: number) =>
-  json(
-    {
+/**
+ * A refusal envelope with a 5xx status: as the web backend's own handler
+ * renders it (`origin: "web"`, with the origin header), or as coord's body
+ * passed through verbatim (no header).
+ */
+const refusalResponse = (
+  discriminator: string,
+  status: number,
+  origin: "web" | "coord" = "web"
+) =>
+  new Response(
+    JSON.stringify({
       error: "upstream_unavailable",
       message: "m",
       refusal: { discriminator },
-    },
-    status
+    }),
+    {
+      status,
+      headers: origin === "web" ? { "X-Qontinui-Refusal-Origin": "web" } : {},
+    }
   );
+const webRefusal = (discriminator: string, status: number) =>
+  refusalResponse(discriminator, status, "web");
 
 describe("recordOperatorLabel", () => {
   afterEach(() => {
@@ -109,6 +122,23 @@ describe("recordOperatorLabel", () => {
         message: "m",
       });
     }
+  });
+
+  it("a coord 502 passed through with the same discriminator is unknown, not rejected", async () => {
+    for (const d of [
+      "coord_unreachable",
+      "coord_verification_label_credential_refused",
+    ]) {
+      fetchMock.mockResolvedValueOnce(refusalResponse(d, 502, "coord"));
+      await expect(recordOperatorLabel(VID, "holds")).resolves.toEqual({
+        kind: "unknown",
+        status: 502,
+        message: "m",
+      });
+    }
+    // The header alone, on a discriminator that does not mean "not taken".
+    fetchMock.mockResolvedValueOnce(webRefusal("coord_read_answer_lost", 502));
+    expect((await recordOperatorLabel(VID, "holds")).kind).toBe("unknown");
   });
 
   it("a 403 is refused, with coord's code", async () => {

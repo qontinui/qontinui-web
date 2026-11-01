@@ -10,9 +10,10 @@
  * Optional by construction: nothing waits on it and nothing is hidden behind
  * it. A click posts the label (`recordOperatorLabel`) and the control then
  * shows what came back — the row coord recorded, "already labelled" for a
- * verdict labelled before, or why it was not recorded. "Answer again" is
- * offered only when the outcome is not known either way; a definite refusal
- * (403, 422, any other 4xx) is final. The words are derived in
+ * verdict labelled before, or why it was not recorded. Only an outcome that
+ * is not known either way is amber and offers "Answer again"; a definite
+ * refusal (403, 404, 422, any other 4xx, the web's own 502s) is final and
+ * muted (console style R3). The line truncates with a title (R2). The words are derived in
  * `verificationMetrics.ts` (`operatorLabelOutcome`, console style R8).
  */
 
@@ -52,7 +53,7 @@ export function OperatorLabelControl({
     return (
       <span
         className={cn(
-          "inline-flex items-center gap-2 text-xs",
+          "inline-flex max-w-full min-w-0 items-center gap-2 text-xs",
           outcome.attention
             ? "text-amber-700 dark:text-amber-300"
             : "text-muted-foreground"
@@ -61,7 +62,9 @@ export function OperatorLabelControl({
         data-testid="coord-verification-label-outcome"
         data-label-outcome={state.result.kind}
       >
-        {outcome.text}
+        <span className="min-w-0 truncate" title={outcome.text}>
+          {outcome.text}
+        </span>
         {outcome.retry && (
           <Button
             size="sm"

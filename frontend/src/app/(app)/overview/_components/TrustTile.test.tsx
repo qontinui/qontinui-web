@@ -313,7 +313,7 @@ describe("TrustTile — verifier agreement", () => {
     const line = agreementLine(await settled("could_not_look"));
     expect(line.getAttribute("data-agreement-state")).toBe("unknown");
     expect(line.textContent).toBe(
-      "verifier agreement unknown — the metrics door did not answer"
+      "verifier agreement unknown — the metrics could not be read"
     );
   });
 });

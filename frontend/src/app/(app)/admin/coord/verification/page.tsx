@@ -228,31 +228,41 @@ function AgreementLine({ agreement }: { agreement: AgreementView }) {
 }
 
 function LabelSampleItem({ row }: { row: LabelSampleRow }) {
+  // One record, one line (R2): identity, verdict, time, then the answer slot
+  // last. Overflow truncates with a title; the verdict id lives in a title
+  // only (R8).
+  const answered = row.operatorLabel
+    ? `already labelled: ${choiceLabel(row.operatorLabel.truth)}`
+    : null;
   return (
     <li
-      className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm"
+      className="flex min-w-0 items-center gap-3 text-sm"
       data-testid="coord-verification-label-sample-row"
       data-verification-id={row.verificationId}
     >
-      <span className="font-mono text-xs">
-        {row.slug ?? `verdict ${row.verificationId}`}
+      <span
+        className="min-w-0 flex-1 truncate font-mono text-xs"
+        title={`${row.label} — verdict ${row.verificationId}`}
+      >
+        {row.label}
       </span>
-      <span className="text-muted-foreground">{row.verdict}</span>
-      <span className="ml-auto text-xs text-muted-foreground">
+      <span className="shrink-0 text-muted-foreground">{row.verdict}</span>
+      <span className="shrink-0 text-xs text-muted-foreground">
         <Stamp iso={row.recordedAt} />
       </span>
-      <span className="basis-full">
-        {row.operatorLabel ? (
-          <span
-            className="text-xs text-muted-foreground"
-            data-testid="coord-verification-label-already"
-          >
-            already labelled: {choiceLabel(row.operatorLabel.truth)}
-          </span>
-        ) : (
+      {answered ? (
+        <span
+          className="min-w-0 max-w-[40ch] truncate text-xs text-muted-foreground"
+          title={answered}
+          data-testid="coord-verification-label-already"
+        >
+          {answered}
+        </span>
+      ) : (
+        <span className="min-w-0 max-w-[60ch] truncate">
           <OperatorLabelControl verificationId={row.verificationId} />
-        )}
-      </span>
+        </span>
+      )}
     </li>
   );
 }

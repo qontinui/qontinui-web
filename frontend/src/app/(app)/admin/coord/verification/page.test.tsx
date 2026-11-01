@@ -191,6 +191,16 @@ describe("CoordVerificationPage — verifier agreement and the operator label", 
       )
     ).toBeNull();
     expect(rows[2]?.textContent).toContain("unverifiable");
+    // No slug: named "unnamed verdict", the id only in a title.
+    expect(rows[2]?.textContent).toContain("unnamed verdict");
+    expect(rows[2]?.textContent).not.toContain(
+      "9e000000-0000-4000-8000-000000000003"
+    );
+    expect(
+      within(rows[2] as HTMLElement)
+        .getByText("unnamed verdict")
+        .getAttribute("title")
+    ).toContain("9e000000-0000-4000-8000-000000000003");
     expect(
       screen.getAllByTestId("coord-verification-label-control")
     ).toHaveLength(2);
@@ -264,6 +274,9 @@ describe("CoordVerificationPage — verifier agreement and the operator label", 
     let outcome = await screen.findByTestId("coord-verification-label-outcome");
     expect(outcome.getAttribute("data-label-outcome")).toBe("rejected");
     expect(outcome.textContent).toMatch(/^Not recorded/);
+    // Final and known: muted, not amber, and not offered again.
+    expect(outcome.className).toContain("text-muted-foreground");
+    expect(outcome.className).not.toContain("amber");
     expect(screen.queryByTestId("coord-verification-label-again")).toBeNull();
     unmount();
 
@@ -279,6 +292,7 @@ describe("CoordVerificationPage — verifier agreement and the operator label", 
     outcome = await screen.findByTestId("coord-verification-label-outcome");
     expect(outcome.getAttribute("data-label-outcome")).toBe("unknown");
     expect(outcome.textContent).toMatch(/^Not known to be recorded/);
+    expect(outcome.className).toContain("amber");
     expect(screen.getByTestId("coord-verification-label-again")).toBeTruthy();
   });
 
@@ -361,8 +375,8 @@ describe("CoordVerificationPage — verifier agreement and the operator label", 
     render(<CoordVerificationPage />);
     line = await screen.findByTestId("coord-verification-agreement");
     expect(line.getAttribute("data-agreement-state")).toBe("unknown");
-    expect(line.textContent).toBe(
-      "verifier agreement unknown — the metrics door did not answer"
+    expect(line.textContent).toMatch(
+      /^verifier agreement unknown — the metrics could not be read \(.+\)$/
     );
   });
 });

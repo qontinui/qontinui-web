@@ -562,12 +562,16 @@ export function deriveTrustView(
  * `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
  * Phase 4: `verifier agreement κ 0.71 (seeded n=24) · operator n=6`.
  *
- * - `populated` — a seeded kappa, with the seeded binary n and the operator n;
- * - `insufficient` — fewer than 20 seeded binary cases: words only, no count
- *   and no kappa;
+ * - `populated` — a seeded kappa over at least {@link AGREEMENT_MIN_CASES}
+ *   binary cases with no reason attached, with the seeded binary n and the
+ *   operator n (the operator side carries a count only, never a kappa);
+ * - `insufficient` — fewer than {@link AGREEMENT_MIN_CASES} seeded binary
+ *   cases: words only, no count and no kappa, whatever else coord sent;
  * - `undefined` — enough cases, but kappa has no value (expected agreement 1);
- * - `unknown` — the door did not answer, coord could not read the cases, or
- *   this coord build does not serve them. Never a number and never zero.
+ * - `unknown` — the metrics could not be read, coord could not look (a
+ *   degraded answer shows no kappa even if it carries one), coord could not
+ *   read the cases, this coord build does not serve them, or coord's fields
+ *   contradict each other. Never a number and never zero.
  */
 export type AgreementView =
   | { state: "loading"; text: "" }
@@ -578,10 +582,13 @@ export type AgreementView =
 
 export const AGREEMENT_INSUFFICIENT_TEXT = "not enough labelled cases yet";
 
+/** Below this many binary cases a kappa is not shown (coord's `n<20`). */
+export const AGREEMENT_MIN_CASES = 20;
+
 /**
- * Where the line renders. The overview `tile` says a fixed sentence when coord
- * could not read the labelled cases; only the drill-down `page` quotes coord's
- * own `judge_agreement_error`.
+ * Where the line renders. The overview `tile` says a fixed sentence when the
+ * metrics or the labelled cases could not be read; only the drill-down `page`
+ * quotes the reason (the read's own, or coord's `judge_agreement_error`).
  */
 export type AgreementSurface = "tile" | "page";
 
@@ -619,9 +626,17 @@ export function deriveVerifierAgreement(
 ): AgreementView {
   if (read.status === "loading") return { state: "loading", text: "" };
   if (read.status === "error") {
-    return unknownAgreement("the metrics door did not answer");
+    // Covers no answer, a body that would not parse and an unloadable
+    // project list alike, so the words claim none of them.
+    return unknownAgreement(
+      surface === "page"
+        ? `the metrics could not be read (${read.reason})`
+        : "the metrics could not be read"
+    );
   }
   const m = read.metrics;
+  // "Nothing here is known": no kappa under it, whatever block came along.
+  if (m.degraded) return unknownAgreement("coord could not look");
   if (typeof m.judge_agreement_error === "string") {
     return unknownAgreement(
       surface === "page"
@@ -630,9 +645,7 @@ export function deriveVerifierAgreement(
     );
   }
   if (m.judge_agreement == null) {
-    return unknownAgreement(
-      m.degraded ? "coord could not look" : "this coord build does not serve it"
-    );
+    return unknownAgreement("this coord build does not serve it");
   }
   const raw: unknown = m.judge_agreement;
   const seeded = isObject(raw) ? readAgreementSource(raw.seeded) : null;
@@ -645,26 +658,26 @@ export function deriveVerifierAgreement(
   const operatorPart = operator
     ? `operator n=${operator.n}`
     : "operator n unknown";
-  if (seeded.kappa !== null) {
-    return {
-      state: "populated",
-      text: `verifier agreement κ ${kappaText(seeded.kappa)} (seeded n=${seeded.binary_n}) · ${operatorPart}`,
-    };
-  }
-  if (seeded.reason === "n<20") {
+  if (seeded.binary_n < AGREEMENT_MIN_CASES) {
     return {
       state: "insufficient",
       text: `verifier agreement: ${AGREEMENT_INSUFFICIENT_TEXT}`,
     };
   }
-  if (seeded.reason === "undefined") {
+  if (seeded.kappa !== null && seeded.reason === null) {
+    return {
+      state: "populated",
+      text: `verifier agreement κ ${kappaText(seeded.kappa)} (seeded n=${seeded.binary_n}) · ${operatorPart}`,
+    };
+  }
+  if (seeded.kappa === null && seeded.reason === "undefined") {
     return {
       state: "undefined",
       text: `verifier agreement undefined (n=${seeded.binary_n}) · ${operatorPart}`,
     };
   }
   return unknownAgreement(
-    `coord served no kappa and no reason this page recognises (${seeded.reason ?? "none"})`
+    `coord served a kappa and a reason that disagree (${seeded.reason ?? "no reason"})`
   );
 }
 
@@ -675,6 +688,8 @@ export function deriveVerifierAgreement(
 /** One sampled verdict, as the label-sample door names it. */
 export interface LabelSampleRow {
   verificationId: string;
+  /** What the row is called: the work-unit slug, or "unnamed verdict". */
+  label: string;
   slug: string | null;
   verdict: VerifierVerdict;
   recordedAt: string;
@@ -703,6 +718,9 @@ export type LabelSampleView =
 
 const NOT_NOTHING = "Not the same as nothing to label.";
 
+/** A sampled verdict with no work-unit slug; its id goes in a `title` only. */
+export const UNNAMED_VERDICT = "unnamed verdict";
+
 function readSampleRow(v: unknown): LabelSampleRow | null {
   if (
     !isObject(v) ||
@@ -728,6 +746,7 @@ function readSampleRow(v: unknown): LabelSampleRow | null {
   }
   return {
     verificationId: v.verification_id,
+    label: v.work_unit_slug ?? UNNAMED_VERDICT,
     slug: v.work_unit_slug,
     verdict: v.verdict,
     recordedAt: v.recorded_at,
@@ -810,9 +829,9 @@ const TRUTH_WORDS: Record<OperatorLabelTruth, string> = {
 /**
  * What the control says after a click. `recorded` quotes the row coord wrote
  * back; `already_labelled` is not an error — the verdict was labelled before.
- * `attention` marks the answers where the label is NOT known to be stored;
- * `retry` is set only when it is not known either way (`unknown`) — a
- * definite refusal is not answered again.
+ * `refused`, `not_found` and `rejected` are final and known: muted, no retry
+ * (console style R3 — nobody has to act on them). Only `unknown` — stored or
+ * not, nobody can say — is `attention` and offers `retry`.
  */
 export function operatorLabelOutcome(r: OperatorLabelResult): {
   text: string;
@@ -835,7 +854,7 @@ export function operatorLabelOutcome(r: OperatorLabelResult): {
     case "refused":
       return {
         text: `Not recorded — coord refused it${r.code ? ` (${r.code})` : ""}: ${r.message}`,
-        attention: true,
+        attention: false,
         retry: false,
       };
     case "not_found":
@@ -844,13 +863,13 @@ export function operatorLabelOutcome(r: OperatorLabelResult): {
           r.code === "verification_not_found"
             ? "Not recorded — coord has no such verdict in this project"
             : `Not recorded — the label door is not answering (HTTP 404): ${r.message}`,
-        attention: true,
+        attention: false,
         retry: false,
       };
     case "rejected":
       return {
         text: `Not recorded — HTTP ${r.status}${r.code ? ` ${r.code}` : ""}: ${r.message}`,
-        attention: true,
+        attention: false,
         retry: false,
       };
     case "unknown":
