@@ -229,8 +229,8 @@ function AgreementLine({ agreement }: { agreement: AgreementView }) {
 
 function LabelSampleItem({ row }: { row: LabelSampleRow }) {
   // One record, one line (R2): identity, verdict, time, then the answer slot
-  // last. Overflow truncates with a title; the verdict id lives in a title
-  // only (R8).
+  // last. Text overflow truncates with a title; the verdict id lives in a
+  // title only (R8).
   const answered = row.operatorLabel
     ? `already labelled: ${choiceLabel(row.operatorLabel.truth)}`
     : null;
@@ -259,7 +259,10 @@ function LabelSampleItem({ row }: { row: LabelSampleRow }) {
           {answered}
         </span>
       ) : (
-        <span className="min-w-0 max-w-[60ch] truncate">
+        // Never shrinks: the buttons must stay whole on a narrow row (the
+        // label gives way instead). Only the outcome text truncates, with its
+        // own title, inside the bounded slot.
+        <span className="max-w-[60ch] shrink-0">
           <OperatorLabelControl verificationId={row.verificationId} />
         </span>
       )}

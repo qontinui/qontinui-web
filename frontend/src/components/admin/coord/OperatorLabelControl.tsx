@@ -87,7 +87,8 @@ export function OperatorLabelControl({
       aria-label="Did this hold up?"
       data-testid="coord-verification-label-control"
     >
-      Did this hold up?
+      {/* The group's aria-label carries the question on every width. */}
+      <span className="hidden sm:inline">Did this hold up?</span>
       {OPERATOR_LABEL_CHOICES.map((c) => (
         <Button
           key={c.truth}

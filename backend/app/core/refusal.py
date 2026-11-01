@@ -97,6 +97,11 @@ REFUSAL_KEY = "refusal"
 #: web backend itself decided the answer. Only the handler sets it, and the
 #: verbatim coord proxies echo no upstream header but ``Retry-After``, so a
 #: passed-through coord response can never carry it.
+#:
+#: The frontend reads the same name as ``REFUSAL_ORIGIN_HEADER`` in
+#: ``frontend/src/lib/api/operations/coordVerification.ts``; both sides are
+#: pinned to the literal by a test (``test_operations_verification_label_proxy.py``
+#: and ``coordVerification.test.ts``), so rename them together.
 REFUSAL_ORIGIN_HEADER = "X-Qontinui-Refusal-Origin"
 REFUSAL_ORIGIN_WEB = "web"
 

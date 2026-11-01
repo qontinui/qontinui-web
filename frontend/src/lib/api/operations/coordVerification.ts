@@ -106,6 +106,11 @@ const NOT_TAKEN_DISCRIMINATORS: readonly string[] = [
  * Set (to {@link REFUSAL_ORIGIN_WEB}) by the web backend's exception handler on
  * every refusal it raised itself (`app/core/refusal.py`), and never echoed from
  * a proxied coord response.
+ *
+ * The same name as the backend's `REFUSAL_ORIGIN_HEADER` in
+ * `backend/app/core/refusal.py`; both are pinned to the literal by a test
+ * (`coordVerification.test.ts` and `test_operations_verification_label_proxy.py`),
+ * so rename them together.
  */
 export const REFUSAL_ORIGIN_HEADER = "X-Qontinui-Refusal-Origin";
 export const REFUSAL_ORIGIN_WEB = "web";

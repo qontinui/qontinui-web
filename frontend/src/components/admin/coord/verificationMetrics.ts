@@ -677,7 +677,9 @@ export function deriveVerifierAgreement(
     };
   }
   return unknownAgreement(
-    `coord served a kappa and a reason that disagree (${seeded.reason ?? "no reason"})`
+    seeded.kappa !== null
+      ? `coord served a kappa beside a reason (${seeded.reason})`
+      : `coord served no kappa and no reason this page recognises (${seeded.reason ?? "none"})`
   );
 }
 

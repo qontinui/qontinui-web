@@ -173,6 +173,12 @@ describe("CoordVerificationPage — verifier agreement and the operator label", 
     expect(section.textContent).toContain("2026-W44");
     expect(rows[0]?.textContent).toContain("2026-10-01-widget-import");
     expect(rows[0]?.textContent).toContain("survived");
+    // The idle control's slot never shrinks or clips: the buttons stay whole.
+    const slot = within(rows[0] as HTMLElement).getByTestId(
+      "coord-verification-label-control"
+    ).parentElement as HTMLElement;
+    expect(slot.className).toContain("shrink-0");
+    expect(slot.className).not.toContain("truncate");
     expect(
       within(rows[0] as HTMLElement).getByTestId(
         "coord-verification-label-control"
