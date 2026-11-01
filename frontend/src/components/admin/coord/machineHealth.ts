@@ -551,7 +551,9 @@ export function readRosterCut(body: RosterCutRef): RosterCut {
       kind: "cut_degradable",
       listed,
       total: cutTotal,
-      degradableDropped: droppedOversized ? null : degradableDropped,
+      // Already null when oversized: `isCount` and `isOversizedCount` are
+      // disjoint, so an oversized value never parsed as a count.
+      degradableDropped,
       hardLimit: rowCapField(body.row_cap, "hard"),
     };
   }
