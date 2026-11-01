@@ -1396,6 +1396,46 @@ class TestTransportStatusesSayWhetherCoordMayHaveActed:
         assert (await self._status_of(handler)).status_code == 504
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["PUT", "GET"])
+    async def test_a_timeout_is_a_typed_refusal(self, method: str) -> None:
+        """Built with ``refusal_error``: a typed next action, coord named, and a
+        write told to re-read before retrying (it may have landed)."""
+        from app.core.refusal import RefusalHTTPException
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("slow", request=request)
+
+        err = await self._status_of(handler, method=method)
+        assert isinstance(err, RefusalHTTPException)
+        assert err.status_code == 504
+        assert err.refusal.code.value == "upstream_timeout"
+        assert err.refusal.next_action.kind.value == "retry_later"
+        assert err.refusal.discriminator == "agent_registry_coord_timeout"
+        assert [t.value for t in err.refusal.glossary_terms] == ["coord"]
+        assert err.detail.startswith("timeout waiting for coord")
+        assert ("may have been applied" in err.detail) == (method != "GET")
+
+    @pytest.mark.asyncio
+    async def test_every_answer_lost_504_is_a_typed_refusal(self) -> None:
+        from app.core.refusal import RefusalHTTPException
+
+        def lost(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadError("cut", request=request)
+
+        def not_json(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="<html>from a proxy</html>")
+
+        for handler, discriminator in (
+            (lost, "agent_registry_coord_answer_lost"),
+            (not_json, "agent_registry_coord_no_usable_answer"),
+        ):
+            err = await self._status_of(handler)
+            assert isinstance(err, RefusalHTTPException)
+            assert err.status_code == 504
+            assert err.refusal.discriminator == discriminator
+            assert err.refusal.next_action.kind.value == "retry_later"
+
+    @pytest.mark.asyncio
     async def test_a_lost_read_names_nothing_to_re_read(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ReadError("cut", request=request)

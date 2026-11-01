@@ -76,6 +76,13 @@ from app.api.coord_proxy import (
     require_coord_tenant_admin,
 )
 from app.core.config import settings
+from app.core.refusal import (
+    GlossaryTerm,
+    NextActionKind,
+    RefusalCode,
+    RefusalHTTPException,
+    refusal_error,
+)
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
 
@@ -144,20 +151,38 @@ def _answer_lost_detail(method: str, what_happened: str) -> str:
     )
 
 
+def _answer_lost(
+    method: str, what_happened: str, *, code: RefusalCode, discriminator: str
+) -> RefusalHTTPException:
+    """The 504 for a request coord may have acted on with no usable answer.
+
+    ``retry_later`` is the next action; for a write the message says to re-read
+    first (:func:`_answer_lost_detail`), because the change may have landed.
+    """
+    return refusal_error(
+        status.HTTP_504_GATEWAY_TIMEOUT,
+        code,
+        NextActionKind.retry_later,
+        _answer_lost_detail(method, what_happened),
+        discriminator=discriminator,
+        glossary_terms=[GlossaryTerm.coord],
+    )
+
+
 def _no_usable_answer(
     method: str, path: str, resp: httpx.Response, what_came: str
-) -> HTTPException:
+) -> RefusalHTTPException:
     """The 504 for an answer below 400 that this door cannot use. Coord answered,
     so it may have acted; the status is named because it is all there is to go on.
     """
     logger.warning(
         "coord_answer_lost", method=method, path=path, status=resp.status_code
     )
-    return HTTPException(
-        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-        detail=_answer_lost_detail(
-            method, f"coord answered {resp.status_code} with {what_came}"
-        ),
+    return _answer_lost(
+        method,
+        f"coord answered {resp.status_code} with {what_came}",
+        code=RefusalCode.upstream_unavailable,
+        discriminator="agent_registry_coord_no_usable_answer",
     )
 
 
@@ -201,9 +226,11 @@ async def _coord_request(
                 detail="coord is not reachable",
             ) from exc
         except httpx.TimeoutException as exc:
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="timeout waiting for coord",
+            raise _answer_lost(
+                method,
+                "timeout waiting for coord",
+                code=RefusalCode.upstream_timeout,
+                discriminator="agent_registry_coord_timeout",
             ) from exc
         except httpx.RequestError as exc:
             # Any other transport failure (ReadError, RemoteProtocolError,
@@ -215,12 +242,11 @@ async def _coord_request(
                 path=path,
                 exc_type=type(exc).__name__,
             )
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=_answer_lost_detail(
-                    method,
-                    f"coord's answer was lost in transit ({type(exc).__name__})",
-                ),
+            raise _answer_lost(
+                method,
+                f"coord's answer was lost in transit ({type(exc).__name__})",
+                code=RefusalCode.upstream_unavailable,
+                discriminator="agent_registry_coord_answer_lost",
             ) from exc
     if resp.status_code >= 400:
         detail: Any
