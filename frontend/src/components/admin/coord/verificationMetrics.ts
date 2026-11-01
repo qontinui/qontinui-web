@@ -26,9 +26,13 @@
  * prints a word or a dash for it — nothing in here defaults a count to 0.
  */
 
-import type {
-  OperatorLabelResult,
-  OperatorLabelTruth,
+import {
+  isOperatorLabelTruth,
+  isVerifierVerdict,
+  type LabelSampleAnswer,
+  type OperatorLabelResult,
+  type OperatorLabelTruth,
+  type VerifierVerdict,
 } from "@/lib/api/operations/coordVerification";
 
 /** The window the tile reads. coord's default is also 28 days. */
@@ -559,7 +563,8 @@ export function deriveTrustView(
  * Phase 4: `verifier agreement κ 0.71 (seeded n=24) · operator n=6`.
  *
  * - `populated` — a seeded kappa, with the seeded binary n and the operator n;
- * - `insufficient` — fewer than 20 seeded binary cases: words, never a number;
+ * - `insufficient` — fewer than 20 seeded binary cases: words only, no count
+ *   and no kappa;
  * - `undefined` — enough cases, but kappa has no value (expected agreement 1);
  * - `unknown` — the door did not answer, coord could not read the cases, or
  *   this coord build does not serve them. Never a number and never zero.
@@ -572,6 +577,13 @@ export type AgreementView =
     };
 
 export const AGREEMENT_INSUFFICIENT_TEXT = "not enough labelled cases yet";
+
+/**
+ * Where the line renders. The overview `tile` says a fixed sentence when coord
+ * could not read the labelled cases; only the drill-down `page` quotes coord's
+ * own `judge_agreement_error`.
+ */
+export type AgreementSurface = "tile" | "page";
 
 function isCount(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v >= 0;
@@ -592,11 +604,18 @@ function unknownAgreement(why: string): AgreementView {
   return { state: "unknown", text: `verifier agreement unknown — ${why}` };
 }
 
+/** Kappa to two places; a negative value that rounds to zero prints `0.00`. */
+export function kappaText(kappa: number): string {
+  const fixed = kappa.toFixed(2);
+  return Number(fixed) === 0 ? (0).toFixed(2) : fixed;
+}
+
 export function deriveVerifierAgreement(
   read:
     | { status: "loading" }
     | { status: "error"; reason: string }
-    | { status: "ok"; metrics: VerificationMetrics }
+    | { status: "ok"; metrics: VerificationMetrics },
+  surface: AgreementSurface
 ): AgreementView {
   if (read.status === "loading") return { state: "loading", text: "" };
   if (read.status === "error") {
@@ -605,7 +624,9 @@ export function deriveVerifierAgreement(
   const m = read.metrics;
   if (typeof m.judge_agreement_error === "string") {
     return unknownAgreement(
-      `coord could not read the labelled cases (${m.judge_agreement_error})`
+      surface === "page"
+        ? `coord could not read the labelled cases (${m.judge_agreement_error})`
+        : "coord could not read the labelled cases"
     );
   }
   if (m.judge_agreement == null) {
@@ -627,13 +648,13 @@ export function deriveVerifierAgreement(
   if (seeded.kappa !== null) {
     return {
       state: "populated",
-      text: `verifier agreement κ ${seeded.kappa.toFixed(2)} (seeded n=${seeded.binary_n}) · ${operatorPart}`,
+      text: `verifier agreement κ ${kappaText(seeded.kappa)} (seeded n=${seeded.binary_n}) · ${operatorPart}`,
     };
   }
   if (seeded.reason === "n<20") {
     return {
       state: "insufficient",
-      text: `verifier agreement: ${AGREEMENT_INSUFFICIENT_TEXT} (seeded n=${seeded.binary_n}) · ${operatorPart}`,
+      text: `verifier agreement: ${AGREEMENT_INSUFFICIENT_TEXT}`,
     };
   }
   if (seeded.reason === "undefined") {
@@ -648,52 +669,121 @@ export function deriveVerifierAgreement(
 }
 
 // ---------------------------------------------------------------------------
-// The operator's one-click label — which verdicts carry it this week
+// The operator's one-click label — coord's weekly sample, and each answer
 // ---------------------------------------------------------------------------
 
-/** At most this many verdicts per ISO week carry the label control. */
-export const OPERATOR_LABELS_PER_WEEK = 3;
-
-/** The UTC ISO-8601 week of `at`, e.g. `2026-W44`. */
-export function isoWeekKey(at: number | Date): string {
-  const t = typeof at === "number" ? new Date(at) : at;
-  const d = new Date(
-    Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate())
-  );
-  // The ISO week belongs to the year of its Thursday.
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day);
-  const yearStart = Date.UTC(d.getUTCFullYear(), 0, 1);
-  const week = Math.ceil(((d.getTime() - yearStart) / 86400_000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
-}
-
-/** 32-bit FNV-1a — a stable, dependency-free hash for the weekly draw. */
-function fnv1a(s: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
+/** One sampled verdict, as the label-sample door names it. */
+export interface LabelSampleRow {
+  verificationId: string;
+  slug: string | null;
+  verdict: VerifierVerdict;
+  recordedAt: string;
+  /** The operator label this verdict already carries, if any. */
+  operatorLabel: {
+    id: string;
+    truth: OperatorLabelTruth;
+    createdAt: string;
+  } | null;
 }
 
 /**
- * The verdicts that carry "Did this hold up?" this week: the
- * {@link OPERATOR_LABELS_PER_WEEK} lowest by a hash of `<week>:<id>`. The draw
- * is a pure function of the week and the ids, so a reload does not reshuffle
- * it and nothing about it is stored. Duplicates are drawn once.
+ * What the "Did this hold up?" section shows:
+ *
+ * - `rows` — coord's sample for `isoWeek`, each row labelled or not;
+ * - `empty` — coord ANSWERED and sampled nothing this week;
+ * - `unavailable` — no sample could be read (a coord that predates the door,
+ *   a `503 label_sample_unreadable`, no answer, an unreadable body). Never
+ *   rendered as "nothing to label".
  */
-export function sampleForOperatorLabel(
-  verificationIds: readonly string[],
-  weekKey: string,
-  max: number = OPERATOR_LABELS_PER_WEEK
-): string[] {
-  return [...new Set(verificationIds)]
-    .map((id) => ({ id, h: fnv1a(`${weekKey}:${id}`) }))
-    .sort((a, b) => a.h - b.h || a.id.localeCompare(b.id))
-    .slice(0, Math.max(0, max))
-    .map((x) => x.id);
+export type LabelSampleView =
+  | { state: "loading" }
+  | { state: "unavailable"; text: string }
+  | { state: "empty"; isoWeek: string; text: string }
+  | { state: "rows"; isoWeek: string; rows: LabelSampleRow[] };
+
+const NOT_NOTHING = "Not the same as nothing to label.";
+
+function readSampleRow(v: unknown): LabelSampleRow | null {
+  if (
+    !isObject(v) ||
+    typeof v.verification_id !== "string" ||
+    !(v.work_unit_slug === null || typeof v.work_unit_slug === "string") ||
+    !isVerifierVerdict(v.verdict) ||
+    typeof v.recorded_at !== "string"
+  ) {
+    return null;
+  }
+  let operatorLabel: LabelSampleRow["operatorLabel"] = null;
+  if (v.operator_label != null) {
+    const l = v.operator_label;
+    if (
+      !isObject(l) ||
+      typeof l.id !== "string" ||
+      !isOperatorLabelTruth(l.truth) ||
+      typeof l.created_at !== "string"
+    ) {
+      return null;
+    }
+    operatorLabel = { id: l.id, truth: l.truth, createdAt: l.created_at };
+  }
+  return {
+    verificationId: v.verification_id,
+    slug: v.work_unit_slug,
+    verdict: v.verdict,
+    recordedAt: v.recorded_at,
+    operatorLabel,
+  };
+}
+
+/**
+ * The label-sample section, from the door's answer (`null` while reading).
+ * Any row this page cannot read makes the whole sample unavailable rather
+ * than silently shorter.
+ */
+export function deriveLabelSampleView(
+  answer: LabelSampleAnswer | null
+): LabelSampleView {
+  if (answer === null) return { state: "loading" };
+  if (answer.kind === "unavailable") {
+    const why =
+      answer.status === null
+        ? `the door did not answer (${answer.message})`
+        : answer.status === 404
+          ? "this coord build does not serve it (HTTP 404)"
+          : answer.status === 503
+            ? `coord could not read its verdicts (${answer.code ?? "HTTP 503"}: ${answer.message})`
+            : `HTTP ${answer.status}${answer.code ? ` ${answer.code}` : ""}: ${answer.message}`;
+    return {
+      state: "unavailable",
+      text: `Label sample unavailable — ${why}. ${NOT_NOTHING}`,
+    };
+  }
+  const b = answer.body;
+  const unreadable: LabelSampleView = {
+    state: "unavailable",
+    text: `Label sample unavailable — coord answered in a shape this page does not recognise. ${NOT_NOTHING}`,
+  };
+  if (
+    !isObject(b) ||
+    typeof b.iso_week !== "string" ||
+    !Array.isArray(b.verdicts)
+  ) {
+    return unreadable;
+  }
+  const rows: LabelSampleRow[] = [];
+  for (const v of b.verdicts) {
+    const row = readSampleRow(v);
+    if (!row) return unreadable;
+    rows.push(row);
+  }
+  if (rows.length === 0) {
+    return {
+      state: "empty",
+      isoWeek: b.iso_week,
+      text: `coord sampled no verdict to label in ${b.iso_week}.`,
+    };
+  }
+  return { state: "rows", isoWeek: b.iso_week, rows };
 }
 
 /** The three answers, in the order the control shows them. */
@@ -706,6 +796,11 @@ export const OPERATOR_LABEL_CHOICES: ReadonlyArray<{
   { truth: "cannot_tell", label: "Can't tell" },
 ];
 
+/** The control's word for a truth: `Yes`, `No` or `Can't tell`. */
+export function choiceLabel(truth: OperatorLabelTruth): string {
+  return OPERATOR_LABEL_CHOICES.find((c) => c.truth === truth)?.label ?? truth;
+}
+
 const TRUTH_WORDS: Record<OperatorLabelTruth, string> = {
   holds: "held up",
   fails: "did not hold up",
@@ -715,27 +810,33 @@ const TRUTH_WORDS: Record<OperatorLabelTruth, string> = {
 /**
  * What the control says after a click. `recorded` quotes the row coord wrote
  * back; `already_labelled` is not an error — the verdict was labelled before.
- * `attention` marks the answers where the label is NOT known to be stored.
+ * `attention` marks the answers where the label is NOT known to be stored;
+ * `retry` is set only when it is not known either way (`unknown`) — a
+ * definite refusal is not answered again.
  */
 export function operatorLabelOutcome(r: OperatorLabelResult): {
   text: string;
   attention: boolean;
+  retry: boolean;
 } {
   switch (r.kind) {
     case "recorded":
       return {
-        text: `Recorded: ${TRUTH_WORDS[r.record.truth] ?? r.record.truth} (verifier said ${r.record.verifier_verdict})`,
+        text: `Recorded: ${TRUTH_WORDS[r.record.truth]} (verifier said ${r.record.verifier_verdict})`,
         attention: false,
+        retry: false,
       };
     case "already_labelled":
       return {
         text: "Already labelled — this verdict carries an operator label",
         attention: false,
+        retry: false,
       };
     case "refused":
       return {
         text: `Not recorded — coord refused it${r.code ? ` (${r.code})` : ""}: ${r.message}`,
         attention: true,
+        retry: false,
       };
     case "not_found":
       return {
@@ -744,11 +845,19 @@ export function operatorLabelOutcome(r: OperatorLabelResult): {
             ? "Not recorded — coord has no such verdict in this project"
             : `Not recorded — the label door is not answering (HTTP 404): ${r.message}`,
         attention: true,
+        retry: false,
       };
-    case "failed":
+    case "rejected":
+      return {
+        text: `Not recorded — HTTP ${r.status}${r.code ? ` ${r.code}` : ""}: ${r.message}`,
+        attention: true,
+        retry: false,
+      };
+    case "unknown":
       return {
         text: `Not known to be recorded — ${r.status === null ? r.message : `HTTP ${r.status}: ${r.message}`}`,
         attention: true,
+        retry: true,
       };
   }
 }
@@ -763,8 +872,6 @@ export interface RefutedUnit {
   label: string;
   slug: string | null;
   createdAt: string | null;
-  /** The refuting verdict's row id, when the finding names it. */
-  verificationId: string | null;
 }
 
 interface FindingLike {
@@ -773,24 +880,6 @@ interface FindingLike {
   body?: string | null;
   created_at?: string | null;
   topic?: string | null;
-  artifact_refs?: unknown;
-}
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * The verdict a refutation finding names: coord writes it into the finding's
- * `artifact_refs.verification_id` and into its body as `Verification: <id>`.
- */
-export function verificationIdOf(f: FindingLike): string | null {
-  const ref = isObject(f.artifact_refs)
-    ? f.artifact_refs.verification_id
-    : undefined;
-  if (typeof ref === "string" && UUID_RE.test(ref)) return ref.toLowerCase();
-  const m = /^Verification: (\S+)$/m.exec(f.body ?? "");
-  const id = m?.[1];
-  return id && UUID_RE.test(id) ? id.toLowerCase() : null;
 }
 
 /**
@@ -810,7 +899,6 @@ export function refutedUnitFromFinding(f: FindingLike): RefutedUnit {
     label: bodyMatch?.[2] ?? slug ?? f.title ?? f.finding_id,
     slug,
     createdAt: f.created_at ?? null,
-    verificationId: verificationIdOf(f),
   };
 }
 

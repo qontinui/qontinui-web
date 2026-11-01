@@ -10,8 +10,10 @@
  * Optional by construction: nothing waits on it and nothing is hidden behind
  * it. A click posts the label (`recordOperatorLabel`) and the control then
  * shows what came back — the row coord recorded, "already labelled" for a
- * verdict labelled before, or why it was not recorded. The words are derived
- * in `verificationMetrics.ts` (`operatorLabelOutcome`, console style R8).
+ * verdict labelled before, or why it was not recorded. "Answer again" is
+ * offered only when the outcome is not known either way; a definite refusal
+ * (403, 422, any other 4xx) is final. The words are derived in
+ * `verificationMetrics.ts` (`operatorLabelOutcome`, console style R8).
  */
 
 import { useState } from "react";
@@ -47,9 +49,6 @@ export function OperatorLabelControl({
 
   if (state.status === "done") {
     const outcome = operatorLabelOutcome(state.result);
-    const retryable =
-      state.result.kind !== "recorded" &&
-      state.result.kind !== "already_labelled";
     return (
       <span
         className={cn(
@@ -63,7 +62,7 @@ export function OperatorLabelControl({
         data-label-outcome={state.result.kind}
       >
         {outcome.text}
-        {retryable && (
+        {outcome.retry && (
           <Button
             size="sm"
             variant="ghost"

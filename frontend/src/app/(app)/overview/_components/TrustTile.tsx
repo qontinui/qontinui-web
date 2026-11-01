@@ -31,7 +31,10 @@ export function TrustTile({
     tenantError
   );
   const view = useMemo(() => deriveTrustView(read, lastGood), [read, lastGood]);
-  const agreement = useMemo(() => deriveVerifierAgreement(read), [read]);
+  const agreement = useMemo(
+    () => deriveVerifierAgreement(read, "tile"),
+    [read]
+  );
 
   const windowFrom =
     view.state === "populated" || view.state === "no_verifications"

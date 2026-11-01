@@ -14589,39 +14589,82 @@ async def get_coord_verification_metrics(
 
 
 # ---------------------------------------------------------------------------
-# Operator verdict label — `POST /operations/coord/verification/labels`
-#                        → coord `POST /coord/verification/labels`
+# Operator verdict labels — two doors behind the drill-down's one-click
+# "Did this hold up? Yes · No · Can't tell":
 #
-# The drill-down's one-click "Did this hold up? Yes · No · Can't tell" on a
-# sampled verdict. Plan
+#   `GET  /operations/coord/verification/label-sample`
+#        → coord `GET  /coord/verification/label-sample`
+#   `POST /operations/coord/verification/labels`
+#        → coord `POST /coord/verification/labels`
+#
+# Plan
 # `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
-# Phase 4 (web half): an `operator` judge case is the only label source that
-# is not synthetic, and coord serves its agreement with the verifier as
-# `judge_agreement.operator` on the metrics door above.
+# Phase 4 (web half). What coord does behind both doors is the label-door
+# contract of that plan's Phases 3–4, stated here as the contract this proxy is
+# written against — not as a description of a deployed coord:
 #
-# **The operator's own principal is what labels.** The operator's Cognito
-# bearer is forwarded (`_tenant_headers`), exactly as the metrics proxy does,
-# so coord derives `labelled_by` and the tenant from that identity and refuses
-# an `operator` label from any device / agent / service principal (`403
-# operator_principal_required`). Nothing in the body names either.
+# - the SAMPLE door answers a fixed, server-chosen weekly sample of up to three
+#   verdicts of both polarities, each with any operator label it already
+#   carries, and answers an unreadable store with `503 label_sample_unreadable`
+#   rather than an empty list;
+# - the LABEL door derives `labelled_by` and the tenant from the authenticated
+#   identity, accepts an `operator` label only from an operator principal
+#   (`403 operator_principal_required`), copies the verifier's verdict from the
+#   referenced row, and answers `201` with the row, `409 duplicate_label`
+#   (naming the existing row's `id`), `404 verification_not_found` or `422`.
 #
-# **The body is pinned to the operator source.** `label_source` must be
-# `"operator"` and the model forbids every other field, so this door cannot
-# write a `seeded` case (the lane's) or a `consequence` case (coord's own):
-# only `{label_source, verification_id, truth}` reaches coord. coord copies
-# the verifier's verdict and criteria from the referenced row server-side.
+# What this proxy itself guarantees:
 #
-# **coord's answer passes through with its status** (`_proxy_coord_verbatim`):
-# `201` with the recorded row, `409 duplicate_label` (the verdict already has
-# an operator label — its body names the existing row's `id`), `403`, `404
-# verification_not_found`, `422`. The page renders each one distinctly. The one
-# rewrite is the metrics proxy's: a coord `401` means coord refused the
-# operator's credential on this door, which is re-raised as a named `502`
-# rather than a `401` that would send the frontend into its session-refresh
-# branch.
+# - **The operator's own principal is what labels.** The operator's Cognito
+#   bearer is forwarded (`_tenant_headers`), exactly as the metrics proxy
+#   does. Nothing in either request names a tenant or a labeller.
+# - **The label body is pinned to the operator source.** `label_source` must
+#   be `"operator"` and the model forbids every other field, so this door
+#   cannot write a `seeded` or `consequence` case: only `{label_source,
+#   verification_id, truth}` reaches coord.
+# - **coord's answer passes through with its status** (`_proxy_coord_verbatim`)
+#   — including a `404` from a coord that predates a door, which the page
+#   renders as "unavailable", never as "nothing to label". The one rewrite is
+#   the metrics proxy's: a coord `401` (coord refused the operator's
+#   credential) is re-raised as a named `502` rather than a `401` that would
+#   send the frontend into its session-refresh branch.
 # ---------------------------------------------------------------------------
 
 _COORD_VERIFICATION_LABELS_PATH = "/coord/verification/labels"
+_COORD_VERIFICATION_LABEL_SAMPLE_PATH = "/coord/verification/label-sample"
+
+
+def _reraise_coord_credential_refusal(resp: JSONResponse, path: str) -> None:
+    """A coord ``401`` on a label door becomes the named ``502`` (see above)."""
+    if resp.status_code != 401:
+        return
+    raise refusal_error(
+        502,
+        RefusalCode.credential_rejected,
+        NextActionKind.report_defect,
+        (
+            f"coord refused the operator's credential on {path} (HTTP 401): "
+            f"{bytes(resp.body).decode(errors='replace')}"
+        ),
+        discriminator="coord_verification_label_credential_refused",
+        glossary_terms=[GlossaryTerm.coord],
+    )
+
+
+@router.get("/coord/verification/label-sample")
+async def get_coord_verification_label_sample(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Return this week's verdicts for the operator to label.
+
+    coord's body is forwarded verbatim with its status: ``{iso_week,
+    population_cutoff, verdicts: [...]}``, or its typed refusal.
+    """
+    resp = await _proxy_coord_verbatim(
+        "GET", _COORD_VERIFICATION_LABEL_SAMPLE_PATH, tenant_id=tenant_id
+    )
+    _reraise_coord_credential_refusal(resp, _COORD_VERIFICATION_LABEL_SAMPLE_PATH)
+    return resp
 
 
 class OperatorVerificationLabelRequest(BaseModel):
@@ -14639,7 +14682,7 @@ class OperatorVerificationLabelRequest(BaseModel):
     truth: Literal["holds", "fails", "cannot_tell"]
 
 
-@router.post("/coord/verification/labels")
+@router.post("/coord/verification/labels", status_code=201)
 async def post_coord_verification_label(
     body: OperatorVerificationLabelRequest,
     tenant_id: UUID = Depends(get_tenant_id),
@@ -14648,7 +14691,7 @@ async def post_coord_verification_label(
 
     Forwards ``{label_source: "operator", verification_id, truth}`` with the
     operator's bearer; coord's status and body come back verbatim (see the
-    section comment for each status), except a coord ``401``.
+    section comment), except a coord ``401``.
     """
     resp = await _proxy_coord_verbatim(
         "POST",
@@ -14660,19 +14703,7 @@ async def post_coord_verification_label(
             "truth": body.truth,
         },
     )
-    if resp.status_code == 401:
-        raise refusal_error(
-            502,
-            RefusalCode.credential_rejected,
-            NextActionKind.report_defect,
-            (
-                f"coord refused the operator's credential on "
-                f"{_COORD_VERIFICATION_LABELS_PATH} (HTTP 401): "
-                f"{bytes(resp.body).decode(errors='replace')}"
-            ),
-            discriminator="coord_verification_label_credential_refused",
-            glossary_terms=[GlossaryTerm.coord],
-        )
+    _reraise_coord_credential_refusal(resp, _COORD_VERIFICATION_LABELS_PATH)
     return resp
 
 

@@ -1,4 +1,7 @@
-"""Tests for the operator verdict-label proxy (``POST /operations/coord/verification/labels``).
+"""Tests for the operator verdict-label proxies.
+
+``GET /operations/coord/verification/label-sample`` (this week's verdicts to
+label) and ``POST /operations/coord/verification/labels`` (the label itself).
 
 Backs the "Did this hold up? Yes · No · Can't tell" control on
 ``/admin/coord/verification``. Plan
@@ -10,10 +13,12 @@ The properties under test:
 - the label is written as the OPERATOR — the operator's bearer is forwarded,
   and the body coord receives is exactly ``{label_source: "operator",
   verification_id, truth}`` (no tenant, no labeller, no other source);
-- coord's status and body come back verbatim (201 / 409 / 403 / 404 / 422),
-  because the page renders each one differently;
-- a coord ``401`` is a named ``502``, never a ``401`` the frontend would read
-  as its own session expiring.
+- coord's status and body come back verbatim (201 / 409 / 403 / 404 / 422 on
+  the label door; 200 / 404 / 503 on the sample door), because the page
+  renders each one differently — a 404 or 503 from the sample door is
+  "unavailable", never an empty "nothing to label";
+- a coord ``401`` is a named ``502`` on both doors, never a ``401`` the
+  frontend would read as its own session expiring.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -27,6 +32,7 @@ from fastapi.testclient import TestClient
 TEST_TENANT_ID = uuid4()
 OPERATOR_BEARER = "operator-cognito-token"
 LABELS_URL = "/api/v1/operations/coord/verification/labels"
+SAMPLE_URL = "/api/v1/operations/coord/verification/label-sample"
 VERIFICATION_ID = "5f0c2a8e-7d1b-4c3e-9a40-1b2c3d4e5f60"
 
 
@@ -218,3 +224,87 @@ class TestVerificationLabelProxy:
         finally:
             patcher.stop()
         assert resp.status_code == 504
+
+
+SAMPLE = {
+    "iso_week": "2026-W44",
+    "population_cutoff": "2026-10-26T00:00:00Z",
+    "verdicts": [
+        {
+            "verification_id": VERIFICATION_ID,
+            "work_unit_slug": "2026-10-01-some-plan",
+            "verdict": "survived",
+            "recorded_at": "2026-10-20T09:00:00Z",
+            "operator_label": None,
+        },
+        {
+            "verification_id": RECORDED["id"],
+            "work_unit_slug": None,
+            "verdict": "refuted",
+            "recorded_at": "2026-10-21T09:00:00Z",
+            "operator_label": {
+                "id": "0d6a1f3e-2222-4c3e-9a40-1b2c3d4e5f60",
+                "truth": "fails",
+                "created_at": "2026-10-28T09:00:00Z",
+            },
+        },
+    ],
+}
+
+
+class TestVerificationLabelSampleProxy:
+    def test_forwards_the_sample_read_with_the_operator_bearer(self, client):
+        patcher, instance = _mock_client(AsyncMock(return_value=_response(200, SAMPLE)))
+        try:
+            resp = client.get(SAMPLE_URL)
+        finally:
+            patcher.stop()
+        assert resp.status_code == 200
+        assert resp.json() == SAMPLE
+        call = instance.request.call_args
+        assert call.args[0] == "GET"
+        assert call.args[1].endswith("/coord/verification/label-sample")
+        assert call.kwargs["headers"]["Authorization"] == f"Bearer {OPERATOR_BEARER}"
+
+    @pytest.mark.parametrize(
+        "status,coord_body",
+        [
+            (503, {"error": "label_sample_unreadable", "message": "store down"}),
+            (404, {"error": "not_found", "message": "no such route"}),
+        ],
+    )
+    def test_an_unavailable_sample_passes_through_with_its_status(
+        self, client, status, coord_body
+    ):
+        patcher, _ = _mock_client(AsyncMock(return_value=_response(status, coord_body)))
+        try:
+            resp = client.get(SAMPLE_URL)
+        finally:
+            patcher.stop()
+        assert resp.status_code == status
+        assert resp.json() == coord_body
+
+    def test_coord_refusing_the_operator_bearer_is_a_named_502(self, client):
+        patcher, _ = _mock_client(
+            AsyncMock(
+                return_value=_response(
+                    401, {"error": "unauthorized", "message": "token_foreign_issuer"}
+                )
+            )
+        )
+        try:
+            resp = client.get(SAMPLE_URL)
+        finally:
+            patcher.stop()
+        assert resp.status_code == 502
+        detail = resp.json()["detail"]
+        assert "/coord/verification/label-sample" in detail
+        assert "HTTP 401" in detail
+
+    def test_a_connect_error_is_a_502(self, client):
+        patcher, _ = _mock_client(AsyncMock(side_effect=httpx.ConnectError("refused")))
+        try:
+            resp = client.get(SAMPLE_URL)
+        finally:
+            patcher.stop()
+        assert resp.status_code == 502

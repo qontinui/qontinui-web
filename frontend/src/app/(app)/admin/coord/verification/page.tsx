@@ -29,13 +29,17 @@
  * Plan `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
  * Phase 4. Under calibration, one line says how far the verifier agrees with
  * labelled cases (`deriveVerifierAgreement`) — words, never a number, below 20
- * cases or when it cannot be read. At most three verdicts a week, drawn by
- * `sampleForOperatorLabel` from the verdicts this page lists, carry "Did this
- * hold up? Yes · No · Can't tell" (`OperatorLabelControl`). The overview tile
- * never carries it.
+ * cases or when it cannot be read; only this page quotes coord's own error
+ * when it could not read them. Below it, the verdicts coord's label-sample
+ * door (`GET /coord/verification/label-sample`) picked for this ISO week — up
+ * to three, of every verdict kind, chosen by coord rather than by this page —
+ * each carry "Did this hold up? Yes · No · Can't tell"
+ * (`OperatorLabelControl`), or the label already recorded on them
+ * (`deriveLabelSampleView`). A sample that cannot be read says "unavailable",
+ * never "nothing to label". The overview tile never carries the control.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,23 +53,26 @@ import {
 } from "@/components/console";
 import { useTenant } from "@/contexts/tenant-context";
 import { OperatorLabelControl } from "@/components/admin/coord/OperatorLabelControl";
+import { useOperatorLabelSample } from "@/components/admin/coord/useOperatorLabelSample";
 import { useVerificationMetrics } from "@/components/admin/coord/useVerificationMetrics";
 import {
   REFUTED_FINDING_TOPIC,
   ageFromSecs,
   bpPct,
+  choiceLabel,
+  deriveLabelSampleView,
   deriveTrustView,
   deriveVerificationHealth,
   deriveVerifierAgreement,
   findingHref,
   interval,
-  isoWeekKey,
   pct,
   ratePct,
   refutedUnitsInWindow,
-  sampleForOperatorLabel,
   unverifiableTotal,
   type AgreementView,
+  type LabelSampleRow,
+  type LabelSampleView,
   type PopulatedMetrics,
   type SeriesWeek,
   type VerificationLane,
@@ -217,6 +224,69 @@ function AgreementLine({ agreement }: { agreement: AgreementView }) {
     >
       {agreement.text}
     </p>
+  );
+}
+
+function LabelSampleItem({ row }: { row: LabelSampleRow }) {
+  return (
+    <li
+      className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm"
+      data-testid="coord-verification-label-sample-row"
+      data-verification-id={row.verificationId}
+    >
+      <span className="font-mono text-xs">
+        {row.slug ?? `verdict ${row.verificationId}`}
+      </span>
+      <span className="text-muted-foreground">{row.verdict}</span>
+      <span className="ml-auto text-xs text-muted-foreground">
+        <Stamp iso={row.recordedAt} />
+      </span>
+      <span className="basis-full">
+        {row.operatorLabel ? (
+          <span
+            className="text-xs text-muted-foreground"
+            data-testid="coord-verification-label-already"
+          >
+            already labelled: {choiceLabel(row.operatorLabel.truth)}
+          </span>
+        ) : (
+          <OperatorLabelControl verificationId={row.verificationId} />
+        )}
+      </span>
+    </li>
+  );
+}
+
+function LabelSampleSection({ view }: { view: LabelSampleView }) {
+  return (
+    <section
+      className="space-y-1"
+      data-testid="coord-verification-label-sample"
+      data-label-sample-state={view.state}
+    >
+      <h2 className="text-sm font-medium">
+        Did this hold up?{" "}
+        <span className="font-normal text-muted-foreground">
+          — this week&rsquo;s verdicts for you to label
+          {view.state === "rows" || view.state === "empty"
+            ? ` (${view.isoWeek})`
+            : ""}
+        </span>
+      </h2>
+      {view.state === "loading" && (
+        <p className="text-sm text-muted-foreground">Reading…</p>
+      )}
+      {(view.state === "unavailable" || view.state === "empty") && (
+        <p className="text-sm text-muted-foreground">{view.text}</p>
+      )}
+      {view.state === "rows" && (
+        <ul className="space-y-1">
+          {view.rows.map((row) => (
+            <LabelSampleItem key={row.verificationId} row={row} />
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -378,20 +448,28 @@ export default function CoordVerificationPage() {
   );
   const view = useMemo(() => deriveTrustView(read, lastGood), [read, lastGood]);
   const health = useMemo(() => deriveVerificationHealth(view), [view]);
-  const agreement = useMemo(() => deriveVerifierAgreement(read), [read]);
+  const agreement = useMemo(
+    () => deriveVerifierAgreement(read, "page"),
+    [read]
+  );
+  const { answer: sampleAnswer, reload: reloadSample } = useOperatorLabelSample(
+    activeTenantId,
+    loading,
+    tenantsError
+  );
+  const labelSample = useMemo(
+    () => deriveLabelSampleView(sampleAnswer),
+    [sampleAnswer]
+  );
+  const reloadAll = useCallback(
+    () => Promise.all([reload(), reloadSample()]),
+    [reload, reloadSample]
+  );
   const metrics = read.status === "ok" ? read.metrics : null;
   const refutedUnits = useMemo(() => {
     if (refuted.status !== "ok" || !metrics) return null;
     return refutedUnitsInWindow(refuted.findings, metrics.window.from);
   }, [refuted, metrics]);
-  // The verdicts carrying "Did this hold up?" this ISO week — a pure draw
-  // over the verdicts listed below, so a reload does not reshuffle it.
-  const sampledForLabel = useMemo(() => {
-    const ids = (refutedUnits ?? []).flatMap((u) =>
-      u.verificationId ? [u.verificationId] : []
-    );
-    return new Set(sampleForOperatorLabel(ids, isoWeekKey(Date.now())));
-  }, [refutedUnits]);
 
   return (
     <div className="p-3 sm:p-6 space-y-5" data-testid="coord-verification-page">
@@ -432,9 +510,9 @@ export default function CoordVerificationPage() {
           </Button>
         ))}
         <RefreshButton
-          onRefresh={reload}
+          onRefresh={reloadAll}
           label="Refresh verification metrics"
-          title="Re-reads coord's verification metrics and the refutation findings now"
+          title="Re-reads coord's verification metrics, the refutation findings and this week's label sample now"
           data-testid="coord-verification-refresh"
         />
         {metrics && (
@@ -490,8 +568,7 @@ export default function CoordVerificationPage() {
               {refutedUnits.map((r) => (
                 <li
                   key={r.findingId}
-                  className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm"
-                  data-testid="coord-verification-refuted-unit"
+                  className="flex items-baseline gap-3 text-sm"
                 >
                   <Link
                     href={findingHref(r.findingId)}
@@ -507,14 +584,6 @@ export default function CoordVerificationPage() {
                   <span className="ml-auto text-xs text-muted-foreground">
                     <Stamp iso={r.createdAt} />
                   </span>
-                  {r.verificationId &&
-                    sampledForLabel.has(r.verificationId) && (
-                      <span className="basis-full">
-                        <OperatorLabelControl
-                          verificationId={r.verificationId}
-                        />
-                      </span>
-                    )}
                 </li>
               ))}
             </ul>
@@ -537,6 +606,8 @@ export default function CoordVerificationPage() {
           still listed here; the counts above use only standing verdicts.
         </p>
       </section>
+
+      <LabelSampleSection view={labelSample} />
 
       {metrics && (
         <>
