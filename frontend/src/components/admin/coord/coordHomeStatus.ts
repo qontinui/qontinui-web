@@ -654,6 +654,14 @@ export interface NeedsMeView {
   /** Admitted decisions per decision domain; null = not served. */
   byDomain: Readonly<Record<string, number>> | null;
   /**
+   * Coord's own verdict on its question scan (`questions_coverage`). `stale`:
+   * the scan was capped, rows were answered or withdrawn or inserted while it
+   * paged, or a column was unreadable — so `total`, `by_domain` and
+   * `shape_share` may be off, and are never a definite figure. `unknown`: not
+   * served (an older coord), which changes nothing on the page.
+   */
+  coverage: "read" | "stale" | "unknown";
+  /**
    * Whether coord can retire a question whose premise died. `unsupported`
    * means the list may hold questions whose condition already resolved;
    * `unknown` (coord's schema-readiness probe has not yet looked, or the field
@@ -774,6 +782,10 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
         }
       : null,
     byDomain: read ? parseByDomain(o.by_domain) : null,
+    coverage:
+      o.questions_coverage === "read" || o.questions_coverage === "stale"
+        ? o.questions_coverage
+        : "unknown",
     retirement:
       o.retirement === "supported" || o.retirement === "unsupported"
         ? o.retirement
@@ -791,6 +803,8 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
 export function nothingNeedsYou(needs: NeedsMeView): boolean {
   return (
     needs.state === "read" &&
+    // A zero from a scan coord calls stale may have missed a decision.
+    !needsCountMayBeOff(needs) &&
     needs.total === 0 &&
     (needs.items?.length ?? 0) === 0
   );
@@ -809,12 +823,29 @@ export function needsDisplayCount(needs: NeedsMeView): number | null {
 }
 
 /**
+ * Whether coord said its needs_me counts may be off (`questions_coverage:
+ * "stale"`): the count shows, but never as a definite total.
+ */
+export function needsCountMayBeOff(needs: NeedsMeView): boolean {
+  return needs.state === "read" && needs.coverage === "stale";
+}
+
+/** The words a possibly-off needs_me count carries after it. */
+export const NEEDS_COUNT_MAY_BE_OFF_WORDS = "(may be incomplete)";
+
+/**
  * The sentence for a read needs_me block that counted decisions but served
  * none of them. `count` is {@link needsDisplayCount}; `null` is an unknown
  * number, never a zero. One decision is singular ("1 decision … did not
  * serve it"), never "1 decisions".
  */
-export function unservedDecisionsSentence(count: number | null): string {
+export function unservedDecisionsSentence(
+  count: number | null,
+  mayBeOff = false
+): string {
+  if (mayBeOff) {
+    return "Coord's scan of the questions was incomplete, so how many decisions wait on you is not known, and it served none of them";
+  }
   return count === 1
     ? "Coord counted 1 decision for you but did not serve it"
     : `Coord counted ${count ?? "an unknown number of"} decisions for you but served none of them`;
@@ -1971,7 +2002,9 @@ export function deriveHomeStrip(
     : queues !== null && queues.count > 0;
   // Only coord's own block answers "nothing needs you": the queue counts
   // give a figure, never that answer.
-  const nothingNeedsYou = needsRead && needsTotal !== null;
+  // A stale scan's count shows, but it is never the answer "nothing".
+  const needsMayBeOff = needsCountMayBeOff(view.needsMe);
+  const nothingNeedsYou = needsRead && needsTotal !== null && !needsMayBeOff;
   const open = openDegradations(view.degradations);
   const degRowsServed =
     view.degradations.state === "read" || view.degradations.state === "stale";
@@ -2042,6 +2075,7 @@ export function deriveHomeStrip(
     unknownSources === null ||
     unknownSources > 0 ||
     (needsRead && needsTotal === null) ||
+    needsMayBeOff ||
     (degRowsServed && open === null) ||
     !machinesCalm ||
     stale
@@ -2066,7 +2100,7 @@ export function deriveHomeStrip(
       // absent, or smaller than what was listed, is not a count to print.
       needsTotal === null
         ? "Decisions need you — how many is unknown"
-        : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you`;
+        : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you${needsMayBeOff ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""}`;
   } else if (somethingDegrading) {
     headline = "Something is degrading";
   } else if (stale) {
@@ -2134,6 +2168,10 @@ export function deriveHomeStrip(
   if (needsRead && needsTotal === null) {
     detailParts.push(
       "Coord gave no usable count of the decisions that need you."
+    );
+  } else if (needsMayBeOff) {
+    detailParts.push(
+      "Coord's scan of the questions was incomplete, so its count of the decisions that need you may be off."
     );
   }
   if (queues !== null) {
@@ -2223,7 +2261,7 @@ export function deriveHomeStrip(
         label:
           queues !== null
             ? `needs you ${queuesFigure(queues)} (from queues)`
-            : `needs you ${countText(needsTotal)}`,
+            : `needs you ${countText(needsTotal)}${needsMayBeOff && needsTotal !== null ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""}`,
         tone: needsSomething
           ? "attention"
           : needsRead || queues !== null

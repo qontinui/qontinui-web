@@ -308,6 +308,42 @@ const ARMS: Arm[] = [
     never: [/If you overturn it: none/],
   },
   {
+    // Coord called its question scan stale: the items show, but the count and
+    // the per-kind counts are never a definite total.
+    arm: "a needs_me block whose question scan coord called stale",
+    body: {
+      needs_me: {
+        ...needsOne({}),
+        by_domain: { unclassified: 1 },
+        questions_coverage: "stale",
+      },
+    },
+    region: NEEDS,
+    says: [
+      "1 shown of 1 (may be incomplete)",
+      "By kind of decision: unclassified 1 (may be incomplete)",
+      // The items still show (a row, its text or its descriptor).
+      /1 shown of 1.*decide/,
+    ],
+    never: [/shown of 1(?! \(may be incomplete\))/],
+  },
+  {
+    arm: "a stale needs_me scan that counted none",
+    body: {
+      needs_me: {
+        state: "read",
+        total: 0,
+        omitted: 0,
+        items: [],
+        retirement: "supported",
+        questions_coverage: "stale",
+      },
+    },
+    region: NEEDS,
+    says: [/how many decisions wait on you is not known/],
+    never: [/Nothing needs you/, /Nothing needed you/],
+  },
+  {
     // Coord could not read the fork-shape columns: it serves `shape: "unknown"`
     // and leaves `recommendation` / `if_overturned` out. That is UNKNOWN, and
     // must not read as an open question with none given.

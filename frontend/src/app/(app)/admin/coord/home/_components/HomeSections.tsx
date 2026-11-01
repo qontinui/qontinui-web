@@ -135,6 +135,8 @@ import {
   needsYouReason,
   NEEDS_UNREADABLE_WORDS,
   needsDisplayCount,
+  needsCountMayBeOff,
+  NEEDS_COUNT_MAY_BE_OFF_WORDS,
   nothingNeedsYou,
   lastGoodReadPhrase,
   namedUnitAgePhrase,
@@ -661,8 +663,12 @@ export function NeedsYouSection({
   const served = needs.items?.length ?? 0;
   // One displayable count, shared with the strip: never "1 shown of 0".
   const count = needsDisplayCount(needs);
+  // Coord called its scan stale: the count shows, never as a definite total.
+  const mayBeOff = needsCountMayBeOff(needs);
   const header = read
     ? `${served} shown of ${count ?? "an unknown number"}${
+        mayBeOff && count !== null ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""
+      }${
         needs.omitted !== null && needs.omitted > 0
           ? ` · ${needs.omitted} not shown`
           : ""
@@ -715,6 +721,7 @@ export function NeedsYouSection({
                 ([domain, n]) => `${decisionDomainLabel(domain)} ${n}`
               )
           ).join(" · ")}
+          {mayBeOff && ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}`}
         </p>
       )}
       {read && needs.retirement === "unsupported" && (
@@ -749,7 +756,7 @@ export function NeedsYouSection({
             className="m-0 text-sm text-muted-foreground"
             data-testid="coord-home.needs-you.unserved"
           >
-            {unservedDecisionsSentence(count)}
+            {unservedDecisionsSentence(count, mayBeOff)}
             {opens("/admin/coord/questions") ? (
               <>
                 ; open{" "}

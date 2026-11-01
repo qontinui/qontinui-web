@@ -1880,3 +1880,104 @@ describe("a served key spelled like an Object.prototype member", () => {
     expect(Object.getPrototypeOf(byDomain)).toBe(Object.prototype);
   });
 });
+
+describe("needs_me questions_coverage — a stale scan's counts are never definite", () => {
+  function staleBody(needs: Record<string, unknown>) {
+    const body = calmBody();
+    body.needs_me = { state: "read", ...needs };
+    return body;
+  }
+
+  it.each([
+    ["read", "read"],
+    ["stale", "stale"],
+    [undefined, "unknown"],
+    ["maybe", "unknown"],
+  ])("reads questions_coverage %p as %p", (raw, want) => {
+    const view = parseProjectState(
+      staleBody({ total: 0, items: [], questions_coverage: raw })
+    )!;
+    expect(view.needsMe.coverage).toBe(want);
+  });
+
+  it("does not say nothing needs you over a stale zero", () => {
+    const view = parseProjectState(
+      staleBody({
+        total: 0,
+        omitted: 0,
+        items: [],
+        questions_coverage: "stale",
+      })
+    )!;
+    expect(nothingNeedsYou(view.needsMe)).toBe(false);
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.level).not.toBe("green");
+    expect(strip.headline).not.toMatch(/^Nothing needs you/);
+    expect(strip.detail).toContain(
+      "Coord's scan of the questions was incomplete, so its count of the decisions that need you may be off."
+    );
+    expect(strip.badges.find((b) => b.key === "needs")!.label).toBe(
+      "needs you 0 (may be incomplete)"
+    );
+    expect(unservedDecisionsSentence(0, true)).toMatch(/not known/);
+    expect(unservedDecisionsSentence(0, true)).not.toMatch(/\b0\b/);
+  });
+
+  it("marks a stale count as possibly incomplete in the headline", () => {
+    const view = parseProjectState(
+      staleBody({
+        total: 2,
+        omitted: 0,
+        items: [
+          {
+            id: "q-1",
+            fork: "A?",
+            recommendation: null,
+            shape: "open_question",
+          },
+          {
+            id: "q-2",
+            fork: "B?",
+            recommendation: null,
+            shape: "open_question",
+          },
+        ],
+        questions_coverage: "stale",
+      })
+    )!;
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.headline).toMatch(
+      /^2 decisions need you \(may be incomplete\)/
+    );
+  });
+
+  it("leaves a read (or unserved) coverage's zero as the definite answer", () => {
+    for (const coverage of ["read", undefined]) {
+      const view = parseProjectState(
+        staleBody({
+          total: 0,
+          omitted: 0,
+          items: [],
+          questions_coverage: coverage,
+        })
+      )!;
+      expect(nothingNeedsYou(view.needsMe)).toBe(true);
+      expect(deriveHomeStrip(view, CALM_MACHINES).level).toBe("green");
+    }
+  });
+
+  it("reads a null share as unknown, never as zero", () => {
+    const view = parseProjectState(
+      staleBody({
+        total: 0,
+        items: [],
+        questions_coverage: "stale",
+        shape_share: { with_recommendation: null, total: null },
+      })
+    )!;
+    expect(view.needsMe.shapeShare).toEqual({
+      withRecommendation: null,
+      total: null,
+    });
+  });
+});
