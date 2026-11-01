@@ -205,9 +205,10 @@ async def _coord_request(
     as ``operations._proxy_coord_write``, because a caller of a write door
     decides from them whether the write may have landed:
 
-    * ``ConnectError``, ``ConnectTimeout`` or ``PoolTimeout`` → **502**: no
-      connection was made, so coord never saw the request. The only arm that
-      says nothing changed.
+    * ``ConnectError``, ``ConnectTimeout``, ``PoolTimeout``,
+      ``UnsupportedProtocol`` or ``LocalProtocolError`` → **502**: the request
+      never left, so coord never saw it. The only arm that says nothing
+      changed.
     * a timeout, any OTHER transport failure after the request may have been
       sent (``ReadError``, ``RemoteProtocolError``), a 2xx whose body is not JSON,
       or a 3xx, which httpx does not follow → **504**: coord may have committed,
@@ -221,11 +222,19 @@ async def _coord_request(
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.request(method, url, json=json_body, headers=headers)
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+        except (
+            httpx.ConnectError,
+            httpx.ConnectTimeout,
+            httpx.PoolTimeout,
+            httpx.UnsupportedProtocol,
+            httpx.LocalProtocolError,
+        ) as exc:
             # Raised before a byte reached coord: no connection was made (or
-            # none was free), so coord never saw the request and nothing changed.
-            # ConnectTimeout and PoolTimeout are TimeoutExceptions, so they are
-            # caught here, ahead of the arm that says a write may have landed.
+            # none was free), the URL's scheme cannot be sent, or this side
+            # refused to put the request on the wire — so coord never saw it and
+            # nothing changed. ConnectTimeout and PoolTimeout are
+            # TimeoutExceptions and the last two are RequestErrors, so they are
+            # caught here, ahead of the arms that say a write may have landed.
             raise refusal_error(
                 status.HTTP_502_BAD_GATEWAY,
                 RefusalCode.upstream_unavailable,

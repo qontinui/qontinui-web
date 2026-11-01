@@ -1376,7 +1376,14 @@ class TestTransportStatusesSayWhetherCoordMayHaveActed:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "never_sent", [httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout]
+        "never_sent",
+        [
+            httpx.ConnectError,
+            httpx.ConnectTimeout,
+            httpx.PoolTimeout,
+            httpx.UnsupportedProtocol,
+            httpx.LocalProtocolError,
+        ],
     )
     async def test_a_request_that_never_left_is_a_typed_502(self, never_sent) -> None:
         """Raised before a byte reached coord: nothing changed, so a write is
