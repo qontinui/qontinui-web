@@ -5,6 +5,8 @@
 
 import type {
   DegradedMetrics,
+  JudgeAgreement,
+  JudgeAgreementSource,
   PopulatedMetrics,
   SeriesWeek,
   VerificationLane,
@@ -191,11 +193,70 @@ export function degraded(): DegradedMetrics {
   };
 }
 
+export const REFUTATION_VERIFICATION_ID =
+  "5f0c2a8e-7d1b-4c3e-9a40-1b2c3d4e5f60";
+
 export const REFUTATION_FINDING = {
   finding_id: "7a1b2c3d-0000-4000-8000-00000000abcd",
   topic: "verification-refuted",
   title:
     "Independent verification REFUTED shipped unit 2026-09-01-widget-export — 2 unmet criterion(s)",
-  body: 'A fresh-context verifier checked work unit `2026-09-01-widget-export` ("Widgets export to CSV") against origin/main and the deployed surface and found its "landed and verified" claim did not hold.',
+  body: `A fresh-context verifier checked work unit \`2026-09-01-widget-export\` ("Widgets export to CSV") against origin/main and the deployed surface and found its "landed and verified" claim did not hold.
+
+Verification: ${REFUTATION_VERIFICATION_ID}
+Cited PRs: qontinui/qontinui-web#1
+`,
   created_at: hoursAgo(48),
+  artifact_refs: {
+    verification_id: REFUTATION_VERIFICATION_ID,
+    work_unit_id: "11111111-2222-4333-8444-555555555555",
+  },
 };
+
+/** The `i`th of several refutation findings, each naming its own verdict. */
+export function refutationFinding(i: number) {
+  const hex = i.toString(16).padStart(12, "0");
+  return {
+    ...REFUTATION_FINDING,
+    finding_id: `7a1b2c3d-0000-4000-8000-${hex}`,
+    title: `Independent verification REFUTED shipped unit unit-${i} — 1 unmet criterion(s)`,
+    body: `A fresh-context verifier checked work unit \`unit-${i}\` ("Unit ${i}") and found its claim did not hold.
+
+Verification: 9e000000-0000-4000-8000-${hex}
+`,
+    created_at: hoursAgo(1 + i),
+    artifact_refs: { verification_id: `9e000000-0000-4000-8000-${hex}` },
+  };
+}
+
+const ZERO_ROW = { survived: 0, refuted: 0, unverifiable: 0 };
+
+/** coord's `judge_agreement` — seeded kappa 0.71 over 24 binary cases. */
+export function judgeAgreement(
+  seeded: Partial<JudgeAgreementSource> = {},
+  operator: Partial<JudgeAgreementSource> = {}
+): JudgeAgreement {
+  const source = (o: Partial<JudgeAgreementSource>): JudgeAgreementSource => ({
+    n: 0,
+    binary_n: 0,
+    kappa: null,
+    reason: "n<20",
+    matrix: {
+      holds: { ...ZERO_ROW },
+      fails: { ...ZERO_ROW },
+      cannot_tell: { ...ZERO_ROW },
+    },
+    ...o,
+  });
+  return {
+    seeded: source({
+      n: 27,
+      binary_n: 24,
+      kappa: 0.712,
+      reason: null,
+      ...seeded,
+    }),
+    operator: source({ n: 6, binary_n: 5, ...operator }),
+    consequence: { false_survived_count: 0 },
+  };
+}

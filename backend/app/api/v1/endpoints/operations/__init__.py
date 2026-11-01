@@ -14588,6 +14588,94 @@ async def get_coord_verification_metrics(
         raise
 
 
+# ---------------------------------------------------------------------------
+# Operator verdict label — `POST /operations/coord/verification/labels`
+#                        → coord `POST /coord/verification/labels`
+#
+# The drill-down's one-click "Did this hold up? Yes · No · Can't tell" on a
+# sampled verdict. Plan
+# `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
+# Phase 4 (web half): an `operator` judge case is the only label source that
+# is not synthetic, and coord serves its agreement with the verifier as
+# `judge_agreement.operator` on the metrics door above.
+#
+# **The operator's own principal is what labels.** The operator's Cognito
+# bearer is forwarded (`_tenant_headers`), exactly as the metrics proxy does,
+# so coord derives `labelled_by` and the tenant from that identity and refuses
+# an `operator` label from any device / agent / service principal (`403
+# operator_principal_required`). Nothing in the body names either.
+#
+# **The body is pinned to the operator source.** `label_source` must be
+# `"operator"` and the model forbids every other field, so this door cannot
+# write a `seeded` case (the lane's) or a `consequence` case (coord's own):
+# only `{label_source, verification_id, truth}` reaches coord. coord copies
+# the verifier's verdict and criteria from the referenced row server-side.
+#
+# **coord's answer passes through with its status** (`_proxy_coord_verbatim`):
+# `201` with the recorded row, `409 duplicate_label` (the verdict already has
+# an operator label — its body names the existing row's `id`), `403`, `404
+# verification_not_found`, `422`. The page renders each one distinctly. The one
+# rewrite is the metrics proxy's: a coord `401` means coord refused the
+# operator's credential on this door, which is re-raised as a named `502`
+# rather than a `401` that would send the frontend into its session-refresh
+# branch.
+# ---------------------------------------------------------------------------
+
+_COORD_VERIFICATION_LABELS_PATH = "/coord/verification/labels"
+
+
+class OperatorVerificationLabelRequest(BaseModel):
+    """Body for ``POST /operations/coord/verification/labels``.
+
+    ``truth`` is the operator's answer to "Did this hold up?": ``holds``
+    (Yes), ``fails`` (No) or ``cannot_tell`` (Can't tell). ``verification_id``
+    names the verdict row (``coord.work_unit_verifications.id``) being judged.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    label_source: Literal["operator"]
+    verification_id: UUID
+    truth: Literal["holds", "fails", "cannot_tell"]
+
+
+@router.post("/coord/verification/labels")
+async def post_coord_verification_label(
+    body: OperatorVerificationLabelRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Record the operator's label on one verification verdict.
+
+    Forwards ``{label_source: "operator", verification_id, truth}`` with the
+    operator's bearer; coord's status and body come back verbatim (see the
+    section comment for each status), except a coord ``401``.
+    """
+    resp = await _proxy_coord_verbatim(
+        "POST",
+        _COORD_VERIFICATION_LABELS_PATH,
+        tenant_id=tenant_id,
+        json_body={
+            "label_source": body.label_source,
+            "verification_id": str(body.verification_id),
+            "truth": body.truth,
+        },
+    )
+    if resp.status_code == 401:
+        raise refusal_error(
+            502,
+            RefusalCode.credential_rejected,
+            NextActionKind.report_defect,
+            (
+                f"coord refused the operator's credential on "
+                f"{_COORD_VERIFICATION_LABELS_PATH} (HTTP 401): "
+                f"{bytes(resp.body).decode(errors='replace')}"
+            ),
+            discriminator="coord_verification_label_credential_refused",
+            glossary_terms=[GlossaryTerm.coord],
+        )
+    return resp
+
+
 @router.put("/coord/policies/system/{system_rule_id}/override")
 async def put_coord_policy_override(
     system_rule_id: str,

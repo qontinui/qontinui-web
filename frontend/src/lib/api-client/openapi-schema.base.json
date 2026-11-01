@@ -35610,6 +35610,38 @@
         "title": "OperatorLabel",
         "type": "string"
       },
+      "OperatorVerificationLabelRequest": {
+        "additionalProperties": false,
+        "description": "Body for ``POST /operations/coord/verification/labels``.\n\n``truth`` is the operator's answer to \"Did this hold up?\": ``holds``\n(Yes), ``fails`` (No) or ``cannot_tell`` (Can't tell). ``verification_id``\nnames the verdict row (``coord.work_unit_verifications.id``) being judged.",
+        "properties": {
+          "label_source": {
+            "const": "operator",
+            "title": "Label Source",
+            "type": "string"
+          },
+          "truth": {
+            "enum": [
+              "holds",
+              "fails",
+              "cannot_tell"
+            ],
+            "title": "Truth",
+            "type": "string"
+          },
+          "verification_id": {
+            "format": "uuid",
+            "title": "Verification Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label_source",
+          "verification_id",
+          "truth"
+        ],
+        "title": "OperatorVerificationLabelRequest",
+        "type": "object"
+      },
       "OrganizationCreate": {
         "description": "Schema for creating a new organization.",
         "properties": {
@@ -100819,6 +100851,46 @@
           }
         ],
         "summary": "Post Coord Tenant Member",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/verification/labels": {
+      "post": {
+        "description": "Record the operator's label on one verification verdict.\n\nForwards ``{label_source: \"operator\", verification_id, truth}`` with the\noperator's bearer; coord's status and body come back verbatim (see the\nsection comment for each status), except a coord ``401``.",
+        "operationId": "api_v1_operations_coord_verification_labels_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorVerificationLabelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Coord Verification Label",
         "tags": [
           "operations"
         ]

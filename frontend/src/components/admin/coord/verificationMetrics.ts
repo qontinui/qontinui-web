@@ -26,6 +26,11 @@
  * prints a word or a dash for it — nothing in here defaults a count to 0.
  */
 
+import type {
+  OperatorLabelResult,
+  OperatorLabelTruth,
+} from "@/lib/api/operations/coordVerification";
+
 /** The window the tile reads. coord's default is also 28 days. */
 export const DEFAULT_METRICS_WINDOW = "28d";
 
@@ -137,12 +142,46 @@ export interface MetricsWindow {
   to: string;
 }
 
+/** Rows are the label's truth, columns the verifier's verdict. */
+export type JudgeMatrix = Record<
+  "holds" | "fails" | "cannot_tell",
+  Record<"survived" | "refuted" | "unverifiable", number>
+>;
+
+/**
+ * One label source's agreement with the verifier (`seeded` or `operator`).
+ * `kappa` is Cohen's kappa on the binary sub-table (truth holds/fails ×
+ * verdict survived/refuted), `null` with `reason: "n<20"` below 20 binary
+ * cases and `reason: "undefined"` when the expected agreement is 1.
+ */
+export interface JudgeAgreementSource {
+  n: number;
+  binary_n: number;
+  kappa: number | null;
+  reason: "n<20" | "undefined" | null | string;
+  matrix: JudgeMatrix;
+}
+
+/** coord's `judge_agreement` — per label source, never pooled. */
+export interface JudgeAgreement {
+  seeded: JudgeAgreementSource;
+  operator: JudgeAgreementSource;
+  /** A one-sided false-`survived` signal; never put into kappa. */
+  consequence: { false_survived_count: number };
+}
+
 interface MetricsCommon {
   generated_at: string;
   window: MetricsWindow;
   population_query_id: string;
   sampling: VerificationSampling;
   lane: VerificationLane;
+  /**
+   * Absent on a coord build that predates the judge-case table; `null` with
+   * `judge_agreement_error` when coord could not read it. Neither is zero.
+   */
+  judge_agreement?: JudgeAgreement | null;
+  judge_agreement_error?: string;
 }
 
 export interface PopulatedMetrics extends MetricsCommon {
@@ -511,6 +550,210 @@ export function deriveTrustView(
 }
 
 // ---------------------------------------------------------------------------
+// Verifier agreement — one line under calibration, on the tile and the page
+// ---------------------------------------------------------------------------
+
+/**
+ * The verifier-agreement line. Plan
+ * `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
+ * Phase 4: `verifier agreement κ 0.71 (seeded n=24) · operator n=6`.
+ *
+ * - `populated` — a seeded kappa, with the seeded binary n and the operator n;
+ * - `insufficient` — fewer than 20 seeded binary cases: words, never a number;
+ * - `undefined` — enough cases, but kappa has no value (expected agreement 1);
+ * - `unknown` — the door did not answer, coord could not read the cases, or
+ *   this coord build does not serve them. Never a number and never zero.
+ */
+export type AgreementView =
+  | { state: "loading"; text: "" }
+  | {
+      state: "populated" | "insufficient" | "undefined" | "unknown";
+      text: string;
+    };
+
+export const AGREEMENT_INSUFFICIENT_TEXT = "not enough labelled cases yet";
+
+function isCount(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0;
+}
+
+function readAgreementSource(
+  v: unknown
+): Pick<JudgeAgreementSource, "n" | "binary_n" | "kappa" | "reason"> | null {
+  if (!isObject(v) || !isCount(v.n) || !isCount(v.binary_n)) return null;
+  const kappa =
+    typeof v.kappa === "number" && Number.isFinite(v.kappa) ? v.kappa : null;
+  if (kappa === null && v.kappa !== null) return null;
+  const reason = typeof v.reason === "string" ? v.reason : null;
+  return { n: v.n, binary_n: v.binary_n, kappa, reason };
+}
+
+function unknownAgreement(why: string): AgreementView {
+  return { state: "unknown", text: `verifier agreement unknown — ${why}` };
+}
+
+export function deriveVerifierAgreement(
+  read:
+    | { status: "loading" }
+    | { status: "error"; reason: string }
+    | { status: "ok"; metrics: VerificationMetrics }
+): AgreementView {
+  if (read.status === "loading") return { state: "loading", text: "" };
+  if (read.status === "error") {
+    return unknownAgreement("the metrics door did not answer");
+  }
+  const m = read.metrics;
+  if (typeof m.judge_agreement_error === "string") {
+    return unknownAgreement(
+      `coord could not read the labelled cases (${m.judge_agreement_error})`
+    );
+  }
+  if (m.judge_agreement == null) {
+    return unknownAgreement(
+      m.degraded ? "coord could not look" : "this coord build does not serve it"
+    );
+  }
+  const raw: unknown = m.judge_agreement;
+  const seeded = isObject(raw) ? readAgreementSource(raw.seeded) : null;
+  if (!seeded) {
+    return unknownAgreement(
+      "coord served it in a shape this page does not recognise"
+    );
+  }
+  const operator = isObject(raw) ? readAgreementSource(raw.operator) : null;
+  const operatorPart = operator
+    ? `operator n=${operator.n}`
+    : "operator n unknown";
+  if (seeded.kappa !== null) {
+    return {
+      state: "populated",
+      text: `verifier agreement κ ${seeded.kappa.toFixed(2)} (seeded n=${seeded.binary_n}) · ${operatorPart}`,
+    };
+  }
+  if (seeded.reason === "n<20") {
+    return {
+      state: "insufficient",
+      text: `verifier agreement: ${AGREEMENT_INSUFFICIENT_TEXT} (seeded n=${seeded.binary_n}) · ${operatorPart}`,
+    };
+  }
+  if (seeded.reason === "undefined") {
+    return {
+      state: "undefined",
+      text: `verifier agreement undefined (n=${seeded.binary_n}) · ${operatorPart}`,
+    };
+  }
+  return unknownAgreement(
+    `coord served no kappa and no reason this page recognises (${seeded.reason ?? "none"})`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The operator's one-click label — which verdicts carry it this week
+// ---------------------------------------------------------------------------
+
+/** At most this many verdicts per ISO week carry the label control. */
+export const OPERATOR_LABELS_PER_WEEK = 3;
+
+/** The UTC ISO-8601 week of `at`, e.g. `2026-W44`. */
+export function isoWeekKey(at: number | Date): string {
+  const t = typeof at === "number" ? new Date(at) : at;
+  const d = new Date(
+    Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate())
+  );
+  // The ISO week belongs to the year of its Thursday.
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = Date.UTC(d.getUTCFullYear(), 0, 1);
+  const week = Math.ceil(((d.getTime() - yearStart) / 86400_000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+/** 32-bit FNV-1a — a stable, dependency-free hash for the weekly draw. */
+function fnv1a(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/**
+ * The verdicts that carry "Did this hold up?" this week: the
+ * {@link OPERATOR_LABELS_PER_WEEK} lowest by a hash of `<week>:<id>`. The draw
+ * is a pure function of the week and the ids, so a reload does not reshuffle
+ * it and nothing about it is stored. Duplicates are drawn once.
+ */
+export function sampleForOperatorLabel(
+  verificationIds: readonly string[],
+  weekKey: string,
+  max: number = OPERATOR_LABELS_PER_WEEK
+): string[] {
+  return [...new Set(verificationIds)]
+    .map((id) => ({ id, h: fnv1a(`${weekKey}:${id}`) }))
+    .sort((a, b) => a.h - b.h || a.id.localeCompare(b.id))
+    .slice(0, Math.max(0, max))
+    .map((x) => x.id);
+}
+
+/** The three answers, in the order the control shows them. */
+export const OPERATOR_LABEL_CHOICES: ReadonlyArray<{
+  truth: OperatorLabelTruth;
+  label: string;
+}> = [
+  { truth: "holds", label: "Yes" },
+  { truth: "fails", label: "No" },
+  { truth: "cannot_tell", label: "Can't tell" },
+];
+
+const TRUTH_WORDS: Record<OperatorLabelTruth, string> = {
+  holds: "held up",
+  fails: "did not hold up",
+  cannot_tell: "can't tell",
+};
+
+/**
+ * What the control says after a click. `recorded` quotes the row coord wrote
+ * back; `already_labelled` is not an error — the verdict was labelled before.
+ * `attention` marks the answers where the label is NOT known to be stored.
+ */
+export function operatorLabelOutcome(r: OperatorLabelResult): {
+  text: string;
+  attention: boolean;
+} {
+  switch (r.kind) {
+    case "recorded":
+      return {
+        text: `Recorded: ${TRUTH_WORDS[r.record.truth] ?? r.record.truth} (verifier said ${r.record.verifier_verdict})`,
+        attention: false,
+      };
+    case "already_labelled":
+      return {
+        text: "Already labelled — this verdict carries an operator label",
+        attention: false,
+      };
+    case "refused":
+      return {
+        text: `Not recorded — coord refused it${r.code ? ` (${r.code})` : ""}: ${r.message}`,
+        attention: true,
+      };
+    case "not_found":
+      return {
+        text:
+          r.code === "verification_not_found"
+            ? "Not recorded — coord has no such verdict in this project"
+            : `Not recorded — the label door is not answering (HTTP 404): ${r.message}`,
+        attention: true,
+      };
+    case "failed":
+      return {
+        text: `Not known to be recorded — ${r.status === null ? r.message : `HTTP ${r.status}: ${r.message}`}`,
+        attention: true,
+      };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Refuted units — read from the findings store, where each refutation posts
 // ---------------------------------------------------------------------------
 
@@ -520,6 +763,8 @@ export interface RefutedUnit {
   label: string;
   slug: string | null;
   createdAt: string | null;
+  /** The refuting verdict's row id, when the finding names it. */
+  verificationId: string | null;
 }
 
 interface FindingLike {
@@ -528,6 +773,24 @@ interface FindingLike {
   body?: string | null;
   created_at?: string | null;
   topic?: string | null;
+  artifact_refs?: unknown;
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The verdict a refutation finding names: coord writes it into the finding's
+ * `artifact_refs.verification_id` and into its body as `Verification: <id>`.
+ */
+export function verificationIdOf(f: FindingLike): string | null {
+  const ref = isObject(f.artifact_refs)
+    ? f.artifact_refs.verification_id
+    : undefined;
+  if (typeof ref === "string" && UUID_RE.test(ref)) return ref.toLowerCase();
+  const m = /^Verification: (\S+)$/m.exec(f.body ?? "");
+  const id = m?.[1];
+  return id && UUID_RE.test(id) ? id.toLowerCase() : null;
 }
 
 /**
@@ -547,6 +810,7 @@ export function refutedUnitFromFinding(f: FindingLike): RefutedUnit {
     label: bodyMatch?.[2] ?? slug ?? f.title ?? f.finding_id,
     slug,
     createdAt: f.created_at ?? null,
+    verificationId: verificationIdOf(f),
   };
 }
 
