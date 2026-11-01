@@ -123,6 +123,7 @@
   "tests/test_coord_read_boundary_revoke.py": 0.0,
   "tests/test_coord_repo_branches_touched_files_authoritative_01_migration.py": 18.9,
   "tests/test_coord_repo_tenant_bindings_01_migration.py": 13.6,
+  "tests/test_coord_retention_idx_01_migration.py": 15.0,
   "tests/test_coord_schema_boundary_guard.py": 4.6,
   "tests/test_coord_sessev_interact_idx_01_migration.py": 19.5,
   "tests/test_coord_session_census_01_migration.py": 9.7,

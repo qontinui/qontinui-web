@@ -271,6 +271,7 @@ export type {
   MachineAliasRegistryOptions,
   MachineIdentity,
 } from "./machineAliases";
+export { RowKeyAliases, useRowKey } from "./rowKeyAliases";
 
 export {
   MachineName,
