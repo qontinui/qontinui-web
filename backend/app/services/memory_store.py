@@ -283,22 +283,55 @@ _ANCHOR_MERGE_CONFLICT_ACTION = f"""
 """
 
 
+def _scope_params(exclude_scopes: Collection[str]) -> dict[str, Any]:
+    """The bind params of an ``exclude_scopes`` predicate; empty when none.
+
+    ``exclude_scopes`` is the endpoint's ``withheld_scopes`` answer — the
+    scopes the calling principal may neither read nor write. Every SQL form
+    of that predicate in this module (:func:`_scope_exclusion`,
+    :func:`_target_scope_exclusion`, :func:`_anchor_merge_conflict_action`)
+    binds it under this one name, as an EXPANDING parameter
+    (:func:`_expanding_scope_binds`).
+    """
+    if not exclude_scopes:
+        return {}
+    return {"exclude_scopes": sorted(exclude_scopes)}
+
+
 def _scope_exclusion(
     exclude_scopes: Collection[str], alias: str = "r"
 ) -> tuple[str, dict[str, Any]]:
     """`` AND <alias>.scope NOT IN :exclude_scopes`` plus its params.
 
-    ``exclude_scopes`` is the endpoint's ``withheld_scopes`` answer — the
-    scopes the calling principal may neither read nor write. Empty returns
-    an empty clause and no params, so a statement built for an admitted
+    The predicate on a row's OWN scope. Empty ``exclude_scopes`` returns an
+    empty clause and no params, so a statement built for an admitted
     principal is byte-identical to the one it ran before the predicate
-    existed. The caller binds ``exclude_scopes`` as an EXPANDING parameter.
+    existed.
     """
-    if not exclude_scopes:
+    params = _scope_params(exclude_scopes)
+    if not params:
+        return "", {}
+    return f" AND {alias}.scope NOT IN :exclude_scopes", params
+
+
+def _target_scope_exclusion(
+    target: str, exclude_scopes: Collection[str]
+) -> tuple[str, dict[str, Any]]:
+    """`` AND NOT EXISTS (<a withheld record t.memory_id = target>)``.
+
+    The predicate on the scope of a record a row POINTS AT — a link's
+    target (``target="l.target_id"``) or any of a job's targets
+    (``target="ANY(j.target_ids)"``). A pointer to a record that no longer
+    exists passes, exactly as it did before the predicate existed. Empty
+    ``exclude_scopes`` returns an empty clause and no params.
+    """
+    params = _scope_params(exclude_scopes)
+    if not params:
         return "", {}
     return (
-        f" AND {alias}.scope NOT IN :exclude_scopes",
-        {"exclude_scopes": sorted(exclude_scopes)},
+        " AND NOT EXISTS (SELECT 1 FROM coord.memory_records t"
+        f" WHERE t.memory_id = {target} AND t.scope IN :exclude_scopes)",
+        params,
     )
 
 
@@ -757,7 +790,7 @@ async def insert_record(
     which is today's semantics exactly.
     """
     proposed_id = uuid4()
-    _scope_clause, scope_params = _scope_exclusion(exclude_scopes)
+    scope_params = _scope_params(exclude_scopes)
     returned = (
         await session.execute(
             text(
@@ -933,7 +966,7 @@ async def insert_records_batch(
             union.extend(a for a in item.anchors if a not in union)
             unique[seen] = replace(head, anchors=union)
     proposed: dict[str, UUID] = {i.content_hash: uuid4() for i in unique}
-    _scope_clause, scope_params = _scope_exclusion(exclude_scopes)
+    scope_params = _scope_params(exclude_scopes)
     stmt = text(
         f"""
         INSERT INTO coord.memory_records
@@ -1945,6 +1978,10 @@ async def get_record_by_id(
     (:data:`_EFFECTIVE_NOW_ROW_SQL`), so a row the by-id read calls live is
     exactly a row ``/memory/query`` and ``GET /memory/records`` can return
     on the validity axis. Read-only: ``access_count`` is not touched.
+
+    ``successor_scope`` is the scope of the row ``superseded_by`` names
+    (``None`` when there is none), so the endpoint can withhold a successor
+    id that sits in a scope the caller may not see.
     """
     row = (
         (
@@ -1956,8 +1993,11 @@ async def get_record_by_id(
                        r.superseded_by, r.valid_until, r.created_at,
                        (r.valid_until IS NOT NULL
                         AND r.valid_until <= {_EFFECTIVE_NOW_ROW_SQL})
-                           AS is_expired
+                           AS is_expired,
+                       s.scope AS successor_scope
                 FROM coord.memory_records r
+                LEFT JOIN coord.memory_records s
+                  ON s.tenant_id = r.tenant_id AND s.memory_id = r.superseded_by
                 WHERE r.tenant_id = :tenant_id AND r.memory_id = :memory_id
                 """
                 ),
@@ -2100,9 +2140,19 @@ class MemoryLinkInsert:
 
 
 async def resolve_link_targets(
-    session: AsyncSession, tenant_id: UUID, refs: list[str]
+    session: AsyncSession,
+    tenant_id: UUID,
+    refs: list[str],
+    exclude_scopes: Collection[str] = (),
 ) -> dict[str, UUID]:
     """Resolve link ``target_ref`` strings to LIVE record ids, tenant-bound.
+
+    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) is applied
+    in all three lookups, so a ref naming a withheld record — by id, by
+    content hash or by title — resolves to nothing and drops like a
+    nonexistent one. That keeps a link write from confirming a withheld id,
+    content or title. In the title lookup it is applied BEFORE the
+    ``GROUP BY``, so ambiguity is judged over the rows this caller may see.
 
     Each ref is tried as a ``memory_id`` (UUID string) first, then as a
     ``content_hash``, then as an **exact title**. Only LIVE rows (the
@@ -2132,6 +2182,9 @@ async def resolve_link_targets(
     """
     if not refs:
         return {}
+    scope_clause, scope_params = _scope_exclusion(
+        exclude_scopes, alias="memory_records"
+    )
     unique_refs = list(dict.fromkeys(refs))
     resolved: dict[str, UUID] = {}
 
@@ -2146,11 +2199,18 @@ async def resolve_link_targets(
             f"""
             SELECT memory_id FROM coord.memory_records
             WHERE tenant_id = :tenant_id AND memory_id IN :ids
-              AND {_LIVE_DEDUP_PREDICATE}
+              AND {_LIVE_DEDUP_PREDICATE}{scope_clause}
             """
-        ).bindparams(bindparam("ids", expanding=True))
+        ).bindparams(
+            bindparam("ids", expanding=True), *_expanding_scope_binds(scope_params)
+        )
         rows = await session.execute(
-            stmt, {"tenant_id": tenant_id, "ids": list(set(uuid_by_ref.values()))}
+            stmt,
+            {
+                "tenant_id": tenant_id,
+                "ids": list(set(uuid_by_ref.values())),
+                **scope_params,
+            },
         )
         found_ids = {UUID(str(r.memory_id)) for r in rows}
         for ref, candidate in uuid_by_ref.items():
@@ -2163,11 +2223,13 @@ async def resolve_link_targets(
             f"""
             SELECT memory_id, content_hash FROM coord.memory_records
             WHERE tenant_id = :tenant_id AND content_hash IN :hashes
-              AND {_LIVE_DEDUP_PREDICATE}
+              AND {_LIVE_DEDUP_PREDICATE}{scope_clause}
             """
-        ).bindparams(bindparam("hashes", expanding=True))
+        ).bindparams(
+            bindparam("hashes", expanding=True), *_expanding_scope_binds(scope_params)
+        )
         rows = await session.execute(
-            stmt, {"tenant_id": tenant_id, "hashes": remaining}
+            stmt, {"tenant_id": tenant_id, "hashes": remaining, **scope_params}
         )
         by_hash = {str(r.content_hash): UUID(str(r.memory_id)) for r in rows}
         for ref in remaining:
@@ -2195,13 +2257,15 @@ async def resolve_link_targets(
             SELECT title, min(memory_id::text) AS memory_id
             FROM coord.memory_records
             WHERE tenant_id = :tenant_id AND title IN :titles
-              AND {_LIVE_DEDUP_PREDICATE}
+              AND {_LIVE_DEDUP_PREDICATE}{scope_clause}
             GROUP BY title
             HAVING count(*) = 1
             """
-        ).bindparams(bindparam("titles", expanding=True))
+        ).bindparams(
+            bindparam("titles", expanding=True), *_expanding_scope_binds(scope_params)
+        )
         rows = await session.execute(
-            stmt, {"tenant_id": tenant_id, "titles": remaining}
+            stmt, {"tenant_id": tenant_id, "titles": remaining, **scope_params}
         )
         by_title = {str(r.title): UUID(str(r.memory_id)) for r in rows}
         for ref in remaining:
@@ -2273,12 +2337,7 @@ async def fetch_outbound_links(
     """
     if not source_ids:
         return {}
-    target_clause = (
-        " AND NOT EXISTS (SELECT 1 FROM coord.memory_records t"
-        " WHERE t.memory_id = l.target_id AND t.scope IN :exclude_scopes)"
-        if exclude_scopes
-        else ""
-    )
+    target_clause, scope_params = _target_scope_exclusion("l.target_id", exclude_scopes)
     stmt = text(
         f"""
         SELECT l.link_id, l.source_id, l.target_id, l.relation, l.description,
@@ -2290,11 +2349,10 @@ async def fetch_outbound_links(
         ORDER BY l.created_at ASC, l.link_id ASC
         """
     ).bindparams(bindparam("ids", expanding=True))
-    params: dict[str, Any] = {"tenant_id": tenant_id, "ids": source_ids}
-    if exclude_scopes:
-        stmt = stmt.bindparams(bindparam("exclude_scopes", expanding=True))
-        params["exclude_scopes"] = sorted(exclude_scopes)
-    rows = await session.execute(stmt, params)
+    stmt = stmt.bindparams(*_expanding_scope_binds(scope_params))
+    rows = await session.execute(
+        stmt, {"tenant_id": tenant_id, "ids": source_ids, **scope_params}
+    )
     out: dict[UUID, list[dict[str, Any]]] = {}
     for r in rows.mappings():
         d = dict(r)
@@ -2554,13 +2612,8 @@ async def graph_edges(
     either. The caller checks the root itself. Empty → the walk is
     unchanged.
     """
-    walk_clause = " AND l.relation IN :relations" if relations else ""
-    if exclude_scopes:
-        walk_clause += (
-            " AND NOT EXISTS (SELECT 1 FROM coord.memory_records t"
-            " WHERE t.memory_id = l.target_id"
-            " AND t.scope IN :exclude_scopes)"
-        )
+    target_clause, scope_params = _target_scope_exclusion("l.target_id", exclude_scopes)
+    walk_clause = (" AND l.relation IN :relations" if relations else "") + target_clause
     stmt = text(
         f"""
         WITH RECURSIVE walk
@@ -2589,17 +2642,15 @@ async def graph_edges(
     )
     if relations:
         stmt = stmt.bindparams(bindparam("relations", expanding=True))
-    if exclude_scopes:
-        stmt = stmt.bindparams(bindparam("exclude_scopes", expanding=True))
+    stmt = stmt.bindparams(*_expanding_scope_binds(scope_params))
     params: dict[str, Any] = {
         "tenant_id": tenant_id,
         "root_id": root_id,
         "depth": depth,
+        **scope_params,
     }
     if relations:
         params["relations"] = relations
-    if exclude_scopes:
-        params["exclude_scopes"] = sorted(exclude_scopes)
     rows = await session.execute(stmt, params)
     out: list[dict[str, Any]] = []
     for r in rows.mappings():
@@ -3419,6 +3470,13 @@ async def find_near_duplicate_pairs(
 
     Same tenant, same kind, both live and embedded, cosine similarity
     above ``min_similarity`` (``<=>`` distance below ``1 - min_similarity``).
+
+    **Same ``(scope, scope_ref)`` too.** :func:`apply_merge` supersedes the
+    loser onto the survivor, so a pair across a partition boundary would
+    fold a private ``session`` (or ``agent``) row into a ``tenant`` row, or
+    one session's row into another session's — moving content across the
+    one boundary ``scope_ref`` exists to enforce. ``IS NOT DISTINCT FROM``
+    because ``tenant`` rows carry a NULL ``scope_ref``.
     The left side is bounded to rows created inside ``window_days`` and
     the pair batch is capped at ``pair_limit`` per run, tightest pairs
     first. ``a.memory_id < b.memory_id`` de-duplicates the symmetric join.
@@ -3491,6 +3549,8 @@ async def find_near_duplicate_pairs(
             JOIN coord.memory_records b
               ON b.tenant_id = a.tenant_id
              AND b.kind = a.kind
+             AND b.scope = a.scope
+             AND b.scope_ref IS NOT DISTINCT FROM a.scope_ref
              AND b.memory_id > a.memory_id
             WHERE a.tenant_id = :tenant_id
               AND a.is_tombstone = false AND b.is_tombstone = false
@@ -3620,6 +3680,14 @@ async def fetch_cluster_candidates(
     Returns oldest-first dicts with the parsed embedding (each carries
     ``memory_id, title, content, importance, created_at, embedding``).
 
+    **Never a ``session`` row, for any claimer.** A cluster becomes a
+    ``synthesis`` job whose ``input_texts`` are its members' contents, and
+    the job's result is a ``scope='tenant'`` ``mental_model`` that
+    supersedes them. A session episode in a cluster would therefore be
+    handed to whichever runner claims the job, and condensed into a row
+    every principal in the tenant can read — the private partition
+    published by the consolidation sweep.
+
     ## Why ``episode`` only
 
     This selector used to read ``kind IN ('episode', 'observation')``, and that
@@ -3725,6 +3793,7 @@ async def fetch_cluster_candidates(
             FROM coord.memory_records
             WHERE tenant_id = :tenant_id
               AND kind = 'episode'
+              AND scope <> 'session'
               AND is_tombstone = false
               AND superseded_by IS NULL
               AND (valid_until IS NULL OR valid_until > CAST(:now AS timestamptz))
@@ -4052,6 +4121,16 @@ async def fetch_reindex_batch(
     it be re-queued, even under the SAME tag. Excluding only in-flight
     jobs here is therefore the exact complement of that dedupe: together
     they let a stuck row heal without ever double-queuing a live one.
+
+    **``session`` rows are never selected, so no embedding job ever targets
+    one.** An embedding job hands its targets' CONTENTS to whichever runner
+    claims it, and the claimer is a device principal, which the session
+    partition is withheld from. So a session row stays as embedded as its
+    writer made it — a row written without a vector is FTS-only for its
+    whole life. That costs nothing measurable today: production held zero
+    session rows at the census (coord finding ``664e470a``). If session
+    rows ever need the vector arm, coord (which can prove the session) is
+    the writer to send the vector, not this sweep.
     """
     rows = await session.execute(
         text(
@@ -4059,6 +4138,7 @@ async def fetch_reindex_batch(
             SELECT r.tenant_id, r.memory_id, r.content
             FROM coord.memory_records r
             WHERE r.is_tombstone = false
+              AND r.scope <> 'session'
               AND (r.embedding_model IS DISTINCT FROM :current_tag
                    OR r.embedding IS NULL)
               AND NOT EXISTS (
@@ -4450,8 +4530,15 @@ async def claim_jobs(
     limit: int,
     kinds: list[str],
     worker: str,
+    exclude_scopes: Collection[str] = (),
 ) -> list[ClaimedMemoryJob]:
     """Atomically claim up to ``limit`` pending jobs of ``kinds``.
+
+    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) skips any
+    job with a target in one of those scopes — its ``target_ids`` and
+    ``input_texts`` would hand the claimer a withheld row's id and content.
+    Defense in depth: the enqueuers (:func:`fetch_cluster_candidates`,
+    :func:`fetch_reindex_batch`) already never target a ``session`` row.
 
     ``FOR UPDATE SKIP LOCKED`` is mandatory: two runners polling the same
     tenant concurrently must split the queue, never double-claim a row.
@@ -4462,31 +4549,35 @@ async def claim_jobs(
     """
     if not kinds:
         return []
+    target_clause, scope_params = _target_scope_exclusion(
+        "ANY(j.target_ids)", exclude_scopes
+    )
     rows = await session.execute(
         text(
-            """
+            f"""
             UPDATE coord.memory_jobs
             SET status = 'claimed',
                 claimed_by = :worker,
                 claimed_at = now()
             WHERE job_id IN (
-                SELECT job_id
-                FROM coord.memory_jobs
-                WHERE tenant_id = :tenant_id
-                  AND status = 'pending'
-                  AND kind = ANY(CAST(:kinds AS text[]))
-                ORDER BY created_at
-                FOR UPDATE SKIP LOCKED
+                SELECT j.job_id
+                FROM coord.memory_jobs j
+                WHERE j.tenant_id = :tenant_id
+                  AND j.status = 'pending'
+                  AND j.kind = ANY(CAST(:kinds AS text[])){target_clause}
+                ORDER BY j.created_at
+                FOR UPDATE OF j SKIP LOCKED
                 LIMIT :limit
             )
             RETURNING job_id, kind, target_ids, input_texts
             """
-        ),
+        ).bindparams(*_expanding_scope_binds(scope_params)),
         {
             "tenant_id": tenant_id,
             "worker": worker,
             "limit": limit,
             "kinds": list(kinds),
+            **scope_params,
         },
     )
     claimed: list[ClaimedMemoryJob] = []
@@ -4503,9 +4594,16 @@ async def claim_jobs(
 
 
 async def get_job_kind(
-    session: AsyncSession, tenant_id: UUID, job_id: UUID
+    session: AsyncSession,
+    tenant_id: UUID,
+    job_id: UUID,
+    exclude_scopes: Collection[str] = (),
 ) -> str | None:
     """This job's ``kind``, or ``None`` when it is not in this tenant.
+
+    Also ``None`` when any of the job's targets is in ``exclude_scopes`` (the
+    endpoint's ``withheld_scopes`` answer), so a principal withheld a row
+    can neither post a result onto it nor tell its job from an unknown one.
 
     An unlocked peek, used only to pick the parser for a posted result:
     ``kind`` is set at enqueue and never updated, so it cannot change
@@ -4513,15 +4611,19 @@ async def get_job_kind(
     :func:`_lock_claimed_job`, which is what actually refuses a result
     posted in the wrong shape.
     """
+    target_clause, scope_params = _target_scope_exclusion(
+        "ANY(j.target_ids)", exclude_scopes
+    )
     kind = (
         await session.execute(
             text(
+                f"""
+                SELECT j.kind FROM coord.memory_jobs j
+                WHERE j.tenant_id = :tenant_id
+                  AND j.job_id = :job_id{target_clause}
                 """
-                SELECT kind FROM coord.memory_jobs
-                WHERE tenant_id = :tenant_id AND job_id = :job_id
-                """
-            ),
-            {"tenant_id": tenant_id, "job_id": job_id},
+            ).bindparams(*_expanding_scope_binds(scope_params)),
+            {"tenant_id": tenant_id, "job_id": job_id, **scope_params},
         )
     ).scalar_one_or_none()
     return None if kind is None else str(kind)

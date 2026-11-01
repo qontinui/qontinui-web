@@ -30,26 +30,35 @@ pgvector) is unreachable, the same posture as ``test_memory_api_db``.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Generator
+import hashlib
+from collections.abc import Awaitable, Callable, Generator
+from datetime import UTC, datetime
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
 
 from app.api.v1.endpoints.memory import MemoryPrincipal, withheld_scopes
+from app.services import memory_store as store
+from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_memory_api_db import (
     _SETUP_SQL,
     MemoryClient,
+    _client_vector,
     _exec,
     _record,
     _scalar,
 )
 
 _NOT_FOUND_BY_ID = {"detail": "memory record not found in your tenant"}
-_NOT_FOUND_GRAPH = {"detail": "memory record not found"}
 
 _SESSION_REF = str(uuid4())
 
@@ -299,7 +308,7 @@ class TestGraph:
         corpus = _Corpus(mc)
         resp = _graph(_as(mc, "device"), corpus.session)
         assert resp.status_code == 404
-        assert resp.json() == _NOT_FOUND_GRAPH
+        assert resp.json() == _NOT_FOUND_BY_ID
         assert _graph(mc, str(uuid4())).json() == resp.json()
 
     def test_device_graph_rooted_at_a_tenant_row_is_unchanged(
@@ -455,7 +464,16 @@ class TestSupersede:
             f"/api/v1/memory/records/{corpus.session}/supersede",
             json={"title": "hijack", "content": "an injected successor"},
         )
-        assert resp.status_code == 403, resp.text
+        # The same 404 as an unknown id: the route cannot be used to probe
+        # which ids are session rows.
+        assert resp.status_code == 404, resp.text
+        assert resp.json() == _NOT_FOUND_BY_ID
+        unknown = mc.client.post(
+            f"/api/v1/memory/records/{uuid4()}/supersede",
+            json={"title": "hijack", "content": "an injected successor"},
+        )
+        assert unknown.status_code == 404
+        assert unknown.json() == resp.json()
         assert _live_rows(memory_engine) == before
         assert _successor_of(memory_engine, corpus.session) is None
 
@@ -473,7 +491,8 @@ class TestSupersede:
                 "scope": "tenant",
             },
         )
-        assert resp.status_code == 403, resp.text
+        assert resp.status_code == 404, resp.text
+        assert resp.json() == _NOT_FOUND_BY_ID
         assert _successor_of(memory_engine, corpus.session) is None
 
     def test_device_supersede_naming_session_scope_is_refused(
@@ -735,3 +754,448 @@ class TestContentDedupe:
         (rec,) = resp.json()["records"]
         assert rec == {"memory_id": corpus.session, "deduped": True}
         assert "c" * 40 in _anchors_of(memory_engine, corpus.session)
+
+
+# ---------------------------------------------------------------------------
+# Graph — the recursive arm of the walk, not just the first hop
+# ---------------------------------------------------------------------------
+
+
+class TestGraphRecursion:
+    def test_device_walk_drops_a_session_node_two_hops_out(
+        self, mc: MemoryClient
+    ) -> None:
+        """``tenant -> tenant2 -> session``: the session node is reached only
+        by the RECURSIVE half of the walk, so this goes red when only that
+        half loses its exclusion."""
+        _as(mc, "coord_service")
+        session_id = _write(
+            mc,
+            "a session note two hops from the root",
+            scope="session",
+            scope_ref=_SESSION_REF,
+        )
+        middle = _write(
+            mc,
+            "the middle tenant fact",
+            links=[{"target_ref": session_id, "relation": "related"}],
+        )
+        root = _write(
+            mc,
+            "the root tenant fact",
+            links=[{"target_ref": middle, "relation": "related"}],
+        )
+
+        device = _graph(_as(mc, "device"), root)
+        assert device.status_code == 200, device.text
+        body = device.json()
+        assert {n["memory_id"] for n in body["nodes"]} == {root, middle}
+        assert {(e["source_id"], e["target_id"]) for e in body["edges"]} == {
+            (root, middle)
+        }
+
+        service = _graph(_as(mc, "coord_service"), root).json()
+        assert {n["memory_id"] for n in service["nodes"]} == {
+            root,
+            middle,
+            session_id,
+        }
+
+
+# ---------------------------------------------------------------------------
+# GET /records/{id} — a superseded row must not name a withheld successor
+# ---------------------------------------------------------------------------
+
+
+class TestSupersededByLeak:
+    def _tenant_row_superseded_into_session(self, mc: MemoryClient) -> tuple[str, str]:
+        _as(mc, "coord_service")
+        old = _write(mc, "a tenant fact later moved into a session")
+        resp = mc.client.post(
+            f"/api/v1/memory/records/{old}/supersede",
+            json={
+                "title": "moved",
+                "content": "the session-private successor",
+                "scope": "session",
+                "scope_ref": _SESSION_REF,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        return old, str(resp.json()["memory_id"])
+
+    def test_device_by_id_withholds_a_session_successor(self, mc: MemoryClient) -> None:
+        old, new = self._tenant_row_superseded_into_session(mc)
+        resp = _as(mc, "device").client.get(f"/api/v1/memory/records/{old}")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["state"] == "superseded"
+        assert body["superseded_by"] is None
+        assert new not in resp.text
+
+    def test_admitted_by_id_names_the_successor(self, mc: MemoryClient) -> None:
+        old, new = self._tenant_row_superseded_into_session(mc)
+        body = (
+            _as(mc, "coord_service").client.get(f"/api/v1/memory/records/{old}").json()
+        )
+        assert body["superseded_by"] == new
+
+    def test_device_by_id_names_a_tenant_successor(self, mc: MemoryClient) -> None:
+        corpus = _Corpus(mc)
+        resp = _as(mc, "device").client.post(
+            f"/api/v1/memory/records/{corpus.tenant}/supersede",
+            json={"title": "fixed", "content": "the corrected shared fact"},
+        )
+        new = resp.json()["memory_id"]
+        body = mc.client.get(f"/api/v1/memory/records/{corpus.tenant}").json()
+        assert body["superseded_by"] == new
+
+
+# ---------------------------------------------------------------------------
+# POST /records links — a ref naming a withheld row resolves to nothing
+# ---------------------------------------------------------------------------
+
+
+def _link_rows(engine: AsyncEngine) -> int:
+    return int(_scalar(engine, "SELECT count(*) FROM coord.memory_links"))
+
+
+class TestLinkResolution:
+    @pytest.mark.parametrize("ref_form", ["memory_id", "content_hash", "title"])
+    def test_device_link_to_a_session_row_drops_and_writes_no_edge(
+        self, mc: MemoryClient, memory_engine: AsyncEngine, ref_form: str
+    ) -> None:
+        corpus = _Corpus(mc)
+        target_ref = {
+            "memory_id": corpus.session,
+            "content_hash": hashlib.sha256(_SESSION_CONTENT.encode()).hexdigest(),
+            "title": "the private session title",
+        }[ref_form]
+        before = _link_rows(memory_engine)
+        resp = _as(mc, "device").client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(
+                        "a device fact that tries to link a session row",
+                        links=[{"target_ref": target_ref, "relation": "related"}],
+                    )
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["dropped_links_count"] == 1
+        assert _link_rows(memory_engine) == before
+
+    @pytest.mark.parametrize("ref_form", ["memory_id", "content_hash", "title"])
+    def test_admitted_link_to_a_session_row_resolves(
+        self, mc: MemoryClient, memory_engine: AsyncEngine, ref_form: str
+    ) -> None:
+        corpus = _Corpus(mc)
+        target_ref = {
+            "memory_id": corpus.session,
+            "content_hash": hashlib.sha256(_SESSION_CONTENT.encode()).hexdigest(),
+            "title": "the private session title",
+        }[ref_form]
+        before = _link_rows(memory_engine)
+        resp = _as(mc, "coord_service").client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(
+                        "a service fact that links a session row",
+                        links=[{"target_ref": target_ref, "relation": "related"}],
+                    )
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["dropped_links_count"] == 0
+        assert _link_rows(memory_engine) == before + 1
+
+    def test_device_link_to_a_tenant_row_by_title_is_unchanged(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        _Corpus(mc)
+        before = _link_rows(memory_engine)
+        resp = _as(mc, "device").client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(
+                        "a device fact that links the shared one",
+                        links=[
+                            {
+                                "target_ref": "the shared tenant title",
+                                "relation": "related",
+                            }
+                        ],
+                    )
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["dropped_links_count"] == 0
+        assert _link_rows(memory_engine) == before + 1
+
+
+# ---------------------------------------------------------------------------
+# The job queue — no job ever hands a session row to a device
+# ---------------------------------------------------------------------------
+
+
+def _run(engine: AsyncEngine, fn: Callable[[AsyncSession], Awaitable[Any]]) -> Any:
+    async def _go() -> Any:
+        maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with maker() as session:
+            result = await fn(session)
+            await session.commit()
+            return result
+
+    return asyncio.run(_go())
+
+
+def _seed_job(engine: AsyncEngine, tenant: UUID, kind: str, targets: list[str]) -> str:
+    job = (
+        store.embedding_job_input(
+            [(UUID(t), f"text {i}") for i, t in enumerate(targets)],
+            model_tag=EMBEDDING_MODEL_TAG,
+        )
+        if kind == "embedding"
+        else store.synthesis_job_input(
+            [UUID(t) for t in targets], [f"text {i}" for i in range(len(targets))]
+        )
+    )
+    assert _run(engine, lambda s: store.enqueue_jobs(s, tenant, [job])) == 1
+    return str(
+        _scalar(
+            engine,
+            "SELECT job_id FROM coord.memory_jobs WHERE input_hash = :h",
+            h=job.input_hash,
+        )
+    )
+
+
+def _job_status(engine: AsyncEngine, job_id: str) -> Any:
+    return _scalar(
+        engine,
+        "SELECT status FROM coord.memory_jobs WHERE job_id = CAST(:j AS uuid)",
+        j=job_id,
+    )
+
+
+def _result_for(kind: str, n: int) -> dict[str, Any]:
+    if kind == "embedding":
+        return {
+            "result": {
+                "embeddings": [_client_vector(f"v{i}") for i in range(n)],
+                "embedding_model": EMBEDDING_MODEL_TAG,
+            }
+        }
+    return {
+        "result": {
+            "result_text": "a synthesized model of the cluster",
+            "embedding": _client_vector("synth"),
+            "embedding_model": EMBEDDING_MODEL_TAG,
+        }
+    }
+
+
+class TestJobQueue:
+    @pytest.mark.parametrize("kind", ["embedding", "synthesis"])
+    def test_device_never_claims_a_job_targeting_a_session_row(
+        self, mc: MemoryClient, memory_engine: AsyncEngine, kind: str
+    ) -> None:
+        corpus = _Corpus(mc)
+        job_id = _seed_job(
+            memory_engine, mc.tenant_id, kind, [corpus.tenant, corpus.session]
+        )
+        resp = _as(mc, "device").client.post(
+            "/api/v1/memory/jobs/claim", json={"limit": 4, "kinds": [kind]}
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["jobs"] == []
+        assert _job_status(memory_engine, job_id) == "pending"
+
+    @pytest.mark.parametrize("kind", ["embedding", "synthesis"])
+    def test_admitted_claim_of_a_session_job_is_unchanged(
+        self, mc: MemoryClient, memory_engine: AsyncEngine, kind: str
+    ) -> None:
+        corpus = _Corpus(mc)
+        job_id = _seed_job(
+            memory_engine, mc.tenant_id, kind, [corpus.tenant, corpus.session]
+        )
+        resp = _as(mc, "coord_service").client.post(
+            "/api/v1/memory/jobs/claim", json={"limit": 4, "kinds": [kind]}
+        )
+        assert resp.status_code == 200, resp.text
+        assert [j["job_id"] for j in resp.json()["jobs"]] == [job_id]
+
+    @pytest.mark.parametrize("kind", ["embedding", "synthesis"])
+    def test_device_claims_a_tenant_only_job_as_before(
+        self, mc: MemoryClient, memory_engine: AsyncEngine, kind: str
+    ) -> None:
+        corpus = _Corpus(mc)
+        job_id = _seed_job(
+            memory_engine, mc.tenant_id, kind, [corpus.tenant, corpus.beyond]
+        )
+        resp = _as(mc, "device").client.post(
+            "/api/v1/memory/jobs/claim", json={"limit": 4, "kinds": [kind]}
+        )
+        assert [j["job_id"] for j in resp.json()["jobs"]] == [job_id]
+
+    @pytest.mark.parametrize("kind", ["embedding", "synthesis"])
+    @pytest.mark.parametrize("outcome", ["result", "failure"])
+    def test_device_result_onto_a_session_job_is_the_unknown_job_404(
+        self,
+        mc: MemoryClient,
+        memory_engine: AsyncEngine,
+        kind: str,
+        outcome: str,
+    ) -> None:
+        """Even a job some admitted worker already claimed: the device may
+        neither post a result onto it nor tell it from an unknown job."""
+        corpus = _Corpus(mc)
+        job_id = _seed_job(
+            memory_engine, mc.tenant_id, kind, [corpus.tenant, corpus.session]
+        )
+        claimed = _as(mc, "coord_service").client.post(
+            "/api/v1/memory/jobs/claim", json={"limit": 4, "kinds": [kind]}
+        )
+        assert [j["job_id"] for j in claimed.json()["jobs"]] == [job_id]
+        body = (
+            _result_for(kind, 2)
+            if outcome == "result"
+            else {"failure": "the device gave up"}
+        )
+        _as(mc, "device")
+        resp = mc.client.post(f"/api/v1/memory/jobs/{job_id}/result", json=body)
+        assert resp.status_code == 404, resp.text
+        unknown = mc.client.post(f"/api/v1/memory/jobs/{uuid4()}/result", json=body)
+        assert unknown.status_code == 404
+        assert unknown.json() == resp.json()
+        assert _job_status(memory_engine, job_id) == "claimed"
+        assert _successor_of(memory_engine, corpus.session) is None
+
+
+# ---------------------------------------------------------------------------
+# The lifecycle selectors — a session row is never fed to a job or a merge
+# ---------------------------------------------------------------------------
+
+
+def _seed_row(
+    engine: AsyncEngine,
+    tenant: UUID,
+    *,
+    scope: str,
+    scope_ref: str | None,
+    kind: str = "episode",
+    vector_of: str | None = "the shared vector",
+) -> UUID:
+    """A live row with a controlled embedding (identical vectors pair)."""
+    memory_id = uuid4()
+    _exec(
+        engine,
+        [
+            """
+            INSERT INTO coord.memory_records
+                (memory_id, tenant_id, scope, scope_ref, kind, title, content,
+                 content_hash, importance, embedding, embedding_model)
+            VALUES
+                (:memory_id, :tenant, :scope, :scope_ref, :kind, 't', :content,
+                 :content_hash, 0.5, CAST(:embedding AS vector), :model)
+            """
+        ],
+        memory_id=memory_id,
+        tenant=tenant,
+        scope=scope,
+        scope_ref=scope_ref,
+        kind=kind,
+        content=f"content {memory_id}",
+        content_hash=f"hash-{memory_id}",
+        embedding=(
+            store.format_pgvector(_client_vector(vector_of))
+            if vector_of is not None
+            else None
+        ),
+        model=EMBEDDING_MODEL_TAG if vector_of is not None else None,
+    )
+    return memory_id
+
+
+def _pairs(engine: AsyncEngine, tenant: UUID) -> set[frozenset[UUID]]:
+    pairs = _run(
+        engine,
+        lambda s: store.find_near_duplicate_pairs(
+            s,
+            tenant,
+            now=datetime.now(UTC),
+            min_similarity=0.95,
+            window_days=90,
+            pair_limit=100,
+        ),
+    )
+    return {frozenset({a.memory_id, b.memory_id}) for a, b in pairs}
+
+
+class TestLifecycleSelectors:
+    def test_session_episodes_are_never_cluster_candidates(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        tenant = mc.tenant_id
+        shared = _seed_row(memory_engine, tenant, scope="tenant", scope_ref=None)
+        private = _seed_row(
+            memory_engine, tenant, scope="session", scope_ref=_SESSION_REF
+        )
+        candidates = _run(
+            memory_engine,
+            lambda s: store.fetch_cluster_candidates(
+                s, tenant, now=datetime.now(UTC), limit=100
+            ),
+        )
+        ids = {c["memory_id"] for c in candidates}
+        assert shared in ids
+        assert private not in ids
+
+    def test_session_rows_are_never_reindexed(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        tenant = mc.tenant_id
+        shared = _seed_row(
+            memory_engine, tenant, scope="tenant", scope_ref=None, vector_of=None
+        )
+        private = _seed_row(
+            memory_engine,
+            tenant,
+            scope="session",
+            scope_ref=_SESSION_REF,
+            vector_of=None,
+        )
+        batch = _run(
+            memory_engine,
+            lambda s: store.fetch_reindex_batch(
+                s, current_tag=EMBEDDING_MODEL_TAG, limit=1000
+            ),
+        )
+        ids = {memory_id for _tenant, memory_id, _content in batch}
+        assert shared in ids
+        assert private not in ids
+
+    def test_near_duplicates_pair_only_within_one_partition(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        tenant = mc.tenant_id
+        t1 = _seed_row(memory_engine, tenant, scope="tenant", scope_ref=None)
+        t2 = _seed_row(memory_engine, tenant, scope="tenant", scope_ref=None)
+        s1 = _seed_row(memory_engine, tenant, scope="session", scope_ref="sess-a")
+        s1b = _seed_row(memory_engine, tenant, scope="session", scope_ref="sess-a")
+        s2 = _seed_row(memory_engine, tenant, scope="session", scope_ref="sess-b")
+        pairs = _pairs(memory_engine, tenant)
+        # Positive controls: same scope and scope_ref pair (identical vectors).
+        assert frozenset({t1, t2}) in pairs
+        assert frozenset({s1, s1b}) in pairs
+        # Never across session/tenant, never across two sessions.
+        for session_row in (s1, s1b, s2):
+            for tenant_row in (t1, t2):
+                assert frozenset({session_row, tenant_row}) not in pairs
+        assert frozenset({s1, s2}) not in pairs
+        assert frozenset({s1b, s2}) not in pairs

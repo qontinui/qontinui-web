@@ -813,8 +813,9 @@ def _refuse_withheld_scopes(
 
 
 # The not-found answer of every by-id route that HIDES a withheld row: the
-# by-id read, the two hold verbs and delete. A withheld row and an unknown id
-# get this same detail, so none of them can probe which ids are session rows.
+# by-id read, the graph root, supersede's predecessor, the two hold verbs and
+# delete. A withheld row and an unknown id get this same detail, so none of
+# them can probe which ids are session rows.
 # It is a WIRE CONTRACT on the by-id read — see ``get_record_by_id``.
 _RECORD_NOT_FOUND_IN_TENANT = "memory record not found in your tenant"
 
@@ -1216,7 +1217,9 @@ async def _write_records(
         link.target_ref for rec in payload.records for link in (rec.links or [])
     ]
     if all_refs:
-        resolved = await store.resolve_link_targets(db, principal.tenant_id, all_refs)
+        resolved = await store.resolve_link_targets(
+            db, principal.tenant_id, all_refs, exclude_scopes=withheld
+        )
         seen_edges: set[tuple[UUID, UUID, str]] = set()
         link_items: list[store.MemoryLinkInsert] = []
         for i, rec in enumerate(payload.records):
@@ -1707,7 +1710,16 @@ async def get_record_by_id(
         ),
         created_at=row["created_at"],
         state=state,
-        superseded_by=row["superseded_by"],
+        # The successor's id is withheld when the SUCCESSOR sits in a scope
+        # this principal is withheld: a tenant row superseded into a session
+        # partition would otherwise disclose that session row's id here. The
+        # state still reads ``superseded`` — that much is true and is the
+        # predecessor's own fact.
+        superseded_by=(
+            None
+            if row["successor_scope"] in withheld_scopes(principal)
+            else row["superseded_by"]
+        ),
         valid_until=row["valid_until"],
     )
 
@@ -1739,7 +1751,7 @@ async def memory_graph(
     if root is None or root["scope"] in withheld:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="memory record not found",
+            detail=_RECORD_NOT_FOUND_IN_TENANT,
         )
     relations: list[str] | None = (
         [str(rel) for rel in payload.relation_filter]
@@ -1804,19 +1816,24 @@ async def supersede_record(
     the comment on the insert below for why the two go opposite ways.
     This is the "superseded, or corrected" arm of the plan's Phase 6.
 
-    403 when the successor would land in a scope :func:`withheld_scopes`
-    withholds from this principal, OR the predecessor sits in one. Both are
-    checked, because an omitted ``scope``/``scope_ref`` INHERITS the
-    predecessor's: checking only the payload would let a device supersede a
-    peer's session row by id and write the successor into that partition.
+    A predecessor in a scope :func:`withheld_scopes` withholds from this
+    principal is the same 404 as an unknown id — checked BEFORE the payload,
+    because an omitted ``scope``/``scope_ref`` INHERITS the predecessor's, so
+    checking only the payload would let a device supersede a peer's session
+    row by id and write the successor into that partition. A payload that
+    names a withheld scope itself is a 403.
     """
     old = await store.get_record(db, principal.tenant_id, memory_id)
-    if old is None:
+    # A predecessor in a withheld scope answers EXACTLY like an unknown id, so
+    # the supersede route cannot probe which ids are session rows (the by-id
+    # read hides the same way). Only a payload that itself NAMES a withheld
+    # scope gets the explanatory 403 — the caller asked for the partition.
+    if old is None or old["scope"] in withheld_scopes(principal):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="memory record not found",
+            detail=_RECORD_NOT_FOUND_IN_TENANT,
         )
-    _refuse_withheld_scopes(principal, [payload.scope, old["scope"]])
+    _refuse_withheld_scopes(principal, [payload.scope])
 
     rt = redact_text(payload.title)
     rc = redact_text(payload.content)
@@ -2151,8 +2168,9 @@ async def memory_stats(
 
     ``facets`` describes the corpus THIS principal can retrieve: rows in a
     scope :func:`withheld_scopes` withholds (``session``, for a device JWT)
-    are excluded from its counts and its title sample. The quota fields are
-    tenant posture and still count every row.
+    are excluded from its counts and its title sample. The quota fields
+    (``row_count``, ``bytes``, ``lifecycle_held``) and ``embedding_coverage``
+    are tenant posture, not content, and still count every row.
     """
     usage = await store.get_usage(db, principal.tenant_id)
     coverage = await store.embedding_coverage(db, principal.tenant_id)
@@ -2212,6 +2230,9 @@ async def claim_jobs(
         limit=payload.limit,
         kinds=list(payload.kinds),
         worker=worker,
+        # A job targeting a withheld row is never handed to this principal:
+        # its target_ids and input_texts are that row's id and content.
+        exclude_scopes=withheld_scopes(principal),
     )
     return ClaimJobsResponse(
         jobs=[
@@ -2257,7 +2278,27 @@ async def submit_job_result(
     not match the job (wrong kind, wrong vector count, wrong dimension,
     unaccepted model tag), which leaves the job ``claimed`` so the runner
     can still post a correct result before its lease expires.
+
+    A job with a target in a scope :func:`withheld_scopes` withholds from
+    this principal is the same 404 as an unknown job, on the failure path
+    too: such a principal may not write onto that row, nor learn the job
+    exists.
     """
+    # Dispatch on the STORED kind. The job is locked + its kind checked
+    # inside the store call; we must know the kind out here to parse the
+    # payload, so a cheap unlocked peek picks the parser and the store's
+    # locked re-check is what actually enforces it (a kind cannot change
+    # under us — it is set at enqueue and never updated). The peek is also
+    # the visibility check: it answers None for a job targeting a row this
+    # principal is withheld (a job's targets are fixed at enqueue).
+    kind = await store.get_job_kind(
+        db, principal.tenant_id, job_id, exclude_scopes=withheld_scopes(principal)
+    )
+    if kind is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="memory job not found"
+        )
+
     if payload.failure is not None:
         try:
             ok = await store.record_job_failure(
@@ -2277,17 +2318,6 @@ async def submit_job_result(
     # Success path — `result` is guaranteed present by the schema
     # validator (exactly one of result / failure).
     assert payload.result is not None
-
-    # Dispatch on the STORED kind. The job is locked + its kind checked
-    # inside the store call; we must know the kind out here to parse the
-    # payload, so a cheap unlocked peek picks the parser and the store's
-    # locked re-check is what actually enforces it (a kind cannot change
-    # under us — it is set at enqueue and never updated).
-    kind = await store.get_job_kind(db, principal.tenant_id, job_id)
-    if kind is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="memory job not found"
-        )
 
     try:
         if kind == "embedding":
