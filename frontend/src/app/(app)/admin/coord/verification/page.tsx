@@ -259,12 +259,14 @@ function LabelSampleItem({ row }: { row: LabelSampleRow }) {
           {answered}
         </span>
       ) : (
-        // Never shrinks: the buttons must stay whole on a narrow row (the
-        // label gives way instead). Only the outcome text truncates, with its
-        // own title, inside the bounded slot.
-        <span className="max-w-[60ch] shrink-0">
-          <OperatorLabelControl verificationId={row.verificationId} />
-        </span>
+        // The control IS the row's last flex item and sizes itself by state
+        // (OperatorLabelControl): the idle button group never shrinks, so the
+        // label gives way; the outcome line is `min-w-0` and truncates with
+        // its title. A wrapper here would decide one size for both states.
+        <OperatorLabelControl
+          verificationId={row.verificationId}
+          className="max-w-[60ch]"
+        />
       )}
     </li>
   );
