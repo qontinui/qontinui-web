@@ -852,6 +852,12 @@ def _withheld_duplicate_conflict() -> RefusalHTTPException:
     session content); recorded as coord finding ``fd4ffbaa`` and as a
     follow-up of plan
     ``2026-10-30-memory-session-scope-clamp-trusts-an-unproven-caller-session``.
+
+    **Accepted residual (2):** the 409 refuses the WHOLE batch, and the
+    runner's ``tenant_sync`` treats a 409 as a permanent rejection, so one
+    colliding record drops every unrelated record in its batch. Recorded as
+    coord finding ``042622ce``; the follow-up is a per-record outcome here or
+    a 409-aware retry in the runner.
     """
     return refusal_error(
         status.HTTP_409_CONFLICT,
