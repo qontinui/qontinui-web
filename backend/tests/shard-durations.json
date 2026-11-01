@@ -80,6 +80,7 @@
   "tests/test_coord_agent_questions_effect_migration.py": 7.8,
   "tests/test_coord_agent_questions_recommendation_migration.py": 7.1,
   "tests/test_coord_agent_sessions_context_01_migration.py": 20.0,
+  "tests/test_coord_agent_sessions_identity_01_migration.py": 12.8,
   "tests/test_coord_agent_worktrees_client_allocation_id_01_migration.py": 15.8,
   "tests/test_coord_agent_worktrees_credentialed_at_01_migration.py": 10.8,
   "tests/test_coord_alerts_claim_01_migration.py": 6.0,
