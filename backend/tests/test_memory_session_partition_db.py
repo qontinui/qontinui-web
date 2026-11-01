@@ -4,14 +4,20 @@ Plan ``2026-10-30-memory-session-scope-clamp-trusts-an-unproven-caller-session``
 D6 / Phase 2. A ``scope='session'`` row is a PRIVATE partition whose only
 enforcement is an exact ``scope_ref`` match, and this door cannot prove which
 session a caller is. So a device-JWT principal (``actor="device"``) is
-withheld it on all six routes:
+withheld it on every memory route that reads or writes a row:
 
 * ``GET /records`` and ``POST /graph`` leave session rows out (and the graph
   walk never steps onto one);
-* ``GET /records/{id}`` answers the existing not-found 404 for one;
+* ``GET /records/{id}``, ``PUT``/``DELETE /records/{id}/hold`` and
+  ``DELETE /records/{id}`` answer the by-id not-found 404 for one, and write
+  nothing;
 * ``POST /query``, ``POST /records`` and ``POST /records/{id}/supersede``
   refuse with 403 when they name ``session`` scope or supersede a session row
-  — including the inheritance case, where the payload omits ``scope``.
+  — including the inheritance case, where the payload omits ``scope``;
+* ``GET /stats`` facets (and ``POST /query``'s ``live_row_count``) count
+  and sample no session row;
+* a write or supersede whose CONTENT a live session row already holds is a
+  409 naming no id — never a dedupe onto that row or an anchor merge into it.
 
 The coord service token and an operator user keep today's behaviour, and
 ``tenant`` (and ``agent``) rows are unchanged for every principal.
@@ -106,6 +112,7 @@ class _Corpus:
         self.session = _write(
             mc,
             "the wombat note private to one session",
+            title="the private session title",
             scope="session",
             scope_ref=_SESSION_REF,
             links=[{"target_ref": self.beyond, "relation": "related"}],
@@ -113,6 +120,7 @@ class _Corpus:
         self.tenant = _write(
             mc,
             "the shared wombat fact every principal sees",
+            title="the shared tenant title",
             links=[{"target_ref": self.session, "relation": "related"}],
         )
         self.agent = _write(
@@ -511,3 +519,219 @@ class TestSupersede:
         got = mc.client.get(f"/api/v1/memory/records/{new_id}").json()
         assert got["scope"] == "session"
         assert got["scope_ref"] == _SESSION_REF
+
+
+# ---------------------------------------------------------------------------
+# GET /stats — the facets describe the corpus this principal can retrieve
+# ---------------------------------------------------------------------------
+
+
+def _stats_facets(mc: MemoryClient) -> dict[str, Any]:
+    resp = mc.client.get("/api/v1/memory/stats")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["corpus_complete"] is True, body
+    facets: dict[str, Any] = body["facets"]
+    return facets
+
+
+class TestStats:
+    def test_device_facets_exclude_session_counts_and_titles(
+        self, mc: MemoryClient
+    ) -> None:
+        _Corpus(mc)
+        facets = _stats_facets(_as(mc, "device"))
+        # The bucket stays (the contract is exhaustive) and reads 0: the
+        # device can retrieve no session row.
+        assert facets["by_scope"]["session"] == 0
+        assert facets["by_scope"]["tenant"] == 2
+        assert facets["by_scope"]["agent"] == 1
+        assert facets["live_row_count"] == 3
+        assert sum(facets["by_scope"].values()) == facets["live_row_count"]
+        assert sum(facets["by_kind"].values()) == facets["live_row_count"]
+        assert "the private session title" not in facets["recent_titles"]
+        assert "the shared tenant title" in facets["recent_titles"]
+
+    @pytest.mark.parametrize("actor", ["coord_service", "operator"])
+    def test_admitted_facets_are_unchanged(self, mc: MemoryClient, actor: str) -> None:
+        _Corpus(mc)
+        facets = _stats_facets(_as(mc, actor))
+        assert facets["by_scope"]["session"] == 1
+        assert facets["live_row_count"] == 4
+        assert "the private session title" in facets["recent_titles"]
+
+    def test_device_query_denominator_matches_its_facets(
+        self, mc: MemoryClient
+    ) -> None:
+        """``live_row_count`` on ``POST /query`` is documented as the number
+        ``/stats`` publishes; for a device both must drop the same rows."""
+        _Corpus(mc)
+        _as(mc, "device")
+        resp = mc.client.post("/api/v1/memory/query", json={"query_text": "wombat"})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["live_row_count"] == 3
+        assert resp.json()["live_row_count"] == _stats_facets(mc)["live_row_count"]
+
+
+# ---------------------------------------------------------------------------
+# PUT / DELETE /records/{id}/hold and DELETE /records/{id}
+# ---------------------------------------------------------------------------
+
+
+def _hold_value(engine: AsyncEngine, memory_id: str) -> Any:
+    return _scalar(
+        engine,
+        "SELECT source->>'lifecycle_hold' FROM coord.memory_records "
+        "WHERE memory_id = CAST(:m AS uuid)",
+        m=memory_id,
+    )
+
+
+def _is_tombstone(engine: AsyncEngine, memory_id: str) -> Any:
+    return _scalar(
+        engine,
+        "SELECT is_tombstone FROM coord.memory_records "
+        "WHERE memory_id = CAST(:m AS uuid)",
+        m=memory_id,
+    )
+
+
+class TestHoldAndDelete:
+    @pytest.mark.parametrize(
+        ("method", "suffix"),
+        [("put", "/hold"), ("delete", "/hold"), ("delete", "")],
+    )
+    def test_device_on_a_session_row_is_the_not_found_404_and_writes_nothing(
+        self,
+        mc: MemoryClient,
+        memory_engine: AsyncEngine,
+        method: str,
+        suffix: str,
+    ) -> None:
+        corpus = _Corpus(mc)
+        _as(mc, "device")
+        call = getattr(mc.client, method)
+        resp = call(f"/api/v1/memory/records/{corpus.session}{suffix}")
+        assert resp.status_code == 404
+        assert resp.json() == _NOT_FOUND_BY_ID
+        unknown = call(f"/api/v1/memory/records/{uuid4()}{suffix}")
+        assert unknown.status_code == 404
+        assert unknown.json() == resp.json()
+        assert _hold_value(memory_engine, corpus.session) is None
+        assert _is_tombstone(memory_engine, corpus.session) is False
+
+    def test_device_hold_and_delete_of_a_tenant_row_are_unchanged(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        corpus = _Corpus(mc)
+        _as(mc, "device")
+        held = mc.client.put(f"/api/v1/memory/records/{corpus.tenant}/hold")
+        assert held.status_code == 200, held.text
+        assert _hold_value(memory_engine, corpus.tenant) == "true"
+        released = mc.client.delete(f"/api/v1/memory/records/{corpus.tenant}/hold")
+        assert released.status_code == 200, released.text
+        assert _hold_value(memory_engine, corpus.tenant) == "false"
+        deleted = mc.client.delete(f"/api/v1/memory/records/{corpus.tenant}")
+        assert deleted.status_code == 204, deleted.text
+        assert _is_tombstone(memory_engine, corpus.tenant) is True
+
+    @pytest.mark.parametrize("actor", ["coord_service", "operator"])
+    def test_admitted_hold_and_delete_of_a_session_row_are_unchanged(
+        self, mc: MemoryClient, memory_engine: AsyncEngine, actor: str
+    ) -> None:
+        corpus = _Corpus(mc)
+        _as(mc, actor)
+        held = mc.client.put(f"/api/v1/memory/records/{corpus.session}/hold")
+        assert held.status_code == 200, held.text
+        assert _hold_value(memory_engine, corpus.session) == "true"
+        deleted = mc.client.delete(f"/api/v1/memory/records/{corpus.session}")
+        assert deleted.status_code == 204, deleted.text
+        assert _is_tombstone(memory_engine, corpus.session) is True
+
+
+# ---------------------------------------------------------------------------
+# Content dedupe — never onto a withheld row
+# ---------------------------------------------------------------------------
+
+_SESSION_CONTENT = "the wombat note private to one session"
+_ANCHOR = {
+    "type": "blob",
+    "repo": "qontinui-web",
+    "path": "backend/app/services/memory_store.py",
+    "sha": "c" * 40,
+}
+
+
+def _anchors_of(engine: AsyncEngine, memory_id: str) -> Any:
+    return _scalar(
+        engine,
+        "SELECT anchors::text FROM coord.memory_records "
+        "WHERE memory_id = CAST(:m AS uuid)",
+        m=memory_id,
+    )
+
+
+class TestContentDedupe:
+    """``uq_memory_records_tenant_content_hash_live`` is UNIQUE on
+    ``(tenant_id, content_hash)`` over live rows, with no scope column, so a
+    device cannot get a second live row holding a session row's content. It
+    gets a 409 that names no id, with nothing written and no anchor merged."""
+
+    @pytest.mark.parametrize("anchors", [[], [_ANCHOR]])
+    def test_device_write_of_session_content_is_a_409_without_the_id(
+        self, mc: MemoryClient, memory_engine: AsyncEngine, anchors: list[Any]
+    ) -> None:
+        corpus = _Corpus(mc)
+        before_rows = _live_rows(memory_engine)
+        before_anchors = _anchors_of(memory_engine, corpus.session)
+        resp = _as(mc, "device").client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record("a shared fact written in the same batch"),
+                    _record(_SESSION_CONTENT, anchors=anchors),
+                ]
+            },
+        )
+        assert resp.status_code == 409, resp.text
+        assert corpus.session not in resp.text
+        assert _live_rows(memory_engine) == before_rows
+        assert _anchors_of(memory_engine, corpus.session) == before_anchors
+
+    def test_device_supersede_into_session_content_is_a_409(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        corpus = _Corpus(mc)
+        resp = _as(mc, "device").client.post(
+            f"/api/v1/memory/records/{corpus.tenant}/supersede",
+            json={"title": "collide", "content": _SESSION_CONTENT},
+        )
+        assert resp.status_code == 409, resp.text
+        assert corpus.session not in resp.text
+        assert _successor_of(memory_engine, corpus.tenant) is None
+
+    def test_device_dedupe_onto_a_tenant_row_is_unchanged(
+        self, mc: MemoryClient
+    ) -> None:
+        corpus = _Corpus(mc)
+        resp = _as(mc, "device").client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("the shared wombat fact every principal sees")]},
+        )
+        assert resp.status_code == 200, resp.text
+        (rec,) = resp.json()["records"]
+        assert rec == {"memory_id": corpus.tenant, "deduped": True}
+
+    @pytest.mark.parametrize("actor", ["coord_service", "operator"])
+    def test_admitted_dedupe_onto_a_session_row_is_unchanged(
+        self, mc: MemoryClient, memory_engine: AsyncEngine, actor: str
+    ) -> None:
+        corpus = _Corpus(mc)
+        resp = _as(mc, actor).client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record(_SESSION_CONTENT, anchors=[_ANCHOR])]},
+        )
+        assert resp.status_code == 200, resp.text
+        (rec,) = resp.json()["records"]
+        assert rec == {"memory_id": corpus.session, "deduped": True}
+        assert "c" * 40 in _anchors_of(memory_engine, corpus.session)

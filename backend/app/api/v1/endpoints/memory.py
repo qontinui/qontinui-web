@@ -812,6 +812,33 @@ def _refuse_withheld_scopes(
         )
 
 
+# The not-found answer of every by-id route that HIDES a withheld row: the
+# by-id read, the two hold verbs and delete. A withheld row and an unknown id
+# get this same detail, so none of them can probe which ids are session rows.
+# It is a WIRE CONTRACT on the by-id read — see ``get_record_by_id``.
+_RECORD_NOT_FOUND_IN_TENANT = "memory record not found in your tenant"
+
+_WITHHELD_DUPLICATE_DETAIL = (
+    "this content is already stored in a memory this credential cannot "
+    "reach, and a tenant holds one live copy of any content, so it was not "
+    "written. Write it through coord, or change the content."
+)
+
+
+def _withheld_duplicate_conflict() -> HTTPException:
+    """409 for :class:`store.DedupAgainstWithheldScope` — carries NO id.
+
+    The unique live-content index has no scope column, so the write cannot
+    land as a second row, and deduping onto the withheld row would disclose
+    its id and merge anchors into it. Raised from inside the request, so
+    the session dependency rolls back anything the request already wrote.
+    """
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=_WITHHELD_DUPLICATE_DETAIL,
+    )
+
+
 def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -913,9 +940,29 @@ async def write_records(
 
     A record naming a scope :func:`withheld_scopes` withholds from this
     principal (``session``, for a device JWT) refuses the WHOLE batch with
-    403 before anything is written.
+    403 before anything is written. A record whose CONTENT is already held
+    by a live row in such a scope refuses the batch with 409 and no id — see
+    :func:`_withheld_duplicate_conflict`.
     """
     _refuse_withheld_scopes(principal, [rec.scope for rec in payload.records])
+    try:
+        return await _write_records(payload, principal, db)
+    except store.DedupAgainstWithheldScope as exc:
+        raise _withheld_duplicate_conflict() from exc
+
+
+async def _write_records(
+    payload: WriteRecordsRequest,
+    principal: MemoryPrincipal,
+    db: AsyncSession,
+) -> Any:
+    """The body of :func:`write_records`, after its scope refusal.
+
+    Every dedupe lookup and insert below passes ``withheld_scopes`` as
+    ``exclude_scopes``; each raises ``store.DedupAgainstWithheldScope`` on a
+    collision with a withheld row, which the caller maps to a 409.
+    """
+    withheld = withheld_scopes(principal)
 
     # 1. Redact (server-side pass; log counts only, never the secrets).
     redaction_counts: dict[str, int] = {}
@@ -1092,6 +1139,7 @@ async def write_records(
             items=batch_items,
             user_id=user_id,
             device_id=device_id,
+            exclude_scopes=withheld,
         ),
     )
     outcome_by_hash: dict[str, tuple[UUID, bool]] = dict(
@@ -1105,7 +1153,9 @@ async def write_records(
         outcome = outcome_by_hash.get(h)
         if outcome is None:
             # Known-duplicate content (pre-existing live row): report it.
-            existing_id = await store.find_by_hash(db, principal.tenant_id, h)
+            existing_id = await store.find_by_hash(
+                db, principal.tenant_id, h, exclude_scopes=withheld
+            )
             if existing_id is not None:
                 results.append(WriteRecordResult(memory_id=existing_id, deduped=True))
                 continue
@@ -1142,6 +1192,7 @@ async def write_records(
                     anchors=[a.model_dump(mode="json") for a in rec.anchors],
                     user_id=user_id,
                     device_id=device_id,
+                    exclude_scopes=withheld,
                 )
 
             memory_id, deduped = await _write_degrading_dangling_provenance(
@@ -1464,7 +1515,9 @@ async def query_records(
     # corpus moves between the count and the hits it is meant to
     # explain. Same predicate as the facets aggregate — see
     # ``store.live_row_count``.
-    live_rows = await store.live_row_count(db, principal.tenant_id)
+    live_rows = await store.live_row_count(
+        db, principal.tenant_id, exclude_scopes=withheld_scopes(principal)
+    )
 
     # The meta describes ``hits`` only; ``anchored_hits`` is its own list.
     meta = bounded_read.from_ranked_pool(
@@ -1627,7 +1680,7 @@ async def get_record_by_id(
         # every real 404 into coord's errors / tool-error path.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="memory record not found in your tenant",
+            detail=_RECORD_NOT_FOUND_IN_TENANT,
         )
     state: MemoryRecordState
     if row["is_tombstone"]:
@@ -1823,35 +1876,48 @@ async def supersede_record(
     # is this caller's — not the superseded row's. Same verified-principal
     # source as every other write, and the same insert-side fail-soft: a
     # dangling id degrades the row, never the supersede.
-    new_id, deduped = await _write_degrading_dangling_provenance(
-        db,
-        principal,
-        lambda user_id, device_id: store.insert_record(
+    # ``exclude_scopes``: replacement content identical to a live row this
+    # principal is withheld must neither dedupe onto that row (its id would
+    # come back as ``memory_id`` and be recorded as this record's successor)
+    # nor merge anchors into it — 409, with no id.
+    withheld = withheld_scopes(principal)
+    try:
+        new_id, deduped = await _write_degrading_dangling_provenance(
             db,
-            tenant_id=principal.tenant_id,
-            scope=payload.scope if payload.scope is not None else old["scope"],
-            scope_ref=(
-                payload.scope_ref if payload.scope_ref is not None else old["scope_ref"]
+            principal,
+            lambda user_id, device_id: store.insert_record(
+                db,
+                tenant_id=principal.tenant_id,
+                scope=payload.scope if payload.scope is not None else old["scope"],
+                scope_ref=(
+                    payload.scope_ref
+                    if payload.scope_ref is not None
+                    else old["scope_ref"]
+                ),
+                kind=payload.kind if payload.kind is not None else old["kind"],
+                title=rt.text,
+                content=rc.text,
+                content_hash=content_hash,
+                embedding=payload.embedding,
+                embedding_model=payload.embedding_model,
+                importance=(
+                    payload.importance
+                    if payload.importance is not None
+                    else float(old["importance"])
+                ),
+                source=(
+                    payload.source
+                    if payload.source is not None
+                    else (old["source"] or {})
+                ),
+                anchors=inherited_anchors,
+                user_id=user_id,
+                device_id=device_id,
+                exclude_scopes=withheld,
             ),
-            kind=payload.kind if payload.kind is not None else old["kind"],
-            title=rt.text,
-            content=rc.text,
-            content_hash=content_hash,
-            embedding=payload.embedding,
-            embedding_model=payload.embedding_model,
-            importance=(
-                payload.importance
-                if payload.importance is not None
-                else float(old["importance"])
-            ),
-            source=(
-                payload.source if payload.source is not None else (old["source"] or {})
-            ),
-            anchors=inherited_anchors,
-            user_id=user_id,
-            device_id=device_id,
-        ),
-    )
+        )
+    except store.DedupAgainstWithheldScope as exc:
+        raise _withheld_duplicate_conflict() from exc
     if new_id == memory_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1903,7 +1969,8 @@ async def hold_record(
     passes.
 
     404 for records that don't exist in the caller's tenant (cross-tenant
-    ids are never disclosed).
+    ids are never disclosed), or that sit in a scope :func:`withheld_scopes`
+    withholds from this principal — the same detail, and nothing written.
     """
     return await _set_hold(memory_id, held=True, principal=principal, db=db)
 
@@ -1925,7 +1992,8 @@ async def release_record_hold(
 
     Idempotent: releasing an unheld record is a no-op that reports
     ``held=False``. 404 only when the record does not exist in the
-    caller's tenant.
+    caller's tenant, or sits in a scope :func:`withheld_scopes` withholds
+    from this principal (the same detail; nothing written).
     """
     return await _set_hold(memory_id, held=False, principal=principal, db=db)
 
@@ -1944,11 +2012,14 @@ async def _set_hold(
         memory_id=memory_id,
         held=held,
         now=datetime.now(UTC),
+        exclude_scopes=withheld_scopes(principal),
     )
     if not matched:
+        # A row withheld from this principal matched nothing, and answers
+        # exactly like an unknown id — nothing was written.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="memory record not found",
+            detail=_RECORD_NOT_FOUND_IN_TENANT,
         )
     logger.info(
         "memory_lifecycle_hold_set",
@@ -1966,19 +2037,33 @@ async def delete_record(
 ) -> Response:
     """Tombstone a record (``is_tombstone = true, valid_until = now()``).
 
-    404 for records that don't exist in the caller's tenant.
+    404 for records that don't exist in the caller's tenant, or that sit in
+    a scope :func:`withheld_scopes` withholds from this principal — the
+    same detail either way, and the withheld row is left untouched.
     """
-    deleted = await store.tombstone_record(db, principal.tenant_id, memory_id)
+    deleted = await store.tombstone_record(
+        db,
+        principal.tenant_id,
+        memory_id,
+        exclude_scopes=withheld_scopes(principal),
+    )
     if not deleted:
+        # A row withheld from this principal is not tombstoned, and answers
+        # exactly like an unknown id.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="memory record not found",
+            detail=_RECORD_NOT_FOUND_IN_TENANT,
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def _stats_facets(db: AsyncSession, tenant_id: UUID) -> MemoryFacets | None:
+async def _stats_facets(
+    db: AsyncSession, tenant_id: UUID, exclude_scopes: frozenset[str]
+) -> MemoryFacets | None:
     """Content facets, or ``None`` when the read could not complete.
+
+    ``exclude_scopes`` is the caller's ``withheld_scopes`` answer, applied
+    at the source by ``store.facets`` (tallies and title sample alike).
 
     ``None`` is the honest answer to a degraded read and drives
     ``corpus_complete=False``. The alternative — returning whatever
@@ -2018,7 +2103,7 @@ async def _stats_facets(db: AsyncSession, tenant_id: UUID) -> MemoryFacets | Non
     is exactly what this path exists to avoid.
     """
     try:
-        facets = await store.facets(db, tenant_id)
+        facets = await store.facets(db, tenant_id, exclude_scopes=exclude_scopes)
     except (OperationalError, SATimeoutError, TimeoutError) as exc:
         try:
             await db.rollback()
@@ -2063,6 +2148,11 @@ async def memory_stats(
     "what is in here" — the read an agent needs BEFORE guessing at query
     vocabulary. ``corpus_complete`` distinguishes a genuinely small
     corpus from a facet read that degraded.
+
+    ``facets`` describes the corpus THIS principal can retrieve: rows in a
+    scope :func:`withheld_scopes` withholds (``session``, for a device JWT)
+    are excluded from its counts and its title sample. The quota fields are
+    tenant posture and still count every row.
     """
     usage = await store.get_usage(db, principal.tenant_id)
     coverage = await store.embedding_coverage(db, principal.tenant_id)
@@ -2074,7 +2164,9 @@ async def memory_stats(
         usage.bytes / usage.quota_bytes if usage.quota_bytes > 0 else 0.0,
         usage.row_count / usage.quota_rows if usage.quota_rows > 0 else 0.0,
     )
-    facets = await _stats_facets(db, principal.tenant_id)
+    facets = await _stats_facets(
+        db, principal.tenant_id, exclude_scopes=withheld_scopes(principal)
+    )
     return MemoryStatsResponse(
         row_count=usage.row_count,
         bytes=usage.bytes,
