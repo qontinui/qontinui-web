@@ -692,7 +692,11 @@ function registrationViolations(
 export { CURRENCY_FIGURE };
 const COST_LABEL_FRAGMENT = "list-price equivalent";
 
-const TEXT_ATTRIBUTES = [
+/**
+ * The text-bearing attributes the checks read as on-screen text (exported so a
+ * test reading text the same way cannot drift from this list).
+ */
+export const TEXT_ATTRIBUTES: readonly string[] = [
   "title",
   "aria-label",
   "aria-description",
