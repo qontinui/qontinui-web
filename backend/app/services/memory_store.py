@@ -283,6 +283,64 @@ _ANCHOR_MERGE_CONFLICT_ACTION = f"""
 """
 
 
+def _scope_exclusion(
+    exclude_scopes: Collection[str], alias: str = "r"
+) -> tuple[str, dict[str, Any]]:
+    """`` AND <alias>.scope NOT IN :exclude_scopes`` plus its params.
+
+    ``exclude_scopes`` is the endpoint's ``withheld_scopes`` answer — the
+    scopes the calling principal may neither read nor write. Empty returns
+    an empty clause and no params, so a statement built for an admitted
+    principal is byte-identical to the one it ran before the predicate
+    existed. The caller binds ``exclude_scopes`` as an EXPANDING parameter.
+    """
+    if not exclude_scopes:
+        return "", {}
+    return (
+        f" AND {alias}.scope NOT IN :exclude_scopes",
+        {"exclude_scopes": sorted(exclude_scopes)},
+    )
+
+
+def _expanding_scope_binds(params: dict[str, Any]) -> list[Any]:
+    """The ``bindparams`` a :func:`_scope_exclusion` clause needs, if any."""
+    if "exclude_scopes" not in params:
+        return []
+    return [bindparam("exclude_scopes", expanding=True)]
+
+
+class DedupAgainstWithheldScope(RuntimeError):
+    """A write's content is already held by a LIVE row the writer is withheld.
+
+    ``uq_memory_records_tenant_content_hash_live`` is a UNIQUE index on
+    ``(tenant_id, content_hash)`` over live rows, with NO scope column: a
+    tenant holds at most one live row per content, whatever its scope. So
+    when that row is in a scope withheld from the writer (a ``session`` row,
+    for a device JWT), there is no write that is both honest and allowed —
+    a second live row is forbidden by the index, and deduping onto the
+    existing one would hand the writer that row's ``memory_id`` and merge
+    its anchors into a partition it may not touch. The write is refused
+    instead; the endpoint maps this to a 409 that carries no id.
+    """
+
+
+def _anchor_merge_conflict_action(exclude_scopes: Collection[str]) -> str:
+    """:data:`_ANCHOR_MERGE_CONFLICT_ACTION`, never merging onto a withheld row.
+
+    With ``exclude_scopes`` the ``DO UPDATE`` is additionally gated on the
+    EXISTING row's scope, so an anchor-bearing write that collides with a
+    withheld row updates nothing and returns no row — which the callers
+    already read as "conflicted" and resolve through their existing-row
+    lookup, where :class:`DedupAgainstWithheldScope` is raised.
+    """
+    if not exclude_scopes:
+        return _ANCHOR_MERGE_CONFLICT_ACTION
+    return (
+        _ANCHOR_MERGE_CONFLICT_ACTION.rstrip()
+        + "\n          AND memory_records.scope NOT IN :exclude_scopes\n"
+    )
+
+
 def _anchors_json(anchors: list[dict[str, Any]] | None) -> str:
     """Render an anchor array for the ``CAST(:anchors AS jsonb)`` bind.
 
@@ -449,8 +507,19 @@ _BUCKET_FACET_COLUMNS = "".join(
 )
 
 
-async def facets(session: AsyncSession, tenant_id: UUID) -> MemoryContentFacets:
+async def facets(
+    session: AsyncSession,
+    tenant_id: UUID,
+    exclude_scopes: Collection[str] = (),
+) -> MemoryContentFacets:
     """Content facets for ``tenant_id`` over RETRIEVAL-LIVE rows only.
+
+    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) removes
+    those scopes' rows at the SOURCE — from the tallies and the title sample
+    alike, in the one statement — so every invariant below still holds,
+    over the corpus this principal can retrieve. A withheld scope's
+    ``by_scope`` bucket then reads ``0``; the comment at the return says
+    why that, and not omission, is the honest answer.
 
     The companion to :func:`get_usage`: that one reports storage posture,
     this one reports what is actually IN the store.
@@ -538,6 +607,7 @@ async def facets(session: AsyncSession, tenant_id: UUID) -> MemoryContentFacets:
     being ABOVE 0.8. Casting the literal keeps the comparison in the
     column's own precision, where 0.8 is not above 0.8.
     """
+    scope_clause, scope_params = _scope_exclusion(exclude_scopes)
     agg = (
         await session.execute(
             text(
@@ -570,17 +640,21 @@ async def facets(session: AsyncSession, tenant_id: UUID) -> MemoryContentFacets:
                             SELECT r.title, r.created_at, r.seq
                             FROM coord.memory_records r
                             WHERE r.tenant_id = :tenant_id
-                              AND {_RETRIEVAL_LIVE_PREDICATE}
+                              AND {_RETRIEVAL_LIVE_PREDICATE}{scope_clause}
                             ORDER BY r.created_at DESC, r.seq DESC
                             LIMIT :titles_limit
                         ) t
                     ) AS recent_titles
                 FROM coord.memory_records r
                 WHERE r.tenant_id = :tenant_id
-                  AND {_RETRIEVAL_LIVE_PREDICATE}
+                  AND {_RETRIEVAL_LIVE_PREDICATE}{scope_clause}
                 """
-            ),
-            {"tenant_id": tenant_id, "titles_limit": RECENT_TITLES_SAMPLE},
+            ).bindparams(*_expanding_scope_binds(scope_params)),
+            {
+                "tenant_id": tenant_id,
+                "titles_limit": RECENT_TITLES_SAMPLE,
+                **scope_params,
+            },
         )
     ).one()
 
@@ -590,6 +664,16 @@ async def facets(session: AsyncSession, tenant_id: UUID) -> MemoryContentFacets:
     return MemoryContentFacets(
         live_row_count=int(agg.live_row_count),
         by_kind={k: int(getattr(agg, f"kind_{k}")) for k in MEMORY_KINDS},
+        # A withheld scope stays in ``by_scope`` and reads 0 rather than being
+        # omitted. The published contract (``schemas.memory.MemoryFacets``)
+        # is that the buckets are exhaustive over MEMORY_SCOPES and count what
+        # ``POST /memory/query`` and ``GET /memory/records`` can return. For a
+        # principal withheld the session partition both of those return zero
+        # session rows, so 0 is exactly that count. Omitting the key would
+        # break the exhaustiveness the frontend's generated type relies on,
+        # and that contract reads an omitted bucket as "not measured" — false
+        # here: it was measured, under this principal's visibility. It also
+        # keeps ``sum(by_scope) == live_row_count``: both drop the same rows.
         by_scope={s: int(getattr(agg, f"scope_{s}")) for s in MEMORY_SCOPES},
         age=MemoryFacetAge(
             p50_days=_opt_float(agg.age_p50_days),
@@ -623,9 +707,15 @@ async def insert_record(
     anchors: list[dict[str, Any]] | None = None,
     user_id: UUID | None = None,
     device_id: UUID | None = None,
+    exclude_scopes: Collection[str] = (),
 ) -> tuple[UUID, bool]:
     """Insert one record, deduping on ``(tenant_id, content_hash)``
     against LIVE rows only.
+
+    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer): a
+    collision with a live row in one of those scopes neither merges anchors
+    onto it nor returns its id — :class:`DedupAgainstWithheldScope` is
+    raised, and the caller's transaction rolls back.
 
     The conflict target is the ``uq_memory_records_tenant_content_hash_live``
     partial unique index, so tombstoned / superseded / validity-ended
@@ -667,6 +757,7 @@ async def insert_record(
     which is today's semantics exactly.
     """
     proposed_id = uuid4()
+    _scope_clause, scope_params = _scope_exclusion(exclude_scopes)
     returned = (
         await session.execute(
             text(
@@ -686,11 +777,12 @@ async def insert_record(
                      :user_id, :device_id)
                 ON CONFLICT (tenant_id, content_hash)
                     WHERE {_LIVE_DEDUP_PREDICATE}
-                    {_ANCHOR_MERGE_CONFLICT_ACTION}
+                    {_anchor_merge_conflict_action(exclude_scopes)}
                 RETURNING memory_id
                 """
-            ),
+            ).bindparams(*_expanding_scope_binds(scope_params)),
             {
+                **scope_params,
                 "memory_id": proposed_id,
                 "tenant_id": tenant_id,
                 "scope": scope,
@@ -723,18 +815,24 @@ async def insert_record(
     # the union equals the stored array and the row is deliberately left
     # untouched. Both are a plain dedup and resolve the same way.
     existing = (
-        await session.execute(
-            text(
-                f"""
-                SELECT memory_id FROM coord.memory_records
-                WHERE tenant_id = :tenant_id AND content_hash = :content_hash
-                  AND {_LIVE_DEDUP_PREDICATE}
-                """
-            ),
-            {"tenant_id": tenant_id, "content_hash": content_hash},
+        (
+            await session.execute(
+                text(
+                    f"""
+                    SELECT memory_id, scope FROM coord.memory_records
+                    WHERE tenant_id = :tenant_id AND content_hash = :content_hash
+                      AND {_LIVE_DEDUP_PREDICATE}
+                    """
+                ),
+                {"tenant_id": tenant_id, "content_hash": content_hash},
+            )
         )
-    ).scalar_one()
-    return UUID(str(existing)), True
+        .mappings()
+        .one()
+    )
+    if existing["scope"] in exclude_scopes:
+        raise DedupAgainstWithheldScope(content_hash)
+    return UUID(str(existing["memory_id"])), True
 
 
 @dataclass(frozen=True)
@@ -765,10 +863,16 @@ async def insert_records_batch(
     items: list[MemoryRecordInsert],
     user_id: UUID | None = None,
     device_id: UUID | None = None,
+    exclude_scopes: Collection[str] = (),
 ) -> list[tuple[UUID, bool]]:
     """Set-based multi-row insert with the same live-row dedup semantics
     as :func:`insert_record`, in ONE round-trip (plus one dedup lookup
     when any row conflicted).
+
+    ``exclude_scopes`` behaves as on :func:`insert_record`: any item that
+    collides with a live row in one of those scopes raises
+    :class:`DedupAgainstWithheldScope` (no anchor merge onto that row, no id
+    returned), and the caller's transaction rolls the whole batch back.
 
     Returns ``(memory_id, deduped)`` per item, in item order — conflicts
     against an existing LIVE row report that row's id with
@@ -829,6 +933,7 @@ async def insert_records_batch(
             union.extend(a for a in item.anchors if a not in union)
             unique[seen] = replace(head, anchors=union)
     proposed: dict[str, UUID] = {i.content_hash: uuid4() for i in unique}
+    _scope_clause, scope_params = _scope_exclusion(exclude_scopes)
     stmt = text(
         f"""
         INSERT INTO coord.memory_records
@@ -859,10 +964,11 @@ async def insert_records_batch(
                     source, anchors)
         ON CONFLICT (tenant_id, content_hash)
             WHERE {_LIVE_DEDUP_PREDICATE}
-            {_ANCHOR_MERGE_CONFLICT_ACTION}
+            {_anchor_merge_conflict_action(exclude_scopes)}
         RETURNING memory_id, content_hash
         """
     ).bindparams(
+        *_expanding_scope_binds(scope_params),
         bindparam("memory_ids", type_=ARRAY(Text())),
         bindparam("scopes", type_=ARRAY(Text())),
         bindparam("scope_refs", type_=ARRAY(Text())),
@@ -879,6 +985,7 @@ async def insert_records_batch(
     rows = await session.execute(
         stmt,
         {
+            **scope_params,
             "tenant_id": tenant_id,
             # Request-level, like ``tenant_id``: one verified principal per
             # call, so these are scalars broadcast over the unnest rather
@@ -918,14 +1025,19 @@ async def insert_records_batch(
     if conflicted:
         lookup = text(
             f"""
-            SELECT memory_id, content_hash FROM coord.memory_records
+            SELECT memory_id, content_hash, scope FROM coord.memory_records
             WHERE tenant_id = :tenant_id AND content_hash IN :hashes
               AND {_LIVE_DEDUP_PREDICATE}
             """
         ).bindparams(bindparam("hashes", expanding=True))
-        found = await session.execute(
-            lookup, {"tenant_id": tenant_id, "hashes": conflicted}
-        )
+        found = (
+            await session.execute(
+                lookup, {"tenant_id": tenant_id, "hashes": conflicted}
+            )
+        ).all()
+        for r in found:
+            if r.scope in exclude_scopes:
+                raise DedupAgainstWithheldScope(str(r.content_hash))
         existing = {str(r.content_hash): UUID(str(r.memory_id)) for r in found}
 
     # One entry per ORIGINAL item, in the caller's order. A hash that
@@ -973,22 +1085,37 @@ async def existing_hashes(
 
 
 async def find_by_hash(
-    session: AsyncSession, tenant_id: UUID, content_hash: str
+    session: AsyncSession,
+    tenant_id: UUID,
+    content_hash: str,
+    exclude_scopes: Collection[str] = (),
 ) -> UUID | None:
-    """The tenant's LIVE record id carrying ``content_hash``, if any."""
+    """The tenant's LIVE record id carrying ``content_hash``, if any.
+
+    Raises :class:`DedupAgainstWithheldScope` when that row is in one of
+    ``exclude_scopes``: its id is never returned to such a caller.
+    """
     found = (
-        await session.execute(
-            text(
-                f"""
-                SELECT memory_id FROM coord.memory_records
-                WHERE tenant_id = :tenant_id AND content_hash = :content_hash
-                  AND {_LIVE_DEDUP_PREDICATE}
-                """
-            ),
-            {"tenant_id": tenant_id, "content_hash": content_hash},
+        (
+            await session.execute(
+                text(
+                    f"""
+                    SELECT memory_id, scope FROM coord.memory_records
+                    WHERE tenant_id = :tenant_id AND content_hash = :content_hash
+                      AND {_LIVE_DEDUP_PREDICATE}
+                    """
+                ),
+                {"tenant_id": tenant_id, "content_hash": content_hash},
+            )
         )
-    ).scalar_one_or_none()
-    return UUID(str(found)) if found is not None else None
+        .mappings()
+        .one_or_none()
+    )
+    if found is None:
+        return None
+    if found["scope"] in exclude_scopes:
+        raise DedupAgainstWithheldScope(content_hash)
+    return UUID(str(found["memory_id"]))
 
 
 # The instant validity is evaluated at.
@@ -1073,8 +1200,16 @@ _FACET_AGE_DAYS_SQL = (
 )
 
 
-async def live_row_count(session: AsyncSession, tenant_id: UUID) -> int:
+async def live_row_count(
+    session: AsyncSession,
+    tenant_id: UUID,
+    exclude_scopes: Collection[str] = (),
+) -> int:
     """Count ``tenant_id``'s RETRIEVAL-LIVE rows — the query denominator.
+
+    ``exclude_scopes`` drops the scopes withheld from the caller, exactly as
+    :func:`facets` does, so this stays the number ``/stats`` publishes for
+    the same principal.
 
     The same number :func:`facets` publishes as
     ``MemoryContentFacets.live_row_count``, and deliberately the same
@@ -1101,19 +1236,18 @@ async def live_row_count(session: AsyncSession, tenant_id: UUID) -> int:
     could have matched — which is the direction that keeps "the corpus
     holds N rows and you matched none" true.
     """
+    scope_clause, scope_params = _scope_exclusion(exclude_scopes)
+    stmt = text(
+        f"""
+        SELECT count(*)
+        FROM coord.memory_records r
+        WHERE r.tenant_id = :tenant_id
+          AND {_RETRIEVAL_LIVE_PREDICATE}{scope_clause}
+        """
+    ).bindparams(*_expanding_scope_binds(scope_params))
     return int(
         (
-            await session.execute(
-                text(
-                    f"""
-                    SELECT count(*)
-                    FROM coord.memory_records r
-                    WHERE r.tenant_id = :tenant_id
-                      AND {_RETRIEVAL_LIVE_PREDICATE}
-                    """
-                ),
-                {"tenant_id": tenant_id},
-            )
+            await session.execute(stmt, {"tenant_id": tenant_id, **scope_params})
         ).scalar_one()
     )
 
@@ -1899,22 +2033,33 @@ async def mark_superseded(
 
 
 async def tombstone_record(
-    session: AsyncSession, tenant_id: UUID, memory_id: UUID
+    session: AsyncSession,
+    tenant_id: UUID,
+    memory_id: UUID,
+    exclude_scopes: Collection[str] = (),
 ) -> bool:
-    """Tombstone one row; False when it doesn't exist for this tenant."""
+    """Tombstone one row; False when it doesn't exist for this tenant.
+
+    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) makes a
+    row in those scopes match nothing, in the same ``UPDATE``: it is not
+    tombstoned, and the caller sees the same False as for an unknown id.
+    """
+    scope_clause, scope_params = _scope_exclusion(
+        exclude_scopes, alias="memory_records"
+    )
+    stmt = text(
+        f"""
+        UPDATE coord.memory_records
+        SET is_tombstone = true,
+            valid_until = now(),
+            updated_at = now()
+        WHERE tenant_id = :tenant_id AND memory_id = :memory_id{scope_clause}
+        RETURNING memory_id
+        """
+    ).bindparams(*_expanding_scope_binds(scope_params))
     deleted = (
         await session.execute(
-            text(
-                """
-                UPDATE coord.memory_records
-                SET is_tombstone = true,
-                    valid_until = now(),
-                    updated_at = now()
-                WHERE tenant_id = :tenant_id AND memory_id = :memory_id
-                RETURNING memory_id
-                """
-            ),
-            {"tenant_id": tenant_id, "memory_id": memory_id},
+            stmt, {"tenant_id": tenant_id, "memory_id": memory_id, **scope_params}
         )
     ).scalar_one_or_none()
     return deleted is not None
@@ -2515,9 +2660,10 @@ async def list_records_page(
     if since is not None:
         clauses.append("GREATEST(r.updated_at, r.created_at) > :since")
         params["since"] = since
-    if exclude_scopes:
-        clauses.append("r.scope NOT IN :exclude_scopes")
-        params["exclude_scopes"] = sorted(exclude_scopes)
+    scope_clause, scope_params = _scope_exclusion(exclude_scopes)
+    if scope_clause:
+        clauses.append(scope_clause.removeprefix(" AND "))
+        params.update(scope_params)
     if cursor is not None:
         clauses.append(
             "(r.created_at, r.seq)"
@@ -2539,8 +2685,7 @@ async def list_records_page(
     )
     if kinds:
         stmt = stmt.bindparams(bindparam("kinds", expanding=True))
-    if exclude_scopes:
-        stmt = stmt.bindparams(bindparam("exclude_scopes", expanding=True))
+    stmt = stmt.bindparams(*_expanding_scope_binds(scope_params))
     rows = await session.execute(stmt, params)
     out: list[dict[str, Any]] = []
     for r in rows.mappings():
@@ -3152,8 +3297,14 @@ async def set_lifecycle_hold(
     memory_id: UUID,
     held: bool,
     now: datetime,
+    exclude_scopes: Collection[str] = (),
 ) -> bool:
     """Apply (``held=True``) or release (``held=False``) one record's hold.
+
+    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) makes a
+    row in those scopes match NOTHING, inside the same ``UPDATE`` — so it is
+    neither written nor distinguishable from an unknown id (both return
+    False → 404).
 
     The WRITER for the flag :func:`_not_lifecycle_held` reads. Until this
     existed the seven gates listed there were reachable only by raw SQL
@@ -3195,24 +3346,29 @@ async def set_lifecycle_hold(
     Returns True when a row in ``tenant_id`` matched (False maps to 404;
     a cross-tenant ``memory_id`` is never disclosed as existing).
     """
+    scope_clause, scope_params = _scope_exclusion(
+        exclude_scopes, alias="memory_records"
+    )
     updated = (
         await session.execute(
             text(
-                """
+                f"""
                 UPDATE coord.memory_records
-                SET source = COALESCE(source, '{}'::jsonb)
+                SET source = COALESCE(source, '{{}}'::jsonb)
                              || jsonb_build_object('lifecycle_hold',
                                                    CAST(:held AS boolean)),
                     updated_at = :now
-                WHERE tenant_id = :tenant_id AND memory_id = :memory_id
+                WHERE tenant_id = :tenant_id
+                  AND memory_id = :memory_id{scope_clause}
                 RETURNING memory_id
                 """
-            ),
+            ).bindparams(*_expanding_scope_binds(scope_params)),
             {
                 "tenant_id": tenant_id,
                 "memory_id": memory_id,
                 "held": held,
                 "now": now,
+                **scope_params,
             },
         )
     ).scalar_one_or_none()
