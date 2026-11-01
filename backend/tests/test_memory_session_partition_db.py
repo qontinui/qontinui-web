@@ -56,7 +56,13 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-from app.api.v1.endpoints.memory import MemoryPrincipal, withheld_scopes
+from app.api.v1.endpoints.memory import (
+    MemoryPrincipal,
+    _refuse_withheld_scopes,
+    _withheld_duplicate_conflict,
+    withheld_scopes,
+)
+from app.core.refusal import NextActionKind, RefusalCode, RefusalHTTPException
 from app.jobs.memory_lifecycle import reindex_once
 from app.services import memory_store as store
 from app.services.memory_vectors import EMBEDDING_MODEL_TAG
@@ -202,6 +208,35 @@ class TestWithheldScopesPredicate:
         one is treated like a device, never like the service."""
         principal = MemoryPrincipal(tenant_id=uuid4(), device_id=None, actor=actor)
         assert withheld_scopes(principal) == frozenset({"session"})
+
+
+class TestRefusalEnvelopes:
+    """The two refusals this partition adds carry a typed next action."""
+
+    def test_named_session_scope_is_a_typed_permission_refusal(self) -> None:
+        principal = MemoryPrincipal(tenant_id=uuid4(), device_id=None, actor="device")
+        with pytest.raises(RefusalHTTPException) as caught:
+            _refuse_withheld_scopes(principal, ["tenant", "session"])
+        exc = caught.value
+        assert exc.status_code == 403
+        assert exc.refusal.code is RefusalCode.permission_denied
+        assert exc.refusal.next_action.kind is NextActionKind.fix_request
+        assert exc.refusal.discriminator == "memory_session_scope_withheld"
+        assert "coord" in str(exc.detail)
+
+    def test_admitted_principal_naming_session_is_not_refused(self) -> None:
+        principal = MemoryPrincipal(
+            tenant_id=uuid4(), device_id=None, actor="coord_service"
+        )
+        _refuse_withheld_scopes(principal, ["session"])
+
+    def test_withheld_duplicate_is_a_typed_conflict_naming_no_id(self) -> None:
+        exc = _withheld_duplicate_conflict()
+        assert exc.status_code == 409
+        assert exc.refusal.code is RefusalCode.conflict
+        assert exc.refusal.next_action.kind is NextActionKind.fix_request
+        assert exc.refusal.discriminator == "memory_content_held_in_withheld_scope"
+        assert exc.refusal.next_action.target is None
 
 
 # ---------------------------------------------------------------------------

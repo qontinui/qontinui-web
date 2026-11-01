@@ -117,6 +117,12 @@ from app.api.deps import (
 from app.api.strict_query import StrictQueryRoute
 from app.core import bounded_read
 from app.core.config import settings
+from app.core.refusal import (
+    NextActionKind,
+    RefusalCode,
+    RefusalHTTPException,
+    refusal_error,
+)
 from app.models.user import User
 from app.schemas.memory import (
     DEFAULT_LIST_LIMIT,
@@ -808,9 +814,12 @@ def _refuse_withheld_scopes(
     cannot be used to probe which ids are session rows.
     """
     if withheld_scopes(principal).intersection(s for s in scopes if s is not None):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=_SESSION_PARTITION_REFUSAL.format(actor=principal.actor),
+        raise refusal_error(
+            status.HTTP_403_FORBIDDEN,
+            RefusalCode.permission_denied,
+            NextActionKind.fix_request,
+            _SESSION_PARTITION_REFUSAL.format(actor=principal.actor),
+            discriminator="memory_session_scope_withheld",
         )
 
 
@@ -828,7 +837,7 @@ _WITHHELD_DUPLICATE_DETAIL = (
 )
 
 
-def _withheld_duplicate_conflict() -> HTTPException:
+def _withheld_duplicate_conflict() -> RefusalHTTPException:
     """409 for :class:`store.DedupAgainstWithheldScope` — carries NO id.
 
     The unique live-content index has no scope column, so the write cannot
@@ -844,9 +853,12 @@ def _withheld_duplicate_conflict() -> HTTPException:
     follow-up of plan
     ``2026-10-30-memory-session-scope-clamp-trusts-an-unproven-caller-session``.
     """
-    return HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail=_WITHHELD_DUPLICATE_DETAIL,
+    return refusal_error(
+        status.HTTP_409_CONFLICT,
+        RefusalCode.conflict,
+        NextActionKind.fix_request,
+        _WITHHELD_DUPLICATE_DETAIL,
+        discriminator="memory_content_held_in_withheld_scope",
     )
 
 

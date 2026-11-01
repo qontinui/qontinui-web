@@ -42,6 +42,14 @@ from pathlib import Path
 #: ``origin/main`` it was measured against, 04d134535, before the D2
 #: conversions on the same change). Lower it when a conversion lands; never
 #: raise it.
+# 795 (from 800), plan 2026-10-30-memory-session-scope-clamp-trusts-an-unproven-
+# caller-session: five memory 404s (by-id, graph, supersede, hold, delete) now
+# pass ``_RECORD_NOT_FOUND_IN_TENANT``, a module constant this syntactic
+# detector does not count. That is NOT a conversion: those refusals are still
+# free text, and the by-id detail is a coord wire contract, so moving them to
+# ``refusal_error`` belongs in its own change. The PR's two NEW refusals
+# (``_refuse_withheld_scopes``, ``_withheld_duplicate_conflict``) do use
+# ``refusal_error``.
 BASELINE = 795
 
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
