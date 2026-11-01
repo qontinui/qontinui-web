@@ -638,6 +638,7 @@ describe("coord needs_me wire at 4907c36ff", () => {
     expect(decisionDomainLabel("operator_gate")).toBe("operator approval gate");
     expect(decisionDomainLabel("unscanned")).toBe("not yet scanned");
     expect(decisionDomainLabel("unclassified")).toBe("unclassified");
+    expect(decisionDomainLabel("other")).toBe("other kinds");
   });
 
   describe("an initiative's typed status and dates", () => {
@@ -807,6 +808,82 @@ describe("round-7 review — blank recommendations, link targets, windows", () =
     const item = view.needsMe.items![0];
     expect(item.recommendation).toBeNull();
     expect(needsYouReason(item)).toBe("open question — no recommendation");
+  });
+
+  it('reads shape "unknown" as an UNKNOWN recommendation, never as none given', () => {
+    // Coord's fork-shape columns were unreadable: it serves `shape: "unknown"`
+    // and OMITS `recommendation` / `if_overturned` (absent, never null).
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [{ id: "q-1", fork: "Pick one", shape: "unknown" }],
+      },
+    })!;
+    const item = view.needsMe.items![0];
+    expect(item.recommendationKnown).toBe(false);
+    expect(item.ifOverturnedKnown).toBe(false);
+    expect(needsYouReason(item)).toBe(
+      "recommendation unknown (could not be read)"
+    );
+    expect(needsYouReason(item)).not.toMatch(/no recommendation|none given/);
+  });
+
+  it("reads an omitted recommendation as UNKNOWN even beside a served shape", () => {
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [{ id: "q-1", fork: "Pick one", shape: "open_question" }],
+      },
+    })!;
+    const item = view.needsMe.items![0];
+    expect(item.recommendationKnown).toBe(false);
+    expect(needsYouReason(item)).toBe(
+      "recommendation unknown (could not be read)"
+    );
+  });
+
+  it("keeps a served null recommendation as none given", () => {
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [
+          {
+            id: "q-1",
+            fork: "Pick one",
+            recommendation: null,
+            if_overturned: null,
+            shape: "open_question",
+          },
+        ],
+      },
+    })!;
+    const item = view.needsMe.items![0];
+    expect(item.recommendationKnown).toBe(true);
+    expect(item.ifOverturnedKnown).toBe(true);
+    expect(needsYouReason(item)).toBe("open question — no recommendation");
+  });
+
+  it('does not let shape "unknown" vouch for a served recommendation key', () => {
+    // `shape` is the column-read verdict: when it says unknown, a stray null
+    // beside it is not a reading of "none".
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [
+          {
+            id: "q-1",
+            fork: "Pick one",
+            recommendation: null,
+            shape: "unknown",
+          },
+        ],
+      },
+    })!;
+    expect(view.needsMe.items![0].recommendationKnown).toBe(false);
   });
 
   it.each([

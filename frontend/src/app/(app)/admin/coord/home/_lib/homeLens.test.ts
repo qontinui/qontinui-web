@@ -65,7 +65,9 @@ function item(over: Partial<NeedsMeItem> = {}): NeedsMeItem {
     fork: "Ship it?",
     options: [],
     recommendation: null,
+    recommendationKnown: true,
     ifOverturned: null,
+    ifOverturnedKnown: true,
     shape: null,
     answerAt: null,
     blocking: null,
@@ -250,6 +252,10 @@ describe("descriptors — built from fixed fields, never from the text", () => {
     const question = item({ recommendation: "Hold" });
     expect(needsStatusWord(question)).toBe("decide");
     expect(needsStatusWord(item())).toBe("open question");
+    // A recommendation coord could not read is UNKNOWN, not an open question.
+    expect(needsStatusWord(item({ recommendationKnown: false }))).toBe(
+      "unknown"
+    );
     const gate = item({ source: "operator_gate", recommendation: "x" });
     expect(needsStatusWord(gate)).toBe("approval");
     expect(needsDescriptor(question)).toEqual({
@@ -405,6 +411,15 @@ describe("presentedDecisionDomains — the table's words, or fixed words", () =>
       "fixing a pull request 2",
       "operator approval gate 1",
       "not yet scanned 4",
+    ]);
+  });
+
+  it("names coord's reserved overflow bucket, `other`, in the table's words", () => {
+    // Coord folds the parsed domains past its key cap into `other`, one of its
+    // reserved buckets — a key coord fills itself, not an agent's text.
+    expect(presentedDecisionDomains({ pr_fix: 1, other: 6 })).toEqual([
+      "fixing a pull request 1",
+      "other kinds 6",
     ]);
   });
 

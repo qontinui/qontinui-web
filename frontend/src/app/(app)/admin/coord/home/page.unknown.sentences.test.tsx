@@ -308,6 +308,28 @@ const ARMS: Arm[] = [
     never: [/If you overturn it: none/],
   },
   {
+    // Coord could not read the fork-shape columns: it serves `shape: "unknown"`
+    // and leaves `recommendation` / `if_overturned` out. That is UNKNOWN, and
+    // must not read as an open question with none given.
+    arm: "a question whose recommendation coord could not read",
+    body: {
+      needs_me: needsOne({
+        shape: "unknown",
+        recommendation: undefined,
+        if_overturned: undefined,
+      }),
+    },
+    region: NEEDS,
+    open: "row",
+    // The opened row shows its detail, not its collapsed reason
+    // (`needsYouReason`, pinned in coordHomeStatus.test.ts).
+    says: [
+      "Recommended: unknown (could not be read)",
+      "If you overturn it: unknown (could not be read)",
+    ],
+    never: [/none given/, /not stated/, /open question/, /no recommendation/],
+  },
+  {
     arm: "a question with no source",
     body: { needs_me: needsOne({ source: undefined }) },
     region: NEEDS,

@@ -617,9 +617,23 @@ export interface NeedsMeItem {
   fork: string | null;
   /** The offered answers; `null` when coord served options this page cannot read. */
   options: string[] | null;
+  /** The recommendation; `null` is "none given" ONLY when {@link recommendationKnown}. */
   recommendation: string | null;
+  /**
+   * Whether coord could read the item's recommendation. `false` when coord
+   * served `shape: "unknown"` (its fork-shape columns could not be read, so a
+   * recommendation may have been recorded) or left the `recommendation` key
+   * out: the recommendation is UNKNOWN, never "none given".
+   */
+  recommendationKnown: boolean;
+  /** The consequence of overturning; `null` is "not stated" ONLY when {@link ifOverturnedKnown}. */
   ifOverturned: string | null;
-  /** `fork_with_recommendation` | `open_question`, derived coord-side. */
+  /** Whether coord could read `if_overturned` — as {@link recommendationKnown}. */
+  ifOverturnedKnown: boolean;
+  /**
+   * `fork_with_recommendation` | `open_question` | `unknown`, derived
+   * coord-side; `unknown` means the fork-shape columns could not be read.
+   */
   shape: string | null;
   /** The console page where the existing write door answers it. */
   answerAt: string | null;
@@ -697,6 +711,12 @@ function parseByDomain(raw: unknown): Record<string, number> | null {
   return Object.fromEntries(counts);
 }
 
+/** coord's `shape` for an item whose fork-shape columns could not be read. */
+export const SHAPE_UNKNOWN = "unknown";
+
+/** What a needs-you item says of a recommendation (or consequence) coord could not read. */
+export const NEEDS_UNREADABLE_WORDS = "unknown (could not be read)";
+
 function parseNeedsMe(raw: unknown): NeedsMeView {
   const o = obj(raw) ?? {};
   const state = parseBlockState(o.state);
@@ -712,6 +732,11 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
           const id =
             str(r.id) ?? (typeof r.id === "number" ? String(r.id) : null);
           const blocking = obj(r.blocking);
+          const shape = str(r.shape);
+          // `shape: "unknown"` is coord saying the fork-shape columns could not
+          // be read; an omitted key says the same. Either way the value is
+          // UNKNOWN, and must not read as a served null ("none given").
+          const forkShapeRead = shape !== SHAPE_UNKNOWN;
           return [
             {
               source: str(r.source),
@@ -723,8 +748,12 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
               // coord counts a recommendation only when non-blank after trim
               // (its `shape`); a whitespace-only one is no recommendation.
               recommendation: nonBlank(str(r.recommendation)),
+              recommendationKnown:
+                forkShapeRead && Object.hasOwn(r, "recommendation"),
               ifOverturned: str(r.if_overturned),
-              shape: str(r.shape),
+              ifOverturnedKnown:
+                forkShapeRead && Object.hasOwn(r, "if_overturned"),
+              shape,
               answerAt: str(r.answer_at),
               blocking: blocking
                 ? {
@@ -813,6 +842,10 @@ function nonBlank(v: string | null): string | null {
 /** A needs-you row's `reason`: the recommendation, or the literal label. */
 export function needsYouReason(item: NeedsMeItem): string {
   if (item.recommendation !== null) return item.recommendation;
+  // Unread is not absent: the item may carry a recommendation coord could not
+  // read, so "no recommendation" would state a definite value it does not know.
+  if (!item.recommendationKnown)
+    return `recommendation ${NEEDS_UNREADABLE_WORDS}`;
   // A gate is an approval, not a question: coord serves it with no
   // recommendation, and calling it an "open question" would misname it.
   return item.source === "operator_gate"
@@ -1043,6 +1076,7 @@ const DECISION_DOMAIN_LABEL: Readonly<Record<string, string>> = {
   unclassified: "unclassified",
   operator_gate: "operator approval gate",
   unscanned: "not yet scanned",
+  other: "other kinds",
 };
 
 export function decisionDomainLabel(domain: string): string {

@@ -309,12 +309,17 @@ export function repositoryAliasDescriptor(alias: string): RedactionDescriptor {
 export const INITIATIVE_UNPARSEABLE_SENTENCE =
   "The current initiative's document could not be read as written, so its status and scope are not shown.";
 
-/** A needs-you item's own status word — the badge the row shows. */
+/**
+ * A needs-you item's own status word — the badge the row shows. An item whose
+ * recommendation coord could not read is `unknown`: calling it an "open
+ * question" would state that none was given, which coord does not know.
+ */
 export function needsStatusWord(
   item: NeedsMeItem
-): "approval" | "decide" | "open question" {
+): "approval" | "decide" | "open question" | "unknown" {
   if (item.source === "operator_gate") return "approval";
-  return item.recommendation !== null ? "decide" : "open question";
+  if (item.recommendation !== null) return "decide";
+  return item.recommendationKnown ? "open question" : "unknown";
 }
 
 /** What a part of a needs-you item is, for its descriptor. */

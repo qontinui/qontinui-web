@@ -133,6 +133,7 @@ import {
   degradationsGapTitle,
   durationText,
   needsYouReason,
+  NEEDS_UNREADABLE_WORDS,
   needsDisplayCount,
   nothingNeedsYou,
   lastGoodReadPhrase,
@@ -433,28 +434,32 @@ function NeedsYouRow({
               <span className="text-muted-foreground">Recommended: </span>
               {/* The detail states the recommendation plainly; the row's
                   collapsed reason (needsYouReason) carries the label. */}
-              {item.recommendation === null ? (
-                "none given"
-              ) : (
+              {item.recommendation !== null ? (
                 <RedactedText
                   text={item.recommendation}
                   repo={null}
                   descriptor={needsDescriptor(item, "Recommendation")}
                 />
+              ) : item.recommendationKnown ? (
+                "none given"
+              ) : (
+                NEEDS_UNREADABLE_WORDS
               )}
             </p>
             <p className="m-0">
               <span className="text-muted-foreground">
                 If you overturn it:{" "}
               </span>
-              {item.ifOverturned === null ? (
-                "not stated"
-              ) : (
+              {item.ifOverturned !== null ? (
                 <RedactedText
                   text={item.ifOverturned}
                   repo={null}
                   descriptor={needsDescriptor(item, "Consequence")}
                 />
+              ) : item.ifOverturnedKnown ? (
+                "not stated"
+              ) : (
+                NEEDS_UNREADABLE_WORDS
               )}
             </p>
             {item.options === null ? (
