@@ -504,5 +504,6 @@
   "tests/test_wtcensus_split_01_migration.py": 44.5,
   "tests/test_wthr_01_worktree_headroom_mode_migration.py": 12.7,
   "tests/test_wuverif_01_tenant_verification_settings_migration.py": 31.9,
-  "tests/test_wuverif_01_work_unit_verifications_migration.py": 69.6
+  "tests/test_wuverif_01_work_unit_verifications_migration.py": 69.6,
+  "tests/test_wuverif_02_verification_judge_cases_migration.py": 81.2
 }

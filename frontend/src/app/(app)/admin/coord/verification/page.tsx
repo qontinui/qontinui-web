@@ -23,9 +23,23 @@
  *
  * A failed or degraded read renders "could not look" with the reason and the
  * last good stamp. Numbers from an earlier read are never replayed.
+ *
+ * ## Verifier agreement and the operator's label
+ *
+ * Plan `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
+ * Phase 4. Under calibration, one line says how far the verifier agrees with
+ * labelled cases (`deriveVerifierAgreement`) — words, never a number, below 20
+ * cases or when it cannot be read; only this page quotes coord's own error
+ * when it could not read them. Below it, the verdicts coord's label-sample
+ * door (`GET /coord/verification/label-sample`) picked for this ISO week — up
+ * to three, of every verdict kind, chosen by coord rather than by this page —
+ * each carry "Did this hold up? Yes · No · Can't tell"
+ * (`OperatorLabelControl`), or the label already recorded on them
+ * (`deriveLabelSampleView`). A sample that cannot be read says "unavailable",
+ * never "nothing to label". The overview tile never carries the control.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,19 +52,27 @@ import {
   type Stat,
 } from "@/components/console";
 import { useTenant } from "@/contexts/tenant-context";
+import { OperatorLabelControl } from "@/components/admin/coord/OperatorLabelControl";
+import { useOperatorLabelSample } from "@/components/admin/coord/useOperatorLabelSample";
 import { useVerificationMetrics } from "@/components/admin/coord/useVerificationMetrics";
 import {
   REFUTED_FINDING_TOPIC,
   ageFromSecs,
   bpPct,
+  choiceLabel,
+  deriveLabelSampleView,
   deriveTrustView,
   deriveVerificationHealth,
+  deriveVerifierAgreement,
   findingHref,
   interval,
   pct,
   ratePct,
   refutedUnitsInWindow,
   unverifiableTotal,
+  type AgreementView,
+  type LabelSampleRow,
+  type LabelSampleView,
   type PopulatedMetrics,
   type SeriesWeek,
   type VerificationLane,
@@ -193,7 +215,103 @@ function LaneBlock({ lane }: { lane: VerificationLane }) {
   );
 }
 
-function PopulatedBody({ m }: { m: PopulatedMetrics }) {
+function AgreementLine({ agreement }: { agreement: AgreementView }) {
+  return (
+    <p
+      className={`text-sm ${agreement.state === "populated" ? "text-foreground" : "text-muted-foreground"}`}
+      data-testid="coord-verification-agreement"
+      data-agreement-state={agreement.state}
+    >
+      {agreement.text}
+    </p>
+  );
+}
+
+function LabelSampleItem({ row }: { row: LabelSampleRow }) {
+  // One record, one line (R2): identity, verdict, time, then the answer slot
+  // last. Text overflow truncates with a title; the verdict id lives in a
+  // title only (R8).
+  const answered = row.operatorLabel
+    ? `already labelled: ${choiceLabel(row.operatorLabel.truth)}`
+    : null;
+  return (
+    <li
+      className="flex min-w-0 items-center gap-3 text-sm"
+      data-testid="coord-verification-label-sample-row"
+      data-verification-id={row.verificationId}
+    >
+      <span
+        className="min-w-0 flex-1 truncate font-mono text-xs"
+        title={`${row.label} — verdict ${row.verificationId}`}
+      >
+        {row.label}
+      </span>
+      <span className="shrink-0 text-muted-foreground">{row.verdict}</span>
+      <span className="shrink-0 text-xs text-muted-foreground">
+        <Stamp iso={row.recordedAt} />
+      </span>
+      {answered ? (
+        <span
+          className="min-w-0 max-w-[40ch] truncate text-xs text-muted-foreground"
+          title={answered}
+          data-testid="coord-verification-label-already"
+        >
+          {answered}
+        </span>
+      ) : (
+        // The control IS the row's last flex item and sizes itself by state
+        // (OperatorLabelControl): the idle button group never shrinks, so the
+        // label gives way; the outcome line is `min-w-0` and truncates with
+        // its title. A wrapper here would decide one size for both states.
+        <OperatorLabelControl
+          verificationId={row.verificationId}
+          className="max-w-[60ch]"
+        />
+      )}
+    </li>
+  );
+}
+
+function LabelSampleSection({ view }: { view: LabelSampleView }) {
+  return (
+    <section
+      className="space-y-1"
+      data-testid="coord-verification-label-sample"
+      data-label-sample-state={view.state}
+    >
+      <h2 className="text-sm font-medium">
+        Did this hold up?{" "}
+        <span className="font-normal text-muted-foreground">
+          — this week&rsquo;s verdicts for you to label
+          {view.state === "rows" || view.state === "empty"
+            ? ` (${view.isoWeek})`
+            : ""}
+        </span>
+      </h2>
+      {view.state === "loading" && (
+        <p className="text-sm text-muted-foreground">Reading…</p>
+      )}
+      {(view.state === "unavailable" || view.state === "empty") && (
+        <p className="text-sm text-muted-foreground">{view.text}</p>
+      )}
+      {view.state === "rows" && (
+        <ul className="space-y-1">
+          {view.rows.map((row) => (
+            <LabelSampleItem key={row.verificationId} row={row} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function PopulatedBody({
+  m,
+  agreement,
+}: {
+  m: PopulatedMetrics;
+  agreement: AgreementView;
+}) {
   const tc = m.trust_calibration;
   const cov = m.independent_verification_coverage;
   const u = m.unknowns;
@@ -247,6 +365,7 @@ function PopulatedBody({ m }: { m: PopulatedMetrics }) {
           <KV k="Method">{tc.method}</KV>
           {tc.counts && <KV k="Counts">{tc.counts}</KV>}
         </dl>
+        <AgreementLine agreement={agreement} />
       </section>
 
       <section className="space-y-1" data-testid="coord-verification-coverage">
@@ -344,6 +463,23 @@ export default function CoordVerificationPage() {
   );
   const view = useMemo(() => deriveTrustView(read, lastGood), [read, lastGood]);
   const health = useMemo(() => deriveVerificationHealth(view), [view]);
+  const agreement = useMemo(
+    () => deriveVerifierAgreement(read, "page"),
+    [read]
+  );
+  const { answer: sampleAnswer, reload: reloadSample } = useOperatorLabelSample(
+    activeTenantId,
+    loading,
+    tenantsError
+  );
+  const labelSample = useMemo(
+    () => deriveLabelSampleView(sampleAnswer),
+    [sampleAnswer]
+  );
+  const reloadAll = useCallback(
+    () => Promise.all([reload(), reloadSample()]),
+    [reload, reloadSample]
+  );
   const metrics = read.status === "ok" ? read.metrics : null;
   const refutedUnits = useMemo(() => {
     if (refuted.status !== "ok" || !metrics) return null;
@@ -389,9 +525,9 @@ export default function CoordVerificationPage() {
           </Button>
         ))}
         <RefreshButton
-          onRefresh={reload}
+          onRefresh={reloadAll}
           label="Refresh verification metrics"
-          title="Re-reads coord's verification metrics and the refutation findings now"
+          title="Re-reads coord's verification metrics, the refutation findings and this week's label sample now"
           data-testid="coord-verification-refresh"
         />
         {metrics && (
@@ -418,7 +554,13 @@ export default function CoordVerificationPage() {
         </p>
       )}
 
-      {metrics && !metrics.degraded && <PopulatedBody m={metrics} />}
+      {view.state === "could_not_look" && (
+        <AgreementLine agreement={agreement} />
+      )}
+
+      {metrics && !metrics.degraded && (
+        <PopulatedBody m={metrics} agreement={agreement} />
+      )}
 
       <section className="space-y-1" data-testid="coord-verification-refuted">
         <h2 className="text-sm font-medium">Refuted in this window</h2>
@@ -479,6 +621,8 @@ export default function CoordVerificationPage() {
           still listed here; the counts above use only standing verdicts.
         </p>
       </section>
+
+      <LabelSampleSection view={labelSample} />
 
       {metrics && (
         <>

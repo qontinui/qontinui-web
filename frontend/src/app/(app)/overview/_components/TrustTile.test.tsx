@@ -18,6 +18,7 @@ import {
   NOW,
   REFUTATION_FINDING,
   degraded,
+  judgeAgreement,
   noVerifications,
   populated,
 } from "@/components/admin/coord/verificationMetrics.fixture";
@@ -219,5 +220,100 @@ describe("TrustTile", () => {
     });
     expect(caveat.textContent).toContain("a later check");
     expect(caveat.textContent).toContain("more may exist");
+  });
+});
+
+/**
+ * Plan `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
+ * Phase 4: one verifier-agreement line under calibration, distinct for
+ * populated / not enough cases / door unreachable — and the operator's
+ * "Did this hold up?" control is never on this tile.
+ */
+describe("TrustTile — verifier agreement", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    window.localStorage.clear();
+    http.fetch.mockReset();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  function agreementLine(el: HTMLElement): HTMLElement {
+    const line = el.querySelector<HTMLElement>(
+      '[data-ui-bridge-id="overview.summary.trust.agreement"] dd'
+    );
+    if (!line) throw new Error("no agreement line");
+    return line;
+  }
+
+  it("populated: kappa with the seeded n and the operator n, and no label control", async () => {
+    // coord's wire shape, written out: this test reads the served body, not
+    // the fixture builder.
+    const row = { survived: 0, refuted: 0, unverifiable: 0 };
+    const matrix = { holds: row, fails: row, cannot_tell: row };
+    serve(
+      {
+        ...populated(),
+        judge_agreement: {
+          seeded: { n: 27, binary_n: 24, kappa: 0.712, reason: null, matrix },
+          operator: { n: 6, binary_n: 5, kappa: null, reason: "n<20", matrix },
+          consequence: { false_survived_count: 0 },
+        },
+      },
+      { available: true, findings: [REFUTATION_FINDING] }
+    );
+    renderTile();
+    const el = await settled("populated");
+    expect(agreementLine(el).textContent).toBe(
+      "verifier agreement κ 0.71 (seeded n=24) · operator n=6"
+    );
+    expect(
+      document.querySelector('[data-testid="coord-verification-label-control"]')
+    ).toBeNull();
+    expect(el.textContent).not.toContain("Did this hold up?");
+  });
+
+  it("n<20: 'not enough labelled cases yet', never a kappa", async () => {
+    serve(
+      populated({
+        judge_agreement: judgeAgreement({
+          n: 3,
+          binary_n: 2,
+          kappa: null,
+          reason: "n<20",
+        }),
+      })
+    );
+    renderTile();
+    const line = agreementLine(await settled("populated"));
+    expect(line.getAttribute("data-agreement-state")).toBe("insufficient");
+    expect(line.textContent).toBe(
+      "verifier agreement: not enough labelled cases yet"
+    );
+  });
+
+  it("coord's judge_agreement_error: a fixed sentence, never coord's raw error", async () => {
+    serve(
+      populated({
+        judge_agreement: null,
+        judge_agreement_error: "relation coord.judge_cases does not exist",
+      })
+    );
+    renderTile();
+    const line = agreementLine(await settled("populated"));
+    expect(line.getAttribute("data-agreement-state")).toBe("unknown");
+    expect(line.textContent).toBe(
+      "verifier agreement unknown — coord could not read the labelled cases"
+    );
+  });
+
+  it("door unreachable: explicit unknown, no number", async () => {
+    serve(new TypeError("Failed to fetch"));
+    renderTile();
+    const line = agreementLine(await settled("could_not_look"));
+    expect(line.getAttribute("data-agreement-state")).toBe("unknown");
+    expect(line.textContent).toBe(
+      "verifier agreement unknown — the metrics could not be read"
+    );
   });
 });

@@ -25,6 +25,12 @@
  * well while the checker has stopped is the stale green this tile exists to
  * rule out. Nothing per-criterion, no diff and no file list here — that is
  * the drill-down's.
+ *
+ * Under calibration, one line says how far the verifier agrees with labelled
+ * cases (`deriveVerifierAgreement`; plan
+ * `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
+ * Phase 4). The operator's "Did this hold up?" control is the drill-down's
+ * only — it is never shown on this tile.
  */
 
 import Link from "next/link";
@@ -32,6 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { absoluteTime, relativeTime } from "@/components/console";
 import {
   findingHref,
+  type AgreementView,
   type LaneView,
   type RefutedUnit,
   type TrustView,
@@ -65,6 +72,25 @@ function LaneLine({ lane }: { lane: LaneView }) {
       )}
       <span>{lane.line}</span>
     </p>
+  );
+}
+
+function AgreementLine({ agreement }: { agreement: AgreementView }) {
+  if (agreement.state === "loading") return null;
+  return (
+    <div data-ui-bridge-id="overview.summary.trust.agreement">
+      <dt className="text-muted-foreground">Checker agreement</dt>
+      <dd
+        className={
+          agreement.state === "populated"
+            ? "text-foreground"
+            : "text-muted-foreground"
+        }
+        data-agreement-state={agreement.state}
+      >
+        {agreement.text}
+      </dd>
+    </div>
   );
 }
 
@@ -147,9 +173,11 @@ function RefutedSection({ count, list }: { count: number; list: RefutedList }) {
 export function TrustPanel({
   view,
   refuted,
+  agreement,
 }: {
   view: TrustView;
   refuted: RefutedList;
+  agreement: AgreementView;
 }) {
   if (view.state === "loading") {
     return (
@@ -189,6 +217,9 @@ export function TrustPanel({
         <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
           These are not zeros: nothing here is known until the read succeeds.
         </p>
+        <dl className="mt-3 text-sm">
+          <AgreementLine agreement={agreement} />
+        </dl>
         <LaneLine lane={view.lane} />
         <DetailsLink />
       </div>
@@ -228,6 +259,7 @@ export function TrustPanel({
             </dd>
           </div>
         )}
+        <AgreementLine agreement={agreement} />
         <div data-ui-bridge-id="overview.summary.trust.coverage">
           <dt className="text-muted-foreground">Checked independently</dt>
           <dd className="text-foreground">

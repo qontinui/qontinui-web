@@ -5,6 +5,8 @@
 
 import type {
   DegradedMetrics,
+  JudgeAgreement,
+  JudgeAgreementSource,
   PopulatedMetrics,
   SeriesWeek,
   VerificationLane,
@@ -199,3 +201,73 @@ export const REFUTATION_FINDING = {
   body: 'A fresh-context verifier checked work unit `2026-09-01-widget-export` ("Widgets export to CSV") against origin/main and the deployed surface and found its "landed and verified" claim did not hold.',
   created_at: hoursAgo(48),
 };
+
+/**
+ * coord's `GET /coord/verification/label-sample` body: one survived, one
+ * refuted (already labelled by the operator), one unverifiable with no slug.
+ */
+export function labelSample() {
+  return {
+    iso_week: "2026-W44",
+    population_cutoff: "2026-10-26T00:00:00Z",
+    verdicts: [
+      {
+        verification_id: "9e000000-0000-4000-8000-000000000001",
+        work_unit_slug: "2026-10-01-widget-import",
+        verdict: "survived",
+        recorded_at: hoursAgo(30),
+        operator_label: null,
+      },
+      {
+        verification_id: "9e000000-0000-4000-8000-000000000002",
+        work_unit_slug: "2026-09-01-widget-export",
+        verdict: "refuted",
+        recorded_at: hoursAgo(48),
+        operator_label: {
+          id: "0d6a1f3e-2222-4c3e-9a40-1b2c3d4e5f60",
+          truth: "fails",
+          created_at: hoursAgo(5),
+        },
+      },
+      {
+        verification_id: "9e000000-0000-4000-8000-000000000003",
+        work_unit_slug: null,
+        verdict: "unverifiable",
+        recorded_at: hoursAgo(70),
+        operator_label: null,
+      },
+    ],
+  };
+}
+
+const ZERO_ROW = { survived: 0, refuted: 0, unverifiable: 0 };
+
+/** coord's `judge_agreement` — seeded kappa 0.71 over 24 binary cases. */
+export function judgeAgreement(
+  seeded: Partial<JudgeAgreementSource> = {},
+  operator: Partial<JudgeAgreementSource> = {}
+): JudgeAgreement {
+  const source = (o: Partial<JudgeAgreementSource>): JudgeAgreementSource => ({
+    n: 0,
+    binary_n: 0,
+    kappa: null,
+    reason: "n<20",
+    matrix: {
+      holds: { ...ZERO_ROW },
+      fails: { ...ZERO_ROW },
+      cannot_tell: { ...ZERO_ROW },
+    },
+    ...o,
+  });
+  return {
+    seeded: source({
+      n: 27,
+      binary_n: 24,
+      kappa: 0.712,
+      reason: null,
+      ...seeded,
+    }),
+    operator: source({ n: 6, binary_n: 5, ...operator }),
+    consequence: { false_survived_count: 0 },
+  };
+}

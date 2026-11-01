@@ -12402,6 +12402,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/coord/verification/label-sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Verification Label Sample
+         * @description Return this week's verdicts for the operator to label.
+         *
+         *     coord's body is forwarded verbatim with its status: ``{iso_week,
+         *     population_cutoff, verdicts: [...]}``, or its typed refusal.
+         */
+        get: operations["api_v1_operations_coord_verification_label_sample_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/verification/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Coord Verification Label
+         * @description Record the operator's label on one verification verdict.
+         *
+         *     Forwards ``{label_source: "operator", verification_id, truth}`` with the
+         *     operator's bearer; coord's status and body come back verbatim (see the
+         *     section comment), except a coord ``401``.
+         */
+        post: operations["api_v1_operations_coord_verification_labels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/coord/verification/metrics": {
         parameters: {
             query?: never;
@@ -43370,6 +43417,31 @@ export interface components {
          * @enum {string}
          */
         OperatorLabel: "A" | "B" | "E";
+        /**
+         * OperatorVerificationLabelRequest
+         * @description Body for ``POST /operations/coord/verification/labels``.
+         *
+         *     ``truth`` is the operator's answer to "Did this hold up?": ``holds``
+         *     (Yes), ``fails`` (No) or ``cannot_tell`` (Can't tell). ``verification_id``
+         *     names the verdict row (``coord.work_unit_verifications.id``) being judged.
+         */
+        OperatorVerificationLabelRequest: {
+            /**
+             * Label Source
+             * @constant
+             */
+            label_source: "operator";
+            /**
+             * Truth
+             * @enum {string}
+             */
+            truth: "holds" | "fails" | "cannot_tell";
+            /**
+             * Verification Id
+             * Format: uuid
+             */
+            verification_id: string;
+        };
         /**
          * OrganizationCreate
          * @description Schema for creating a new organization.
@@ -76409,6 +76481,59 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_verification_label_sample_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_verification_labels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorVerificationLabelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
