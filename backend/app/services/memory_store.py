@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Collection
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -2113,22 +2114,42 @@ async def insert_links_batch(
 
 
 async def fetch_outbound_links(
-    session: AsyncSession, tenant_id: UUID, source_ids: list[UUID]
+    session: AsyncSession,
+    tenant_id: UUID,
+    source_ids: list[UUID],
+    exclude_scopes: Collection[str] = (),
 ) -> dict[UUID, list[dict[str, Any]]]:
-    """Outbound edges for ``source_ids``, grouped by source. Tenant-bound."""
+    """Outbound edges for ``source_ids``, grouped by source. Tenant-bound.
+
+    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) drops an
+    edge whose TARGET is a record in one of those scopes, so a visible row's
+    links cannot disclose the id of a row the caller may not see. Empty →
+    every edge.
+    """
     if not source_ids:
         return {}
+    target_clause = (
+        " AND NOT EXISTS (SELECT 1 FROM coord.memory_records t"
+        " WHERE t.memory_id = l.target_id AND t.scope IN :exclude_scopes)"
+        if exclude_scopes
+        else ""
+    )
     stmt = text(
-        """
-        SELECT link_id, source_id, target_id, relation, description, created_at
-        FROM coord.memory_links
-        WHERE tenant_id = :tenant_id AND source_id IN :ids
+        f"""
+        SELECT l.link_id, l.source_id, l.target_id, l.relation, l.description,
+               l.created_at
+        FROM coord.memory_links l
+        WHERE l.tenant_id = :tenant_id AND l.source_id IN :ids{target_clause}
         -- Justified, not overlooked: no LIMIT truncates this full-set
         -- read, so the random-UUID tiebreak selects nothing.
-        ORDER BY created_at ASC, link_id ASC
+        ORDER BY l.created_at ASC, l.link_id ASC
         """
     ).bindparams(bindparam("ids", expanding=True))
-    rows = await session.execute(stmt, {"tenant_id": tenant_id, "ids": source_ids})
+    params: dict[str, Any] = {"tenant_id": tenant_id, "ids": source_ids}
+    if exclude_scopes:
+        stmt = stmt.bindparams(bindparam("exclude_scopes", expanding=True))
+        params["exclude_scopes"] = sorted(exclude_scopes)
+    rows = await session.execute(stmt, params)
     out: dict[UUID, list[dict[str, Any]]] = {}
     for r in rows.mappings():
         d = dict(r)
@@ -2370,6 +2391,7 @@ async def graph_edges(
     root_id: UUID,
     depth: int,
     relations: list[str] | None,
+    exclude_scopes: Collection[str] = (),
 ) -> list[dict[str, Any]]:
     """Bounded outbound traversal from ``root_id`` over ``coord.memory_links``.
 
@@ -2379,8 +2401,21 @@ async def graph_edges(
     depth cap itself — a cycle re-surfaces edges at increasing depth
     until the cap terminates the recursion, and the final DISTINCT
     collapses the repeats. Returns unique edge rows.
+
+    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) stops the
+    walk stepping ONTO a record in one of those scopes, in both arms: the
+    edge into it is not returned, and since the recursion only continues
+    from a returned edge's target, nothing reached solely through it is
+    either. The caller checks the root itself. Empty → the walk is
+    unchanged.
     """
-    rel_clause = " AND l.relation IN :relations" if relations else ""
+    walk_clause = " AND l.relation IN :relations" if relations else ""
+    if exclude_scopes:
+        walk_clause += (
+            " AND NOT EXISTS (SELECT 1 FROM coord.memory_records t"
+            " WHERE t.memory_id = l.target_id"
+            " AND t.scope IN :exclude_scopes)"
+        )
     stmt = text(
         f"""
         WITH RECURSIVE walk
@@ -2390,14 +2425,14 @@ async def graph_edges(
                    l.description, l.created_at, 1
             FROM coord.memory_links l
             WHERE l.tenant_id = :tenant_id
-              AND l.source_id = :root_id{rel_clause}
+              AND l.source_id = :root_id{walk_clause}
             UNION
             SELECT l.link_id, l.source_id, l.target_id, l.relation,
                    l.description, l.created_at, w.depth + 1
             FROM coord.memory_links l
             JOIN walk w ON l.source_id = w.target_id
             WHERE l.tenant_id = :tenant_id
-              AND w.depth < :depth{rel_clause}
+              AND w.depth < :depth{walk_clause}
         )
         SELECT DISTINCT link_id, source_id, target_id, relation,
                         description, created_at
@@ -2409,6 +2444,8 @@ async def graph_edges(
     )
     if relations:
         stmt = stmt.bindparams(bindparam("relations", expanding=True))
+    if exclude_scopes:
+        stmt = stmt.bindparams(bindparam("exclude_scopes", expanding=True))
     params: dict[str, Any] = {
         "tenant_id": tenant_id,
         "root_id": root_id,
@@ -2416,6 +2453,8 @@ async def graph_edges(
     }
     if relations:
         params["relations"] = relations
+    if exclude_scopes:
+        params["exclude_scopes"] = sorted(exclude_scopes)
     rows = await session.execute(stmt, params)
     out: list[dict[str, Any]] = []
     for r in rows.mappings():
@@ -2436,8 +2475,13 @@ async def list_records_page(
     cursor: tuple[datetime, int] | None,
     limit: int,
     now: datetime | None,
+    exclude_scopes: Collection[str] = (),
 ) -> list[dict[str, Any]]:
     """One keyset page of LIVE records, newest-first in WRITE order.
+
+    ``exclude_scopes`` (the endpoint's ``withheld_scopes`` answer) drops rows
+    in those scopes IN SQL, so the page still holds up to ``limit`` visible
+    rows and the keyset cursor stays exact. Empty → no scope predicate.
 
     Liveness = not tombstoned, not superseded, validity not ended
     (matching retrieval visibility, and evaluated the same
@@ -2471,6 +2515,9 @@ async def list_records_page(
     if since is not None:
         clauses.append("GREATEST(r.updated_at, r.created_at) > :since")
         params["since"] = since
+    if exclude_scopes:
+        clauses.append("r.scope NOT IN :exclude_scopes")
+        params["exclude_scopes"] = sorted(exclude_scopes)
     if cursor is not None:
         clauses.append(
             "(r.created_at, r.seq)"
@@ -2492,6 +2539,8 @@ async def list_records_page(
     )
     if kinds:
         stmt = stmt.bindparams(bindparam("kinds", expanding=True))
+    if exclude_scopes:
+        stmt = stmt.bindparams(bindparam("exclude_scopes", expanding=True))
     rows = await session.execute(stmt, params)
     out: list[dict[str, Any]] = []
     for r in rows.mappings():
