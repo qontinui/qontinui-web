@@ -16,6 +16,30 @@ interface OutputViewerProps {
 }
 
 /**
+ * The sentence of the backend's refusal of a beacon naming its own host
+ * (`operations` `_proxy_beacon_runner`); `null` for any other answer. An access
+ * rule reads as its sentence, not as a status and a JSON body.
+ */
+function coLocatedBeaconRefusal(
+  status: number | null,
+  body: string | null
+): string | null {
+  if (status !== 403 || body === null) return null;
+  try {
+    const parsed = JSON.parse(body) as {
+      message?: unknown;
+      refusal?: { discriminator?: unknown };
+    };
+    return parsed.refusal?.discriminator === "co_located_beacon_admin_only" &&
+      typeof parsed.message === "string"
+      ? parsed.message
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Live output viewer that fetches AI output from a runner via the backend
  * proxy. Polls every 5 seconds and auto-scrolls to the bottom.
  */
@@ -41,6 +65,11 @@ export function OutputViewer({ runnerId, taskRunId }: OutputViewerProps) {
         if (!isCurrent()) return;
         // A non-2xx keeps its own wording: the status and the runner's body.
         const status = httpStatusOf(err);
+        const refusal = coLocatedBeaconRefusal(status, httpBodyOf(err));
+        if (refusal !== null) {
+          setError(refusal);
+          return;
+        }
         if (status !== null) {
           setError(
             `Failed to fetch output: ${status} - ${httpBodyOf(err) ?? ""}`

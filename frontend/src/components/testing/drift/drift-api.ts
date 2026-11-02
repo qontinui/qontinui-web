@@ -4,12 +4,12 @@
  * Drift API client — fetches `DriftReport` and individual `DriftEntry`
  * records for a given run from the qontinui-web backend.
  *
- * NOTE: as of Phase D2 the backend endpoints documented below DO NOT YET
- * EXIST. They are a follow-up. The exported fetchers below issue requests
- * to those paths, but pages calling them will see a network error until
- * the backend wiring lands.
+ * The backend (`backend/app/api/v1/endpoints/runs_drift.py`) proxies these to
+ * the runner on its own host, so both routes are for platform admins only;
+ * anyone else gets the refusal {@link isDriftAdminRefusal} recognises, which the
+ * UI renders as `DriftAdminOnly`, never as a load error.
  *
- * Expected backend contract:
+ * Backend contract:
  *   GET /api/v1/runs/:runId/drift                  -> DriftReport-like list
  *     Returns { entries: VisualDriftEntryView[] | DriftEntryView[] }
  *     where each entry carries enough metadata for routing + summary cards.
@@ -26,6 +26,8 @@
  * directly while still having the fields the renderers need.
  */
 
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { isPlatformAdminRefusal } from "@/lib/api/fleet";
 import { httpClient } from "@/services/service-factory";
 import type { DriftEntry } from "@qontinui/ui-bridge-auto/drift";
 
@@ -147,7 +149,9 @@ export function asUiBridgeKind(entry: DriftEntryView): DriftEntry["kind"] | null
 // ---------------------------------------------------------------------------
 
 export async function fetchDriftReport(runId: string): Promise<DriftReportView> {
-  return httpClient.get<DriftReportView>(`/api/v1/runs/${runId}/drift`);
+  return httpClient.get<DriftReportView>(
+    `/api/v1/runs/${encodeURIComponent(runId)}/drift`,
+  );
 }
 
 export async function fetchDriftEntry(
@@ -155,6 +159,68 @@ export async function fetchDriftEntry(
   entryId: string,
 ): Promise<DriftEntryView> {
   return httpClient.get<DriftEntryView>(
-    `/api/v1/runs/${runId}/drift/${entryId}`,
+    `/api/v1/runs/${encodeURIComponent(runId)}/drift/${encodeURIComponent(entryId)}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// The platform-admin refusal
+// ---------------------------------------------------------------------------
+
+/** What the drift pages say in place of a report or an entry. */
+export const DRIFT_ADMIN_ONLY =
+  "Drift reports are limited to platform administrators.";
+
+/** The body `httpClient` rejected with, parsed; `null` when there is none. */
+function rejectionBody(err: unknown): unknown {
+  const body = httpBodyOf(err);
+  if (body === null) return null;
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a failed drift read is the backend's platform-admin refusal rather
+ * than a failure. `httpClient` throws `GET <url> failed: 403 - <body>`, so the
+ * status and body are recovered with the console's anchored readers. Any other
+ * 403 (a proxy's HTML page, a WAF's body) stays a failure.
+ */
+export function isDriftAdminRefusal(err: unknown): boolean {
+  return isPlatformAdminRefusal(httpStatusOf(err), rejectionBody(err));
+}
+
+/** The runner's own sentences for "it has nothing at that path" (`handlers.rs`). */
+const DRIFT_NOT_FOUND = new Set([
+  "drift-report-not-found",
+  "drift-entry-not-found",
+]);
+
+/**
+ * Whether a failed drift read is the runner saying it holds no such report or
+ * entry. That is an answer, and it is NOT "no drift": the runner says the same
+ * for a run recorded without drift inputs and for an id no run has. Any other
+ * 404 stays a failure, since it says nothing about the run.
+ */
+export function isDriftNotFound(err: unknown): boolean {
+  if (httpStatusOf(err) !== 404) return false;
+  const body = rejectionBody(err);
+  if (typeof body !== "object" || body === null) return false;
+  const record = body as Record<string, unknown>;
+  return (
+    DRIFT_NOT_FOUND.has(String(record.message)) ||
+    DRIFT_NOT_FOUND.has(String(record.detail))
+  );
+}
+
+/**
+ * Whether to ask again after a failed drift read. A 4xx is an answer, and asking
+ * again cannot change it, so only a transport failure or a 5xx is retried, up to
+ * the app's default of 3.
+ */
+export function retryDriftRead(failures: number, err: unknown): boolean {
+  const status = httpStatusOf(err);
+  return (status === null || status >= 500) && failures < 3;
 }

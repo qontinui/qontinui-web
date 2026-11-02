@@ -13473,10 +13473,11 @@ export interface paths {
          * @description Get all running tasks across all runners (cross-machine beacon).
          *
          *     Scoped to the caller's own devices: the fleet registry is process-global
-         *     and the beacon path is unauthenticated, so tasks are filtered to runners
-         *     on a hostname the caller owns a device on — the same cross-tenant guard
-         *     applied by ``GET /fleet``. Without it, every caller saw every tenant's
-         *     running-task prompts and ids.
+         *     and the beacon path is unauthenticated, so only runners on a hostname the
+         *     caller owns a device on are dialled — the same cross-tenant guard applied
+         *     by ``GET /fleet``. Without it, every caller saw every tenant's running-task
+         *     prompts and ids. A beacon naming this backend's own host is dialled for a
+         *     platform admin only.
          */
         get: operations["api_v1_operations_fleet_tasks_get"];
         put?: never;
@@ -27568,6 +27569,11 @@ export interface components {
             task_runs: components["schemas"]["RunnerTaskRun"][];
             /** Total */
             total: number;
+            /**
+             * Withheld Co Located
+             * @default 0
+             */
+            withheld_co_located: number;
         };
         /**
          * AllCapableAtCapacityOutcome
@@ -90822,6 +90828,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Letters, digits and _ . : @ + ~ - only, and not starting with a dot. */
                 run_id: string;
             };
             cookie?: never;
@@ -90855,7 +90862,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Letters, digits and _ . : @ + ~ - only, and not starting with a dot. */
                 run_id: string;
+                /** @description Any id except '.' and '..'. */
                 entry_id: string;
             };
             cookie?: never;

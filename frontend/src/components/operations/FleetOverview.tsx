@@ -28,7 +28,8 @@ import {
   volumeSeverity,
 } from "./utils";
 import { statusOnlyErrorText } from "@/lib/api/operations/base";
-import { CollapsiblePanel } from "@/components/console";
+import { CollapsiblePanel, INERT } from "@/components/console";
+import { cn } from "@/lib/utils";
 import { SectionCaption, usePresentationMode } from "@/components/presentation";
 import { DEVOPS_SOURCES, latestInstant } from "./devOpsHeadline";
 import { FAILURE_SENTENCE_WITHHELD } from "./presentedFailure";
@@ -66,6 +67,10 @@ import type {
   RunnerTaskRun,
   SymbolClaim,
 } from "./types";
+
+/** What the overview says for a runner `GET /fleet/tasks` declined to dial. */
+const COLOCATED_TASKS_ADMIN_ONLY =
+  "Tasks at this server's own address are limited to platform administrators.";
 
 /** Stable empty identities — see the `useMemo` in `FleetOverview`. */
 const EMPTY_DEVICES: FleetHealthDevice[] = [];
@@ -1034,6 +1039,25 @@ export function FleetOverview({
               )}
             </div>
           </div>
+
+          {(tasks?.withheld_co_located ?? 0) > 0 && (
+            <div
+              role="status"
+              className={cn("rounded-md border px-3 py-2 text-sm", INERT)}
+              data-testid="fleet-tasks-withheld"
+              data-ui-bridge-id="fleet-tasks-withheld"
+            >
+              <p className="font-medium text-foreground">
+                {COLOCATED_TASKS_ADMIN_ONLY}
+              </p>
+              <p className="text-xs mt-1">
+                {tasks?.withheld_co_located === 1
+                  ? "1 runner beacon under your hosts gives this server's own address, so its tasks were not read."
+                  : `${tasks?.withheld_co_located} runner beacons under your hosts give this server's own address, so their tasks were not read.`}{" "}
+                The Running Tasks count is what the beacons report.
+              </p>
+            </div>
+          )}
 
           {/* Active workflows */}
           {runningTasks.length > 0 && (

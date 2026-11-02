@@ -24,8 +24,11 @@ const DriftEntryDetail = dynamic(
 
 export default function DriftEntryPage() {
   const params = useParams();
-  const runId = params.id ? String(params.id) : null;
-  const entryId = params.entryId ? String(params.entryId) : null;
+  // `useParams` hands a segment back still percent-encoded.
+  const runId = params.id ? decodeURIComponent(String(params.id)) : null;
+  const entryId = params.entryId
+    ? decodeURIComponent(String(params.entryId))
+    : null;
 
   if (!runId || !entryId) {
     return (

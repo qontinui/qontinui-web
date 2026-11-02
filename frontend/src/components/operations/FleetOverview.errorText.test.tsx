@@ -6,7 +6,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 
 const fetchMock = vi.fn();
@@ -67,6 +67,58 @@ function route(fleet: () => Response) {
     return new Response("{}");
   });
 }
+
+function routeTasks(tasks: unknown) {
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url === "/api/v1/operations/fleet/tasks")
+      return new Response(JSON.stringify(tasks));
+    if (url === "/api/v1/operations/fleet")
+      return new Response(
+        JSON.stringify({
+          runners: [],
+          claude_sessions: {},
+          machine_display_names: {},
+          total_runners: 0,
+          total_healthy: 0,
+          total_running_tasks: 0,
+          total_claude_sessions: 0,
+        })
+      );
+    return new Response("{}");
+  });
+}
+
+describe("FleetOverview withheld runners", () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("says when the backend declined to dial a runner, rather than showing no tasks", async () => {
+    routeTasks({ task_runs: [], total: 0, withheld_co_located: 2 });
+    render(<Host />);
+    const note = await screen.findByTestId("fleet-tasks-withheld");
+    expect(note.textContent).toContain("limited to platform administrators");
+    expect(note.textContent).toContain(
+      "2 runner beacons under your hosts give this server's own address"
+    );
+  });
+
+  it.each([
+    ["none was withheld", { task_runs: [], total: 0, withheld_co_located: 0 }],
+    ["the backend predates the field", { task_runs: [], total: 0 }],
+  ])("says nothing when %s", async (_name, tasks) => {
+    routeTasks(tasks);
+    render(<Host />);
+    await screen.findAllByText(/Running Tasks/);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/operations/fleet/tasks",
+        expect.anything()
+      )
+    );
+    expect(screen.queryByTestId("fleet-tasks-withheld")).toBeNull();
+  });
+});
 
 describe("FleetOverview /fleet error wording", () => {
   afterEach(() => {
