@@ -1114,6 +1114,35 @@ class TestSettings:
         assert second.status_code == 200
         assert second.json()["version"] == version + 1
 
+    async def test_a_save_naming_a_project_the_caller_is_not_in_is_refused(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        # A read degrades to the caller's home project here. A write must not:
+        # it would replace the home project's settings with another's.
+        stored = await admin_a.put(f"{API}/settings", json={"base_currency": "EUR"})
+        assert stored.status_code == 200, stored.text
+        version = stored.json()["version"]
+
+        refused = await admin_a.put(
+            f"{API}/settings",
+            json={"base_currency": "GBP"},
+            headers={"X-Qontinui-Active-Tenant": str(TENANT_B)},
+        )
+        assert refused.status_code == 403
+        assert refused.json()["detail"]["error"] == "project_not_active"
+        after = (await admin_a.get(f"{API}/settings")).json()
+        assert after["base_currency"] == "EUR"
+        assert after["version"] == version
+
+        for spelling in (str(TENANT_A), str(TENANT_A).upper()):
+            named = await admin_a.put(
+                f"{API}/settings",
+                json={"base_currency": "GBP"},
+                headers={"X-Qontinui-Active-Tenant": spelling},
+            )
+            assert named.status_code == 200, named.text
+        assert (await admin_a.get(f"{API}/settings")).json()["base_currency"] == "GBP"
+
     async def test_a_stale_version_is_refused_with_the_current_one(
         self, admin_a: httpx.AsyncClient
     ) -> None:

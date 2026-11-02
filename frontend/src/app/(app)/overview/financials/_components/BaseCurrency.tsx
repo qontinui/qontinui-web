@@ -11,16 +11,16 @@
  * refused with a 409: the settings are read again, so the next save is built
  * on what is stored now, and nothing is written until the editor says so.
  *
- * The project a write lands in is the selection in `localStorage` when it is
- * sent, and likewise the project a read answers for; another tab can change it
- * without this page knowing. These settings are one replaced whole per project,
- * and neither the body nor the answer names the project, so a read taken while
- * the selection was elsewhere is discarded and a save is refused unless the
- * selection is still this page's project. The backend also sends a caller no
- * longer a member of the selected project to their home project, so a save
- * first asks the catalog which project it answers for (`confirmProject`). One
- * window stays open: a token refresh mid-save rebuilds the request and reads the
- * selection again, where `expected_version` is the only remaining check.
+ * The project a read answers for is the selection in `localStorage` when it is
+ * sent; another tab can change it without this page knowing. These settings are
+ * one replaced whole per project, and neither the body nor the answer names the
+ * project, so a read taken while the selection was elsewhere is discarded and a
+ * save is refused unless the selection is still this page's project. The backend
+ * also sends a reader no longer a member of the selected project to their home
+ * project, so a save and the re-read after a failed one first ask the catalog
+ * which project it answers for (`confirmProject`). The save itself names this
+ * page's project, so a token refresh that rebuilds the request mid-save keeps
+ * it, and the backend refuses a save naming a project the caller is not in.
  */
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
@@ -324,15 +324,15 @@ export function BaseCurrency({
       return;
     }
     // The catalog read took time, and its answer covers only that request: the
-    // selection could have moved since, and the PUT reads it afresh.
+    // selection could have moved since.
     const refusalNow = saveRefusal();
-    if (refusalNow) {
-      setError(refusalNow);
+    if (refusalNow || projectId === null) {
+      setError(refusalNow ?? PROJECT_UNKNOWN);
       setSaving(false);
       return;
     }
     try {
-      const saved = await saveBaseCurrency(settings, code);
+      const saved = await saveBaseCurrency(settings, code, projectId);
       setLoaded({ state: "ready", settings: saved });
       close();
       setNotice(
@@ -342,6 +342,11 @@ export function BaseCurrency({
     } catch (err) {
       if (err instanceof ResourceError && err.status === 409) {
         await reloadAfterConflict(code);
+      } else if (
+        err instanceof ResourceError &&
+        err.code === "project_not_active"
+      ) {
+        setError(err.message);
       } else if (isRefusal(err)) {
         setError(describeWriteFailure(err));
       } else {
