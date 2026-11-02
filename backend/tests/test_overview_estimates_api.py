@@ -1144,6 +1144,30 @@ class TestNamedProjectResolution:
         assert caller.tenant_id == tenant_id
         assert caller.named_project_degraded is degraded
 
+    async def test_naming_a_home_project_with_no_role_row_is_not_degraded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        from app.overview import permissions
+
+        # Coord lists role rows only, so a staff caller's home can be absent.
+        identity = SimpleNamespace(home_tenant_id=TENANT_A, tenants=[])
+        monkeypatch.setattr(
+            permissions, "get_coord_identity", AsyncMock(return_value=identity)
+        )
+        monkeypatch.setattr(permissions, "capture_caller_bearer", lambda _r: None)
+
+        caller = await permissions._operator_caller(
+            SimpleNamespace(  # type: ignore[arg-type]
+                headers={permissions.ACTIVE_TENANT_HEADER: str(TENANT_A)}
+            )
+        )
+
+        assert caller.tenant_id == TENANT_A
+        assert caller.named_project_degraded is False
+
 
 class TestSettings:
     async def test_unsaved_settings_read_as_the_defaults_not_as_absent(
@@ -1199,6 +1223,12 @@ class TestSettings:
         assert read.status_code == 200
         assert read.json()["base_currency"] == "EUR"
         assert read.json()["version"] == version
+
+        # Only this route refuses: a write that names its record still degrades.
+        other_write = await degraded_admin_a.post(
+            f"{API}/estimates", json={"name": "still allowed", "purpose": "budget"}
+        )
+        assert other_write.status_code == 201, other_write.text
 
     async def test_a_stale_version_is_refused_with_the_current_one(
         self, admin_a: httpx.AsyncClient

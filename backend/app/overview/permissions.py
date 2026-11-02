@@ -319,9 +319,12 @@ async def _operator_caller(request: Request) -> OverviewCaller:
     return OverviewCaller(
         tenant_id=tenant_id,
         roles=roles,
+        # Compared with the tenant too: a staff caller's home project can name
+        # no membership row, and naming it degrades nothing.
         named_project_degraded=(
-            bool((active or "").strip())
+            bool(named := (active or "").strip())
             and _selected_member_tenant_id(identity, active) is None
+            and named != str(tenant_id)
         ),
     )
 
