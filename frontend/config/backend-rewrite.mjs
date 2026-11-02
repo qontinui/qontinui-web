@@ -7,7 +7,12 @@
  * from `BACKEND_URL`, else `NEXT_PUBLIC_API_URL`) and coord (`/coord-api/:path*`,
  * from `COORD_URL`). For each:
  *
- *   1. configured → proxy to it;
+ *   1. configured → proxy to it. A `ws://` or `wss://` value counts as NOT
+ *      configured: Next refuses a rewrite destination with that scheme, and
+ *      refuses the whole config with it ("Invalid rewrite"), which is how every
+ *      `next dev` inside a runner session died, those sessions exporting a
+ *      websocket `COORD_URL`. It then takes the arm an unset variable takes,
+ *      including the loud throw that names the variable on a deploy build;
  *   2. unset on a PRODUCTION deploy build (`VERCEL_ENV=production`, or
  *      `QONTINUI_DEPLOY_BUILD=1`) → throw at config load, naming the
  *      variable: the deploy fails loudly instead of shipping a proxy to
@@ -65,7 +70,9 @@ export function resolveUpstream(name, env = process.env) {
   if (!spec) throw new Error(`unknown upstream: ${name}`);
   for (const v of spec.vars) {
     const value = env[v]?.trim();
-    if (value) return { kind: "url", url: value.replace(/\/+$/, "") };
+    if (value && !/^wss?:\/\//i.test(value)) {
+      return { kind: "url", url: value.replace(/\/+$/, "") };
+    }
   }
   const named = spec.vars.join(" (or ") + (spec.vars.length > 1 ? ")" : "");
   if (isDeployBuild(env)) {
