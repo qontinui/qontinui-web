@@ -196,9 +196,13 @@ interface SendOptions {
 }
 
 async function send(
-  method: "GET" | "POST" | "PATCH" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   url: string,
-  options: SendOptions & { form?: FormData; timeoutMs?: number } = {}
+  options: SendOptions & {
+    form?: FormData;
+    timeoutMs?: number;
+    maxRetries?: number;
+  } = {}
 ): Promise<Response> {
   const headers: Record<string, string> = {};
   if (options.ifMatch !== undefined)
@@ -216,6 +220,9 @@ async function send(
     // answers a repeat with the record the first attempt made.
     idempotent: method === "POST" && Boolean(options.idempotencyKey),
     ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+    ...(options.maxRetries !== undefined
+      ? { maxRetries: options.maxRetries }
+      : {}),
   });
 }
 
@@ -296,6 +303,28 @@ export async function updateResource<T>(
 // Resource-specific calls. Each spells its own path, so the route walker
 // (`lib/api/route-walker.test.ts`) can check it against the OpenAPI snapshot;
 // a generic `path` parameter would leave it unresolved.
+
+/**
+ * Replace the project's settings. This route REPLACES every field and defaults
+ * what is omitted, so `body` must carry all of them; build it with
+ * `saveBaseCurrency`, never by hand. It answers the bare settings, not an
+ * `{item}` envelope, and a stale `expected_version` is a 409 whose body has no
+ * server copy: a {@link ResourceError} with status 409, so re-read to continue.
+ *
+ * Never re-issued: the client would otherwise retry a PUT on a 5xx, and if the
+ * first attempt had landed the retry would 409 against its own write.
+ */
+export async function writeSettings<T>(
+  body: Record<string, unknown>
+): Promise<T> {
+  const response = await send("PUT", `${OVERVIEW_API}/settings`, {
+    body,
+    source: "ui",
+    maxRetries: 0,
+  });
+  if (!response.ok) throw await refusal<T>(response);
+  return (await response.json()) as T;
+}
 
 /** Delete an uploaded file; `version` is the one on screen (always 1). */
 export async function deleteFile<T>(

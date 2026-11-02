@@ -12,9 +12,11 @@ import {
   deleteFile,
   fetchChangeLog,
   fetchFileBlob,
+  ResourceError,
   revertPage,
   uploadFile,
   VersionConflictError,
+  writeSettings,
 } from "./api";
 
 function lastCall(): { url: string; init: Record<string, unknown> } {
@@ -27,6 +29,42 @@ function lastCall(): { url: string; init: Record<string, unknown> } {
 
 describe("overview write calls send what the server reads", () => {
   beforeEach(() => fetchMock.mockReset());
+
+  it("writeSettings PUTs the body as given, with retries off, and returns the bare settings", async () => {
+    const saved = { base_currency: "EUR", version: 8 };
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(saved), { status: 200 })
+    );
+    const body = { base_currency: "EUR", expected_version: 7 };
+    await expect(writeSettings(body)).resolves.toEqual(saved);
+    const { url, init } = lastCall();
+    expect(url).toBe("https://api.test/api/v1/overview/settings");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual(body);
+    expect(init.headers).toMatchObject({ "X-Overview-Source": "ui" });
+    // A retried PUT that had already landed would 409 against its own write.
+    expect(init.maxRetries).toBe(0);
+    expect(init.idempotent).toBe(false);
+  });
+
+  it("writeSettings reads the route's own 409 shape as a version conflict", async () => {
+    // The route's body: FastAPI's `detail`, with no copy of the server's row.
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: {
+            error: "version_conflict",
+            current_version: 9,
+            message: "Somebody else saved this since you loaded it.",
+          },
+        }),
+        { status: 409 }
+      )
+    );
+    const err = await writeSettings({}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ResourceError);
+    expect(err).toMatchObject({ status: 409, code: "version_conflict" });
+  });
 
   it("revertPage restores the named version, written on the version on screen", async () => {
     fetchMock.mockResolvedValue(
