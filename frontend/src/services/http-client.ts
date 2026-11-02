@@ -55,6 +55,9 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   "/api/v1/operations/",
   "/api/v1/admin-dev/",
   "/api/v1/admin/agent-sessions",
+  // The session-census proxy beside it: forwards the header to coord, which
+  // checks the caller's membership.
+  "/api/v1/admin/sessions/census",
   // Helper-task portal proxy — coord-scoped; honoring the override lets a
   // caller who is a coord member of another tenant point the portal at it.
   "/api/v1/helper-tasks",

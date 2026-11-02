@@ -58,6 +58,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.api.deps import get_current_active_user_async
 from app.core.config import settings
+from app.core.refusal import GlossaryTerm, NextActionKind, RefusalCode, refusal_error
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)
@@ -398,7 +399,7 @@ async def get_session_census(
         None,
         max_length=128,
         description=(
-            "A Claude Code session uuid or a coord.sessions id (coord matches "
+            "A Claude Code session uuid or a coord session id (coord matches "
             "both: a census row's `aliases` carry the coord ids)."
         ),
     ),
@@ -466,8 +467,12 @@ async def get_session_census(
     if not isinstance(payload, dict):
         # coord answered 2xx with something that is not a census envelope.
         # Not an answer either way — a 502 the card renders as UNKNOWN.
-        raise HTTPException(
-            status_code=502,
-            detail="coord's session census answered a body that is not an object",
+        raise refusal_error(
+            502,
+            RefusalCode.upstream_unavailable,
+            NextActionKind.retry_later,
+            "coord's session census answered a body that is not an object",
+            discriminator="session_census_body_not_an_object",
+            glossary_terms=[GlossaryTerm.coord],
         )
     return {**payload, "served": True}
