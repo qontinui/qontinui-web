@@ -26,9 +26,21 @@
  *   a publisher that has stopped, red would report a network partition that is
  *   not happening. It is also not the `unknown` catch-all — coord OBSERVED
  *   this, it did not fail to say anything.
+ * - **Every count is of the machines coord LISTED, and a cut says so.** Coord
+ *   caps the roster (`RosterCut`), so a list can be shorter than the fleet. A
+ *   cut that may hide a degrading machine is never green.
  */
 
-import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
+import {
+  readRosterCut,
+  rosterCutHidesHealth,
+  rosterCutSentence,
+  type RosterCut,
+} from "@/components/admin/coord/machineHealth";
+import type {
+  FleetHealthDevice,
+  FleetHealthPayload,
+} from "@/lib/api/operations/coordFleet";
 
 /** Traffic-light level, same vocabulary as `console/HealthStrip`. */
 export type FleetLivenessLevel = "green" | "amber" | "red";
@@ -46,6 +58,12 @@ export interface FleetLivenessSummary {
    * (`[policy: unknown-must-not-render-as-a-default]`).
    */
   total: number | null;
+  /**
+   * What coord's row cap left out of `total`, in a few words for the badge, or
+   * `null` when the list is whole. `total` counts only the rows it listed, and
+   * a roster row is not always a machine, so this is worded in rows.
+   */
+  rosterNote: string | null;
   healthy: number;
   degraded: number;
   /** `partitioned` + `abandoned` — coord cannot reach the device. */
@@ -73,7 +91,18 @@ const UNREACHABLE_STATES = new Set(["partitioned", "abandoned"]);
  */
 const SAMPLER_QUIET_STATE = "stale";
 
-export function summarizeFleetLiveness(input: {
+/** The roster's cut, from a fleet-health body. A body not read yet is whole. */
+export function fleetRosterCut(data: FleetHealthPayload | null): RosterCut {
+  return readRosterCut({
+    devices: data?.devices ?? [],
+    truncated: data?.truncated,
+    total: data?.total,
+    degradable_dropped: data?.degradable_dropped,
+    row_cap: data?.row_cap,
+  });
+}
+
+interface FleetLivenessInput {
   devices: FleetHealthDevice[];
   loading: boolean;
   error: string | null;
@@ -83,8 +112,56 @@ export function summarizeFleetLiveness(input: {
    * known `0`; only an unanswered read is `null`.
    */
   answered: boolean;
-}): FleetLivenessSummary {
-  const { devices, loading, error, answered } = input;
+  /** What coord's row cap withheld from `devices` ({@link fleetRosterCut}). */
+  cut: RosterCut;
+}
+
+export function summarizeFleetLiveness(
+  input: FleetLivenessInput
+): FleetLivenessSummary {
+  const listed = summarizeListedDevices(input);
+  const { cut } = input;
+  const sentence = rosterCutSentence(cut);
+  if (sentence === null) return listed;
+  const rosterTotal = "total" in cut ? cut.total : null;
+  const hidesHealth = rosterCutHidesHealth(cut);
+  const rosterNote =
+    cut.kind === "may_be_cut"
+      ? "list may be cut"
+      : `${rosterTotal !== null ? `${rosterTotal} roster rows` : "list cut"}${hidesHealth ? ", some health unknown" : ""}`;
+  if (listed.level !== "green") {
+    return { ...listed, rosterNote, detail: `${listed.detail} ${sentence}` };
+  }
+  // "Every device it knows about" stops being true the moment rows are cut.
+  const n = input.devices.length;
+  if (hidesHealth) {
+    return {
+      ...listed,
+      rosterNote,
+      level: "amber",
+      headline:
+        n === 1
+          ? "1 listed machine healthy, any others unknown"
+          : `${n} listed machines healthy, any others unknown`,
+      detail: sentence,
+    };
+  }
+  return {
+    ...listed,
+    rosterNote,
+    headline:
+      n === 1 ? "1 listed machine, healthy" : `All ${n} listed machines healthy`,
+    detail: `Coord reaches every device it listed. ${sentence}`,
+  };
+}
+
+/** The verdict over the rows coord listed, before any cut is considered. */
+function summarizeListedDevices(
+  input: FleetLivenessInput
+): FleetLivenessSummary {
+  const { devices, loading, error, answered, cut } = input;
+  // Every count below is of the rows coord listed, and a cut says so.
+  const machines = cut.kind === "whole" ? "machines" : "listed machines";
   let healthy = 0;
   let degraded = 0;
   let unreachable = 0;
@@ -99,6 +176,7 @@ export function summarizeFleetLiveness(input: {
   }
   const counts = {
     total: devices.length,
+    rosterNote: null,
     healthy,
     degraded,
     unreachable,
@@ -142,7 +220,7 @@ export function summarizeFleetLiveness(input: {
     return {
       ...counts,
       level: "red",
-      headline: `${unreachable} of ${devices.length} machines unreachable`,
+      headline: `${unreachable} of ${devices.length} ${machines} unreachable`,
       detail:
         "Coord has stopped reaching them (partitioned or abandoned). Work " +
         "routed to them will not run.",
@@ -166,7 +244,7 @@ export function summarizeFleetLiveness(input: {
     return {
       ...counts,
       level: "amber",
-      headline: `${devices.length} machines, ${parts.join(" and ")}`,
+      headline: `${devices.length} ${machines}, ${parts.join(" and ")}`,
       detail,
     };
   }

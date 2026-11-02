@@ -126,6 +126,11 @@ describe("/admin/coord/overlord/flow", () => {
       "href",
       `/sessions/${SESSION_ID}`
     );
+    expect(
+      screen.getByTestId("overlord-flow-unchanged-judgment")
+    ).toHaveTextContent(
+      "Last /next-move: class A, nudge (live), outcome did_work"
+    );
     await userEvent.click(
       within(
         screen.getAllByTestId("overlord-flow-unchanged-row")[1]!

@@ -28,7 +28,10 @@ import {
   UNKNOWN_COUNTS_DETAIL,
 } from "@/components/console";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
-import type { FlowUnchangedSession } from "@/lib/api/operations/overlordFlow";
+import type {
+  FlowLastIntervention,
+  FlowUnchangedSession,
+} from "@/lib/api/operations/overlordFlow";
 
 // ---------------------------------------------------------------------------
 // Window picker
@@ -148,6 +151,29 @@ export function unchangedCoverage(
 // ---------------------------------------------------------------------------
 // Narrowing the wire shape
 // ---------------------------------------------------------------------------
+
+/**
+ * What `/next-move` last judged about an unchanged session, in words, or `null`
+ * when there is nothing to say: a coord predating the join (field absent) says
+ * nothing either way, and a session with no proven id has nothing to join on,
+ * which the row already says.
+ */
+export function lastInterventionWords(
+  row: FlowUnchangedSession,
+  formatTime: (iso: string) => string
+): string | null {
+  const last = row.last_intervention;
+  if (last === undefined || !row.claude_session_id) return null;
+  if (last === null)
+    return "No /next-move judgment is recorded for this session.";
+  let how = last.mode;
+  if (last.mode === "live" && last.executed !== true) {
+    how +=
+      last.executed === false ? ", not executed" : ", execution not recorded";
+  }
+  const outcome = last.outcome ? `, outcome ${last.outcome}` : "";
+  return `Last /next-move: class ${last.stop_class}, ${last.verb} (${how})${outcome}, ${formatTime(last.observed_at)}.`;
+}
 
 /** A measured number, coord's explicit `null`, or `undefined` (unknown). */
 export type Metric = number | null | undefined;
@@ -311,9 +337,38 @@ function unchangedOf(raw: unknown): FlowUnchangedSession[] | null {
       consecutive_full_passes: passes,
       first_seen_at: str(r.first_seen_at) ?? "",
       last_seen_at: str(r.last_seen_at) ?? "",
+      last_intervention: parseLastIntervention(r.last_intervention),
     });
   }
   return rows;
+}
+
+/**
+ * A session's `last_intervention` as sent. `null` is an answer (none recorded);
+ * an absent field or one missing its identifying words is no answer, so it comes
+ * back `undefined` and the row says nothing rather than "not judged".
+ */
+function parseLastIntervention(
+  raw: unknown
+): FlowLastIntervention | null | undefined {
+  if (raw === null) return null;
+  if (typeof raw !== "object" || raw === undefined) return undefined;
+  const r = raw as Record<string, unknown>;
+  const id = str(r.intervention_id);
+  const stopClass = str(r.stop_class);
+  const verb = str(r.verb);
+  const mode = str(r.mode);
+  const observedAt = str(r.observed_at);
+  if (!id || !stopClass || !verb || !mode || !observedAt) return undefined;
+  return {
+    intervention_id: id,
+    stop_class: stopClass,
+    verb,
+    mode,
+    executed: typeof r.executed === "boolean" ? r.executed : null,
+    outcome: str(r.outcome),
+    observed_at: observedAt,
+  };
 }
 
 /** `full` / `filtered` as sent; anything else is unknown, never a default. */

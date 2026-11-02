@@ -232,6 +232,8 @@ function rolesMachine(
 }
 
 export interface DevOpsFixture {
+  /** The rest of the `/fleet/health` body beside `devices`, spread verbatim. */
+  healthExtras?: Record<string, unknown>;
   /** Reject the worktree-slots poll (the headline's UNKNOWN arm). */
   worktreeSlotsFail?: boolean;
   /**
@@ -458,6 +460,7 @@ export function mockDevOpsRoutes(
     }
     if (u.includes("fleet/health")) {
       return Promise.resolve({
+        ...fixture.healthExtras,
         devices: [
           {
             device_id: DEV_A,
