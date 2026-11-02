@@ -5,9 +5,15 @@ import {
   NULL_FLOW,
   RUNNERS_ALL_COVERED,
   RUNNERS_TWO_SHORT,
+  SESSION_ID,
+  VERSION_OLD,
 } from "../__fixtures__/flow";
+import type { FlowUnchangedSession } from "@/lib/api/operations/overlordFlow";
 import {
   NO_DATA,
+  closedCountMismatch,
+  closedSessionHref,
+  closedSessionLabel,
   deriveFlowHealth,
   durationWords,
   failureSentence,
@@ -16,23 +22,233 @@ import {
   lastInterventionWords,
   metricTitle,
   metricValue,
+  nudgeNoDataWhy,
   parseFlowReadFailure,
   passWord,
   percentWords,
   readFlowBody,
+  laterStopAt,
   scopeCounts,
   sessionHref,
   SEGMENT_GAP_PX,
   UNCHANGED_MIN_PASSES,
   insetSegment,
   unchangedCoverage,
+  unchangedRowKey,
+  versionWords,
+  type ClosedSession,
+  type ClosedSessions,
+  type FlowView,
+  type VersionGroup,
 } from "./overlordFlowStatus";
 
 describe("flowQuery", () => {
   it("maps each window onto contract §2's window_hours", () => {
-    expect(flowQuery("24h")).toBe("window_hours=24&unchanged_min_passes=3");
-    expect(flowQuery("7d")).toBe("window_hours=168&unchanged_min_passes=3");
-    expect(flowQuery("30d")).toBe("window_hours=720&unchanged_min_passes=3");
+    expect(flowQuery("24h")).toBe(
+      "window_hours=24&unchanged_min_passes=3&group_by=overlord_version"
+    );
+    expect(flowQuery("7d")).toBe(
+      "window_hours=168&unchanged_min_passes=3&group_by=overlord_version"
+    );
+    expect(flowQuery("30d")).toBe(
+      "window_hours=720&unchanged_min_passes=3&group_by=overlord_version"
+    );
+  });
+});
+
+describe("the fields coord serves beyond the tiles", () => {
+  const view = () => readFlowBody(FULL_FLOW) as FlowView;
+
+  it("reads the census count, the pending nudges and the list-cut flags", () => {
+    const v = view();
+    expect(v.censusPassesConsidered).toBe(2);
+    expect(v.nudge.pending).toBe(1);
+    expect(v.unchangedTruncated).toBe(false);
+    expect(v.seriesTruncated).toBe(false);
+  });
+
+  it("keeps an absent flag unknown, never false", () => {
+    const body = { ...FULL_FLOW } as Record<string, unknown>;
+    delete body.unchanged_truncated;
+    delete body.verdict_series_truncated;
+    const v = readFlowBody(body) as FlowView;
+    expect(v.unchangedTruncated).toBeUndefined();
+    expect(v.seriesTruncated).toBeUndefined();
+  });
+
+  it("lists closed sessions newest close first, with the cut flag", () => {
+    const closed = view().closed as ClosedSessions;
+    expect(closed.truncated).toBe(false);
+    expect(closed.sessions.slice(0, 2).map((c) => c.key)).toEqual([
+      "terminal:term-3",
+      SESSION_ID,
+    ]);
+  });
+
+  it("makes the whole closed list unknown when any entry cannot be read", () => {
+    const ttc = FULL_FLOW.time_to_close;
+    const v = readFlowBody({
+      ...FULL_FLOW,
+      time_to_close: {
+        ...ttc,
+        sessions: [ttc.sessions[0], { ...ttc.sessions[1], secs: "1800" }],
+      },
+    }) as FlowView;
+    expect(v.closed).toBeNull();
+  });
+
+  it.each([
+    ["a closed time", { closed_at: "garbage" }],
+    ["a first stop", { first_stopped_at: "garbage" }],
+    ["a last stop", { stop_episode_started_at: "garbage" }],
+  ])("makes the list unknown over an unreadable %s", (_name, bad) => {
+    const ttc = FULL_FLOW.time_to_close;
+    const v = readFlowBody({
+      ...FULL_FLOW,
+      time_to_close: { ...ttc, sessions: [{ ...ttc.sessions[0], ...bad }] },
+    }) as FlowView;
+    expect(v.closed).toBeNull();
+  });
+
+  it("takes an absent last stop as not served, not as unreadable", () => {
+    const ttc = FULL_FLOW.time_to_close;
+    const { stop_episode_started_at: _gone, ...session } = ttc.sessions[0];
+    const v = readFlowBody({
+      ...FULL_FLOW,
+      time_to_close: { ...ttc, sessions: [session] },
+    }) as FlowView;
+    expect(v.closed?.sessions[0].stopEpisodeStartedAt).toBeNull();
+  });
+
+  it("says so when the tile's count and an uncut list disagree", () => {
+    const closed = view().closed as ClosedSessions;
+    expect(closedCountMismatch(closed, closed.sessions.length)).toBeNull();
+    expect(closedCountMismatch(closed, 9)).toContain(
+      "counted 9 closed sessions but listed 4"
+    );
+    expect(closedCountMismatch({ ...closed, truncated: true }, 9)).toBeNull();
+  });
+
+  it("labels a closed row without leading on a bare id", () => {
+    expect(closedSessionLabel(SESSION_ID)).toBe("session 6f1c2d3e");
+    expect(closedSessionLabel("terminal:term-3")).toBe("terminal term-3");
+  });
+
+  it("names a later stop only when the last stop differs from the first", () => {
+    const closed = (view().closed as ClosedSessions).sessions;
+    const recovered = closed.find((c) => c.key === SESSION_ID) as ClosedSession;
+    const straight = closed.find(
+      (c) => c.key === "terminal:term-3"
+    ) as ClosedSession;
+    expect(laterStopAt(recovered)).toBe("2026-10-20T11:00:00Z");
+    expect(laterStopAt(straight)).toBeNull();
+    expect(
+      laterStopAt({ ...recovered, stopEpisodeStartedAt: null })
+    ).toBeNull();
+  });
+
+  it("links a closed session only when its key is a proven session id", () => {
+    expect(closedSessionHref(SESSION_ID)).toBe(`/sessions/${SESSION_ID}`);
+    expect(closedSessionHref("terminal:term-3")).toBeNull();
+  });
+
+  it("keeps one session on two runners as two rows", () => {
+    const row = (FULL_FLOW.unchanged[0] ?? {}) as FlowUnchangedSession;
+    expect(unchangedRowKey({ ...row, runner_port: 9876 })).not.toBe(
+      unchangedRowKey({ ...row, runner_port: 9877 })
+    );
+  });
+
+  it("reads the version groups in coord's order, with their three states", () => {
+    const groups = view().groups as VersionGroup[];
+    expect(groups.map((g) => g.version)).toEqual([VERSION_OLD, null]);
+    expect(groups[0]).toMatchObject({
+      passes: 2,
+      censusPasses: 1,
+      closed: 0,
+      medianSecs: null,
+      latestUnknownShare: 0.5,
+    });
+    expect(groups[1]).toMatchObject({
+      medianSecs: 5400,
+      unchanged: 1,
+      latestUnknownShare: 0.05,
+    });
+    expect(versionWords(VERSION_OLD)).toBe("2d0c39d0d5");
+    expect(versionWords(null)).toBe("none recorded");
+  });
+
+  it("applies the list rules to a version's own unchanged list", () => {
+    const group = FULL_FLOW.groups[1];
+    const read = (over: object) =>
+      (
+        (
+          readFlowBody({
+            ...FULL_FLOW,
+            groups: [{ ...group, ...over }],
+          }) as FlowView
+        ).groups as VersionGroup[]
+      )[0];
+    // An unreadable entry is unknown, never a count that includes it.
+    expect(read({ unchanged: [{}] }).unchanged).toBeUndefined();
+    expect(read({ unchanged_truncated: true }).unchangedTruncated).toBe(true);
+    expect(read({ unchanged_truncated: undefined }).unchangedTruncated).toBe(
+      undefined
+    );
+    // A pass that screened nothing: coord's explicit null, not an unknown.
+    expect(
+      read({
+        unknown_share: [
+          {
+            pass_id: "p",
+            started_at: "2026-10-23T12:00:00Z",
+            rows: 0,
+            unknown_rows: 0,
+            share: null,
+          },
+        ],
+      }).latestUnknownShare
+    ).toBeNull();
+  });
+
+  it("words a missing version as unknown, not as none recorded", () => {
+    expect(versionWords(undefined)).toBe("unknown");
+  });
+
+  it.each([
+    ["absent", undefined],
+    ["a group with no version key", [{ passes_considered: 1 }]],
+    ["an empty version", [{ overlord_version: "" }]],
+    ["a non-object group", [3]],
+  ])("makes the groups unknown for %s", (_name, groups) => {
+    const v = readFlowBody({ ...FULL_FLOW, groups }) as FlowView;
+    expect(v.groups).toBeNull();
+  });
+});
+
+describe("nudgeNoDataWhy", () => {
+  it("claims only delivery, since coord's counts exclude a failed nudge", () => {
+    expect(nudgeNoDataWhy({ nudged: 0, pending: 0 }, "progress")).toBe(
+      "no nudge was delivered in this window"
+    );
+  });
+
+  it("never says that of nudges sent but not yet measured", () => {
+    expect(nudgeNoDataWhy({ nudged: 4, pending: 0 }, "progress")).toBe(
+      "no nudge in this window has a progress measurement yet"
+    );
+    expect(nudgeNoDataWhy({ nudged: 4, pending: 0 }, "finish")).toBe(
+      "no nudge in this window has a known outcome"
+    );
+    expect(nudgeNoDataWhy({ nudged: 0, pending: 2 }, "finish")).toBe(
+      "2 delivered, and no later pass has seen those sessions yet"
+    );
+  });
+
+  it("does not assert none when a count did not arrive", () => {
+    expect(nudgeNoDataWhy({ nudged: 0, pending: undefined }, "progress")).toBe(
+      "no nudge has been measured in this window"
+    );
   });
 });
 
@@ -453,6 +669,7 @@ describe("deriveFlowHealth", () => {
     expect(h.badges.map((b) => b.label)).toEqual([
       "passes –",
       "full –",
+      "census –",
       "unchanged –",
     ]);
   });
@@ -551,6 +768,83 @@ describe("deriveFlowHealth", () => {
     const h = stripOver({ full_passes_by_runner: RUNNERS_ALL_COVERED });
     expect(h.level).toBe("green");
     expect(h.headline).toBe("No session is stuck unchanged");
+  });
+
+  it("is never green over an empty unchanged list coord cut", () => {
+    const h = stripOver({
+      full_passes_by_runner: RUNNERS_ALL_COVERED,
+      unchanged_truncated: true,
+    });
+    expect(h.level).toBe("amber");
+    expect(h.detail).toBe(
+      "coord cut the unchanged list — unchanged cannot be confirmed"
+    );
+  });
+
+  it("is never green when coord did not say whether it cut the list", () => {
+    const h = stripOver({
+      full_passes_by_runner: RUNNERS_ALL_COVERED,
+      unchanged_truncated: undefined,
+    });
+    expect(h.level).toBe("amber");
+    expect(h.detail).toBe(
+      "coord did not say whether it cut the unchanged list — unchanged cannot be confirmed"
+    );
+  });
+
+  it("says at least when coord did not say whether it cut the list", () => {
+    const body = { ...FULL_FLOW } as Record<string, unknown>;
+    delete body.unchanged_truncated;
+    const h = deriveFlowHealth({
+      view: readFlowBody(body) as FlowView,
+      loaded: true,
+      failed: false,
+      failure: null,
+      windowId: "7d",
+    });
+    expect(h.headline).toMatch(/^At least 2 sessions/);
+    expect(h.badges.map((b) => b.label)).toContain("unchanged 2+");
+  });
+
+  it("says at least, and marks the badge, when the unchanged list was cut", () => {
+    const v = readFlowBody({
+      ...FULL_FLOW,
+      unchanged_truncated: true,
+    }) as FlowView;
+    const h = deriveFlowHealth({
+      view: v,
+      loaded: true,
+      failed: false,
+      failure: null,
+      windowId: "7d",
+    });
+    expect(h.headline).toBe(
+      "At least 2 sessions have not moved across consecutive full passes"
+    );
+    expect(h.badges.map((b) => b.label)).toContain("unchanged 2+");
+  });
+
+  it("counts census apart from full, and credits absence only to census", () => {
+    const v = readFlowBody({
+      ...FULL_FLOW,
+      census_passes_considered: 1,
+    }) as FlowView;
+    const h = deriveFlowHealth({
+      view: v,
+      loaded: true,
+      failed: false,
+      failure: null,
+      windowId: "7d",
+    });
+    const labels = h.badges.map((b) => b.label);
+    expect(labels).toContain("full 2");
+    expect(labels).toContain("census 1");
+    expect(h.badges.find((b) => b.key === "census")?.title).toContain(
+      "only these count absence and unchanged"
+    );
+    expect(h.badges.find((b) => b.key === "full")?.title).not.toContain(
+      "absence"
+    );
   });
 
   it("is never green on a total when per-runner counts are absent", () => {
