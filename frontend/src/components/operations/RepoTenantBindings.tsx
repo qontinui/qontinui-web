@@ -469,6 +469,40 @@ function countText(v: unknown): string {
 }
 
 /**
+ * What coord's `tenant_pin` row adds to a move's summary: nothing on a pass or
+ * when coord sent no row, otherwise the row's own words. A `skip` is said too,
+ * because it is either "no pin" or UNKNOWN and only the row can tell them apart.
+ */
+function tenantPinText(pin: RepoBindingResult["tenant_pin"] | null): string {
+  if (!pin || pin.status === "pass") {
+    return "";
+  }
+  const detail = nonBlank(pin.detail);
+  if (detail === null) {
+    return "";
+  }
+  const remediation = nonBlank(pin.remediation);
+  return ` Tenant pin: ${detail}${remediation !== null ? ` — ${remediation}` : ""}`;
+}
+
+/**
+ * Whether coord's answer says the committed pin needs someone to act. A summary
+ * that says so is drawn as a warning, because the write it reports did succeed
+ * and a muted line would read as nothing left to do.
+ */
+export function pinNeedsAction(r: RepoBindingResult | null): boolean {
+  const status = r?.tenant_pin?.status;
+  return status === "warn" || status === "fail";
+}
+
+/** The muted line a landed write reports on, or the warning {@link pinNeedsAction} asks for. */
+function noticeClass(pinWarns: boolean): string {
+  return pinWarns
+    ? `rounded-md border px-3 py-2 text-xs ${UNKNOWN_AMBER}`
+    : "text-xs text-muted-foreground";
+}
+
+/**
  * One-line summary of a successful bind or unbind, from coord's answer.
  *
  * The write's 2xx is the success; the body only describes it. So every field
@@ -479,7 +513,9 @@ function countText(v: unknown): string {
  * coord's answer does not name one. `tenantLabel` names `from_tenant` /
  * `to_tenant`. The flags coord sets only when they happened —
  * `binding_deleted`, `tombstone_cleared`, `enrollment_spawned` — are named
- * when `true` and otherwise left unsaid.
+ * when `true` and otherwise left unsaid. The committed tenant pin
+ * ({@link tenantPinText}) is added on both paths: a move is what makes a pin
+ * stale, and a repeat is the retry that lost the first answer.
  */
 export function resultSummary(
   verb: "Bound" | "Unbound",
@@ -494,8 +530,9 @@ export function resultSummary(
   if (res === null) {
     return `${verb} ${name} — coord confirmed the change but sent no readable details.`;
   }
+  const pin = tenantPinText(res.tenant_pin);
   if (res.idempotent === true) {
-    return `${name}: already in that state — nothing changed.`;
+    return `${name}: already in that state — nothing changed.${pin}`;
   }
   const m: Partial<RepoBindingResult["moved"]> =
     res.moved && typeof res.moved === "object" ? res.moved : {};
@@ -522,7 +559,7 @@ export function resultSummary(
       ? "enrollment started for the new tenant"
       : null,
   ].filter((f): f is string => f !== null);
-  return `${verb} ${name} — ${governance}; ${moved}; ${audit}; ${notified}${flags.length > 0 ? `; ${flags.join("; ")}` : ""}.`;
+  return `${verb} ${name} — ${governance}; ${moved}; ${audit}; ${notified}${flags.length > 0 ? `; ${flags.join("; ")}` : ""}.${pin}`;
 }
 
 type ListRead =
@@ -531,14 +568,14 @@ type ListRead =
   | { state: "unknown"; failure: CardFailure };
 
 type ActionOutcome =
-  | { kind: "ok"; text: string }
+  | { kind: "ok"; text: string; pinWarns: boolean }
   | { kind: "error"; failure: CardFailure }
   /** The write was sent under another tenant: not checked here. */
   | { kind: "elsewhere"; text: string };
 
 /** A bind's outcome, tagged with the tenant it was sent under. */
 type BindOutcome = (
-  | { kind: "ok"; text: string }
+  | { kind: "ok"; text: string; pinWarns: boolean }
   | { kind: "error"; failure: CardFailure }
 ) & { tenant: string | null; repo: string };
 
@@ -853,6 +890,7 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
     setOutcome({
       kind: "ok",
       text: resultSummary("Bound", result, repo, tenantLabel),
+      pinWarns: pinNeedsAction(result),
       tenant: sentUnder,
       repo,
     });
@@ -1020,12 +1058,17 @@ function BindForm({ afterWrite }: { afterWrite: () => Promise<void> }) {
           className={
             shownOutcome.kind === "error"
               ? "text-xs text-destructive"
-              : "text-xs text-muted-foreground"
+              : noticeClass(shownOutcome.kind === "ok" && shownOutcome.pinWarns)
           }
           role={shownOutcome.kind === "error" ? "alert" : "status"}
           data-testid="repo-binding-bind-outcome"
           data-ui-bridge-id="operations.repo-binding-bind-outcome"
           data-outcome={shownOutcome.kind}
+          data-pin-warns={
+            shownOutcome.kind === "ok" && shownOutcome.pinWarns
+              ? "true"
+              : undefined
+          }
         >
           {shownOutcome.kind === "error" ? (
             <FailureText failure={shownOutcome.failure} />
@@ -1147,7 +1190,10 @@ export function RepoTenantBindings({
   }, []);
 
   // The last unbind's terminal success, kept at card level (see UnbindForm).
-  const [unbindNotice, setUnbindNotice] = useState<string | null>(null);
+  const [unbindNotice, setUnbindNotice] = useState<{
+    text: string;
+    pinWarns: boolean;
+  } | null>(null);
   // Per-repo unbind state, at card level for the same reason; the ref is the
   // synchronous re-entry guard (state lags a render behind).
   const [unbindStates, setUnbindStates] = useState<Record<string, UnbindState>>(
@@ -1197,7 +1243,10 @@ export function RepoTenantBindings({
       delete next[repo];
       return next;
     });
-    setUnbindNotice(settledElsewhereText("unbind", repo));
+    setUnbindNotice({
+      text: settledElsewhereText("unbind", repo),
+      pinWarns: false,
+    });
   }, []);
 
   const onUnbind = useCallback(
@@ -1241,7 +1290,10 @@ export function RepoTenantBindings({
       }
       // Any 2xx is the success; summary and re-read are outside the failure
       // path so neither can report a landed unbind as failed.
-      setUnbindNotice(resultSummary("Unbound", result, repo, tenantLabel));
+      setUnbindNotice({
+        text: resultSummary("Unbound", result, repo, tenantLabel),
+        pinWarns: pinNeedsAction(result),
+      });
       unbindBusy.current.delete(repo);
       setUnbindStates((prev) => {
         const next = { ...prev };
@@ -1335,12 +1387,13 @@ export function RepoTenantBindings({
             )}
             {unbindNotice && (
               <p
-                className="text-xs text-muted-foreground"
+                className={noticeClass(unbindNotice.pinWarns)}
                 role="status"
                 data-testid="repo-binding-unbind-outcome"
                 data-ui-bridge-id="operations.repo-binding-unbind-outcome"
+                data-pin-warns={unbindNotice.pinWarns ? "true" : undefined}
               >
-                {unbindNotice}
+                {unbindNotice.text}
               </p>
             )}
             {orphanFailures.map(([repo, s]) => {
