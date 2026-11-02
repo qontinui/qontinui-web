@@ -256,6 +256,28 @@ describe("ConstraintsPanel after a read", () => {
     expect(screen.getByText(NO_SECRETS.name)).toBeTruthy();
   });
 
+  it("keeps the stale label up while another re-read is out", async () => {
+    render(<ConstraintsPanel />);
+    await screen.findByText(NO_SECRETS.name);
+
+    routes["GET /active"] = RUNNER_UNREACHABLE;
+    fireEvent.click(screen.getByTestId("constraints-reread"));
+    await screen.findByTestId("constraints-read-stale");
+
+    const release = holdReads();
+    routes = readableRoutes();
+    fireEvent.click(screen.getByTestId("constraints-reread"));
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(4));
+
+    // Nothing has been delivered yet, so the last read's failure still stands.
+    expect(screen.getByTestId("constraints-read-stale")).toBeTruthy();
+
+    release();
+    await waitFor(() =>
+      expect(screen.queryByTestId("constraints-read-stale")).toBeNull()
+    );
+  });
+
   it("offers no re-read while an edit is unsaved, since its answer would replace the edit", async () => {
     render(<ConstraintsPanel />);
     await screen.findByText(NO_SECRETS.name);
