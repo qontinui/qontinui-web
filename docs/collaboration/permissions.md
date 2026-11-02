@@ -129,58 +129,20 @@ class PermissionService:
 
 ### Frontend Permission Hooks
 
+Components read the current user's access to the open project from `usePermissions()`, which must be rendered inside a `PermissionsProvider`:
+
 ```typescript
-// hooks/use-permissions.ts
-import { useAuth } from '@/hooks/use-auth';
-import { useProject } from '@/hooks/use-project';
+import { usePermissions } from '@/contexts/collaboration/PermissionsContext';
 
-export function usePermissions(projectId: number) {
-  const { user } = useAuth();
-  const { project, access } = useProject(projectId);
+export function EditButton() {
+  const { canEdit, hasPermission } = usePermissions();
 
-  const can = (action: string): boolean => {
-    if (!user || !project) return false;
-
-    // Owner has all permissions
-    if (project.owner_id === user.id) return true;
-
-    // Check access level
-    const userAccess = access?.users.find(ua => ua.user.id === user.id);
-    if (!userAccess) {
-      // Check organization access
-      const orgAccess = access?.organizations.find(oa =>
-        user.organizations?.some(org => org.id === oa.organization.id)
-      );
-      if (!orgAccess) return false;
-
-      return checkPermission(orgAccess.permission_level, action);
-    }
-
-    return checkPermission(userAccess.permission_level, action);
-  };
-
-  return {
-    canView: can('view'),
-    canComment: can('comment'),
-    canEdit: can('edit'),
-    canShare: can('share'),
-    canAdmin: can('admin'),
-    canDelete: can('delete'),
-    can
-  };
-}
-
-function checkPermission(level: string, action: string): boolean {
-  const hierarchy = {
-    view: ['view'],
-    comment: ['view', 'comment'],
-    edit: ['view', 'comment', 'edit'],
-    admin: ['view', 'comment', 'edit', 'share', 'admin', 'delete']
-  };
-
-  return hierarchy[level]?.includes(action) ?? false;
+  if (!canEdit) return null;
+  return <button disabled={!hasPermission('admin')}>Edit settings</button>;
 }
 ```
+
+The provider derives `canView`, `canComment`, `canEdit` and `canAdmin` from the project's access level with `hasPermission(required, level)` from `@/lib/permissions` (hierarchy `none < view < comment < edit < admin < owner`).
 
 ## Inherited Permissions
 

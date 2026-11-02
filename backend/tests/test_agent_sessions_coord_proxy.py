@@ -25,6 +25,7 @@ old DB-direct cross-schema SQL path).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -564,6 +565,248 @@ class TestSessionLineageProxy:
             client = TestClient(app)
             resp = client.get(f"/api/v1/admin/agent-sessions/{sid}/lineage")
         assert resp.status_code == 504
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/sessions/census  → coord GET /coord/sessions/census
+#
+# Plan 2026-10-19-session-lookup-by-name-shows-claude-account-in-web Phase 3.
+# The load-bearing case is the 404: the deployed coord does not serve the
+# census route yet, and the card must read that as UNKNOWN — never as an empty
+# census ("not live") and never as a failed detail page.
+# ---------------------------------------------------------------------------
+
+
+def _census_payload(session_id: str) -> dict[str, Any]:
+    return {
+        "tenant_id": str(uuid4()),
+        "census_present": True,
+        "coord_sessions_readable": True,
+        "gate_rows_readable": True,
+        "stale_after_secs": 180,
+        "sessions": [
+            {
+                "session_id": session_id,
+                "aliases": [],
+                "has_coord_row": True,
+                "device_id": str(uuid4()),
+                "hostname": "spaceship",
+                "account": "qontinui",
+                "liveness": "alive",
+                "liveness_reason": None,
+                "last_acted_at": "2026-11-02T10:00:00+00:00",
+                "observed_at": "2026-11-02T10:00:30+00:00",
+                "census_age_secs": 12,
+            }
+        ],
+        "count": 1,
+        "limit": 50,
+        "truncated": False,
+        "pr_resolution": None,
+    }
+
+
+class _HttpxClient:
+    """A stand-in for ``httpx.AsyncClient`` that answers one canned response,
+    so the census route runs through the REAL ``_proxy_coord_get``."""
+
+    def __init__(self, status_code: int, body: Any, seen: dict[str, Any]):
+        self._status = status_code
+        self._body = body
+        self._seen = seen
+
+    def __call__(self, *a, **k):  # noqa: ANN002, ANN003 — AsyncClient(...)
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):  # noqa: ANN002
+        return False
+
+    async def get(self, url, params=None, headers=None):  # noqa: ANN001
+        self._seen["url"] = url
+        self._seen["params"] = params
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = self._status
+        resp.json.return_value = self._body
+        resp.text = (
+            self._body if isinstance(self._body, str) else json.dumps(self._body)
+        )
+        return resp
+
+
+class TestSessionCensusProxy:
+    def test_served_census_passes_through_with_served_true(self):
+        sid = str(uuid4())
+        coord_payload = _census_payload(sid)
+        app = _build_app()
+        captured: dict[str, Any] = {}
+
+        async def fake_proxy(path, *, params=None):  # noqa: ANN001
+            captured["path"] = path
+            captured["params"] = params
+            return coord_payload
+
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get", new=fake_proxy
+        ):
+            client = TestClient(app)
+            resp = client.get(f"/api/v1/admin/sessions/census?session_id={sid}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["served"] is True
+        # Every coord field verbatim; `served` is the only addition.
+        for key, value in coord_payload.items():
+            assert body[key] == value
+        assert set(body) == set(coord_payload) | {"served"}
+        assert captured["path"] == "/coord/sessions/census"
+        assert captured["params"] == {"session_id": sid}
+
+    def test_forwards_name_pr_and_limit(self):
+        app = _build_app()
+        captured: dict[str, Any] = {}
+
+        async def fake_proxy(path, *, params=None):  # noqa: ANN001
+            captured["params"] = params
+            return _census_payload(str(uuid4()))
+
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get", new=fake_proxy
+        ):
+            client = TestClient(app)
+            resp = client.get(
+                "/api/v1/admin/sessions/census",
+                params={
+                    "session_name": "spaceship-latency",
+                    "pr": "qontinui/qontinui-web#1610",
+                    "limit": 7,
+                },
+            )
+        assert resp.status_code == 200
+        assert captured["params"] == {
+            "session_name": "spaceship-latency",
+            "pr": "qontinui/qontinui-web#1610",
+            "limit": 7,
+        }
+
+    def test_no_filters_sends_no_params(self):
+        """Unset filters are not forwarded — coord reads none as 'the whole
+        tenant census', and an empty string would be a different question."""
+        app = _build_app()
+        captured: dict[str, Any] = {}
+
+        async def fake_proxy(path, *, params=None):  # noqa: ANN001
+            captured["params"] = params
+            return _census_payload(str(uuid4()))
+
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get", new=fake_proxy
+        ):
+            client = TestClient(app)
+            resp = client.get("/api/v1/admin/sessions/census")
+        assert resp.status_code == 200
+        assert captured["params"] is None
+
+    def test_coord_404_is_the_unknown_envelope_not_an_error_or_empty_census(self):
+        """The deployed coord answers its typed 404 no_such_route. Driven
+        through the REAL ``_proxy_coord_get`` so the 404 it raises is the one
+        converted."""
+        from app.api.v1.endpoints import agent_sessions as mod
+
+        sid = str(uuid4())
+        seen: dict[str, Any] = {}
+        # The shape of coord's router fallback (`doors.rs` `no_such_route`).
+        body = {
+            "error": "no_such_route",
+            "method": "GET",
+            "path": "/coord/sessions/census",
+            "did_you_mean": [],
+        }
+        fake = _HttpxClient(404, body, seen)
+        app = _build_app()
+        with patch.object(mod.httpx, "AsyncClient", fake):
+            client = TestClient(app)
+            resp = client.get(f"/api/v1/admin/sessions/census?session_id={sid}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["served"] is False
+        assert body["unknown_reason"] == mod.CENSUS_NOT_SERVED == "census_not_served"
+        assert "no_such_route" in body["detail"]
+        # NO `sessions` key: an empty list here would read as "no census row,
+        # so not live" to a consumer that forgot to check `served`.
+        assert "sessions" not in body
+        assert "count" not in body
+        assert seen["url"].endswith("/coord/sessions/census")
+        assert seen["params"] == {"session_id": sid}
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"error": "not_found", "detail": "a route-level 404"},
+            "<html>404 Not Found</html>",
+            "",
+        ],
+        ids=["other-typed-404", "html-404", "empty-404"],
+    )
+    def test_a_404_that_is_not_no_such_route_passes_through_as_an_error(
+        self, body: Any
+    ):
+        """Only coord's typed fallback means "not served". A 404 from
+        anything else — a proxy in front of coord, a future route-level 404 —
+        is a failed read and stays one."""
+        from app.api.v1.endpoints import agent_sessions as mod
+
+        seen: dict[str, Any] = {}
+        fake = _HttpxClient(404, body, seen)
+        app = _build_app()
+        with patch.object(mod.httpx, "AsyncClient", fake):
+            client = TestClient(app)
+            resp = client.get(f"/api/v1/admin/sessions/census?session_id={uuid4()}")
+        assert resp.status_code == 404
+        assert "served" not in resp.json()
+
+    @pytest.mark.parametrize("status", [403, 500, 502, 504])
+    def test_other_failures_propagate_as_failed_reads(self, status: int):
+        """Only a 404 means "not served". A refusal or an outage is a read
+        that did not land, and stays an error the card renders as UNKNOWN."""
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=AsyncMock(side_effect=HTTPException(status_code=status, detail="x")),
+        ):
+            client = TestClient(app)
+            resp = client.get(f"/api/v1/admin/sessions/census?session_id={uuid4()}")
+        assert resp.status_code == status
+
+    def test_non_object_body_is_502(self):
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_sessions._proxy_coord_get",
+            new=AsyncMock(return_value=["not", "an", "envelope"]),
+        ):
+            client = TestClient(app)
+            resp = client.get(f"/api/v1/admin/sessions/census?session_id={uuid4()}")
+        assert resp.status_code == 502
+
+    @pytest.mark.parametrize("limit", [0, 501])
+    def test_limit_out_of_range_is_422_no_coord_call(self, limit: int):
+        app = _build_app()
+        mock = AsyncMock(return_value=_census_payload(str(uuid4())))
+        with patch("app.api.v1.endpoints.agent_sessions._proxy_coord_get", new=mock):
+            client = TestClient(app)
+            resp = client.get(f"/api/v1/admin/sessions/census?limit={limit}")
+        assert resp.status_code == 422
+        mock.assert_not_awaited()
+
+    def test_requires_authentication(self):
+        app = _build_app(authenticated=False)
+        mock = AsyncMock(return_value=_census_payload(str(uuid4())))
+        with patch("app.api.v1.endpoints.agent_sessions._proxy_coord_get", new=mock):
+            client = TestClient(app)
+            resp = client.get("/api/v1/admin/sessions/census")
+        assert resp.status_code == 401
+        mock.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

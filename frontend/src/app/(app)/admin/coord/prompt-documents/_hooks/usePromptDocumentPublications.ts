@@ -2,12 +2,19 @@
 
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
+import {
+  adoptUpstreamPublication,
+  applyUpstreamMerge,
+  fetchPromptDocumentPublication,
+  keepLocalOverPublication,
+  listPromptDocumentPublications,
+  previewUpstreamMerge,
+  publishPromptDocument,
+} from "@/lib/api/operations/coordPromptDocuments";
 import type {
   ClauseConflictChoice,
   ClauseMergeApplyResponse,
   ClauseMergePreview,
-  ListPublicationsResponse,
   Publication,
   PublicationSummary,
   PromptDocumentKind,
@@ -15,35 +22,8 @@ import type {
   UpstreamDecisionResponse,
 } from "../types";
 
-const API = "/api/v1/operations";
-
-/**
- * `/coord/prompt-document-publications/:kind/:name/:version`, each segment
- * encoded.
- */
-function publicationPath(
-  kind: PromptDocumentKind,
-  name: string,
-  version: number
-): string {
-  return `${API}/coord/prompt-document-publications/${encodeURIComponent(
-    kind
-  )}/${encodeURIComponent(name)}/${version}`;
-}
-
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
-}
-
-/** `/coord/prompt-documents/:kind/:name/<tail>`, each segment encoded. */
-function documentPath(
-  kind: PromptDocumentKind,
-  name: string,
-  tail: string
-): string {
-  return `${API}/coord/prompt-documents/${encodeURIComponent(
-    kind
-  )}/${encodeURIComponent(name)}/${tail}`;
 }
 
 /**
@@ -175,11 +155,7 @@ export function usePromptDocumentPublications() {
       name: string
     ): Promise<PublicationSummary[] | null> => {
       try {
-        const data = await httpClient.get<ListPublicationsResponse>(
-          `${API}/coord/prompt-document-publications?kind=${encodeURIComponent(
-            kind
-          )}&name=${encodeURIComponent(name)}`
-        );
+        const data = await listPromptDocumentPublications(kind, name);
         return (data.publications ?? [])
           .slice()
           .sort((a, b) => b.publication_version - a.publication_version);
@@ -199,9 +175,7 @@ export function usePromptDocumentPublications() {
       version: number
     ): Promise<Publication | null> => {
       try {
-        return await httpClient.get<Publication>(
-          publicationPath(kind, name, version)
-        );
+        return await fetchPromptDocumentPublication(kind, name, version);
       } catch (err) {
         toast.error(message(err, `Failed to load publication v${version}`));
         return null;
@@ -229,15 +203,10 @@ export function usePromptDocumentPublications() {
     ): Promise<PublishResponse | null> => {
       try {
         setPublishing(true);
-        const result = await httpClient.post<PublishResponse>(
-          `${API}/coord/prompt-documents/${encodeURIComponent(
-            kind
-          )}/${encodeURIComponent(name)}/publish`,
-          {
-            release_note: releaseNote.trim() ? releaseNote.trim() : null,
-            expected_version: expectedVersion,
-          }
-        );
+        const result = await publishPromptDocument(kind, name, {
+          release_note: releaseNote.trim() ? releaseNote.trim() : null,
+          expected_version: expectedVersion,
+        });
         toast.success(
           `Published ${kind}/${name} as publication v${result.publication.publication_version}`
         );
@@ -275,14 +244,13 @@ export function usePromptDocumentPublications() {
 
   /** The shared write shape: post, toast, classify. */
   const decide = async <T>(
-    url: string,
-    body: unknown,
+    post: () => Promise<T>,
     onSuccess: (value: T) => string,
     fallback: string
   ): Promise<UpstreamDecisionOutcome<T>> => {
     try {
       setDeciding(true);
-      const value = await httpClient.post<T>(url, body);
+      const value = await post();
       toast.success(onSuccess(value));
       return { ok: true, value };
     } catch (err) {
@@ -307,11 +275,11 @@ export function usePromptDocumentPublications() {
       expectedVersion: number
     ): Promise<UpstreamDecisionOutcome<UpstreamDecisionResponse>> =>
       decide<UpstreamDecisionResponse>(
-        documentPath(kind, name, "upstream-adopt"),
-        {
-          publication_version: publicationVersion,
-          expected_version: expectedVersion,
-        },
+        () =>
+          adoptUpstreamPublication(kind, name, {
+            publication_version: publicationVersion,
+            expected_version: expectedVersion,
+          }),
         (r) =>
           `Adopted publication v${r.publication_version} as ${kind}/${name} v${r.to_version}`,
         "Failed to adopt the publication"
@@ -331,11 +299,11 @@ export function usePromptDocumentPublications() {
       expectedVersion: number
     ): Promise<UpstreamDecisionOutcome<UpstreamDecisionResponse>> =>
       decide<UpstreamDecisionResponse>(
-        documentPath(kind, name, "upstream-keep"),
-        {
-          publication_version: publicationVersion,
-          expected_version: expectedVersion,
-        },
+        () =>
+          keepLocalOverPublication(kind, name, {
+            publication_version: publicationVersion,
+            expected_version: expectedVersion,
+          }),
         (r) =>
           `Kept your ${kind}/${name}; publication v${r.publication_version} recorded as reviewed`,
         "Failed to record the decision"
@@ -356,9 +324,7 @@ export function usePromptDocumentPublications() {
       publicationVersion: number
     ): Promise<ClauseMergePreview | null> => {
       try {
-        return await httpClient.get<ClauseMergePreview>(
-          `${documentPath(kind, name, "upstream-merge")}?publication_version=${publicationVersion}`
-        );
+        return await previewUpstreamMerge(kind, name, publicationVersion);
       } catch (err) {
         toast.error(message(err, "Failed to load the clause merge preview"));
         return null;
@@ -383,12 +349,12 @@ export function usePromptDocumentPublications() {
       resolutions: Record<string, ClauseConflictChoice>
     ): Promise<UpstreamDecisionOutcome<ClauseMergeApplyResponse>> =>
       decide<ClauseMergeApplyResponse>(
-        documentPath(kind, name, "upstream-merge"),
-        {
-          publication_version: publicationVersion,
-          expected_version: expectedVersion,
-          resolutions,
-        },
+        () =>
+          applyUpstreamMerge(kind, name, {
+            publication_version: publicationVersion,
+            expected_version: expectedVersion,
+            resolutions,
+          }),
         (r) =>
           `Merged publication v${r.publication_version} into ${kind}/${name} clause by clause (v${r.to_version}, ${r.clauses} clauses)`,
         "Failed to merge the publication"

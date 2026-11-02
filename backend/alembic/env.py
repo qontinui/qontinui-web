@@ -150,6 +150,56 @@ def _include_object(object_, name, type_, reflected, compare_to):  # noqa: ARG00
     return _object_schema(object_) not in ATLAS_OWNED_SCHEMAS
 
 
+# ---------------------------------------------------------------------------
+# No revision's ``lock_timeout`` or ``search_path`` reaches the next one.
+#
+# Revisions bound their DDL's lock wait with ``SET LOCAL lock_timeout`` (house
+# style — a QUEUED ``ACCESS EXCLUSIVE`` request blocks every reader behind it),
+# and some, inside an autocommit block, with a session-level ``SET``. But
+# ``run_migrations_online`` runs a whole ``upgrade``/``downgrade`` batch in ONE
+# transaction on ONE connection, so a bound a revision does not restore caps the
+# lock wait of every revision after it in the batch — most often a fresh-database
+# build. Coord finding ``b4782f88-49f2-464e-92f9-4f44194dee34`` (filed with
+# web#1423, 2026-09) counted 14 of the 18 revisions of that day unrestored.
+#
+# The restore lives HERE rather than in each revision because landed revisions
+# are effectively immutable: editing one makes coord's migration classifier
+# re-classify the whole file, and most of these carry a DROP, DML or a dynamic
+# ``op.execute`` it rejects (web#1457, which tried the per-file edit). One hook
+# also covers every future revision without a convention to remember.
+#
+# ``search_path`` leaks the same way, and with a sharper failure: 26 landed
+# revisions (the ``consolidation_phase2_v_*`` series, ``appid_01``,
+# ``obsappfill_01``) open with a session-level ``SET search_path TO project,
+# public`` and never restore it. Left alone, every later revision in a
+# batch that includes a setter (every fresh-database build) resolves an
+# unqualified name ``project``-first, while the same revision applied in a batch
+# without one resolves it ``public``-first — one revision, two schemas,
+# depending on how the chain was batched (``coord_pgss_ext_01`` put
+# ``pg_stat_statements`` in ``project`` on a fresh build, ``public`` on prod).
+#
+# ``RESET`` rather than ``SET LOCAL ... = DEFAULT``: it clears a session-level
+# ``SET`` as well as a ``SET LOCAL`` (a ``SET LOCAL`` would mask a leaked
+# session value only until the next autocommit block commits). It restores the
+# connection's reset value — server config, role/database settings and any
+# startup ``PGOPTIONS`` — so an operator-supplied baseline survives. Inside the
+# batch transaction it is transactional like any other ``SET``.
+#
+# Runs after every applied step, up or down, online or offline (``--sql``
+# renders the statements after each revision). Stamp steps run no revision
+# code, so there is nothing to restore and the statements are skipped.
+# ---------------------------------------------------------------------------
+RESET_AFTER_EACH_REVISION_SQL = ("RESET lock_timeout", "RESET search_path")
+
+
+def _reset_revision_settings(ctx, step, heads, run_args):  # noqa: ARG001
+    """``on_version_apply`` hook: undo any setting the step just changed."""
+    if step.is_stamp:
+        return
+    for statement in RESET_AFTER_EACH_REVISION_SQL:
+        ctx.execute(statement)
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -170,6 +220,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
         include_object=_include_object,
+        on_version_apply=_reset_revision_settings,
     )
 
     with context.begin_transaction():
@@ -195,6 +246,7 @@ def run_migrations_online() -> None:
             target_metadata=_target_metadata(),
             include_schemas=True,
             include_object=_include_object,
+            on_version_apply=_reset_revision_settings,
         )
 
         with context.begin_transaction():

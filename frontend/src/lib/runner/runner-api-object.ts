@@ -38,6 +38,7 @@ import type {
 import type {
   GeneralSettings,
   AiSettings,
+  AiSettingsView,
   AgenticSettings,
   DebugSettings,
   PlaywrightSettings,
@@ -520,45 +521,6 @@ export function createRunnerApi(target: RunnerTarget) {
         }),
       }),
 
-    aiGenerateMacro: (userPrompt: string, category?: string) =>
-      runnerFetch<{
-        success: boolean;
-        data: Record<string, unknown>;
-        message?: string;
-      }>(target, "/ai/generate-macro", {
-        method: "POST",
-        body: JSON.stringify({ user_prompt: userPrompt, category }),
-      }),
-
-    aiGeneratePromptSnippet: (userPrompt: string, language?: string) =>
-      runnerFetch<{
-        success: boolean;
-        data: Record<string, unknown>;
-        message?: string;
-      }>(target, "/ai/generate-prompt-snippet", {
-        method: "POST",
-        body: JSON.stringify({
-          user_prompt: userPrompt,
-          language: language ?? "python",
-        }),
-      }),
-
-    aiSuggestCheckGroups: (
-      userPrompt: string,
-      existingChecks: Array<Record<string, unknown>>
-    ) =>
-      runnerFetch<{
-        success: boolean;
-        data: Record<string, unknown>;
-        message?: string;
-      }>(target, "/ai/suggest-check-groups", {
-        method: "POST",
-        body: JSON.stringify({
-          user_prompt: userPrompt,
-          existing_checks: existingChecks,
-        }),
-      }),
-
     aiSuggestExplorationStrategy: (userGoal: string, configPath?: string) =>
       runnerFetch<{
         success: boolean;
@@ -846,7 +808,7 @@ export function createRunnerApi(target: RunnerTarget) {
       }),
 
     // AI Settings
-    getAiSettings: () => runnerFetch<AiSettings>(target, "/settings/ai"),
+    getAiSettings: () => runnerFetch<AiSettingsView>(target, "/settings/ai"),
     saveAiSettings: (settings: AiSettings) =>
       runnerFetch<void>(target, "/settings/ai", {
         method: "PUT",

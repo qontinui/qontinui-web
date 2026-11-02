@@ -15,9 +15,10 @@ const log = createLogger("HttpClient");
  * Read here directly (not via React context — `HttpClient` is a plain class)
  * to attach the `X-Qontinui-Active-Tenant` header to coord-proxy calls so the
  * operator's coord context re-scopes to the chosen tenant. The key MUST match
- * `tenant-context.tsx`'s `STORAGE_KEY`.
+ * `tenant-context.tsx`'s `STORAGE_KEY`. Exported for readers that must key a
+ * cache on the selection a request carries (the presentation scope loader).
  */
-const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
+export const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
 
 /**
  * URL prefixes whose backend handlers proxy to coord with the operator's
@@ -49,16 +50,14 @@ const ACTIVE_TENANT_STORAGE_KEY = "qontinui.active_tenant_id";
  * against the caller's coord memberships (the test's `_FORWARDED_TO_COORD` /
  * `_VALIDATED_LOCALLY`). WebSocket routes cannot carry the header at all and
  * are checked separately (they read the selection from a query param).
- *
- * `/api/v1/fleet/test-targets` is deliberately ABSENT: its PUT re-stamps
- * `coord.test_targets.tenant_id` with no `coord.tenant_devices` binding
- * check, so a selection the device is not bound to would hide the
- * designation from the device's runner. See the guard's `_EXCLUSIONS`.
  */
 const ACTIVE_TENANT_URL_PREFIXES = [
   "/api/v1/operations/",
   "/api/v1/admin-dev/",
   "/api/v1/admin/agent-sessions",
+  // The session-census proxy beside it: forwards the header to coord, which
+  // checks the caller's membership.
+  "/api/v1/admin/sessions/census",
   // Helper-task portal proxy — coord-scoped; honoring the override lets a
   // caller who is a coord member of another tenant point the portal at it.
   "/api/v1/helper-tasks",
@@ -115,6 +114,21 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // today — the coord memory page reads `/api/v1/operations/memory/list` —
   // so this entry is for future callers, which then scope correctly.
   "/api/v1/memory/",
+  // Content-addressed image store — the same `get_memory_tenant` operator
+  // arm: every `web.image_assets` / `web.image_slot_candidates` row and every
+  // object key is scoped by the tenant `get_coord_identity` resolves, so
+  // without the header a multi-tenant operator would read (and upload into)
+  // the home project's images under another project's name. Its first
+  // dashboard caller is the taste inbox (plan
+  // 2026-10-13-image-generation-and-visual-judgment, Phases 13 and 23).
+  "/api/v1/image-assets",
+  // The taste inbox — the same `get_memory_tenant` operator arm for the queue
+  // read and the pair push, and `require_coord_tenant_admin_target` for label
+  // writes: every `web.taste_pairs` row is the selected project's, so without
+  // the header a multi-tenant operator would label (and read) the home
+  // project's queue under another project's name. Plan
+  // 2026-10-13-image-generation-and-visual-judgment, Phase 23.
+  "/api/v1/taste/",
   // Plan library — the coord work-unit overlay resolves through
   // `_soft_tenant_id` and forwards the header, so without it the overlay is
   // the home project's while the page claims the selected one.
@@ -122,9 +136,41 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // Session repository — `get_tenant_id` / `require_coord_tenant_admin`
   // coord proxies; relaunch lands in the tenant the operator selected.
   "/api/v1/session-repository",
+  // Test-host designations — the PUT and DELETE proxy to coord's
+  // `/coord/trees/test-targets` writer behind `get_tenant_id`, and coord
+  // refuses a device the selected project has no `coord.tenant_devices`
+  // binding for (surfaced as a 409 naming the project). So the designation
+  // lands in the project the operator selected, or is refused — never
+  // stamped into a project whose runner poll cannot see it. The GET list is
+  // device-owner scoped and ignores the header. Plan
+  // 2026-09-30-test-host-designation-put-stamps-a-tenant-the-device-is-not-bound-to.
+  "/api/v1/fleet/test-targets",
+  // Build records — `get_tenant_id` / `require_coord_tenant_admin_target`
+  // coord proxies, plus the publish step that freezes a snapshot owned by the
+  // selected tenant. Does NOT match the unauthenticated
+  // `/api/v1/public/build-records/…`, which resolves no tenant. Plan
+  // 2026-10-09-factory-built-product-portfolio-and-launch-kit, Phase 1.
+  "/api/v1/build-records/",
+  // Overlord operator labels — `require_coord_tenant_admin` gates the write, so
+  // admin is checked in the SELECTED project, not the home one. Plan
+  // 2026-10-01-overlord-session-supervisor-classifies-stops-and-absorbs-
+  // avoidable-escalations, Phase 2b.
+  "/api/v1/admin/coord/overlord/",
+  // The presentation scope — `web.presentation_scopes` rows are keyed on the
+  // tenant `_effective_tenant_id` resolves from this header (membership-
+  // validated), and the write is `require_coord_tenant_admin_target`. Without
+  // it a multi-tenant operator presenting another project would redact by the
+  // HOME project's first-party owners and confidential terms. Plan
+  // 2026-10-23-console-presentation-spaces, Phase 1.
+  "/api/v1/presentation/",
 ];
 
-function readActiveTenantId(): string | null {
+/**
+ * The active-tenant selection exactly as a request built now would carry it in
+ * `X-Qontinui-Active-Tenant` (or `null`: none, no `window`, or unreadable
+ * storage — the backend then resolves the caller's home tenant).
+ */
+export function readActiveTenantId(): string | null {
   if (typeof window === "undefined") return null;
   try {
     return localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY);
@@ -250,6 +296,57 @@ export function isRetryableStatus(args: {
     );
   }
   return false;
+}
+
+/**
+ * What a request rejects with when it failed and the browser reports it is
+ * offline. Exported so a caller deciding whether a write may have landed can
+ * tell this apart from a fetch that failed for a reason nobody can name.
+ */
+export const NO_CONNECTION_MESSAGE =
+  "No internet connection. Please check your network.";
+
+/**
+ * What a request rejects with when the client's own timeout fired. Exported so
+ * a caller that must not invite a retry (a write whose outcome is open) can
+ * word it differently.
+ */
+export const REQUEST_TIMEOUT_MESSAGE =
+  "Request timeout - backend may be starting up. Please try again.";
+
+/**
+ * What reading an answer's body rejects with once the answer has arrived: the
+ * body would not parse (an HTML page, an empty body on a 2xx) or broke off
+ * mid-read. It is a `SyntaxError` so every caller that already names an
+ * unparseable body by that type keeps doing so, and it keeps the reader's own
+ * message. `answeredStatus` is the status that DID come back — distinct from a
+ * `status` field on purpose, because a caller reads `status` as the failure's.
+ *
+ * Exported so a caller deciding whether a write may have landed can say that an
+ * answer came back, rather than that none reached the browser.
+ */
+export class UnreadableAnswerError extends SyntaxError {
+  readonly answeredStatus: number;
+
+  constructor(answeredStatus: number, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "UnreadableAnswerError";
+    this.answeredStatus = answeredStatus;
+  }
+}
+
+/**
+ * `response.json()`, with every failure after the answer arrived raised as an
+ * {@link UnreadableAnswerError}. A caller's own abort is handed back as it came.
+ */
+export async function readAnswerJson<T>(response: Response): Promise<T> {
+  try {
+    return (await response.json()) as T;
+  } catch (err: unknown) {
+    // A DOMException is not an `Error` in every runtime, so read the name.
+    if ((err as { name?: unknown } | null)?.name === "AbortError") throw err;
+    throw new UnreadableAnswerError(response.status, err);
+  }
 }
 
 /**
@@ -780,13 +877,11 @@ export class HttpClient {
       }
 
       if ((error as Error).name === "AbortError") {
-        throw new Error(
-          "Request timeout - backend may be starting up. Please try again."
-        );
+        throw new Error(REQUEST_TIMEOUT_MESSAGE);
       }
 
       if (typeof navigator !== "undefined" && !navigator.onLine) {
-        throw new Error("No internet connection. Please check your network.");
+        throw new Error(NO_CONNECTION_MESSAGE);
       }
 
       throw error;
@@ -886,7 +981,7 @@ export class HttpClient {
       throw new Error(`GET ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -911,7 +1006,7 @@ export class HttpClient {
       throw new Error(`POST ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -932,7 +1027,7 @@ export class HttpClient {
       throw new Error(`PUT ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -957,7 +1052,7 @@ export class HttpClient {
       throw new Error(`PATCH ${url} failed: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**
@@ -984,7 +1079,7 @@ export class HttpClient {
       return undefined as T;
     }
 
-    return response.json();
+    return readAnswerJson<T>(response);
   }
 
   /**

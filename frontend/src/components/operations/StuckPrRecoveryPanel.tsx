@@ -24,20 +24,21 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, LifeBuoy, Lock, Terminal } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  cancelMergeProposal,
+  fetchOpenPrs,
+  fetchPrMergeVerdict,
+  fetchStuckNudges,
+  reevaluatePr,
+} from "@/lib/api/operations/prMerge";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import type { PrListResponse, PrRow } from "./mergeTypes";
+import type { PrRow } from "./mergeTypes";
 import { useTenantDefaultRepo } from "./useTenantDefaultRepo";
 import {
-  OPERATIONS_API,
   STUCK_PR_MAX_CARDS,
   STUCK_PR_MAX_VERDICT_READS,
   STUCK_PR_POLL_MS,
-  prMergeVerdictUrl,
-  prReevaluateUrl,
-  proposalCancelUrl,
-  stuckNudgesUrl,
 } from "./utils";
 import {
   CANCEL_REASON,
@@ -148,6 +149,36 @@ function splitRepo(repo: string): { owner: string; name: string } | null {
   const idx = repo.indexOf("/");
   if (idx <= 0 || idx === repo.length - 1) return null;
   return { owner: repo.slice(0, idx), name: repo.slice(idx + 1) };
+}
+
+/**
+ * Settle a client read as `{ok: true, body}` on a 2xx, or `{ok: false}` when
+ * the server ANSWERED with a non-2xx. Anything else — a network failure, an
+ * unparseable 2xx body — still rejects, exactly as the poll's own `res.json()`
+ * used to, so the poll's catch marks the view stale.
+ */
+async function answeredOrNull<T>(
+  read: Promise<T>
+): Promise<{ ok: true; body: T } | { ok: false }> {
+  try {
+    return { ok: true, body: await read };
+  } catch (err) {
+    if (httpStatusOf(err) === null) throw err;
+    return { ok: false };
+  }
+}
+
+/**
+ * The JSON body of a status rejection, or `{}` when it does not parse — what
+ * the lever actions read with `res.json().catch(() => ({}))` before they moved
+ * onto the typed client.
+ */
+function parseErrorBody(err: unknown): unknown {
+  try {
+    return JSON.parse(httpBodyOf(err) ?? "");
+  } catch {
+    return {};
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -386,37 +417,35 @@ export function StuckPrDiagnosisCard({
       setResult(null);
       setBusy(kind);
       try {
-        let res: Response;
+        let body: unknown;
         if (kind === "reevaluate") {
           if (!parts) throw new Error(`unrecognized repo "${repo}"`);
-          res = await httpClient.fetch(
-            prReevaluateUrl(parts.owner, parts.name, candidate.prNumber),
-            { method: "POST", body: JSON.stringify({}) }
-          );
+          body = await reevaluatePr(parts.owner, parts.name, candidate.prNumber);
         } else {
           if (!proposal) {
             // Unreachable through the UI (cancel levers only exist once a
             // proposal has been read) but stated rather than swallowed.
             throw new Error("no merge attempt to cancel");
           }
-          res = await httpClient.fetch(proposalCancelUrl(proposal.proposalId), {
-            method: "POST",
-            body: JSON.stringify({
-              unblock: kind === "cancel_unblock",
-              reason: CANCEL_REASON,
-            }),
+          body = await cancelMergeProposal(proposal.proposalId, {
+            unblock: kind === "cancel_unblock",
+            reason: CANCEL_REASON,
           });
         }
-        const body: unknown = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setActionError(describeActionError(res.status, body));
-          return;
-        }
-        setResult(describeActionSuccess(kind, body));
+        // An unparseable 2xx body reads as `{}`, as it always has.
+        setResult(describeActionSuccess(kind, body ?? {}));
         // The panel's refresh re-reads the verdict too, so one call re-syncs
         // both the candidate list and this card's proposal.
         onActed();
       } catch (err) {
+        // A status rejection is coord's answer (409 `land_in_flight`, 404
+        // `*_not_found_in_tenant_scope`, …): word it from its JSON body, read
+        // as `{}` when the body does not parse.
+        const status = httpStatusOf(err);
+        if (status !== null) {
+          setActionError(describeActionError(status, parseErrorBody(err)));
+          return;
+        }
         setActionError({
           code: "web_error",
           message: err instanceof Error ? err.message : String(err),
@@ -587,20 +616,14 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
       if (!activeRepo) return;
       const parts = splitRepo(activeRepo);
       try {
-        const [nudgeRes, prRes] = await Promise.all([
-          httpClient.fetch(
-            stuckNudgesUrl(activeRepo),
-            COORD_DASHBOARD_POLL_OPTIONS
-          ),
-          httpClient.fetch(
-            `${OPERATIONS_API}/pr-merge/prs`,
-            COORD_DASHBOARD_POLL_OPTIONS
-          ),
+        // A non-2xx read settles as "no body" (the other read can still carry
+        // the poll); a network failure or an unparseable 2xx rejects the poll.
+        const [nudgeRead, prRead] = await Promise.all([
+          answeredOrNull(fetchStuckNudges(activeRepo)),
+          answeredOrNull(fetchOpenPrs()),
         ]);
-        const nudgeBody: unknown = nudgeRes.ok ? await nudgeRes.json() : null;
-        const prBody: unknown = prRes.ok ? await prRes.json() : null;
-        const nudges = parseStuckNudges(nudgeBody);
-        const prs = ((prBody as PrListResponse | null)?.prs ?? []) as PrRow[];
+        const nudges = parseStuckNudges(nudgeRead.ok ? nudgeRead.body : null);
+        const prs = ((prRead.ok ? prRead.body : null)?.prs ?? []) as PrRow[];
         const fused = fuseStuckCandidates(
           activeRepo,
           nudges?.prs ?? [],
@@ -610,7 +633,7 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
         if (!isCurrent()) return;
         setCandidates(fused);
         setNudgesEnabled(nudges?.enabled ?? true);
-        setStaleRead(!nudgeRes.ok && !prRes.ok);
+        setStaleRead(!nudgeRead.ok && !prRead.ok);
 
         // Verdicts for the candidates that can plausibly be rendered — bounded,
         // with headroom above STUCK_PR_MAX_CARDS so a retraction that promotes
@@ -619,17 +642,14 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
           const wanted = fused.slice(0, STUCK_PR_MAX_VERDICT_READS);
           const read = await Promise.all(
             wanted.map(async (c) => {
+              // A verdict coord will not serve is not a failure of the panel —
+              // the diagnosis proceeds without proposal evidence and says so.
               try {
-                const res = await httpClient.fetch(
-                  prMergeVerdictUrl(parts.owner, parts.name, c.prNumber),
-                  COORD_DASHBOARD_POLL_OPTIONS
-                );
-                // A verdict coord will not serve is not a failure of the panel —
-                // the diagnosis proceeds without proposal evidence and says so.
-                if (!res.ok) return [c.prNumber, null] as const;
                 return [
                   c.prNumber,
-                  parseProposalView(await res.json()),
+                  parseProposalView(
+                    await fetchPrMergeVerdict(parts.owner, parts.name, c.prNumber)
+                  ),
                 ] as const;
               } catch {
                 return [c.prNumber, null] as const;

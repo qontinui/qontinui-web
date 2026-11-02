@@ -6,9 +6,7 @@ Create Date: 2026-04-30
 
 Creates the cloud-only tables that power the qontinui.cloud deployment,
 inside the ``cloud.*`` schema added to the canonical-DB topology by 3b
-of the cloud-control carve-out (per
-``D:/qontinui-root/tmp_cloud_control_carve_out.md`` §5 and
-``D:/qontinui-root/tmp_canonical_db_topology_plan.md`` §4).
+of the cloud-control carve-out.
 
 Per the open-core posture (business-model plan §8: "no proprietary
 extensions to OSS schemas — all migrations are open SQL"), the migration

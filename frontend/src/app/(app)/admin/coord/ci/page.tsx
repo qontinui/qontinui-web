@@ -22,6 +22,10 @@
  *     ACTIVE tenant only, the predicate `require_coord_tenant_admin` applies.
  *     Its reads are its own and live inside its `CollapsiblePanel`, so a closed
  *     panel polls nothing (R7) and the strip depends on none of them.
+ *  1b. **Model access for CI steps** — the `ci_model_access` tenant dial and
+ *     per-repo overrides (`CiModelAccessPanel`, plan
+ *     `2026-10-13-ci-node-runs-model-dependent-eval-steps` D6), beside the
+ *     hosted-CI panel and built the same way, with the same admin gating.
  *  2. **Pools** — one row per runner label set, expanding in place (R5) to
  *     each repo that uses it and its open alerts.
  *  3. **Repos** — main verdict, PR checks, candidate-CI p90, and the 24 h
@@ -89,6 +93,7 @@ import {
 } from "./_lib/ciDashboardStatus";
 import { useCiEconomics, useCiOverview } from "./_lib/useCiReads";
 import { GithubHostedCiPanel } from "./_components/GithubHostedCiPanel";
+import { CiModelAccessPanel } from "./_components/CiModelAccessPanel";
 
 /** A figure that may refuse to answer: amber `–` with the reason as its title. */
 function CellText({
@@ -664,6 +669,8 @@ export default function CoordCiPage() {
       />
 
       <GithubHostedCiPanel isAdmin={canAdminActiveTenant} />
+
+      <CiModelAccessPanel isAdmin={canAdminActiveTenant} />
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <RefreshButton

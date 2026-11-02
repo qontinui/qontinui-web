@@ -345,6 +345,88 @@ describe("proxyToBackend", () => {
     });
   });
 
+  // The URL parser resolves dot segments (also `%2E`/`%2e`, and a backslash
+  // is a `/` in an http URL), and the backend percent-decodes before routing
+  // (so `%2F` splits a segment there; `%5C` is refused defensively): each of
+  // these could reach another backend route with the caller's token, and is
+  // refused before any read.
+  describe("a path the URL parser would rewrite", () => {
+    const ESCAPES = [
+      ["/../", "/api/v1/ai-tasks/../x"],
+      ["/./", "/api/v1/ai-tasks/./x"],
+      ["trailing /..", "/api/v1/ai-tasks/.."],
+      ["%2E%2E", "/api/v1/ai-tasks/%2E%2E/findings/2"],
+      ["%2e", "/api/v1/ai-tasks/%2e/x"],
+      ["a raw backslash", "/api/v1/ai-tasks/..\\x"],
+      ["a leading //", "//evil.test/api/v1/x"],
+      ["?", "/api/v1/ai-tasks/1?x=1"],
+      ["#", "/api/v1/ai-tasks/1#x"],
+      ["%2F", "/api/v1/execution/runs/R%2Fcost-summary"],
+      ["%2f", "/api/v1/ai-tasks/..%2fx"],
+      ["%5C", "/api/v1/execution/runs/R%5Ccost-summary"],
+      ["%5c", "/api/v1/ai-tasks/x%5cy"],
+    ] as const;
+    // [label, options, cookie token, the 400 body key]
+    const MODES: [string, ProxyOptions, string | undefined, string][] = [
+      ["detail, with a token", DETAIL_401, "t", "detail"],
+      ["detail, no token (not 401)", DETAIL_401, undefined, "detail"],
+      ["details", { ...DETAIL_401, errorBody: "details" }, "t", "detail"],
+      [
+        "{ error }, unauthorizedBodyKey error",
+        {
+          ...DETAIL_401,
+          unauthorizedBodyKey: "error",
+          errorBody: { error: "x" },
+        },
+        "t",
+        "error",
+      ],
+      [
+        "throw, with a token",
+        { ...FORWARD, errorBody: "throw" },
+        "t",
+        "detail",
+      ],
+      [
+        "throw, no token",
+        { ...FORWARD, errorBody: "throw" },
+        undefined,
+        "detail",
+      ],
+    ];
+
+    for (const [label, backendPath] of ESCAPES) {
+      describe(label, () => {
+        it.each(MODES)(
+          "%s: 400, never fetching",
+          async (_, options, token, key) => {
+            cookieToken = token;
+            const f = upstream("{}");
+            const res = await proxyToBackend(req(), backendPath, options);
+            expect(res.status).toBe(400);
+            expect(await res.json()).toEqual({
+              [key]: "Invalid path parameter",
+            });
+            expect(f).not.toHaveBeenCalled();
+          }
+        );
+      });
+    }
+
+    it.each([
+      PATH,
+      "/api/v1/ai-tasks/a%20b",
+      "/api/v1/ai-tasks/%C3%A9/findings/%3F%23",
+      "/api/v1/ai-tasks/a..b/x.",
+    ])("a clean path %s still forwards verbatim", async (backendPath) => {
+      cookieToken = "t";
+      const f = upstream("{}", 200, "application/json");
+      const res = await proxyToBackend(req(), backendPath, DETAIL_401);
+      expect(res.status).toBe(200);
+      expect(sent(f).url).toBe(`${BASE}${backendPath}`);
+    });
+  });
+
   it("answers the unresolved-backend 503 without fetching", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("BACKEND_URL", "");

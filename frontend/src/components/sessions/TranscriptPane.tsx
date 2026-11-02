@@ -25,7 +25,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Loader2, RefreshCw, ScrollText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getSessionOutput, SessionsApiError } from "./api";
+import { getSessionOutput, SessionsApiError } from "@/lib/api/operations/sessions";
 import type { OutputChunk } from "./types";
 import {
   capTail,

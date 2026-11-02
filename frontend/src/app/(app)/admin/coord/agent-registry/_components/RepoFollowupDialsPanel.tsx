@@ -21,7 +21,7 @@ import {
   DELIVERY_HELP,
   DELIVERY_LABEL,
   DELIVERY_MODES,
-  DELIVERY_PROVENANCE_NOTE,
+  deliveryProvenanceNote,
   deliveryCurrentLabel,
   EMPTY_READING,
   FOLLOWUP_SCOPES,
@@ -37,10 +37,13 @@ import {
   rolloutHeadline,
   scopeStatus,
   summarizeScopes,
-  type DeliveryMode,
-  type FollowupScope,
+  writeUnknownReason,
   type RepoDialReading,
 } from "../_lib/repoFollowupStatus";
+import type {
+  DeliveryMode,
+  FollowupScope,
+} from "@/lib/api/operations/repoFollowupDials";
 
 const LABEL = "Post-merge follow-ups";
 
@@ -270,6 +273,7 @@ function RepoRow({
   const status = scopeStatus(reading.scope, {
     error: reading.scopeError,
     readbackError: reading.scopeReadbackError,
+    outcomeUnknown: reading.scopeOutcomeUnknown,
   });
   return (
     <RecordRow
@@ -305,7 +309,7 @@ function RepoRow({
           <div className="space-y-4">
             <ScopeEditor
               // Re-seed the draft whenever coord's answer changes.
-              key={`${reading.scopeReadbackError !== null ? "readback-failed" : (reading.scope?.scope ?? "?")}|${(reading.scope?.code_paths ?? []).join("\n")}`}
+              key={`${reading.scopeReadbackError !== null || reading.scopeOutcomeUnknown !== null ? "write-unknown" : (reading.scope?.scope ?? "?")}|${(reading.scope?.code_paths ?? []).join("\n")}`}
               repo={repo}
               reading={reading}
               canEdit={canEdit}
@@ -327,7 +331,8 @@ function RepoRow({
             scope={knownScope(reading)?.scope ?? "unknown"} · resolved_scope=
             {knownScope(reading)?.resolved_scope ?? "unknown"} · mode=
             {knownScope(reading)?.mode ?? "unknown"} · delivery=
-            {reading.deliveryReadbackError === null
+            {reading.deliveryReadbackError === null &&
+            reading.deliveryOutcomeUnknown === null
               ? (reading.delivery?.mode ?? "unknown")
               : "unknown"}
           </span>
@@ -357,7 +362,10 @@ function ScopeEditor({
   }) => Promise<boolean>;
 }) {
   const view = reading.scope;
-  const known = view !== null && reading.scopeReadbackError === null;
+  const known =
+    view !== null &&
+    reading.scopeReadbackError === null &&
+    reading.scopeOutcomeUnknown === null;
   const stored = view?.code_paths ?? [];
   const [draftScope, setDraftScope] = useState<FollowupScope | null>(
     known ? view.scope : null
@@ -476,20 +484,24 @@ function DeliveryEditor({
 }) {
   /** The mode whose write is in flight, so only its button spins. */
   const [pending, setPending] = useState<DeliveryMode | null>(null);
-  // Coord's read is fail-open, so a value it resolves is not proof that it
-  // was set: `provenance_known: false` renders it qualified, never as a
-  // confirmed setting.
-  const confirmed = reading.delivery?.provenance_known === true;
+  // Coord says where the mode came from; a missing or `unrecognized` scope is
+  // never rendered as a confirmed setting.
+  const resolvedScope = reading.delivery?.resolved_scope ?? null;
+  const confirmed = resolvedScope === "repo" || resolvedScope === "default";
   const current: DeliveryMode | null =
-    reading.deliveryReadbackError === null
+    reading.deliveryReadbackError === null &&
+    reading.deliveryOutcomeUnknown === null
       ? (reading.delivery?.mode ?? null)
       : null;
-  const problem = reading.deliveryReadbackError
-    ? `written, but reading it back failed (${reading.deliveryReadbackError}) — refresh to re-check`
-    : reading.deliveryError
+  const problem =
+    writeUnknownReason(
+      reading.deliveryReadbackError,
+      reading.deliveryOutcomeUnknown
+    ) ??
+    (reading.deliveryError
       ? readErrorText(reading.deliveryError) +
         (reading.delivery ? "; showing the last value read" : "")
-      : null;
+      : null);
   return (
     <div className="space-y-2" data-testid="repo-followup-delivery-editor">
       <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -499,10 +511,12 @@ function DeliveryEditor({
             key={m}
             size="sm"
             variant={current === m ? "default" : "outline"}
-            // While coord cannot confirm the value was SET (fail-open read),
-            // the shown mode may be the default — so it can still be written
-            // explicitly.
-            disabled={!canEdit || busy || (current === m && confirmed)}
+            // Only a mode a row already declares (`repo`) is a no-op write.
+            // A default, an unrecognized stored value or an UNKNOWN scope can
+            // still be written explicitly for this repo.
+            disabled={
+              !canEdit || busy || (current === m && resolvedScope === "repo")
+            }
             onClick={() => {
               setPending(m);
               onChoose(m);
@@ -521,9 +535,9 @@ function DeliveryEditor({
           variant="outline"
           className={`text-[11px] ${current === null || !confirmed ? UNKNOWN_AMBER : ""}`}
           data-testid="repo-followup-delivery-current"
-          data-provenance={confirmed ? "confirmed" : "unconfirmed"}
+          data-provenance={resolvedScope ?? "unconfirmed"}
         >
-          {deliveryCurrentLabel(current, confirmed)}
+          {deliveryCurrentLabel(current, resolvedScope)}
         </Badge>
       </div>
       {current !== null && (
@@ -538,7 +552,10 @@ function DeliveryEditor({
         </AmberNote>
       )}
       <p className="text-[11px] text-muted-foreground">
-        {DELIVERY_PROVENANCE_NOTE}
+        {deliveryProvenanceNote(
+          resolvedScope,
+          reading.delivery?.stored_value ?? null
+        )}
       </p>
     </div>
   );

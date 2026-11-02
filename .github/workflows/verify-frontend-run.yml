@@ -82,6 +82,9 @@ name: Verify Frontend Deploy (run)
 #     and main has moved on to a deployed head        -> green named skip
 #                                                        (::notice::), ok=false
 #   * the SHA's production deployment is in ERROR     -> red
+#     (errorCode git_info_fail: Vercel could not fetch the commit from
+#     GitHub and no build ran -- still red, but named as a transient
+#     fetch failure with the redeploy command, not as a failed build)
 #   * still not READY after 15 min                    -> red
 #   * Vercel/GitHub API unreachable, or no token      -> red
 #   * refused dispatch input (bad SHA, not on main,

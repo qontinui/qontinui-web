@@ -1071,6 +1071,58 @@ def _coord_transport_detail(exc: HTTPException) -> str:
     )
 
 
+#: ``dispatch_error`` when coord accepted the directive but its ``applied``
+#: echo — a well-formed object — does not carry the ``model_access`` this save
+#: sent: a coord that predates ``CiNodeDirective.model_access`` drops the
+#: unknown key with a 2xx.
+CI_NODE_MODEL_ACCESS_NOT_RELAYED = "coord_predates_model_access"
+#: ``dispatch_error`` when coord's 2xx body could not be read, or carried no
+#: ``applied`` object, so whether ``model_access`` travelled cannot be told.
+#: That is NOT evidence of an older coord, and is not reported as one.
+CI_NODE_MODEL_ACCESS_UNCONFIRMED = "model_access_unconfirmed"
+
+_MODEL_ACCESS_NOT_RELAYED_DETAIL = (
+    "The coordinator accepted the other settings, but it does not yet carry "
+    "the model-access choice, so that choice did not reach the machine. It is "
+    "saved here; apply again once the coordinator is updated."
+)
+_MODEL_ACCESS_UNCONFIRMED_DETAIL = (
+    "The coordinator accepted the settings, but its answer did not say what it "
+    "sent, so whether the model-access choice reached the machine is unknown. "
+    "It is saved here; apply again to retry."
+)
+
+
+def _model_access_relay_problem(
+    payload: CiNodeConfig, resp: httpx.Response
+) -> str | None:
+    """Why this save's ``model_access`` cannot be counted as delivered, or None.
+
+    Coord's 2xx body echoes what it published as ``applied``. Three outcomes
+    when a value was sent:
+
+    * ``applied`` is an object carrying the same value — delivered (None).
+    * ``applied`` is an object WITHOUT it — the coord predates the field
+      (serde ignores unknown keys): ``CI_NODE_MODEL_ACCESS_NOT_RELAYED``.
+    * the body is unparseable or has no ``applied`` object — nothing can be
+      told either way: ``CI_NODE_MODEL_ACCESS_UNCONFIRMED``.
+
+    A save that sent no value (``None``) has nothing to confirm.
+    """
+    if payload.model_access is None:
+        return None
+    try:
+        body = resp.json()
+    except ValueError:
+        return CI_NODE_MODEL_ACCESS_UNCONFIRMED
+    applied = body.get("applied") if isinstance(body, dict) else None
+    if not isinstance(applied, dict):
+        return CI_NODE_MODEL_ACCESS_UNCONFIRMED
+    if applied.get("model_access") is payload.model_access:
+        return None
+    return CI_NODE_MODEL_ACCESS_NOT_RELAYED
+
+
 def _coord_dispatch_refusal(resp: httpx.Response) -> tuple[str | None, str]:
     """Turn coord's non-2xx answer into ``(machine code, human sentence)``.
 
@@ -1272,6 +1324,24 @@ async def set_ci_node_config(
     )
     await db.commit()
     await db.refresh(machine)
+    relay_problem = _model_access_relay_problem(payload, resp)
+    if relay_problem is not None:
+        # Coord accepted and published the directive — so the other settings
+        # were handed off and ``dispatched_at`` moves — but the owner's
+        # model-access choice is not confirmed. Reporting that as delivered
+        # would hide exactly the switch this save was most likely made for.
+        return _ci_node_response(
+            machine,
+            reachability,
+            dispatched=False,
+            dispatch_status=resp.status_code,
+            dispatch_error=relay_problem,
+            dispatch_detail=(
+                _MODEL_ACCESS_NOT_RELAYED_DETAIL
+                if relay_problem == CI_NODE_MODEL_ACCESS_NOT_RELAYED
+                else _MODEL_ACCESS_UNCONFIRMED_DETAIL
+            ),
+        )
     return _ci_node_response(machine, reachability, dispatched=True)
 
 

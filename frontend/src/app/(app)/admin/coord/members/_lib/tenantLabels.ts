@@ -7,11 +7,11 @@
 
 import type { RenameTarget } from "@/components/admin/coord/CoordProjectRenameDialog";
 import type {
-  CoordRole,
-  GroupTenantRoleRow,
+  CoordMemberRole,
   MyTenantsResponse,
   TenantRoleEntry,
-} from "../_types";
+} from "@/lib/api/operations/coordMembers";
+import type { GroupTenantRoleRow } from "@/lib/api/operations/cognitoGroups";
 
 // ---------------------------------------------------------------------------
 // Tier ↔ coord role mapping
@@ -19,7 +19,7 @@ import type {
 
 interface TierOption {
   /** Coord role sent to the API. */
-  role: CoordRole;
+  role: CoordMemberRole;
   /** Product-tier label shown in the UI. */
   label: string;
 }

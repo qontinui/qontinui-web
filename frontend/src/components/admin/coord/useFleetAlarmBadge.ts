@@ -71,7 +71,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRetainedValue } from "@/components/console";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
-import { httpClient } from "@/services/service-factory";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { createLogger } from "@/lib/logger";
 import {
@@ -80,13 +79,12 @@ import {
   type ResourceSamplesResponse,
 } from "@/components/operations/fleetResources";
 import {
-  FLEET_HEALTH_API,
+  fetchFleetHealth,
+  fetchFleetResourceSamples,
   type FleetHealthPayload,
-} from "@/components/operations/useFleetHealth";
-import {
-  DEFAULT_WINDOW_SECS,
-  FLEET_RESOURCE_SAMPLES_API,
-} from "@/components/operations/useFleetResourceSamples";
+} from "@/lib/api/operations/coordFleet";
+import { DEFAULT_WINDOW_SECS } from "@/components/operations/useFleetResourceSamples";
+import { isNotHealthyDevice } from "@/components/admin/coord/machineHealth";
 
 const log = createLogger("useFleetAlarmBadge");
 
@@ -213,12 +211,9 @@ export function useFleetAlarmBadge(): FleetAlarm {
       // No client retries (plan
       // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland`
       // D5): the next tick is the retry.
-      httpClient.get<FleetHealthPayload>(
-        FLEET_HEALTH_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      ),
-      httpClient.get<ResourceSamplesResponse>(
-        `${FLEET_RESOURCE_SAMPLES_API}?window_secs=${DEFAULT_WINDOW_SECS}`,
+      fetchFleetHealth(COORD_DASHBOARD_POLL_OPTIONS),
+      fetchFleetResourceSamples(
+        DEFAULT_WINDOW_SECS,
         COORD_DASHBOARD_POLL_OPTIONS
       ),
     ]);
@@ -303,7 +298,11 @@ export function useFleetAlarmBadge(): FleetAlarm {
     );
     return {
       ...admission,
-      unhealthy: devices.filter((d) => d.state && d.state !== "healthy").length,
+      // The nav's own predicate: every verdict other than healthy. Home's
+      // Degrading section follows coord's project state instead and says,
+      // by state, which of these it does not call degrading
+      // (`machineHealth.ts`).
+      unhealthy: devices.filter(isNotHealthyDevice).length,
     };
   }, [health, samples, fetchedAtMs, nowMs]);
 

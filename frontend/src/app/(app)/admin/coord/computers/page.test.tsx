@@ -35,7 +35,14 @@ vi.mock("next/navigation", () => ({
 
 const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
-  httpClient: { get: (...a: unknown[]) => httpGet(...a) },
+  // The computer reads go through `httpClient.fetch` (the typed client's
+  // `fetchComputers` / `fetchComputer`). Every case here answers as `httpGet`'s
+  // parsed body, so a fetch is served from it as a 200 Response, and a
+  // rejection passes through exactly as `get`'s did.
+  httpClient: {
+    fetch: async (url: string, init?: unknown) =>
+      new Response(JSON.stringify(await httpGet(url, init)), { status: 200 }),
+  },
 }));
 
 import {

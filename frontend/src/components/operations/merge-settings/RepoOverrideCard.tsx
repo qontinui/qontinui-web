@@ -9,8 +9,18 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle } from "lucide-react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "../utils";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  fetchRepoProfile,
+  patchRepoProfile,
+  setMergeEnabled,
+  type ExpediteDials,
+  type RawRepoOverride,
+  type RepoProfilePatch,
+  type RepoProfileResponse,
+  type TenantRepoRow,
+} from "@/lib/api/operations/prMerge";
 import {
   MergeEnabledBadge,
   pinChoice,
@@ -19,15 +29,20 @@ import {
   type PinChoice,
 } from "./pinChoice";
 import {
+  httpFailureText,
   overrideFieldsFrom,
   parseFloatOrThrow,
   parseIntOrThrow,
 } from "./format";
-import type {
-  RawRepoOverride,
-  RepoProfileResponse,
-  TenantRepoRow,
-} from "./types";
+import {
+  EXPEDITE_KEYS,
+  ExpediteDialsSection,
+  expediteFieldsFrom,
+  expeditePatchFrom,
+  type ExpediteFields,
+  type ExpediteKey,
+  type ExpediteReadState,
+} from "./ExpediteDialsSection";
 
 const log = createLogger("MergeOrchestrationSettings");
 
@@ -39,6 +54,7 @@ export function RepoOverrideCard({
   repoRow,
   tenantPaused,
   ffLandHeadSyncWritable,
+  expediteWritable,
   onSaved,
 }: {
   repoRow: TenantRepoRow;
@@ -54,6 +70,13 @@ export function RepoOverrideCard({
    * every mount. One read, one answer, every card.
    */
   ffLandHeadSyncWritable: boolean;
+  /**
+   * Whether coord's settings wire carries the expedited-land dials — read off
+   * the TENANT settings response for the same build-not-repo reason as
+   * `ffLandHeadSyncWritable`. Without it the expedite controls are disabled
+   * and their keys are never sent (`deny_unknown_fields`).
+   */
+  expediteWritable: boolean;
   onSaved: () => void;
 }) {
   const [repoProfile, setRepoProfile] = useState<RepoProfileResponse | null>(
@@ -124,6 +147,14 @@ export function RepoOverrideCard({
   const [ffLandHeadSyncOverride, setFfLandHeadSyncOverride] = useState<
     "inherit" | "true" | "false"
   >("inherit");
+  // The per-repo expedited-land dials, seeded from `expedite_override` (read
+  // best-effort coord-side, so carried apart from `raw_override`). Their keys
+  // share the dirty set below; until seeded they read as unknown, never as
+  // inherit.
+  const [expedite, setExpedite] = useState<ExpediteFields>(() =>
+    expediteFieldsFrom(null)
+  );
+  const [expediteSeeded, setExpediteSeeded] = useState(false);
   // Body keys the operator has edited this session; only these are PATCHed.
   //
   // Mirrored SYNCHRONOUSLY in `dirtyRef` (every write goes through
@@ -192,6 +223,30 @@ export function RepoOverrideCard({
     []
   );
 
+  /**
+   * Seed the expedite fields from a stored `expedite_override` object. Same
+   * `keep` rule as `seedFromRaw`. `null` (unreadable) seeds nothing: the
+   * fields stay unknown.
+   */
+  const seedExpedite = useCallback(
+    (dials: ExpediteDials | null | undefined, keep: ReadonlySet<string>) => {
+      // Unreadable: the fields not being kept go back to UNKNOWN, so a value
+      // the operator typed is never displayed as if coord had stored it.
+      const f = expediteFieldsFrom(dials);
+      setExpedite((prev) => {
+        const next = { ...prev };
+        for (const key of EXPEDITE_KEYS) {
+          if (!keep.has(key)) {
+            (next as Record<ExpediteKey, string>)[key] = f[key];
+          }
+        }
+        return next;
+      });
+      setExpediteSeeded(Boolean(dials));
+    },
+    []
+  );
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -201,13 +256,7 @@ export function RepoOverrideCard({
   // but the layered defaults require an extra fetch per card.
   useEffect(() => {
     let cancelled = false;
-    const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
-    httpClient
-      .fetch(url)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return (await res.json()) as RepoProfileResponse;
-      })
+    fetchRepoProfile(repoRow.repo)
       .then((body) => {
         if (cancelled) return;
         setReadSettled(true);
@@ -223,6 +272,7 @@ export function RepoOverrideCard({
         if (body.raw_override) {
           seedFromRaw(body.raw_override, dirtyRef.current);
         }
+        seedExpedite(body.expedite_override, dirtyRef.current);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -231,12 +281,12 @@ export function RepoOverrideCard({
         // shows (or knowingly lacks) what the save returned; an error line
         // here would sit beside correct fields.
         if (adoptedSaveResponseRef.current) return;
-        setLoadError(err instanceof Error ? err.message : String(err));
+        setLoadError(httpFailureText(err, { withBody: false }));
       });
     return () => {
       cancelled = true;
     };
-  }, [repoRow.repo, seedFromRaw]);
+  }, [repoRow.repo, seedFromRaw, seedExpedite]);
 
   const handleSave = useCallback(async () => {
     setError(null);
@@ -255,7 +305,7 @@ export function RepoOverrideCard({
       // `line_budget_override` — sending it trips `deny_unknown_fields` and
       // 400s the whole PATCH — so that field is not sent (and its input was
       // removed; coord neither stores nor resolves a per-repo line budget).
-      const body: Record<string, unknown> = {};
+      const body: RepoProfilePatch = {};
       if (dirty.has("confidence_threshold_override")) {
         body.confidence_threshold_override =
           confidenceOverride.trim() === ""
@@ -298,18 +348,17 @@ export function RepoOverrideCard({
             : ffLandHeadSyncOverride === "true";
       }
 
+      // The expedite dials: edited keys only, never on a build that does not
+      // carry them. Throws on an invalid size before anything is sent.
+      if (expediteWritable) {
+        Object.assign(body, expeditePatchFrom(expedite, dirty));
+      }
+
       // Skip the PATCH entirely when no profile field changed (e.g. a
       // merge-enablement-only save) — an empty body is a wasted round-trip and
       // needlessly couples the enablement POST to the PATCH succeeding.
       if (Object.keys(body).length > 0) {
-        const url = `${OPERATIONS_API}/pr-merge/repos/${repoRow.repo}/profile`;
-        const res = await httpClient.fetch(url, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
+        const saved = await patchRepoProfile(repoRow.repo, body);
         // The write landed, so the initial profile read — if it has not
         // arrived yet — now carries PRE-save values. Ignore it from here on,
         // whatever this response's body turns out to be.
@@ -320,9 +369,6 @@ export function RepoOverrideCard({
         // save consumed the operator's edits). A body that does not parse,
         // or an older coord's body without `raw_override`, leaves the fields
         // as the operator typed them — which is what was just written.
-        const saved = (await res
-          .json()
-          .catch(() => null)) as RepoProfileResponse | null;
         if (saved && typeof saved === "object" && saved.profile) {
           setRepoProfile(saved);
           setLoadError(null);
@@ -331,6 +377,7 @@ export function RepoOverrideCard({
             // is replaced by what coord now stores.
             seedFromRaw(saved.raw_override, dirtyAfterSave(sent));
           }
+          seedExpedite(saved.expedite_override, dirtyAfterSave(sent));
         }
         // The PATCH consumed these edits; a later failure (the enablement
         // POST below) must not leave them flagged for a re-send.
@@ -343,21 +390,18 @@ export function RepoOverrideCard({
       // All three values write, including `null` — clearing a pin back to
       // inherit is a real action here, not a no-op placeholder.
       if (mergePin !== storedPin) {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/merge-enabled`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              scope: `repo:${repoRow.repo}`,
-              enabled: pinValue(mergePin),
-              reason: "dashboard: per-repo override save",
-            }),
-          }
-        );
-        if (!res.ok) {
-          const detail = await res.text().catch(() => "");
+        try {
+          await setMergeEnabled({
+            scope: `repo:${repoRow.repo}`,
+            enabled: pinValue(mergePin),
+            reason: "dashboard: per-repo override save",
+          });
+        } catch (err) {
+          // Only a status answer is the write REFUSED; a request that never
+          // landed reaches the outer `catch` as it is.
+          if (httpStatusOf(err) === null) throw err;
           throw new Error(
-            `merge-enabled: HTTP ${res.status}${detail ? `: ${detail}` : ""}`
+            `merge-enabled: ${httpFailureText(err, { withBody: true })}`
           );
         }
       }
@@ -365,7 +409,12 @@ export function RepoOverrideCard({
       onSaved();
     } catch (err) {
       log.warn("save repo profile failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      // A 422 is coord naming the refused dial (`dial_value_invalid`): show it.
+      setError(
+        httpStatusOf(err) === 422
+          ? operationsErrorMessage(err)
+          : httpFailureText(err, { withBody: false })
+      );
     } finally {
       savingRef.current = false;
       editedDuringSaveRef.current = new Set();
@@ -382,7 +431,10 @@ export function RepoOverrideCard({
     autoFixRedMainOverride,
     ffLandHeadSyncOverride,
     ffLandHeadSyncWritable,
+    expedite,
+    expediteWritable,
     seedFromRaw,
+    seedExpedite,
     dirtyAfterSave,
     clearDirty,
     onSaved,
@@ -570,6 +622,24 @@ export function RepoOverrideCard({
             </p>
           </div>
         </div>
+        <ExpediteDialsSection
+          tier="repo"
+          fields={expedite}
+          readState={expediteReadStateFor(
+            expediteWritable,
+            expediteSeeded,
+            readSettled
+          )}
+          onChange={<K extends ExpediteKey>(
+            key: K,
+            value: ExpediteFields[K]
+          ) => {
+            setExpedite((prev) => ({ ...prev, [key]: value }));
+            markDirty(key);
+          }}
+          testIdPrefix="repo"
+          testIdSuffix={`-${repoRow.repo}`}
+        />
         <div className="space-y-1">
           <Label>Escalate paths extra (one per line)</Label>
           <Textarea
@@ -603,4 +673,19 @@ export function RepoOverrideCard({
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * The per-repo card's expedite read state: unsupported without the build
+ * capability; loaded once seeded; loading until the profile read (or a save)
+ * has answered; unknown when it answered without readable dials.
+ */
+function expediteReadStateFor(
+  writable: boolean,
+  seeded: boolean,
+  readSettled: boolean
+): ExpediteReadState {
+  if (!writable) return "unsupported";
+  if (seeded) return "loaded";
+  return readSettled ? "unknown" : "loading";
 }

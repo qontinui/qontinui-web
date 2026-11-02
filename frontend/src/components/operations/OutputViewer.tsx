@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API, POLL_INTERVAL_MS } from "./utils";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { fetchRunnerTaskOutput } from "@/lib/api/operations/coordFleet";
+import { POLL_INTERVAL_MS } from "./utils";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
 
@@ -28,22 +29,24 @@ export function OutputViewer({ runnerId, taskRunId }: OutputViewerProps) {
   const fetchOutput = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const url = `${OPERATIONS_API}/fleet/runners/${encodeURIComponent(runnerId)}/output?task_run_id=${encodeURIComponent(taskRunId)}&tail_chars=8000`;
-        const res = await httpClient.fetch(url, COORD_DASHBOARD_POLL_OPTIONS);
-
-        if (!res.ok) {
-          const text = await res.text().catch(() => "Unknown error");
-          if (!isCurrent()) return;
-          setError(`Failed to fetch output: ${res.status} - ${text}`);
-          return;
-        }
-
-        const data = await res.json();
+        const data = await fetchRunnerTaskOutput(
+          runnerId,
+          taskRunId,
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
         if (!isCurrent()) return;
         setOutput(data.output ?? data.text ?? JSON.stringify(data, null, 2));
         setError(null);
       } catch (err) {
         if (!isCurrent()) return;
+        // A non-2xx keeps its own wording: the status and the runner's body.
+        const status = httpStatusOf(err);
+        if (status !== null) {
+          setError(
+            `Failed to fetch output: ${status} - ${httpBodyOf(err) ?? ""}`
+          );
+          return;
+        }
         setError(
           err instanceof Error ? err.message : "Failed to fetch task output"
         );

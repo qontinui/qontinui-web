@@ -30,6 +30,7 @@
 
 import { Fragment } from "react";
 import { Badge } from "@/components/ui/badge";
+import { NAVIGATION_ONLY_PROPS } from "./navigationOnly";
 
 /**
  * Tone. `attention` is the only one that borrows the R3 red, and it means the
@@ -58,6 +59,14 @@ export interface Stat {
   tone?: StatTone;
   title?: string;
   onClick?: () => void;
+  /**
+   * The press only filters, jumps or opens a view — it changes no state. Marks
+   * the button `NAVIGATION_ONLY_PROPS`, so it stays live in presentation mode
+   * (plan `2026-10-23-console-presentation-spaces` D3.2). A CLAIM about the
+   * handler: leave it unset for anything that writes. Ignored without
+   * `onClick`.
+   */
+  navigationOnly?: boolean;
   "data-testid"?: string;
 }
 
@@ -97,6 +106,7 @@ export function StatCluster({
         );
         return s.onClick ? (
           <button
+            {...(s.navigationOnly ? NAVIGATION_ONLY_PROPS : {})}
             key={s.key}
             type="button"
             onClick={s.onClick}

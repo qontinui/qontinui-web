@@ -24,9 +24,12 @@ import {
   addCognitoGroupUser,
   deleteCognitoGroup,
   fetchCognitoGroupBlastRadius,
+  type CognitoGroupRow,
+  type GroupTenantRoleRow,
 } from "@/lib/api/operations/cognitoGroups";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { RecordDetail } from "@/components/console";
-import type { CognitoGroupRow, GroupTenantRoleRow } from "../_types";
 import {
   blastRadiusReadCause,
   HOME_GROUP_SUFFIX,
@@ -40,7 +43,6 @@ import {
   historicalSlugTooltip,
   tierLabel,
 } from "../_lib/tenantLabels";
-import { backendErrorMessage } from "@/lib/errors/backend-error-message";
 import { CognitoGroupMembers } from "./CognitoGroupMembers";
 import { log } from "../_lib/log";
 
@@ -171,25 +173,31 @@ export function CognitoGroupItem({
     setBlastRadius({ state: "loading" });
     void (async () => {
       try {
-        const res = await fetchCognitoGroupBlastRadius(group.group_name);
-        // A 502 here is the backend's own `mapping_check_unavailable` /
-        // `mapping_check_unreadable` — coord could not say, so neither can
-        // we. Render the CAUSE (`error` + coord's status), not the detail's
-        // `message`: that prose is the DELETE's refusal ("Refused … Nothing
-        // was deleted …"), written for the moment after a click, and in a
-        // preview nothing was attempted.
-        if (!res.ok) throw new Error(await blastRadiusReadCause(res));
-        const verdict = parseBlastRadiusVerdict(await res.json());
+        const verdict = parseBlastRadiusVerdict(
+          await fetchCognitoGroupBlastRadius(group.group_name)
+        );
         if (verdict === null) {
           throw new Error("the blast-radius body is not a verdict");
         }
         if (!cancelled) setBlastRadius({ state: "ok", verdict });
       } catch (err) {
         log.warn("read cognito group blast radius failed", err);
+        // A 502 here is the backend's own `mapping_check_unavailable` /
+        // `mapping_check_unreadable` — coord could not say, so neither can
+        // we. Render the CAUSE (`error` + coord's status), not the detail's
+        // `message`: that prose is the DELETE's refusal ("Refused … Nothing
+        // was deleted …"), written for the moment after a click, and in a
+        // preview nothing was attempted.
+        const status = httpStatusOf(err);
         if (!cancelled) {
           setBlastRadius({
             state: "error",
-            message: err instanceof Error ? err.message : String(err),
+            message:
+              status !== null
+                ? blastRadiusReadCause(httpBodyOf(err) ?? "", status)
+                : err instanceof Error
+                  ? err.message
+                  : String(err),
           });
         }
       }
@@ -219,19 +227,21 @@ export function CognitoGroupItem({
     }
     setAdding(true);
     try {
-      const res = await addCognitoGroupUser(group.group_name, email);
-      if (res.status === 404) {
-        toast.error("No Cognito user with that email; they must sign up first.");
-        return;
-      }
-      if (res.status === 409) {
-        toast.error(
-          "Ambiguous email — more than one Cognito user matches. Resolve in Cognito first."
-        );
-        return;
-      }
-      if (!res.ok) {
-        throw new Error(await backendErrorMessage(res));
+      try {
+        await addCognitoGroupUser(group.group_name, email);
+      } catch (err) {
+        const status = httpStatusOf(err);
+        if (status === 404) {
+          toast.error("No Cognito user with that email; they must sign up first.");
+          return;
+        }
+        if (status === 409) {
+          toast.error(
+            "Ambiguous email — more than one Cognito user matches. Resolve in Cognito first."
+          );
+          return;
+        }
+        throw err;
       }
       toast.success(`Added ${email} to ${group.group_name}`);
       setAddEmail("");
@@ -240,9 +250,7 @@ export function CognitoGroupItem({
       onMembersChanged();
     } catch (err) {
       log.warn("add cognito group user failed", err);
-      toast.error(
-        `Add failed: ${err instanceof Error ? err.message : String(err)}`
-      );
+      toast.error(`Add failed: ${operationsErrorMessage(err)}`);
     } finally {
       setAdding(false);
     }
@@ -255,21 +263,17 @@ export function CognitoGroupItem({
       // deliberately no `allow_mapped` control: when coord maps the group the
       // backend 409s and the fix is to remove the mapping first — that
       // ordering is the guard's whole purpose, and a checkbox would erase it.
-      const res = await deleteCognitoGroup(group.group_name, {
+      await deleteCognitoGroup(group.group_name, {
         allowHomeGroup,
       });
-      if (!res.ok) {
-        throw new Error(await backendErrorMessage(res));
-      }
       toast.success(`Deleted group ${group.group_name}`);
       setConfirmOpen(false);
       onDeleted();
     } catch (err) {
       log.warn("delete cognito group failed", err);
-      toast.error(
-        `Delete failed: ${err instanceof Error ? err.message : String(err)}`,
-        { duration: 12_000 }
-      );
+      toast.error(`Delete failed: ${operationsErrorMessage(err)}`, {
+        duration: 12_000,
+      });
       setDeleting(false);
     }
   }, [group.group_name, allowHomeGroup, onDeleted]);

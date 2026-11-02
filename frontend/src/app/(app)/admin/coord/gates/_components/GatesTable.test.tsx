@@ -24,7 +24,7 @@ vi.mock("./ShadowReap", () => ({ ShadowReapEvidence: () => null }));
 
 import { GatesTable } from "./GatesTable";
 import type { GateOverviewRow } from "@/services/admin-dev-service";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 
 function gate(overrides: Partial<GateOverviewRow> = {}): GateOverviewRow {
   return {

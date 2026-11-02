@@ -420,7 +420,11 @@ CiNodeReachabilityT = Literal["unlinked", "offline", "online", "unknown"]
 
 
 class CiNodeConfig(BaseSchema):
-    """The four ``CiNodeSettings`` fields, with the runner's own defaults.
+    """The ``CiNodeSettings`` fields, with the runner's own defaults.
+
+    ``model_access`` is the exception: its default is ``None`` ("not set
+    here"), not the runner's ``True``, because an absent value must leave the
+    runner's stored consent alone rather than overwrite it.
 
     The defaults are copied from the Rust ``Default for CiNodeSettings`` impl
     on purpose: a machine that has never been configured here must round-trip
@@ -460,6 +464,19 @@ class CiNodeConfig(BaseSchema):
     # remote surface should make one keystroke easy; an owner who truly wants
     # it can still hand-edit the runner's settings.json.
     min_free_disk_gb: int = Field(default=20, ge=1, le=100_000)
+    # "Let CI steps use this machine's Claude accounts" — the DEVICE-scope
+    # off-switch for CI model calls (plan
+    # ``2026-10-13-ci-node-runs-model-dependent-eval-steps`` D6). The runner
+    # defaults it ON for a device never configured.
+    #
+    # ``None`` (the default) means THIS surface has never spoken about it, and
+    # it is forwarded by OMITTING the key (see ``coord_payload``): coord's
+    # ``CiNodeDirective.model_access`` is ``Option<bool>`` and the runner keeps
+    # its stored value for an absent key. So a row saved before this switch
+    # existed — or any save that leaves it untouched — can neither re-enable a
+    # device whose owner switched it off on the machine nor disable a fresh
+    # one. Only an explicit ``True`` / ``False`` travels.
+    model_access: bool | None = None
 
     @field_validator("repo_allowlist")
     @classmethod
@@ -499,21 +516,23 @@ class CiNodeConfig(BaseSchema):
         """The ``ci_node`` object forwarded to coord's CI-node dispatch.
 
         Identical to ``model_dump(mode="json")`` except that an unset
-        ``max_concurrent_builds`` is OMITTED instead of sent as ``null``. That
-        is a deploy-order guard: a coord predating the Option-typed relay
+        ``max_concurrent_builds`` or ``model_access`` is OMITTED instead of
+        sent as ``null``. For ``model_access`` omission is the semantics, not
+        only a guard: an absent key leaves the runner's stored consent alone.
+        For ``max_concurrent_builds`` it is a deploy-order guard: a coord predating the Option-typed relay
         reads the field as ``u32`` with a serde default, so an absent key
         falls back to that default while a ``null`` fails the whole
         deserialize and every CI-node save is refused. A coord that does
         accept ``Option<u32>`` reads an absent key as ``None`` — "use the
         host's suggested capacity" — so omitting is correct on both.
 
-        Scoped to that one field on purpose: no other field here is nullable,
-        and a blanket ``exclude_none`` would silently start dropping any
-        nullable field a later edit adds.
+        Scoped to those two fields on purpose: a blanket ``exclude_none``
+        would silently start dropping any nullable field a later edit adds.
         """
         body = self.model_dump(mode="json")
-        if body.get("max_concurrent_builds") is None:
-            body.pop("max_concurrent_builds", None)
+        for key in ("max_concurrent_builds", "model_access"):
+            if body.get(key) is None:
+                body.pop(key, None)
         return body
 
 

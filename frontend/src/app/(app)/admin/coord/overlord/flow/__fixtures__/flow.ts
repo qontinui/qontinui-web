@@ -1,0 +1,175 @@
+/**
+ * Contract-§2 fixtures for `GET /coord/overlord/flow`, shared by the page and
+ * derivation tests (plan
+ * `2026-10-23-the-overlord-keeps-no-record-of-session-flow-so-its-development-runs-on-anecdote`).
+ */
+
+export const SESSION_ID = "6f1c2d3e-4b5a-4978-8a9b-0c1d2e3f4a5b";
+
+export const DEVICE_ID = "0d1e2f3a-4b5c-4d6e-8f70-819203a4b5c6";
+export const DEVICE_ID_2 = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+
+/** Two runners with 2 full passes each: a tenant total of 4, and still none covered. */
+export const RUNNERS_TWO_SHORT = [
+  {
+    device_id: DEVICE_ID,
+    runner_port: 9876,
+    passes: 3,
+    full_passes: 2,
+    latest_full_pass_at: "2026-10-23T20:00:00Z",
+  },
+  {
+    device_id: DEVICE_ID_2,
+    runner_port: 9876,
+    passes: 2,
+    full_passes: 2,
+    latest_full_pass_at: "2026-10-23T19:00:00Z",
+  },
+];
+
+/** Every runner ran at least 3 full passes. */
+export const RUNNERS_ALL_COVERED = [
+  { ...RUNNERS_TWO_SHORT[0], passes: 4, full_passes: 3 },
+  { ...RUNNERS_TWO_SHORT[1], passes: 5, full_passes: 4 },
+];
+
+export const FULL_FLOW = {
+  ok: true,
+  window: { since: "2026-10-17T00:00:00Z", until: "2026-10-24T00:00:00Z" },
+  truncated: false,
+  passes_considered: 3,
+  full_passes_considered: 2,
+  time_to_close: {
+    count: 4,
+    median_secs: 5400,
+    p90_secs: 20000,
+    closed_by: { triage: 3, absent: 1 },
+    sessions: [
+      {
+        key: SESSION_ID,
+        first_stopped_at: "2026-10-20T10:00:00Z",
+        closed_at: "2026-10-20T11:30:00Z",
+        secs: 5400,
+        closed_by: "triage",
+      },
+    ],
+  },
+  nudge: {
+    nudged: 10,
+    progressed: 4,
+    finished: 2,
+    progress_rate: 0.4,
+    finish_rate: 0.2,
+    unmeasured_progress: 3,
+  },
+  unchanged: [
+    {
+      key: SESSION_ID,
+      claude_session_id: SESSION_ID,
+      terminal_id: "term-7",
+      session_name: "1234 fix the flaky gate",
+      verdict: "STOPPED",
+      reason_codes: ["stopped.no_progress"],
+      consecutive_full_passes: 3,
+      first_seen_at: "2026-10-23T08:00:00Z",
+      last_seen_at: "2026-10-23T20:00:00Z",
+    },
+    {
+      key: "terminal:term-9",
+      claude_session_id: null,
+      terminal_id: "term-9",
+      session_name: null,
+      verdict: "LIMITED",
+      reason_codes: [],
+      consecutive_full_passes: 4,
+      first_seen_at: "2026-10-22T08:00:00Z",
+      last_seen_at: "2026-10-23T20:00:00Z",
+    },
+  ],
+  unknown_share: [
+    {
+      pass_id: "p-new",
+      started_at: "2026-10-23T20:00:00Z",
+      rows: 40,
+      unknown_rows: 2,
+      share: 0.05,
+    },
+    {
+      pass_id: "p-old",
+      started_at: "2026-10-23T08:00:00Z",
+      rows: 38,
+      unknown_rows: 19,
+      share: 0.5,
+    },
+  ],
+  verdict_series: [
+    {
+      pass_id: "p-new",
+      started_at: "2026-10-23T20:00:00Z",
+      scope: "full",
+      mode: "report",
+      histogram: { STOPPED: 3, BUSY: 33, UNKNOWN: 2, LIMITED: 2 },
+    },
+    {
+      pass_id: "p-old",
+      started_at: "2026-10-23T08:00:00Z",
+      scope: "full",
+      mode: "act",
+      histogram: { STOPPED: 5, BUSY: 14, UNKNOWN: 19 },
+    },
+    {
+      pass_id: "p-filtered",
+      started_at: "2026-10-23T12:00:00Z",
+      scope: "filtered",
+      mode: "report",
+      histogram: { FINISHED: 1 },
+    },
+  ],
+  full_passes_by_runner: [RUNNERS_TWO_SHORT[0]],
+  params: { unchanged_min_passes: 3, nudge_window_passes: 3 },
+};
+
+/** A window coord answered with nothing measurable: nulls, never zeros. */
+export const NULL_FLOW = {
+  ok: true,
+  window: { since: "2026-10-23T00:00:00Z", until: "2026-10-24T00:00:00Z" },
+  truncated: false,
+  passes_considered: 2,
+  full_passes_considered: 2,
+  time_to_close: {
+    count: 0,
+    median_secs: null,
+    p90_secs: null,
+    closed_by: {},
+    sessions: [],
+  },
+  nudge: {
+    nudged: 0,
+    progressed: 0,
+    finished: 0,
+    progress_rate: null,
+    finish_rate: null,
+    unmeasured_progress: 0,
+  },
+  unchanged: [],
+  unknown_share: [
+    {
+      pass_id: "p-empty",
+      started_at: "2026-10-23T20:00:00Z",
+      rows: 0,
+      unknown_rows: 0,
+      share: null,
+    },
+  ],
+  verdict_series: [
+    {
+      pass_id: "p-empty",
+      started_at: "2026-10-23T20:00:00Z",
+      scope: "full",
+      mode: "report",
+      histogram: {},
+    },
+  ],
+  full_passes_by_runner: [RUNNERS_TWO_SHORT[0]],
+  params: { unchanged_min_passes: 3, nudge_window_passes: 3 },
+};

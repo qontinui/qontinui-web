@@ -117,7 +117,8 @@ function AuthCallbackContent() {
 
         // Coord-centric product: default post-login home is the Coord
         // Console (`/admin/coord` → Fleet tab); honor an explicit `next`.
-        const dest = next && next.startsWith("/") ? next : "/admin/coord";
+        // `next` is already a resolved same-origin path, or null.
+        const dest = next ?? "/admin/coord";
         router.replace(dest);
       } catch (error: unknown) {
         consumePkceState();

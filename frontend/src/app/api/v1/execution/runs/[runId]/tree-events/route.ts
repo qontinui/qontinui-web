@@ -9,7 +9,7 @@ export async function GET(
   const { runId } = await params;
   return proxyToBackend(
     request,
-    `/api/v1/execution/runs/${runId}/tree-events`,
+    `/api/v1/execution/runs/${encodeURIComponent(runId)}/tree-events`,
     {
       tokenSources: ["cookie", "header"],
       onMissingToken: "401",

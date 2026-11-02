@@ -72,9 +72,17 @@ const CLOUD_ALIAS_TARGET = path.resolve(
     : 'src/cloud-absent'
 );
 
+// Captured-frame hygiene: NEXT_PUBLIC_HIDE_DEV_OVERLAYS=1 turns off the
+// `next dev` indicator (and query-provider.tsx drops the React Query Devtools
+// toggle on the same flag). The CI style gate sets it so its snapshot-and-frame
+// pairs show the app, not dev-only chrome that the analyzer reports as layout
+// occlusions. Unset, dev keeps both overlays; a production build has neither.
+const hideDevOverlays = process.env.NEXT_PUBLIC_HIDE_DEV_OVERLAYS === '1';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  ...(hideDevOverlays ? { devIndicators: false } : {}),
   // `ioredis` powers the UI Bridge cross-instance relay bus
   // (`@qontinui/ui-bridge` RedisRelayBus, used by lib/ui-bridge/relay.ts).
   // It's loaded via a variable-specifier dynamic import so the SDK stays
@@ -348,6 +356,20 @@ const nextConfig = {
           { key: 'Access-Control-Allow-Origin', value: '*' },
           { key: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS,PATCH,DELETE,POST,PUT' },
           { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization' },
+        ],
+      },
+      {
+        // Image-slot files (plan 2026-10-13-image-generation-and-visual-
+        // judgment, Phase 14): the pages load them through <picture>/<img>,
+        // where a document CSP does not apply, so this changes nothing there.
+        // It matters when a published SVG is opened DIRECTLY as a same-origin
+        // document: no script runs, and the document is sandboxed. The SVGs
+        // are also checked against the SVG allowlist in CI
+        // (src/lib/image-slots/inventory.ci.test.tsx).
+        source: '/image-slots/:path*',
+        headers: [
+          { key: 'Content-Security-Policy', value: "script-src 'none'; sandbox" },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
         ],
       },
       {

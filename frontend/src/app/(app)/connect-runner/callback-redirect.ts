@@ -82,14 +82,44 @@ function batchRefusalReason(reasons: unknown): string | undefined {
 /** The relayed coord refusal fields `pairConfirmErrorMessage` reads. */
 interface CoordRefusal {
   coord_status?: unknown;
+  /**
+   * The backend's own sentence. For a coord 5xx it is a fixed sentence that,
+   * on this door, tells the user to start pairing again from their device.
+   */
+  message?: unknown;
   coord_code?: unknown;
+  /** Coord's hint; on a 5xx, relayed only when it is a static coord value. */
   coord_hint?: unknown;
   coord_skip_reasons?: unknown;
 }
 
-/** Message for a relayed coord pairing refusal. */
+const RESTART_PAIRING = "Start pairing again from your device.";
+
+/**
+ * Message for a relayed coord pairing answer. A coord 5xx is a coord-side
+ * failure, not a refusal: the backend relays only its status, a fixed
+ * sentence (`_coord_refusal_detail` in `devices.py`) and, when coord sent one
+ * of its static values, `coord_hint`. Coord consumes the one-shot pairing
+ * state before most of its 5xx paths, so re-submitting from this page answers
+ * `unknown_state`: the advice is to start pairing again from the device,
+ * never to retry. The backend's sentence is shown when present, else that
+ * advice.
+ */
 function coordRefusalMessage(refusal: CoordRefusal): string {
   const coordStatus = refusal.coord_status;
+  if (typeof coordStatus === "number" && coordStatus >= 500) {
+    let failure =
+      typeof refusal.message === "string" && refusal.message
+        ? refusal.message
+        : `Coord failed to complete pairing (HTTP ${coordStatus}). ${RESTART_PAIRING}`;
+    if (
+      refusal.coord_hint === "restart pairing" &&
+      !failure.includes(RESTART_PAIRING)
+    ) {
+      failure += ` ${RESTART_PAIRING}`;
+    }
+    return failure;
+  }
   let code = typeof refusal.coord_code === "string" ? refusal.coord_code : "";
   if (code === "no_tenant_authorized") {
     // The batch code says nothing about WHY; the per-tenant reasons do.
@@ -110,12 +140,15 @@ function coordRefusalMessage(refusal: CoordRefusal): string {
   // used up: retrying from this page cannot succeed. An unknown state means
   // the same thing, and coord sends no hint with it.
   if (refusal.coord_hint === "restart pairing" || code === "unknown_state") {
-    message += " Start pairing again from your device.";
+    message += ` ${RESTART_PAIRING}`;
   }
   return message;
 }
 
-function isCoordRefusal(value: unknown): value is CoordRefusal {
+/** A body carrying `coord_status` is a relayed coord answer. */
+function isCoordRefusal(
+  value: unknown
+): value is CoordRefusal & { coord_status: unknown } {
   return (
     !!value &&
     typeof value === "object" &&

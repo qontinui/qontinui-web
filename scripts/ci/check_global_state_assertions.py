@@ -270,7 +270,7 @@ def _rel(path: Path) -> str:
     try:
         return path.resolve().relative_to(Path(REPO_ROOT).resolve()).as_posix()
     except ValueError:
-        return str(path)
+        return path.as_posix()
 
 
 # ---------------------------------------------------------------------------

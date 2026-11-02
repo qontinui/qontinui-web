@@ -7,9 +7,11 @@
  * unit this console lists, so the page reads it from a second endpoint —
  * `GET /api/v1/plan-library/difficulty` — and joins by slug here.
  *
- * The three levels are a MODEL-ROUTING vocabulary: `high` → Fable 5.1,
- * `medium` → Opus 5, `low` → a fast tier. The backend serves that map
- * (`model_tiers`), so the copy here never names a model on its own.
+ * The three levels are a MODEL-ROUTING vocabulary: `high` → the strongest
+ * tier, `medium` → a mid tier, `low` → a fast tier. Which model family each
+ * routes to is operator-editable per organization
+ * (`/admin/coord/plan-library/settings`), and the backend serves the resulting
+ * map (`model_tiers`), so the copy here never names a model on its own.
  *
  * ## Three states a cell can be in, and they are not interchangeable
  *

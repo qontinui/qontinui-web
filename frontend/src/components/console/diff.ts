@@ -5,9 +5,7 @@
  * Prompt documents are prose measured in kilobytes and both sides are already in
  * memory, so the diff is computed client-side — no round-trip, and no new
  * dependency for ~60 lines of well-understood algorithm (the repo ships no diff
- * library; the only existing "diff" surface, the collaboration
- * ConflictDiffItem, compares whole field VALUES and has no line-level engine to
- * reuse).
+ * library to reuse).
  *
  * **Promoted here from `admin/coord/prompt-documents/_lib/diff.ts`** by plan
  * `2026-08-27-tenant-level-agent-authorable-stores.md` Phase 4, when the

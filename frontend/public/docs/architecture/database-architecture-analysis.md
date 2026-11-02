@@ -407,9 +407,9 @@ id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uui
 
 | Table | Current Strategy | Required Strategy | Records/Year (10K users) | Documentation |
 |-------|-----------------|-------------------|-------------------------|---------------|
-| `automation_logs` | None | **Range (Monthly)** | **500M** 🔥 | [PARTITIONING.md](../../../backend/docs/database/PARTITIONING.md) |
-| `automation_input_events` | None | **Range (Weekly)** | **200M** 🔥 | [PARTITIONING.md](../../../backend/docs/database/PARTITIONING.md) |
-| `analytics_events` | None | **Range (Monthly)** | **120M** 🔥 | [PARTITIONING.md](../../../backend/docs/database/PARTITIONING.md) |
+| `automation_logs` | None | **Range (Monthly)** | **500M** 🔥 | [PARTITIONING.md](../../../../backend/docs/database/PARTITIONING.md) |
+| `automation_input_events` | None | **Range (Weekly)** | **200M** 🔥 | [PARTITIONING.md](../../../../backend/docs/database/PARTITIONING.md) |
+| `analytics_events` | None | **Range (Monthly)** | **120M** 🔥 | [PARTITIONING.md](../../../../backend/docs/database/PARTITIONING.md) |
 
 **Without partitioning by Q2 2026:**
 - Query performance degrades exponentially
@@ -420,9 +420,9 @@ id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uui
 **Implementation Status: PLANNING PHASE**
 
 **Comprehensive Documentation Created (2025-11-21):**
-- ✅ [PARTITIONING.md](../../../backend/docs/database/PARTITIONING.md) - Overall strategy and architecture
-- ✅ [PARTITION_MAINTENANCE.md](../../../backend/docs/database/PARTITION_MAINTENANCE.md) - Operations runbook
-- ✅ [PARTITION_MONITORING.md](../../../backend/docs/database/PARTITION_MONITORING.md) - Monitoring and alerting
+- ✅ [PARTITIONING.md](../../../../backend/docs/database/PARTITIONING.md) - Overall strategy and architecture
+- ✅ [PARTITION_MAINTENANCE.md](../../../../backend/docs/database/PARTITION_MAINTENANCE.md) - Operations runbook
+- ✅ [PARTITION_MONITORING.md](../../../../backend/docs/database/PARTITION_MONITORING.md) - Monitoring and alerting
 
 **Example Implementation:**
 ```sql
@@ -564,9 +564,9 @@ confidence: Mapped[float] = mapped_column(Float, nullable=False)  # Fixed!
 **Status:** PLANNING PHASE - Documentation Complete
 
 **Documentation:**
-- [PARTITIONING.md](../../../backend/docs/database/PARTITIONING.md) - Comprehensive strategy document
-- [PARTITION_MAINTENANCE.md](../../../backend/docs/database/PARTITION_MAINTENANCE.md) - Operations runbook
-- [PARTITION_MONITORING.md](../../../backend/docs/database/PARTITION_MONITORING.md) - Monitoring guide
+- [PARTITIONING.md](../../../../backend/docs/database/PARTITIONING.md) - Comprehensive strategy document
+- [PARTITION_MAINTENANCE.md](../../../../backend/docs/database/PARTITION_MAINTENANCE.md) - Operations runbook
+- [PARTITION_MONITORING.md](../../../../backend/docs/database/PARTITION_MONITORING.md) - Monitoring guide
 
 **Tables to Partition:**
 - `automation_logs` (monthly partitions) - 500M rows/year projected
@@ -713,7 +713,7 @@ Comprehensive documentation for database partitioning strategy has been created 
 
 Three comprehensive guides have been created:
 
-#### [PARTITIONING.md](../../../backend/docs/database/PARTITIONING.md)
+#### [PARTITIONING.md](../../../../backend/docs/database/PARTITIONING.md)
 **Purpose:** Overall strategy and architecture
 **Contents:**
 - Growth projections and why partitioning is critical
@@ -733,7 +733,7 @@ Three comprehensive guides have been created:
 - S3 archival integration for cold storage
 - Configuration-driven retention policies per subscription tier
 
-#### [PARTITION_MAINTENANCE.md](../../../backend/docs/database/PARTITION_MAINTENANCE.md)
+#### [PARTITION_MAINTENANCE.md](../../../../backend/docs/database/PARTITION_MAINTENANCE.md)
 **Purpose:** Operations runbook for manual partition management
 **Contents:**
 - Manual partition operations (create, drop, inspect)
@@ -752,7 +752,7 @@ Three comprehensive guides have been created:
 - Safe archival procedures before dropping partitions
 - Restore procedures from S3 archives
 
-#### [PARTITION_MONITORING.md](../../../backend/docs/database/PARTITION_MONITORING.md)
+#### [PARTITION_MONITORING.md](../../../../backend/docs/database/PARTITION_MONITORING.md)
 **Purpose:** Monitoring, alerting, and observability
 **Contents:**
 - Key metrics and alert configurations

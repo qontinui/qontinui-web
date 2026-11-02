@@ -22,6 +22,7 @@ import {
   deriveForkHealth,
   describeContentFork,
   describeKindFork,
+  kindForkKey,
   orderVariants,
   orphanVariantIds,
   shortDigest,
@@ -113,6 +114,16 @@ describe("the kind-fork half — the one a (kind, slug) grouping cannot see", ()
     expect(status.label).toMatch(/scanner/i);
     // Still a fork until the scan runs — the badge must not say "resolved".
     expect(status.reason).toMatch(/until it runs/i);
+  });
+
+  it("keys a key forked in both families as two distinct rows", () => {
+    // One (slug, source_repo) forked in the spec family AND the plan family is
+    // served as two groups; a key without `family` collides in the list.
+    const base = RESPONSE.kind_forks![0];
+    const spec = kindForkKey({ ...base, family: "spec" });
+    const plan = kindForkKey({ ...base, family: "plan" });
+    expect(spec).not.toBe(plan);
+    expect(kindForkKey({ ...base, family: "spec" })).toBe(spec);
   });
 
   it("forwards `resolvable` rather than recomputing it from the variants", () => {

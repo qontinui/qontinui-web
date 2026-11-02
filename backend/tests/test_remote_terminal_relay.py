@@ -4265,6 +4265,11 @@ async def test_a_target_may_not_spell_a_relay_code() -> None:
     # The target's own closed set passes through untouched.
     for code in rtr.TARGET_ERROR_CODES:
         assert rtr.namespace_target_code(code) == code, code
+    # Spelled out, so dropping one from the set reddens this: the runner's
+    # drain and dispatch-role refusals of a remote create, which its source UI
+    # explains by name (``remoteCreate.ts``).
+    for code in ["device_drained", "drain_unreadable", "role_closes_agent_lane"]:
+        assert rtr.namespace_target_code(code) == code, code
 
     # Unusable input is a code, not a crash and not a blank.
     for junk in [None, 7, "", "   ", "!!!", {"code": "x"}]:

@@ -52,7 +52,7 @@ import {
   proposalIsActive,
   unstableHasFailure,
 } from "@/components/operations/prPipeline";
-import { PrDraftStateControl } from "@/components/operations/PrDraftStateControl";
+import { PrHoldControl } from "@/components/operations/PrHoldControl";
 import {
   RecordDetail,
   StatusBadge,
@@ -454,11 +454,10 @@ export function PrsTable({
   /** When true (the "Recently merged" tab) show the Deploy + Merged columns. */
   merged?: boolean;
   /**
-   * FORCED refetch after a row action (the draft-state toggle) succeeds.
-   * Must be a forced (`?refresh=1`) reload, not the plain auto-refresh:
-   * coord's cached `pr_state` only reconciles when the `ready_for_review` /
-   * `converted_to_draft` webhook lands, so an unforced poll can keep serving
-   * the pre-flip state. Omitted on the merged tab, where no action renders.
+   * FORCED refetch after a row action (the hold / release control) succeeds.
+   * Must be a forced (`?refresh=1`) reload, not the plain auto-refresh: a
+   * cached listing can keep serving the pre-action `hold`. Omitted on the
+   * merged tab, where no action renders.
    */
   onActed?: () => void;
 }) {
@@ -662,10 +661,11 @@ export function PrsTable({
                   </TableCell>
                   {!merged && (
                     <TableCell className="whitespace-nowrap text-right">
-                      <PrDraftStateControl
+                      <PrHoldControl
                         repo={p.repo}
                         prNumber={p.pr_number}
                         prState={p.pr_state}
+                        hold={p}
                         hasActiveProposal={proposalIsActive(p.proposal_status)}
                         onActed={onActed}
                       />

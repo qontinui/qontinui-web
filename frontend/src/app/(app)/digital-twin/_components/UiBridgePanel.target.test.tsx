@@ -41,6 +41,7 @@ vi.mock("../_hooks/useUiBridge", () => {
       state.deviceIds.push(deviceId);
       return idle;
     },
+    useRunnerApps: () => idle,
     useRunnerSpecGraph: () => idle,
     useRunnerSnapshot: () => idle,
   };

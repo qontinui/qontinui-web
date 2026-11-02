@@ -83,6 +83,15 @@ def _stem(name: str) -> str:
     return f"2026-09-03-{name}-{uuid4().hex[:10]}"
 
 
+def _walk_order(stems: list[str]) -> list[str]:
+    """The route's page order: :func:`crud.stem_position` (date prefix, then a
+    uuid5 of the stem) — immutable, so it is NOT alphabetical within a day."""
+    return sorted(
+        stems,
+        key=lambda s: (crud.stem_position(s).at, crud.stem_position(s).id),
+    )
+
+
 # ===========================================================================
 # Layer 0 — the vendored spec (D6 + D7)
 # ===========================================================================
@@ -685,17 +694,19 @@ class TestAxisCIsPerPage:
         So axis C is derived for the page — and every other row is classified
         ``UNKNOWN_AXIS_UNREADABLE`` and kept in the denominator, never dropped.
         """
-        stems = sorted(_stem(f"page{i}") for i in range(5))
+        stems = _walk_order([_stem(f"page{i}") for i in range(5)])
         for stem in stems:
             await _plan_artifact(
                 async_db_session, org_id=None, slug=stem, status="draft"
             )
         fake = _coord([_unit(stem, status="vetted") for stem in stems])
         with _patched(fake):
-            resp = await client.get(RECONCILIATION, params={"limit": 2, "offset": 0})
+            resp = await client.get(RECONCILIATION, params={"limit": 2})
         payload = resp.json()
 
         assert payload["total"] == 5
+        assert payload["truncated"] is True
+        assert payload["next_cursor"]
         assert len(payload["items"]) == 2
         assert payload["axis_c_scope"] == "page"
         assert payload["axis_c_computed_count"] == 2
@@ -720,17 +731,25 @@ class TestAxisCIsPerPage:
     async def test_the_off_page_reason_names_axis_c(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
-        stems = sorted(_stem(f"reason{i}") for i in range(3))
+        stems = _walk_order([_stem(f"reason{i}") for i in range(3)])
         for stem in stems:
             await _plan_artifact(
                 async_db_session, org_id=None, slug=stem, status="draft"
             )
         with _patched(_coord([_unit(s, status="vetted") for s in stems])):
-            resp = await client.get(RECONCILIATION, params={"limit": 1, "offset": 2})
+            cursor = None
+            for _ in range(3):
+                params: dict[str, Any] = {"limit": 1}
+                if cursor is not None:
+                    params["cursor"] = cursor
+                resp = await client.get(RECONCILIATION, params=params)
+                cursor = resp.json()["next_cursor"]
         payload = resp.json()
         assert [row["slug"] for row in payload["items"]] == [stems[2]]
-        assert payload["offset"] == 2
-        assert payload["ordering"] == "slug_asc"
+        assert payload["total"] == 1, "counted from the third page's own start"
+        assert payload["next_cursor"] is None
+        assert payload["facets"]["denominator"] == 3
+        assert payload["ordering"] == "stem_date_asc"
         # The returned row IS on the page, so its axis C was derived.
         assert payload["items"][0]["axis_c"]["computed"] is True
         assert _AXIS_C_OFF_PAGE.startswith("axis C")
@@ -902,9 +921,20 @@ class TestStrictQuery:
         with _patched(_coord([])):
             resp = await client.get(
                 RECONCILIATION,
-                params={"offset": 0, "limit": 10, "include_coord": "true"},
+                params={"limit": 10, "include_coord": "true"},
             )
         assert resp.status_code == 200
+
+    async def test_offset_is_deleted_not_deprecated(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """Plan 2026-09-05-every-bounded-read-… Phase 4 (D2): the walk is keyset,
+        and an ``offset`` is now an undeclared key — a typed 422, never a
+        silently ignored one."""
+        with _patched(_coord([])):
+            resp = await client.get(RECONCILIATION, params={"offset": 0})
+        assert resp.status_code == 422
+        assert "unknown_query_parameter" in resp.text
 
 
 @_ASYNC

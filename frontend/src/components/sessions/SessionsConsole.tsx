@@ -57,6 +57,18 @@
  * "unknown" and "we did not look" are three different sentences and a bare
  * dash is only honest if the reader can find out which one it means.
  *
+ * ## Finding a session by name, id or commit trailer — and its account
+ *
+ * Plan `2026-10-19-session-lookup-by-name-shows-claude-account-in-web`
+ * Phase 3. The search box takes a session name, a session id, or a pasted
+ * `Session-Id:` / `Session-Name:` trailer line; `sessionQuery.ts` strips the
+ * trailer prefix before `?q=` goes on the wire, because neither half of the
+ * search would match the literal prefix. A name matching several sessions
+ * renders every row — nothing here collapses matches. The **Account** column
+ * and facet read the list row's agent half (`row.agent_session`) through
+ * `sessionAccount.ts`, whose module doc has the three UNKNOWNs and why they
+ * are not one.
+ *
  * ## Tenant scoping is coord's (trap 7 / trap 10)
  *
  * Both backend reads forward the caller's bearer and coord scopes by
@@ -86,7 +98,7 @@ import {
   type Stat,
 } from "@/components/console";
 import { Button } from "@/components/ui/button";
-import { listConsolidatedSessions } from "./api";
+import { listConsolidatedSessions } from "@/lib/api/operations/sessions";
 import {
   SESSION_STATUS_PALETTE,
   SESSION_WORK_PALETTE,
@@ -110,6 +122,13 @@ import {
   type CoordinationReaders,
 } from "./SessionRowExpansion";
 import type { SessionRevalidationOptions } from "./liveRevalidation";
+import {
+  ACCOUNT_FACET_UNKNOWN,
+  accountFacetValue,
+  deriveAccountCell,
+  type AccountCell,
+} from "./sessionAccount";
+import { normalizeSessionQuery } from "./sessionQuery";
 import { useTranscriptStores } from "./TranscriptStoresPanel";
 import {
   liveTranscriptIndicator,
@@ -272,6 +291,9 @@ export function SessionsConsole({
   // does not remember setting is a filter that silently hides rows on the next
   // visit. Match the surface's idiom; do not add persistence here alone.
   const [work, setWork] = useState<string[]>([]);
+  // The Claude-account facet — a CLIENT facet over the agent half's account
+  // stamp, like `machine`. Not persisted, for the reason `work` gives above.
+  const [accounts, setAccounts] = useState<string[]>([]);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   // `?device=` is a deep link, so it is a SERVER filter (it narrows both halves
@@ -281,10 +303,17 @@ export function SessionsConsole({
   const deviceRef = useRef(initialDevice);
   deviceRef.current = initialDevice;
 
+  // What the box holds, as the wire will see it: a pasted `Session-Id:` /
+  // `Session-Name:` trailer line is reduced to its value (`sessionQuery.ts`).
+  const normalizedQuery = useMemo(() => normalizeSessionQuery(query), [query]);
+
   useEffect(() => {
-    const id = window.setTimeout(() => setAppliedQuery(query.trim()), QUERY_DEBOUNCE_MS);
+    const id = window.setTimeout(
+      () => setAppliedQuery(normalizedQuery.query),
+      QUERY_DEBOUNCE_MS
+    );
     return () => window.clearTimeout(id);
-  }, [query]);
+  }, [normalizedQuery.query]);
 
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
@@ -362,6 +391,10 @@ export function SessionsConsole({
 
   const rows = useMemo(() => payload?.sessions ?? [], [payload]);
   const agentHalfFailed = payload?.agent_half?.read === "failed";
+  // Sessions the server-side status/machine filter hid although their agent
+  // half matched — the halves disagree. Counted so a narrowed tab never loses
+  // a session silently (`withheld_by_filter` on the envelope).
+  const withheld = payload?.withheld_by_filter ?? 0;
 
   // The READ axis. Keyed on `loaded`, per `readFailure.ts`.
   const unknown = readIsUnknown(loaded, readFailed);
@@ -376,6 +409,19 @@ export function SessionsConsole({
         : null,
     [hostnameFor]
   );
+
+  // ---- the Account column (one derivation per row, shared with its facet) ---
+  const accountCells = useMemo(() => {
+    const ctx = { machineLabel, agentHalf: payload?.agent_half };
+    const cells = new Map<ConsolidatedSessionRow, AccountCell>();
+    for (const row of rows) cells.set(row, deriveAccountCell(row, ctx));
+    return {
+      // Every row on the page is in the map (`visible` filters `rows`, it
+      // does not copy them); deriving on a miss keeps the accessor total.
+      of: (row: ConsolidatedSessionRow): AccountCell =>
+        cells.get(row) ?? deriveAccountCell(row, ctx),
+    };
+  }, [rows, machineLabel, payload]);
 
   // ---- the client-side facets ------------------------------------------
   const kindOptions = useMemo(
@@ -393,6 +439,43 @@ export function SessionsConsole({
       ).map((o) => ({ ...o, label: machineLabel(o.value) ?? o.value })),
     [rows, machineLabel]
   );
+
+  /**
+   * The account facet. Every UNKNOWN shares ONE chip — whatever its reason, it
+   * answers "which sessions do we not know the account of?" — and a session
+   * with no Claude session id at all (a shell) belongs to no chip, so picking
+   * an account narrows to sessions that ran on it rather than counting shells
+   * as unknown. Counts are measured over the rows on the page.
+   */
+  const accountOptions = useMemo<FilterChipOption<string>[]>(() => {
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const value = accountFacetValue(accountCells.of(row));
+      if (value === null) continue;
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort(([a], [b]) =>
+        // UNKNOWN last: it is the absence of an answer, not an account.
+        a === ACCOUNT_FACET_UNKNOWN
+          ? 1
+          : b === ACCOUNT_FACET_UNKNOWN
+            ? -1
+            : a.localeCompare(b)
+      )
+      .map(([value, count]) =>
+        value === ACCOUNT_FACET_UNKNOWN
+          ? {
+              value,
+              label: "UNKNOWN",
+              count,
+              testId: "sessions-console-account-unknown",
+              title:
+                "sessions whose account is not known — the agent half was unread, coord does not report the account yet, or no device has reported it. Hover a row's Account cell for which.",
+            }
+          : { value, label: value, count, title: `Claude account ${value}` }
+      );
+  }, [rows, accountCells]);
 
   /**
    * The work facet's vocabulary — AUTHORED (two members), not derived from the
@@ -447,10 +530,14 @@ export function SessionsConsole({
       ) {
         return false;
       }
+      if (accounts.length) {
+        const value = accountFacetValue(accountCells.of(r));
+        if (value === null || !accounts.includes(value)) return false;
+      }
       return true;
     });
     return [...filtered].sort((a, b) => compareSessionRows(a, b, { now }));
-  }, [rows, kinds, providers, machines, work, now]);
+  }, [rows, kinds, providers, machines, work, accounts, accountCells, now]);
 
   const health = useMemo(
     () =>
@@ -564,9 +651,30 @@ export function SessionsConsole({
         testIdPrefix="sessions-console-status"
         query={query}
         onQueryChange={setQuery}
-        queryPlaceholder="Filter sessions…"
+        queryPlaceholder="Name, id, or Session-Id: line…"
         queryTestId="sessions-console-query"
       />
+      {normalizedQuery.trailer && (
+        <p
+          className="text-[11px] text-muted-foreground"
+          data-testid="sessions-console-query-trailer"
+        >
+          {normalizedQuery.query ? (
+            <>
+              Searching the {normalizedQuery.trailer} value{" "}
+              <span className="font-mono break-all text-foreground/90">
+                {normalizedQuery.query}
+              </span>{" "}
+              — the trailer prefix is not part of the search.
+            </>
+          ) : (
+            <>
+              A {normalizedQuery.trailer}: line with no value yet — paste the
+              whole trailer line and the value after the colon is searched.
+            </>
+          )}
+        </p>
+      )}
 
       <div className="flex flex-col gap-1">
         <FilterChips
@@ -609,7 +717,23 @@ export function SessionsConsole({
           testIdPrefix="sessions-console-work"
           title="coord.sessions.session_status — the WORK axis, orthogonal to the live/stale/closed tabs above"
         />
+        <FilterChips
+          label="account"
+          options={accountOptions}
+          selected={accounts}
+          onToggle={(v) => setAccounts(toggle(accounts, v))}
+          onClear={() => setAccounts([])}
+          // A server vocabulary (one chip per Claude account home the fleet
+          // reported), so capped like `machine`.
+          maxVisible={8}
+          testIdPrefix="sessions-console-account"
+          title="the Claude account each session ran on — coord's durable account stamp, read off the agent half"
+        />
       </div>
+
+      {withheld > 0 && visible.length > 0 && (
+        <WithheldNote count={withheld} testId="sessions-console-withheld" />
+      )}
 
       <RecordList
         items={visible}
@@ -627,6 +751,7 @@ export function SessionsConsole({
           <EmptyState
             unknown={unknown}
             error={error}
+            withheld={withheld}
             // `work` counts here for the same reason every other facet does:
             // a list emptied by "hide finished" must say a FILTER emptied it,
             // not report an idle fleet. That is the same
@@ -639,7 +764,8 @@ export function SessionsConsole({
               kinds.length +
                 providers.length +
                 machines.length +
-                work.length >
+                work.length +
+                accounts.length >
                 0
             }
           />
@@ -647,6 +773,7 @@ export function SessionsConsole({
         renderRow={(row, ctx) => (
           <SessionConsoleRow
             row={row}
+            account={accountCells.of(row)}
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
             rowKey={ctx.rowKey}
@@ -669,6 +796,7 @@ export function SessionsConsole({
 
 function SessionConsoleRow({
   row,
+  account,
   expanded,
   onToggle,
   rowKey,
@@ -680,6 +808,8 @@ function SessionConsoleRow({
   revalidation,
 }: {
   row: ConsolidatedSessionRow;
+  /** The row's Account cell — derived once in the console, shared with the facet. */
+  account: AccountCell;
   expanded: boolean;
   onToggle: () => void;
   rowKey: string;
@@ -751,6 +881,28 @@ function SessionConsoleRow({
             data-testid="sessions-console-row-machine"
           >
             {machine ?? <Dash title="coord recorded no device for this row" />}
+          </span>
+          {/* The Claude account (plan 2026-10-19 Phase 3). Never blank: a
+              label, an UNKNOWN that names its reason, or — for a session with
+              no Claude session id at all — D2's not-applicable dash. The full
+              sentence is always in the title. */}
+          <span
+            className="hidden md:inline shrink-0 w-44 truncate text-xs"
+            title={account.title}
+            data-testid="sessions-console-row-account"
+            data-account-state={
+              account.kind === "not-applicable" ? "not-applicable" : account.state
+            }
+          >
+            {account.kind === "not-applicable" ? (
+              <Dash title={account.title} />
+            ) : account.state === "known" ? (
+              <span className="font-mono text-muted-foreground">
+                {account.label}
+              </span>
+            ) : (
+              <span className="text-amber-300/90">{account.label}</span>
+            )}
           </span>
           <span
             className="hidden lg:inline shrink-0 w-28 truncate text-xs text-muted-foreground"
@@ -873,10 +1025,13 @@ function SessionConsoleRow({
 function EmptyState({
   unknown,
   error,
+  withheld,
   filtered,
 }: {
   unknown: boolean;
   error: string | null;
+  /** Sessions the server filter hid although their agent half matched. */
+  withheld: number;
   filtered: boolean;
 }) {
   if (unknown) {
@@ -906,7 +1061,31 @@ function EmptyState({
           ? "coord answered — nothing matched. Clear a filter to widen the question."
           : "Start a session from any runner and it will surface here."}
       </p>
+      {withheld > 0 && (
+        <div className="mt-2 flex justify-center">
+          <WithheldNote count={withheld} testId="sessions-console-empty-withheld" />
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * "N matches hidden by this filter" — sessions the status/machine filter
+ * removed although coord's agent half matched it. Without this a session whose
+ * two halves disagree (lifecycle `active`, agent `stale`) would vanish from
+ * every narrowed tab with nothing counted.
+ */
+function WithheldNote({ count, testId }: { count: number; testId: string }) {
+  return (
+    <p
+      className="text-xs text-amber-300/90"
+      data-testid={testId}
+      title="coord's agent-session half matched this filter, but the session's lifecycle half (its coord.sessions row) did not — the two halves disagree on status or machine. Widen the status tab or clear the machine filter to see them."
+    >
+      {count} {count === 1 ? "match" : "matches"} hidden by this filter — the
+      session&apos;s two halves disagree on status or machine
+    </p>
   );
 }
 

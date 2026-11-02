@@ -2,7 +2,7 @@
 
 /**
  * The phone-width top bar: a menu button, the Qontinui mark and the project
- * the page is about.
+ * the page is about — named for the operator, withheld while presenting.
  *
  * It is exactly 44px tall (`h-11`) on purpose. 87 pages set their root to
  * `h-[calc(100vh-44px)]`, so a 44px bar above them makes those pages the
@@ -19,6 +19,9 @@ import Image from "next/image";
 import { Menu } from "lucide-react";
 import { useSidebar } from "@/contexts/sidebar-context";
 import { useTenant } from "@/contexts/tenant-context";
+// The modules, not the barrel: the top bar is on every authenticated page.
+import { RedactedText } from "@/components/presentation/RedactedText";
+import { PROJECT_NAME_DESCRIPTOR } from "@/components/presentation/redaction";
 import { SIDEBAR_DRAWER_ID } from "./sidebar/SidebarDrawer";
 
 export function MobileTopBar() {
@@ -61,7 +64,14 @@ export function MobileTopBar() {
           className="min-w-0 truncate text-sm font-medium text-text-primary"
           data-ui-bridge-id="shell.mobile-top-bar.project-name"
         >
-          {project.name}
+          {/* Beside a lens page in presentation mode the project's name is
+              withheld, as in the sidebar's selector (plan
+              2026-10-23-console-presentation-spaces D3.3). */}
+          <RedactedText
+            text={project.name}
+            repo={null}
+            descriptor={PROJECT_NAME_DESCRIPTOR}
+          />
         </span>
       )}
     </div>

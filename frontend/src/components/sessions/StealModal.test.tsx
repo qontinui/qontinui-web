@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StealModal } from "./StealModal";
 import type { SessionRow } from "./types";
-import * as api from "./api";
+import * as api from "@/lib/api/operations/sessions";
 
 /**
  * StealModal — Phase 6 of

@@ -127,6 +127,16 @@ export interface CoordPlanRow {
   body_provenance?: BodyProvenance;
   has_body?: HasBody;
   body_unknown_reason?: BodyUnknownReason | null;
+  /**
+   * coord `work_units.metadata` — the free-form JSON every list row carries
+   * and the proxy forwards untouched. Its one CANONICAL key is `area`, the
+   * kebab-case steering subject coord's `area` list filter matches exactly
+   * (`work_unit_registry.rs` `ListQuery::area`); everything else in it is
+   * writer-defined. Typed `unknown` per key because coord promises no shape:
+   * read it through a narrowing helper (the digital twin's `workUnitArea`),
+   * never by casting. Absent on a coord that predates the column.
+   */
+  metadata?: Readonly<Record<string, unknown>> | null;
 }
 
 /**

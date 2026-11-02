@@ -33,7 +33,7 @@ import Link from "next/link";
 import { Archive, ScrollText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { listSessionArtifacts } from "@/components/session-repository/api";
-import { getSessionOutput } from "./api";
+import { getSessionOutput } from "@/lib/api/operations/sessions";
 import {
   archiveHref,
   archivedTranscriptIndicator,

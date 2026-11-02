@@ -15,6 +15,11 @@ without audit or permissions.
 
 from __future__ import annotations
 
+from app.overview.costs import (
+    cost_category_store,
+    cost_entry_store,
+    recurring_cost_store,
+)
 from app.overview.estimates import estimate_store
 from app.overview.files import FileRead, file_store
 from app.overview.intent_documents import (
@@ -38,6 +43,17 @@ from app.schemas.overview import (
     OverviewSettingsWrite,
     PhaseProgressRead,
     PhaseProgressUpdate,
+)
+from app.schemas.overview_costs import (
+    CostCategoryCreate,
+    CostCategoryRead,
+    CostCategoryUpdate,
+    CostEntryCreate,
+    CostEntryRead,
+    CostEntryUpdate,
+    RecurringCostCreate,
+    RecurringCostRead,
+    RecurringCostUpdate,
 )
 
 REGISTRY: dict[str, ResourceSpec] = {
@@ -139,6 +155,69 @@ REGISTRY: dict[str, ResourceSpec] = {
             tables=("milestones",),
         ),
         ResourceSpec(
+            name="cost_categories",
+            path="cost-categories",
+            title="Cost categories",
+            description=(
+                "The headings costs are grouped under on the Costs page. Names "
+                "are unique per project, ignoring case (409 name_taken). A "
+                "category still used by a cost or a recurring cost cannot be "
+                "deleted (409 category_in_use)."
+            ),
+            permission="editing_roles",
+            read_model=CostCategoryRead,
+            create_model=CostCategoryCreate,
+            update_model=CostCategoryUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            store=cost_category_store,
+            tables=("cost_categories",),
+        ),
+        ResourceSpec(
+            name="recurring_costs",
+            path="recurring-costs",
+            title="Recurring costs",
+            description=(
+                "Costs that fall due on a cadence (monthly / quarterly / "
+                "annual) from start_date, on the same day of the month. A fixed "
+                "one charges amount_micros every period; a variable one (a "
+                "usage bill) needs each period recorded as a cost entry. Its "
+                "periods are derived by GET /costs/summary. One with recorded "
+                "periods cannot be deleted, nor rescheduled so a recorded "
+                "period no longer falls due (409 periods_recorded) — give it "
+                "an end_date instead. Money is integer micros."
+            ),
+            permission="editing_roles",
+            read_model=RecurringCostRead,
+            create_model=RecurringCostCreate,
+            update_model=RecurringCostUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            store=recurring_cost_store,
+            tables=("recurring_costs",),
+        ),
+        ResourceSpec(
+            name="cost_entries",
+            path="cost-entries",
+            title="Costs",
+            description=(
+                "Money actually spent: a one-time purchase, or one period of a "
+                "recurring cost (recurring_cost_id + period_start, one of its "
+                "due dates; at most one entry per period, else 409 "
+                "period_already_recorded). expects_delivery marks a physical "
+                "item and received_on the day it arrived. A negative amount is "
+                "a refund. Newest first. Filters: category_id (repeatable; "
+                "'none' for uncategorised), awaiting_delivery=true, "
+                "recurring_cost_id. Money is integer micros."
+            ),
+            permission="editing_roles",
+            read_model=CostEntryRead,
+            create_model=CostEntryCreate,
+            update_model=CostEntryUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            list_filters=("category_id", "awaiting_delivery", "recurring_cost_id"),
+            store=cost_entry_store,
+            tables=("cost_entries",),
+        ),
+        ResourceSpec(
             name="pages",
             path="pages",
             title="Documents and wiki pages",
@@ -146,14 +225,24 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "Markdown documents and wiki pages, with full version history "
                 "(GET /pages/{id}/versions, POST …/versions/{n}/revert) and "
                 "backlinks (GET /pages/{id}/backlinks). Filters: kind, slug, q "
-                "(full-text). A list read carries no bodies (body_md is null)."
+                "(full-text), source_repo + source_path (exact: the repository "
+                "file a published page mirrors). A list read carries no bodies "
+                "(body_md is null). A page published from a repository carries "
+                "source_repo/source_path/source_sha; a PATCH naming a source "
+                "refuses a page with none or another (409 source_mismatch), a "
+                "PATCH carrying source_sha must name the source, and a keyed "
+                "create colliding on a source converges on that page only when "
+                "it already holds the same content (else 409 name_taken: "
+                "update it instead). "
+                "via_device/via_session say which device and reported session "
+                "wrote the current version."
             ),
             permission="editing_roles",
             read_model=PageRead,
             create_model=PageCreate,
             update_model=PageUpdate,
             operations=frozenset({"list", "get", "create", "update", "delete"}),
-            list_filters=("kind", "slug", "q"),
+            list_filters=("kind", "slug", "q", "source_repo", "source_path"),
             store=page_store,
             tables=("pages", "page_versions", "page_links"),
             audit_exclude=frozenset({"body_md"}),

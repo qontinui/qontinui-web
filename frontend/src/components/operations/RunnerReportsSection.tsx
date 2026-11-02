@@ -14,12 +14,21 @@
  *
  * `null` renders "unknown — <reason>", never "none" and never a dash: a
  * report coord could not serve is the machine nothing measured.
+ *
+ * In presentation mode (plan `2026-10-23-console-presentation-spaces`
+ * Phase 7) the section is two lines of counts — open stalls, and mechanisms
+ * per state — with no mechanism badges and no `title` detail: the runner's own
+ * reports quote paths and error text, which can name the machine (D3.3), and
+ * an evaluator needs the verdict, not the inventory (density down). UNKNOWN
+ * still reads "unknown — <reason>", the reason in plain words.
  */
 
 import { rowAccentClass, StatusBadge } from "@/components/console";
 import { relativeTime } from "@/components/console/time";
+import { usePresentationMode } from "@/components/presentation";
 import {
   CAPABILITY_PALETTE,
+  presentedUnknownReason,
   WEDGE_PALETTE,
   type CapabilityKind,
   type RunnerReportView,
@@ -84,6 +93,55 @@ function Provenance({
   );
 }
 
+/** The state words a presented capability count uses, worst first. */
+const PRESENTED_STATE: Record<CapabilityKind, string> = {
+  inoperative: "inoperative",
+  degraded: "degraded",
+  unknown: "unknown",
+  operative: "working",
+};
+
+/** The presentation-mode summary: counts only (see the module doc). */
+function PresentedRunnerReports({
+  reports,
+}: {
+  reports: ResolvedRunnerReports;
+}) {
+  const { wedge, capability } = reports;
+  // An unknown report says why in plain words: coord's own reason is a token
+  // (`no_publisher`) an outsider cannot read (`presentedUnknownReason`).
+  const stalls =
+    wedge.state === "unknown"
+      ? `unknown — ${presentedUnknownReason(wedge.reason)}`
+      : wedge.items.open.length === 0
+        ? "none open"
+        : `${wedge.items.open.length} open`;
+  const mechanisms =
+    capability.state === "unknown"
+      ? `unknown — ${presentedUnknownReason(capability.reason)}`
+      : capability.items.length === 0
+        ? "the runner reported none"
+        : capability.items
+            .map((g) => `${g.rows.length} ${PRESENTED_STATE[g.kind]}`)
+            .join(" · ");
+  return (
+    <div
+      className="space-y-0.5 text-xs"
+      data-testid="devops-runner-reports"
+      data-runner-reports-presented=""
+    >
+      <p data-testid="devops-runner-wedges-presented">
+        <span className="text-muted-foreground">Runner stalls: </span>
+        {stalls}
+      </p>
+      <p data-testid="devops-runner-capability-presented">
+        <span className="text-muted-foreground">Runner capabilities: </span>
+        {mechanisms}
+      </p>
+    </div>
+  );
+}
+
 export function RunnerReportsSection({
   reports,
   nowMs,
@@ -92,6 +150,8 @@ export function RunnerReportsSection({
   /** The page's clock; `undefined` reads the wall clock (as `MachineCard` does). */
   nowMs?: number;
 }) {
+  const { presenting } = usePresentationMode();
+  if (presenting) return <PresentedRunnerReports reports={reports} />;
   const { wedge, capability } = reports;
   return (
     <div className="space-y-2" data-testid="devops-runner-reports">
@@ -117,8 +177,7 @@ export function RunnerReportsSection({
                   >
                     <StatusBadge status={w} palette={WEDGE_PALETTE} />
                     <span className="text-muted-foreground">
-                      since{" "}
-                      {relativeTime(w.incident.began_at, { now: nowMs })}
+                      since {relativeTime(w.incident.began_at, { now: nowMs })}
                     </span>
                   </li>
                 ))}

@@ -6,6 +6,27 @@
  * Bridges Next.js routing information into the UI Bridge navigation tracker
  * via the useRouteAwareness hook. This enables automation tools to understand
  * the current route, params, and query parameters.
+ *
+ * `pattern` is a route TEMPLATE (`/marketplace/[slug]`), never the concrete
+ * pathname: consumers such as the runner's journey ledger store it, so a
+ * concrete `/search/<what the user typed>` would leak user input. Hence:
+ *
+ * - `routePatternFromParams` derives the template from the RAW `useParams()`
+ *   (flattened, a one-segment catch-all `["x"]` becomes the string `"x"` and
+ *   would template as `[slug]` instead of `[...slug]`), and returns `null`
+ *   rather than leak;
+ * - `patternSource: "router"` asserts the template came from the router — a
+ *   consumer drops a pattern that does not carry it;
+ * - this provider OWNS the not-found signal and provides it to children. On a
+ *   404, Next renders `app/not-found.tsx` inside the root layout with
+ *   `useParams() == {}`, so `matched: true` alone would hand back the concrete
+ *   path. `not-found.tsx` raises the signal (`useMarkRouteUnmatched`) in a
+ *   layout effect, which runs before this provider's passive effect in the same
+ *   commit, so the hook reports `pattern: null` instead.
+ *
+ * This provider must stay an ANCESTOR of `app/not-found.tsx` (it is mounted by
+ * `UIBridgeWrapper` in the root layout); the context form of
+ * `useMarkRouteUnmatched()` silently no-ops without one.
  */
 
 import React, { useEffect } from "react";
@@ -15,13 +36,24 @@ import {
   useParams,
   useRouter,
 } from "next/navigation";
-import { useRouteAwareness } from "@qontinui/ui-bridge/react";
+import {
+  RouteUnmatchedContext,
+  routePatternFromParams,
+  useRouteAwareness,
+  useRouteUnmatchedSignal,
+} from "@qontinui/ui-bridge/react";
 
-function flattenParams(
+/**
+ * The CONCRETE params as `RouteInfo.params` carries them (`Record<string,
+ * string>`, so a catch-all array is joined with `/`). Display data for
+ * automation tools only — never used to derive the pattern, which needs the
+ * raw arrays to template a `[...slug]` run.
+ */
+function paramsForReport(
   params: ReturnType<typeof useParams>
 ): Record<string, string> {
   const result: Record<string, string> = {};
-  for (const [key, value] of Object.entries(params)) {
+  for (const [key, value] of Object.entries(params ?? {})) {
     if (value != null) {
       result[key] = Array.isArray(value) ? value.join("/") : value;
     }
@@ -38,12 +70,18 @@ export function RouteAwarenessProvider({
   const searchParams = useSearchParams();
   const params = useParams();
   const router = useRouter();
+  const unmatched = useRouteUnmatchedSignal();
 
-  useRouteAwareness({
-    pattern: pathname,
-    params: flattenParams(params),
-    queryParams: Object.fromEntries(searchParams),
-  });
+  useRouteAwareness(
+    {
+      // matched: true is safe ONLY because `unmatched` overrides it on a 404.
+      pattern: routePatternFromParams(pathname, params, { matched: true }),
+      patternSource: "router",
+      params: paramsForReport(params),
+      queryParams: Object.fromEntries(searchParams),
+    },
+    { unmatched }
+  );
 
   // Register client-side navigation handler for UI Bridge pageNavigate commands.
   // This allows navigate commands to use Next.js router.push() instead of raw
@@ -72,5 +110,7 @@ export function RouteAwarenessProvider({
     };
   }, [router]);
 
-  return <>{children}</>;
+  return (
+    <RouteUnmatchedContext value={unmatched}>{children}</RouteUnmatchedContext>
+  );
 }

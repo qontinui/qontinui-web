@@ -225,6 +225,23 @@ class Device(Base):
         comment="Timestamp of the most recent CI job executed by this runner.",
     )
 
+    # ---- Credential deny (alembic ``devcred_01``) -----------------------
+    #
+    # Device-scoped: while set, every door that issues this device a
+    # credential refuses (web's dmk mint/self-mint/exchange, pair-code redeem,
+    # the pending-redeem poll; coord's refresh and service-mint). Cleared only
+    # by an operator's ``authorize-redeem``.
+    credential_revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment=(
+            "Device-scoped credential deny. NULL = not revoked. While set, "
+            "every door that issues this device a credential refuses "
+            "(device_credential_revoked). Cleared only by an operator "
+            "authorize-redeem."
+        ),
+    )
+
     # ---- Audit -------------------------------------------------------------
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -14,10 +14,16 @@
  * beats a plausible sentence that happens to be wrong, which is the exact
  * failure ("try reconnecting via USB", for a starved runtime) that started
  * this whole remediation loop.
+ *
+ * A failure can also be the RUNNER speaking: the relay carried the request,
+ * the runner answered, and the answer was "no" (`RunnerRelayError.runner`).
+ * That is a different fact from any relay fault, so it gets its own arm and is
+ * reported in the runner's words — not as "the relay answered HTTP 404".
  */
 
 import { formatDistance } from "date-fns";
-import { RunnerRelayError } from "./runner-relay";
+import { RunnerRelayError, type RunnerRefusal } from "./runner-relay";
+import { RUNNER_APP_ID } from "./ui-bridge-types";
 
 /**
  * The relay's two fixed `detail` strings, which are what identify a body as
@@ -97,8 +103,46 @@ function explainNotConnected(err: RunnerRelayError, now: Date): string {
 }
 
 /**
+ * Explain the runner's own refusal. The relay worked — the runner answered —
+ * so this names the runner's cause and claims nothing about the relay.
+ *
+ * `app-not-found` is spelled out because it is the one a person can act on
+ * from this page: the App field holds an id this runner never registered
+ * (qontinui-runner `spec_api/apps.rs` `app_error_into_response`).
+ */
+function explainRunnerRefusal(
+  status: number | undefined,
+  runner: RunnerRefusal
+): string {
+  if (runner.reason === "app-not-found") {
+    const appId =
+      typeof runner.detail?.appId === "string" && runner.detail.appId
+        ? runner.detail.appId
+        : undefined;
+    const which = appId ? `"${appId}"` : "that id";
+    // The one pointer this answer supports, phrased as advice rather than as
+    // a fact about THIS runner: recent runners register their own UI under
+    // that id, but older builds do not, and a current one can fail to (see
+    // `RUNNER_APP_ID`). Omitted when it is the id that just failed.
+    const pointer =
+      appId === RUNNER_APP_ID
+        ? ""
+        : ` Recent runners register their own UI as "${RUNNER_APP_ID}" — try that id.`;
+    return `The runner has no app registered as ${which} (app-not-found).${pointer}`;
+  }
+  const answered =
+    status === undefined
+      ? "The runner answered"
+      : `The runner answered HTTP ${status}`;
+  const said = [runner.reason, runner.message].filter(Boolean).join(" — ");
+  return said
+    ? `${answered}: ${said}.`
+    : `${answered} with a failure and named no cause.`;
+}
+
+/**
  * Explain any relay failure. `subject` names what the caller was reading, so
- * the headline stays specific ("spec pages for qontinui-web").
+ * the headline stays specific ("spec pages for qontinui-runner").
  */
 export function explainRelayFailure(
   error: unknown,
@@ -131,6 +175,13 @@ export function explainRelayFailure(
       cause:
         `The backend has no device${which} registered to your account — ` +
         "the runner pairing is stale. Re-pair the runner.",
+      requestId,
+    };
+  }
+  if (error.runner) {
+    return {
+      headline,
+      cause: explainRunnerRefusal(status, error.runner),
       requestId,
     };
   }

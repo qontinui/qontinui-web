@@ -180,6 +180,26 @@ class TestGetCiHosting:
         assert body["tenant_default"]["level"] is None
         assert body["tenant_default"]["unknown_reason"] == "missing"
         assert body["repos"] == []
+        # No list at all is UNKNOWN, not "this tenant has no repos".
+        assert body["repos_unknown_reason"] == "no_repos_reported"
+
+    def test_an_unreadable_repo_list_carries_coords_reason(self, client: TestClient):
+        """Coord answers `repos: []` plus `repos_unknown_reason` when it could
+        not list the tenant's repos — the empty list must not read as none."""
+        payload = {
+            **COORD_BODY,
+            "repos": [],
+            "repos_unknown_reason": "schema_object_missing:tenant_repos",
+        }
+        with _patch_coord_get(_mock_response(200, payload)), _patch_identity():
+            body = client.get(f"{API_PREFIX}/ci-hosting").json()
+        assert body["repos"] == []
+        assert body["repos_unknown_reason"] == "schema_object_missing:tenant_repos"
+
+    def test_a_readable_repo_list_has_no_unknown_reason(self, client: TestClient):
+        with _patch_coord_get(_mock_response(200, COORD_BODY)), _patch_identity():
+            body = client.get(f"{API_PREFIX}/ci-hosting").json()
+        assert body["repos_unknown_reason"] is None
 
     def test_forwards_the_repo_filter(self, client: TestClient):
         with (

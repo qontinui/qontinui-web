@@ -1,6 +1,6 @@
 import React from "react";
 import { Action } from "@/lib/action-schema/action-types";
-import { ActionComment } from "@/services/workflow-documentation-service";
+import { ActionComment } from "@/services/workflow-documentation";
 import { Button } from "@/components/ui/button";
 import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Textarea } from "@/components/ui/textarea";

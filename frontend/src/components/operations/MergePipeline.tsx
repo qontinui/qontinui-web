@@ -116,7 +116,7 @@ import {
   indexGateBlocks,
   unattachedGateBlocks,
 } from "./gateDecision";
-import { PrDraftStateControl } from "./PrDraftStateControl";
+import { PrHoldControl } from "./PrHoldControl";
 import { MergeTrainActivity } from "./MergeTrainActivity";
 import { MergeDependencyGraph } from "./MergeDependencyGraph";
 import { relativeTime } from "./utils";
@@ -735,10 +735,11 @@ function RowDetail({
                 </Link>
               </Button>
             )}
-            <PrDraftStateControl
+            <PrHoldControl
               repo={row.repo}
               prNumber={row.prNumber}
               prState={row.pr?.pr_state}
+              hold={row.pr ?? {}}
               hasActiveProposal={row.activeProposal !== null}
               onActed={onActed}
             />

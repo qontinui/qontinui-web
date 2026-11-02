@@ -31,11 +31,14 @@
  * The tenant DEFAULT behind these rows is edited at /admin/coord/agent-registry.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { outcomeUnknownReason } from "@/components/admin/coord/writeOutcome";
+import { createReadSequence } from "@/components/console";
 import {
   AgentPrefError,
+  isWriteOutcomeUnknown,
   listAgentRegistry,
   putAgentPref,
   type AgentDisposition,
@@ -149,9 +152,22 @@ export default function AgentsSettingsPage() {
   // standing explanation the moment an unrelated row was toggled.
   const [denials, setDenials] = useState<Record<string, DenialKind>>({});
 
+  // Reads can overtake each other (a slow re-read after one save, a fast one
+  // after the next), so each is ticketed and only one no older than the last
+  // applied replaces the list: an older answer never paints over a newer one.
+  const reads = useRef(createReadSequence());
+
   const refresh = useCallback(async (): Promise<AgentRegistryEntry[]> => {
-    const rows = await listAgentRegistry();
-    setEntries(rows);
+    const seq = reads.current;
+    const ticket = seq.issue();
+    let rows: AgentRegistryEntry[];
+    try {
+      rows = await listAgentRegistry();
+    } catch (err) {
+      seq.settle(ticket, false);
+      throw err;
+    }
+    if (seq.settle(ticket, true)) setEntries(rows);
     return rows;
   }, []);
 
@@ -187,6 +203,79 @@ export default function AgentsSettingsPage() {
     });
   };
 
+  /** What the PUT's own failure means. Only the write's errors reach here. */
+  const reportWriteFailure = async (
+    agentName: string,
+    err: unknown,
+    fromPicker: boolean
+  ) => {
+    if (err instanceof AgentPrefError && err.code === "disposition_required") {
+      // Forced choice, inline -- never a toast.
+      openPicker(
+        agentName,
+        true,
+        "A disposition is required to disable this policy-required agent."
+      );
+    } else if (
+      err instanceof AgentPrefError &&
+      err.code === "invalid_disposition" &&
+      fromPicker
+    ) {
+      setPickers((prev) => ({
+        ...prev,
+        [agentName]: {
+          selected: prev[agentName]?.selected ?? null,
+          error:
+            "That disposition was rejected as invalid. Pick one of the options below.",
+          forced: prev[agentName]?.forced ?? false,
+        },
+      }));
+    } else if (err instanceof AgentPrefError && err.status === 403) {
+      // A refusal ABOUT THE ACCOUNT — inline and standing, never a toast.
+      // The two codes are rendered distinctly because the remedy differs;
+      // see `DENIAL_COPY`. An unrecognised 403 body is the plain
+      // authorization case: coord's prose for it is not a stable contract,
+      // so the status is what is keyed on, not the message.
+      setDenials((prev) => ({
+        ...prev,
+        [agentName]:
+          err.code === "operator_not_provisioned_in_web"
+            ? "not_provisioned"
+            : "not_authorized",
+      }));
+      // The picker asks for a choice that cannot be saved by this account.
+      closePicker(agentName);
+    } else if (isWriteOutcomeUnknown(err)) {
+      // The change may have landed, so "failed" beside the old value would be
+      // a claim nobody can make: only a re-read can say.
+      const unknown = `${agentName}: whether this change was saved is unknown (${outcomeUnknownReason(
+        err
+      )}).`;
+      const rows = await refresh().catch(() => null);
+      if (rows === null) {
+        toast.error(
+          `${unknown} The re-read failed too, so what is shown may be out of date.`
+        );
+      } else {
+        closePicker(agentName);
+        const read = rows.find((r) => r.agent_name === agentName);
+        toast.error(
+          read
+            ? `${unknown} A read made after it says: ${recordedLine(read)}.`
+            : `${unknown} A read made after it lists no such agent.`
+        );
+      }
+    } else {
+      // Only the PUT's own failure reaches here (the re-read after a 2xx is
+      // reported by `save`), so everything left is coord's or the proxy's
+      // answer about the request, or a browser that is offline and sent
+      // nothing, and a toast is the right weight for it.
+      toast.error(
+        err instanceof Error ? err.message : "Failed to save preference"
+      );
+    }
+  };
+
   const save = async (
     agentName: string,
     update: { enabled: boolean; disposition?: AgentDisposition },
@@ -198,9 +287,27 @@ export default function AgentsSettingsPage() {
     // happened yet.
     clearDenial(agentName);
     try {
-      await putAgentPref(agentName, update);
-      const rows = await refresh();
+      try {
+        await putAgentPref(agentName, update);
+      } catch (err) {
+        await reportWriteFailure(agentName, err, fromPicker);
+        return;
+      }
+      // Coord answered the PUT with a 2xx: the preference is saved, whatever
+      // the re-read below says. The re-read has its own failure, which is about
+      // what is SHOWN — never about the write, and never an account denial.
       closePicker(agentName);
+      let rows: AgentRegistryEntry[];
+      try {
+        rows = await refresh();
+      } catch (readErr) {
+        toast.warning(
+          `${agentName}: saved, but the re-read failed (${
+            readErr instanceof Error ? readErr.message : String(readErr)
+          }), so what is shown may be out of date.`
+        );
+        return;
+      }
       const saved = rows.find((r) => r.agent_name === agentName);
       // UX honesty: report the state the SERVER recorded, not the request.
       toast.success(
@@ -208,53 +315,6 @@ export default function AgentsSettingsPage() {
           ? `${agentName}: ${recordedLine(saved)}`
           : `${agentName}: preference saved`
       );
-    } catch (err) {
-      if (
-        err instanceof AgentPrefError &&
-        err.code === "disposition_required"
-      ) {
-        // Forced choice, inline -- never a toast.
-        openPicker(
-          agentName,
-          true,
-          "A disposition is required to disable this policy-required agent."
-        );
-      } else if (
-        err instanceof AgentPrefError &&
-        err.code === "invalid_disposition" &&
-        fromPicker
-      ) {
-        setPickers((prev) => ({
-          ...prev,
-          [agentName]: {
-            selected: prev[agentName]?.selected ?? null,
-            error:
-              "That disposition was rejected as invalid. Pick one of the options below.",
-            forced: prev[agentName]?.forced ?? false,
-          },
-        }));
-      } else if (err instanceof AgentPrefError && err.status === 403) {
-        // A refusal ABOUT THE ACCOUNT — inline and standing, never a toast.
-        // The two codes are rendered distinctly because the remedy differs;
-        // see `DENIAL_COPY`. An unrecognised 403 body is the plain
-        // authorization case: coord's prose for it is not a stable contract,
-        // so the status is what is keyed on, not the message.
-        setDenials((prev) => ({
-          ...prev,
-          [agentName]:
-            err.code === "operator_not_provisioned_in_web"
-              ? "not_provisioned"
-              : "not_authorized",
-        }));
-        // The picker asks for a choice that cannot be saved by this account.
-        closePicker(agentName);
-      } else {
-        // Everything left is a transport or server failure — genuinely
-        // transient, and a toast is the right weight for it.
-        toast.error(
-          err instanceof Error ? err.message : "Failed to save preference"
-        );
-      }
     } finally {
       setSavingAgents((prev) => {
         const next = new Set(prev);

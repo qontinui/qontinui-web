@@ -17,9 +17,9 @@
 
 import { useEffect, useReducer, useRef } from "react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "./utils";
-import type { CheckRunSummary, PrStateResponse } from "./mergeTypes";
+import { statusOnlyErrorText } from "@/lib/api/operations/base";
+import { fetchPrChecks } from "@/lib/api/operations/prMerge";
+import type { CheckRunSummary } from "./mergeTypes";
 
 const log = createLogger("usePrCheckDetails");
 
@@ -67,11 +67,7 @@ export function usePrCheckDetails(
     let stale = false;
     (async () => {
       try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/prs/${encodeURIComponent(repo)}/${prNumber}/checks`
-        );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const body = (await res.json()) as PrStateResponse;
+        const body = await fetchPrChecks(repo, prNumber);
         cacheRef.current.set(key, {
           checks: Array.isArray(body.checks) ? body.checks : [],
           error: null,
@@ -80,7 +76,7 @@ export function usePrCheckDetails(
         log.warn("check-details fetch failed", err);
         cacheRef.current.set(key, {
           checks: null,
-          error: err instanceof Error ? err.message : String(err),
+          error: statusOnlyErrorText(err, String(err)),
         });
       }
       if (!stale) force();

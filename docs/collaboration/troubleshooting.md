@@ -215,8 +215,8 @@ Solutions to common issues with Qontinui's collaboration features.
 1. **Check WebSocket Connection**
    ```typescript
    const ws = useWebSocket();
-   console.log('Connection state:', ws.getState());
-   // Should be 'connected'
+   console.log('Connected:', ws.isConnected);
+   // Should be true
    ```
 
 2. **Network Issues**
@@ -435,21 +435,23 @@ Solutions to common issues with Qontinui's collaboration features.
 
 1. **WebSocket Message Queue Growing**
    ```typescript
-   // Limit queue size
-   ws.updateConfig({
+   // Limit queue size on the ExecutionWebSocket instance
+   executionWs.updateConfig({
      maxQueueSize: 100 // Reduce from default
    });
    ```
 
 2. **Event Listeners Not Cleaned Up**
    ```typescript
+   const ws = useWebSocket();
    useEffect(() => {
-     const handler = (event) => {...};
-     ws.on('message', handler);
+     ws.registerHandlers({ onActivityUpdate: handleActivity });
 
      return () => {
-       ws.off('message', handler); // Always cleanup!
+       // Handlers are merged, one per event: clear yours on unmount.
+       ws.registerHandlers({ onActivityUpdate: undefined });
      };
+     // Not [ws]: the context value is rebuilt every render.
    }, []);
    ```
 

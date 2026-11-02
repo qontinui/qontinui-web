@@ -1,3 +1,5 @@
+import type { PrHold } from "./prHold";
+
 // ============================================================================
 // Merge-train wire types
 // ============================================================================
@@ -200,6 +202,13 @@ export interface PrRow {
   close_cause?: string | null;
   /** kebab-case deploy state ("has my merged PR deployed yet?"). */
   deploy_state?: string | null;
+  /**
+   * coord hold (plan `2026-10-04-coord-pr-hold-without-github-drafts`). `null`
+   * = read and not held; an ABSENT key = UNKNOWN (an older coord);
+   * `hold_unknown: true` = coord's hold read failed. See `prHold.ts`.
+   */
+  hold?: PrHold | null;
+  hold_unknown?: boolean;
 }
 
 export interface PrListResponse {
@@ -223,6 +232,21 @@ export interface PrListResponse {
 export type MergeStatusToken =
   | "draft"
   | "ci-failed"
+  /** CI is red, but `main` has moved past the PR's CI base, so the red may be
+   *  main's fault rather than the PR's. Emitted from the predicate code
+   *  `ci-not-green-stale-base`, ABOVE plain `ci-failed`. The remedy is coord's
+   *  own BEHIND freshen (update the branch; CI re-runs) — not author work.
+   *  Plan `2026-09-05-a-red-pr-is-classified-before-coord-looks-at-behind-so-a-stale-base-is-never-refreshed`. */
+  | "ci-failed-stale-base"
+  /** Added by qontinui-coord#2723 (not yet emitted by coord main — mapped here
+   *  ahead of it): CI is red and EVERY failing check run at the head failed on
+   *  a self-hosted runner with zero failed steps — an infrastructure failure,
+   *  proven by coord's per-job classifier. Not the author's code and not a
+   *  code fix: the remedy is re-running the failed jobs once the runner is
+   *  healthy, an infra/operator-side action (coord's own bounded re-run reflex
+   *  is a deferred phase). Plan
+   *  `2026-09-21-coord-already-classifies-an-infra-killed-ci-run-but-the-merge-classifier-never-reads-it`. */
+  | "ci-failed-infra-kill"
   | "ci-pending"
   | "conflicts"
   | "behind-base"
@@ -234,6 +258,14 @@ export type MergeStatusToken =
    *  the verdict surface and this one tell ONE story about a PR. */
   | "required-checks-missing"
   | "blast-radius-block"
+  /** A `coord:stacked-on=` / `coord:downstream-of=` edge names an upstream PR
+   *  that is CLOSED and did not land — an edge that can never clear on its
+   *  own. coord's `BlockReason::DependencyUpstreamClosed` wire code, emitted
+   *  from the predicate-token arm (ahead of every ready/queued arm) and given
+   *  its own token by qontinui-coord#2819 so it stops reading as an ordinary
+   *  cross-repo wait. The move is the author's: re-anchor the label onto the
+   *  successor PR, or remove it if the upstream's content already landed. */
+  | "dependency-upstream-closed"
   | "ready"
   | "queued"
   /** coord cannot clone the repo (deleted/renamed, or the GitHub App's access
@@ -244,6 +276,18 @@ export type MergeStatusToken =
   /** Green + CLEAN + open, but no fresh proposal — the orchestrator is
    *  stalled. The single highest-signal token for "why the pause". */
   | "ready-but-unlanded"
+  /** Green + CLEAN + open, and the train's only proposal at this head is
+   *  TERMINAL and HELD — coord will not re-cut it (already-landed,
+   *  merge-resolution-discarded, reap-hardcap, superseded-empty candidate,
+   *  merged, plain cancelled). Split out of `ready-but-unlanded`, which keeps
+   *  the no-proposal half (a genuine orchestrator stall) and every terminal
+   *  coord re-cuts or re-probes itself (infra / transient errors, content and
+   *  textual conflicts, shadow-landed). NOT a stall: coord diagnosed it, and the move —
+   *  sometimes the author's, sometimes the operator's — is named in
+   *  `blocking_summary`.
+   *  Plan
+   *  `2026-10-08-ready-but-unlanded-token-carries-a-terminal-proposal-into-the-idle-unserved-alarm`. */
+  | "terminal-proposal-held"
   /** coord LANDED this PR at its CURRENT head and GitHub still shows it open —
    *  the phantom-open ff-land window, keyed on coord's `land_stamp ==
    *  current_head`. NOT a pause: the work is on the base branch already.

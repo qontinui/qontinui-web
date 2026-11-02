@@ -192,6 +192,26 @@ export function dispatchRefusalCopy(
       detail,
     };
   }
+  if (state.dispatch_error === MODEL_ACCESS_NOT_RELAYED) {
+    // Coord answered 2xx and published the other settings, but it predates
+    // the model-access field, so the owner's choice never left it.
+    return {
+      headline:
+        "Sent, but the coordinator does not carry the model-access choice yet, so that choice did not reach the machine.",
+      fixableHere: false,
+      detail,
+    };
+  }
+  if (state.dispatch_error === MODEL_ACCESS_UNCONFIRMED) {
+    // Coord answered 2xx but did not say what it sent: unknown, not a refusal
+    // and not evidence of an older coordinator.
+    return {
+      headline:
+        "Sent, but the coordinator's answer did not confirm the model-access choice, so whether it reached the machine is unknown.",
+      fixableHere: false,
+      detail,
+    };
+  }
   if (status === 400 || status === 422) {
     return {
       headline: "Saved here, but these settings were not accepted.",
@@ -224,6 +244,11 @@ export function dispatchRefusalCopy(
     detail,
   };
 }
+
+/** The backend's `dispatch_error` when coord did not echo `model_access` back. */
+export const MODEL_ACCESS_NOT_RELAYED = "coord_predates_model_access";
+/** The backend's `dispatch_error` when coord's answer could not confirm it. */
+export const MODEL_ACCESS_UNCONFIRMED = "model_access_unconfirmed";
 
 /** Mirrors the server's `max_concurrent_builds` bounds (`ge=1, le=64`). */
 export const MAX_CONCURRENT_BUILDS_MIN = 1;
@@ -261,8 +286,121 @@ export function configsEqual(a: CiNodeConfig, b: CiNodeConfig): boolean {
     // change nobody made.
     (a.max_concurrent_builds ?? null) === (b.max_concurrent_builds ?? null) &&
     a.min_free_disk_gb === b.min_free_disk_gb &&
+    // Same normalisation: a stored config predating `model_access` reads as
+    // "not set here", not as a change.
+    (a.model_access ?? null) === (b.model_access ?? null) &&
     a.repo_allowlist.length === b.repo_allowlist.length &&
     a.repo_allowlist.every((r, i) => r === b.repo_allowlist[i])
+  );
+}
+
+/** The model-access control's three choices. `machine` is `null` on the wire. */
+export type ModelAccessChoice = "machine" | "on" | "off";
+
+export function modelAccessChoice(value: boolean | null): ModelAccessChoice {
+  if (value === true) return "on";
+  if (value === false) return "off";
+  return "machine";
+}
+
+const MODEL_ACCESS_CHOICE_VALUE: Record<ModelAccessChoice, boolean | null> = {
+  machine: null,
+  on: true,
+  off: false,
+};
+
+const MODEL_ACCESS_CHOICE_LABEL: Record<ModelAccessChoice, string> = {
+  machine: "Leave as set on the machine",
+  on: "On",
+  off: "Off",
+};
+
+/**
+ * What the current choice means. `null` is NEVER drawn as "on": qontinui.io
+ * sends nothing for it, and the runner keeps the last value it received —
+ * which may be an explicit value an earlier save sent from here, or one the
+ * owner set on the machine itself. Only a runner that never received one is
+ * on by default.
+ */
+export function modelAccessStateText(value: boolean | null): string {
+  if (value === true) return "On: qontinui.io tells the machine to allow it.";
+  if (value === false)
+    return "Off: qontinui.io tells the machine to refuse it.";
+  return "Left as set on the machine: qontinui.io sends nothing for this, so the runner keeps the last value it received, from here or set on the machine (on, if it never received one).";
+}
+
+/**
+ * "Let CI steps use this machine's Claude accounts" — the DEVICE scope of the
+ * CI model-access off-switches (plan
+ * `2026-10-13-ci-node-runs-model-dependent-eval-steps` D6; the tenant and repo
+ * scopes live on Dev Ops ▸ CI). The consequence — including what off does NOT
+ * stop (D11) — is stated before the control, as for `enabled`.
+ *
+ * Three choices, not a switch: a two-state switch has to draw "not set here"
+ * as one of on/off, and once toggled it cannot return to "not set", so an
+ * unrelated save would then send an explicit value and could re-enable a
+ * machine its owner switched off on the machine.
+ */
+function ModelAccessField({
+  value,
+  onChange,
+}: {
+  value: boolean | null;
+  onChange: (next: boolean | null) => void;
+}) {
+  const current = modelAccessChoice(value);
+  return (
+    <div className="space-y-2" data-testid="ci-node-model-access">
+      <div className="space-y-1">
+        <p className="text-sm font-medium">
+          Let CI steps use this machine&apos;s Claude accounts
+        </p>
+        <p className="text-sm text-muted-foreground">
+          A repository can mark CI steps that call a model (its{" "}
+          <code className="font-mono text-xs">.qontinui/ci.toml</code> declares{" "}
+          <code className="font-mono text-xs">[model]</code>). On this machine
+          those calls run through the runner on your own Claude accounts, within
+          the budget the repository declares; the step itself is never given a
+          login. The runner allows it unless it is turned off. Turned off, those
+          steps still run, without model access, and their results read UNKNOWN.
+        </p>
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="ci-node-model-access-residual"
+        >
+          What off does not stop: CI steps run as your user, so a step that
+          deliberately points <code className="font-mono text-xs">claude</code>{" "}
+          at this machine&apos;s account files can still use them. Only allow
+          repositories you trust.
+        </p>
+      </div>
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="group"
+        aria-label="Let CI steps use this machine's Claude accounts"
+      >
+        {(["machine", "on", "off"] as const).map((choice) => (
+          <Button
+            key={choice}
+            type="button"
+            size="sm"
+            variant={current === choice ? "default" : "outline"}
+            aria-pressed={current === choice}
+            data-testid={`ci-node-model-access-${choice}`}
+            onClick={() => onChange(MODEL_ACCESS_CHOICE_VALUE[choice])}
+          >
+            {MODEL_ACCESS_CHOICE_LABEL[choice]}
+          </Button>
+        ))}
+      </div>
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="ci-node-model-access-state"
+        data-state={current}
+      >
+        {modelAccessStateText(value)}
+      </p>
+    </div>
   );
 }
 
@@ -627,6 +765,11 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
           </span>
         </label>
       </div>
+
+      <ModelAccessField
+        value={draft.model_access ?? null}
+        onChange={(next) => setDraft((d) => ({ ...d, model_access: next }))}
+      />
 
       {/* The delivery record. Deliberately worded as "requested"/"sent", never
           "active": there is no read-back and no ack, so a stronger word here

@@ -1,6 +1,7 @@
 """AWS S3 storage backend."""
 
 import mimetypes
+from datetime import datetime
 from typing import BinaryIO
 
 import boto3
@@ -206,6 +207,26 @@ class S3Backend(StorageBackend):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to generate presigned URL",
             )
+
+    def credential_expires_at(self) -> datetime | None:
+        """The expiry of the temporary credential this client signs with.
+
+        An assumed role, an EC2 instance profile or an ECS task role gives
+        botocore a ``RefreshableCredentials`` carrying its expiry; long-lived
+        access keys carry none. botocore exposes no public accessor for it, so
+        this reads the signer's credentials defensively and answers None
+        whenever that read does not yield a timezone-aware datetime — the
+        caller then documents the long-lived-credential assumption rather than
+        inventing an expiry.
+        """
+        try:
+            credentials = self.client._request_signer._credentials
+        except AttributeError:
+            return None
+        expiry = getattr(credentials, "_expiry_time", None)
+        if isinstance(expiry, datetime) and expiry.tzinfo is not None:
+            return expiry
+        return None
 
     def file_exists(self, key: str) -> bool:
         """Check if file exists."""

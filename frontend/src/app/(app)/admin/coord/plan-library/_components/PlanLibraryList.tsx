@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { RecordRow, RowTime } from "@/components/console";
 import { cn } from "@/lib/utils";
-import { PAGE_SIZE, usePlanLibrary } from "../_hooks/usePlanLibrary";
+import { usePlanLibrary } from "../_hooks/usePlanLibrary";
 import { ArtifactDetailPanel } from "./ArtifactDetailPanel";
 import { StatusCurrencyBadge } from "./StatusCurrencyBadge";
 import {
@@ -131,9 +131,8 @@ export function PlanLibraryList() {
     resetFilters,
     seen,
     items,
-    total,
-    offset,
-    setOffset,
+    window,
+    pager,
     loading,
     error,
     reload,
@@ -335,17 +334,23 @@ export function PlanLibraryList() {
         </div>
       )}
 
-      {total > PAGE_SIZE && (
+      {window && (window.hasMore || pager.canPrev) && (
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span data-testid="plan-library-range">
-            {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
+            {window.shown === 0
+              ? "no rows on this page"
+              : `${window.start + 1}–${window.start + window.shown}`}{" "}
+            of{" "}
+            {window.populationTotal !== null
+              ? window.populationTotal
+              : "an unstated total"}
           </span>
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
-              disabled={offset === 0 || loading}
-              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+              disabled={!pager.canPrev || loading}
+              onClick={pager.prev}
               data-testid="plan-library-prev"
             >
               Previous
@@ -353,8 +358,12 @@ export function PlanLibraryList() {
             <Button
               variant="outline"
               size="sm"
-              disabled={offset + PAGE_SIZE >= total || loading}
-              onClick={() => setOffset(offset + PAGE_SIZE)}
+              disabled={!window.hasMore || loading}
+              onClick={() => {
+                if (window.nextCursor !== null) {
+                  pager.next(window.nextCursor, window.shown);
+                }
+              }}
               data-testid="plan-library-next"
             >
               Next

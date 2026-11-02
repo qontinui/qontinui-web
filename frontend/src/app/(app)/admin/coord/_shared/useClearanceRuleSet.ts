@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { isGateClearanceRow } from "../gate-clearance/gateClearance";
-import type { CoordPolicyRow } from "./coordPolicies";
-import { listCoordPolicies } from "./coordPolicyApi";
+import {
+  type CoordPolicyRow,
+  listCoordPolicies,
+} from "@/lib/api/operations/coordPolicies";
 
 /**
  * Read-only, fail-SILENT fetch of the workspace's `gate_clearance` rules, for

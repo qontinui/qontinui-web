@@ -1,6 +1,6 @@
 /**
- * The wire shapes of the `estimates` resource and the two reads beyond it —
- * the project settings and an estimate's rollup.
+ * The wire shapes of the `estimates` resource and the calls beyond it — the
+ * project settings (read, and the base-currency write) and an estimate's rollup.
  *
  * The estimate itself is read and written through the overview authoring kit
  * (`@/components/overview/editing/api`: `listResource("estimates")`,
@@ -22,7 +22,8 @@
  */
 
 import { httpClient } from "@/services/service-factory";
-import { OVERVIEW_API } from "@/components/overview/editing/api";
+import { OVERVIEW_API, writeSettings } from "@/components/overview/editing/api";
+import type { components } from "@/lib/api-client/generated-types";
 import type {
   EstimatePurpose,
   LabourBilling,
@@ -33,6 +34,9 @@ export type EstimatePurposeOption = EstimatePurpose;
 
 /** The registry name and route segment of the estimate resource. */
 export const ESTIMATES = "estimates";
+
+/** The registry name of the project-settings resource. */
+export const SETTINGS = "settings";
 
 export type EstimateStatus =
   | "draft"
@@ -360,6 +364,37 @@ export interface EstimateContentWrite {
 
 export function fetchSettings(): Promise<OverviewSettings> {
   return httpClient.get<OverviewSettings>(`${OVERVIEW_API}/settings`);
+}
+
+/**
+ * Every field `PUT /settings` takes except `editing_roles`, all required: the
+ * route replaces every field and defaults what is omitted, so a field added to
+ * the write model must fail to compile here rather than be reset by this save.
+ */
+type SettingsReplacement = Required<
+  Omit<components["schemas"]["OverviewSettingsWrite"], "editing_roles">
+>;
+
+/**
+ * Change the base currency and nothing else: every other field goes back as
+ * read. `editing_roles` stays out deliberately, because absent is what leaves
+ * the stored set alone. `expected_version` makes the server refuse a write
+ * built on settings somebody has since changed.
+ */
+export function saveBaseCurrency(
+  settings: OverviewSettings,
+  baseCurrency: string
+): Promise<OverviewSettings> {
+  const body: SettingsReplacement = {
+    base_currency: baseCurrency,
+    fx_rates: settings.fx_rates,
+    labour_billing: settings.labour_billing,
+    hours_per_day: settings.hours_per_day,
+    working_day_factor: settings.working_day_factor,
+    first_value_date: settings.first_value_date,
+    expected_version: settings.version,
+  };
+  return writeSettings<OverviewSettings>(body);
 }
 
 export function fetchRollup(id: string): Promise<EstimateRollup> {

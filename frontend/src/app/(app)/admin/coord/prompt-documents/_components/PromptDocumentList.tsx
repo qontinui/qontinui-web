@@ -17,7 +17,7 @@ import {
   usePromptDocumentPublications,
   type UpstreamDecisionOutcome,
 } from "../_hooks/usePromptDocumentPublications";
-import { usePublishAll } from "../_hooks/usePublishAll";
+import { usePublishAll, type PublishAllState } from "../_hooks/usePublishAll";
 import { PromptDocumentCreateDialog } from "./PromptDocumentCreateDialog";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
@@ -84,6 +84,7 @@ function formatWhen(iso: string): string {
  */
 export function PromptDocumentList({
   autoPublishRefreshKey = 0,
+  publishAllState,
 }: {
   /**
    * Bumped by the page when something outside this list changes what the
@@ -92,7 +93,49 @@ export function PromptDocumentList({
    * already reads on mount).
    */
   autoPublishRefreshKey?: number;
+  /**
+   * The page's own {@link usePublishAll} result, when the page owns the status
+   * read so the auto-publish dial can share it (plan
+   * `2026-10-17-auto-publish-lands-via-coord-2290-adoption` Phase 4: ONE fetch
+   * for the list's badges and the dial's observed worker). Omitted, the list
+   * reads for itself — which is how it is mounted standalone.
+   */
+  publishAllState?: PublishAllState;
 } = {}) {
+  return publishAllState ? (
+    <PromptDocumentListBody
+      autoPublishRefreshKey={autoPublishRefreshKey}
+      publishAllState={publishAllState}
+    />
+  ) : (
+    <SelfReadingPromptDocumentList
+      autoPublishRefreshKey={autoPublishRefreshKey}
+    />
+  );
+}
+
+/** The list reading the publish-all surface itself — no page owns the read. */
+function SelfReadingPromptDocumentList({
+  autoPublishRefreshKey,
+}: {
+  autoPublishRefreshKey: number;
+}) {
+  const publishAllState = usePublishAll();
+  return (
+    <PromptDocumentListBody
+      autoPublishRefreshKey={autoPublishRefreshKey}
+      publishAllState={publishAllState}
+    />
+  );
+}
+
+function PromptDocumentListBody({
+  autoPublishRefreshKey,
+  publishAllState,
+}: {
+  autoPublishRefreshKey: number;
+  publishAllState: PublishAllState;
+}) {
   const {
     documents,
     loading,
@@ -149,7 +192,7 @@ export function PromptDocumentList({
     unavailable: publishAllUnavailable,
     reload: reloadPublishAll,
     publishAll,
-  } = usePublishAll();
+  } = publishAllState;
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);

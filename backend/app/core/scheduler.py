@@ -508,10 +508,30 @@ async def _job_render_log_retention() -> Any:
     return await _run_committed(run_render_log_retention)
 
 
+async def _job_build_record_reconcile() -> Any:
+    from app.db.session import AsyncSessionLocal
+    from app.jobs.build_record_reconcile import reconcile_all
+
+    return await reconcile_all(AsyncSessionLocal)
+
+
+async def _job_build_record_visibility_recheck() -> Any:
+    from app.db.session import AsyncSessionLocal
+    from app.jobs.build_record_reconcile import recheck_visibility_all
+
+    return await recheck_visibility_all(AsyncSessionLocal)
+
+
 async def _job_journey_edge_retention() -> Any:
     from app.jobs.journey_edge_retention import run_journey_edge_retention
 
     return await _run_committed(run_journey_edge_retention)
+
+
+async def _job_followup_reconcile() -> Any:
+    from app.jobs.followup_reconcile import run_followup_reconcile
+
+    return await run_followup_reconcile()
 
 
 def install_default_tasks(service: SchedulerService) -> None:
@@ -628,6 +648,37 @@ def install_default_tasks(service: SchedulerService) -> None:
         )
     )
 
+    # Public build records — retract a published snapshot whose coord product
+    # was made private (or deleted) through coord's own door, which web never
+    # sees. Every 10 minutes and at boot: the window a private product's page
+    # stays public is bounded by this cadence. A tenant with no live public
+    # slug costs nothing; one whose coord read is unanswered retracts nothing
+    # (UNKNOWN, not "private"). Plan
+    # 2026-10-09-factory-built-product-portfolio-and-launch-kit, Phase 1.
+    service.register(
+        ScheduledTask(
+            name="build_record_reconcile",
+            coro=_job_build_record_reconcile,
+            cron="*/10 * * * *",
+            run_at_boot=True,
+        )
+    )
+    # Public build records, second question — does GitHub (asked anonymously)
+    # still say every repo on a live page is public? Its own task so it has its
+    # own kill switch and its own timeout, and never shares a tick with the
+    # coord reconcile above. At most 8 GitHub calls per tick anonymously (80
+    # with GITHUB_VISIBILITY_TOKEN); real anonymous throughput is ~30 repos/
+    # hour because it stops at 30 remaining of GitHub's 60/hour window — see
+    # recheck_throughput_per_hour. Offset to :05 so the two never fire together.
+    service.register(
+        ScheduledTask(
+            name="build_record_visibility_recheck",
+            coro=_job_build_record_visibility_recheck,
+            cron="5-59/10 * * * *",
+            timeout_seconds=300.0,
+        )
+    )
+
     # Scheduled workflow dispatch — poll due rows every 30s. Runs at boot too,
     # so rows left unscheduled (next_fire_at NULL) get anchored onto their cron
     # promptly rather than up to 30s late.
@@ -696,6 +747,28 @@ def install_default_tasks(service: SchedulerService) -> None:
             name="journey_edge_retention",
             coro=_job_journey_edge_retention,
             interval_seconds=3600.0,
+            run_at_boot=True,
+        )
+    )
+
+    # Plan-library follow-up reconcile (plan
+    # 2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down
+    # Phase 5): every ``fixing`` follow-up whose PR coord has settled moves —
+    # ``fixed`` when coord's land record says it landed, back to ``open`` when
+    # it closed unlanded — across every organization, through web's coord
+    # service identity. It is what closes a follow-up when no session asks, so
+    # it must not wait on one. Every 15 minutes: a land is visible in the
+    # queue within a quarter hour, at the cost of one coord read per DISTINCT
+    # open fix PR per pass (none at all when nothing is ``fixing``).
+    # ``run_at_boot`` because this backend redeploys more often than some
+    # cadences fire (see memory_reindex). Kill switch:
+    # QONTINUI_SCHEDULER_FOLLOWUP_RECONCILE_ENABLED=0. A coord it cannot read
+    # moves no row and logs the count as UNKNOWN.
+    service.register(
+        ScheduledTask(
+            name="followup_reconcile",
+            coro=_job_followup_reconcile,
+            interval_seconds=900.0,
             run_at_boot=True,
         )
     )

@@ -23,6 +23,7 @@
 
 import { Fragment, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
+import { NAVIGATION_ONLY_PROPS } from "./navigationOnly";
 
 /** Traffic-light level. Same vocabulary as `prPipeline`'s `HealthLevel`. */
 export type HealthStripLevel = "green" | "amber" | "red";
@@ -71,6 +72,14 @@ export interface HealthBadge {
   tone?: HealthBadgeTone;
   /** Makes the badge a real button (e.g. "show me those rows"). */
   onClick?: () => void;
+  /**
+   * The press only filters, jumps or opens a view — it changes no state. Marks
+   * the button `NAVIGATION_ONLY_PROPS`, so it stays live in presentation mode
+   * (plan `2026-10-23-console-presentation-spaces` D3.2). A CLAIM about the
+   * handler: leave it unset for anything that writes. Ignored without
+   * `onClick`.
+   */
+  navigationOnly?: boolean;
   title?: string;
   "data-testid"?: string;
 }
@@ -146,6 +155,7 @@ export function HealthStrip({
             );
             return b.onClick ? (
               <button
+                {...(b.navigationOnly ? NAVIGATION_ONLY_PROPS : {})}
                 key={b.key}
                 type="button"
                 onClick={b.onClick}

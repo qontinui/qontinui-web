@@ -20,6 +20,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const relayFetch = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: { fetch: (...args: unknown[]) => relayFetch(...args) },
+  // A door call over loopback goes through the same-origin door proxy with
+  // the operator bearer (./door-client); the runner's refusal is passed
+  // through unchanged, so the rendering below is the same either way.
+  tokenManager: { getAccessToken: () => "operator-bearer" },
 }));
 vi.mock("@/services/api-config", () => ({
   ApiConfig: { API_BASE_URL: "https://api.test" },

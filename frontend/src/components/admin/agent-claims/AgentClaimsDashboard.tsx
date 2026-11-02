@@ -20,7 +20,11 @@
  *
  * All sections poll every 10s through the web backend's
  * `/api/v1/operations/claims/*` proxy (the browser can't speak directly
- * to coord because coord has no CORS layer).
+ * to coord because coord has no CORS layer), via the typed client
+ * (`@/lib/api/operations/claims` + `coordGates`) on `httpClient` — which
+ * attaches the operator bearer the bare `fetch` this file used to make never
+ * sent (plan `2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls`
+ * Phase 7 batch 1).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -58,12 +62,29 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ApiConfig } from "@/services/api-config";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
+import {
+  fetchActiveClaims,
+  fetchAgentStatus,
+  fetchClaimSteals,
+  fetchRecentConflicts,
+  CLAIMS_ROUTES_LABEL,
+  type ActiveClaimsResponse,
+  type AgentStatusRow,
+  type ConflictEntry,
+  type StealRow,
+} from "@/lib/api/operations/claims";
+import {
+  approveGate,
+  fetchGatesList,
+  rejectGate,
+  type GateListEntry,
+  type GatesListResponse,
+} from "@/lib/api/operations/coordGates";
 
 const POLL_INTERVAL_MS = 10_000;
-const API = `${ApiConfig.API_BASE_URL}/api/v1/operations/claims`;
-const API_GATES = `${ApiConfig.API_BASE_URL}/api/v1/operations/gates`;
 
 const KIND_OPTIONS = [
   { value: "phase", label: "phase" },
@@ -75,89 +96,37 @@ const KIND_OPTIONS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Wire shapes — mirror the coord JSON exactly
+// Wire shapes — owned by the typed client (`lib/api/operations/claims.ts`,
+// `coordGates.ts`), which mirrors the coord JSON.
 // ---------------------------------------------------------------------------
 
-interface ActiveClaim {
-  kind: string;
-  resource_key: string;
-  machine_id: string;
-  ttl_seconds: number;
-  // Agent-self-reported free-text status + blocker (coord claim metadata,
-  // surfaced by /coord/claims/list). Optional — older claims have none.
-  status_text?: string | null;
-  blocked_on?: string | null;
-}
+type GateEntry = GateListEntry;
 
-interface ActiveClaimsResponse {
-  kind: string;
-  prefix: string;
-  holders: ActiveClaim[];
-  truncated: boolean;
-}
-
-/**
- * Coord-native MCP coordination surface (Phase 2). One row from
- * `GET /api/v1/operations/agent-status` → coord `GET /coord/agent-status`,
- * backed by `coord.agent_status`. Distinct from the legacy claim-metadata
- * shape (`ActiveClaim`): work-unit-grain, carries structured coordination
- * free-text + the topic peers collaborate on. The dashboard prefers these
- * rows and only falls back to the claim path when none exist for the tenant.
- */
-interface AgentStatusRow {
-  device_id: string;
-  tenant_id: string;
-  correlation_topic: string;
-  work_unit_id: string;
-  status_text: string;
-  blocked_on: string | null;
-  intent_globs: string[] | null;
-  updated_at: string;
-  expires_at: string;
-}
-
-interface AgentStatusResponse {
-  agents: AgentStatusRow[];
-  count: number;
-}
-
-const AGENT_STATUS_API = `${ApiConfig.API_BASE_URL}/api/v1/operations/agent-status`;
-
-interface ConflictEntry {
-  recorded_at: string;
-  requesting_machine_id: string;
-  current_holder: string;
-  kind: string;
-  resource_key: string;
-}
-
-interface StealRow {
-  occurred_at: string;
-  claim_kind: string;
-  resource_key: string;
-  stolen_from_machine_id: string | null;
-  stolen_by_machine_id: string | null;
-  steal_reason: string | null;
-}
-
-interface GateEntry {
-  gate_id: string;
-  claim_kind: string | null;
-  resource_key: string | null;
-  plan_id: string | null;
-  phase_name: string | null;
-  predicate: Record<string, unknown>;
-  verdict: "open" | "cleared" | "failed";
-  verdict_reason: string | null;
-  registered_by: string | null;
-  created_at: string;
-  evaluated_at: string | null;
-  cleared_at: string | null;
+/** The gate rows of either `/gates/list` envelope (a bare array, or `{gates}`). */
+function gateRows(body: GatesListResponse): GateEntry[] {
+  return Array.isArray(body)
+    ? body
+    : Array.isArray(body.gates)
+      ? body.gates
+      : [];
 }
 
 // ---------------------------------------------------------------------------
 // Tiny helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * The error text this dashboard has always shown: `HTTP <status>`, plus the
+ * first 120 characters of the body where `withBody`. The typed client rejects
+ * a non-2xx as `<METHOD> <url> failed: <status> - <body>`, so the status and
+ * body are read back out of that; a transport error keeps its own message.
+ */
+function dashboardErrorText(e: unknown, withBody: boolean): string {
+  const status = httpStatusOf(e);
+  if (status === null) return e instanceof Error ? e.message : String(e);
+  if (!withBody) return `HTTP ${status}`;
+  return `HTTP ${status}: ${(httpBodyOf(e) ?? "").slice(0, 120)}`;
+}
 
 /**
  * This surface's relative timestamps, rendered through the console primitive.
@@ -259,25 +228,19 @@ function ActiveClaimsSection({
       // the migration. On success-with-rows we short-circuit the fallback.
       let usedAgentStatus = false;
       try {
-        const res = await fetch(AGENT_STATUS_API);
-        if (res.ok) {
-          const body: AgentStatusResponse = await res.json();
-          if (!isCurrent()) return;
-          const rows = Array.isArray(body.agents) ? body.agents : [];
-          if (rows.length > 0) {
-            setAgentStatus(rows);
-            setError(null);
-            usedAgentStatus = true;
-          } else {
-            // No agent_status rows for this tenant yet → dual-read fallback.
-            setAgentStatus(null);
-          }
+        const body = await fetchAgentStatus(COORD_DASHBOARD_POLL_OPTIONS);
+        if (!isCurrent()) return;
+        const rows = Array.isArray(body.agents) ? body.agents : [];
+        if (rows.length > 0) {
+          setAgentStatus(rows);
+          setError(null);
+          usedAgentStatus = true;
         } else {
-          if (!isCurrent()) return;
+          // No agent_status rows for this tenant yet → dual-read fallback.
           setAgentStatus(null);
         }
       } catch {
-        // Swallow — fall through to the legacy claim path.
+        // Swallow (a non-2xx included) — fall through to the legacy claim path.
         if (!isCurrent()) return;
         setAgentStatus(null);
       }
@@ -289,21 +252,17 @@ function ActiveClaimsSection({
 
       // --- Fallback read: legacy claim metadata ---------------------------
       try {
-        const url = new URL(`${API}/list`, window.location.origin);
-        url.searchParams.set("kind", kind);
-        if (prefix) url.searchParams.set("prefix", prefix);
-        const res = await fetch(url.toString());
-        if (!res.ok) {
-          const body = await res.text();
-          throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
-        }
-        const body: ActiveClaimsResponse = await res.json();
+        const body = await fetchActiveClaims(
+          kind,
+          prefix,
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
         if (!isCurrent()) return;
         setData(body);
         setError(null);
       } catch (e) {
         if (!isCurrent()) return;
-        setError(e instanceof Error ? e.message : String(e));
+        setError(dashboardErrorText(e, true));
       } finally {
         if (isCurrent()) setLoading(false);
       }
@@ -533,15 +492,16 @@ function RecentConflictsSection() {
 
   const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const res = await fetch(`${API}/recent-conflicts?limit=50`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
+      const body = await fetchRecentConflicts(
+        50,
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
       if (!isCurrent()) return;
       setEntries(Array.isArray(body.entries) ? body.entries : []);
       setError(null);
     } catch (e) {
       if (!isCurrent()) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(dashboardErrorText(e, false));
     } finally {
       if (isCurrent()) setLoading(false);
     }
@@ -621,15 +581,13 @@ function RecentStealsSection() {
 
   const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const res = await fetch(`${API}/steals?limit=50`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
+      const body = await fetchClaimSteals(50, COORD_DASHBOARD_POLL_OPTIONS);
       if (!isCurrent()) return;
       setRows(Array.isArray(body.rows) ? body.rows : []);
       setError(null);
     } catch (e) {
       if (!isCurrent()) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(dashboardErrorText(e, false));
     } finally {
       if (isCurrent()) setLoading(false);
     }
@@ -722,20 +680,14 @@ function GatesSection({
 
   const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const res = await fetch(`${API_GATES}/list`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
-      const list: GateEntry[] = Array.isArray(body)
-        ? body
-        : Array.isArray(body.gates)
-          ? body.gates
-          : [];
+      const body = await fetchGatesList(COORD_DASHBOARD_POLL_OPTIONS);
+      const list = gateRows(body);
       if (!isCurrent()) return;
       setEntries(list);
       setError(null);
     } catch (e) {
       if (!isCurrent()) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(dashboardErrorText(e, false));
     } finally {
       if (isCurrent()) setLoading(false);
     }
@@ -755,18 +707,12 @@ function GatesSection({
     async (gateId: string) => {
       setActionInFlight(gateId);
       try {
-        const res = await fetch(`${API_GATES}/${gateId}/approve`, {
-          method: "POST",
-        });
-        if (!res.ok) {
-          const body = await res.text();
-          throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
-        }
+        await approveGate(gateId);
         // Re-fetch immediately after action
         await refreshData();
         onRefresh();
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(dashboardErrorText(e, true));
       } finally {
         setActionInFlight(null);
       }
@@ -778,17 +724,11 @@ function GatesSection({
     async (gateId: string) => {
       setActionInFlight(gateId);
       try {
-        const res = await fetch(`${API_GATES}/${gateId}/reject`, {
-          method: "POST",
-        });
-        if (!res.ok) {
-          const body = await res.text();
-          throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
-        }
+        await rejectGate(gateId);
         await refreshData();
         onRefresh();
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(dashboardErrorText(e, true));
       } finally {
         setActionInFlight(null);
       }
@@ -928,24 +868,21 @@ export default function AgentClaimsDashboard() {
 
   const fetchGates = useCallback(async (isCurrent: () => boolean) => {
     try {
-      const res = await fetch(`${API_GATES}/list`);
-      if (!res.ok) return;
-      const body = await res.json();
-      const list: GateEntry[] = Array.isArray(body)
-        ? body
-        : Array.isArray(body.gates)
-          ? body.gates
-          : [];
+      const body = await fetchGatesList(COORD_DASHBOARD_POLL_OPTIONS);
+      const list = gateRows(body);
       if (!isCurrent()) return;
       setGates(list);
     } catch {
-      // Swallow — the GatesSection component has its own error display.
+      // Swallow (a non-2xx included) — the GatesSection component has its
+      // own error display.
     }
   }, []);
 
   // Single-flight (plan `2026-09-25-fleet-worktree-slots-hang-mechanism-and-
   // safe-reland` D5): a tick that finds the previous read outstanding is
-  // skipped. Raw `fetch`, so there is no retry layer to switch off here.
+  // skipped. Every poll read here passes `COORD_DASHBOARD_POLL_OPTIONS`
+  // (`maxRetries: 0`), so moving off raw `fetch` added no retry layer: one
+  // request per tick, as before, and the next tick is the retry.
   const { refresh: refreshGates } = useSingleFlightPoll(
     fetchGates,
     POLL_INTERVAL_MS
@@ -970,9 +907,7 @@ export default function AgentClaimsDashboard() {
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <TimerOff className="h-3 w-3" />
         Polls every {POLL_INTERVAL_MS / 1000}s · backed by{" "}
-        <code className="rounded bg-muted px-1">
-          /api/v1/operations/claims/*
-        </code>
+        <code className="rounded bg-muted px-1">{CLAIMS_ROUTES_LABEL}</code>
       </div>
       <ActiveClaimsSection openGateCountsByAnchor={openGateCountsByAnchor} />
       <RecentConflictsSection />

@@ -18,12 +18,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-const getMock = vi.fn();
+// The accounts READ and the enroll/restore WRITES both go through
+// `httpClient.fetch` (`lib/api/operations/prMergeOnboarding.ts`). The read is
+// answered by `accountsMock` (its resolved value is the parsed body; a
+// rejection is the transport failing) and kept out of `fetchMock`, so every
+// `fetchMock` count below is a count of writes only.
+const accountsMock = vi.fn();
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    fetch: (...args: unknown[]) => fetchMock(...args),
+    fetch: async (...args: unknown[]) => {
+      if (String(args[0]).endsWith("/pr-merge/onboarding/accounts")) {
+        const body: unknown = await accountsMock(...args);
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+      return fetchMock(...args);
+    },
   },
 }));
 
@@ -36,6 +46,7 @@ vi.mock("@/contexts/auth-context", () => ({
 
 import {
   ConnectedOrgs,
+  groupBoundAway,
   mergePostureLabel,
   pollTimeoutMessage,
 } from "./ConnectedOrgs";
@@ -63,13 +74,13 @@ function jsonResponse(body: unknown, status: number): Response {
 
 describe("<ConnectedOrgs> enroll/sync button", () => {
   beforeEach(() => {
-    getMock.mockReset();
+    accountsMock.mockReset();
     fetchMock.mockReset();
     authState.isCoordAdmin = true;
   });
 
   it("labels the button by enrollment state (Enroll vs Sync)", async () => {
-    getMock.mockResolvedValue({ accounts: [EMPTY_ORG, ENROLLED_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [EMPTY_ORG, ENROLLED_ORG] });
     render(<ConnectedOrgs />);
 
     const enrollBtn = await screen.findByTestId("enroll-repos-acme");
@@ -80,7 +91,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
   });
 
   it("POSTs to the installation enroll proxy with maxRetries: 0", async () => {
-    getMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
     fetchMock.mockResolvedValue(jsonResponse({ enrolled: "spawned" }, 202));
     render(<ConnectedOrgs />);
 
@@ -97,7 +108,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
   it("202 spawn starts the poll and renders repos when they appear", async () => {
     vi.useFakeTimers();
     try {
-      getMock
+      accountsMock
         .mockResolvedValueOnce({ accounts: [EMPTY_ORG] }) // mount
         .mockResolvedValue({
           accounts: [
@@ -139,7 +150,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
   });
 
   it("maps a 403 to the admin-required copy", async () => {
-    getMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
     fetchMock.mockResolvedValue(
       jsonResponse({ error: "installation_not_owned_by_tenant" }, 403)
     );
@@ -153,7 +164,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
   });
 
   it("maps a 404 to the connect-first copy", async () => {
-    getMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [EMPTY_ORG] });
     fetchMock.mockResolvedValue(
       jsonResponse({ error: "installation_not_mapped" }, 404)
     );
@@ -177,7 +188,7 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
  */
 describe("<ConnectedOrgs> merge posture + tombstones", () => {
   beforeEach(() => {
-    getMock.mockReset();
+    accountsMock.mockReset();
     fetchMock.mockReset();
     authState.isCoordAdmin = true;
   });
@@ -271,7 +282,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   });
 
   it("renders an ALWAYS-present posture indicator per enrolled row, linked to merge settings", async () => {
-    getMock.mockResolvedValue({ accounts: [POSTURE_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [POSTURE_ORG] });
     render(<ConnectedOrgs />);
 
     const expected: Record<string, string> = {
@@ -290,7 +301,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   });
 
   it("keeps the raw pin badge as a SECOND indicator, only when a pin is set", async () => {
-    getMock.mockResolvedValue({ accounts: [POSTURE_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [POSTURE_ORG] });
     render(<ConnectedOrgs />);
 
     await screen.findByTestId("merge-posture-acme/default");
@@ -307,7 +318,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   });
 
   it("renders an un-enrolled row greyed with who/when/why and counts it separately", async () => {
-    getMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
     render(<ConnectedOrgs />);
 
     const row = await screen.findByTestId(
@@ -328,7 +339,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   });
 
   it("offers Re-enroll to a coord admin and hides it from everyone else", async () => {
-    getMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
     const { unmount } = render(<ConnectedOrgs />);
     expect(
       await screen.findByTestId("reenroll-repo-portofino/infra")
@@ -344,7 +355,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   it("Re-enroll POSTs the restore proxy and polls until the row flips to enrolled", async () => {
     vi.useFakeTimers();
     try {
-      getMock
+      accountsMock
         .mockResolvedValueOnce({ accounts: [TOMBSTONE_ORG] }) // mount
         .mockResolvedValue({
           accounts: [
@@ -410,7 +421,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
   });
 
   it("maps the restore 404 onto copy that says whether the tombstone was cleared", async () => {
-    getMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
+    accountsMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
     fetchMock.mockResolvedValue(
       jsonResponse(
         { error: "no_installation_for_owner", owner: "portofino", restored: true },
@@ -431,7 +442,7 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
     try {
       // Every poll returns the same shape: the enrolled count never grows,
       // because the only repo left to enroll is the tombstoned one.
-      getMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
+      accountsMock.mockResolvedValue({ accounts: [TOMBSTONE_ORG] });
       fetchMock.mockResolvedValue(jsonResponse({ enrolled: "spawned" }, 202));
       render(<ConnectedOrgs />);
       await act(async () => {
@@ -467,5 +478,200 @@ describe("<ConnectedOrgs> merge posture + tombstones", () => {
     expect(pollTimeoutMessage("restore", 2)).toBe(
       "Re-enroll is taking longer than expected — refresh to check."
     );
+  });
+});
+
+describe("<ConnectedOrgs> repos bound to another tenant", () => {
+  const MERYTS_ORG = {
+    account_login: "Meryts",
+    account_type: "Organization",
+    installation_id: 333,
+    repos: [
+      { repo: "Meryts/site", merge_enabled: null, profile_source: "auto" },
+      {
+        repo: "Meryts/bauhaus-b2b-shop",
+        state: "unenrolled",
+        merge_enabled: null,
+        profile_source: null,
+        unenrolled_at: "2026-10-01T09:00:00Z",
+        unenrolled_by: "ops@example.com",
+        unenroll_reason: "moved",
+      },
+    ],
+  };
+  const BOUND_AWAY = [
+    {
+      repo: "meryts/bauhaus-b2b-dev-notes",
+      bound_tenant_id: "ce1ec20c-9cf1-427a-857d-81d6449cc6e4",
+      bound_tenant_slug: "bauhaus-b2b",
+    },
+    {
+      repo: "meryts/bauhaus-b2b-shop",
+      bound_tenant_id: "ce1ec20c-9cf1-427a-857d-81d6449cc6e4",
+      bound_tenant_slug: "bauhaus-b2b",
+    },
+  ];
+
+  beforeEach(() => {
+    accountsMock.mockReset();
+    fetchMock.mockReset();
+    authState.isCoordAdmin = true;
+  });
+
+  it("renders bound-away repos under their org as 'bound to <slug>' with no Re-enroll", async () => {
+    accountsMock.mockResolvedValue({
+      accounts: [MERYTS_ORG],
+      bound_away: BOUND_AWAY,
+    });
+    render(<ConnectedOrgs />);
+
+    const devNotes = await screen.findByTestId(
+      "connected-org-repo-bound-away-meryts/bauhaus-b2b-dev-notes"
+    );
+    expect(devNotes.textContent).toContain("bound to bauhaus-b2b");
+    // The tombstoned row of a bound-away repo is the binding's, not a
+    // Re-enroll candidate: it renders as bound away, once.
+    expect(
+      screen.getByTestId(
+        "connected-org-repo-bound-away-meryts/bauhaus-b2b-shop"
+      )
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("reenroll-repo-Meryts/bauhaus-b2b-shop")
+    ).toBeNull();
+    expect(
+      screen.queryByTestId(
+        "connected-org-repo-unenrolled-Meryts/bauhaus-b2b-shop"
+      )
+    ).toBeNull();
+    // The org's own enrolled repo is untouched.
+    expect(screen.getByTestId("connected-org-repo-Meryts/site")).toBeTruthy();
+  });
+
+  it("renders nothing new when coord does not send bound_away", async () => {
+    accountsMock.mockResolvedValue({ accounts: [MERYTS_ORG] });
+    render(<ConnectedOrgs />);
+
+    await screen.findByTestId("connected-org-repo-Meryts/site");
+    expect(screen.queryByText(/bound to/)).toBeNull();
+    // Without the field, the tombstone keeps its Re-enroll as before.
+    expect(
+      screen.getByTestId("reenroll-repo-Meryts/bauhaus-b2b-shop")
+    ).toBeTruthy();
+  });
+
+  it("says the bound-away repos are UNKNOWN when coord sends bindings_error", async () => {
+    accountsMock.mockResolvedValue({
+      accounts: [MERYTS_ORG],
+      bindings_error: "the per-repo binding list could not be read",
+    });
+    render(<ConnectedOrgs />);
+
+    const unknown = await screen.findByTestId(
+      "connected-orgs-bindings-unknown"
+    );
+    expect(unknown.textContent).toContain("UNKNOWN");
+    // coord's own reason travels in the title, not as wire jargon in the line.
+    expect(unknown.getAttribute("title")).toBe(
+      "the per-repo binding list could not be read"
+    );
+    // The accounts still render beside it.
+    expect(screen.getByTestId("connected-org-repo-Meryts/site")).toBeTruthy();
+  });
+
+  it("a measured-empty bound_away is not UNKNOWN", async () => {
+    accountsMock.mockResolvedValue({ accounts: [MERYTS_ORG], bound_away: [] });
+    render(<ConnectedOrgs />);
+    await screen.findByTestId("connected-org-repo-Meryts/site");
+    expect(screen.queryByTestId("connected-orgs-bindings-unknown")).toBeNull();
+  });
+
+  it("an older coord that sends neither key says nothing about bindings", async () => {
+    accountsMock.mockResolvedValue({ accounts: [MERYTS_ORG] });
+    render(<ConnectedOrgs />);
+    await screen.findByTestId("connected-org-repo-Meryts/site");
+    expect(screen.queryByTestId("connected-orgs-bindings-unknown")).toBeNull();
+  });
+
+  it("renders a bound-away repo no listed org owns, beside the account list", async () => {
+    const stray = {
+      repo: "elsewhere/repo",
+      bound_tenant_id: "t",
+      bound_tenant_slug: "other",
+    };
+    accountsMock.mockResolvedValue({
+      accounts: [MERYTS_ORG],
+      bound_away: [stray],
+    });
+    render(<ConnectedOrgs />);
+
+    const unmatched = await screen.findByTestId(
+      "connected-orgs-bound-away-unmatched"
+    );
+    expect(unmatched.textContent).toContain("elsewhere/repo");
+    expect(unmatched.textContent).toContain("bound to other");
+    expect(screen.getByTestId("connected-org-repo-Meryts/site")).toBeTruthy();
+  });
+
+  it("renders unmatched bound-away repos when no organization is connected", async () => {
+    accountsMock.mockResolvedValue({
+      accounts: [],
+      bound_away: [BOUND_AWAY[0]],
+    });
+    render(<ConnectedOrgs />);
+
+    // The empty state still renders — and the bound-away row beside it.
+    await screen.findByTestId("connected-orgs-empty");
+    const unmatched = screen.getByTestId("connected-orgs-bound-away-unmatched");
+    expect(
+      unmatched.querySelector(
+        '[data-testid="connected-org-repo-bound-away-meryts/bauhaus-b2b-dev-notes"]'
+      )
+    ).not.toBeNull();
+    expect(
+      screen.getByTestId("bound-away-tenant-meryts/bauhaus-b2b-dev-notes")
+        .textContent
+    ).toBe("bound to bauhaus-b2b");
+  });
+
+  it("re-reads in place when bindingsVersion changes, without a remount", async () => {
+    accountsMock.mockResolvedValueOnce({ accounts: [MERYTS_ORG] });
+    const { rerender } = render(<ConnectedOrgs bindingsVersion={0} />);
+    await screen.findByTestId("connected-org-repo-Meryts/site");
+    expect(accountsMock).toHaveBeenCalledTimes(1);
+    // A re-render with the SAME version reads nothing.
+    rerender(<ConnectedOrgs bindingsVersion={0} />);
+    expect(accountsMock).toHaveBeenCalledTimes(1);
+
+    const card = screen.getByTestId("connected-orgs");
+    accountsMock.mockResolvedValueOnce({
+      accounts: [MERYTS_ORG],
+      bound_away: [BOUND_AWAY[0]],
+    });
+    rerender(<ConnectedOrgs bindingsVersion={1} />);
+
+    await screen.findByTestId(
+      "connected-org-repo-bound-away-meryts/bauhaus-b2b-dev-notes"
+    );
+    expect(accountsMock).toHaveBeenCalledTimes(2);
+    // Same element: the card was re-read in place, not remounted.
+    expect(screen.getByTestId("connected-orgs")).toBe(card);
+  });
+
+  it("groupBoundAway keeps a repo no listed org owns instead of dropping it", () => {
+    const stray = {
+      repo: "elsewhere/repo",
+      bound_tenant_id: "t",
+      bound_tenant_slug: "other",
+    };
+    const { byLogin, unmatched } = groupBoundAway(
+      [...BOUND_AWAY, stray],
+      [MERYTS_ORG]
+    );
+    expect(byLogin.get("meryts")?.map((b) => b.repo)).toEqual([
+      "meryts/bauhaus-b2b-dev-notes",
+      "meryts/bauhaus-b2b-shop",
+    ]);
+    expect(unmatched).toEqual([stray]);
   });
 });

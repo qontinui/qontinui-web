@@ -16,6 +16,10 @@ export interface AiSettings {
     custom_path: string | null;
     timeout_seconds: number;
     config_dir: string | null;
+    /** Local account-selection mode (stored). Absent on an older runner. */
+    account_selection_mode?: string | null;
+    /** When true the local mode wins over the fleet value (stored). */
+    account_selection_pinned?: boolean | null;
   };
   claude_api: {
     model: string;
@@ -36,6 +40,18 @@ export interface AiSettings {
   auto_refine_video_after_iterations: number;
   interactive_sessions_enabled: boolean;
 }
+
+/**
+ * GET /settings/ai: the stored AiSettings plus three read-only derived keys at
+ * the TOP LEVEL. Every derived key is optional — an older runner omits them,
+ * and an absent key is UNKNOWN. AiSettings stays the PUT body type.
+ */
+export type AiSettingsView = AiSettings & {
+  effective_account_selection_mode?: string;
+  account_selection_source?: "fleet" | "local" | "pinned";
+  /** Raw fleet value; null = the fleet has no opinion, absent = UNKNOWN. */
+  fleet_account_selection_mode?: string | null;
+};
 
 export interface AgenticSettings {
   compression: {

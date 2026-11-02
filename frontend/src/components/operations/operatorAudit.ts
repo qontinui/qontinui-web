@@ -60,7 +60,17 @@ export interface AuditPayload {
 /** The feed, as far as the page got. A failed read is never an empty feed. */
 export type AuditRead =
   | { state: "loading" }
-  | { state: "ok"; rows: AuditRow[] }
+  | {
+      state: "ok";
+      rows: AuditRow[];
+      /**
+       * Coord's `truncated`: rows matching the filters were left out past
+       * the limit (qontinui-coord `get_audit_recent` asks for `limit + 1`
+       * to know). `null` when the body does not say — a coord predating
+       * the field — which is UNKNOWN, never "complete".
+       */
+      truncated: boolean | null;
+    }
   | { state: "unavailable"; reason: string };
 
 /**
@@ -348,7 +358,12 @@ export function parseAuditPayload(payload: unknown): AuditRead {
           : "the audit feed's `audit` field was not a list.",
     };
   }
-  return { state: "ok", rows: body["audit"] as AuditRow[] };
+  return {
+    state: "ok",
+    rows: body["audit"] as AuditRow[],
+    truncated:
+      typeof body["truncated"] === "boolean" ? body["truncated"] : null,
+  };
 }
 
 /**
@@ -386,6 +401,11 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   // `2026-10-04-github-hosted-ci-is-a-per-tenant-dev-ops-setting` D6).
   // `metadata.domain` / `scope_key` / `level` say which setting and how.
   "fleet_policy.upsert": "Changed a fleet policy",
+  // coord-stored PR holds (plan
+  // `2026-10-04-coord-pr-hold-without-github-drafts`, `pr_hold.rs`).
+  // `metadata.reason` / `kind` / `held_by` say which hold and why.
+  "pr_hold.place": "Held a PR",
+  "pr_hold.release": "Released a PR hold",
 };
 
 export function describeAuditAction(action: string): AuditActionLabel {

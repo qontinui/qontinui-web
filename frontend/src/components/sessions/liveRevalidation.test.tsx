@@ -22,7 +22,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, renderHook, screen } from "@testing-library/react";
 
-import { SessionsApiError } from "./api";
+import { SessionsApiError } from "@/lib/api/operations/sessions";
 import {
   NON_REVALIDATING_EVENT_KINDS,
   REVALIDATE_COALESCE_MS,

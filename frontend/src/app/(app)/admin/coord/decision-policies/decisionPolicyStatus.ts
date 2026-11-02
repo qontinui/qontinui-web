@@ -23,7 +23,7 @@ import {
   INERT,
   UNKNOWN_AMBER,
 } from "@/components/console/statusRow";
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import {
   DECISION_POLICY_MODES,
   parseAutonomyLevel,

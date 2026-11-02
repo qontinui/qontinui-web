@@ -49,7 +49,8 @@ import {
   StatusBadge,
 } from "@/components/console";
 import { useAuth } from "@/contexts/auth-context";
-import { httpClient } from "@/services/service-factory";
+import { respondToAgentQuestion } from "@/lib/api/operations/agentQuestions";
+import { createPromptDocumentClause } from "@/lib/api/operations/coordPromptDocuments";
 import {
   QUESTION_STATUS_PALETTE,
   deriveGapStatus,
@@ -60,8 +61,6 @@ import {
   parseGapContext,
   type ProposedClause,
 } from "@/components/admin/coord/policy-gap";
-
-const API = "/api/v1/operations";
 
 /** One labelled row in the proposed-clause readout, omitted when empty. */
 function ClauseField({
@@ -114,34 +113,32 @@ export function GapRow({
    */
   const markHandled = async (note: string) => {
     if (!answered) {
-      await httpClient.post(
-        `${API}/agent-questions/${encodeURIComponent(
-          question.question_id
-        )}/respond`,
-        { response: note, responded_by_operator: operator }
-      );
+      await respondToAgentQuestion(question.question_id, {
+        response: note,
+        responded_by_operator: operator,
+      });
     }
     onHandled(question.question_id);
   };
 
   const onAccept = async () => {
+    // Accept is disabled without a `clause_id` (see its `disabled` below);
+    // narrowing here is what lets the clause-create door require one.
+    const clauseId = proposed.clause_id;
+    if (!clauseId) return;
     setBusy("accept");
     try {
       // Force status → proposed; default tier to the auto-applied tier.
-      const body: ProposedClause = {
+      const body: ProposedClause & { clause_id: string } = {
         ...proposed,
+        clause_id: clauseId,
         status: "proposed",
         tier: proposed.tier ?? tierApplied ?? undefined,
         updated_by: operator,
       };
-      // Phase-2 clause-create proxy (raw path — may not be in this branch's
-      // OpenAPI client yet; called via the generic http helper).
-      await httpClient.post(
-        `${API}/coord/prompt-documents/policy/${encodeURIComponent(
-          category
-        )}/clauses`,
-        body
-      );
+      // The policy document's clause-create door — the gap's category IS
+      // the policy document's name.
+      await createPromptDocumentClause("policy", category, body);
       await markHandled(
         `accepted as proposed clause '${proposed.clause_id ?? "(unnamed)"}' in policy/${category}`
       );

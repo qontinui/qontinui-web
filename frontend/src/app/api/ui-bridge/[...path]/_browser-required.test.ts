@@ -51,6 +51,15 @@ describe("isBrowserRequiredRoute", () => {
     expect(isBrowserRequiredRoute("/tabs", "GET")).toBe(false);
   });
 
+  it("does not claim /control/page-health — the SDK answers a typed unknown itself", () => {
+    // With no browser attached the SDK's relay handler returns a typed
+    // `unknown` Observation<PageHealthValue> (`app_unreachable` when
+    // nothing is cached, `stale_input` over a stale cache) — a "cannot
+    // see" verdict the generic NO_BROWSER_CONNECTED envelope would erase.
+    // Callers must get the Observation.
+    expect(isBrowserRequiredRoute("/control/page-health", "POST")).toBe(false);
+  });
+
   it("anchors the element route to exactly one id segment", () => {
     expect(isBrowserRequiredRoute("/control/element/a/state", "GET")).toBe(
       false,
@@ -89,6 +98,11 @@ describe("isKnownRoute", () => {
     // Relay-transport set (not in UI_BRIDGE_ROUTES):
     expect(isKnownRoute("/tabs", "GET")).toBe(true);
     expect(isKnownRoute("/commands/stream", "GET")).toBe(true);
+  });
+
+  it("claims POST /control/page-health (in the SDK manifest since 0.8.1)", () => {
+    expect(isKnownRoute("/control/page-health", "POST")).toBe(true);
+    expect(isKnownRoute("/control/page-health", "GET")).toBe(false);
   });
 
   it("rejects known paths under the wrong method", () => {

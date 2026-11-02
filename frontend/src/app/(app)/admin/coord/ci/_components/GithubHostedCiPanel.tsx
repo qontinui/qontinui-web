@@ -1,13 +1,7 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import { AlertTriangle, Cloud, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Cloud, Loader2 } from "lucide-react";
 import {
   CollapsiblePanel,
   RecordDetail,
@@ -33,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useRepoFleetPolicyWrite } from "../../_shared/useRepoFleetPolicyWrite";
 import { useTenantFleetPolicyDial } from "../../_shared/useTenantFleetPolicyDial";
 import { useCiHosting } from "../_hooks/useCiHosting";
+import { Notice } from "./Notice";
 import {
   GITHUB_HOSTED_CI_DOMAIN,
   HOSTED_CI_LEVELS,
@@ -194,7 +189,12 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
 
   const repos = ci.view?.repos ?? [];
   const summary = summarizeRepos(repos);
-  const reposUnknown = readIsUnknown(ci.view !== null, ci.error !== null);
+  // Coord could not LIST the tenant's repos: the empty list is UNKNOWN, never
+  // "this tenant has no repos".
+  const listUnknownReason = ci.view?.repos_unknown_reason ?? null;
+  const reposUnknown =
+    readIsUnknown(ci.view !== null, ci.error !== null) ||
+    listUnknownReason !== null;
 
   return (
     <CollapsiblePanel
@@ -371,6 +371,13 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
                 : "Nothing is shown in their place."}
             </Notice>
           )}
+          {listUnknownReason !== null && (
+            <Notice testId="github-hosted-ci-repos-unlisted">
+              Coord could not list this tenant&apos;s repos ({listUnknownReason}
+              ), so which repos exist and what they resolve is unknown — not
+              none.
+            </Notice>
+          )}
           {!reposUnknown && (
             <RecordList<CiHostingRepoReading>
               items={repos}
@@ -468,18 +475,6 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
         </DialogContent>
       </Dialog>
     </CollapsiblePanel>
-  );
-}
-
-function Notice({ testId, children }: { testId: string; children: ReactNode }) {
-  return (
-    <div
-      className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
-      data-testid={testId}
-    >
-      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-      <p className="text-xs text-amber-800 dark:text-amber-200">{children}</p>
-    </div>
   );
 }
 

@@ -55,7 +55,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { RotateCcw, Scale, TriangleAlert } from "lucide-react";
-import type { CoordPolicyRow } from "../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 import { DecisionPolicyEditorDialog } from "./_components/DecisionPolicyEditorDialog";
 import { DecisionPolicyList } from "./_components/DecisionPolicyList";
 import { useDecisionPolicies } from "./_hooks/useDecisionPolicies";
@@ -108,7 +108,9 @@ export default function DecisionPoliciesPage() {
 
       {/* The single most misread fact about this store, stated where an
           operator sees it before opening the form rather than only inside it:
-          creating a row does not arm anything. */}
+          creating a row does not arm anything — though it can outrank (and so
+          turn off) a coord system default, which the form warns about per
+          domain. */}
       <p
         className="rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground"
         data-testid="decision-policies-inert-banner"
@@ -186,6 +188,9 @@ export default function DecisionPoliciesPage() {
         open={editorOpen}
         onOpenChange={setEditorOpen}
         rule={editingRule}
+        // A failed (or pending) list read is UNKNOWN, even when stale rows
+        // are still on screen: the dialog then qualifies its repo claims.
+        existingRules={loading || loadFailed ? null : rules}
         saving={saving}
         onCreate={create}
         onPatch={patchRule}

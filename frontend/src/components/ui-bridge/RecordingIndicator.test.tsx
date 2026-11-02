@@ -29,6 +29,9 @@ import {
   RecordingIndicator,
   recordingSocketUrlFor,
 } from "./RecordingIndicator";
+import { PRESENTER_SAFETY_ATTRIBUTE } from "@/components/console/presenterSafety";
+import { FixedPresentationMode } from "@/components/presentation/PresentationModeProvider";
+import { findPresentationViolations } from "@/test/presentation";
 
 const opened: string[] = [];
 /** What the fake socket answers `recording:status` with (null = no answer). */
@@ -114,6 +117,35 @@ describe("<RecordingIndicator> transport", () => {
 
     expect(await screen.findByText("Recording")).toBeTruthy();
     expect(screen.getByText("1:05")).toBeTruthy();
+  });
+
+  it("is safe to show in presentation mode: its one control is the presenter's safety control", async () => {
+    runnerTargetMock.current = localRunner();
+    socketStatus = {
+      active: true,
+      duration: 65_000,
+      interactionCount: 3,
+      captureCount: 1,
+    };
+    render(
+      <FixedPresentationMode presenting>
+        <RecordingIndicator />
+      </FixedPresentationMode>
+    );
+    expect(await screen.findByText("Recording")).toBeTruthy();
+    const stop = screen.getByRole("button", { name: "Stop recording" });
+    expect(stop.getAttribute(PRESENTER_SAFETY_ATTRIBUTE)).toBe(
+      "recording-stop"
+    );
+    expect(
+      findPresentationViolations({
+        baseElement: document.body,
+        uiBridge: {
+          unobservable:
+            "the indicator registers nothing with the UI Bridge; its control is checked as DOM",
+        },
+      })
+    ).toEqual([]);
   });
 
   it("opens nothing when the connected app's URL is not a loopback address", async () => {

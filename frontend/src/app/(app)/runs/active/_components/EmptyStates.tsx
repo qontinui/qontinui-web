@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Inbox, CheckCircle2, History, Rocket, WifiOff } from "lucide-react";
 import { TaskRunScopeNote } from "@/components/runner/TaskRunScopeNote";
+import { SlotImage } from "@/components/image-slot/SlotImage";
 
 export function IdleState({
   isOffline = false,
@@ -18,12 +19,20 @@ export function IdleState({
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="text-center space-y-6 max-w-md">
-        <div className="relative mx-auto w-20 h-20">
-          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-brand-primary/20 to-violet-500/20 animate-pulse" />
-          <div className="absolute inset-2 rounded-full bg-surface-raised/80 flex items-center justify-center">
-            <Inbox className="size-8 text-text-muted" />
-          </div>
-        </div>
+        {/* Until an asset is bound to this slot, its placeholder keeps the
+            page's existing idle motif inside the reserved 1/1 box. */}
+        <SlotImage
+          slot="runs.active.idle"
+          className="relative mx-auto w-20"
+          placeholder={
+            <>
+              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-brand-primary/20 to-violet-500/20 animate-pulse" />
+              <div className="absolute inset-2 rounded-full bg-surface-raised/80 flex items-center justify-center">
+                <Inbox className="size-8 text-text-muted" />
+              </div>
+            </>
+          }
+        />
         <div>
           <h3 className="text-lg font-medium text-text-secondary mb-2">
             No Active Runs

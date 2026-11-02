@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/collapsible";
 import { useNavigationItem, NavigationItemShell } from "@qontinui/navigation";
 import type { NavItem } from "./types";
+import { NAVIGATION_ONLY_PROPS } from "@/components/console/navigationOnly";
 
 export interface NestedSubGroupProps {
   item: NavItem;
@@ -74,6 +75,7 @@ export function NestedSubGroup({
                 onActivate={() => onNavigate(grandchild.route)}
               >
                 <button
+                  {...NAVIGATION_ONLY_PROPS}
                   data-route={grandchild.route}
                   onClick={() => onNavigate(grandchild.route)}
                   className={cn(

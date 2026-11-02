@@ -26,10 +26,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud import work_artifact as crud
 from app.models.work_artifact import WorkArtifact
 from app.services.plan_difficulty import (
+    DEFAULT_MODEL_SELECTORS,
     MODEL_SELECTOR_VOCABULARY,
-    MODEL_SELECTORS,
-    MODEL_TIERS,
     RUBRIC_VERSION,
+    model_tiers_for,
 )
 from tests.test_plan_library_api import API_PREFIX, _build_app
 
@@ -384,7 +384,7 @@ class TestDifficultyRoute:
         assert payload["rubric_version"] == RUBRIC_VERSION
         assert payload["rerate_failed_reason"] is None
         assert payload["rerate_pending"] == 0
-        assert payload["model_tiers"]["high"] == "Fable 5.1"
+        assert payload["model_tiers"]["high"] == "Fable (latest)"
         mine = [item for item in payload["items"] if item["slug"] == slug]
         assert len(mine) == 1
         assert mine[0]["work_unit_slug"] == slug
@@ -418,17 +418,17 @@ class TestDifficultyRoute:
         # Page through: the NULL-organization bucket this user writes into is
         # shared with every other test, so one page proves nothing.
         mine: list[dict] = []
-        offset = 0
+        cursor: str | None = None
         while True:
-            response = await http.get(
-                f"{API_PREFIX}/candidates",
-                params={"include_coord": "false", "limit": 100, "offset": offset},
-            )
+            params: dict[str, str | int] = {"include_coord": "false", "limit": 100}
+            if cursor is not None:
+                params["cursor"] = cursor
+            response = await http.get(f"{API_PREFIX}/candidates", params=params)
             assert response.status_code == 200, response.text
             page = response.json()
             mine += [c for c in page["items"] if c["slug"] == slug]
-            offset += len(page["items"])
-            if not page["items"] or offset >= page["total"]:
+            cursor = page["next_cursor"]
+            if cursor is None:
                 break
         assert len(mine) == 1
         assert mine[0]["difficulty"] == "high"
@@ -462,8 +462,11 @@ class TestModelRoutingMapsOnEveryConsumingRoute:
             payload = response.json()
             for key in self._KEYS:
                 assert payload.get(key) is not None, (route, key)
-            assert payload["model_tiers"] == MODEL_TIERS, route
-            assert payload["model_selectors"] == MODEL_SELECTORS, route
+            # No routing row for this caller: the defaults, tiers derived.
+            assert payload["model_tiers"] == model_tiers_for(DEFAULT_MODEL_SELECTORS), (
+                route
+            )
+            assert payload["model_selectors"] == DEFAULT_MODEL_SELECTORS, route
             assert payload["model_selector_vocabulary"] == MODEL_SELECTOR_VOCABULARY
             # Byte-identical: compare the raw serialised maps, not just equality.
             blocks[route] = json.dumps(

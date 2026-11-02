@@ -109,7 +109,7 @@ export function rollbackProposalPossible(
  * regions:
  *
  * - the BODY, so a 500 whose text quoted a 404 read as "no proposal";
- * - the URL, which is `${API}/deploys/${sig.id}/rollback-proposal`. Deploy ids
+ * - the URL, which is `/api/v1/operations/deploys/{id}/rollback-proposal`. Deploy ids
  *   are hex, so an id containing the digits `404` turned EVERY failure on that
  *   one row — a 500, a timeout, coord being down — into the calm "coord does
  *   not consider this rollback-justified". A row that told the operator no

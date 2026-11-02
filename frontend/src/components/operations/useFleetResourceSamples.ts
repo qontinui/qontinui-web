@@ -23,16 +23,13 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "./utils";
+import { fetchFleetResourceSamples } from "@/lib/api/operations/coordFleet";
 import type { ResourceSamplesResponse } from "./fleetResources";
 import {
   COORD_DASHBOARD_POLL_OPTIONS,
   describeCoordPollError,
 } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-
-export const FLEET_RESOURCE_SAMPLES_API = `${OPERATIONS_API}/fleet/resource-samples`;
 
 /** Poll cadence. Matches the runner's 30 s publish cadence. */
 export const RESOURCE_POLL_INTERVAL_MS = 30_000;
@@ -83,10 +80,8 @@ export function useFleetResourceSamples(options?: {
   const poll = useCallback(
     async (isCurrent: () => boolean) => {
       try {
-        const body = await httpClient.get<ResourceSamplesResponse>(
-          `${FLEET_RESOURCE_SAMPLES_API}?window_secs=${encodeURIComponent(
-            String(windowSecs)
-          )}`,
+        const body = await fetchFleetResourceSamples(
+          windowSecs,
           COORD_DASHBOARD_POLL_OPTIONS
         );
         if (!isCurrent()) return;

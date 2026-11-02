@@ -238,6 +238,15 @@ describe("parseAuditPayload", () => {
     expect(parseAuditPayload({ audit: "nope" }).state).toBe("unavailable");
   });
 
+  it("carries coord's truncated flag, and UNKNOWN (null) — never false — when the body does not say", () => {
+    const cut = parseAuditPayload({ audit: [row()], count: 1, truncated: true });
+    const whole = parseAuditPayload({ audit: [row()], count: 1, truncated: false });
+    const silent = parseAuditPayload({ audit: [row()], count: 1 });
+    expect(cut.state === "ok" && cut.truncated).toBe(true);
+    expect(whole.state === "ok" && whole.truncated).toBe(false);
+    expect(silent.state === "ok" ? silent.truncated : "not ok").toBeNull();
+  });
+
   it("an ABSENT `audit` key is UNAVAILABLE too", () => {
     const read = parseAuditPayload({ count: 0 });
     expect(read.state).toBe("unavailable");
@@ -253,6 +262,17 @@ describe("describeAuditAction — R8", () => {
       mapped: true,
     });
     expect(describeAuditAction("fleet.drain.clear").mapped).toBe(true);
+  });
+
+  it("labels the coord PR hold actions", () => {
+    expect(describeAuditAction("pr_hold.place")).toEqual({
+      label: "Held a PR",
+      mapped: true,
+    });
+    expect(describeAuditAction("pr_hold.release")).toEqual({
+      label: "Released a PR hold",
+      mapped: true,
+    });
   });
 
   it("labels a fleet-policy write, and offers a filter that reaches it", () => {

@@ -40,18 +40,20 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  fetchFleetWorktreeCap,
+  postFleetWorktreeCap,
+  postFleetWorktreeCapClear,
+  type FleetWriteAck,
+} from "@/lib/api/operations/coordFleet";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { OPERATIONS_API } from "./utils";
 import {
   normalizeDeviceId,
   parseFleetWorktreeCap,
   type FleetWorktreeCapRead,
 } from "./fleetWorktreeCap";
-
-export const FLEET_WORKTREE_CAP_API = `${OPERATIONS_API}/fleet/worktree-cap`;
-export const FLEET_WORKTREE_CAP_CLEAR_API = `${OPERATIONS_API}/fleet/worktree-cap/clear`;
 
 /** Poll cadence. Slow on purpose — see the module doc. */
 export const FLEET_WORKTREE_CAP_POLL_MS = 30_000;
@@ -70,11 +72,12 @@ export function useFleetWorktreeCap(): UseFleetWorktreeCapResult {
   const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: FleetWorktreeCapRead;
     try {
-      const res = await httpClient.fetch(
-        FLEET_WORKTREE_CAP_API,
-        COORD_DASHBOARD_POLL_OPTIONS
+      next = parseFleetWorktreeCap(
+        await fetchFleetWorktreeCap(COORD_DASHBOARD_POLL_OPTIONS)
       );
-      if (res.status === 404) {
+    } catch (err) {
+      const status = httpStatusOf(err);
+      if (status === 404) {
         next = {
           state: "unknown",
           reason:
@@ -83,36 +86,27 @@ export function useFleetWorktreeCap(): UseFleetWorktreeCapResult {
             "carry a cap — this build simply cannot ask. Expected while coord " +
             "is a deploy behind this console.",
         };
-      } else if (!res.ok) {
+      } else if (status !== null) {
         next = {
           state: "unknown",
           reason:
-            `The worktree-cap read returned HTTP ${res.status}, so no ` +
+            `The worktree-cap read returned HTTP ${status}, so no ` +
             "device's cap could be determined from it.",
         };
       } else {
-        // Two arms rather than a nullable payload: an unreadable body and a
-        // body that reads as `undefined` are the same UNKNOWN to the operator,
-        // but only one of them has a message worth showing.
-        let parsed: unknown;
-        try {
-          parsed = await res.json();
-        } catch (err) {
-          throw new Error(
-            `the worktree-cap read did not return valid JSON: ${
-              err instanceof Error ? err.message : "parse error"
-            }`
-          );
-        }
-        next = parseFleetWorktreeCap(parsed);
+        // An unreadable 2xx body and a transport failure are the same UNKNOWN
+        // to the operator; the body case keeps naming itself.
+        const message =
+          err instanceof SyntaxError
+            ? `the worktree-cap read did not return valid JSON: ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        next = {
+          state: "unknown",
+          reason: `Coord's per-device worktree caps could not be read — ${message}`,
+        };
       }
-    } catch (err) {
-      next = {
-        state: "unknown",
-        reason: `Coord's per-device worktree caps could not be read — ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      };
     }
     if (isCurrent()) setRead(next);
   }, []);
@@ -152,15 +146,17 @@ export async function postWorktreeCap(input: {
   maxWorktrees: number;
   reason: string;
 }): Promise<WorktreeCapWriteResult> {
-  return postCapChange(FLEET_WORKTREE_CAP_API, {
-    // Normalised, like the READ side keys its map. The ids on this page come
-    // from several joins; one carrying surrounding whitespace would resolve
-    // `capped` in the state line and then 422 on the write, which reads as coord
-    // refusing an operator rather than as a local id that was never trimmed.
-    device_id: normalizeDeviceId(input.deviceId),
-    max_worktrees: input.maxWorktrees,
-    reason: input.reason,
-  });
+  return capWriteResult(() =>
+    postFleetWorktreeCap({
+      // Normalised, like the READ side keys its map. The ids on this page come
+      // from several joins; one carrying surrounding whitespace would resolve
+      // `capped` in the state line and then 422 on the write, which reads as coord
+      // refusing an operator rather than as a local id that was never trimmed.
+      device_id: normalizeDeviceId(input.deviceId),
+      max_worktrees: input.maxWorktrees,
+      reason: input.reason,
+    })
+  );
 }
 
 /**
@@ -171,55 +167,51 @@ export async function postClearWorktreeCap(input: {
   deviceId: string;
   reason: string;
 }): Promise<WorktreeCapWriteResult> {
-  return postCapChange(FLEET_WORKTREE_CAP_CLEAR_API, {
-    device_id: normalizeDeviceId(input.deviceId),
-    reason: input.reason,
-  });
+  return capWriteResult(() =>
+    postFleetWorktreeCapClear({
+      device_id: normalizeDeviceId(input.deviceId),
+      reason: input.reason,
+    })
+  );
 }
 
-async function postCapChange(
-  url: string,
-  body: Record<string, string | number>
+/**
+ * Map one cap write onto what the control renders. Takes the client call, not
+ * a URL: the route lives in `coordFleet.ts` alone.
+ */
+async function capWriteResult(
+  write: () => Promise<FleetWriteAck | null>
 ): Promise<WorktreeCapWriteResult> {
+  let payload: FleetWriteAck | null;
   try {
-    const res = await httpClient.fetch(url, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
+    payload = await write();
+  } catch (err) {
+    const status = httpStatusOf(err);
+    if (status !== null) {
       // The response TEXT, not just the status. Route-missing,
       // `device_not_in_tenant`, `admin_required` and `schema_pending` are four
       // different remediations that render identically without it.
-      return { ok: false, status: res.status, body: await res.text() };
+      return { ok: false, status, body: httpBodyOf(err) ?? "" };
     }
-    // Coord reports `changed: false` for a request that altered nothing — a
-    // clear of a device that carried no cap, or a re-set of the same number.
-    // Passed through rather than dressed up as a change, so the operator can
-    // tell "I set it" from "it was already that".
-    let changed: boolean | "unknown" = "unknown";
-    try {
-      const payload: unknown = await res.json();
-      if (
-        typeof payload === "object" &&
-        payload !== null &&
-        "changed" in payload &&
-        typeof (payload as { changed: unknown }).changed === "boolean"
-      ) {
-        changed = (payload as { changed: boolean }).changed;
-      }
-    } catch {
-      // A success with an unreadable body still SUCCEEDED — the write landed —
-      // but which of coord's two outcomes it was is UNKNOWN, and `"unknown"` is
-      // how the control is told so. Defaulting to either boolean would make the
-      // toast assert something no code here observed
-      // [policy: verification-and-evidence unknown-must-not-render-as-a-default].
-    }
-    return { ok: true, changed };
-  } catch (err) {
     return {
       ok: false,
       status: null,
       body: err instanceof Error ? err.message : String(err),
     };
   }
+  // Coord reports `changed: false` for a request that altered nothing — a
+  // clear of a device that carried no cap, or a re-set of the same number.
+  // Passed through rather than dressed up as a change, so the operator can
+  // tell "I set it" from "it was already that".
+  //
+  // A success with an unreadable body (`null`) still SUCCEEDED — the write
+  // landed — but which of coord's two outcomes it was is UNKNOWN, and
+  // `"unknown"` is how the control is told so. Defaulting to either boolean
+  // would make the toast assert something no code here observed
+  // [policy: verification-and-evidence unknown-must-not-render-as-a-default].
+  const changed: boolean | "unknown" =
+    payload !== null && typeof payload.changed === "boolean"
+      ? payload.changed
+      : "unknown";
+  return { ok: true, changed };
 }

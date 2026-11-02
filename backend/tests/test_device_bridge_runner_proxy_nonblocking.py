@@ -36,6 +36,11 @@ from starlette.datastructures import Headers
 from app.api.v1.endpoints import device_bridge_ws
 
 USER_ID = "33333333-3333-3333-3333-333333333333"
+# The co-located arm (no ``X-Qontinui-Device-Id``) is for platform admins
+# only: ``runner_proxy`` refuses anyone else before the hop these tests
+# exercise. That refusal is pinned in
+# ``test_device_bridge_runner_proxy_co_located_admin_gate.py``.
+ADMIN = SimpleNamespace(id=USER_ID, is_superuser=True)
 
 # Sleep the fake runner performs per request. Small enough to keep the suite
 # fast, large enough that a serialized (blocking) implementation is
@@ -144,7 +149,7 @@ async def test_runner_proxy_concurrent_calls_do_not_serialize(monkeypatch):
         device_bridge_ws.httpx, "AsyncClient", _SlowAsyncClient, raising=True
     )
 
-    user = SimpleNamespace(id=USER_ID)
+    user = ADMIN
 
     started = time.monotonic()
     responses = await asyncio.gather(
@@ -204,9 +209,7 @@ async def test_runner_proxy_transport_failure_maps_to_502(monkeypatch):
         device_bridge_ws.httpx, "AsyncClient", _FailingAsyncClient, raising=True
     )
 
-    resp = await device_bridge_ws.runner_proxy(
-        _FakeRequest(), "status", user=SimpleNamespace(id=USER_ID)
-    )
+    resp = await device_bridge_ws.runner_proxy(_FakeRequest(), "status", user=ADMIN)
 
     assert resp.status_code == 502
     assert b"9880" in resp.body
@@ -253,9 +256,7 @@ async def test_runner_proxy_passes_runner_error_status_through(monkeypatch):
         device_bridge_ws.httpx, "AsyncClient", _NotFoundClient, raising=True
     )
 
-    resp = await device_bridge_ws.runner_proxy(
-        _FakeRequest(), "status", user=SimpleNamespace(id=USER_ID)
-    )
+    resp = await device_bridge_ws.runner_proxy(_FakeRequest(), "status", user=ADMIN)
 
     assert resp.status_code == 404
     assert resp.body == b'{"detail":"nope"}'
@@ -309,9 +310,7 @@ async def test_runner_proxy_strips_content_encoding(monkeypatch):
         device_bridge_ws.httpx, "AsyncClient", _GzipClient, raising=True
     )
 
-    resp = await device_bridge_ws.runner_proxy(
-        _FakeRequest(), "status", user=SimpleNamespace(id=USER_ID)
-    )
+    resp = await device_bridge_ws.runner_proxy(_FakeRequest(), "status", user=ADMIN)
 
     assert resp.status_code == 200
     assert "content-encoding" not in {k.lower() for k in resp.headers}
@@ -612,7 +611,7 @@ async def test_runner_proxy_negotiates_identity_encoding(monkeypatch):
     await device_bridge_ws.runner_proxy(
         _FakeRequest(headers={"Accept-Encoding": "gzip, br"}),
         "status",
-        user=SimpleNamespace(id=USER_ID),
+        user=ADMIN,
     )
 
     assert seen.get("accept-encoding") == "identity", (
@@ -672,9 +671,7 @@ async def test_runner_proxy_preserves_repeated_set_cookie(monkeypatch):
         device_bridge_ws.httpx, "AsyncClient", _CookieClient, raising=True
     )
 
-    resp = await device_bridge_ws.runner_proxy(
-        _FakeRequest(), "status", user=SimpleNamespace(id=USER_ID)
-    )
+    resp = await device_bridge_ws.runner_proxy(_FakeRequest(), "status", user=ADMIN)
 
     cookies = [
         v.decode("latin-1")
@@ -755,7 +752,7 @@ async def test_runner_proxy_forwards_repeated_request_headers(monkeypatch):
             )
         ),
         "status",
-        user=SimpleNamespace(id=USER_ID),
+        user=ADMIN,
     )
 
     repeated = [v for k, v in sent if k == "x-repeat"]

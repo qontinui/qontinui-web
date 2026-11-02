@@ -1,5 +1,5 @@
 /**
- * `/admin/coord/plan-library/settings` — the two policy dials' stable,
+ * `/admin/coord/plan-library/settings` — the policy dials' and model routing's stable,
  * linkable home (plan
  * `2026-09-19-plan-library-cannot-answer-what-to-work-on-next` Design
  * decision 4b). The panels own their own tests; this pins that both are here.
@@ -14,14 +14,18 @@ vi.mock("../_components/CapturePolicyPanel", () => ({
 vi.mock("../_components/CitationBackfillPolicyPanel", () => ({
   CitationBackfillPolicyPanel: () => <div data-testid="stub-backfill-policy" />,
 }));
+vi.mock("../_components/ModelRoutingPanel", () => ({
+  ModelRoutingPanel: () => <div data-testid="stub-model-routing" />,
+}));
 
 import PlanLibrarySettingsPage from "./page";
 
 describe("/admin/coord/plan-library/settings", () => {
-  it("renders both policy dials and links back to the plan browser", () => {
+  it("renders both policy dials, the model routing, and links back to the plan browser", () => {
     render(<PlanLibrarySettingsPage />);
     expect(screen.getByTestId("stub-capture-policy")).toBeInTheDocument();
     expect(screen.getByTestId("stub-backfill-policy")).toBeInTheDocument();
+    expect(screen.getByTestId("stub-model-routing")).toBeInTheDocument();
     expect(
       screen.getByTestId("plan-library-settings-plans-link")
     ).toHaveAttribute("href", "/admin/coord/plans");

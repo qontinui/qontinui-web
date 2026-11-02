@@ -17,7 +17,7 @@ import {
   resolveRunnerReports,
   wedgeStatus,
 } from "./runnerReportStatus";
-import type { RunnerReportMeta, RunnerReportsMeta } from "./useFleetHealth";
+import type { RunnerReportMeta, RunnerReportsMeta } from "@/lib/api/operations/coordFleet";
 
 const FRESH: RunnerReportMeta = {
   absent_reason: null,

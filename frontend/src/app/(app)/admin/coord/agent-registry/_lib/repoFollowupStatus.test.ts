@@ -10,16 +10,18 @@ import {
   UNKNOWN_DASH,
   buildScopeWrite,
   deliveryCurrentLabel,
+  deliveryProvenanceNote,
   fleetRolloutMode,
   parseGlobLines,
   readErrorText,
   rolloutHeadline,
   scopeStatus,
   summarizeScopes,
+  writeUnknownReason,
   EMPTY_READING,
-  type PostMergeFollowupScopeView,
   type RepoDialReading,
 } from "./repoFollowupStatus";
+import type { PostMergeFollowupScopeView } from "@/lib/api/operations/repoFollowupDials";
 
 function view(
   overrides: Partial<PostMergeFollowupScopeView> = {}
@@ -172,6 +174,44 @@ describe("rollout mode", () => {
   });
 });
 
+describe("a write whose outcome is open", () => {
+  it("is UNKNOWN on the scope row, worded as unknown and never as written", () => {
+    const s = scopeStatus(view({ scope: "all", resolved_scope: "repo" }), {
+      outcomeUnknown: "timeout waiting for coord",
+    });
+    expect(s.kind).toBe("unknown");
+    expect(s.label).toBe(UNKNOWN_DASH);
+    expect(s.reason).toBe(
+      "whether the last change was applied is unknown (timeout waiting for coord) — re-reading what coord holds"
+    );
+    expect(s.reason).not.toMatch(/written|failed/);
+  });
+
+  it("counts as unknown, not as its pre-write scope or mode", () => {
+    const r = reading(view({ scope: "all", mode: "enforce" }), {
+      scopeOutcomeUnknown: "HTTP 504 with no readable reason",
+    });
+    expect(summarizeScopes([r])).toEqual({
+      all: 0,
+      code_only: 0,
+      none: 0,
+      unknown: 1,
+      stale: 0,
+    });
+    expect(fleetRolloutMode([r]).mode).toBeNull();
+  });
+
+  it("names a failed read-back before an open outcome, and nothing for neither", () => {
+    expect(writeUnknownReason("503", "x")).toBe(
+      "written, but reading it back failed (503) — refresh to re-check"
+    );
+    expect(writeUnknownReason(null, "x")).toBe(
+      "whether the last change was applied is unknown (x) — re-reading what coord holds"
+    );
+    expect(writeUnknownReason(null, null)).toBeNull();
+  });
+});
+
 describe("summarizeScopes", () => {
   it("counts unread repos as unknown, not as `all`", () => {
     expect(
@@ -247,15 +287,39 @@ describe("parseGlobLines / readErrorText", () => {
 });
 
 describe("deliveryCurrentLabel", () => {
-  it("qualifies a value coord resolved but cannot confirm was set", () => {
-    expect(deliveryCurrentLabel("notify_only", false)).toBe(
-      "Notify only (resolved, not confirmed)"
+  it("says 'not confirmed' when coord did not say where the value came from", () => {
+    expect(deliveryCurrentLabel("notify_only", null)).toBe(
+      "Notify only (not confirmed)"
     );
   });
-  it("renders a confirmed value plainly, and unknown as a dash", () => {
-    expect(deliveryCurrentLabel("spawn_always", true)).toBe(
-      "Always a new session"
+  it("names each provenance coord reports", () => {
+    expect(deliveryCurrentLabel("spawn_always", "repo")).toBe(
+      "Always a new session (set for this repo)"
     );
-    expect(deliveryCurrentLabel(null, false)).toBe(UNKNOWN_DASH);
+    expect(deliveryCurrentLabel("spawn_always", "default")).toBe(
+      "Always a new session (default)"
+    );
+    expect(deliveryCurrentLabel("notify_only", "unrecognized")).toBe(
+      "Notify only (stored value not understood)"
+    );
+  });
+  it("renders an unknown mode as a dash whatever the scope", () => {
+    expect(deliveryCurrentLabel(null, "repo")).toBe(UNKNOWN_DASH);
+    expect(deliveryCurrentLabel(null, null)).toBe(UNKNOWN_DASH);
+  });
+});
+
+describe("deliveryProvenanceNote", () => {
+  it("claims an unreadable read is an error only when coord gave a provenance", () => {
+    expect(deliveryProvenanceNote("repo", null)).toContain("is an error");
+    expect(deliveryProvenanceNote("default", null)).toContain("is an error");
+    expect(deliveryProvenanceNote(null, null)).not.toContain("is an error");
+    expect(deliveryProvenanceNote(null, null)).toContain("may be the default");
+  });
+  it("names the stored value coord did not understand", () => {
+    expect(deliveryProvenanceNote("unrecognized", "inject_always")).toContain(
+      '"inject_always"'
+    );
+    expect(deliveryProvenanceNote("unrecognized", null)).toContain("a value");
   });
 });

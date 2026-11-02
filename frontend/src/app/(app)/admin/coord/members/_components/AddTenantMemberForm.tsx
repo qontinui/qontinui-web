@@ -13,41 +13,20 @@ import {
 } from "@/components/ui/select";
 import { AlertTriangle, Mail, ShieldCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import { addTenantMember } from "@/lib/api/operations/coordMembers";
-import type { CoordRole } from "../_types";
-import { TIER_OPTIONS, tierLabel } from "../_lib/tenantLabels";
 import {
-  backendErrorMessage,
-  plainSentence,
-} from "@/lib/errors/backend-error-message";
+  addTenantMember,
+  type CoordMemberRole,
+  type TenantMemberAddResponse,
+} from "@/lib/api/operations/coordMembers";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { TIER_OPTIONS, tierLabel } from "../_lib/tenantLabels";
+import { plainSentence } from "@/lib/errors/backend-error-message";
 import { log } from "../_lib/log";
 
 // ===========================================================================
 // Section c — Add a member by email (the page's PRIMARY write)
 // ===========================================================================
-
-/**
- * The success body of `POST /coord/tenant-members`.
- *
- * `status` is declared optional against the wire even though the backend
- * always sends it: a 2xx that carries no arm is a body this component cannot
- * describe, and the only honest rendering of it is the error arm (see
- * `submit`), not a silent success.
- */
-interface TenantMemberAddResponse {
-  status?: string;
-  operator_id?: string;
-  role?: string;
-  /**
-   * `added` only — what happened to the "you have been given access" email.
-   * `sent`, `not_sent`, or `not_needed` (they already had access to this
-   * team, so nothing was sent and nothing needed to be). Absent on a backend
-   * that predates the notice, which is a further state (UNKNOWN) rather than
-   * a failure: the copy then says nothing about email rather than claiming
-   * any outcome.
-   */
-  notice?: string;
-}
 
 /** What happened to the notice. `null` = this backend did not say. */
 type AddMemberNotice = "sent" | "not_sent" | "not_needed" | null;
@@ -68,9 +47,14 @@ function readNotice(value: unknown): AddMemberNotice {
 
 /** What the last submit produced, rendered inline beneath the form. */
 type AddMemberOutcome =
-  | { kind: "added"; email: string; role: CoordRole; notice: AddMemberNotice }
-  | { kind: "invited"; email: string; role: CoordRole }
-  | { kind: "invitation_pending"; email: string; role: CoordRole }
+  | {
+      kind: "added";
+      email: string;
+      role: CoordMemberRole;
+      notice: AddMemberNotice;
+    }
+  | { kind: "invited"; email: string; role: CoordMemberRole }
+  | { kind: "invitation_pending"; email: string; role: CoordMemberRole }
   | { kind: "invite_required"; email: string }
   | { kind: "error"; message: string };
 
@@ -136,7 +120,7 @@ export function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
   // Developer, not Administrator: the old form defaulted to `admin`, which
   // makes the most privileged grant the one a distracted click produces. A
   // tier is one click to change and a mis-grant is a revoke plus an apology.
-  const [role, setRole] = useState<CoordRole>("operator");
+  const [role, setRole] = useState<CoordMemberRole>("operator");
   const [submitting, setSubmitting] = useState(false);
   const [outcome, setOutcome] = useState<AddMemberOutcome | null>(null);
 
@@ -149,25 +133,28 @@ export function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
     setSubmitting(true);
     setOutcome(null);
     try {
-      const res = await addTenantMember(addr, role);
-      // 409 is the resolver's ambiguity verdict (more than one Cognito user
-      // carries this email), NOT a generic conflict — same wording the Cognito
-      // group member add already uses, because it is the same condition and an
-      // operator who has read one should recognise the other.
-      if (res.status === 409) {
-        const message =
-          "Ambiguous email — more than one Cognito user matches. Resolve in Cognito first.";
-        setOutcome({ kind: "error", message });
-        toast.error(message);
-        return;
-      }
-      if (!res.ok) {
+      let json: TenantMemberAddResponse;
+      try {
+        json = await addTenantMember(addr, role);
+      } catch (err) {
+        const status = httpStatusOf(err);
+        // 409 is the resolver's ambiguity verdict (more than one Cognito user
+        // carries this email), NOT a generic conflict — same wording the
+        // Cognito group member add already uses, because it is the same
+        // condition and an operator who has read one should recognise the
+        // other.
+        if (status === 409) {
+          const message =
+            "Ambiguous email — more than one Cognito user matches. Resolve in Cognito first.";
+          setOutcome({ kind: "error", message });
+          toast.error(message);
+          return;
+        }
         // A 502 can mean the grant landed and only its invitation email
         // failed (`invitation_not_sent`), so the list may have changed.
-        if (res.status === 502) onAdded();
-        throw new Error(await backendErrorMessage(res));
+        if (status === 502) onAdded();
+        throw err;
       }
-      const json = (await res.json()) as TenantMemberAddResponse;
       if (json?.status === "added") {
         const notice = readNotice(json?.notice);
         setOutcome({ kind: "added", email: addr, role, notice });
@@ -219,7 +206,7 @@ export function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
         }).`
       );
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = operationsErrorMessage(err);
       log.warn("add tenant member failed", err);
       setOutcome({ kind: "error", message });
       toast.error(`Add failed: ${message}`);
@@ -247,7 +234,10 @@ export function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
         </div>
         <div className="space-y-1 sm:w-52">
           <Label htmlFor="add-member-role">Role</Label>
-          <Select value={role} onValueChange={(v) => setRole(v as CoordRole)}>
+          <Select
+            value={role}
+            onValueChange={(v) => setRole(v as CoordMemberRole)}
+          >
             <SelectTrigger
               id="add-member-role"
               className="w-full"

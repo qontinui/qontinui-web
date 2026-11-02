@@ -5,13 +5,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Building2 } from "lucide-react";
-import { fetchMyTenants } from "@/lib/api/operations/coordMembers";
-import { CollapsiblePanel } from "@/components/console";
+import {
+  fetchMyTenants,
+  type MyTenantsResponse,
+  type TenantRoleEntry,
+} from "@/lib/api/operations/coordMembers";
+import { operationsErrorReading } from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
+import { BackendErrorMessage, CollapsiblePanel } from "@/components/console";
 import {
   CoordProjectRenameDialog,
   type RenameTarget,
 } from "@/components/admin/coord/CoordProjectRenameDialog";
-import type { MyTenantsResponse, TenantRoleEntry } from "../_types";
 import { requireRows } from "../_lib/groupName";
 import {
   homeTenantName,
@@ -19,7 +24,6 @@ import {
   tierLabel,
   tenantName,
 } from "../_lib/tenantLabels";
-import { backendErrorMessage } from "@/lib/errors/backend-error-message";
 import { log } from "../_lib/log";
 
 // ===========================================================================
@@ -35,7 +39,7 @@ import { log } from "../_lib/log";
 export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
   const [data, setData] = useState<MyTenantsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   // The row whose Rename dialog is open. The dialog is MOUNTED only while this
   // is set, so the rest of the page never pays for its tenant-context and UI
   // Bridge hooks.
@@ -45,9 +49,7 @@ export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchMyTenants();
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
-      const json = (await res.json()) as MyTenantsResponse | null;
+      const json = await fetchMyTenants();
       // This read is cast straight into state with no check at all. A `null`
       // body — legal JSON, and what a proxy returns when it has nothing —
       // leaves `data` null while `loading` and `error` are both false, and the
@@ -87,7 +89,7 @@ export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) 
       setData(json);
     } catch (err) {
       log.warn("load my-tenants failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(operationsErrorReading(err));
     } finally {
       setLoading(false);
     }
@@ -164,7 +166,8 @@ export function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) 
           <Skeleton className="h-10 w-full" />
         ) : error ? (
           <p className="text-sm text-destructive flex items-center gap-1.5">
-            <AlertTriangle className="h-4 w-4" /> {error}
+            <AlertTriangle className="h-4 w-4" />{" "}
+            <BackendErrorMessage error={error} />
           </p>
         ) : data ? (
           <div className="space-y-2 text-sm">

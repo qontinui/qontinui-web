@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { sameOriginNext } from "@/lib/safe-next";
 import {
   startCognitoLogin,
   type CognitoProvider,
@@ -35,7 +36,7 @@ export function AuthForm({ next }: AuthFormProps) {
     null
   );
 
-  const nextPath = next && next.startsWith("/") ? next : undefined;
+  const nextPath = sameOriginNext(next) ?? undefined;
 
   const beginLogin = async (provider?: CognitoProvider) => {
     setPending(provider ?? "email");

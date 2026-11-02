@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { httpClient } from "@/services/service-factory";
 import { useRetainedValue } from "@/components/console";
 import { useArtifactDocument } from "../../plans/useArtifactDocument";
+import {
+  describeBoundedWindow,
+  useCursorPager,
+  type BoundedWindow,
+} from "@/components/admin/coord/cursorPager";
 import type {
   ScanRootListResponse,
   WorkArtifactKind,
@@ -38,13 +43,15 @@ export const EMPTY_FILTERS: PlanLibraryFilters = {
   q: "",
 };
 
-function toQuery(filters: PlanLibraryFilters, offset: number): string {
+function toQuery(filters: PlanLibraryFilters, cursor: string | null): string {
   const qs = new URLSearchParams();
   if (filters.kind) qs.set("kind", filters.kind);
   if (filters.status.trim()) qs.set("status", filters.status.trim());
   if (filters.repo.trim()) qs.set("repo", filters.repo.trim());
   if (filters.q.trim()) qs.set("q", filters.q.trim());
-  qs.set("offset", String(offset));
+  // Keyset paging: the previous page's `next_cursor`, verbatim. The route
+  // has no `offset` (deleted, plan 2026-09-05-every-bounded-read-… Phase 4).
+  if (cursor !== null) qs.set("cursor", cursor);
   qs.set("limit", String(PAGE_SIZE));
   return qs.toString();
 }
@@ -83,9 +90,10 @@ export function usePlanLibrary() {
   const [filters, setFilters] = useState<PlanLibraryFilters>(EMPTY_FILTERS);
   //: What has actually been sent — trails `filters` by the debounce.
   const [applied, setApplied] = useState<PlanLibraryFilters>(EMPTY_FILTERS);
-  const [offset, setOffset] = useState(0);
+  const pager = useCursorPager();
+  const { cursor, start, reset: resetPager } = pager;
   const [items, setItems] = useState<WorkArtifactSummary[]>([]);
-  const [total, setTotal] = useState(0);
+  const [window, setWindow] = useState<BoundedWindow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,7 +120,7 @@ export function usePlanLibrary() {
    * rows, the total, both branches of the error state and `loading` — is
    * gated on still owning it.
    *
-   * `load` is recreated on `[applied, offset]` and fired by the effect below,
+   * `load` is recreated on `[applied, cursor]` and fired by the effect below,
    * so overlapping filter or page changes are ordinary, not exotic. Ungated,
    * a late page lands under the wrong pager, a late failure paints "may be out
    * of date" over fresh rows, a late success clears a banner that was telling
@@ -126,13 +134,13 @@ export function usePlanLibrary() {
     setLoading(true);
     try {
       const data = await httpClient.get<WorkArtifactListResponse>(
-        `${API}?${toQuery(applied, offset)}`
+        `${API}?${toQuery(applied, cursor)}`
       );
       // Superseded: write NOTHING. Not the rows, not the error state, and not
       // `loading` — the live request owns that and clears it when it lands.
       if (reqId !== requestIdRef.current) return;
       setItems(data.items ?? []);
-      setTotal(data.total ?? 0);
+      setWindow(describeBoundedWindow(data, start));
       setError(null);
     } catch (err) {
       if (reqId !== requestIdRef.current) return;
@@ -140,7 +148,7 @@ export function usePlanLibrary() {
     } finally {
       if (reqId === requestIdRef.current) setLoading(false);
     }
-  }, [applied, offset]);
+  }, [applied, cursor, start]);
 
   useEffect(() => {
     load();
@@ -153,18 +161,18 @@ export function usePlanLibrary() {
       key: K,
       value: PlanLibraryFilters[K]
     ) => {
-      setOffset(0);
+      resetPager();
       setFilters((prev) => ({ ...prev, [key]: value }));
     },
-    []
+    [resetPager]
   );
 
   const resetFilters = useCallback(() => {
-    setOffset(0);
+    resetPager();
     setFilters(EMPTY_FILTERS);
     // Clearing is a discrete action, so it skips the debounce entirely.
     setApplied(EMPTY_FILTERS);
-  }, []);
+  }, [resetPager]);
 
   /** Distinct statuses/repos on the LOADED page — suggestions, not a ceiling. */
   const seen = useMemo(() => {
@@ -191,9 +199,9 @@ export function usePlanLibrary() {
     resetFilters,
     seen,
     items,
-    total,
-    offset,
-    setOffset,
+    /** The page's bound: rows before it, the population total, more-or-not. */
+    window,
+    pager,
     loading,
     error,
     reload: load,

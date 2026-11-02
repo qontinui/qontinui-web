@@ -9,6 +9,11 @@ paths = [
   '''docs/examples/.*''',
   '''.*/__snapshots__/.*''',
   '''.*\.lock$''',
+  # Bounded-read cursor tokens minted by Rust for the cross-language codec test
+  # (plan 2026-09-05-every-bounded-read-... Phase 4): base64url of a public
+  # {version, sort key, micros, uuid, sha256 fingerprint} payload — opaque by
+  # contract, not secret, and high-entropy by construction.
+  '''backend/tests/fixtures/bounded_read/.*''',
 ]
 regexes = [
   '''(?i)(dummy|example|sample|test|placeholder|changeme|your[-_]?)[-_]?(secret|token|key|password)''',
@@ -28,4 +33,9 @@ regexes = [
   '''AKIAIOSFODNN7EXAMPL2''',
   '''sk-abcdef1234567890''',
   '''MIIEpAIBAAKCAQEA7bq0\\nmoresecretbytes''',
+  # Planted fake fixture in backend/tests/test_secrets_broker_01_migration.py
+  # (`_TOKEN_LOWER`): a fabricated lowercase value-shaped token the migration's
+  # CHECK grammars are tested against. Matches only that literal. Same
+  # range-scan rationale as above.
+  '''kq3zt7mvx9wbn2plr8yhj4cswg6u''',
 ]

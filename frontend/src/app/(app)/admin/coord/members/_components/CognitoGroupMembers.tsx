@@ -9,10 +9,15 @@ import { toast } from "sonner";
 import {
   fetchCognitoGroupUsers,
   removeCognitoGroupUser,
+  type CognitoGroupUserRow,
 } from "@/lib/api/operations/cognitoGroups";
-import type { CognitoGroupUserRow, CognitoGroupUsersResponse } from "../_types";
+import {
+  operationsErrorMessage,
+  operationsErrorReading,
+} from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
+import { BackendErrorMessage } from "@/components/console";
 import { requireRows } from "../_lib/groupName";
-import { backendErrorMessage } from "@/lib/errors/backend-error-message";
 import { log } from "../_lib/log";
 
 // ===========================================================================
@@ -35,29 +40,26 @@ export function CognitoGroupMembers({
 }) {
   const [users, setUsers] = useState<CognitoGroupUserRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchCognitoGroupUsers(groupName);
-      // This route answers 400 naming the reason for a `group_name` Cognito
-      // could never hold, so a bare `HTTP ${res.status}` throws that sentence
-      // away and renders the section error as literally "HTTP 400" — the
-      // status the backend stopped relying on precisely because it says
-      // nothing. `backendErrorMessage` is what the mutations on this page
-      // already use.
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
-      const json = (await res.json()) as CognitoGroupUsersResponse;
+      const json = await fetchCognitoGroupUsers(groupName);
       // "No users in this group yet." is an assertion about a group an operator
       // is deciding whether to empty or delete. It must come from a read that
       // landed, not from a 200 that forgot the list.
       setUsers(requireRows<CognitoGroupUserRow>(json?.users, "cognito group users"));
     } catch (err) {
       log.warn("load cognito group users failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      // This route answers 400 naming the reason for a `group_name` Cognito
+      // could never hold, so a bare `HTTP <status>` throws that sentence away
+      // and renders the section error as literally "HTTP 400" — the status
+      // the backend stopped relying on precisely because it says nothing.
+      // `operationsErrorMessage` is what the mutations on this page use.
+      setError(operationsErrorReading(err));
     } finally {
       setLoading(false);
     }
@@ -71,25 +73,19 @@ export function CognitoGroupMembers({
     async (email: string) => {
       setBusy(email);
       try {
-        const res = await removeCognitoGroupUser(groupName, email);
-        // ONE prefix, not two — the `catch` below adds "Remove failed:". This
-        // route already answered 404 (no such user) and 409 (ambiguous email)
-        // with a real sentence, and now answers 400 for an email or group name
-        // Cognito rejects as malformed; nesting `HTTP 404 {"detail":…}` in
-        // between made the reason the least readable part of the toast. The
-        // add-member handler on the sibling component reads its errors this
-        // way already — this was the last Cognito membership call that did not.
-        if (!res.ok) {
-          throw new Error(await backendErrorMessage(res));
-        }
+        await removeCognitoGroupUser(groupName, email);
         toast.success(`Removed ${email} from ${groupName}`);
         await load();
         onChanged?.();
       } catch (err) {
         log.warn("remove cognito group user failed", err);
-        toast.error(
-          `Remove failed: ${err instanceof Error ? err.message : String(err)}`
-        );
+        // ONE prefix, not two. This route answers 404 (no such user) and 409
+        // (ambiguous email) with a real sentence, and 400 for an email or
+        // group name Cognito rejects as malformed; nesting `HTTP 404
+        // {"detail":…}` after "Remove failed:" made the reason the least
+        // readable part of the toast. The add-member handler on the sibling
+        // component reads its errors this way too.
+        toast.error(`Remove failed: ${operationsErrorMessage(err)}`);
       } finally {
         setBusy(null);
       }
@@ -109,7 +105,8 @@ export function CognitoGroupMembers({
   if (error) {
     return (
       <p className="text-sm text-destructive flex items-center gap-1.5 py-2">
-        <AlertTriangle className="h-4 w-4" /> {error}
+        <AlertTriangle className="h-4 w-4" />{" "}
+        <BackendErrorMessage error={error} />
       </p>
     );
   }

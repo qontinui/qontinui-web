@@ -27,4 +27,3 @@ export * from "./sessionConsoleStatus";
 export * from "./sessionKeyResolution";
 export * from "./transcriptStores";
 export * from "./types";
-export * from "./api";

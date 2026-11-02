@@ -28,7 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { handoffSession } from "./api";
+import { handoffSession } from "@/lib/api/operations/sessions";
 
 /** One candidate target machine. */
 export interface HandoffTarget {

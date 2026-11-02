@@ -462,7 +462,6 @@ This will enable:
 
 - **[Image Organization Guide](./organization.md)** - Detailed organization strategies
 - **[State Builder](../state-builder/README.md)** - Using images in states
-- **[Pattern Optimization](../workflow-builder/components.md)** - Creating patterns from images
 - **[Best Practices](../best-practices/large-projects.md)** - Large project management
 - **[API Reference](../api-reference/resource-services.md)** - Image library API
 

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useNavigationItem } from "@qontinui/navigation";
 import type { NavItem } from "./types";
+import { NAVIGATION_ONLY_PROPS } from "@/components/console/navigationOnly";
 
 export interface NavItemButtonProps {
   item: NavItem;
@@ -31,8 +32,11 @@ export function NavItemButton({
   // test env), so it's safe to call unconditionally.
   useNavigationItem(item, onClick ?? (() => {}));
 
+  // A nav entry only navigates: it stays live in presentation mode (plan
+  // 2026-10-23-console-presentation-spaces D3.2).
   const content = (
     <button
+      {...NAVIGATION_ONLY_PROPS}
       onClick={onClick}
       data-nav-id={item.id}
       data-tutorial-id={`nav-${item.id}`}

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  pendingDomainWrites,
-  type NextStepDomain,
-  type NextStepSettings,
-} from "./useNextStepSettings";
+import { pendingDomainWrites } from "./useNextStepSettings";
+import type {
+  NextStepDomain,
+  NextStepSettings,
+} from "@/lib/api/operations/coordSettings";
 
 function domain(fields: Partial<NextStepDomain>): NextStepDomain {
   return {

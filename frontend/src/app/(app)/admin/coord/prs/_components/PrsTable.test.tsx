@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 
-// Every open row now renders `PrDraftStateControl`, which gates itself on
+// Every open row now renders `PrHoldControl`, which gates itself on
 // `useAuth().isCoordAdmin` — and the real `useAuth` THROWS outside an
 // AuthProvider. Mock it (same shape as MergeTrainActivity.test.tsx) and let a
 // test flip the flag to assert the non-admin surface.
@@ -149,39 +149,56 @@ describe("merge-state legend (the operator's contract)", () => {
 });
 
 /**
- * The draft-state control on the PRs page (plan
- * 2026-08-01-admin-ui-pr-draft-state-control). `/admin/coord/prs` is where the
- * "PR is a draft — not mergeable until marked ready" diagnosis is rendered, so
- * it is where the fix for it belongs; before this it dead-ended there while the
- * fleet page could already act.
+ * The coord hold control on the PRs page (plan
+ * 2026-10-04-coord-pr-hold-without-github-drafts, Phase 4). It replaced the
+ * draft toggle: a coord hold works on private repos on GitHub Free, which have
+ * no drafts.
  */
-describe("draft-state control", () => {
-  it("offers 'Ready for review' on a draft row", () => {
-    render(<PrsTable prs={[pr({ pr_state: "draft" })]} />);
-    expect(screen.getByTestId("pr-ready-for-review")).toBeInTheDocument();
+describe("hold control", () => {
+  it("offers Hold on an open, unheld row", () => {
+    render(<PrsTable prs={[pr({ pr_state: "open", hold: null })]} />);
+    expect(screen.getByTestId("pr-hold-place")).toBeInTheDocument();
+    expect(screen.queryByTestId("pr-hold-unknown")).not.toBeInTheDocument();
   });
 
-  it("offers 'Convert to draft' on an open row", () => {
+  it("shows who holds a held row and offers Release", () => {
+    render(
+      <PrsTable
+        prs={[
+          pr({
+            pr_state: "open",
+            hold: {
+              held_by: "operator:0b6a1c2e-0000-4000-8000-000000000000",
+              reason: "waiting on web#1680",
+              kind: "manual",
+              since: "2026-10-16T12:00:00Z",
+            },
+          }),
+        ]}
+      />
+    );
+    expect(screen.getByTestId("pr-hold-summary").textContent).toContain(
+      "waiting on web#1680"
+    );
+    expect(screen.getByTestId("pr-hold-release")).toBeInTheDocument();
+  });
+
+  it("renders amber '–' when coord does not report hold state", () => {
+    // The fixture row carries no `hold` key: an older coord. UNKNOWN.
     render(<PrsTable prs={[pr({ pr_state: "open" })]} />);
-    expect(screen.getByTestId("pr-convert-to-draft")).toBeInTheDocument();
+    expect(screen.getByTestId("pr-hold-unknown").textContent).toBe("–");
   });
 
   it("renders no control on the merged tab", () => {
-    render(
-      <PrsTable prs={[pr({ pr_state: "open" })]} merged />
-    );
-    expect(
-      screen.queryByTestId("pr-convert-to-draft")
-    ).not.toBeInTheDocument();
+    render(<PrsTable prs={[pr({ pr_state: "open", hold: null })]} merged />);
+    expect(screen.queryByTestId("pr-hold-place")).not.toBeInTheDocument();
   });
 
-  it("hides the control from a non-admin operator", () => {
+  it("hides the actions from a non-admin operator", () => {
     authState.isCoordAdmin = false;
     try {
-      render(<PrsTable prs={[pr({ pr_state: "draft" })]} />);
-      expect(
-        screen.queryByTestId("pr-ready-for-review")
-      ).not.toBeInTheDocument();
+      render(<PrsTable prs={[pr({ pr_state: "open", hold: null })]} />);
+      expect(screen.queryByTestId("pr-hold-place")).not.toBeInTheDocument();
     } finally {
       authState.isCoordAdmin = true;
     }

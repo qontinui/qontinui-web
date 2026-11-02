@@ -1,0 +1,192 @@
+/**
+ * `<SlotImage slot="…">` — every image placement in this app renders through a
+ * declared slot.
+ *
+ * Plan 2026-10-13-image-generation-and-visual-judgment, Phase 14 step 3. A slot
+ * is declared by `frontend/image-slots/<slot>.yaml` (qontinui-schemas'
+ * `ImageSlotSpec`): what the image is for, its contexts, its aspect, its
+ * content and alt policy. This component renders:
+ *
+ * - **the chosen asset** when the slot manifest (`public/image-slots/
+ *   studio-manifest.json`, written by qontinui-studio's compile step) names
+ *   one: a `<picture>` of the published derivatives, served byte for byte.
+ *   Deliberately NOT `next/image`: its optimizer re-encodes the file and drops
+ *   the IPTC "AI-generated" marker each model-made derivative carries;
+ * - **an agent-authored SVG, inline**, when `frontend/image-slots/<slot>.svg`
+ *   exists (studio's `svg` route) and is current and marked: only inline SVG
+ *   inherits `currentColor` and the page's `--qontinui-*` custom properties.
+ *   What renders is the generator's allowlist-checked re-serialisation,
+ *   carrying the canonical IPTC marker; a stale or unmarked one renders the
+ *   placeholder;
+ * - **a lucide-react icon**, when the manifest's entry is a `lucide` one
+ *   (studio's `lucide` route) and the generated registry holds its
+ *   component;
+ * - **otherwise a correctly sized, explicitly marked placeholder**, reserving
+ *   the spec's preferred `aspect-ratio` so the layout does not move when the
+ *   asset arrives.
+ *
+ * All four carry `data-ui-bridge-image-slot="<slot>"` and `data-ui-bridge-id`
+ * (only that attribute, or an interactive role, registers an element with the
+ * UI Bridge). The placeholder alone carries `data-ui-bridge-placeholder="true"`
+ * and `data-ui-bridge-placeholder-reason`. A shipped placeholder is a finding
+ * the image-slot inventory (`npm run image-slots:inventory`) lists, never a
+ * build failure.
+ *
+ * Studio's D7 preview contract (Phase 19): the asset's `<picture>` and
+ * `<img>` carry `data-media-id="studio-picture-<slot>"` and
+ * `"studio-img-<slot>"`, every URL is `/image-slots/<file>?sha=<digest>` on
+ * the page's own origin, and on a preview load (`?studio_batch=`) the image
+ * is never `lazy`, decided in the server render (`SlotImg`).
+ *
+ * Not a client component: only the `<img>` (`SlotImg`) reads the URL, so a
+ * server component that renders a slot keeps its spec data on the server.
+ */
+
+import type { CSSProperties, ReactNode } from "react";
+import { ImageIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { SlotImg } from "./SlotImg";
+import { resolveSlotImage, SLOT_MANIFEST } from "@/lib/image-slots/manifest";
+import {
+  IMAGE_SLOT_LUCIDE,
+  imageSlotAuthoredSvg,
+  imageSlotSpec,
+  type ImageSlotId,
+} from "@/lib/image-slots/specs.generated";
+
+export interface SlotImageProps {
+  /** A declared slot id: a file `frontend/image-slots/<slot>.yaml`. */
+  slot: ImageSlotId;
+  /** Sizing and placement of the slot's box (its width; the spec's aspect
+   *  ratio sets the height). */
+  className?: string;
+  /** What the placeholder shows inside its reserved box until an asset is
+   *  chosen. Defaults to a neutral bordered box with an image glyph. */
+  placeholder?: ReactNode;
+  /** The asset's `loading` (default `lazy`; pass `eager` for an image above
+   *  the fold). It is rendered as given in the server HTML, except on a
+   *  studio preview load (`?studio_batch=`) or where the URL cannot be read,
+   *  which are always `eager`. */
+  loading?: "eager" | "lazy";
+}
+
+const LUCIDE_COMPONENTS: ReadonlySet<string> = new Set(
+  Object.keys(IMAGE_SLOT_LUCIDE)
+);
+
+/** Studio's D7 ids for a slot's `<picture>` and `<img>`. */
+export function studioMediaIds(slot: string): { picture: string; img: string } {
+  return { picture: `studio-picture-${slot}`, img: `studio-img-${slot}` };
+}
+
+/** The UI Bridge id of a slot's element. */
+export function slotUiBridgeId(slot: string): string {
+  return `image-slot.${slot}`;
+}
+
+export function SlotImage({
+  slot,
+  className,
+  placeholder,
+  loading = "lazy",
+}: SlotImageProps) {
+  const spec = imageSlotSpec(slot);
+  const resolution = resolveSlotImage(
+    slot,
+    spec,
+    SLOT_MANIFEST,
+    imageSlotAuthoredSvg(slot),
+    LUCIDE_COMPONENTS
+  );
+  // `W/H` is the spec's spelling and CSS `aspect-ratio` syntax both.
+  const box: CSSProperties = { aspectRatio: spec.aspect.preferred };
+
+  if (resolution.kind === "placeholder") {
+    return (
+      <div
+        data-ui-bridge-id={slotUiBridgeId(slot)}
+        data-ui-bridge-image-slot={slot}
+        data-ui-bridge-placeholder="true"
+        data-ui-bridge-placeholder-reason={resolution.reason}
+        // A placeholder carries no information for anyone, sighted or not.
+        // OPEN FOR PHASE 15 (plan 2026-10-13-image-generation-and-visual-
+        // judgment): aria-hidden may also hide this element from UI Bridge
+        // capture and media discovery, which Phase 15's placeholder detection
+        // (via Phase 5/7's `placeholder` media field) reads. Phase 15 must
+        // settle it, e.g. `role="img"` plus `aria-label` for `alt: text`
+        // slots, rather than this comment being read as a decision.
+        aria-hidden="true"
+        style={box}
+        className={cn(
+          "flex items-center justify-center overflow-hidden",
+          placeholder === undefined &&
+            "rounded-md border border-dashed border-border-subtle bg-surface-raised text-text-muted",
+          className
+        )}
+      >
+        {placeholder ?? <ImageIcon className="size-1/4 max-h-8 max-w-8" />}
+      </div>
+    );
+  }
+
+  if (resolution.kind === "inline_svg") {
+    return (
+      <div
+        data-ui-bridge-id={slotUiBridgeId(slot)}
+        data-ui-bridge-image-slot={slot}
+        {...(resolution.alt === ""
+          ? { "aria-hidden": true }
+          : { role: "img", "aria-label": resolution.alt })}
+        style={box}
+        className={cn(
+          "block overflow-hidden [&>svg]:block [&>svg]:h-full [&>svg]:w-full",
+          className
+        )}
+        // Never the authored text: markup the generator REBUILT from an XML
+        // parse that passed the SVG allowlist (src/lib/image-slots/
+        // svg-allowlist.ts): SVG-namespace drawing elements, allowlisted
+        // attributes with grammar-checked values, escaped text, and the
+        // canonical IPTC marker in place of the original <metadata>.
+        dangerouslySetInnerHTML={{ __html: resolution.markup }}
+      />
+    );
+  }
+
+  if (resolution.kind === "lucide") {
+    const Icon = IMAGE_SLOT_LUCIDE[resolution.component];
+    return (
+      <div
+        data-ui-bridge-id={slotUiBridgeId(slot)}
+        data-ui-bridge-image-slot={slot}
+        {...(resolution.alt === ""
+          ? { "aria-hidden": true }
+          : { role: "img", "aria-label": resolution.alt })}
+        style={box}
+        className={cn("block overflow-hidden", className)}
+      >
+        {Icon && <Icon aria-hidden="true" className="block h-full w-full" />}
+      </div>
+    );
+  }
+
+  const media = studioMediaIds(slot);
+  return (
+    <picture
+      data-media-id={media.picture}
+      style={box}
+      className={cn("block overflow-hidden", className)}
+    >
+      {resolution.sources.map((source) => (
+        <source key={source.type} type={source.type} srcSet={source.srcSet} />
+      ))}
+      <SlotImg
+        src={resolution.src}
+        alt={resolution.alt}
+        loading={loading}
+        mediaId={media.img}
+        uiBridgeId={slotUiBridgeId(slot)}
+        slot={slot}
+      />
+    </picture>
+  );
+}

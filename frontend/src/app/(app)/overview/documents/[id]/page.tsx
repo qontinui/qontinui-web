@@ -10,15 +10,16 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { LoadFailure } from "@/components/overview/LoadFailure";
+import { ChangeLogPanel } from "@/components/overview/editing/ChangeLogPanel";
 import { useFocusAfterRender } from "@/components/overview/editing/focus";
 import { useCanEdit } from "@/components/overview/editing/permissions";
 import { useResourceList } from "@/components/overview/editing/useResource";
-import { formatRelativeTime } from "@/lib/time-utils";
 import {
   DocumentDetailsForm,
   DocumentMetaLine,
   RelatedDocuments,
 } from "../../_components/DocumentDetails";
+import { DocumentProvenanceLine } from "../../_components/DocumentProvenance";
 import { EstimateSource } from "../../_components/EstimateSource";
 import { FilesPanel } from "../../_components/FilesPanel";
 import { PageBody, useWikiLinkOptions } from "../../_components/PageBody";
@@ -149,11 +150,25 @@ export default function DocumentView() {
                 />
               </>
             )}
-            <p className="text-xs text-muted-foreground">
-              Version {state.page.version} · edited{" "}
-              {formatRelativeTime(state.page.updated_at)}
-              {state.page.updated_by ? ` by ${state.page.updated_by}` : ""}
+            <p
+              className="text-xs text-muted-foreground"
+              data-ui-bridge-id="overview.document.version"
+            >
+              Version {state.page.version}
             </p>
+            {/* Who edited it last, and the write history — filterable to
+                the writes agents made through the API. */}
+            <ChangeLogPanel
+              resource="pages"
+              recordId={state.page.id}
+              updatedBy={state.page.updated_by}
+              updatedAt={state.page.updated_at}
+              uiBridgeId="overview.document.history-log"
+            />
+            <DocumentProvenanceLine
+              page={state.page}
+              uiBridgeId="overview.document.provenance"
+            />
           </header>
           <PageBody
             page={state.page}

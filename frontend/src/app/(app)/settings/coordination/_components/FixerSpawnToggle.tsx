@@ -3,8 +3,10 @@
 import { type KeyboardEvent, useId, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import {
+  type AutoFixPrAbsence,
   type AutoFixPrChoice,
-  choiceFromTenant,
+  autoFixPrAbsence,
+  dialChoice,
   tenantSummary,
 } from "../_hooks/auto-fix-pr";
 import { useAutoFixPrSetting } from "../_hooks/useAutoFixPrSetting";
@@ -14,6 +16,23 @@ const CHOICES: { value: AutoFixPrChoice; label: string }[] = [
   { value: "on", label: "On" },
   { value: "off", label: "Off" },
 ];
+
+/** What the dial's line and its note say when the read answered with no dial. */
+const ABSENT_DIAL: Record<AutoFixPrAbsence, { detail: string; note: string }> =
+  {
+    no_profile: {
+      detail: "coord answered with no merge settings",
+      note: "Coord answered with no merge settings, so this is not settable here. Reload the page to try again.",
+    },
+    not_served: {
+      detail: "this setting is not available yet",
+      note: "Not available yet on this server. It becomes settable once coordination serves this setting.",
+    },
+    malformed: {
+      detail: "coord's answer for this setting is not one this page can read",
+      note: "Coord's answer for this setting is not one this page can read, so it is not settable here.",
+    },
+  };
 
 interface FixerSpawnToggleProps {
   canEdit: boolean;
@@ -49,8 +68,16 @@ export function FixerSpawnToggle({
   editRightsKnown = true,
   autonomyState,
 }: FixerSpawnToggleProps) {
-  const { loading, saving, error, state, setChoice, reload } =
-    useAutoFixPrSetting();
+  const {
+    loading,
+    saving,
+    error,
+    state,
+    profile,
+    unconfirmed,
+    setChoice,
+    reload,
+  } = useAutoFixPrSetting();
   const labelId = useId();
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -71,15 +98,20 @@ export function FixerSpawnToggle({
   };
 
   const unsupported = !loading && !error && state === null;
-  const current = state ? choiceFromTenant(state.tenant) : null;
+  // While a write's outcome is open, `state` is the value from BEFORE it, so
+  // no position is pressed until the re-read settles which one coord holds.
+  const current = unconfirmed ? null : dialChoice(state);
+  const absent = ABSENT_DIAL[autoFixPrAbsence(profile)];
+  // No arm claims how the value is treated: coord holds a last known value
+  // while its read fails, so "Unknown" is all any of them can say.
   const summary = state
     ? tenantSummary(state)
     : {
-        value: "Unknown (treated as off)",
+        value: "Unknown",
         tone: "unknown" as const,
-        from: error
+        detail: error
           ? "the merge settings could not be loaded"
-          : "this setting is not available yet",
+          : absent.detail,
       };
   // Hard-disabled only when there is nothing to act on. While saving, the
   // buttons stay focusable (aria-disabled) so keyboard focus is not dropped.
@@ -130,7 +162,7 @@ export function FixerSpawnToggle({
                 >
                   {summary.value}
                 </span>{" "}
-                — from {summary.from}.{saving && " Saving…"}
+                — {summary.detail}.{saving && " Saving…"}
               </>
             )}
           </p>
@@ -214,8 +246,7 @@ export function FixerSpawnToggle({
             className="text-xs text-yellow-500/80"
             data-testid="fixer-spawn-unsupported"
           >
-            Not available yet on this server. It becomes settable once
-            coordination serves this setting.
+            {absent.note}
           </p>
         )}
         {error && (
@@ -223,7 +254,7 @@ export function FixerSpawnToggle({
             {error}{" "}
             <button
               type="button"
-              onClick={reload}
+              onClick={() => void reload()}
               className="underline focus-visible:ring-2 focus-visible:ring-ring"
               data-testid="fixer-spawn-retry"
             >

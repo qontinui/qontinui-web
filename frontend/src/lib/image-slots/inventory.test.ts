@@ -1,0 +1,484 @@
+import type { ImageSlotSpec } from "@qontinui/shared-types";
+import { createHash } from "crypto";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { describe, expect, it } from "vitest";
+
+import {
+  buildInventory,
+  findPlacements,
+  readPublishDir,
+  readRenderedMarker,
+  renderAnnotations,
+  renderMarkdown,
+  shippedPlaceholders,
+  type InventoryInput,
+} from "./inventory";
+import type { ManifestRead } from "./manifest";
+import { imageSlotSpec } from "./specs.generated";
+
+const SPEC: ImageSlotSpec = imageSlotSpec("runs.active.idle");
+const A = "a".repeat(64);
+
+const PLACEHOLDER = (slot: string, reason = "no_asset") =>
+  `<div data-ui-bridge-id="image-slot.${slot}" data-ui-bridge-image-slot="${slot}" data-ui-bridge-placeholder="true" data-ui-bridge-placeholder-reason="${reason}" aria-hidden="true" style="aspect-ratio:1/1"></div>`;
+const ASSET = (slot: string) =>
+  `<picture style="aspect-ratio:1/1"><img data-ui-bridge-id="image-slot.${slot}" data-ui-bridge-image-slot="${slot}" src="/image-slots/${slot}.png?sha=${A}" alt=""/></picture>`;
+
+const EMPTY: ManifestRead = {
+  ok: true,
+  manifest: { generated_by: "qontinui-studio", slots: {} },
+};
+const bytes = (text: string) => new TextEncoder().encode(text);
+const sha256 = (data: Uint8Array) =>
+  createHash("sha256").update(data).digest("hex");
+const PNG = bytes("png bytes");
+const BOUND: ManifestRead = {
+  ok: true,
+  manifest: {
+    generated_by: "qontinui-studio",
+    slots: {
+      "s.one": { files: { png: "s.one.png" }, sha256: { png: sha256(PNG) } },
+    },
+  },
+};
+const PUBLISHED_PNG = [{ name: "s.one.png", bytes: PNG }];
+
+function input(overrides: Partial<InventoryInput> = {}): InventoryInput {
+  return {
+    specs: {
+      "s.one": { ...SPEC, slot: "s.one" },
+      "s.two": { ...SPEC, slot: "s.two" },
+    },
+    manifest: EMPTY,
+    placements: [
+      { file: "src/a.tsx", line: 3, slot: "s.one", expression: '"s.one"' },
+    ],
+    published: [],
+    authoredSvgs: {},
+    lucideComponents: new Set(["CircleUser"]),
+    parse: (text) => new DOMParser().parseFromString(text, "image/svg+xml"),
+    render: (slot) => PLACEHOLDER(slot),
+    ...overrides,
+  };
+}
+
+describe("findPlacements", () => {
+  it("finds literal slots in self-closing and paired elements, with their lines", () => {
+    const source = [
+      'import { SlotImage } from "@/components/image-slot/SlotImage";',
+      'export const A = () => <SlotImage slot="s.one" />;',
+      "export const B = () => (",
+      "  <SlotImage className=\"x\" slot={'s.two'}>",
+      "  </SlotImage>",
+      ");",
+    ].join("\n");
+    expect(findPlacements("src/a.tsx", source)).toEqual([
+      { file: "src/a.tsx", line: 2, slot: "s.one", expression: '"s.one"' },
+      { file: "src/a.tsx", line: 4, slot: "s.two", expression: "{'s.two'}" },
+    ]);
+  });
+
+  it("does not count an element named in a comment or a string", () => {
+    const source = [
+      '/** Renders `<SlotImage slot="s.one">` for each slot. */',
+      'const doc = "<SlotImage slot=\\"s.two\\" />";',
+      '// <SlotImage slot="s.three" />',
+    ].join("\n");
+    expect(findPlacements("src/a.tsx", source)).toEqual([]);
+  });
+
+  it("reports a slot it cannot read as null, with its expression", () => {
+    const source =
+      "export const A = ({ s }) => <><SlotImage slot={s} /><SlotImage /></>;";
+    expect(findPlacements("src/a.tsx", source)).toEqual([
+      { file: "src/a.tsx", line: 1, slot: null, expression: "{s}" },
+      {
+        file: "src/a.tsx",
+        line: 1,
+        slot: null,
+        expression: "<no slot attribute>",
+      },
+    ]);
+  });
+});
+
+describe("readRenderedMarker", () => {
+  it("reads the placeholder's markers", () => {
+    expect(
+      readRenderedMarker(PLACEHOLDER("s.one", "alt_text_missing"))
+    ).toEqual({
+      slot: "s.one",
+      placeholder: true,
+      reason: "alt_text_missing",
+    });
+  });
+
+  it("reads an asset as no placeholder", () => {
+    expect(readRenderedMarker(ASSET("s.one"))).toEqual({
+      slot: "s.one",
+      placeholder: false,
+      reason: null,
+    });
+  });
+
+  it("reads markup without a slot element as unmarked", () => {
+    expect(readRenderedMarker("<div></div>")).toEqual({
+      slot: null,
+      placeholder: false,
+      reason: null,
+    });
+  });
+});
+
+describe("buildInventory", () => {
+  it("lists a placed placeholder as a finding, not a defect", () => {
+    const inventory = buildInventory(input());
+    expect(inventory.defects).toEqual([]);
+    expect(shippedPlaceholders(inventory).map((row) => row.slot)).toEqual([
+      "s.one",
+    ]);
+    // s.two is declared but placed nowhere: listed, not shipped.
+    expect(
+      inventory.rows.map((row) => [row.slot, row.placements.length])
+    ).toEqual([
+      ["s.one", 1],
+      ["s.two", 0],
+    ]);
+  });
+
+  it("does not list a bound slot as a placeholder", () => {
+    const inventory = buildInventory(
+      input({
+        manifest: BOUND,
+        published: PUBLISHED_PNG,
+        render: (slot) => (slot === "s.one" ? ASSET(slot) : PLACEHOLDER(slot)),
+      })
+    );
+    expect(inventory.defects).toEqual([]);
+    expect(shippedPlaceholders(inventory)).toEqual([]);
+  });
+
+  it.each<[string, Partial<InventoryInput>, string]>([
+    [
+      "an unreadable manifest",
+      {
+        manifest: { ok: false, error: "boom" },
+        render: (s) => PLACEHOLDER(s, "manifest_unreadable"),
+      },
+      "public/image-slots/studio-manifest.json is unreadable: boom",
+    ],
+    [
+      "a manifest entry nobody declared",
+      {
+        manifest: {
+          ok: true,
+          manifest: {
+            generated_by: "qontinui-studio",
+            slots: {
+              "s.ghost": { files: { png: "g.png" }, sha256: { png: A } },
+            },
+          },
+        },
+        published: [{ name: "g.png", bytes: PNG }],
+      },
+      'the manifest binds slot "s.ghost", which no image-slots/s.ghost.yaml declares',
+    ],
+    [
+      "a manifest file missing from the publish dir",
+      {
+        manifest: BOUND,
+        render: (s) => (s === "s.one" ? ASSET(s) : PLACEHOLDER(s)),
+      },
+      'the manifest\'s slot "s.one" names public/image-slots/s.one.png, which does not exist',
+    ],
+    [
+      "a placement whose slot is not a literal",
+      {
+        placements: [
+          { file: "src/a.tsx", line: 9, slot: null, expression: "{s}" },
+        ],
+      },
+      "src/a.tsx:9: <SlotImage slot={s}> — the slot must be a string literal, or the inventory cannot say which slot ships there",
+    ],
+    [
+      "a placement of an undeclared slot",
+      {
+        placements: [
+          {
+            file: "src/a.tsx",
+            line: 9,
+            slot: "s.nine",
+            expression: '"s.nine"',
+          },
+        ],
+      },
+      'src/a.tsx:9: <SlotImage slot="s.nine"> names an undeclared slot',
+    ],
+    [
+      "a rendered marker contradicting the resolution",
+      { render: (s) => ASSET(s) },
+      'slot "s.one": the rendered marker (placeholder=false, reason=null) contradicts the manifest\'s resolution (placeholder, no_asset)',
+    ],
+    [
+      "a render with no slot element",
+      { render: () => "<div></div>" },
+      '<SlotImage slot="s.one"> rendered no element marked data-ui-bridge-image-slot="s.one"',
+    ],
+  ])("fails on %s", (_, overrides, defect) => {
+    expect(buildInventory(input(overrides)).defects).toContain(defect);
+  });
+});
+
+describe("the report", () => {
+  it("renders a Markdown table and one notice per shipped placeholder", () => {
+    const inventory = buildInventory(input());
+    const markdown = renderMarkdown(inventory);
+    expect(markdown).toContain(
+      "1 of 2 declared slot(s) render a placeholder where they are placed."
+    );
+    expect(markdown).toContain(
+      "| `s.one` | empty_state | placeholder | no_asset | `src/a.tsx:3` |"
+    );
+    expect(markdown).toContain(
+      "| `s.two` | empty_state | placeholder | no_asset | not placed |"
+    );
+    expect(markdown).not.toContain("Defects");
+    expect(renderAnnotations(inventory)).toEqual([
+      '::notice file=frontend/src/a.tsx,line=3,title=Image slot ships a placeholder::slot "s.one" (empty_state) renders its placeholder (no_asset): no asset is bound to it in public/image-slots/studio-manifest.json',
+    ]);
+  });
+
+  it.each([
+    [
+      "manifest_unreadable",
+      "public/image-slots/studio-manifest.json could not be read",
+    ],
+    ["asset_unusable", "its manifest entry names no file this app can serve"],
+    [
+      "alt_text_missing",
+      "its alt is `required` and its binding records no alt_text, so the asset is withheld",
+    ],
+    [
+      "not_a_reason",
+      "the placeholder marker names no reason this inventory knows",
+    ],
+  ])("says what a %s placeholder means", (reason, text) => {
+    const inventory = buildInventory(
+      input({ render: (slot) => PLACEHOLDER(slot, reason) })
+    );
+    expect(renderAnnotations(inventory)).toEqual([
+      `::notice file=frontend/src/a.tsx,line=3,title=Image slot ships a placeholder::slot "s.one" (empty_state) renders its placeholder (${reason}): ${text}`,
+    ]);
+  });
+
+  it("lists defects under their own heading", () => {
+    const inventory = buildInventory(input({ render: () => "<div></div>" }));
+    expect(renderMarkdown(inventory)).toContain(
+      "### Defects (these fail the run)"
+    );
+  });
+});
+
+describe("authored inline SVGs in the inventory", () => {
+  const SVG = '<svg viewBox="0 0 1 1"></svg>';
+  const INLINE = (slot: string) =>
+    `<div data-ui-bridge-id="image-slot.${slot}" data-ui-bridge-image-slot="${slot}" aria-hidden="true" style="aspect-ratio:1/1">${SVG}</div>`;
+
+  it("lists an authored slot as rendering its inline SVG, not a placeholder", () => {
+    const inventory = buildInventory(
+      input({
+        authoredSvgs: { "s.one": SVG },
+        render: (slot) => (slot === "s.one" ? INLINE(slot) : PLACEHOLDER(slot)),
+      })
+    );
+    expect(inventory.defects).toEqual([]);
+    expect(shippedPlaceholders(inventory)).toEqual([]);
+    expect(renderMarkdown(inventory)).toContain(
+      "| `s.one` | empty_state | authored inline SVG |  | `src/a.tsx:3` |"
+    );
+  });
+
+  it("fails on a slot bound both by an authored SVG and a manifest entry", () => {
+    const inventory = buildInventory(
+      input({
+        manifest: BOUND,
+        published: PUBLISHED_PNG,
+        authoredSvgs: { "s.one": SVG },
+        render: (slot) =>
+          PLACEHOLDER(slot, slot === "s.one" ? "asset_conflict" : "no_asset"),
+      })
+    );
+    expect(inventory.defects).toEqual([
+      'slot "s.one" is bound twice: image-slots/s.one.svg and a manifest entry. A slot has one route; remove one',
+    ]);
+  });
+});
+
+describe("published files in the inventory", () => {
+  const NS = "http://www.w3.org/2000/svg";
+  const MARKED =
+    `<svg xmlns="${NS}" viewBox="0 0 1 1"><metadata><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+    '<rdf:Description rdf:about="" xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/" Iptc4xmpExt:DigitalSourceType="http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"/>' +
+    '</rdf:RDF></x:xmpmeta></metadata><path d="M0 0" fill="#123456"/></svg>';
+  // A traced slot: studio publishes the SVG and a PNG beside it.
+  const traced = (svgName: string, svgText: string) =>
+    input({
+      manifest: {
+        ok: true,
+        manifest: {
+          generated_by: "qontinui-studio",
+          slots: {
+            "s.one": {
+              files: { svg: svgName, png: "s.one.png" },
+              sha256: { svg: sha256(bytes(svgText)), png: sha256(PNG) },
+            },
+          },
+        },
+      },
+      published: [
+        { name: svgName, bytes: bytes(svgText) },
+        { name: "s.one.png", bytes: PNG },
+      ],
+      render: (slot) => (slot === "s.one" ? ASSET(slot) : PLACEHOLDER(slot)),
+    });
+
+  it("passes a marked trace the manifest names with its digests", () => {
+    expect(buildInventory(traced("s.one.svg", MARKED)).defects).toEqual([]);
+  });
+
+  it("fails on an SVG the allowlist refuses", () => {
+    const text = MARKED.replace("<path", '<path onclick="x()"');
+    expect(buildInventory(traced("s.one.svg", text)).defects).toEqual([
+      "public/image-slots/s.one.svg is refused by the SVG allowlist: <path> attribute onclick is not allowed",
+    ]);
+  });
+
+  it("checks an SVG whatever the case of its extension", () => {
+    const text = MARKED.replace("<path", '<path onclick="x()"');
+    expect(buildInventory(traced("s.one.SVG", text)).defects).toEqual([
+      "public/image-slots/s.one.SVG is refused by the SVG allowlist: <path> attribute onclick is not allowed",
+    ]);
+  });
+
+  it("fails on an unmarked SVG", () => {
+    const text = MARKED.replace(/<metadata>.*<\/metadata>/, "");
+    expect(buildInventory(traced("s.one.svg", text)).defects).toEqual([
+      "public/image-slots/s.one.svg carries no IPTC AI-generated marker",
+    ]);
+  });
+
+  it("fails on a file that does not hash to the digest the manifest records", () => {
+    const inventory = buildInventory(
+      input({
+        manifest: BOUND,
+        published: [{ name: "s.one.png", bytes: bytes("other bytes") }],
+        render: (slot) => (slot === "s.one" ? ASSET(slot) : PLACEHOLDER(slot)),
+      })
+    );
+    expect(inventory.defects).toEqual([
+      'public/image-slots/s.one.png does not hash to the sha256 the manifest\'s slot "s.one" records for png',
+    ]);
+  });
+
+  it("fails on a file no manifest entry names, whatever its type", () => {
+    for (const name of ["stray.png", "stray.SVG", "notes.txt"]) {
+      const inventory = buildInventory(
+        input({ published: [{ name, bytes: bytes(MARKED) }] })
+      );
+      expect(inventory.defects).toContain(
+        `public/image-slots/${name} is named by no manifest entry`
+      );
+    }
+  });
+});
+
+describe("lucide entries in the inventory", () => {
+  const LUCIDE: ManifestRead = {
+    ok: true,
+    manifest: {
+      generated_by: "qontinui-studio",
+      slots: {
+        "s.one": {
+          route: "lucide",
+          files: {},
+          sha256: {},
+          lucide: {
+            package: "lucide-react",
+            icon: "circle-user",
+            component: "CircleUser",
+          },
+        },
+      },
+    },
+  };
+  const ICON = (slot: string) =>
+    `<div data-ui-bridge-id="image-slot.${slot}" data-ui-bridge-image-slot="${slot}" aria-hidden="true"><svg></svg></div>`;
+
+  it("lists a lucide slot as rendering its icon, with no file defect", () => {
+    const inventory = buildInventory(
+      input({
+        manifest: LUCIDE,
+        render: (slot) => (slot === "s.one" ? ICON(slot) : PLACEHOLDER(slot)),
+      })
+    );
+    expect(inventory.defects).toEqual([]);
+    expect(renderMarkdown(inventory)).toContain(
+      "| `s.one` | empty_state | lucide icon |"
+    );
+  });
+
+  it("fails on a component the generated registry does not hold", () => {
+    const inventory = buildInventory(
+      input({
+        manifest: LUCIDE,
+        lucideComponents: new Set(),
+        render: (slot) =>
+          PLACEHOLDER(
+            slot,
+            slot === "s.one" ? "lucide_unavailable" : "no_asset"
+          ),
+      })
+    );
+    expect(inventory.defects).toEqual([
+      'the manifest\'s slot "s.one" names lucide-react component CircleUser, which the generated registry does not hold: the installed lucide-react does not export it, or `npm run image-slots:generate` was not run',
+    ]);
+  });
+});
+
+describe("readPublishDir", () => {
+  it("reads files, skips the manifest, and reports a subdirectory instead of reading it", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "image-slots-"));
+    try {
+      fs.writeFileSync(path.join(dir, "studio-manifest.json"), "{}");
+      fs.writeFileSync(path.join(dir, "s.one.png"), "png bytes");
+      fs.mkdirSync(path.join(dir, "nested"));
+      const entries = readPublishDir(dir).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+      expect(
+        entries.map((e) => [
+          e.name,
+          e.bytes === null ? null : Buffer.from(e.bytes).toString("utf8"),
+        ])
+      ).toEqual([
+        ["nested", null],
+        ["s.one.png", "png bytes"],
+      ]);
+      const inventory = buildInventory(
+        input({
+          manifest: BOUND,
+          published: entries,
+          render: (slot) =>
+            slot === "s.one" ? ASSET(slot) : PLACEHOLDER(slot),
+        })
+      );
+      expect(inventory.defects).toEqual([
+        "public/image-slots/nested is not a file: the publish dir holds only the files studio publishes",
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

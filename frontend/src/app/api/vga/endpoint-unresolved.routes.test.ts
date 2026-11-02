@@ -54,15 +54,23 @@ function post(path: string, body: unknown): NextRequest {
 }
 
 describe("/api/vga/* with no base configured", () => {
-  it("capture → 503 naming QONTINUI_RUNNER_URL", async () => {
+  // The two runner hops are OFF in a production posture (plan
+  // 2026-09-17-retire-the-runner-origin-guard-dev-grace, Phase 4): a 404
+  // before any base is resolved, so nothing is fetched either way.
+  it("capture → 404 in a production posture, nothing fetched", async () => {
     const res = await captureGET(
       new NextRequest("http://app.test/api/vga/capture?monitor=0")
     );
-    await expectUnresolved(res, "QONTINUI_RUNNER_URL");
+    expect(res.status).toBe(404);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("monitors → 503 naming QONTINUI_RUNNER_URL", async () => {
-    await expectUnresolved(await monitorsGET(), "QONTINUI_RUNNER_URL");
+  it("monitors → 404 in a production posture, nothing fetched", async () => {
+    const res = await monitorsGET(
+      new NextRequest("http://app.test/api/vga/monitors")
+    );
+    expect(res.status).toBe(404);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("ground → 503 naming QONTINUI_LLAMA_SWAP_URL", async () => {

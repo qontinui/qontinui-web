@@ -54,6 +54,21 @@ def _mock_user() -> MagicMock:
     return user
 
 
+@pytest.fixture(autouse=True)
+def _device_credential_not_revoked():
+    """Every credential door now reads ``coord.devices.credential_revoked_at``
+    (plan ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-
+    from-qontinui-web`` Phase 4). These tests run against a mock session, so
+    the read is stubbed to "not revoked"; the revoked arm is covered in
+    ``test_devices_operator_credential_controls.py``."""
+    from app.crud import device_crud
+
+    with patch.object(
+        device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+    ):
+        yield
+
+
 def _patch_enabled(*, enabled: bool = True):
     return patch.object(
         coord_service_account,
@@ -196,8 +211,9 @@ class TestMintEndpoint:
         kwargs = mock_mint.call_args.kwargs
         assert kwargs["owner_user_id"] == _USER_ID
         assert kwargs["tenant_id"] == tenant_id
-        # The owner's mint keeps the unconditional rotate.
-        assert kwargs["refuse_if_revoked"] is False
+        # The owner's mint still rotates a usable key, but never over a
+        # revoked one (a concurrent operator revoke must win).
+        assert kwargs["refuse_if_revoked"] is True
         assert kwargs["refuse_if_usable_beyond"] is None
 
     def test_non_owner_gets_403(self) -> None:
@@ -441,6 +457,18 @@ class TestSelfMintEndpoint:
         app.include_router(router, prefix=API_PREFIX)
         return app
 
+    def _served_app(self) -> FastAPI:
+        """:meth:`_app` plus the production HTTP exception handler, for the
+        tests that assert the served body (top-level ``error`` and the nested
+        ``refusal``) rather than the bare ``detail``."""
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        from app.middleware.error_handler import http_exception_handler
+
+        app = self._app()
+        app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+        return app
+
     def _verify(self, claims):
         return patch(
             "app.api.deps._verify_device_jwt",
@@ -578,7 +606,7 @@ class TestSelfMintEndpoint:
 
     @pytest.mark.parametrize("provenance", ["bootstrap", "unknown", None])
     def test_non_paired_provenance_is_403(self, provenance) -> None:
-        client = TestClient(self._app())
+        client = TestClient(self._served_app())
         with (
             self._verify(_device_claims(mint_provenance=provenance)),
             self._coord(),
@@ -586,14 +614,17 @@ class TestSelfMintEndpoint:
         ):
             resp = client.post(self._URL, headers=self._AUTH)
         assert resp.status_code == 403, resp.text
-        assert resp.json()["detail"]["code"] == "device_token_provenance_refused"
+        body = resp.json()
+        assert body["error"] == "device_token_provenance_refused"
+        assert body["refusal"]["discriminator"] == "device_token_provenance_refused"
+        assert body["refusal"]["next_action"]["kind"] == "pair_device"
         mock_mint.assert_not_called()
 
     @pytest.mark.parametrize("sub_type", ["agent", "attach_grant", "create_grant"])
     def test_non_device_principal_is_403(self, sub_type) -> None:
         # The anonymous /agents/credential mint names the device in ``sub``
         # but is an ``agent``; grants carry their SOURCE device_id.
-        client = TestClient(self._app())
+        client = TestClient(self._served_app())
         with (
             self._verify(_device_claims(sub_type=sub_type)),
             self._coord(),
@@ -601,7 +632,9 @@ class TestSelfMintEndpoint:
         ):
             resp = client.post(self._URL, headers=self._AUTH)
         assert resp.status_code == 403, resp.text
-        assert resp.json()["detail"]["code"] == "not_a_device_principal"
+        body = resp.json()
+        assert body["error"] == "not_a_device_principal"
+        assert body["refusal"]["discriminator"] == "not_a_device_principal"
         mock_mint.assert_not_called()
 
     def test_coord_404_is_403_device_not_owned(self) -> None:

@@ -2,9 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
+import {
+  createPromptDocument,
+  fetchPromptDocument,
+  fetchPromptDocumentVersion,
+  listPromptDocuments,
+  listPromptDocumentVersions,
+  restorePromptDocumentDefault,
+  restorePromptDocumentVersion,
+  updatePromptDocument,
+} from "@/lib/api/operations/coordPromptDocuments";
 import type {
-  ListPromptDocumentsResponse,
   ListVersionsResponse,
   PromptDocument,
   PromptDocumentCreate,
@@ -13,15 +21,6 @@ import type {
   PromptDocumentUpdate,
   PromptDocumentVersion,
 } from "../types";
-
-const API = "/api/v1/operations";
-
-/** `/coord/prompt-documents/:kind/:name`, each segment encoded. */
-function docPath(kind: PromptDocumentKind, name: string): string {
-  return `${API}/coord/prompt-documents/${encodeURIComponent(
-    kind
-  )}/${encodeURIComponent(name)}`;
-}
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -52,9 +51,7 @@ export function usePromptDocuments() {
   const loadDocuments = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await httpClient.get<ListPromptDocumentsResponse>(
-        `${API}/coord/prompt-documents`
-      );
+      const data = await listPromptDocuments();
       const items = (data.documents ?? [])
         .slice()
         .sort((a, b) => (a.description ?? a.name).localeCompare(b.description ?? b.name));
@@ -81,7 +78,7 @@ export function usePromptDocuments() {
       name: string
     ): Promise<PromptDocument | null> => {
       try {
-        return await httpClient.get<PromptDocument>(docPath(kind, name));
+        return await fetchPromptDocument(kind, name);
       } catch (err) {
         toast.error(message(err, "Failed to load document"));
         return null;
@@ -97,9 +94,7 @@ export function usePromptDocuments() {
       name: string
     ): Promise<ListVersionsResponse | null> => {
       try {
-        return await httpClient.get<ListVersionsResponse>(
-          `${docPath(kind, name)}/versions`
-        );
+        return await listPromptDocumentVersions(kind, name);
       } catch (err) {
         toast.error(message(err, "Failed to load version history"));
         return null;
@@ -116,9 +111,7 @@ export function usePromptDocuments() {
       version: number
     ): Promise<PromptDocumentVersion | null> => {
       try {
-        return await httpClient.get<PromptDocumentVersion>(
-          `${docPath(kind, name)}/versions/${version}`
-        );
+        return await fetchPromptDocumentVersion(kind, name, version);
       } catch (err) {
         toast.error(message(err, "Failed to load version"));
         return null;
@@ -138,10 +131,7 @@ export function usePromptDocuments() {
   ): Promise<PromptDocument | null> => {
     try {
       setSaving(true);
-      const created = await httpClient.post<PromptDocument>(
-        `${API}/coord/prompt-documents/${encodeURIComponent(kind)}`,
-        data
-      );
+      const created = await createPromptDocument(kind, data);
       toast.success(`Created "${created.description ?? created.name}"`);
       await loadDocuments();
       return created;
@@ -161,10 +151,7 @@ export function usePromptDocuments() {
   ): Promise<boolean> => {
     try {
       setSaving(true);
-      const updated = await httpClient.patch<PromptDocument>(
-        docPath(kind, name),
-        data
-      );
+      const updated = await updatePromptDocument(kind, name, data);
       toast.success(`Saved as version ${updated.current_version}`);
       await loadDocuments();
       return true;
@@ -183,7 +170,7 @@ export function usePromptDocuments() {
   ): Promise<boolean> => {
     try {
       setSaving(true);
-      await httpClient.post(`${docPath(kind, name)}/restore-default`, {});
+      await restorePromptDocumentDefault(kind, name);
       toast.success("Restored to default");
       await loadDocuments();
       return true;
@@ -216,10 +203,7 @@ export function usePromptDocuments() {
   ): Promise<boolean> => {
     try {
       setSaving(true);
-      await httpClient.post(
-        `${docPath(kind, name)}/versions/${version}/restore`,
-        changeNote ? { change_note: changeNote } : {}
-      );
+      await restorePromptDocumentVersion(kind, name, version, changeNote);
       toast.success(`Restored version ${version} as a new version`);
       await loadDocuments();
       return true;

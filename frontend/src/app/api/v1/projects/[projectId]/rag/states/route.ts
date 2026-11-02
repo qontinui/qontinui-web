@@ -7,10 +7,14 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  return proxyToBackend(request, `/api/v1/projects/${projectId}/rag/states`, {
-    tokenSources: ["cookie", "header"],
-    onMissingToken: "401",
-    unauthorizedBodyKey: "error",
-    errorBody: { error: "Failed to fetch states" },
-  });
+  return proxyToBackend(
+    request,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/rag/states`,
+    {
+      tokenSources: ["cookie", "header"],
+      onMissingToken: "401",
+      unauthorizedBodyKey: "error",
+      errorBody: { error: "Failed to fetch states" },
+    }
+  );
 }

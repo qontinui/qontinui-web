@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Workflow } from "@/lib/action-schema/action-types";
-import { WorkflowDocumentationService } from "@/services/workflow-documentation-service";
+import { WorkflowDocumentationService } from "@/services/workflow-documentation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";

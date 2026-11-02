@@ -8,8 +8,8 @@ const SUBSPACES_URL = "/api/v1/digital-twin/subspaces";
 
 /**
  * Fetch the live per-tenant snapshot-observer probe for the completeness
- * matrix. The backend fans out to coord's SSO-gated twin verdict routes and
- * returns one cell per fleet-wide snapshot sub-space.
+ * matrix and the lifecycle view. The backend fans out to coord's SSO-gated
+ * twin verdict routes and returns one cell per snapshot sub-space.
  *
  * Refetched on an interval so the matrix tracks the twin as it moves, but not
  * so aggressively that it hammers coord's ~11 live observer reads per load.

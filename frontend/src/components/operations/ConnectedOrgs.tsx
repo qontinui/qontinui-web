@@ -41,9 +41,17 @@
  *   timeout message for a deliberate refusal. Un-enrolled rows now render
  *   greyed with who/when/why and an admin-gated Re-enroll, and the poll's
  *   terminal message names them.
+ *
+ * And one from plan `2026-10-17-per-repo-tenant-binding-overrides-the-org-tenant`
+ * (Phase 7, D8): a repo of one of this tenant's orgs that a per-repo binding
+ * governs from ANOTHER tenant reads "bound to <slug>" and offers no Re-enroll —
+ * re-enrolling it here would contradict the binding, and the way back is an
+ * unbind on the Repository tenant bindings card. The rows come from coord's
+ * `bound_away[]`; a coord that does not send the field gets nothing new
+ * rendered, because absent is "not reported", never "none".
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,80 +60,37 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Building2, CheckCircle2 } from "lucide-react";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { absoluteTime } from "@/components/console/time";
-import { httpClient } from "@/services/service-factory";
+import { UNKNOWN_AMBER } from "@/components/console";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  enrollInstallation,
+  fetchOnboardingAccounts,
+  restoreRepo,
+  type AccountRepo,
+  type BoundAwayRepo,
+  type ConnectedAccount,
+  type MergePosture,
+} from "@/lib/api/operations/prMergeOnboarding";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
-
-// Same relative base the OnboardingDoctor uses (Next.js proxies /api to the
-// web backend, which forwards to coord with the operator's bearer).
-const API = "/api/v1/operations";
 
 // Poll cadence after a 202 enroll-spawn: coord enrolls off-connection, so we
 // re-pull the accounts list until this row's repos appear. 3s × 20 ≈ 60s cap.
 const ENROLL_POLL_INTERVAL_MS = 3000;
 const ENROLL_POLL_MAX_ATTEMPTS = 20;
 
-// ----------------------------------------------------------------------------
-// Wire types — coord-owned contract (GET /coord/onboarding/github-accounts).
-// `repos` may be []. Fields marked "older coord" are absent/null on a coord
-// that predates plan 2026-09-05 P2/P3, and every reader here tolerates that.
-// ----------------------------------------------------------------------------
-
 /**
- * The tier that decided a repo's resolved merge posture, in coord's own
- * arm order (the onboarding doctor's): the tenant-wide pause dominates, then
- * the explicit per-repo pin, then an explicit `auto_merge_enabled = false`,
- * else the enabled default.
+ * Coord's error body from a rejected enroll/restore, as the card always read
+ * it: the JSON object, or `{}` when the body is not JSON.
  */
-export type MergePosture =
-  | "default"
-  | "pinned_on"
-  | "pinned_off"
-  | "tenant_paused"
-  | "auto_merge_off";
-
-interface AccountRepo {
-  repo: string;
-  /**
-   * `"enrolled"` — a live `tenant_repos` row. `"unenrolled"` — only the
-   * un-enrollment tombstone remains; the installation enroll skips this repo
-   * until it is restored. Absent on an older coord, which lists enrolled rows
-   * only, so absent reads as enrolled.
-   */
-  state?: "enrolled" | "unenrolled";
-  /**
-   * The RAW per-repo enablement pin: `true`/`false` = explicitly pinned,
-   * `null` = inheriting the enabled default. NOT the resolved verdict — the
-   * tenant-wide `merge_paused` pause dominates it and is not folded in here;
-   * `merge_enabled_resolved` is. Replaced `rollout_state` when plan
-   * `2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch`
-   * Phase 5 dropped that column.
-   */
-  merge_enabled: boolean | null;
-  /**
-   * The RESOLVED verdict, computed coord-side by `resolve_merge_enabled`
-   * (pause → pin → default) AND-ed with the tenant's `auto_merge_enabled` —
-   * the same conjunction the doctor and `EffectiveProfile::merge_permitted`
-   * apply. `null` on an un-enrolled row or an older coord.
-   */
-  merge_enabled_resolved?: boolean | null;
-  /** The tier that decided `merge_enabled_resolved`. `null` = older coord. */
-  merge_posture?: MergePosture | null;
-  profile_source: string | null;
-  /** Tombstone fields — set only when `state === "unenrolled"`. */
-  unenrolled_at?: string | null;
-  unenrolled_by?: string | null;
-  unenroll_reason?: string | null;
-}
-
-interface ConnectedAccount {
-  account_login: string;
-  account_type: string;
-  installation_id: number;
-  repos: AccountRepo[];
-}
-
-interface AccountsResponse {
-  accounts: ConnectedAccount[];
+function rejectionBody(err: unknown): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(httpBodyOf(err) ?? "");
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 /** The always-present posture label per tier; `null`/absent = older coord. */
@@ -154,6 +119,57 @@ export function mergePostureLabel(
 
 function isUnenrolled(r: AccountRepo): boolean {
   return r.state === "unenrolled";
+}
+
+/** The `owner` half of `owner/name`, lowercased (coord's key is lowercased). */
+function repoOwner(repo: string): string {
+  return repo.split("/")[0]?.toLowerCase() ?? "";
+}
+
+/**
+ * Split coord's `bound_away[]` by org: the entries whose owner is an account
+ * on this card, keyed by lowercased login, and the ones no account owns. The
+ * second list is rendered too rather than dropped — a row nobody can see is
+ * the gap D8 closes.
+ */
+export function groupBoundAway(
+  boundAway: readonly BoundAwayRepo[],
+  accounts: readonly ConnectedAccount[]
+): { byLogin: Map<string, BoundAwayRepo[]>; unmatched: BoundAwayRepo[] } {
+  const logins = new Set(accounts.map((a) => a.account_login.toLowerCase()));
+  const byLogin = new Map<string, BoundAwayRepo[]>();
+  const unmatched: BoundAwayRepo[] = [];
+  for (const b of boundAway) {
+    const owner = repoOwner(b.repo);
+    if (logins.has(owner)) {
+      byLogin.set(owner, [...(byLogin.get(owner) ?? []), b]);
+    } else {
+      unmatched.push(b);
+    }
+  }
+  return { byLogin, unmatched };
+}
+
+/** One "bound to <slug>" row: no link, no Re-enroll. */
+function BoundAwayRow({ entry }: { entry: BoundAwayRepo }) {
+  return (
+    <li
+      className="flex items-center gap-2 flex-wrap text-muted-foreground"
+      data-testid={`connected-org-repo-bound-away-${entry.repo}`}
+      data-ui-bridge-id="operations.connected-org-repo-bound-away"
+    >
+      <span className="text-sm font-mono">{entry.repo}</span>
+      <Badge
+        variant="outline"
+        className="text-[10px]"
+        title={`Governed by tenant ${entry.bound_tenant_slug} through a per-repo binding. Unbind it on the Repository tenant bindings card to return it here.`}
+        data-testid={`bound-away-tenant-${entry.repo}`}
+        data-ui-bridge-id="operations.connected-org-repo-bound-away-tenant"
+      >
+        bound to {entry.bound_tenant_slug}
+      </Badge>
+    </li>
+  );
 }
 
 // Map coord's status + error code onto a human message. The enroll proxy passes
@@ -220,16 +236,27 @@ export function pollTimeoutMessage(
 
 function AccountRow({
   account,
+  boundAway,
   refetch,
 }: {
   account: ConnectedAccount;
+  /**
+   * This org's repos that a binding governs from another tenant, from coord's
+   * `bound_away[]`; empty when coord reported none or did not send the field.
+   */
+  boundAway: readonly BoundAwayRepo[];
   /**
    * `polled` marks a read the post-enroll poll issues: one request, no 5xx
    * retry chain (the next tick is the retry).
    */
   refetch: (polled?: boolean) => Promise<void>;
 }) {
-  const repos = account.repos ?? [];
+  // A bound-away repo is the binding's to govern, so it never renders as an
+  // enrolled or a Re-enroll-able row here, whatever else coord lists for it.
+  const boundAwayKeys = new Set(boundAway.map((b) => b.repo.toLowerCase()));
+  const repos = (account.repos ?? []).filter(
+    (r) => !boundAwayKeys.has(r.repo.toLowerCase())
+  );
   const enrolledRepos = repos.filter((r) => !isUnenrolled(r));
   const unenrolledRepos = repos.filter(isUnenrolled);
   const hasRepos = enrolledRepos.length > 0;
@@ -326,25 +353,20 @@ function AccountRow({
     setEnrollMsg("Enrolling repositories…");
 
     try {
-      const res = await httpClient.fetch(
-        `${API}/pr-merge/onboarding/installations/${account.installation_id}/enroll`,
-        { method: "POST", maxRetries: 0 }
-      );
-
-      if (res.status === 202 || res.ok) {
-        startPoll("enroll");
+      // A 2xx (coord answers 202) means the enroll was spawned.
+      await enrollInstallation(account.installation_id);
+      startPoll("enroll");
+    } catch (err) {
+      setEnrolling(false);
+      setEnrollMsg(null);
+      const status = httpStatusOf(err);
+      if (status === null) {
+        setEnrollError("Enrollment failed — please try again.");
         return;
       }
-
       // Non-ok: read coord's error code and map to copy.
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setEnrolling(false);
-      setEnrollMsg(null);
-      setEnrollError(enrollErrorMessage(res.status, body.error));
-    } catch {
-      setEnrolling(false);
-      setEnrollMsg(null);
-      setEnrollError("Enrollment failed — please try again.");
+      const body = rejectionBody(err) as { error?: string };
+      setEnrollError(enrollErrorMessage(status, body.error));
     }
   }, [
     account.installation_id,
@@ -365,28 +387,22 @@ function AccountRow({
       setEnrollMsg(`Re-enrolling ${repo}…`);
 
       try {
-        const res = await httpClient.fetch(
-          `${API}/pr-merge/onboarding/repos/${repo}/restore`,
-          { method: "POST", maxRetries: 0 }
-        );
-
-        if (res.status === 202 || res.ok) {
-          startPoll("restore");
+        await restoreRepo(repo);
+        startPoll("restore");
+      } catch (err) {
+        setRestoring(null);
+        setEnrollMsg(null);
+        const status = httpStatusOf(err);
+        if (status === null) {
+          setEnrollError("Re-enroll failed — please try again.");
           return;
         }
-
-        const body = (await res.json().catch(() => ({}))) as {
+        const body = rejectionBody(err) as {
           error?: string;
           owner?: string;
           restored?: boolean;
         };
-        setRestoring(null);
-        setEnrollMsg(null);
-        setEnrollError(restoreErrorMessage(res.status, body));
-      } catch {
-        setRestoring(null);
-        setEnrollMsg(null);
-        setEnrollError("Re-enroll failed — please try again.");
+        setEnrollError(restoreErrorMessage(status, body));
       }
     },
     [enrolling, restoring, enrolledRepos.length, clearPoll, startPoll]
@@ -455,7 +471,7 @@ function AccountRow({
           {enrollError}
         </p>
       )}
-      {repos.length > 0 && (
+      {(repos.length > 0 || boundAway.length > 0) && (
         <ul className="mt-2 space-y-1 pl-6">
           {enrolledRepos.map((r) => (
             <li key={r.repo} className="flex items-center gap-2 flex-wrap">
@@ -544,29 +560,93 @@ function AccountRow({
               </CoordAdminOnly>
             </li>
           ))}
+          {boundAway.map((b) => (
+            <BoundAwayRow key={b.repo} entry={b} />
+          ))}
         </ul>
       )}
     </li>
   );
 }
 
-export function ConnectedOrgs() {
+/**
+ * The repos no listed org owns, under their own heading. Rendered beside the
+ * account list AND beside the empty state: a bound-away repo whose org has no
+ * row here is still one nobody could otherwise see (D8).
+ */
+function UnmatchedBoundAway({
+  entries,
+}: {
+  entries: readonly BoundAwayRepo[];
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <div
+      data-testid="connected-orgs-bound-away-unmatched"
+      data-ui-bridge-id="operations.connected-orgs-bound-away-unmatched"
+    >
+      <p className="text-xs text-muted-foreground">
+        Bound to another tenant (organization not listed above)
+      </p>
+      <ul className="mt-1 space-y-1 pl-6">
+        {entries.map((b) => (
+          <BoundAwayRow key={b.repo} entry={b} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export interface ConnectedOrgsProps {
+  /**
+   * Bumped by the page whenever a per-repo binding is written (the Repository
+   * tenant bindings card's bind / unbind). Each change re-reads the accounts
+   * IN PLACE — the card is never remounted for it, which would cancel an
+   * in-flight enroll poll — so the "bound to <slug>" rows follow the binding.
+   */
+  bindingsVersion?: number;
+}
+
+export function ConnectedOrgs({ bindingsVersion }: ConnectedOrgsProps = {}) {
   const [accounts, setAccounts] = useState<ConnectedAccount[] | null>(null);
+  // `undefined` = coord did not send `bound_away` (an older coord): render
+  // nothing new. `[]` = coord measured none.
+  const [boundAway, setBoundAway] = useState<BoundAwayRepo[] | undefined>(
+    undefined
+  );
+  // coord's `bindings_error`: it has the field but could not read the
+  // bindings, so the bound-away repos are UNKNOWN — not "none", and not
+  // listed under their org either (their `tenant_repos` rows moved away).
+  const [bindingsError, setBindingsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(async (polled = false) => {
     try {
-      const body = await httpClient.get<AccountsResponse>(
-        `${API}/pr-merge/onboarding/accounts`,
+      const body = await fetchOnboardingAccounts(
         polled ? COORD_DASHBOARD_POLL_OPTIONS : undefined
       );
       setAccounts(body.accounts ?? []);
+      setBoundAway(
+        Array.isArray(body.bound_away) ? body.bound_away : undefined
+      );
+      setBindingsError(
+        Array.isArray(body.bound_away)
+          ? null
+          : typeof body.bindings_error === "string"
+            ? body.bindings_error.trim() || "coord gave no reason"
+            : null
+      );
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
+
+  const grouped = useMemo(
+    () => groupBoundAway(boundAway ?? [], accounts ?? []),
+    [boundAway, accounts]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -578,6 +658,16 @@ export function ConnectedOrgs() {
       cancelled = true;
     };
   }, [refetch]);
+
+  // A binding written elsewhere on the page: re-read silently (no skeleton),
+  // like the enroll poll does. The mount value is skipped — the effect above
+  // already reads once on mount.
+  const seenBindingsVersion = useRef(bindingsVersion);
+  useEffect(() => {
+    if (bindingsVersion === seenBindingsVersion.current) return;
+    seenBindingsVersion.current = bindingsVersion;
+    void refetch();
+  }, [bindingsVersion, refetch]);
 
   return (
     <Card data-testid="connected-orgs">
@@ -608,6 +698,9 @@ export function ConnectedOrgs() {
               <AccountRow
                 key={a.installation_id || a.account_login}
                 account={a}
+                boundAway={
+                  grouped.byLogin.get(a.account_login.toLowerCase()) ?? []
+                }
                 refetch={refetch}
               />
             ))}
@@ -623,6 +716,22 @@ export function ConnectedOrgs() {
               </Link>
             </Button>
           </div>
+        )}
+        {!loading && !error && bindingsError && (
+          <p
+            className={`rounded-md border px-3 py-2 text-xs ${UNKNOWN_AMBER}`}
+            role="status"
+            title={bindingsError}
+            data-testid="connected-orgs-bindings-unknown"
+            data-ui-bridge-id="operations.connected-orgs-bindings-unknown"
+          >
+            Repositories bound to other tenants: UNKNOWN — coord could not read
+            the per-repo bindings, so a repository bound elsewhere is not shown
+            here.
+          </p>
+        )}
+        {!loading && !error && (
+          <UnmatchedBoundAway entries={grouped.unmatched} />
         )}
       </CardContent>
     </Card>

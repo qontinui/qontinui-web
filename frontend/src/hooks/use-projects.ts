@@ -103,7 +103,12 @@ export function useCreateProject() {
       description?: string;
       configuration: { [key: string]: unknown };
     }) => {
-      const result = await projectService.createProject(data);
+      // `is_public` has a server default (false), which the generated
+      // ProjectCreate type marks required. Send that default explicitly.
+      const result = await projectService.createProject({
+        is_public: false,
+        ...data,
+      });
       return parseApi(ProjectSchema, result, "create project");
     },
     onSuccess: (newProject) => {

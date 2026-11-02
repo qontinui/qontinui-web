@@ -134,6 +134,21 @@ _EXCLUSIONS: dict[str, str] = {
     "/api/v1/devices/pair-confirm": (
         "identity is a gate only; coord resolves the tenant from the pair flow"
     ),
+    # The operator credential controls (plan 2026-09-26-authenticate-and-
+    # perpetually-renew-a-specific-runner-from-qontinui-web) admit a device
+    # whose tenant is ANY of the caller's coord memberships
+    # (``identity.tenant_ids()``), never the selection: the Project selector
+    # must not hide, or refuse to authenticate/revoke, one of the caller's own
+    # runners. The tenant a bound code is minted in is the DEVICE's.
+    "/api/v1/devices/credential-overview": (
+        "scoped by the caller's full membership set, not the selection"
+    ),
+    "/api/v1/devices/{device_id}/authorize-redeem": (
+        "membership-set gate; the code's tenant is the device's own"
+    ),
+    "/api/v1/devices/{device_id}/machine-credential/revoke": (
+        "membership-set gate; revokes one device, scopes no rows"
+    ),
     # The helper-role grant POST does not forward the header, so it lands in
     # the caller's home tenant; the ``already_granted`` check must read that
     # same tenant. Sending the header would make the check and the write
@@ -166,21 +181,6 @@ _EXCLUSIONS: dict[str, str] = {
     # behind it), so the header is never read; the row is scoped by user_id.
     "/api/v1/scheduled-runs/{run_id}/run-now": (
         "dispatches as NO_CALLER: the scheduler path never reads the header"
-    ),
-    # The designation PUT stamps AND overwrites ``coord.test_targets.tenant_id``
-    # from ``get_tenant_id`` checking only device ownership and app existence,
-    # while coord's own writer requires a ``coord.tenant_devices`` binding and
-    # the runner poll returns only rows whose tenant is one of the device's
-    # bindings. With the header, an operator switched to a project the device
-    # is not bound to would re-stamp the row there and the designation would
-    # silently vanish from the device's runner. Follow-up: route the PUT
-    # through coord's binding-checked test-targets upsert, then add the prefix.
-    # Do NOT drop this entry without that backend fix: it is the only thing
-    # that fails if the prefix is re-added (the raw-read rule cannot see it).
-    "/api/v1/fleet/test-targets/{device_id}/{app_id}": (
-        "PUT re-stamps tenant_id with no coord.tenant_devices binding check; "
-        "follow-up: route it through coord's binding-checked upsert, then add "
-        "the prefix"
     ),
 }
 
@@ -243,11 +243,29 @@ _FORWARDED_TO_COORD: dict[str, str] = {
 # selection degrades to home) before using it for anything local, such as a
 # cache key. They also forward it to coord.
 _VALIDATED_LOCALLY: dict[str, str] = {
+    "app.api.v1.endpoints.overlord_labels": (
+        "never forwards the client's raw value: it sends the tenant "
+        "require_coord_tenant_admin resolved, which is membership-checked "
+        "against the caller's coord operator roles"
+    ),
     "app.api.v1.endpoints.admin_dev": (
         "_capture_bearer_best_effort matches the selection against identity.tenants"
     ),
     "app.api.v1.endpoints.digital_twin": (
         "subspaces keys its cache on _effective_tenant_id(identity, header)"
+    ),
+    "app.api.v1.endpoints.taste": (
+        "reads it only for get_can_label's _effective_tenant_roles, which "
+        "matches it against identity.tenants (a non-member selection degrades "
+        "to home); every row is scoped by the tenant get_memory_tenant / "
+        "require_coord_tenant_admin_target resolve, never by the raw value"
+    ),
+    "app.api.v1.endpoints.presentation": (
+        "reads it only through _effective_tenant_id / _effective_tenant_roles, "
+        "which match it against identity.tenants (a non-member selection "
+        "degrades to home); every row is keyed on that resolved tenant, and "
+        "operations' _tenant_headers forwards the header to coord's "
+        "/pr-merge/repos read"
     ),
 }
 
@@ -293,6 +311,7 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
                 "/api/v1/devices/{device_id}/machine-credential/exchange",
                 "/api/v1/devices/{device_id}/machine-credential/mint",
                 "/api/v1/devices/{device_id}/machine-credential/self-mint",
+                "/api/v1/devices/{device_id}/pending-redeem",
             }
         ),
     ),
@@ -319,10 +338,26 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
             }
         ),
     ),
+    "app.api.v1.endpoints.plan_library_followups": (
+        "names _soft_tenant_id only for POST /followups/reconcile (which reads "
+        "coord's land record); the anchor, resolution and match routes are "
+        "organization-scoped web-DB reads and writes of follow-up edges and "
+        "resolve no coord tenant",
+        frozenset(
+            {
+                "/api/v1/plan-library/edges/{edge_id}/anchors",
+                "/api/v1/plan-library/edges/{edge_id}/resolution",
+                "/api/v1/plan-library/followups/match",
+            }
+        ),
+    ),
     "app.api.v1.endpoints.plan_library": (
         "organization-scoped web-DB plan bodies; only candidates, "
         "reconciliation and by-id add the coord overlay; /vocabulary is a "
-        "static description of the write doors' closed fields (auth only)",
+        "static description of the write doors' closed fields (auth only); "
+        "/model-routing is the caller's personal organization's stored "
+        "level -> model-family map (web DB, _resolve_org_id), never the "
+        "selected coord tenant",
         frozenset(
             {
                 "/api/v1/plan-library",
@@ -332,6 +367,7 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
                 "/api/v1/plan-library/edges/{edge_id}",
                 "/api/v1/plan-library/export",
                 "/api/v1/plan-library/followups",
+                "/api/v1/plan-library/model-routing",
                 "/api/v1/plan-library/vocabulary",
                 "/api/v1/plan-library/{artifact_id}/edges",
                 "/api/v1/plan-library/{artifact_id}/export",
@@ -390,7 +426,10 @@ _UNTRACED: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({"/api/v1/dispatch/status/{app_id}"}),
     ),
     "app.api.v1.endpoints.fleet_targets": (
-        "device-owner scoped reads/writes; only the designation PUT stamps a tenant",
+        "device-owner scoped reads and the platform-admin-only project.apps "
+        "config read/edit (project.apps is not partitioned by tenant yet); only "
+        "the designation PUT/DELETE resolve a tenant (they forward it to coord's "
+        "binding-checked test-targets writer)",
         frozenset(
             {
                 "/api/v1/fleet/apps",

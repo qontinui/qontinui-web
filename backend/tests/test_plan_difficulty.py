@@ -21,13 +21,14 @@ import pytest
 
 from app.services.plan_difficulty import (
     _HEADER_MAX_LINES,
+    DEFAULT_MODEL_SELECTORS,
+    MODEL_FAMILY_DISPLAY,
     MODEL_SELECTOR_VOCABULARY,
-    MODEL_SELECTORS,
-    MODEL_TIERS,
     RUBRIC_VERSION,
     DifficultyLevel,
     _fold,
     compute_difficulty,
+    model_tiers_for,
 )
 
 _REPOS = ("qontinui-coord", "qontinui-runner", "qontinui-web", "qontinui-schemas")
@@ -103,9 +104,10 @@ class TestTotality:
         assert signals["computed_level"] == "high"
 
     def test_every_level_names_a_model_tier(self) -> None:
-        assert set(MODEL_TIERS) == {"low", "medium", "high"}
-        assert MODEL_TIERS["high"] == "Fable 5.1"
-        assert MODEL_TIERS["medium"] == "Opus 5"
+        tiers = model_tiers_for(DEFAULT_MODEL_SELECTORS)
+        assert set(tiers) == {"low", "medium", "high"}
+        assert tiers["high"] == "Fable (latest)"
+        assert tiers["medium"] == "Opus (latest)"
 
 
 class TestModelSelectors:
@@ -120,15 +122,34 @@ class TestModelSelectors:
     def test_every_difficulty_level_has_a_tier_and_a_selector(self) -> None:
         levels = set(get_args(DifficultyLevel))
         assert levels == {"low", "medium", "high"}
-        assert set(MODEL_TIERS) == levels
-        assert set(MODEL_SELECTORS) == levels
+        assert set(DEFAULT_MODEL_SELECTORS) == levels
+        assert set(model_tiers_for(DEFAULT_MODEL_SELECTORS)) == levels
 
     def test_every_selector_is_an_agent_tool_model(self) -> None:
-        assert set(MODEL_SELECTORS.values()) <= self._AGENT_TOOL_MODELS
+        assert set(DEFAULT_MODEL_SELECTORS.values()) <= self._AGENT_TOOL_MODELS
 
-    def test_the_selectors_follow_the_calibrated_tiers(self) -> None:
-        # ``low`` was calibrated on Sonnet; ``haiku`` is deliberately unmapped.
-        assert MODEL_SELECTORS == {"high": "fable", "medium": "opus", "low": "sonnet"}
+    def test_every_family_has_display_copy(self) -> None:
+        # The operator may pick any family in the vocabulary, so each needs
+        # copy — and the copy names the family, never a version.
+        assert set(MODEL_FAMILY_DISPLAY) == self._AGENT_TOOL_MODELS
+        for family, display in MODEL_FAMILY_DISPLAY.items():
+            assert display.lower().startswith(family), family
+            assert not any(ch.isdigit() for ch in display), display
+
+    def test_tiers_are_derived_from_the_selectors(self) -> None:
+        assert model_tiers_for({"high": "opus", "medium": "opus", "low": "haiku"}) == {
+            "high": "Opus (latest)",
+            "medium": "Opus (latest)",
+            "low": "Haiku (latest)",
+        }
+
+    def test_the_default_selectors_follow_the_calibrated_tiers(self) -> None:
+        # The fallback for an organization that has written no routing row.
+        assert DEFAULT_MODEL_SELECTORS == {
+            "high": "fable",
+            "medium": "opus",
+            "low": "sonnet",
+        }
 
     def test_the_vocabulary_is_named(self) -> None:
         assert MODEL_SELECTOR_VOCABULARY == "claude_code_agent_tool_v1"

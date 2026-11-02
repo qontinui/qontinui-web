@@ -77,11 +77,10 @@ import { deriveAgentLogHealth } from "@/components/admin/coord/agentLogHealth";
 import { LogRow, type AgentLogRow } from "@/components/admin/coord/LogRow";
 import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import { cn } from "@/lib/utils";
-import { httpClient } from "@/services/service-factory";
+import { fetchAgentLogsByAgent } from "@/lib/api/operations/agentLogs";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 5_000;
 const FETCH_LIMIT = 500;
 const ALL_LEVELS = ["trace", "debug", "info", "warn", "error"] as const;
@@ -144,17 +143,14 @@ export default function CoordAgentLogPage() {
     async (isCurrent: () => boolean) => {
       if (!agentId) return;
       try {
-        const qs = new URLSearchParams();
-        qs.set("limit", String(FETCH_LIMIT));
         const sinceOpt = SINCE_OPTIONS.find((o) => o.value === sinceKey);
-        if (sinceOpt?.minutes != null) {
-          const sinceIso = new Date(
-            Date.now() - sinceOpt.minutes * 60_000
-          ).toISOString();
-          qs.set("since", sinceIso);
-        }
-        const body = await httpClient.get<unknown>(
-          `${API}/agent-logs/by-agent/${encodeURIComponent(agentId)}?${qs.toString()}`,
+        const since =
+          sinceOpt?.minutes != null
+            ? new Date(Date.now() - sinceOpt.minutes * 60_000).toISOString()
+            : undefined;
+        const body = await fetchAgentLogsByAgent(
+          agentId,
+          { limit: FETCH_LIMIT, since },
           COORD_DASHBOARD_POLL_OPTIONS
         );
         if (!isCurrent()) return;

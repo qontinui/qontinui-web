@@ -114,15 +114,12 @@ class NotificationPreferencesBase(BaseSchema):
     email_comments: bool = Field(True, description="Email for comments")
     email_shares: bool = Field(True, description="Email for shares")
     email_replies: bool = Field(True, description="Email for replies")
-    email_team_invites: bool = Field(True, description="Email for team invites")
 
     # In-app preferences
     in_app_mentions: bool = Field(True, description="In-app for mentions")
     in_app_comments: bool = Field(True, description="In-app for comments")
     in_app_shares: bool = Field(True, description="In-app for shares")
     in_app_replies: bool = Field(True, description="In-app for replies")
-    in_app_team_invites: bool = Field(True, description="In-app for team invites")
-    in_app_project_updates: bool = Field(True, description="In-app for project updates")
 
 
 class NotificationPreferencesUpdate(BaseSchema):
@@ -133,15 +130,12 @@ class NotificationPreferencesUpdate(BaseSchema):
     email_comments: bool | None = None
     email_shares: bool | None = None
     email_replies: bool | None = None
-    email_team_invites: bool | None = None
 
     # In-app preferences
     in_app_mentions: bool | None = None
     in_app_comments: bool | None = None
     in_app_shares: bool | None = None
     in_app_replies: bool | None = None
-    in_app_team_invites: bool | None = None
-    in_app_project_updates: bool | None = None
 
 
 class NotificationPreferencesResponse(NotificationPreferencesBase, BaseORMSchema):

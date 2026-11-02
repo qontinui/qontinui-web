@@ -34,6 +34,32 @@ describe("classifyCoordError / describeCoordPollError", () => {
     ).toBe("coord read deadline (4000 ms) exceeded — unknown");
   });
 
+  it("names the loader coord says ran out of budget", () => {
+    expect(
+      describeCoordPollError(
+        rejection(
+          503,
+          '{"error":"deadline","budget_ms":4000,"loader":"census","cause":"statement_timeout"}'
+        )
+      )
+    ).toBe(
+      "coord read deadline (4000 ms) exceeded in its census step — unknown"
+    );
+  });
+
+  it("drops a loader value that is not a loader name", () => {
+    for (const loader of ["<b>census</b>", 7, null, "", "x".repeat(41)]) {
+      expect(
+        describeCoordPollError(
+          rejection(
+            503,
+            JSON.stringify({ error: "deadline", budget_ms: 4000, loader })
+          )
+        )
+      ).toBe("coord read deadline (4000 ms) exceeded — unknown");
+    }
+  });
+
   it("still reads UNKNOWN when the deadline body omits the budget", () => {
     expect(describeCoordPollError(rejection(503, '{"error":"deadline"}'))).toBe(
       "coord read deadline (its budget) exceeded — unknown"

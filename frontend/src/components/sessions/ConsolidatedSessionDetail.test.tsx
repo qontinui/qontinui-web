@@ -18,7 +18,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
-import { SessionsApiError } from "./api";
+import { SessionsApiError } from "@/lib/api/operations/sessions";
 import type { SessionCard } from "@/services/agent-sessions-api";
 import type { SessionRow } from "./types";
 
@@ -32,8 +32,8 @@ vi.mock("@/services/devenv-api", () => ({
   listMachines: vi.fn(async () => []),
 }));
 
-vi.mock("./api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./api")>();
+vi.mock("@/lib/api/operations/sessions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/operations/sessions")>();
   return {
     ...actual,
     // The panes fetch on mount. None of them is what this file is about.
@@ -103,6 +103,13 @@ function mount(
     chunks: [],
     count: 0,
   }));
+  // The census proxy's answer while coord does not serve the route — the
+  // shape the deployed stack returns today.
+  const readCensus = vi.fn(async () => ({
+    served: false as const,
+    unknown_reason: "census_not_served",
+    detail: '{"error":"no_such_route"}',
+  }));
   render(
     <ConsolidatedSessionDetail
       card={CARD}
@@ -110,10 +117,12 @@ function mount(
       fetchSession={(async () => LIFECYCLE_ROW) as never}
       readOutput={readOutput as never}
       listArtifacts={listArtifacts as never}
+      readCensus={readCensus as never}
+      now={Date.parse("2026-11-02T12:00:00.000Z")}
       {...over}
     />
   );
-  return { listArtifacts, readOutput };
+  return { listArtifacts, readOutput, readCensus };
 }
 
 beforeEach(() => {
@@ -220,5 +229,131 @@ describe("D2 — a missing half is structural, not a fault", () => {
         expect.objectContaining({ coordSessionId: "life-1" })
       )
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The identity panel — plan
+// `2026-10-19-session-lookup-by-name-shows-claude-account-in-web` Phase 3
+// ---------------------------------------------------------------------------
+
+const STAMPED: SessionCard = {
+  ...CARD,
+  id: "86e2b721-8270-49fe-bb15-6c8b33b000c8",
+  account: "qontinui",
+  config_dir: "C:/claude/.claude-qontinui",
+  account_observed_at: "2026-11-02T09:00:00Z",
+  registry_name: "spaceship latency",
+  tag_name: "spaceship-latency",
+};
+
+describe("the identity panel — account, config dir, device, names, live", () => {
+  it("renders every stamped fact, the full session id, and names by source", async () => {
+    mount({
+      card: STAMPED,
+      sessionId: STAMPED.id,
+      hostnameFor: (id) => (id === "dev-a" ? "spaceship" : undefined),
+    });
+    const panel = await screen.findByTestId("session-identity-panel");
+    // Identifying text in FULL — no truncation of the id or the names.
+    expect(
+      screen.getByTestId("session-identity-session-id")
+    ).toHaveTextContent(STAMPED.id);
+    expect(screen.getByTestId("session-identity-account")).toHaveTextContent(
+      "qontinui"
+    );
+    expect(screen.getByTestId("session-identity-config-dir")).toHaveTextContent(
+      "C:/claude/.claude-qontinui"
+    );
+    expect(screen.getByTestId("session-identity-device")).toHaveTextContent(
+      "spaceship (dev-a)"
+    );
+    expect(screen.getByTestId("session-identity-observed")).toHaveTextContent(
+      "3h ago"
+    );
+    expect(
+      screen.getByTestId("session-identity-name-registry")
+    ).toHaveTextContent(/spaceship latency.*registry/i);
+    expect(screen.getByTestId("session-identity-name-tag")).toHaveTextContent(
+      /spaceship-latency.*Session-Name trailer/i
+    );
+    // The roster shortcut is roster data, not coord data — never shown.
+    expect(panel.textContent).not.toMatch(/\bclq\b/);
+  });
+
+  it("asks the census by the card's own session id", async () => {
+    const { readCensus } = mount({ card: STAMPED, sessionId: STAMPED.id });
+    await waitFor(() =>
+      expect(readCensus).toHaveBeenCalledWith(
+        expect.objectContaining({ session_id: STAMPED.id })
+      )
+    );
+  });
+
+  it("an unserved census reads `live status UNKNOWN — census not served`, never 'not live'", async () => {
+    mount({ card: STAMPED, sessionId: STAMPED.id });
+    const live = await screen.findByTestId("session-identity-live");
+    await waitFor(() =>
+      expect(live).toHaveTextContent("live status UNKNOWN — census not served")
+    );
+    expect(live.textContent).not.toMatch(/not live/);
+    expect(live).toHaveAttribute("data-state", "unknown");
+  });
+
+  it("a failed census read is UNKNOWN with its status, not 'not served' and not 'not live'", async () => {
+    const { AgentSessionsApiError } = await import("@/services/agent-sessions-api");
+    mount({
+      card: STAMPED,
+      sessionId: STAMPED.id,
+      readCensus: (async () => {
+        throw new AgentSessionsApiError(503, "coord is draining");
+      }) as never,
+    });
+    const live = await screen.findByTestId("session-identity-live");
+    await waitFor(() =>
+      expect(live).toHaveTextContent(
+        "live status UNKNOWN — census read failed (503: coord is draining)"
+      )
+    );
+  });
+
+  it("a served census with the process alive reads live now", async () => {
+    mount({
+      card: STAMPED,
+      sessionId: STAMPED.id,
+      readCensus: (async () => ({
+        served: true,
+        census_present: true,
+        count: 1,
+        sessions: [
+          {
+            session_id: STAMPED.id,
+            liveness: "alive",
+            hostname: "spaceship",
+          },
+        ],
+      })) as never,
+    });
+    const live = await screen.findByTestId("session-identity-live");
+    await waitFor(() => expect(live).toHaveTextContent("live now on spaceship"));
+    expect(live).toHaveAttribute("data-state", "live");
+  });
+
+  it("a card coord serves no stamp on says coord does not report it yet", async () => {
+    // CARD carries no stamp keys at all — today's deployed coord.
+    mount();
+    expect(
+      await screen.findByTestId("session-identity-account")
+    ).toHaveTextContent("UNKNOWN — coord does not report the account yet");
+    expect(screen.getByTestId("session-identity-names")).toHaveTextContent(
+      "UNKNOWN — coord does not report registry or tag names yet"
+    );
+  });
+
+  it("is not rendered for a lifecycle-only session — there is no card to stamp", async () => {
+    const { readCensus } = mount({ card: null, sessionId: "life-1" });
+    await screen.findByTestId("consolidated-session-agent-half-absent");
+    expect(screen.queryByTestId("session-identity-panel")).toBeNull();
+    expect(readCensus).not.toHaveBeenCalled();
   });
 });

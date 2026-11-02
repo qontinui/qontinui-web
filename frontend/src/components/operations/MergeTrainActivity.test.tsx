@@ -428,6 +428,42 @@ describe("MergeTrainActivity emergency stop", () => {
     expect(result).toHaveTextContent("1 repo(s) affected");
     expect(onActed).toHaveBeenCalled();
   });
+
+  it("confirms a stop whose 2xx carries no readable echo, and still resets", async () => {
+    fetchMock.mockResolvedValue(new Response("", { status: 200 }));
+    const onActed = vi.fn();
+    renderTab({ proposals: [proposal()], onActed });
+    expandRow();
+
+    const reasonInput = screen.getByTestId(`emergency-stop-reason-${REPO}`);
+    fireEvent.change(reasonInput, { target: { value: "stop it" } });
+    fireEvent.click(screen.getByTestId(`emergency-stop-fire-${REPO}`));
+
+    const note = await screen.findByTestId(`emergency-stop-no-echo-${REPO}`);
+    expect(note).toHaveTextContent("Stopped (no echo returned).");
+    expect(screen.queryByTestId(`emergency-stop-result-${REPO}`)).toBeNull();
+    expect(reasonInput).toHaveValue("");
+    expect(onActed).toHaveBeenCalled();
+  });
+
+  it("words a refusal whose body cannot be read as HTTP <status>: Unknown error", async () => {
+    const unreadable = new Response("x", { status: 503 });
+    vi.spyOn(unreadable, "text").mockRejectedValue(new Error("stream broke"));
+    fetchMock.mockResolvedValue(unreadable);
+    renderTab({ proposals: [proposal()] });
+    expandRow();
+
+    fireEvent.change(screen.getByTestId(`emergency-stop-reason-${REPO}`), {
+      target: { value: "stop it" },
+    });
+    fireEvent.click(screen.getByTestId(`emergency-stop-fire-${REPO}`));
+
+    await waitFor(() =>
+      expect(screen.getByTestId(`emergency-stop-${REPO}`)).toHaveTextContent(
+        "HTTP 503: Unknown error"
+      )
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

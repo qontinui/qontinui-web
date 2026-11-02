@@ -151,11 +151,16 @@ export interface PredictedLandEffect {
 
 // One correlated sibling-repo cascade. `cascade` is defensively nullable
 // (a persisted row may carry the link without a re-computed cascade).
+// `cascade_note` is coord's reason the sibling's cascade could NOT be
+// predicted; coord then sends an empty, clean `cascade`, so a present note
+// means the cascade is unknown. Absent when the prediction ran (and on coords
+// that predate the field).
 export interface SiblingCascade {
   repo: string;
   branch: string;
   correlated_via: string;
   cascade: PredictedLandEffect["cascade"] | null;
+  cascade_note?: string | null;
 }
 
 // ---- Badge variants -------------------------------------------------------

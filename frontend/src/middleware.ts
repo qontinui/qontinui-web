@@ -51,7 +51,11 @@ export function middleware(request: NextRequest) {
   const loginUrl = request.nextUrl.clone();
   loginUrl.pathname = "/login";
   loginUrl.search = "";
-  const nextTarget = `${pathname}${search}`;
+  // A request path can begin with several slashes; carried verbatim, it
+  // would make `next` a protocol-relative reference to another host. The
+  // login page refuses such a `next` anyway (`sameOriginNext`); this keeps
+  // the middleware from emitting one.
+  const nextTarget = `${pathname.replace(/^\/+/, "/")}${search}`;
   if (nextTarget && nextTarget !== "/login") {
     loginUrl.searchParams.set("next", nextTarget);
   }
@@ -61,6 +65,6 @@ export function middleware(request: NextRequest) {
 // Skip static assets, image optimization, and Next.js internals.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|sw.js|sitemap.xml|robots.txt|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|json|js|css|map|woff|woff2|ttf|otf)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|sitemap.xml|robots.txt|.*\\.(?:png|jpg|jpeg|gif|svg|webp|avif|ico|json|js|css|map|woff|woff2|ttf|otf)$).*)",
   ],
 };

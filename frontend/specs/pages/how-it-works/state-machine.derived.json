@@ -1,0 +1,151 @@
+{
+  "version": "1.0",
+  "id": "how-it-works",
+  "name": "How the factory works (/how-it-works)",
+  "description": "Public page added by plan 2026-10-09-qontinui-marketing-studio-animated-process-explainers Phase 4: one animated studio scene per factory process (S1-S6), each with its plan-D2 mode label. Scene and label ids are pinned with data-testid in src/components/studio/scene-embed.tsx (scene-embed-<scene>, scene-mode-<mode>-<scene>); every scene is ILLUSTRATIVE because no replay trace exists yet. Posters are server-rendered and players load only after the visitor interacts, so this asserts the poster-first structure. Public page; read-only; structural only.",
+  "provenance": { "source": "ai-generated", "appId": "qontinui-web" },
+  "metadata": { "tags": ["marketing", "public", "studio-scenes"], "requiresUnauthenticated": true, "expectedConsoleErrors": ["getCurrentUser failed: 401"] },
+  "states": [
+    {
+      "id": "how-it-works-scenes",
+      "name": "Process scenes",
+      "description": "The six scene embeds S1-S6 and their ILLUSTRATIVE mode labels.",
+      "assertions": [
+        {
+          "id": "how-it-works-scenes-elem-0",
+          "description": "s1-plan-lifecycle scene embed.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-embed-s1-plan-lifecycle" }, "label": "s1-plan-lifecycle scene" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "how-it-works-scenes-elem-1",
+          "description": "s1-plan-lifecycle mode label reads ILLUSTRATIVE.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-mode-illustrative-s1-plan-lifecycle" }, "label": "s1-plan-lifecycle illustrative label" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "how-it-works-scenes-elem-2",
+          "description": "s2-digital-twin scene embed.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-embed-s2-digital-twin" }, "label": "s2-digital-twin scene" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "how-it-works-scenes-elem-3",
+          "description": "s2-digital-twin mode label reads ILLUSTRATIVE.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-mode-illustrative-s2-digital-twin" }, "label": "s2-digital-twin illustrative label" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "how-it-works-scenes-elem-4",
+          "description": "s3-gates-continuations scene embed.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-embed-s3-gates-continuations" }, "label": "s3-gates-continuations scene" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "how-it-works-scenes-elem-5",
+          "description": "s3-gates-continuations mode label reads ILLUSTRATIVE.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-mode-illustrative-s3-gates-continuations" }, "label": "s3-gates-continuations illustrative label" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "how-it-works-scenes-elem-6",
+          "description": "s4-merge-train scene embed.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-embed-s4-merge-train" }, "label": "s4-merge-train scene" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "how-it-works-scenes-elem-7",
+          "description": "s4-merge-train mode label reads ILLUSTRATIVE.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-mode-illustrative-s4-merge-train" }, "label": "s4-merge-train illustrative label" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "how-it-works-scenes-elem-8",
+          "description": "s5-fleet scene embed.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-embed-s5-fleet" }, "label": "s5-fleet scene" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "how-it-works-scenes-elem-9",
+          "description": "s5-fleet mode label reads ILLUSTRATIVE.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-mode-illustrative-s5-fleet" }, "label": "s5-fleet illustrative label" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "how-it-works-scenes-elem-10",
+          "description": "s6-self-correction scene embed.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-embed-s6-self-correction" }, "label": "s6-self-correction scene" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "how-it-works-scenes-elem-11",
+          "description": "s6-self-correction mode label reads ILLUSTRATIVE.",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": { "type": "search", "criteria": { "id": "scene-mode-illustrative-s6-self-correction" }, "label": "s6-self-correction illustrative label" },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": { "source": "ai-generated" }
+    }
+  ],
+  "transitions": []
+}

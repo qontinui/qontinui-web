@@ -171,9 +171,15 @@ function FleetOverviewHost(): ReactElement {
   const noop = async () => {};
   return (
     <FleetOverview
-      health={{ data: null, loading: true, error: null, refresh: noop }}
+      health={{
+        data: null,
+        loading: true,
+        error: null,
+        asOfMs: null,
+        refresh: noop,
+      }}
       ciMachines={{ state: "loading" }}
-      drain={{ read: { state: "loading" }, refresh: noop }}
+      drain={{ read: { state: "loading" }, asOfMs: null, refresh: noop }}
       deviceStatus={{
         byHostname: new Map(),
         connected: false,
@@ -435,6 +441,25 @@ describe("what the operator reads", () => {
     expect(
       result.current.state === "unavailable" && result.current.reason
     ).toContain("coord read deadline (4000 ms) exceeded — unknown");
+  });
+
+  it("volumes: a 503 deadline names the loader coord says ran out", async () => {
+    stubFetch(503, {
+      error: "deadline",
+      budget_ms: 4000,
+      loader: "census",
+      cause: "statement_timeout",
+    });
+    const { result } = renderHook(() => useFleetVolumes());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.state).toBe("unavailable");
+    expect(
+      result.current.state === "unavailable" && result.current.reason
+    ).toContain(
+      "coord read deadline (4000 ms) exceeded in its census step — unknown"
+    );
   });
 
   it("volumes: a route_disabled 404 says disabled by operator", async () => {

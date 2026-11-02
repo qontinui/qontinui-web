@@ -59,13 +59,10 @@ const DEFAULT_PREFS: NotificationPreferencesShape = {
   email_comments: true,
   email_shares: true,
   email_replies: true,
-  email_team_invites: true,
   in_app_mentions: true,
   in_app_comments: true,
   in_app_shares: true,
   in_app_replies: true,
-  in_app_team_invites: true,
-  in_app_project_updates: true,
 };
 
 // ---------------------------------------------------------------------------

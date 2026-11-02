@@ -6,10 +6,8 @@ This guide covers recommended patterns, design strategies, and common pitfalls t
 
 - [Workflow Design](#workflow-design)
 - [Organization](#organization)
-- [Version Control](#version-control)
 - [Testing](#testing)
 - [Performance](#performance)
-- [Components](#components)
 - [Documentation](#documentation)
 - [Common Pitfalls](#common-pitfalls)
 
@@ -110,23 +108,6 @@ const massiveWorkflow = {
 /Backup
 ```
 
-### Tag Strategy
-
-```typescript
-// ✅ Good: Consistent, meaningful tags
-'p0-critical'      // Priority 0 - critical
-'p1-high'          // Priority 1 - high
-'type:smoke'       // Test type
-'feature:login'    // Feature area
-'schedule:nightly' // Schedule
-
-// ❌ Bad: Inconsistent or unclear tags (avoid vague names like these)
-'important'
-'test'
-'old'
-'todo'
-```
-
 ### Naming Conventions
 
 ```typescript
@@ -142,65 +123,6 @@ const massiveWorkflow = {
 'Auth/Logout'
 'Cart/Add Item'
 'Cart/Checkout'
-```
-
-## Version Control
-
-### Commit Often
-
-```typescript
-// ✅ Good: Small, frequent commits
-saveVersion(workflowId, branchId, workflow, 'Add login form validation');
-// ... make more changes ...
-saveVersion(workflowId, branchId, workflow, 'Add error message display');
-// ... make more changes ...
-saveVersion(workflowId, branchId, workflow, 'Update button styling');
-
-// ❌ Bad: Infrequent, large commits
-// ... make many changes over days ...
-saveVersion(workflowId, branchId, workflow, 'Many changes');
-```
-
-### Write Good Commit Messages
-
-```typescript
-// ✅ Good: Clear, specific messages
-'Add two-factor authentication support'
-'Fix timeout issue in login validation'
-'Update error messages for consistency'
-'Remove deprecated password reset flow'
-
-// ❌ Bad: Vague messages
-'Update'
-'Fix'
-'Changes'
-'WIP'
-```
-
-### Use Branches
-
-```typescript
-// ✅ Good: Feature branches
-main                    // Production
-develop                 // Integration
-feature/oauth-login     // New feature
-fix/timeout-bug         // Bug fix
-hotfix/security-patch   // Critical fix
-
-// ❌ Bad: Everything in main
-// Making all changes directly in main branch
-```
-
-### Tag Releases
-
-```typescript
-// ✅ Good: Tag important versions
-createTag(workflowId, versionId, 'v1.0.0', 'Initial release');
-createTag(workflowId, versionId, 'v1.1.0', 'Added OAuth support');
-createTag(workflowId, versionId, 'v2.0.0', 'Major update');
-
-// ❌ Bad: No tags
-// Never tagging releases
 ```
 
 ## Testing
@@ -235,16 +157,16 @@ const testCases = [
 // ✅ Good: Multiple specific assertions
 {
   assertions: [
-    { type: 'equals', actual: '{{status}}', expected: 200 },
-    { type: 'exists', actual: '{{token}}' },
-    { type: 'contains', actual: '{{message}}', expected: 'Success' }
+    { id: 'status', type: 'equals', path: 'status', expected: 200 },
+    { id: 'token', type: 'exists', path: 'token' },
+    { id: 'message', type: 'contains', path: 'message', expected: 'Success' }
   ]
 }
 
 // ❌ Bad: Generic or single assertion
 {
   assertions: [
-    { type: 'exists', actual: '{{result}}' }
+    { id: 'result', type: 'exists', path: 'result' }
   ]
 }
 ```
@@ -345,71 +267,6 @@ const regressionSuite = {
 // Taking screenshots after every action
 ```
 
-## Components
-
-### Single Responsibility
-
-```typescript
-// ✅ Good: Focused components
-{
-  name: 'Login',
-  description: 'Authenticates user with credentials'
-}
-
-{
-  name: 'Fill Form',
-  description: 'Fills form fields with data'
-}
-
-// ❌ Bad: Multi-purpose components
-{
-  name: 'Login and Setup and Validate',
-  description: 'Does everything'
-}
-```
-
-### Clear Parameters
-
-```typescript
-// ✅ Good: Well-defined parameters
-{
-  parameters: [
-    {
-      name: 'username',
-      type: 'string',
-      description: 'User login email',
-      required: true
-    },
-    {
-      name: 'rememberMe',
-      type: 'boolean',
-      description: 'Keep user logged in',
-      required: false,
-      defaultValue: false
-    }
-  ]
-}
-
-// ❌ Bad: Vague parameters
-{
-  parameters: [
-    { name: 'data', type: 'object', required: true }
-  ]
-}
-```
-
-### Versioning
-
-```typescript
-// ✅ Good: Semantic versioning
-'1.0.0' // Initial version
-'1.1.0' // Add optional parameter (backward compatible)
-'2.0.0' // Change required parameter (breaking change)
-
-// ❌ Bad: No versioning
-// Just updating component without tracking versions
-```
-
 ## Documentation
 
 ### Keep Documentation Updated
@@ -420,8 +277,8 @@ function updateWorkflow(workflow: Workflow) {
   saveWorkflow(workflow);
 
   // Regenerate documentation
-  const docs = workflowDocumentationService.generateDocumentation(workflow);
-  workflowDocumentationService.updateDocumentation(workflow.id, docs);
+  const docs = workflowDocumentation.generateDocumentation(workflow);
+  workflowDocumentation.updateDocumentation(workflow.id, docs, 'Workflow changed');
 }
 
 // ❌ Bad: Outdated documentation
@@ -532,8 +389,8 @@ Use this workflow to log in.
 Workflow A → Workflow B → Workflow C → Workflow A
 
 // ✅ Good: Check dependencies before saving
-const circular = workflowDependencyAnalyzer.detectCircularDependencies(workflows);
-if (circular.length > 0) {
+const cycles = workflowDependencyAnalyzer.findCircularDependencies(workflows);
+if (cycles.length > 0) {
   alert('Cannot save: Circular dependency detected!');
 }
 ```
@@ -545,12 +402,10 @@ if (circular.length > 0) {
 // Deploying workflows without testing
 
 // ✅ Good: Comprehensive tests
-const testSuite = createTestSuite({
-  name: 'Login Tests',
-  testCaseIds: [/* test cases */]
-});
+const testing = getWorkflowTestingService();
+const testSuite = testing.createTestSuite('Login Tests', undefined, testCaseIds);
 
-await runTestSuite(testSuite.id);
+await testing.runTestSuite(testSuite.id);
 ```
 
 ## Performance Checklist
@@ -562,10 +417,8 @@ Before deploying a workflow:
 - [ ] Loops have iteration limits
 - [ ] Error handling in place
 - [ ] No circular dependencies
-- [ ] Performance score > 70
 - [ ] Tests passing
 - [ ] Documentation updated
-- [ ] Version tagged
 
 ## Security Best Practices
 
@@ -605,7 +458,5 @@ Before deploying a workflow:
 ## See Also
 
 - [Organization Guide](./organization.md) - Organize workflows
-- [Version Control](./version-control.md) - Version control strategies
 - [Testing Guide](./testing.md) - Testing best practices
-- [Analytics](./analytics.md) - Performance optimization
-- [Troubleshooting](./troubleshooting.md) - Common issues
+- [Analytics](./analytics.md) - Execution metrics and complexity analysis

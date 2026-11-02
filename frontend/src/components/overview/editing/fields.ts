@@ -151,7 +151,7 @@ function readField<Row>(
           error: `${field.label} and its currency go together — give both or neither.`,
         };
       const micros = parseAmountToMicros(amount);
-      if (micros === null || micros < 0)
+      if (micros === null || (micros < 0 && !field.signed))
         return { error: `${field.label} must be an amount, e.g. 900.` };
       if (!CURRENCY.test(currency))
         return {

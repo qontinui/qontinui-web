@@ -607,21 +607,26 @@ def _is_autocommit_block(item: ast.withitem) -> bool:
     )
 
 
-def upgrade_execute_calls(path: Path) -> list[UpgradeExecute]:
-    """Every ``op.execute(...)`` in ``upgrade()``, in source order, via ``ast``.
+def upgrade_execute_calls(
+    path: Path, *, function: str = "upgrade"
+) -> list[UpgradeExecute]:
+    """Every ``op.execute(...)`` in ``function`` (default ``upgrade()``), via ``ast``.
 
     Lets a test run a revision's REAL DDL without a copy that can drift, and
     check the call shapes coord's migration classifier requires: a static
     inline literal argument (anything else is reported as ``sql=None``) and,
     for a CONCURRENTLY build, an enclosing ``autocommit_block``.
+
+    ``function="downgrade"`` reads ``downgrade()`` the same way, for a test that
+    holds the rollback path to the same shape.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     upgrades = [
         node
         for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "upgrade"
+        if isinstance(node, ast.FunctionDef) and node.name == function
     ]
-    assert len(upgrades) == 1, f"{path.name} must define exactly one upgrade()"
+    assert len(upgrades) == 1, f"{path.name} must define exactly one {function}()"
 
     calls: list[UpgradeExecute] = []
 

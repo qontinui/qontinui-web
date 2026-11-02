@@ -6,9 +6,11 @@
  *
  * Split out of `SpawnModal.tsx` (plan
  * `2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls`
- * Phase 4). The transport is unchanged: both reads are still bare `fetch`
- * against the absolute operations base; moving them onto `httpClient` is the
- * plan's Phase 6, a deliberate behaviour change of its own.
+ * Phase 4). Phase 6 moved both reads off a bare `fetch` and onto the typed
+ * `/operations` client (`fetchFleetHealth`, `fetchClaudeAccounts`), so they
+ * carry the operator's bearer and selected tenant. The device roster reads
+ * through the SAME `fetchFleetHealth` as `useFleetHealth` — one reader of
+ * that route, not two.
  *
  * `device` is the trimmed device id on screen (`""` = automatic placement).
  * The roster state is cleared by `resetRoster`, which the modal calls from its
@@ -24,21 +26,52 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 // quiet), the operations copy learned it, and this one went on documenting
 // four. The device list the modal renders comes from the same
 // `GET /operations/fleet/health` read, so it reads the same shape.
-import type {
-  FleetHealthDevice,
-  FleetHealthPayload,
-} from "@/components/operations/useFleetHealth";
+import {
+  fetchFleetHealth,
+  type FleetHealthDevice,
+  type FleetHealthPayload,
+} from "@/lib/api/operations/coordFleet";
+import {
+  fetchClaudeAccounts,
+  type ClaudeAccountRow,
+  type ClaudeAccountsPayload,
+} from "@/lib/api/operations/agents";
 import { findRosterDevice } from "@/components/operations/DevicePicker";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  MAX_CAUSE_LENGTH,
+  messageFromErrorBody,
+} from "@/lib/errors/backend-error-message";
 import {
   ACCOUNT_AUTO,
-  API,
   UUID_RE,
   deriveAccountRoster,
   describeSelectionMode,
   filterAccountsForDevice,
-  type ClaudeAccountRow,
-  type ClaudeAccountsPayload,
 } from "@/components/admin/coord/spawnModel";
+
+/** Why a roster read failed: the HTTP status when the server answered
+ *  (`fleet/health returned HTTP 403`), followed by the backend's own reason
+ *  when its error body carries a readable one, and the transport's own message
+ *  when no status came back at all.
+ *
+ *  `httpClient` rejects a non-2xx as `GET <url> failed: <status> - <body>`.
+ *  `httpStatusOf` / `httpBodyOf` read the status and the body back out of
+ *  exactly that shape. The REASON then goes through the shared guarded reader
+ *  (`messageFromErrorBody`), never a local parse. That reader falls back to
+ *  `HTTP <status>` when the body says nothing readable, and the status is
+ *  already in the sentence, so that fallback adds nothing here. */
+function rosterReadFailure(route: string, e: unknown): string {
+  const status = httpStatusOf(e);
+  if (status === null) return e instanceof Error ? e.message : String(e);
+  const head = `${route} returned HTTP ${status}`;
+  const reason = messageFromErrorBody(
+    httpBodyOf(e) ?? "",
+    status,
+    MAX_CAUSE_LENGTH
+  ).replace(/\.+$/, "");
+  return reason === `HTTP ${status}` ? head : `${head}: ${reason}`;
+}
 
 export function useSpawnRoster(open: boolean, device: string) {
   const [devices, setDevices] = useState<FleetHealthDevice[]>([]);
@@ -111,14 +144,7 @@ export function useSpawnRoster(open: boolean, device: string) {
     let cancelled = false;
     setDevicesLoading(true);
     setDevicesError(null);
-    fetch(`${API}/fleet/health`)
-      .then((res) =>
-        res.ok
-          ? res.json()
-          : Promise.reject(
-              new Error(`fleet/health returned HTTP ${res.status}`)
-            )
-      )
+    fetchFleetHealth()
       .then((body: FleetHealthPayload) => {
         if (cancelled) return;
         const roster = body.devices ?? [];
@@ -147,7 +173,7 @@ export function useSpawnRoster(open: boolean, device: string) {
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        const detail = e instanceof Error ? e.message : String(e);
+        const detail = rosterReadFailure("fleet/health", e);
         console.warn("[SpawnModal] fleet/health fetch failed", e);
         setDevices([]);
         setDevicesError({
@@ -177,14 +203,7 @@ export function useSpawnRoster(open: boolean, device: string) {
     let cancelled = false;
     setAccountsLoading(true);
     setAccountsFault(null);
-    fetch(`${API}/claude-accounts`)
-      .then((res) =>
-        res.ok
-          ? res.json()
-          : Promise.reject(
-              new Error(`claude-accounts returned HTTP ${res.status}`)
-            )
-      )
+    fetchClaudeAccounts()
       .then((body: ClaudeAccountsPayload) => {
         if (cancelled) return;
         const raw = body?.accounts;
@@ -223,7 +242,7 @@ export function useSpawnRoster(open: boolean, device: string) {
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        const detail = e instanceof Error ? e.message : String(e);
+        const detail = rosterReadFailure("claude-accounts", e);
         console.warn("[SpawnModal] claude-accounts fetch failed", e);
         setAccounts([]);
         setUnreadableAccountRows(0);

@@ -555,7 +555,7 @@ describe("tightestVolume", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Per-device sibling (Phase 2 — `deviceVolumesUrl`'s first consumer)
+// Per-device sibling (Phase 2 — `fetchDeviceVolumes`'s first consumer)
 // ---------------------------------------------------------------------------
 
 describe("parseDeviceVolumes", () => {

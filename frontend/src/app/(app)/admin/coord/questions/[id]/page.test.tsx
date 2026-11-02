@@ -31,8 +31,18 @@ const get = vi.fn();
 const post = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => get(...args),
-    post: (...args: unknown[]) => post(...args),
+    // The page reads and answers through `lib/api/operations/agentQuestions.ts`,
+    // which calls `httpClient.fetch`; route it to the `get` / `post` stubs by
+    // method, the POST with its parsed body, so the assertions keep their
+    // `(url, body)` shape. A rejection passes through as before.
+    fetch: async (url: string, init: { method?: string; body?: string } = {}) =>
+      new Response(
+        JSON.stringify(
+          (init.method === "POST"
+            ? await post(url, JSON.parse(init.body ?? "null"))
+            : await get(url)) ?? null
+        )
+      ),
   },
 }));
 

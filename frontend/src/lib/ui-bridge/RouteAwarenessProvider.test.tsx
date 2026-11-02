@@ -28,8 +28,11 @@ vi.mock("next/navigation", () => ({
 }));
 
 // The real hook needs the SDK's navigation tracker; it's irrelevant to the
-// handler-registration contract under test.
-vi.mock("@qontinui/ui-bridge/react", () => ({
+// handler-registration contract under test. The rest of the SDK (the pattern
+// helper, the not-found signal) stays real. Route reporting itself is pinned
+// by RouteAwarenessProvider.routePattern.test.tsx.
+vi.mock("@qontinui/ui-bridge/react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@qontinui/ui-bridge/react")>()),
   useRouteAwareness: () => {},
 }));
 

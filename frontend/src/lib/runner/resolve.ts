@@ -32,7 +32,11 @@ export type PinIneligibility =
   | "not_a_paired_device"
   | "offline"
   | "missing_capabilities"
-  | "drained";
+  | "drained"
+  /** The machine's dispatch role (bench / CI node) takes no work from coord. */
+  | "role_closes_agent_lane"
+  /** At its concurrent-session cap (part of coord's wire enum). */
+  | "at_capacity";
 
 /** Why a pin was dropped on the way to a `placeable` answer. */
 export interface PinReleased {
@@ -65,8 +69,28 @@ export type ResolvedRunnerState =
       pinReleased: PinReleased | null;
     }
   | { status: "all_drained"; pinReleased: PinReleased | null }
+  /** Every capable runner is offline but was seen recently — start one. */
+  | {
+      status: "all_offline";
+      capableOffline: number;
+      pinReleased: PinReleased | null;
+    }
+  /** Every capable runner is at its concurrent-session cap. */
+  | {
+      status: "all_at_capacity";
+      capableDevices: number;
+      pinReleased: PinReleased | null;
+    }
+  /** Every capable runner's role (bench / CI node) does not accept this work. */
+  | { status: "all_role_closed"; pinReleased: PinReleased | null }
   /** Coord could not read the drain set, so it names no device (fail-closed). */
   | { status: "drain_unreadable" }
+  | {
+      /** UNKNOWN — coord answered with an outcome this build does not know.
+       *  Names no device; `rawOutcome` is coord's tag, verbatim. */
+      status: "unknown_outcome";
+      rawOutcome: string;
+    }
   | {
       /** UNKNOWN — the resolver's answer could not be obtained. */
       status: "unavailable";
@@ -119,7 +143,35 @@ const PIN_REASONS: readonly PinIneligibility[] = [
   "offline",
   "missing_capabilities",
   "drained",
+  "role_closes_agent_lane",
+  "at_capacity",
 ];
+
+/** The statuses that mean coord ANSWERED: nothing is eligible for new work.
+ *  (`unavailable`, `drain_unreadable` and `unknown_outcome` are UNKNOWN.) */
+export type NothingEligibleStatus =
+  | "no_capable"
+  | "all_drained"
+  | "all_offline"
+  | "all_at_capacity"
+  | "all_role_closed"
+  | "pin_ineligible";
+
+export function isNothingEligible(
+  state: ResolvedRunnerState
+): state is Extract<ResolvedRunnerState, { status: NothingEligibleStatus }> {
+  switch (state.status) {
+    case "no_capable":
+    case "all_drained":
+    case "all_offline":
+    case "all_at_capacity":
+    case "all_role_closed":
+    case "pin_ineligible":
+      return true;
+    default:
+      return false;
+  }
+}
 
 function pinReason(v: unknown): PinIneligibility | null {
   return PIN_REASONS.includes(v as PinIneligibility)
@@ -133,8 +185,9 @@ function pinReleased(body: Record<string, unknown>): PinReleased | null {
 }
 
 /**
- * The typed state for one response body. Anything that is not the contract
- * is `unavailable / malformed_response` — never a device.
+ * The typed state for one response body. An outcome tag this build does not
+ * know is `unknown_outcome` (named); anything else that is not the contract
+ * is `unavailable / malformed_response`. Never a device.
  */
 export function parseDeviceResolve(body: unknown): ResolvedRunnerState {
   if (typeof body !== "object" || body === null) {
@@ -174,14 +227,42 @@ export function parseDeviceResolve(body: unknown): ResolvedRunnerState {
       };
     case "all_capable_drained":
       return { status: "all_drained", pinReleased: pinReleased(b) };
+    case "all_capable_offline":
+      return {
+        status: "all_offline",
+        capableOffline:
+          typeof b.capable_offline === "number" ? b.capable_offline : 0,
+        pinReleased: pinReleased(b),
+      };
+    case "all_capable_at_capacity":
+      return {
+        status: "all_at_capacity",
+        capableDevices:
+          typeof b.capable_devices === "number" ? b.capable_devices : 0,
+        pinReleased: pinReleased(b),
+      };
+    case "all_capable_role_closed":
+      return { status: "all_role_closed", pinReleased: pinReleased(b) };
     case "drain_unreadable":
       return { status: "drain_unreadable" };
+    case "unknown_outcome": {
+      // The web backend's own name for a coord tag it does not know.
+      const raw = str(b.raw_outcome);
+      if (!raw) break;
+      return { status: "unknown_outcome", rawOutcome: raw };
+    }
     case "unavailable":
       return unavailable(
         str(b.reason) ?? "unknown",
         typeof b.status === "number" ? b.status : null,
         str(b.code)
       );
+    default:
+      // A string tag this build does not know (coord, or a newer web
+      // backend, added an arm): named, never read as a broken resolver.
+      if (typeof b.outcome === "string" && b.outcome !== "") {
+        return { status: "unknown_outcome", rawOutcome: b.outcome };
+      }
   }
   return unavailable("malformed_response");
 }

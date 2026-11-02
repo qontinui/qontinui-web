@@ -12,7 +12,7 @@ import {
   releaseState,
   type ReleaseState,
 } from "./releaseStatus";
-import type { ReleaseHistoryEntry } from "@/services/runner-releases-service";
+import type { ReleaseHistoryEntry } from "@/lib/api/operations/releases";
 
 /**
  * Anti-drift guard for the runner GitHub-Releases drift-state ladder on

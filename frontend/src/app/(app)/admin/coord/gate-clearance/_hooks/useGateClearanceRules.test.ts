@@ -42,7 +42,7 @@ const patchCoordPolicy = vi.fn(async (id: string) => {
   return undefined;
 });
 
-vi.mock("../../_shared/coordPolicyApi", () => ({
+vi.mock("@/lib/api/operations/coordPolicies", () => ({
   listCoordPolicies: (...a: never[]) => listCoordPolicies(...a),
   createCoordPolicy: (b: unknown) => createCoordPolicy(b),
   deleteCoordPolicy: (id: string) => deleteCoordPolicy(id),
@@ -53,7 +53,7 @@ vi.mock("../../_shared/coordPolicyApi", () => ({
 }));
 
 import { useGateClearanceRules } from "./useGateClearanceRules";
-import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import type { CoordPolicyRow } from "@/lib/api/operations/coordPolicies";
 
 const PREVIOUS = {
   policy_id: "old-1",

@@ -94,17 +94,18 @@ import {
   describeBodyProvenance,
   describeHasBody,
   showsBodySignal,
-  type BodyProvenance,
-  type BodyUnknownReason,
-  type HasBody,
 } from "@/components/admin/coord/planBodySignal";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchPlan,
+  fetchPlanHistory,
+  transitionPlan,
+  type CoordWorkUnit,
+  type PlanHistoryEntry,
+} from "@/lib/api/operations/coordPlans";
 import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
-
-const API = "/api/v1/operations";
 
 // Work-unit lifecycle statuses. NB `ready`/`shipped` are coord-DERIVED on
 // the device write path, but the operator-transition route is a trusted
@@ -119,63 +120,6 @@ const TRANSITION_TARGETS = [
   "superseded",
   "obsolete",
 ];
-
-interface CoordWorkUnit {
-  slug: string;
-  title?: string | null;
-  status?: string;
-  /**
-   * coord `work_units.current_phase`. Omitted from this interface until
-   * 2026-08-29, which silently disarmed `derivePlanStatus`'s `reason` — it
-   * reads exactly this field, so the badge could never produce its "phase N"
-   * subtitle here even though `/work-units` and `/spawn` show it for the same work
-   * unit. The deriver was doing its job; it was being handed a type that had
-   * thrown the input away.
-   */
-  current_phase?: string | null;
-  /**
-   * coord `work_units.authored_at` — the authoring date coord holds, NULL when
-   * it holds none (an undated slug, a coord predating the column, or a unit
-   * created through the MCP upsert door by a caller that omitted it). Read
-   * through `planAuthoredAt`, which consults the slug's own date prefix first,
-   * never directly. Never stood in for by `created_at`, the ingest time.
-   */
-  authored_at?: string | null;
-  /** coord `work_units.updated_at` — the scanner's last touch, not a plan event. */
-  updated_at?: string | null;
-  /** coord `work_units.first_shipped_at` — derived first `shipped` transition. */
-  first_shipped_at?: string | null;
-  /**
-   * Does this work unit have a plan document? Derived server-side by
-   * `operations.py` `get_coord_plan` — the SAME helper the list route uses,
-   * over a one-row page, so this surface cannot disagree with the row the
-   * operator clicked to reach it. Plan
-   * `2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`.
-   */
-  body_provenance?: BodyProvenance;
-  has_body?: HasBody;
-  body_unknown_reason?: BodyUnknownReason | null;
-}
-
-// coord `GET /coord/work-units/{slug}` envelope.
-interface CoordPlanDetailResponse {
-  work_unit?: CoordWorkUnit;
-  recent_history?: PlanHistoryEntry[];
-}
-
-// One `coord.work_unit_status_history` row.
-interface PlanHistoryEntry {
-  from_status?: string | null;
-  to_status: string;
-  transitioned_at: string;
-  by_actor?: string | null;
-  reason?: string | null;
-}
-
-interface PlanHistoryResponse {
-  slug?: string;
-  history?: PlanHistoryEntry[];
-}
 
 export default function CoordPlanDetailPage() {
   const params = useParams<{ slug: string }>();
@@ -194,7 +138,7 @@ export default function CoordPlanDetailPage() {
    * The last detail read failed with coord's own 404 — i.e. coord ANSWERED,
    * and the answer was "no such work unit".
    *
-   * `httpClient.get` throws on every non-2xx, so a 404 arrives through the same
+   * `fetchPlan` throws on every non-2xx, so a 404 arrives through the same
    * `catch` as a dead socket; without this the two are indistinguishable and
    * the page must either call every genuine 404 an outage or every outage a
    * 404. Both are wrong, and the first is the one that trains an operator to
@@ -235,9 +179,7 @@ export default function CoordPlanDetailPage() {
     // never computed from.
     setHistoryError(false);
     try {
-      const planBody = await httpClient.get<CoordPlanDetailResponse>(
-        `${API}/plans/${encodeURIComponent(slug)}`
-      );
+      const planBody = await fetchPlan(slug);
       setPlan(planBody.work_unit ?? null);
       // History is best-effort — don't fail the whole page if it errors.
       // The detail envelope already carries `recent_history`; seed from it,
@@ -247,9 +189,7 @@ export default function CoordPlanDetailPage() {
       // is coord saying "no transitions", not coord saying nothing.
       if (planBody.recent_history !== undefined) setHistoryLoaded(true);
       try {
-        const historyBody = await httpClient.get<PlanHistoryResponse>(
-          `${API}/plans/${encodeURIComponent(slug)}/history`
-        );
+        const historyBody = await fetchPlanHistory(slug);
         setHistory(historyBody.history ?? planBody.recent_history ?? []);
         if (historyBody.history !== undefined) setHistoryLoaded(true);
         setHistoryError(false);
@@ -296,13 +236,10 @@ export default function CoordPlanDetailPage() {
     if (!slug || !newStatus) return;
     setTransitioning(true);
     try {
-      await httpClient.post(
-        `${API}/plans/${encodeURIComponent(slug)}/transition`,
-        {
-          status: newStatus,
-          note: note || undefined,
-        }
-      );
+      await transitionPlan(slug, {
+        status: newStatus,
+        note: note || undefined,
+      });
       toast.success(`Plan transitioned to ${newStatus}`);
       setNote("");
       await fetchAll();

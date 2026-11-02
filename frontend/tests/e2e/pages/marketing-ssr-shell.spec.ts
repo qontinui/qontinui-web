@@ -32,7 +32,7 @@ import { test, expect } from "@playwright/test";
 
 /** Routes whose body must be in the initial HTML, and a string proving it. */
 const PUBLIC_ROUTES: Array<{ path: string; marker: string }> = [
-  { path: "/", marker: "Verifies Its Own Work" },
+  { path: "/", marker: "The factory builds it." },
   { path: "/docs", marker: "Qontinui Documentation" },
   { path: "/docs/getting-started", marker: "3 simple steps" },
   { path: "/docs/web", marker: "Model-Based Automation" },

@@ -27,6 +27,7 @@
 import { useState, useCallback, useRef } from "react";
 import { Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { presenterSafetyProps } from "@/components/console/presenterSafety";
 import {
   routeOfTarget,
   runnerRequest,
@@ -229,13 +230,18 @@ export function RecordingIndicator() {
       <span className="text-xs text-red-500/70 dark:text-red-400/70">
         {status.interactionCount} actions
       </span>
+      {/* One of the presenter's own safety controls: presentation mode keeps
+          it live (`presenterSafety.ts`). */}
       <Button
+        {...presenterSafetyProps("recording-stop")}
         variant="ghost"
         size="sm"
         className="h-6 px-2 text-red-600 hover:text-red-800 hover:bg-red-100 dark:hover:bg-red-900"
         onClick={handleStop}
+        aria-label="Stop recording"
+        data-testid="recording-indicator-stop"
       >
-        <Square className="size-3" />
+        <Square className="size-3" aria-hidden />
       </Button>
     </div>
   );

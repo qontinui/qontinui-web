@@ -102,6 +102,9 @@ EVIDENCE_POSTURE_PLAN: Final = (
     "2026-09-20-nothing-checks-that-an-agent-writable-evidence-store-ships-"
     "its-vocabulary-and-a-correction-verb"
 )
+#: Owns the specification family on the plan library — its per-kind
+#: ``status`` lifecycles are checked by a model validator, not an enum.
+SPEC_FRONT_END_PLAN: Final = "2026-10-09-spec-front-end-of-the-software-factory"
 #: Owns plan-library artifact soft-delete (qontinui-web #1545).
 JUNK_ROW_PLAN: Final = (
     "2026-09-12-plan-library-has-no-delete-so-a-junk-row-is-permanent"
@@ -202,6 +205,42 @@ STORES: Final[dict[str, Store]] = {
         states=("never_held", "held", "released"),
         terminal=("held", "released"),
     ),
+    # A plan-library follow-up's closure state (plan
+    # 2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down D1).
+    # ``open`` and ``fixing`` are not terminal: the reconcile moves ``fixing``
+    # on coord's land record, and ``open`` is where a follow-up waits. The
+    # three resolutions are — nothing automatic moves them.
+    "followup_resolutions": Store(
+        states=("open", "fixing", "fixed", "already_fixed", "dismissed"),
+        terminal=("fixed", "already_fixed", "dismissed"),
+    ),
+    # An image-slot candidate's status (plan
+    # 2026-10-13-image-generation-and-visual-judgment, Phase 13). Every move is
+    # a caller's PUT except one: choosing another candidate of the slot returns
+    # a ``chosen`` row to ``candidate`` automatically, so ``chosen`` is not
+    # terminal. Nothing automatic moves the other three.
+    "image_slot_candidates": Store(
+        states=("candidate", "chosen", "rejected", "shipped"),
+        terminal=("candidate", "rejected", "shipped"),
+    ),
+    # A taste pair (plan 2026-10-13-image-generation-and-visual-judgment,
+    # Phase 23). Nothing automatic moves either state: a pair waits until a
+    # human labels it, and a label stands until a human undoes it — so both
+    # are terminal. The device-reachable correction (withdraw) admits only
+    # ``pending``: a labelled pair carries the operator's answer, which no
+    # agent removes; the operator's undo returns it to ``pending`` first.
+    "taste_pairs": Store(
+        states=("pending", "labelled"),
+        terminal=("pending", "labelled"),
+    ),
+    # An overview record (a page, an estimate, a milestone, a file, a phase's
+    # progress). Nothing automatic moves either state: a live record rests
+    # until somebody edits it, and a deleted one is gone from its table, with
+    # its last full read shape kept in ``overview.change_log.before``.
+    "overview_records": Store(
+        states=("live", "deleted"),
+        terminal=("live", "deleted"),
+    ),
 }
 
 
@@ -252,8 +291,65 @@ Posture = Read | Ephemeral | Evidence
 # ───────────────────────────── the table ─────────────────────────────
 
 _MEMORY_SUPERSEDE = f"POST {_V1}/memory/records/{{memory_id}}/supersede"
+#: Every follow-up state has an exit through this door — a resting one back to
+#: ``open``, with a reason — so it is the closure store's correction verb.
+_FOLLOWUP_RESOLUTION = f"POST {_V1}/plan-library/edges/{{edge_id}}/resolution"
+_FOLLOWUP_RESOLUTION_VERB = Verb(
+    verb=_FOLLOWUP_RESOLUTION,
+    admits=("open", "fixing", "fixed", "already_fixed", "dismissed"),
+)
 _MEMORY_DELETE = f"DELETE {_V1}/memory/records/{{memory_id}}"
 _TESTING = f"{_V1}/testing/runs"
+_IMAGE_ASSETS = f"{_V1}/image-assets"
+_SLOT_CANDIDATES = f"{_IMAGE_ASSETS}/slot-candidates"
+_TASTE_PAIRS = f"{_V1}/taste/pairs"
+_TASTE_PAIR = f"{_TASTE_PAIRS}/{{pair_id}}"
+_OVERVIEW = f"{_V1}/overview"
+#: Owns the overview's device-principal door (qontinui-web: agents publish
+#: documents; every overview write admits a coord device JWT since).
+OVERVIEW_PUBLISHING_PLAN: Final = (
+    "2026-10-07-agents-publish-documents-to-the-project-overview"
+)
+
+
+def _overview_record_rows(
+    path: str, *, create: tuple[str, ...], update: tuple[str, ...], deletion: Gap | None
+) -> dict[tuple[str, str], Posture]:
+    """The three generic-contract rows of one overview resource.
+
+    Every overview write appends ``overview.change_log`` with the record's
+    read shape before and after, and every update takes ``If-Match``. So a
+    wrong create or update is corrected forward by a PATCH, and a wrong
+    delete by re-creating from the deleted shape the change log keeps (a new
+    id). What a re-create cannot bring back is named as the delete row's gap.
+    """
+    item = f"{path}/{{record_id}}"
+    rows: dict[tuple[str, str], Posture] = {
+        ("POST", path): Evidence(
+            closed_fields=create,
+            store="overview_records",
+            correction=Verb(verb=f"PATCH {item}", admits=("live",)),
+            aspects=(
+                (
+                    "a field fixed at create",
+                    Verb(verb=f"POST {path}", first=f"DELETE {item}", admits=("live",)),
+                ),
+            ),
+        ),
+        ("PATCH", item): Evidence(
+            closed_fields=update,
+            store="overview_records",
+            correction=Verb(verb=f"PATCH {item}", admits=("live",)),
+        ),
+    }
+    rows[("DELETE", item)] = Evidence(
+        closed_fields=(),
+        store="overview_records",
+        correction=Verb(verb=f"POST {path}", admits=("deleted",)),
+        aspects=(() if deletion is None else (("what a re-create loses", deletion),)),
+    )
+    return rows
+
 
 #: One row per device-JWT-admitted write route. Classified by reading each
 #: handler, not its summary.
@@ -261,6 +357,14 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
     # ── plan library ────────────────────────────────────────────────────
     ("POST", f"{_V1}/plan-library"): Evidence(
         closed_fields=("captured_by", "kind"),
+        # ``status`` is CLOSED for a spec kind only (its per-kind lifecycle,
+        # checked by ``WorkArtifactUpsert._spec_kind_rules``) and opaque for
+        # every other kind, so the request BODY SCHEMA cannot carry it as one
+        # enum — hence "unserved" in this table's sense. The per-kind sets are
+        # still readable before writing: they are served on
+        # ``GET /plan-library/vocabulary`` as ``status[kind=<kind>]``, not in
+        # the body schema.
+        unserved_closed_fields=(("status", SPEC_FRONT_END_PLAN),),
         correction=AppendOnlyByDesign(
             "the body is a version log — a changed body appends a new version "
             "and never rewrites an old one, so a wrong body is corrected by "
@@ -288,7 +392,7 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
         ),
     ),
     ("POST", f"{_V1}/plan-library/{{artifact_id}}/edges"): Evidence(
-        closed_fields=("relation",),
+        closed_fields=("relation", "size_class"),
         correction=Gap(
             tracked_by=EDGE_CORRECTION_PLAN,
             what=(
@@ -313,6 +417,38 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
                 "qontinui-web #1459"
             ),
         ),
+    ),
+    ("PUT", f"{_V1}/plan-library/edges/{{edge_id}}/anchors"): Evidence(
+        closed_fields=("size_class", "size_class_source"),
+        correction=SupersedeArg(
+            property="the edge_id in the path",
+            how=(
+                "a PUT replaces the follow-up's whole anchor set and its "
+                "unanchored_reason with the body, and size_class + "
+                "size_class_source, when supplied, replace the class — so a "
+                "wrong anchor set or class is corrected by PUTting the right one"
+            ),
+        ),
+    ),
+    ("POST", _FOLLOWUP_RESOLUTION.removeprefix("POST ")): Evidence(
+        closed_fields=("resolution",),
+        correction=_FOLLOWUP_RESOLUTION_VERB,
+        store="followup_resolutions",
+    ),
+    ("POST", f"{_V1}/plan-library/followups/match"): Read(
+        reason=(
+            "a query sent as POST because up to 500 repo-relative paths do not "
+            "fit a query string; it reads follow-ups and their anchors and "
+            "writes nothing"
+        )
+    ),
+    # The reconcile asserts nothing of its own: it applies coord's land record.
+    # A wrong move (coord read a PR as landed that did not fix the follow-up)
+    # is corrected through the resolution door like any other closure.
+    ("POST", f"{_V1}/plan-library/followups/reconcile"): Evidence(
+        closed_fields=(),
+        correction=_FOLLOWUP_RESOLUTION_VERB,
+        store="followup_resolutions",
     ),
     ("POST", f"{_V1}/plan-library/scan-roots"): Evidence(
         closed_fields=("censuses[].source", "state"),
@@ -473,6 +609,97 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
         "claims queue jobs for this worker — a lease the reaper requeues when "
         "it lapses, asserting nothing a later reader relies on"
     ),
+    # ── content-addressed image store (``get_memory_tenant``) ───────────
+    ("POST", _IMAGE_ASSETS): Evidence(
+        closed_fields=("kind",),
+        correction=AppendOnlyByDesign(
+            "the record of how an image entered and what produced it is never "
+            "rewritten, on purpose: a re-upload of the same bytes keeps the "
+            "first kind and only ADDS provenance keys (up to the provenance "
+            "cap; past it, the re-upload's new keys are refused, never a "
+            "stored one dropped), so a later uploader can never drop or change "
+            "the generator's AI-generated marker. A re-upload reports what it "
+            "sent but could not apply, and why, in its `conflicts`. The row's "
+            "identity, MIME type, dimensions and "
+            "orientation are computed from the bytes by the server, so they "
+            "cannot be asserted wrongly"
+        ),
+        # A multipart route: the non-file fields arrive as Form fields and are
+        # validated through this model by hand.
+        body_model="app.schemas.image_assets:ImageAssetUploadFields",
+    ),
+    ("PUT", _SLOT_CANDIDATES): Evidence(
+        closed_fields=("status",),
+        store="image_slot_candidates",
+        correction=SupersedeArg(
+            property="repo + slot_id + asset_sha256",
+            how=(
+                "a re-PUT of the same candidate sets status and replaces "
+                "recipe_hash, values and judge when they are sent; a wrong "
+                "choice is corrected by choosing the right candidate, which "
+                "returns the wrong one to candidate in the same transaction"
+            ),
+        ),
+        aspects=(
+            (
+                "identity",
+                # A candidate filed under the wrong repo, slot or asset is
+                # withdrawn, then re-PUT under the right identity.
+                Verb(
+                    verb=f"DELETE {_SLOT_CANDIDATES}",
+                    admits=("candidate", "chosen", "rejected", "shipped"),
+                ),
+            ),
+        ),
+    ),
+    ("DELETE", _SLOT_CANDIDATES): Evidence(
+        closed_fields=(),
+        correction=SupersedeArg(
+            property="repo + slot_id + asset_sha256",
+            how=(
+                "a wrongly withdrawn candidate is restored by re-PUTting the "
+                "same identity; the delete removed its stored status, "
+                "recipe_hash, values and judge, so that PUT re-sends them. The "
+                "image asset itself is never touched by the delete"
+            ),
+        ),
+    ),
+    # ── taste inbox (``get_memory_tenant``) ─────────────────────────────
+    # Only the push and its withdrawal admit a device: labels, skips, the
+    # budget and the calibration build require a coord-tenant admin's
+    # session (``require_coord_tenant_admin_target``).
+    ("POST", _TASTE_PAIRS): Evidence(
+        closed_fields=("source",),
+        store="taste_pairs",
+        correction=Verb(verb=f"DELETE {_TASTE_PAIR}", admits=("pending",)),
+        aspects=(
+            (
+                "fields",
+                # A re-push of a queued pair (same slot, same two images in
+                # either order) answers with the stored row and changes
+                # nothing, so a wrong source, uncertainty, context or capture
+                # is corrected by withdrawing the pair and pushing it again.
+                SupersedeArg(
+                    property="repo + slot_id + the unordered asset pair",
+                    how=(
+                        "withdraw the pair (DELETE /taste/pairs/{pair_id}), "
+                        "then push it again with the right fields"
+                    ),
+                ),
+            ),
+        ),
+    ),
+    ("DELETE", _TASTE_PAIR): Evidence(
+        closed_fields=(),
+        correction=SupersedeArg(
+            property="repo + slot_id + the unordered asset pair",
+            how=(
+                "a wrongly withdrawn pair is restored by pushing it again; "
+                "only an unanswered pair can be withdrawn, so no label is "
+                "ever lost to it, and the images stay in the store"
+            ),
+        ),
+    ),
     # ── testing (runner → backend reports; ``get_runner_user``) ──────────
     ("POST", _TESTING): Evidence(
         closed_fields=(),
@@ -608,6 +835,139 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
             "row would falsify the audit trail, so a later outcome is a new row"
         ),
     ),
+    # ── project overview (``get_overview_principal``) ───────────────────
+    #
+    # A device acts as its owning user, with that user's roles, in a project
+    # it is bound to (plan 2026-10-07-agents-publish-documents-to-the-project-
+    # overview D1), so every overview write admits a device JWT — except the
+    # rules ``permissions.DEVICE_REFUSALS`` refuses a device outright
+    # (coord-backed resources and the project settings), whose rows below
+    # are refusals.
+    **_overview_record_rows(
+        f"{_OVERVIEW}/pages",
+        create=("kind",),
+        update=(),
+        deletion=Gap(
+            tracked_by=OVERVIEW_PUBLISHING_PLAN,
+            what=(
+                "a wrongly deleted page's version history. Its page_versions "
+                "rows cascade with it and the change log keeps every version's "
+                "metadata but not its body, so re-creating restores the last "
+                "version's content under a new id and nothing earlier"
+            ),
+        ),
+    ),
+    ("POST", f"{_OVERVIEW}/pages/{{page_id}}/versions/{{version}}/revert"): Evidence(
+        closed_fields=(),
+        store="overview_records",
+        # A revert writes a NEW version; a wrong one is reverted again.
+        correction=Verb(
+            verb=f"POST {_OVERVIEW}/pages/{{page_id}}/versions/{{version}}/revert",
+            admits=("live",),
+        ),
+    ),
+    **_overview_record_rows(
+        f"{_OVERVIEW}/estimates",
+        create=(
+            "content.cost_lines[].kind",
+            "content.phases[].tasks[].status",
+            "purpose",
+            "status",
+        ),
+        update=(
+            "content.cost_lines[].kind",
+            "content.phases[].tasks[].status",
+            "purpose",
+            "status",
+        ),
+        deletion=Gap(
+            tracked_by=EVIDENCE_POSTURE_PLAN,
+            what=(
+                "a wrongly deleted estimate's recorded progress and ids. The "
+                "change log keeps the whole graph, so a re-create restores the "
+                "plan, but its phases get new ids: the phase_progress recorded "
+                "against the old ones and the milestones it detached do not "
+                "come back"
+            ),
+        ),
+    ),
+    **_overview_record_rows(
+        f"{_OVERVIEW}/milestones",
+        create=("kind", "status"),
+        update=("kind", "status"),
+        deletion=None,
+    ),
+    ("PATCH", f"{_OVERVIEW}/phase-progress/{{record_id}}"): Evidence(
+        closed_fields=("gate_status",),
+        store="overview_records",
+        correction=Verb(
+            verb=f"PATCH {_OVERVIEW}/phase-progress/{{record_id}}", admits=("live",)
+        ),
+    ),
+    ("POST", f"{_OVERVIEW}/files"): Evidence(
+        closed_fields=(),
+        store="overview_records",
+        # Files are immutable: a wrong upload is deleted and uploaded again.
+        correction=Verb(
+            verb=f"POST {_OVERVIEW}/files",
+            first=f"DELETE {_OVERVIEW}/files/{{record_id}}",
+            admits=("live",),
+        ),
+    ),
+    ("DELETE", f"{_OVERVIEW}/files/{{record_id}}"): Evidence(
+        closed_fields=(),
+        correction=Gap(
+            tracked_by=EVIDENCE_POSTURE_PLAN,
+            what=(
+                "a wrongly deleted file. Its stored bytes are removed once the "
+                "delete commits and the change log keeps only its metadata, so "
+                "nothing on the server can restore it; only a writer still "
+                "holding the file can upload it again, under a new id"
+            ),
+        ),
+    ),
+    # The cost ledger (operator decision 2026-11-01: agents enter the
+    # project's costs). Every reference to a category or a recurring cost is
+    # ``ondelete=RESTRICT`` and the stores refuse a referenced delete with a
+    # 409 (``category_in_use``, ``periods_recorded``), so a re-create from the
+    # change log's deleted shape loses nothing but the id.
+    **_overview_record_rows(
+        f"{_OVERVIEW}/cost-categories", create=(), update=(), deletion=None
+    ),
+    **_overview_record_rows(
+        f"{_OVERVIEW}/recurring-costs",
+        create=("amount_kind", "cadence"),
+        update=("amount_kind", "cadence"),
+        deletion=None,
+    ),
+    **_overview_record_rows(
+        f"{_OVERVIEW}/cost-entries", create=(), update=(), deletion=None
+    ),
+    # The settings decide who may edit (``editing_roles``), so a device may
+    # not write them: ``project_admin`` is in ``DEVICE_REFUSALS``.
+    ("PUT", f"{_OVERVIEW}/settings"): Read(
+        "refused to every device principal with 403 "
+        "device_not_supported_for_project_admin from its verified token alone, "
+        "before the project is resolved through coord or any settings row is "
+        "read, so a device mutates nothing through this door; a person's write "
+        "(a project administrator's) keeps its expected_version re-PUT and is "
+        "outside this table's scope"
+    ),
+    # Coord stores these behind its operator-only prompt-document routes. A
+    # device is refused (403 device_not_supported_for_coord_backed_resource)
+    # before any store runs, and its bearer is never forwarded there.
+    ("POST", f"{_OVERVIEW}/intent-documents"): Read(
+        "refused to every device principal with 403 "
+        "device_not_supported_for_coord_backed_resource before the coord store "
+        "runs, so a device mutates nothing through this door; a person's write "
+        "is coord's, proxied, and outside this table's scope"
+    ),
+    ("PATCH", f"{_OVERVIEW}/intent-documents/{{record_id}}"): Read(
+        "refused to every device principal with 403 "
+        "device_not_supported_for_coord_backed_resource before the coord store "
+        "runs, so a device mutates nothing through this door; a person's write "
+        "is coord's, proxied, and outside this table's scope"
+    ),
 }
 
 
@@ -661,6 +1021,7 @@ def device_jwt_admitting_dependencies() -> frozenset[Callable[..., Any]]:
     from app.api import deps
     from app.api.v1.endpoints.memory import get_memory_tenant
     from app.api.v1.endpoints.testing.deps import get_runner_user
+    from app.overview.permissions import get_overview_principal
 
     return frozenset(
         {
@@ -673,6 +1034,7 @@ def device_jwt_admitting_dependencies() -> frozenset[Callable[..., Any]]:
             deps.get_paired_device,
             deps.get_reporting_device,
             get_memory_tenant,
+            get_overview_principal,
             get_runner_user,
         }
     )

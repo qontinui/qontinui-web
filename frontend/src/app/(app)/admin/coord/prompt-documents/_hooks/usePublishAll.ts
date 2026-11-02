@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchAutoPublishStatus,
+  previewPublishAll,
+  publishAllPromptDocuments,
+  updatePromptDocument,
+} from "@/lib/api/operations/coordPromptDocuments";
 import {
   classifyPublishError,
   type PublishRefusal,
@@ -13,14 +18,9 @@ import type {
   PromptDocumentKind,
   PublishAllArmedResponse,
   PublishAllCandidate,
-  PublishAllDryRunResponse,
   PublishAllItem,
   PublishMode,
 } from "../types";
-
-const API = "/api/v1/operations";
-const PUBLISH_ALL = `${API}/coord/prompt-documents/publish-all`;
-const AUTO_PUBLISH_STATUS = `${API}/coord/prompt-documents/auto-publish/status`;
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -139,6 +139,10 @@ export function usePublishAll() {
   const [publishingEnabled, setPublishingEnabled] = useState<
     boolean | undefined
   >(undefined);
+  const [worker, setWorker] = useState<
+    AutoPublishStatusResponse["worker"] | undefined
+  >(undefined);
+  const [statusSettled, setStatusSettled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [previewing, setPreviewing] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -177,10 +181,7 @@ export function usePublishAll() {
   const loadCandidates = useCallback(async (): Promise<void> => {
     try {
       setPreviewing(true);
-      const data = await httpClient.post<PublishAllDryRunResponse>(
-        PUBLISH_ALL,
-        { dry_run: true }
-      );
+      const data = await previewPublishAll();
       setCandidates(data.candidates ?? []);
       setUnavailable(null);
     } catch (err) {
@@ -198,8 +199,7 @@ export function usePublishAll() {
     // the mode or switch the operator just changed.
     const request = ++statusRequest.current;
     try {
-      const data =
-        await httpClient.get<AutoPublishStatusResponse>(AUTO_PUBLISH_STATUS);
+      const data = await fetchAutoPublishStatus();
       if (request !== statusRequest.current) return;
       setStatus(data.candidates ?? []);
       // The D5 switch as coord resolved it. Absent is UNKNOWN (`undefined`),
@@ -216,8 +216,17 @@ export function usePublishAll() {
           ? data.count
           : (data.candidates ?? []).length
       );
+      // The OBSERVED worker (plan 2026-10-17 D5). Absent from an older coord,
+      // and `undefined` renders UNKNOWN — the dial never infers a healthy loop
+      // from the switch being on.
+      setWorker(data.worker ?? undefined);
+      setStatusSettled(true);
     } catch (err) {
       if (request !== statusRequest.current) return;
+      // A failed read observes nothing, so a previously read worker must not
+      // linger as if it were current: drop it, and the dial reads UNKNOWN.
+      setWorker(undefined);
+      setStatusSettled(true);
       // Silent by the same rule as the latch above, and one step further: a
       // failed status read costs an ADVISORY badge. Every non-system tenant
       // fails it on every page load, and nothing an operator can do depends on
@@ -260,19 +269,15 @@ export function usePublishAll() {
       }));
       try {
         setPublishing(true);
-        const result = await httpClient.post<PublishAllArmedResponse>(
-          PUBLISH_ALL,
-          {
-            // **Explicit, and never omitted.** On publish-all `dry_run`
-            // defaults to TRUE — the opposite of `/publish`, whose default is
-            // false. Leaving it out here would take another preview and report
-            // it as a publication: a silent no-op that looks exactly like
-            // success, on the one button whose whole job is to ship 26
-            // documents at once.
-            dry_run: false,
-            release_note: releaseNote.trim() ? releaseNote.trim() : null,
-            items,
-          }
+        // `dry_run: false` is written by the client function, never omitted:
+        // on publish-all `dry_run` defaults to TRUE — the opposite of
+        // `/publish`, whose default is false. Leaving it out would take another
+        // preview and report it as a publication: a silent no-op that looks
+        // exactly like success, on the one button whose whole job is to ship
+        // 26 documents at once.
+        const result = await publishAllPromptDocuments(
+          releaseNote.trim() ? releaseNote.trim() : null,
+          items
         );
         const results = result.results ?? [];
         const published = results.filter(
@@ -334,15 +339,10 @@ export function usePublishAll() {
     ): Promise<boolean> => {
       try {
         setSavingMode(true);
-        await httpClient.patch(
-          `${API}/coord/prompt-documents/${encodeURIComponent(
-            kind
-          )}/${encodeURIComponent(name)}`,
-          {
-            publish_mode: mode,
-            change_description: `Publish mode set to \`${mode}\` by an operator`,
-          }
-        );
+        await updatePromptDocument(kind, name, {
+          publish_mode: mode,
+          change_description: `Publish mode set to \`${mode}\` by an operator`,
+        });
         setModeSchemaPending(null);
         toast.success(`${kind}/${name} now publishes: ${mode}.`);
         // The badges key on the served mode, so the status read is re-taken:
@@ -390,6 +390,18 @@ export function usePublishAll() {
      */
     publishingEnabled,
     /**
+     * What coord observed of the auto-publish loops, from the same status read
+     * (plan `2026-10-17-auto-publish-lands-via-coord-2290-adoption` Phase 4).
+     * `undefined` is UNKNOWN: not served, not read yet, or the read failed.
+     */
+    worker,
+    /**
+     * True once a status read has settled — answered or failed. Before that
+     * the observation is not yet a fact either way, so the dial says nothing
+     * rather than flashing UNKNOWN on every page load.
+     */
+    statusSettled,
+    /**
      * N for the "Publish all changed (N)" button — the status read's candidate
      * count, which coord builds from the same `publication_candidates` helper
      * the dry run uses. See the module docs for the assumption and its failure
@@ -417,3 +429,6 @@ export function usePublishAll() {
     publishAll,
   };
 }
+
+/** Everything {@link usePublishAll} returns — the shape the page hands down. */
+export type PublishAllState = ReturnType<typeof usePublishAll>;

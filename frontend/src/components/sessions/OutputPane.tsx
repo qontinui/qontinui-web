@@ -38,7 +38,7 @@ import "@xterm/xterm/css/xterm.css";
 import { TerminalSquare, AlertTriangle, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getSessionOutput, subscribeSessionOutput } from "./api";
+import { getSessionOutput, subscribeSessionOutput } from "@/lib/api/operations/sessions";
 import type { OutputChunk, SessionRow, SessionIntent } from "./types";
 
 interface OutputPaneProps {

@@ -5,31 +5,32 @@ import { Header } from "@/components/marketing/header";
 import { Footer } from "@/components/marketing/footer";
 import "./marketing.css";
 
+// Card images come from `opengraph-image.tsx` / `twitter-image.tsx` beside
+// this layout, never from `images` here. This object REPLACES the openGraph
+// and twitter objects inherited from the root, cards included, so this
+// segment needs its own card files. And Next merges a file-based card only
+// into a segment whose own `openGraph` / `twitter` has no `images` key. So
+// declaring `images` here silently drops the generated card; that is how
+// this layout once served the 152×177 `q-logo.png` declared as 512×512.
+// Copy follows the served intent documents (plan
+// 2026-10-09-qontinui-marketing-studio-animated-process-explainers, D5:
+// `product_intent/vision`, audience `audience_profile/external-operator`).
 export const metadata: Metadata = {
-  title: "Qontinui - Open Source AI Development Platform",
+  title: "Qontinui - Open-Source Software Factory for AI Agents",
   description:
-    "An open-source desktop app that orchestrates AI coding sessions with automated feedback loops, verification, and error monitoring. Multi-provider support for Claude and Gemini — no vendor lock-in.",
+    "An open-source software factory: a fleet of AI agents plans, implements, tests and lands changes on your own codebase, against a digital twin of your development process, so they answer their own questions instead of asking you.",
   openGraph: {
-    title: "Qontinui - Open Source AI Development Platform",
+    title: "Qontinui - Open-Source Software Factory for AI Agents",
     description:
-      "An open-source desktop app that orchestrates AI coding sessions with automated feedback loops, verification, and error monitoring. Multi-provider support for Claude and Gemini.",
+      "A fleet of AI agents that plans, implements, tests and lands changes on your own codebase, against a digital twin of your development process.",
     siteName: "Qontinui",
-    images: [
-      {
-        url: "/q-logo.png",
-        width: 512,
-        height: 512,
-        alt: "Qontinui Logo",
-      },
-    ],
     type: "website",
   },
   twitter: {
-    card: "summary",
-    title: "Qontinui - Open Source AI Development Platform",
+    card: "summary_large_image",
+    title: "Qontinui - Open-Source Software Factory for AI Agents",
     description:
-      "An open-source desktop app that orchestrates AI coding sessions with automated feedback loops, verification, and error monitoring.",
-    images: ["/q-logo.png"],
+      "A fleet of AI agents that plans, implements, tests and lands changes on your own codebase, against a digital twin of your development process.",
   },
 };
 
@@ -45,7 +46,7 @@ export default function MarketingLayout({
     url: "https://qontinui.io",
     logo: "https://qontinui.io/q-logo.png",
     description:
-      "An open-source desktop app that orchestrates AI coding sessions with automated feedback loops, verification, and error monitoring.",
+      "A fleet of AI agents that plans, implements, tests and lands changes on your own codebase, against a digital twin of your development process.",
   };
 
   return (

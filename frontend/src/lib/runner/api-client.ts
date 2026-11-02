@@ -24,6 +24,7 @@ import {
   readRunnerOriginRefusal,
   type RunnerOriginRefusal,
 } from "./origin-refusal";
+import { runnerDoorRouting } from "./door-client";
 import { measureRunnerLocality, type RunnerLocality } from "./locality";
 import {
   readRelayDiagnostics,
@@ -322,8 +323,18 @@ export async function runnerRequest(
     return response;
   }
 
-  // Loopback: a runner proven to be on this machine.
-  const url = `${route.base}${path}`;
+  // Loopback: a runner proven to be on this machine. A credential door goes
+  // through this page's own same-origin door proxy (./door-client), so the
+  // runner never has to admit this page's origin to it.
+  const door = runnerDoorRouting(route.base, path, rest.method ?? "GET");
+  const url = door ? door.url : `${route.base}${path}`;
+  if (door) {
+    const headers = new Headers(rest.headers);
+    for (const [name, value] of Object.entries(door.headers)) {
+      headers.set(name, value);
+    }
+    rest.headers = headers;
+  }
   const controller = new AbortController();
   const callerSignal = rest.signal ?? undefined;
   const forwardAbort = () => controller.abort(callerSignal?.reason);

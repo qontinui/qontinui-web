@@ -182,3 +182,132 @@ describe("summarizeVerdict — delivery instance", () => {
     expect(prose).toContain("Plan status");
   });
 });
+
+describe("summarizeVerdict — the status word (plan 2026-10-23-console-presentation-spaces D3.3)", () => {
+  const cited = {
+    all_merged: true,
+    prs: [{ repo: "qontinui-runner", pr: 583, merged: true }],
+    unmerged_prs: [],
+  };
+
+  it("quotes coord's status verbatim by default — the operator's view", () => {
+    const v = deliveryVerdict("none", {
+      ...cited,
+      status: "waiting-on-partner-a",
+    });
+    expect(summarizeVerdict("delivery", v).prose).toContain(
+      "Plan status “waiting-on-partner-a”; 1 cited PR, all merged."
+    );
+  });
+
+  it("quotes the given word instead, in both status clauses", () => {
+    const statusWord = (status: string) => `<${status.length}>`;
+    const withPrs = deliveryVerdict("none", {
+      ...cited,
+      status: "waiting-on-partner-a",
+    });
+    const prose = summarizeVerdict("delivery", withPrs, { statusWord }).prose;
+    expect(prose).toContain("Plan status “<20>”; 1 cited PR, all merged.");
+    expect(prose).not.toContain("waiting-on");
+
+    const noPrs = deliveryVerdict("none", {
+      status: "waiting-on-partner-a",
+      prs: [],
+    });
+    expect(
+      summarizeVerdict("delivery", noPrs, { statusWord }).prose
+    ).toContain("Plan status “<20>”; no cited PRs found.");
+  });
+
+  it("never maps a status coord did not send", () => {
+    const statusWord = () => "mapped";
+    const v = deliveryVerdict("none", { ...cited });
+    const prose = summarizeVerdict("delivery", v, { statusWord }).prose;
+    expect(prose).toContain("1 cited PR, all merged.");
+    expect(prose).not.toContain("mapped");
+  });
+});
+
+describe("summarizeVerdict — what a missing staleness means, by the door it came from", () => {
+  /** An answer with no `staleness_seconds`, as both doors can send one. */
+  const NO_STALENESS: DriftVerdict = {
+    drift_class: "nominal",
+    coverage: 1,
+    credibility: 0.95,
+    provenance: "persisted_oplog",
+  };
+
+  it("says a twin-door verdict without one was live when read: coord omits it on a live answer", () => {
+    for (const doorShape of [undefined, null, "verdict_wrapper"] as const) {
+      const { prose, facts } = summarizeVerdict("outbound", NO_STALENESS, {
+        doorShape,
+      });
+      expect(prose, String(doorShape)).toContain(
+        "its data was live when read, from persisted_oplog."
+      );
+      expect(facts).toContainEqual({
+        label: "Freshness when read",
+        value: "live",
+      });
+    }
+  });
+
+  it("says an envelope door's age is UNKNOWN when none was served, with a reason true of either half — never live", () => {
+    const { prose, facts } = summarizeVerdict("outbound", NO_STALENESS, {
+      doorShape: "envelope",
+    });
+    expect(prose).toBe(
+      "Outbound is classified “nominal”. Coverage 100%, credibility 95%, from persisted_oplog; no age was served for this reading, so its freshness when read is UNKNOWN."
+    );
+    expect(facts).toContainEqual({
+      label: "Freshness when read",
+      value: "UNKNOWN",
+      unknownReason: "no age was served for this reading",
+    });
+    expect(prose).not.toMatch(/\blive\b|coord reported/);
+  });
+
+  it("names a served envelope age as its worst bucket's: the class is that bucket's, and the answer has no age of its own", () => {
+    const { prose, facts } = summarizeVerdict(
+      "outbound",
+      { ...NO_STALENESS, staleness_seconds: 45 },
+      { doorShape: "envelope" }
+    );
+    expect(prose).toContain(
+      "its worst bucket's data was 45s stale when read, from persisted_oplog."
+    );
+    expect(prose).not.toContain("its data was");
+    expect(facts).toContainEqual({
+      label: "Freshness when read",
+      value: "45s stale (worst bucket)",
+    });
+  });
+
+  it("names no bucket for a twin-door verdict's age", () => {
+    const { prose, facts } = summarizeVerdict(
+      "outbound",
+      { ...NO_STALENESS, staleness_seconds: 45 },
+      { doorShape: "verdict_wrapper" }
+    );
+    expect(prose).toContain("its data was 45s stale when read");
+    expect(prose).not.toContain("bucket");
+    expect(facts).toContainEqual({
+      label: "Freshness when read",
+      value: "45s stale",
+    });
+  });
+});
+
+describe("summarizeVerdict — a staleness is the verdict's age when it was read", () => {
+  it("never words it as an age now: every summary is shown after its read", () => {
+    const { prose, facts } = summarizeVerdict(
+      "delivery",
+      deliveryVerdict("none", { status: "shipped", prs: [] }),
+      {}
+    );
+    expect(prose).toContain("its data was 0s stale when read, from join:live.");
+    expect(prose).not.toMatch(/data is \d|data is live/);
+    expect(facts.map((f) => f.label)).toContain("Freshness when read");
+    expect(facts.map((f) => f.label)).not.toContain("Freshness");
+  });
+});

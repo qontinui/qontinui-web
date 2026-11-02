@@ -5,6 +5,13 @@
  * These endpoints proxy through to the runner's constraint engine and wrap
  * responses in { success: true, data: <T> } envelopes.
  *
+ * Every route is for platform admins only: a constraint's `command` check is
+ * run by the runner's workflow loop on the backend's own host (coord finding
+ * `5a6791e9-607c-4658-82e2-3b509e459996`). Anyone else gets the backend's
+ * `require_admin` refusal, which {@link isConstraintsAdminRefusal} recognises
+ * and the UI renders as {@link CONSTRAINTS_ADMIN_ONLY}, never as an empty
+ * constraint list or a generic error.
+ *
  * Goes through httpClient.fetch so Authorization: Bearer is attached in
  * remote/staging mode and HttpOnly cookies still ride along in local mode.
  */
@@ -18,8 +25,70 @@ import type {
 } from "@qontinui/shared-types/constraints";
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
+import { isPlatformAdminRefusal } from "@/lib/api/fleet";
 
 const API = `${ApiConfig.API_BASE_URL}/api/v1/constraints`;
+
+/** What the constraints UI says in place of the constraints and their editors. */
+export const CONSTRAINTS_ADMIN_ONLY =
+  "Constraints are limited to platform administrators.";
+
+/**
+ * A failed `/api/v1/constraints` call: the readable sentence, plus the status
+ * and parsed body it was read from, so a caller can tell the platform-admin
+ * refusal apart from a failure (see {@link isConstraintsAdminRefusal}).
+ */
+export class ConstraintsApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ConstraintsApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+/**
+ * Whether a failed constraints call is the backend's platform-admin refusal:
+ * the caller is signed in but is not a platform admin. Only a
+ * {@link ConstraintsApiError} carrying that exact refusal qualifies; any other
+ * 403 (a proxy's, a WAF's) and any other failure is not it.
+ */
+export function isConstraintsAdminRefusal(err: unknown): boolean {
+  return (
+    err instanceof ConstraintsApiError &&
+    isPlatformAdminRefusal(err.status, err.body)
+  );
+}
+
+/** The readable sentence of a failed call's body, or `null` when it has none. */
+function bodySentence(body: unknown): string | null {
+  if (typeof body === "string") return body.trim() || null;
+  if (typeof body !== "object" || body === null) return null;
+  const record = body as Record<string, unknown>;
+  if (typeof record.message === "string") return record.message;
+  if (typeof record.detail === "string") return record.detail;
+  return null;
+}
+
+/** Throw the failure of a call that did not answer 2xx. */
+async function failed(response: Response, what: string): Promise<never> {
+  const text = await response.text().catch(() => "");
+  let body: unknown = text;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // Not JSON (a proxy's HTML page): keep the text as the body.
+  }
+  const said = bodySentence(body) ?? `HTTP ${response.status}`;
+  throw new ConstraintsApiError(
+    `Failed to ${what}: ${said}`,
+    response.status,
+    body
+  );
+}
 
 /** Unwrap the runner's ApiResponse<T> envelope, returning the inner data. */
 async function unwrapApiResponse<T>(response: Response): Promise<T> {
@@ -48,8 +117,7 @@ export async function fetchActiveConstraints(
 
   const response = await httpClient.fetch(url);
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to fetch active constraints: ${text}`);
+    return failed(response, "fetch active constraints");
   }
   return unwrapApiResponse<Constraint[]>(response);
 }
@@ -71,8 +139,7 @@ export async function fetchConstraintConfig(
 
   const response = await httpClient.fetch(url);
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to fetch constraint config: ${text}`);
+    return failed(response, "fetch constraint config");
   }
   return unwrapApiResponse<ReadConfigResponse>(response);
 }
@@ -92,8 +159,7 @@ export async function saveConstraintConfig(
     body: JSON.stringify({ toml, project_path: projectPath }),
   });
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to save constraint config: ${text}`);
+    return failed(response, "save constraint config");
   }
   return unwrapApiResponse<WriteConfigResponse>(response);
 }
@@ -113,8 +179,7 @@ export async function validateConstraintConfig(
     idempotent: true,
   });
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to validate constraint config: ${text}`);
+    return failed(response, "validate constraint config");
   }
   return unwrapApiResponse<ValidateConfigResponse>(response);
 }
@@ -137,8 +202,7 @@ export async function fetchConstraintResults(
 
   const response = await httpClient.fetch(url);
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to fetch constraint results: ${text}`);
+    return failed(response, "fetch constraint results");
   }
   return unwrapApiResponse<ConstraintResult[]>(response);
 }

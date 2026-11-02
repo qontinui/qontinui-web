@@ -367,7 +367,9 @@ export default function TermsOfService() {
               Our open-source components (qontinui Python library,
               qontinui-runner, qontinui-web, qontinui-cloud-control, and others)
               are licensed under the GNU Affero General Public License v3.0 or
-              later (AGPL-3.0) and subject to the terms of that license.
+              later (AGPL-3.0) and subject to the terms of that license. The UI
+              Bridge (ui-bridge, ui-bridge-auto and ui-bridge-mcp) is an
+              exception: it is licensed under the MIT License.
             </p>
 
             <h3 className="text-xl font-semibold mt-4 mb-2">

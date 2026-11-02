@@ -53,6 +53,15 @@ describe("faultToVisibilityBadge", () => {
     expect(b.title).toContain("runner_wedged p90 1h 13m");
   });
 
+  it("spells each slowest kind in words when asked to (presentation mode)", () => {
+    const b = faultToVisibilityBadge(
+      { data: BODY, loading: false, error: null },
+      { plainKinds: true }
+    );
+    expect(b.title).toContain("runner wedged p90 1h 13m");
+    expect(b.title).not.toMatch(/runner_wedged/);
+  });
+
   it("a null p90 is 'no episode with a known onset', with the 0/N share", () => {
     const b = faultToVisibilityBadge({
       data: {

@@ -159,6 +159,80 @@ describe("describeSpawnRefusal — no_eligible_device", () => {
     expect(r.offerOverride).toBe(false);
   });
 
+  it("all_capable_offline says the capable device is offline and to start it", () => {
+    for (const [n, said] of [
+      [1, /The device that could take this session is offline/],
+      [3, /Every device that could take this session is offline/],
+    ] as const) {
+      const r = describeSpawnRefusal(
+        409,
+        envelope({
+          error: "no_eligible_device",
+          outcome: "all_capable_offline",
+          capable_offline: n,
+          detail: "every device that could take this session is offline",
+        }),
+        auto
+      );
+      expect(r.kind).toBe("no_eligible_device");
+      expect(r.headline).toMatch(said);
+      expect(r.remedy).toMatch(/Start that machine/);
+      expect(r.detail).toMatch(/is offline/);
+      expect(r.offerOverride).toBe(false);
+    }
+  });
+
+  it("all_capable_role_closed says a role, not a drain, is in the way", () => {
+    const r = describeSpawnRefusal(
+      409,
+      envelope({
+        error: "no_eligible_device",
+        outcome: "all_capable_role_closed",
+        capable_devices: 1,
+      }),
+      auto
+    );
+    expect(r.kind).toBe("no_eligible_device");
+    expect(r.headline).toMatch(/has a role that takes no sessions/);
+    expect(r.remedy).toMatch(/workhorse/);
+    expect(r.remedy).toMatch(/does not lift a role/);
+    expect(r.offerOverride).toBe(false);
+  });
+
+  it("a NAMED device whose role takes no sessions says so, with no override", () => {
+    const r = describeSpawnRefusal(
+      409,
+      envelope({
+        error: "role_closes_agent_lane",
+        device_id: DEV,
+        reason: "role_closes_agent_lane",
+        detail: "device's dispatch role (bench / ci_node) takes no runner work",
+      }),
+      pin
+    );
+    expect(r.kind).toBe("pin_ineligible");
+    expect(r.headline).toBe("merytshost has a role that takes no sessions");
+    expect(r.detail).toContain(`device id ${DEV}`);
+    expect(r.remedy).toMatch(/does not lift a role/);
+    expect(r.remedy).toMatch(/workhorse/);
+    expect(r.offerOverride).toBe(false);
+  });
+
+  it("an outcome this build does not know is shown verbatim, not guessed at", () => {
+    const r = describeSpawnRefusal(
+      409,
+      envelope({
+        error: "no_eligible_device",
+        outcome: "all_capable_teleported",
+        detail: "d",
+      }),
+      auto
+    );
+    expect(r.kind).toBe("no_eligible_device");
+    expect(r.headline).toBe("Coord found no device for this session");
+    expect(r.detail).toBe("outcome: all_capable_teleported · d");
+  });
+
   it("all_capable_at_capacity says a pin is never refused for capacity", () => {
     const r = describeSpawnRefusal(
       409,

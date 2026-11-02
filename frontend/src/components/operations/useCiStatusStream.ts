@@ -3,14 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
-import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { statusOnlyErrorText } from "@/lib/api/operations/base";
+import { ciStatusWsUrl, fetchCiStatus } from "@/lib/api/operations/ciStatus";
 import { useSingleFlight } from "./useSingleFlightPoll";
-import {
-  CI_STATUS_API,
-  CI_STATUS_POLL_FALLBACK_MS,
-  ciStatusWsUrl,
-} from "./utils";
-import type { CiStatusResponse, RepoCiRow } from "./types";
+import { CI_STATUS_POLL_FALLBACK_MS } from "./utils";
+import type { RepoCiRow } from "./types";
 
 const log = createLogger("CiStatusStream");
 
@@ -97,14 +94,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
 
   const seedFromRest = useCallback(async (): Promise<void> => {
     try {
-      const resp = await httpClient.fetch(
-        CI_STATUS_API,
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`);
-      }
-      const data = (await resp.json()) as CiStatusResponse;
+      const data = await fetchCiStatus();
       if (cleanedUpRef.current) return;
       const seeded = new Map<string, RepoCiRow>();
       for (const row of data.repos ?? []) {
@@ -116,7 +106,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
       setError(null);
     } catch (err) {
       if (cleanedUpRef.current) return;
-      const msg = err instanceof Error ? err.message : "fetch failed";
+      const msg = statusOnlyErrorText(err, "fetch failed");
       log.warn("GET /ci-status failed:", msg);
       setError(msg);
     }

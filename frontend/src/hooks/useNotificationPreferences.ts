@@ -42,15 +42,12 @@ export interface NotificationPreferencesShape {
   email_comments: boolean;
   email_shares: boolean;
   email_replies: boolean;
-  email_team_invites: boolean;
 
   // In-app
   in_app_mentions: boolean;
   in_app_comments: boolean;
   in_app_shares: boolean;
   in_app_replies: boolean;
-  in_app_team_invites: boolean;
-  in_app_project_updates: boolean;
 }
 
 /**

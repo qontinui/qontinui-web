@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import fs from "fs";
 import path from "path";
+import { presentationReadiness } from "./src/test/readinessReporter";
 
 // Mirror of the switch in `next.config.mjs`: the optional
 // `@qontinui/cloud-control` overlay is present (composed cloud build) or it is
@@ -26,7 +27,11 @@ const cloudAliasTarget = path.resolve(
 );
 
 export default defineConfig({
-  plugins: [react()],
+  // `presentationReadiness()` arms the end-of-run step that fails a run which
+  // executes the readiness test without proving every presentation-ready
+  // route (src/test/readinessEvidence.ts). It adds its reporter after the
+  // command line's are resolved, so `--reporter` cannot drop it.
+  plugins: [react(), presentationReadiness()],
   // Vitest 4.x bundles rolldown-vite internally; its transformer is oxc, not esbuild.
   // @vitejs/plugin-react 4.x only wires JSX into esbuild, so .tsx files fail to parse
   // under vitest without this explicit oxc JSX config.

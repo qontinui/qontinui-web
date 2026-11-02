@@ -2,12 +2,32 @@
  * Pure parse / format helpers for the Merge Orchestrator settings page.
  */
 
-import { pinChoice } from "./pinChoice";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import type {
   EffectiveProfile,
   RawRepoOverride,
-  RepoOverrideFields,
-} from "./types";
+} from "@/lib/api/operations/prMerge";
+import { pinChoice } from "./pinChoice";
+import type { RepoOverrideFields } from "./types";
+
+/**
+ * The operator-facing line for a rejection from the `prMerge` client.
+ *
+ * The page has always said `HTTP <status>` for a refused write (plus
+ * `: <body>` on the audited enablement writes), never the client's
+ * `<METHOD> <url> failed: …` rejection text. A status rejection is read back
+ * through the console's one anchored parser and worded as before;
+ * anything else (a network `TypeError`, a malformed body) is its own message.
+ */
+export function httpFailureText(
+  err: unknown,
+  { withBody }: { withBody: boolean }
+): string {
+  const status = httpStatusOf(err);
+  if (status === null) return err instanceof Error ? err.message : String(err);
+  const body = withBody ? (httpBodyOf(err) ?? "") : "";
+  return `HTTP ${status}${body ? `: ${body}` : ""}`;
+}
 
 /**
  * Whether the coord build behind this dashboard carries the ff-land head-sync

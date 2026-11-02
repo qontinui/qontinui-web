@@ -10,7 +10,7 @@
  * independently:
  *
  * 1. **Free space** — Phase 1's per-device route
- *    (`GET /operations/devices/{id}/volumes`, via `deviceVolumesUrl()`), read
+ *    (`GET /operations/devices/{id}/volumes`, via `fetchDeviceVolumes()`), read
  *    through the backend proxy. This section is that route's first consumer;
  *    Phase 1 shipped it deliberately unwired.
  * 2. **Reclaim candidates** — the runner's own survey
@@ -52,7 +52,8 @@ import {
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { fetchDeviceVolumes } from "@/lib/api/operations/coordFleet";
 import {
   runnerFetch,
   RunnerApiError,
@@ -60,7 +61,6 @@ import {
   useRunnerTarget,
 } from "@/lib/runner-api";
 import {
-  deviceVolumesUrl,
   formatBytes,
   percentFree,
   readingAgeMs,
@@ -899,48 +899,43 @@ export function DiskSection() {
       setVolumes(next);
       setVolumesInFlight(false);
     };
-    const url = deviceVolumesUrl(id);
-    let response: Response;
-    try {
-      response = await httpClient.fetch(url);
-    } catch (err) {
-      settle({
-        state: "unavailable",
-        reason:
-          `The request to ${url} failed: ` +
-          `${err instanceof Error ? err.message : "unknown error"}. Nothing ` +
-          `here describes this disk.`,
-      });
-      return;
-    }
-    if (!response.ok) {
-      // The status is named rather than guessed at: 401/403 is an expired
-      // session, 422 is a device id the backend would not accept as a UUID,
-      // 502/504 is coord. Attributing all of them to "coord may be down"
-      // would send the reader after the wrong thing.
-      const hint =
-        response.status === 401 || response.status === 403
-          ? "This session is not authorised for the operations API -- signing in again is the likely fix."
-          : response.status === 404 || response.status === 422
-            ? "The backend did not accept this device id, or does not serve the per-device volumes route."
-            : "Coord may be unreachable (502/504), or the volumes route may not be deployed yet.";
-      settle({
-        state: "unavailable",
-        reason:
-          `The per-device volumes read returned HTTP ${response.status}. ` +
-          `${hint} This is a failed read, not an empty disk.`,
-      });
-      return;
-    }
     let payload: unknown;
     try {
-      payload = await response.json();
+      payload = await fetchDeviceVolumes(id);
     } catch (err) {
+      const status = httpStatusOf(err);
+      if (status !== null) {
+        // The status is named rather than guessed at: 401/403 is an expired
+        // session, 422 is a device id the backend would not accept as a UUID,
+        // 502/504 is coord. Attributing all of them to "coord may be down"
+        // would send the reader after the wrong thing.
+        const hint =
+          status === 401 || status === 403
+            ? "This session is not authorised for the operations API -- signing in again is the likely fix."
+            : status === 404 || status === 422
+              ? "The backend did not accept this device id, or does not serve the per-device volumes route."
+              : "Coord may be unreachable (502/504), or the volumes route may not be deployed yet.";
+        settle({
+          state: "unavailable",
+          reason:
+            `The per-device volumes read returned HTTP ${status}. ` +
+            `${hint} This is a failed read, not an empty disk.`,
+        });
+        return;
+      }
+      if (err instanceof SyntaxError) {
+        settle({
+          state: "unavailable",
+          reason: `The per-device volumes response was not valid JSON: ${err.message}`,
+        });
+        return;
+      }
       settle({
         state: "unavailable",
-        reason: `The per-device volumes response was not valid JSON: ${
-          err instanceof Error ? err.message : "parse error"
-        }`,
+        reason:
+          `The device-volumes request failed: ` +
+          `${err instanceof Error ? err.message : "unknown error"}. Nothing ` +
+          `here describes this disk.`,
       });
       return;
     }

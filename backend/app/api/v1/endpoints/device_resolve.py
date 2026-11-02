@@ -4,7 +4,8 @@ Plan ``2026-09-20-runner-selector-drives-a-transport-not-a-target`` Phase 3.
 The frontend never calls coord directly: it asks here, and this forwards to
 coord's ``POST /coord/devices/resolve`` with the caller's own bearer (see
 :mod:`app.services.coord_device_resolve`). The answer is always ``200`` with
-an ``outcome`` tag — coord's five outcomes, or ``unavailable`` when coord's
+an ``outcome`` tag — one of coord's outcomes; ``unknown_outcome`` when coord
+answered with a tag this build does not know; or ``unavailable`` when coord's
 answer could not be obtained (UNKNOWN; the browser keeps its last resolved
 target and never substitutes a pick of its own).
 """

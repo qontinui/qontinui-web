@@ -49,6 +49,7 @@ const PUBLIC_ROUTES = [
   "/login",
   "/privacy-extension",
   "/runner",
+  "/how-it-works",
   "/docs",
   "/docs/getting-started",
 ];

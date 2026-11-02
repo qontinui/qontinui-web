@@ -26,16 +26,18 @@ rules:
     ignore:
       - backend-ci.yml # ./.github/actions/fleet-nouns-vocab
       - backend-coverage-producer.yml # ./.github/actions/fleet-nouns-vocab
-      - frontend-ci.yml # ./.github/actions/fleet-nouns-vocab (x2)
-      - frontend-coverage-producer.yml # ./.github/actions/fleet-nouns-vocab
+      - frontend-ci.yml # ./.github/actions/fleet-nouns-vocab, spawn-contract (x2 each)
+      - frontend-coverage-producer.yml # ./.github/actions/fleet-nouns-vocab, spawn-contract
       - e2e-tests.yml # ./.github/workflows/e2e-playwright-stack.yml (x2)
 
-  # github-env flags any write to $GITHUB_ENV. The one site is the composite
-  # action .github/actions/fleet-nouns-vocab/action.yml, which writes
-  # QONTINUI_FLEET_NOUNS_FILE="$GITHUB_WORKSPACE/.sibling/...": a path built
-  # from a runner-provided constant after a sha256 check of the file, with no
-  # PR- or input-controlled part. (Ignore entries match the file name, and this
-  # repo has exactly one action.yml.)
+  # github-env flags any write to $GITHUB_ENV. The two sites are the composite
+  # actions .github/actions/fleet-nouns-vocab/action.yml and
+  # .github/actions/spawn-contract/action.yml, which write
+  # QONTINUI_FLEET_NOUNS_FILE and QONTINUI_SPAWN_CONTRACT_FILE, each
+  # "$GITHUB_WORKSPACE/.sibling/...": a path built from a runner-provided
+  # constant after a sha256 check of the file, with no PR- or input-controlled
+  # part. (Ignore entries match the file name, and this repo has exactly these
+  # two action.yml files.)
   github-env:
     ignore:
       - action.yml

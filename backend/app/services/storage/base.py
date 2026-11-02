@@ -2,6 +2,7 @@
 
 import io
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import BinaryIO
 
 
@@ -43,6 +44,16 @@ class StorageBackend(ABC):
     ) -> str:
         """Generate presigned URL for temporary access."""
         pass
+
+    def credential_expires_at(self) -> datetime | None:
+        """When the credential this backend signs URLs with expires.
+
+        None when it has no signing credential, when the credential does not
+        expire (long-lived keys), or when the backend cannot read the expiry.
+        A presigned URL stops working when its signing credential expires,
+        whatever lifetime it was signed for.
+        """
+        return None
 
     @abstractmethod
     def file_exists(self, key: str) -> bool:

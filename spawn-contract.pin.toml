@@ -1,0 +1,39 @@
+# The spawn contract the agentic-activity page's copy is compared with, PINNED.
+#
+# `qontinui-schemas/rust/src/spawn_authorization.json` is what coord compiles in
+# and serves. frontend/src/app/(app)/admin/coord/spawns/_lib/spawnPathContract.ts
+# copies its kinds and seeded classes, and spawnPathContract.test.ts holds the
+# copy to the file at this pin, so a kind added to the contract fails that test
+# until the matrix knows it. This file names the schemas commit and the sha256
+# of the contract at it.
+#
+# Why a pin and not schemas `main`: a contract edit there would otherwise redden
+# every PR here; at a pin, a red comes from THIS repo's change or from the pinned
+# bytes being unreachable, which names itself, and the bump is the reviewed step
+# that adopts the edit. The frontend-ci advisory step warns when schemas main has
+# moved past this pin.
+#
+# GitHub Actions fetches the file at `ref` by a sparse checkout
+# (.github/actions/spawn-contract) and the test refuses a file whose digest
+# differs from `sha256`. Elsewhere it reads
+# `../qontinui-schemas/rust/src/spawn_authorization.json` with the same digest
+# check; when that sibling is absent or at another commit it reads the pinned
+# blob with `git -C ../qontinui-schemas show <ref>:<path>` (digest-checked too).
+# So there it is red only when the pinned commit is absent from the sibling's
+# objects, or there is no sibling. The coord ci_node lane's sibling is a depth-1
+# clone, so its `fetch-pinned-schemas-commits` step runs
+# scripts/ci/fetch_pinned_schemas_commits.py first; run that script by hand for
+# the same cure, or check qontinui-schemas out beside this repository. Under
+# $GITHUB_ACTIONS or with the $QONTINUI_SPAWN_CONTRACT_FILE override there is no
+# fallback: that file at the pinned digest, or red naming both digests. It is
+# never skipped.
+#
+# To bump: set `ref` to the new schemas commit and `sha256` to
+# `git -C ../qontinui-schemas show <ref>:rust/src/spawn_authorization.json | sha256sum`,
+# then run spawnPathContract.test.ts and copy what it says changed.
+#
+# Plan 2026-10-23-console-presentation-spaces, Phase 4.
+
+[spawn_contract]
+ref = "36559574eecc4b6b569b943a11ea0881361fc893"
+sha256 = "c99c3f2e19bfdf30a88619de2d9f5ef378e51caedac9f3837a83ca66dfa40997"

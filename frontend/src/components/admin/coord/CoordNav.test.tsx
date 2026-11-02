@@ -35,11 +35,20 @@ const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => httpGet(...args),
+    // `/fleet/health` and the notifications badge are read through
+    // `httpClient.fetch` (the typed client's `fetchFleetHealth` and
+    // `fetchNotifications`). Every route in this suite answers as `httpGet`'s
+    // parsed body, so the fetch read is served from the same table as a 200
+    // Response, and a rejection passes through exactly as `get`'s did.
+    fetch: async (url: string, init?: unknown) =>
+      new Response(JSON.stringify(await httpGet(url, init)), { status: 200 }),
   },
 }));
 
 import CoordNav from "./CoordNav";
 import { DIRECT_TABS, GROUPS } from "./coordNavModel";
+import { FixedPresentationMode } from "@/components/presentation";
+import { findPresentationViolations } from "@/test/presentation";
 
 describe("CoordNav", () => {
   beforeEach(() => {
@@ -56,6 +65,17 @@ describe("CoordNav", () => {
     expect(crumb).toContainElement(
       screen.getByTestId("coord-nav-pipeline-active")
     );
+  });
+
+  it("renders the console landing page's crumb as Home", () => {
+    // `/admin/coord` redirects to `/admin/coord/home` (the operator's one
+    // screen), so this is the crumb an operator lands on.
+    pathname = "/admin/coord/home";
+    render(<CoordNav />);
+
+    const crumb = screen.getByTestId("coord-nav-crumb");
+    expect(crumb).toHaveTextContent(/^Home$/);
+    expect(crumb).toContainElement(screen.getByTestId("coord-nav-home-active"));
   });
 
   it("names the group and the page for a grouped page", () => {
@@ -685,6 +705,35 @@ describe("CoordNav", () => {
       }
     });
 
+    it("counts a machine with no state as no verdict, never as unhealthy", async () => {
+      // The nav's predicate needs a verdict: coord sent `state` for d-1 and
+      // d-3 only. Home follows a different predicate (`machineHealth.ts`);
+      // this pins that the nav's own did not move with it.
+      routeFleet(
+        {
+          devices: [
+            coordDevice("d-1", "msi", "healthy"),
+            coordDevice("d-2", "nuc"),
+            coordDevice("d-3", "box", "abandoned"),
+          ],
+        },
+        {
+          latest: [
+            sample("d-1", null, "ok"),
+            sample("d-2", null, "ok"),
+            sample("d-3", null, "ok"),
+          ],
+          history: [],
+        }
+      );
+      render(<CoordNav />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-nav-devops-unhealthy-badge")
+        ).toHaveTextContent("1 unhealthy")
+      );
+    });
+
     it("shows `unknown`, not silence, when the fleet's telemetry has gone dark", async () => {
       // The false-safe this badge exists to prevent: machines are registered,
       // nothing is publishing samples. A breach-only badge would render this
@@ -1117,5 +1166,89 @@ describe("CoordNav", () => {
         vi.useRealTimers();
       }
     });
+  });
+});
+
+describe("CoordNav in the presentation lens (plan 2026-10-23-console-presentation-spaces)", () => {
+  /** Notifications unread, and a fleet with one machine refusing work. */
+  function routeBusy() {
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (u.startsWith("/api/v1/operations/notifications")) {
+        return Promise.resolve({ notifications: [], unread_count: 7 });
+      }
+      if (u.includes("fleet/health")) {
+        return Promise.resolve({
+          devices: [{ device_id: "d-1", hostname: "msi", state: "degraded" }],
+        });
+      }
+      if (u.includes("fleet/resource-samples")) {
+        return Promise.resolve({ latest: [], history: [] });
+      }
+      return Promise.resolve({});
+    });
+  }
+
+  beforeEach(() => {
+    httpGet.mockReset();
+    routeBusy();
+    pathname = "/admin/coord/devops";
+  });
+
+  it("carries the presentation on both links, so one opened in a new tab still presents", () => {
+    render(
+      <FixedPresentationMode presenting>
+        <CoordNav />
+      </FixedPresentationMode>
+    );
+    expect(
+      screen.getByTestId("coord-nav-notifications").getAttribute("href")
+    ).toBe("/admin/coord/notifications?present=1");
+    expect(
+      screen.getByTestId("coord-nav-devops-alarm").getAttribute("href")
+    ).toBe("/admin/coord/devops?present=1");
+  });
+
+  it("drops the operator's triage counts, keeping only the navigation", async () => {
+    render(
+      <FixedPresentationMode presenting>
+        <CoordNav />
+      </FixedPresentationMode>
+    );
+    // Let both polls land before asserting their counts stay off screen.
+    await waitFor(() =>
+      expect(
+        httpGet.mock.calls.some(([u]) => String(u).includes("fleet/health"))
+      ).toBe(true)
+    );
+    await act(async () => {});
+    expect(screen.queryByTestId("coord-nav-notifications-badge")).toBeNull();
+    expect(screen.queryByTestId("coord-nav-devops-unhealthy-badge")).toBeNull();
+    expect(
+      findPresentationViolations({
+        baseElement: document.body,
+        uiBridge: {
+          unobservable:
+            "the header row registers nothing with the UI Bridge; its links are checked as DOM",
+        },
+      })
+    ).toEqual([]);
+  });
+
+  it("is the operator's row, counts and plain links, outside presentation mode", async () => {
+    render(
+      <FixedPresentationMode presenting={false}>
+        <CoordNav />
+      </FixedPresentationMode>
+    );
+    expect(
+      await screen.findByTestId("coord-nav-notifications-badge")
+    ).toHaveTextContent("7");
+    expect(
+      await screen.findByTestId("coord-nav-devops-unhealthy-badge")
+    ).toHaveTextContent("1 unhealthy");
+    expect(
+      screen.getByTestId("coord-nav-notifications").getAttribute("href")
+    ).toBe("/admin/coord/notifications");
   });
 });

@@ -42,6 +42,29 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...a: unknown[]) => httpGet(...a),
     put: (...a: unknown[]) => httpPut(...a),
+    // The typed /operations client reads over `httpClient.fetch` (plan
+    // 2026-10-04-web-coord-operator-pages-are-monolith-components-with-hand-typed-urls
+    // Phase 7): route it through the same GET table. A rejection passes
+    // through unchanged, so error-path tests see the identical Error. A PUT
+    // (the fleet-policy dial's write) goes to `httpPut` with its parsed
+    // body; any other non-GET throws, so a future write cannot silently be
+    // answered from the GET table.
+    fetch: async (...a: unknown[]) => {
+      const init = a[1] as RequestInit | undefined;
+      const method = init?.method;
+      if (method?.toUpperCase() === "PUT") {
+        const out = await httpPut(a[0], JSON.parse(String(init?.body)));
+        return new Response(JSON.stringify(out ?? null), { status: 200 });
+      }
+      if (method !== undefined && method.toUpperCase() !== "GET") {
+        throw new Error(
+          `httpClient.fetch mock serves GET only; got ${method} ${String(a[0])}`
+        );
+      }
+      return new Response(JSON.stringify(await httpGet(...a)), {
+        status: 200,
+      });
+    },
   },
 }));
 
@@ -529,7 +552,9 @@ function withHostedCi(opts: { canEdit: boolean }) {
         can_edit: opts.canEdit,
       });
     }
-    return base ? base(url) : Promise.reject(new Error(`unexpected GET ${url}`));
+    return base
+      ? base(url)
+      : Promise.reject(new Error(`unexpected GET ${url}`));
   });
 }
 
@@ -573,7 +598,9 @@ describe("/admin/coord/ci — GitHub-hosted CI (Phase 6)", () => {
           .textContent
       ).toBe("Off")
     );
-    expect(within(panel).getByTestId("github-hosted-ci-tenant-on")).toBeEnabled();
+    expect(
+      within(panel).getByTestId("github-hosted-ci-tenant-on")
+    ).toBeEnabled();
     expect(within(panel).queryByTestId("github-hosted-ci-readonly")).toBeNull();
   });
 

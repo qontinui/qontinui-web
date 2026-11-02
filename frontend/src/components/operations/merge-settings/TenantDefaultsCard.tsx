@@ -9,15 +9,29 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, Settings as SettingsIcon } from "lucide-react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "../utils";
+import { operationsErrorMessage } from "@/lib/api/operations/base";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import {
+  patchTenantSettings,
+  type EffectiveProfile,
+  type ExpediteDials,
+  type TenantSettingsPatch,
+} from "@/lib/api/operations/prMerge";
 import { TenantMergePauseControl } from "./TenantMergePauseControl";
 import {
+  ExpediteDialsSection,
+  expediteFieldsFrom,
+  expeditePatchFrom,
+  expediteReadState,
+  type ExpediteFields,
+  type ExpediteKey,
+} from "./ExpediteDialsSection";
+import {
   ffLandHeadSyncSupported,
+  httpFailureText,
   parseFloatOrThrow,
   parseIntOrThrow,
 } from "./format";
-import type { EffectiveProfile } from "./types";
 
 const log = createLogger("MergeOrchestrationSettings");
 
@@ -27,9 +41,15 @@ const log = createLogger("MergeOrchestrationSettings");
 
 export function TenantDefaultsCard({
   profile,
+  expediteTenant,
   onSaved,
 }: {
   profile: EffectiveProfile;
+  /**
+   * The tenant settings read's RAW `expedite_tenant`: `undefined` = this coord
+   * build does not serve the dials, `null` = coord could not read them.
+   */
+  expediteTenant: ExpediteDials | null | undefined;
   onSaved: () => void;
 }) {
   const [minDwell, setMinDwell] = useState<string>(
@@ -57,6 +77,27 @@ export function TenantDefaultsCard({
   );
   const [shadowFloor, setShadowFloor] = useState<string>(
     String(profile.audit_confidence_shadow_floor)
+  );
+  // The expedited-land dials. Unlike every field above, these are sent ONLY
+  // when edited: this card re-sends the rest on every save, and a re-sent
+  // stale `expedited_land` would silently undo another operator's switch-off.
+  const expediteState = expediteReadState(expediteTenant);
+  const [expedite, setExpedite] = useState<ExpediteFields>(() =>
+    expediteFieldsFrom(expediteTenant)
+  );
+  const [expediteEdited, setExpediteEdited] = useState<Set<string>>(
+    () => new Set()
+  );
+  useEffect(() => {
+    setExpedite(expediteFieldsFrom(expediteTenant));
+    setExpediteEdited(new Set());
+  }, [expediteTenant]);
+  const onExpediteChange = useCallback(
+    <K extends ExpediteKey>(key: K, value: ExpediteFields[K]) => {
+      setExpedite((prev) => ({ ...prev, [key]: value }));
+      setExpediteEdited((prev) => new Set(prev).add(key));
+    },
+    []
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +127,7 @@ export function TenantDefaultsCard({
       // (re-sent) or sets a new one. Clearing to inherit happens via
       // a separate "Reset to default" action per-field (not yet
       // wired; the Phase 8 onboarding has the inheritance model).
-      const body: Record<string, unknown> = {
+      const body: TenantSettingsPatch = {
         min_green_dwell_secs: parseIntOrThrow("min_green_dwell_secs", minDwell),
         confidence_threshold: parseFloatOrThrow(
           "confidence_threshold",
@@ -111,20 +152,28 @@ export function TenantDefaultsCard({
       if (ffLandHeadSyncSupported(profile)) {
         body.ff_land_head_sync_enabled = ffLandHeadSync;
       }
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/settings`,
-        {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        }
-      );
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+      // Same `deny_unknown_fields` reason, plus the edited-only rule above.
+      if (expediteState !== "unsupported") {
+        Object.assign(body, expeditePatchFrom(expedite, expediteEdited));
       }
+      await patchTenantSettings(body);
+      // The save consumed the expedite edits. Clear them HERE, not only in the
+      // re-seed effect: when the dials are unreadable every reload hands back
+      // the same `null`, the effect never re-runs, and a stale edited key
+      // would be re-sent by the next unrelated save — reverting another
+      // operator's switch-off. The fields are NOT re-seeded from the
+      // pre-save read: after a 2xx they hold exactly what coord now stores,
+      // and the reload's effect replaces them with a fresh read.
+      setExpediteEdited(new Set());
       onSaved();
     } catch (err) {
       log.warn("save tenant settings failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      // A 422 is coord naming the refused dial (`dial_value_invalid`): show it.
+      setError(
+        httpStatusOf(err) === 422
+          ? operationsErrorMessage(err)
+          : httpFailureText(err, { withBody: false })
+      );
     } finally {
       setSaving(false);
     }
@@ -137,6 +186,9 @@ export function TenantDefaultsCard({
     profile,
     shadowFloor,
     escalatePathsText,
+    expediteState,
+    expedite,
+    expediteEdited,
     onSaved,
   ]);
 
@@ -226,12 +278,12 @@ export function TenantDefaultsCard({
             </Label>
             <p className="text-xs text-muted-foreground">
               When a repo&apos;s main goes red (candidates rebased onto it
-              generally fail CI until it&apos;s fixed), coord consults
-              its red-main-fix policy and, where that policy is graduated and
-              the fleet flag is armed, opens a visible terminal session on your
+              generally fail CI until it&apos;s fixed), coord consults its
+              red-main-fix policy and, where that policy is graduated and the
+              fleet flag is armed, opens a visible terminal session on your
               device that diagnoses the failing check and authors a fix; the fix
-              lands through coord&apos;s ordinary merge path. On by default — turn
-              this off to opt this repo out. Reversible any time.
+              lands through coord&apos;s ordinary merge path. On by default —
+              turn this off to opt this repo out. Reversible any time.
             </p>
           </div>
           <Switch
@@ -249,14 +301,14 @@ export function TenantDefaultsCard({
             <p className="text-xs text-muted-foreground">
               coord lands a PR by rebasing its commits onto the base branch and
               pushing them straight there. When the rebase rewrites the shas —
-              69.4% of lands, measured over the 90 days to 2026-08-26 — the PR&apos;s
-              head ref is left behind, so GitHub shows grey{" "}
-              <span className="font-mono">Closed</span> on work that demonstrably
-              landed. With this on, coord also moves the head ref to the rebased
-              tip, and GitHub marks the PR{" "}
-              <span className="font-mono">Merged</span> by itself. Off by default
-              — it is a force-update on a branch coord does not own, so it is
-              graduated per repo below rather than flipped fleet-wide.
+              69.4% of lands, measured over the 90 days to 2026-08-26 — the
+              PR&apos;s head ref is left behind, so GitHub shows grey{" "}
+              <span className="font-mono">Closed</span> on work that
+              demonstrably landed. With this on, coord also moves the head ref
+              to the rebased tip, and GitHub marks the PR{" "}
+              <span className="font-mono">Merged</span> by itself. Off by
+              default — it is a force-update on a branch coord does not own, so
+              it is graduated per repo below rather than flipped fleet-wide.
             </p>
             {!ffLandHeadSyncSupported(profile) && (
               <p
@@ -267,7 +319,8 @@ export function TenantDefaultsCard({
                 (qontinui-web#1092) and coord&apos;s resolver reads them
                 (qontinui-coord#1660), but the settings API does not carry the
                 field yet, so there is no writer for it. Shown here so the dial
-                is discoverable, and it goes live by itself once coord serves it.
+                is discoverable, and it goes live by itself once coord serves
+                it.
               </p>
             )}
           </div>
@@ -279,6 +332,16 @@ export function TenantDefaultsCard({
             data-testid="settings-ff-land-head-sync"
           />
         </div>
+        <ExpediteDialsSection
+          tier="tenant"
+          fields={expedite}
+          readState={expediteState}
+          onChange={onExpediteChange}
+          testIdPrefix="settings"
+          // No edits while a save is in flight: the save clears the edited
+          // set when it lands, which would silently drop a mid-save edit.
+          busy={saving}
+        />
         <div className="space-y-1">
           <Label htmlFor="escalate-paths">Escalate paths (one per line)</Label>
           <Textarea

@@ -25,6 +25,7 @@ import {
 import { useNavigationItem, NavigationItemShell } from "@qontinui/navigation";
 import type { NavItem } from "./types";
 import { NestedSubGroup } from "./NestedSubGroup";
+import { NAVIGATION_ONLY_PROPS } from "@/components/console/navigationOnly";
 
 export interface CollapsibleNavItemProps {
   item: NavItem;
@@ -86,7 +87,11 @@ export function CollapsibleNavItem({
         <Tooltip>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
+              {/* Its menu holds only navigation entries, so opening it is
+                  navigation-only (plan 2026-10-23-console-presentation-spaces
+                  D3.2). */}
               <button
+                {...NAVIGATION_ONLY_PROPS}
                 data-nav-id={item.id}
                 data-tutorial-id={`nav-${item.id}`}
                 data-route={item.route}
@@ -234,6 +239,7 @@ export function CollapsibleNavItem({
                 onActivate={() => onNavigate(child.route)}
               >
                 <button
+                  {...NAVIGATION_ONLY_PROPS}
                   data-nav-id={child.id}
                   data-route={child.route}
                   onClick={() => onNavigate(child.route)}

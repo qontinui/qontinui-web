@@ -11,10 +11,13 @@ A plan is rated on two axes, then folded into one level:
 
 The three levels are a MODEL-ROUTING vocabulary, not a grade:
 
-* ``high``   — vet and implement with the strongest model tier (Fable 5.1).
-* ``medium`` — well suited to Opus 5.
-* ``low``    — a fast tier is enough (Sonnet 5.0, DeepSeek Flash 4.1,
-  Gemini 3.8 Flash).
+* ``high``   — vet and implement with the strongest model tier.
+* ``medium`` — a mid tier is well suited to it.
+* ``low``    — a fast tier is enough.
+
+Which model FAMILY each level routes to is per organization and
+operator-editable (:mod:`app.services.plan_model_routing`), defaulting to
+:data:`DEFAULT_MODEL_SELECTORS`.
 
 **A declared stamp wins.** A plan whose header carries ``**Difficulty:** high``
 (or ``medium`` / ``low``) records an author's or vetter's judgement, which is
@@ -48,38 +51,59 @@ DifficultySource = Literal["declared", "computed"]
 #: first 60 lines, so a stamp below a long status blockquote is read.
 RUBRIC_VERSION = 2
 
-#: The model tier each level routes to — display copy, served so every
-#: consumer (the console, /candidates and list-route readers) says the same thing.
-MODEL_TIERS: dict[str, str] = {
-    "high": "Fable 5.1",
-    "medium": "Opus 5",
-    "low": "Sonnet 5.0 / DeepSeek Flash 4.1 / Gemini 3.8 Flash",
-}
-
-#: The harness selector each level routes to — MACHINE-READABLE, unlike
-#: :data:`MODEL_TIERS`, which is display copy and must never be parsed (its
-#: ``low`` value names three alternatives). The values are the Claude Code
-#: Agent tool's ``model`` parameter (``sonnet`` / ``opus`` / ``haiku`` /
-#: ``fable``); :data:`MODEL_SELECTOR_VOCABULARY` names that vocabulary, and a
-#: consumer whose harness does not match it treats the map as ABSENT rather
-#: than guessing. ``haiku`` is deliberately unmapped: the ``low`` tier was
-#: calibrated on Sonnet 5.0 and names no Haiku model.
+#: The harness selector each level routes to BY DEFAULT — what an organization
+#: that has written no routing row is served. MACHINE-READABLE: the values are
+#: the Claude Code Agent tool's ``model`` parameter (``sonnet`` / ``opus`` /
+#: ``haiku`` / ``fable``), which is a model FAMILY alias the harness resolves
+#: to that family's latest model. :data:`MODEL_SELECTOR_VOCABULARY` names that
+#: vocabulary, and a consumer whose harness does not match it treats the map as
+#: ABSENT rather than guessing.
 #:
-#: Kept adjacent to :data:`MODEL_TIERS` so an edit to one prompts a check of
-#: the other; both are served together on ``GET /plan-library``,
-#: ``/plan-library/candidates`` and ``/plan-library/difficulty`` (plan
-#: ``2026-09-22-route-plan-sweeps-by-difficulty``). Every
+#: Since plan ``2026-10-08-operator-editable-model-family-per-plan-difficulty``
+#: the SERVED map is per organization and operator-editable
+#: (``agent.plan_difficulty_model_routes``, resolved by
+#: :mod:`app.services.plan_model_routing`); this is only its fallback. Served
+#: on ``GET /plan-library``, ``/plan-library/candidates`` and
+#: ``/plan-library/difficulty`` together with its display twin
+#: (:func:`model_tiers_for`), which is DERIVED from the selectors so the two
+#: halves can never disagree (plan ``2026-09-22-route-plan-sweeps-by-difficulty``:
+#: promote both maps together, never the selector half alone). Every
 #: :data:`DifficultyLevel` must have an entry — a level added without one is a
 #: test failure, not a ``KeyError`` in a sweep.
-MODEL_SELECTORS: dict[str, str] = {
+DEFAULT_MODEL_SELECTORS: dict[str, str] = {
     "high": "fable",
     "medium": "opus",
     "low": "sonnet",
 }
 
-#: Names the selector vocabulary :data:`MODEL_SELECTORS` is written in. A
-#: second harness is an added key under a new vocabulary, not a rename.
+#: Names the selector vocabulary the selectors are written in. A second harness
+#: is an added key under a new vocabulary, not a rename.
 MODEL_SELECTOR_VOCABULARY = "claude_code_agent_tool_v1"
+
+#: Display copy for each family in :data:`MODEL_SELECTOR_VOCABULARY`. It names
+#: the FAMILY, not a version: the selector resolves to the family's latest
+#: model, so copy naming a version would go stale the day a new model ships —
+#: which is exactly how the shipped ``Fable 5.1`` / ``Opus 5`` copy aged.
+MODEL_FAMILY_DISPLAY: dict[str, str] = {
+    "fable": "Fable (latest)",
+    "opus": "Opus (latest)",
+    "sonnet": "Sonnet (latest)",
+    "haiku": "Haiku (latest)",
+}
+
+
+def model_tiers_for(selectors: dict[str, str]) -> dict[str, str]:
+    """The display twin of ``selectors`` — one copy per level, never parsed.
+
+    A family this module has no copy for (impossible through the CHECKed
+    store, but cheap to make total) is shown as the raw selector rather than
+    dropped, so the two maps keep the same keys.
+    """
+    return {
+        level: MODEL_FAMILY_DISPLAY.get(family, family)
+        for level, family in selectors.items()
+    }
+
 
 # ─────────────────────────── declared stamp ───────────────────────────
 

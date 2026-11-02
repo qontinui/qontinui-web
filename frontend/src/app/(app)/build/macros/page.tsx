@@ -24,7 +24,6 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
 import {
   Zap,
   Trash2,
@@ -294,57 +293,6 @@ function MacrosBuilderPageContent() {
 
   const [addStepMenuOpen, setAddStepMenuOpen] = useState(false);
 
-  // AI generation state
-  const [aiGenerating, setAiGenerating] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-  const [aiResult, setAiResult] = useState<Record<string, unknown> | null>(null);
-
-  const macroTemplates = [
-    { label: "Mouse click sequence", prompt: "Create a macro that performs a sequence of mouse clicks on UI elements" },
-    { label: "Form fill automation", prompt: "Create a macro that fills in a form with text inputs and selections" },
-    { label: "Keyboard shortcut sequence", prompt: "Create a macro that executes a series of keyboard shortcuts" },
-    { label: "Screenshot workflow", prompt: "Create a macro that captures screenshots at different states" },
-  ];
-
-  const handleAiGenerate = async (prompt: string) => {
-    setAiGenerating(true);
-    setAiError(null);
-    setAiResult(null);
-    try {
-      const result = await workApi.aiGenerateMacro(prompt, editForm.category || undefined);
-      if (result.success && result.data) {
-        setAiResult(result.data);
-      } else {
-        setAiError(result.message ?? "Generation failed");
-      }
-    } catch (err) {
-      setAiError(err instanceof Error ? err.message : "Generation failed");
-    } finally {
-      setAiGenerating(false);
-    }
-  };
-
-  const handleAiAccept = () => {
-    if (!aiResult) return;
-    const data = aiResult as Record<string, unknown>;
-    setEditForm((f) => ({
-      ...f,
-      name: (data.name as string) ?? f.name,
-      description: (data.description as string) ?? f.description,
-      category: (data.category as string) ?? f.category,
-      tags: (data.tags as string[]) ?? f.tags,
-      steps: Array.isArray(data.steps)
-        ? (data.steps as Record<string, unknown>[]).map((s) => ({
-            ...s,
-            id: crypto.randomUUID(),
-            action_type: (s.action_type as string) ?? "click",
-          })) as MacroStep[]
-        : f.steps,
-    }));
-    setAiResult(null);
-    toast.success("AI-generated macro accepted");
-  };
-
   return (
     <BuilderLayout<Macro>
       title="Macros"
@@ -453,42 +401,6 @@ function MacrosBuilderPageContent() {
           </div>
 
           <div className="space-y-4">
-            <AiGeneratorPanel
-              refusal={workRefusal}
-              title="Generate Macro with AI"
-              accentColor="amber"
-              templates={macroTemplates}
-              placeholder="Describe the macro you want to create..."
-              generating={aiGenerating}
-              error={aiError}
-              onGenerate={handleAiGenerate}
-              result={aiResult ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-text-primary">{aiResult.name as string ?? "Generated Macro"}</p>
-                  {typeof aiResult.description === "string" && (
-                    <p className="text-xs text-text-muted">{aiResult.description}</p>
-                  )}
-                  {Array.isArray(aiResult.steps) && (
-                    <div className="flex flex-wrap gap-1.5">
-                      <span className="text-xs text-text-muted">{(aiResult.steps as unknown[]).length} steps:</span>
-                      {(aiResult.steps as Array<Record<string, unknown>>).map((step, i) => (
-                        <Badge
-                          key={i}
-                          variant="outline"
-                          className={`text-[10px] px-1.5 py-0 border ${ACTION_TYPE_COLORS[step.action_type as string] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30"}`}
-                        >
-                          {(step.action_type as string ?? "").replace(/_/g, " ")}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : undefined}
-              onAccept={handleAiAccept}
-              onRegenerate={() => setAiResult(null)}
-              disclaimer="AI generates macro steps based on your description."
-            />
-
             {/* Name */}
             <div>
               <Label className="text-xs text-text-muted">Name</Label>

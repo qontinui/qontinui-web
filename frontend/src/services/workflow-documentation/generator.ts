@@ -351,7 +351,7 @@ export function generateDependenciesList(workflow: Workflow): string {
 /**
  * Generate complexity metrics section
  */
-function generateComplexityMetricsSection(workflow: Workflow): string {
+export function generateComplexityMetricsSection(workflow: Workflow): string {
   const parts: string[] = ["## Complexity Metrics\n"];
 
   const metrics = calculateComplexity(workflow);

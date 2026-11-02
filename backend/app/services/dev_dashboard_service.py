@@ -24,6 +24,23 @@ from app.schemas.dev_dashboard import (
 logger = structlog.get_logger(__name__)
 
 
+def _runner_url(runner: RegisteredRunner, path: str) -> httpx.URL:
+    """The URL of ``path`` on ``runner``, composed from its parts.
+
+    Never an f-string. The address comes from the unauthenticated beacon, and
+    ``f"http://{ip}:{port}{path}"`` let an ``ip`` such as
+    ``127.0.0.1:9876/apps#`` choose the port and the path too (the ``#`` made
+    the real port and path a fragment). Composed, the host can only be a host:
+    an IPv6 literal is bracketed, and a value that is not a host is refused by
+    httpx (``InvalidURL``) or percent-encoded into a name nothing resolves,
+    never read as a port or a path. ``RunnerHeartbeat`` also refuses a
+    non-literal ``ip`` at the door; this keeps the registry's other readers
+    honest whatever it holds. ``path`` is still the caller's to keep clean:
+    httpx resolves ``.`` and ``..`` segments in it.
+    """
+    return httpx.URL(scheme="http", host=runner.ip, port=runner.port, path=path)
+
+
 class FleetRegistry:
     """In-memory registry of runner instances across machines."""
 
@@ -103,7 +120,15 @@ class FleetRegistry:
         if not runner:
             return None
 
-        url = f"http://{runner.ip}:{runner.port}{path}"
+        try:
+            url = _runner_url(runner, path)
+        except httpx.InvalidURL as e:
+            logger.warning(
+                "runner_proxy_bad_address",
+                runner_id=runner_id,
+                error=str(e),
+            )
+            return None
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
                 resp = await client.get(url, params=params)
@@ -113,7 +138,7 @@ class FleetRegistry:
                 logger.warning(
                     "runner_proxy_failed",
                     runner_id=runner_id,
-                    url=url,
+                    url=str(url),
                     error=str(e),
                 )
                 return None
@@ -129,9 +154,8 @@ class FleetRegistry:
         async def _fetch_tasks(
             client: httpx.AsyncClient, runner: RegisteredRunner
         ) -> list[dict[str, Any]]:
-            url = f"http://{runner.ip}:{runner.port}/task-runs/running"
             try:
-                resp = await client.get(url)
+                resp = await client.get(_runner_url(runner, "/task-runs/running"))
                 resp.raise_for_status()
                 data = resp.json()
                 # The runner returns an envelope: {"scope": ..., "task_runs": [...]}.

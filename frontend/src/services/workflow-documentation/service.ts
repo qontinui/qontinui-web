@@ -13,6 +13,7 @@ import type {
   ExportOptions,
 } from "./types";
 import {
+  generateComplexityMetricsSection,
   generateDependenciesList,
   generateDocumentation as generateDocContent,
   generateFlowchart,
@@ -211,6 +212,10 @@ export class WorkflowDocumentationService {
 
   generateFlowchart(workflow: Workflow): string {
     return generateFlowchart(workflow);
+  }
+
+  generateComplexityMetrics(workflow: Workflow): string {
+    return generateComplexityMetricsSection(workflow);
   }
 
   // ==========================================================================

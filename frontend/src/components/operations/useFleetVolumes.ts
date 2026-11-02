@@ -28,8 +28,8 @@
  */
 
 import { useCallback, useState } from "react";
-import { httpClient } from "@/services/service-factory";
-import { FLEET_VOLUMES_API } from "./utils";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { fetchFleetVolumes } from "@/lib/api/operations/coordFleet";
 import {
   VOLUMES_NOT_YET_READ,
   volumesFetchFromFailure,
@@ -42,36 +42,27 @@ import { useSingleFlightPoll } from "./useSingleFlightPoll";
 
 /** One fleet-volumes read, mapped to what the disk section renders. */
 export async function readFleetVolumes(): Promise<VolumesFetch> {
-  let res: Response;
-  try {
-    res = await httpClient.fetch(
-      FLEET_VOLUMES_API,
-      COORD_DASHBOARD_POLL_OPTIONS
-    );
-  } catch (err) {
-    return {
-      state: "unavailable",
-      reason: `Request to ${FLEET_VOLUMES_API} failed: ${
-        (err as Error)?.message ?? "unknown error"
-      }`,
-    };
-  }
-  if (!res.ok) {
-    // A body that cannot be read is simply not classified; the status alone
-    // still produces an honest `unavailable`.
-    const bodyText = await Promise.resolve()
-      .then(() => res.text())
-      .catch(() => null);
-    return volumesFetchFromFailure(res.status, bodyText);
-  }
   let payload: unknown;
   try {
-    payload = await res.json();
+    payload = await fetchFleetVolumes(COORD_DASHBOARD_POLL_OPTIONS);
   } catch (err) {
+    const status = httpStatusOf(err);
+    if (status !== null) {
+      // A body that could not be read arrives as `readJson`'s stand-in and is
+      // simply not classified; the status alone still produces an honest
+      // `unavailable`.
+      return volumesFetchFromFailure(status, httpBodyOf(err));
+    }
+    if (err instanceof SyntaxError) {
+      return {
+        state: "unavailable",
+        reason: `The fleet-volumes response was not valid JSON: ${err.message}`,
+      };
+    }
     return {
       state: "unavailable",
-      reason: `The fleet-volumes response was not valid JSON: ${
-        err instanceof Error ? err.message : "parse error"
+      reason: `The fleet-volumes request failed: ${
+        (err as Error)?.message ?? "unknown error"
       }`,
     };
   }

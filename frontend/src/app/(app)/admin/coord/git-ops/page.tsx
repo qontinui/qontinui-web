@@ -5,9 +5,9 @@
  *
  * Plan `2026-05-24-federation-verify-and-gitop.md` Phase 7.
  *
- * Reads:
- *   GET /api/v1/operations/git-ops/list      (proxies coord /coord/git-ops/list)
- *   GET /api/v1/operations/git-ops/branches  (proxies coord /coord/git-ops/branches)
+ * Reads (via `lib/api/operations/coordDelivery.ts`):
+ *   GET /operations/git-ops/list      (proxies coord /coord/git-ops/list)
+ *   GET /operations/git-ops/branches  (proxies coord /coord/git-ops/branches)
  *
  * Shows a fleet-wide activity feed of git operations (commit / checkout /
  * branch_create / merge / rebase / push / …) observed by each runner's
@@ -52,7 +52,12 @@ import {
   GitCommitVertical,
   RefreshCw,
 } from "lucide-react";
-import { httpClient } from "@/services/service-factory";
+import {
+  fetchGitOpsBranches,
+  fetchGitOpsList,
+  type DeviceBranchSummary,
+  type GitOpRecord,
+} from "@/lib/api/operations/coordDelivery";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import {
@@ -61,53 +66,14 @@ import {
   StatCluster,
   StatusBadge,
   type Stat,
+  GlossaryTerm,
+  BackendErrorMessage,
 } from "@/components/console";
+import { operationsErrorReading } from "@/lib/api/operations/base";
+import type { BackendErrorReading } from "@/lib/errors/backend-error-message";
 import { deriveGitOpStatus, GIT_OP_STATUS_PALETTE } from "./gitOpStatus";
 
-const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
-
-// ---- Types ----------------------------------------------------------------
-//
-// These local interfaces mirror coord's git-ops wire shape. The generated
-// `@qontinui/shared-types` git-ops exports (GitOpRecord, DeviceBranchSummary)
-// are not yet published — they regenerate via CI on merge of the schemas
-// package. Swap these for the generated exports once that republishes;
-// the field shapes are intentionally identical.
-
-interface GitOpRecord {
-  op_id: string;
-  tenant_id: string;
-  device_id: string;
-  session_id: string;
-  repo: string;
-  branch: string;
-  op_kind: string;
-  sha: string;
-  message: string;
-  recorded_at: string;
-  metadata?: Record<string, unknown>;
-}
-
-interface DeviceBranchSummary {
-  device_id: string;
-  repo: string;
-  branch: string;
-  sha: string;
-  recorded_at: string;
-}
-
-interface GitOpsListResponse {
-  ops?: GitOpRecord[];
-  items?: GitOpRecord[];
-  count?: number;
-}
-
-interface GitOpsBranchesResponse {
-  branches?: DeviceBranchSummary[];
-  items?: DeviceBranchSummary[];
-  count?: number;
-}
 
 type TimeRange = "1h" | "24h" | "7d" | "all";
 
@@ -248,7 +214,9 @@ function BranchesPanel({
             >
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="px-4 py-2">Device</th>
+                  <th className="px-4 py-2">
+                    <GlossaryTerm id="device">Device</GlossaryTerm>
+                  </th>
                   <th className="px-4 py-2">Repo</th>
                   <th className="px-4 py-2">Branch</th>
                   <th className="px-4 py-2">SHA</th>
@@ -333,7 +301,7 @@ export default function CoordGitOpsPage() {
   const [ops, setOps] = useState<GitOpRecord[]>([]);
   const [branches, setBranches] = useState<DeviceBranchSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackendErrorReading | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>("24h");
   // R5 — one row open at a time, the same model `<RecordList>` holds for a row
   // list, spelled out here because a `<tbody>` cannot host that primitive.
@@ -354,20 +322,12 @@ export default function CoordGitOpsPage() {
     async (isCurrent: () => boolean) => {
       try {
         const since = sinceParam(timeRange);
-        const qs = new URLSearchParams();
-        if (since) qs.set("since", since);
-        if (repoFilter.trim()) qs.set("repo", repoFilter.trim());
-        qs.set("limit", "200");
-
         const [listBody, branchesBody] = await Promise.all([
-          httpClient.get<GitOpsListResponse>(
-            `${API}/git-ops/list?${qs.toString()}`,
+          fetchGitOpsList(
+            { since, repo: repoFilter.trim() || undefined, limit: 200 },
             COORD_DASHBOARD_POLL_OPTIONS
           ),
-          httpClient.get<GitOpsBranchesResponse>(
-            `${API}/git-ops/branches`,
-            COORD_DASHBOARD_POLL_OPTIONS
-          ),
+          fetchGitOpsBranches(COORD_DASHBOARD_POLL_OPTIONS),
         ]);
         if (!isCurrent()) return;
         setOps(listBody.ops ?? listBody.items ?? []);
@@ -375,7 +335,7 @@ export default function CoordGitOpsPage() {
         setError(null);
       } catch (e) {
         if (!isCurrent()) return;
-        setError(e instanceof Error ? e.message : String(e));
+        setError(operationsErrorReading(e));
       } finally {
         if (isCurrent()) setLoading(false);
       }
@@ -447,7 +407,12 @@ export default function CoordGitOpsPage() {
 
       {/* Error */}
       {error && (
-        <p className="text-sm text-destructive">Failed to load: {error}</p>
+        <p
+          className="text-sm text-destructive"
+          data-testid="coord-git-ops-error"
+        >
+          Failed to load: <BackendErrorMessage error={error} />
+        </p>
       )}
 
       {/* Summary tiles */}
@@ -513,7 +478,9 @@ export default function CoordGitOpsPage() {
                 <th className="px-4 py-2">Branch</th>
                 <th className="px-4 py-2">SHA</th>
                 <th className="px-4 py-2">Message</th>
-                <th className="px-4 py-2">Device</th>
+                <th className="px-4 py-2">
+                  <GlossaryTerm id="device">Device</GlossaryTerm>
+                </th>
                 <th className="px-4 py-2">Session</th>
                 <th className="px-4 py-2">Time</th>
               </tr>

@@ -121,6 +121,28 @@ describe("classify", () => {
     expect(outcome.kind === "fail" && outcome.reason).toContain("ERROR");
   });
 
+  it("names a git_info_fail ERROR as a fetch failure, not a failed build", () => {
+    const outcome = classify({
+      ...base,
+      deployments: [{ ...dep(SHA, "ERROR"), errorCode: "git_info_fail" }],
+    });
+    expect(outcome.kind).toBe("fail");
+    const reason = outcome.kind === "fail" ? outcome.reason : "";
+    expect(reason).toContain("NO BUILD RAN");
+    expect(reason).toContain("vercel redeploy");
+    expect(reason).not.toContain("failed production build");
+  });
+
+  it("keeps the failed-build message for an ERROR whose build ran", () => {
+    const outcome = classify({
+      ...base,
+      deployments: [{ ...dep(SHA, "ERROR"), errorCode: "BUILD_UTILS_SPAWN_1" }],
+    });
+    expect(outcome.kind).toBe("fail");
+    const reason = outcome.kind === "fail" ? outcome.reason : "";
+    expect(reason).toContain("failed production build");
+  });
+
   it("fails red on ERROR even when main has moved", () => {
     const outcome = classify({
       ...base,

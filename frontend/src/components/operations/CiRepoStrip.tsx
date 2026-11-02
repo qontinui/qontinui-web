@@ -57,10 +57,10 @@ import {
   GitPullRequest,
 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { CI_STATUS_NOTIFY_API } from "./utils";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { armNotifyWhenGreen } from "@/lib/api/operations/ciStatus";
 import { useCiStatusStream } from "./useCiStatusStream";
-import type { NotifyWhenGreenResponse, RepoCiRow } from "./types";
+import type { RepoCiRow } from "./types";
 
 const log = createLogger("CiRepoStrip");
 
@@ -302,20 +302,10 @@ function CiStatusRow({ row }: { row: RepoCiRow }) {
     if (!row.main_head_sha) return;
     setArm({ kind: "arming" });
     try {
-      const res = await httpClient.fetch(CI_STATUS_NOTIFY_API, {
-        method: "POST",
-        body: JSON.stringify({
-          repo: row.repo,
-          head_sha: row.main_head_sha,
-        }),
+      const body = await armNotifyWhenGreen({
+        repo: row.repo,
+        head_sha: row.main_head_sha,
       });
-      if (!res.ok) {
-        const text = await res.text();
-        log.warn("notify-when-green failed", res.status, text);
-        setArm({ kind: "error", message: `HTTP ${res.status}` });
-        return;
-      }
-      const body = (await res.json()) as NotifyWhenGreenResponse;
       const warnings = body.warnings ?? [];
       const verdict = body.initial_verdict ?? null;
       // A registered-but-not-armed gate is the interesting case; log it so the
@@ -337,6 +327,12 @@ function CiStatusRow({ row }: { row: RepoCiRow }) {
         warnings,
       });
     } catch (err) {
+      const status = httpStatusOf(err);
+      if (status !== null) {
+        log.warn("notify-when-green failed", status, httpBodyOf(err));
+        setArm({ kind: "error", message: `HTTP ${status}` });
+        return;
+      }
       log.warn("notify-when-green threw", err);
       setArm({
         kind: "error",

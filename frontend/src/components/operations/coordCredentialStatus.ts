@@ -388,6 +388,22 @@ const POSTURE_REASON: Record<CoordCredentialPosture, string> = {
 };
 
 /**
+ * The fixed, plain-language reason for a posture — this module's own words,
+ * never a reporter's.
+ *
+ * A resolved status's `reason` prefers what the runner or coord said
+ * (`reported.reason`, `credential_dark.reason`), which is free text: it can
+ * name a host, a path or a URL. The presentation lens (plan
+ * `2026-10-23-console-presentation-spaces` D3.3) shows this instead, so a
+ * badge's `title` cannot carry a machine identity in front of an outsider.
+ */
+export function coordCredentialPostureReason(
+  kind: CoordCredentialPosture
+): string {
+  return POSTURE_REASON[kind];
+}
+
+/**
  * Resolve one device row's credential posture from whatever the wire carried.
  *
  * Precedence, richest first — and every rung is a READ, never an inference:

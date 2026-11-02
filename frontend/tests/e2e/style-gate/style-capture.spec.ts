@@ -956,6 +956,20 @@ for (const route of AUTHED_ROUTES) {
         `this surface.`
     ).toBeGreaterThan(0);
 
+    // The workflow analyzes this pair with `--scale-factor 1`
+    // (.github/workflows/style-gate.yml): vision-audit maps every CSS-pixel
+    // bbox onto the frame through that value. Assert the page really rendered
+    // at DPR 1 BEFORE writing either file, so a frame at any other ratio fails
+    // this capture loudly instead of being analyzed at the wrong pixels.
+    const devicePixelRatio = await page.evaluate(() => window.devicePixelRatio);
+    expect(
+      devicePixelRatio,
+      `[style-gate] Route "${route.id}" rendered at devicePixelRatio ` +
+        `${devicePixelRatio}, but the style gate analyzes every frame with ` +
+        `--scale-factor 1. Pin deviceScaleFactor: 1 for this capture, or pass ` +
+        `the real ratio to vision-audit in style-gate.yml.`
+    ).toBe(1);
+
     // Normalize bbox before writing: map the SDK's `{x,y,width,height}` floats
     // to the Rust analyzer's `{x,y,w,h}` u32 Region (the ONLY shape transform
     // required — see `normalizeSnapshotForAnalyzer`). All other fields pass
@@ -1313,6 +1327,22 @@ for (const route of PUBLIC_ROUTES) {
           `settle, so either the page is genuinely empty or the registry was ` +
           `torn down between settle and the snapshot read.`
       ).toBeGreaterThan(0);
+
+      // The workflow analyzes this pair with `--scale-factor 1`
+      // (.github/workflows/style-gate.yml): vision-audit maps every CSS-pixel
+      // bbox onto the frame through that value. Assert the page really rendered
+      // at DPR 1 BEFORE writing either file, so a frame at any other ratio fails
+      // this capture loudly instead of being analyzed at the wrong pixels.
+      const devicePixelRatio = await page.evaluate(
+        () => window.devicePixelRatio
+      );
+      expect(
+        devicePixelRatio,
+        `[style-gate] Route "${route.id}" rendered at devicePixelRatio ` +
+          `${devicePixelRatio}, but the style gate analyzes every frame with ` +
+          `--scale-factor 1. Pin deviceScaleFactor: 1 for this capture, or pass ` +
+          `the real ratio to vision-audit in style-gate.yml.`
+      ).toBe(1);
 
       // IDENTICAL normalization to the relay lane — same functions, same order.
       // The analyzer must not be able to tell which lane produced a snapshot.

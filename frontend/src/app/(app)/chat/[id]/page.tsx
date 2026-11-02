@@ -62,6 +62,7 @@ export default function ChatSessionPage() {
   const {
     isConnected,
     sessionState,
+    sessionError,
     messages,
     streamingContent,
     sendMessage,
@@ -76,6 +77,14 @@ export default function ChatSessionPage() {
     onSessionCreated: handleSessionCreated,
     onWorkflowGenerated: handleWorkflowGenerated,
   });
+
+  // A request on this conversation failed — an interrupt, rename or message
+  // the runner refused (its `error` / `chat_message_ack` naming this run), a
+  // session error, or a request the relay could not forward. The hook drops
+  // every other run's, so whatever reaches here is this page's to show.
+  useEffect(() => {
+    if (sessionError) toast.error(sessionError);
+  }, [sessionError]);
 
   // Load session on mount (for existing sessions)
   useEffect(() => {

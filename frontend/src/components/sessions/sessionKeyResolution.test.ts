@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import { AgentSessionsApiError } from "@/services/agent-sessions-api";
-import { SessionsApiError } from "./api";
+import { SessionsApiError } from "@/lib/api/operations/sessions";
 import {
   RESERVED_SESSION_SEGMENTS,
   classifyAgentError,

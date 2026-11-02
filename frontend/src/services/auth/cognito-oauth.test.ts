@@ -53,11 +53,13 @@ describe("buildLoginState + verifyStateAndExtractNext round-trip", () => {
     expect(verifyStateAndExtractNext(state)).toBe(next);
   });
 
-  it("round-trips a unicode path segment", () => {
+  it("round-trips a unicode path segment, resolved to its percent-encoded form", () => {
     const next = "/proyectos/café/正在/workflows";
     const state = buildLoginState(CSRF, next);
     storeState(state);
-    expect(verifyStateAndExtractNext(state)).toBe(next);
+    const out = verifyStateAndExtractNext(state);
+    expect(out).toBe("/proyectos/caf%C3%A9/%E6%AD%A3%E5%9C%A8/workflows");
+    expect(decodeURI(out ?? "")).toBe(next);
   });
 
   it("decode-idempotence regression: state has no %xx sequences (the prod bug)", () => {
@@ -74,7 +76,12 @@ describe("buildLoginState + verifyStateAndExtractNext round-trip", () => {
       expect(decodeURIComponent(state)).toBe(state);
       // Survives the extra decode the email path applies, end to end.
       storeState(state);
-      expect(verifyStateAndExtractNext(decodeURIComponent(state))).toBe(next);
+      // The next comes back as the browser resolves it (a Unicode path
+      // percent-encoded), which names the same destination.
+      const resolved = new URL(next, window.location.origin);
+      expect(verifyStateAndExtractNext(decodeURIComponent(state))).toBe(
+        `${resolved.pathname}${resolved.search}${resolved.hash}`
+      );
     }
   });
 
@@ -308,5 +315,25 @@ describe("refreshCognitoTokens", () => {
       (e: unknown) => e
     );
     expect((error as CognitoRefreshError).kind).toBe("transient");
+  });
+});
+
+describe("verifyStateAndExtractNext — same-origin only", () => {
+  it.each([
+    ["a protocol-relative reference", "//elsewhere.example/x"],
+    ["a backslash spelling", "/\\elsewhere.example"],
+    ["an absolute URL to another origin", "https://elsewhere.example/x"],
+    [
+      "a dot segment that collapses into a second leading slash",
+      "/.//elsewhere.example",
+    ],
+    [
+      "a percent-encoded dot segment that does the same",
+      "/%2e//elsewhere.example",
+    ],
+  ])("drops %s carried in the state", (_, next) => {
+    const state = buildLoginState(CSRF, next);
+    storeState(state);
+    expect(verifyStateAndExtractNext(state)).toBeNull();
   });
 });

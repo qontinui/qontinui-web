@@ -200,7 +200,8 @@ export default function AcceptableUsePolicy() {
               <li>
                 Creating derivative products using our proprietary hosted
                 coordination service (our open-source components may be used
-                under their AGPL-3.0 license terms)
+                under their own license terms, such as AGPL-3.0, or MIT for the
+                UI Bridge)
               </li>
               <li>
                 Sharing account credentials or creating accounts for others

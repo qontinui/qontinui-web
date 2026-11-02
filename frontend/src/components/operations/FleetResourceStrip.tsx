@@ -88,9 +88,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { CollapsiblePanel } from "@/components/console";
+import { CollapsiblePanel, NAVIGATION_ONLY_PROPS } from "@/components/console";
+import {
+  useMachineAliaser,
+  usePresentationMode,
+} from "@/components/presentation";
 import { deviceStateBadgeVariant } from "./FleetHealthSummary";
 import { PressureSparkline } from "./PressureSparkline";
+import { presentedFailureReason } from "./presentedFailure";
 import {
   buildMachineGroups,
   classifySaturation,
@@ -111,6 +116,7 @@ import {
   HEADROOM_LABEL,
   HEADROOM_MEANING,
   hostIsBindingConstraint,
+  cpuTempReading,
   laneShowsSwap,
   pressureAxisIsSwap,
   pressureAxisLabel,
@@ -194,7 +200,19 @@ const TONE_BADGE: Record<
 // Cells
 // ---------------------------------------------------------------------------
 
-function LaneCell({ row }: { row: StripRow }) {
+function LaneCell({
+  row,
+  instanceLabel,
+}: {
+  row: StripRow;
+  /**
+   * What to show for a named lane instance instead of its name. A CI
+   * publisher's instance is `"<runner name>/<repo>"`, which names a machine
+   * and a repository, so presentation mode passes its position ("instance
+   * 2") here (plan `2026-10-23-console-presentation-spaces` D3.3).
+   */
+  instanceLabel?: string;
+}) {
   if (!row.lane) {
     return <span className="text-muted-foreground italic">no lane</span>;
   }
@@ -205,11 +223,29 @@ function LaneCell({ row }: { row: StripRow }) {
       </Badge>
       {row.laneInstance && (
         <span className="font-mono text-[10px] text-muted-foreground truncate max-w-[14rem]">
-          {row.laneInstance}
+          {instanceLabel ?? row.laneInstance}
         </span>
       )}
     </span>
   );
+}
+
+/**
+ * Each named lane instance's 1-based position among its machine's instances
+ * of the same lane — the label presentation mode shows instead of the name.
+ * Rows without an instance get no entry.
+ */
+function instancePositions(rows: readonly StripRow[]): Map<string, number> {
+  const seen = new Map<string, number>();
+  const positions = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.laneInstance) continue;
+    const lane = row.lane ?? "";
+    const next = (seen.get(lane) ?? 0) + 1;
+    seen.set(lane, next);
+    positions.set(row.key, next);
+  }
+  return positions;
 }
 
 /**
@@ -890,6 +926,59 @@ function Aged({
   return <>{children}</>;
 }
 
+/**
+ * CPU package temperature, display only. No colour ramp: no threshold is
+ * declared (plan D1), so a reading is neutral text. The three states live in
+ * `cpuTempReading`.
+ */
+function TemperatureCell({ row }: { row: StripRow }) {
+  const s = row.sample;
+  if (!s || row.freshness === "unknown") {
+    return <span className="text-muted-foreground">unknown</span>;
+  }
+  const reading = cpuTempReading(s);
+  if (reading.kind === "value") {
+    return (
+      <Aged freshness={row.freshness}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span data-testid="fleet-resource-cpu-temp">{reading.text}</span>
+          </TooltipTrigger>
+          <TooltipContent className="text-[11px]">
+            package temperature, display only
+          </TooltipContent>
+        </Tooltip>
+      </Aged>
+    );
+  }
+  if (reading.kind === "not_measurable_host") {
+    return (
+      <span
+        className="text-muted-foreground"
+        data-testid="fleet-resource-cpu-temp"
+      >
+        not measured on this host type
+      </span>
+    );
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="text-muted-foreground"
+          data-testid="fleet-resource-cpu-temp"
+        >
+          unknown
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="text-[11px]">
+        no reading reported (sensor absent, or collector not yet publishing this
+        field)
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 /** Free/total memory for the lane, plus the COUPLED figure on a WSL row. */
 function MemoryCell({ row }: { row: StripRow }) {
   const s = row.sample;
@@ -1003,6 +1092,23 @@ function FloorsLegend({
   missingFloors: number;
   warnMargin: number | undefined;
 }) {
+  const { presenting } = usePresentationMode();
+  // The legend teaches the operator to read the Admission column, in coord's
+  // vocabulary; an outsider has the section caption instead (plan
+  // `2026-10-23-console-presentation-spaces` D1, density down). What stays is
+  // the one UNKNOWN statement the legend carries, in plain words.
+  if (presenting) {
+    return missingFloors > 0 ? (
+      <p
+        className="text-[10px] text-muted-foreground"
+        data-testid="fleet-resource-floors-missing"
+      >
+        {missingFloors} lane{missingFloors === 1 ? " has" : "s have"} a limit
+        that was not reported, so room for more work there reads unknown —
+        which is not healthy.
+      </p>
+    ) : null;
+  }
   return (
     <div
       className="rounded border border-dashed p-2 space-y-1"
@@ -1078,9 +1184,9 @@ function FloorsLegend({
         and a recoverable delay never becomes a failed build. Both are shown;
         neither is inferred. The row&apos;s colour is coord&apos;s{" "}
         <em>admission verdict</em> against these floors — not a band over the
-        pressure ratio. This page keeps no threshold of its own, so a red row
-        means the dispatcher has already stopped electing that lane. Memory and
-        disk are kept apart because memory frees on its own and disk does not.
+        pressure ratio. This page keeps no threshold of its own: a red row
+        means a guard on that lane is refusing work. Memory and disk are kept
+        apart because memory frees on its own and disk does not.
       </p>
       {missingFloors > 0 && (
         <p
@@ -1121,6 +1227,10 @@ export function FleetResourceStrip({
   resources,
 }: FleetResourceStripProps) {
   const { data, loading, error, fetchedAtMs, refresh } = resources;
+  // The presentation lens: machines by alias, lane instances by position
+  // (plan `2026-10-23-console-presentation-spaces` D3.3).
+  const { presenting } = usePresentationMode();
+  const machineName = useMachineAliaser();
 
   // Advance the clock independently of the poll. Without this the row ages
   // would only move when a poll SUCCEEDS — so an outage would freeze every
@@ -1249,9 +1359,12 @@ export function FleetResourceStrip({
         }
         headerActions={
           <Button
+            // A re-read: it changes only what is displayed (D3.2).
+            {...NAVIGATION_ONLY_PROPS}
             variant="ghost"
             size="sm"
             onClick={refresh}
+            aria-label="Refresh machine resources"
             data-testid="fleet-resource-refresh"
           >
             <RefreshCw className="h-3 w-3" />
@@ -1263,8 +1376,9 @@ export function FleetResourceStrip({
             className="text-sm text-destructive"
             data-testid="fleet-resource-error"
           >
-            Resource samples unavailable: {error}. Rows below are last-known,
-            not current.
+            Resource samples unavailable:{" "}
+            {presentedFailureReason(error, presenting)}. Rows below are
+            last-known, not current.
           </p>
         )}
         {data?.schema_pending && (
@@ -1393,14 +1507,23 @@ export function FleetResourceStrip({
                       </TooltipContent>
                     </Tooltip>
                   </th>
+                  <th className="py-1 pr-3 font-medium">Temperature</th>
                   <th className="py-1 pr-3 font-medium">Memory (per lane)</th>
                   <th className="py-1 pr-3 font-medium">Sample</th>
                 </tr>
               </thead>
               <tbody>
-                {groups.flatMap((group) =>
-                  group.rows.map((row, i) => {
+                {groups.flatMap((group) => {
+                  const shownName = machineName(
+                    { deviceId: group.deviceId, hostname: group.hostname },
+                    group.displayName
+                  );
+                  const positions = presenting
+                    ? instancePositions(group.rows)
+                    : null;
+                  return group.rows.map((row, i) => {
                     const s = row.sample;
+                    const position = positions?.get(row.key);
                     // The row's tone is the SERVER's admission verdict. There
                     // is no client-side band left to derive it from, and that
                     // is the point: the strip cannot show amber for a machine
@@ -1427,7 +1550,7 @@ export function FleetResourceStrip({
                           {i === 0 ? (
                             <span className="inline-flex items-center gap-1.5">
                               <span className="font-mono text-xs">
-                                {group.displayName}
+                                {shownName}
                               </span>
                               {/* NOT hardcoded `destructive` any more. Coord
                                   now serves a fifth `DeviceState`, `stale` —
@@ -1448,11 +1571,18 @@ export function FleetResourceStrip({
                               )}
                             </span>
                           ) : (
-                            <span className="sr-only">{group.displayName}</span>
+                            <span className="sr-only">{shownName}</span>
                           )}
                         </td>
                         <td className="py-1.5 pr-3">
-                          <LaneCell row={row} />
+                          <LaneCell
+                            row={row}
+                            instanceLabel={
+                              position === undefined
+                                ? undefined
+                                : `instance ${position}`
+                            }
+                          />
                         </td>
                         <td className="py-1.5 pr-3">
                           <PressureCell row={row} />
@@ -1495,7 +1625,12 @@ export function FleetResourceStrip({
                                   s.disk_free_bytes,
                                   s.disk_total_bytes
                                 )}
-                                {s.disk_mount && (
+                                {/* The mount is a path someone chose
+                                    (`/Volumes/<label>`, `/home/<user>`), so it
+                                    can name a person or a client: an outsider
+                                    reads the figure without it (D3.3; style
+                                    guide §3.11, "Positions, not names"). */}
+                                {s.disk_mount && !presenting && (
                                   <span className="text-muted-foreground">
                                     {" "}
                                     {s.disk_mount}
@@ -1586,6 +1721,9 @@ export function FleetResourceStrip({
                             </span>
                           )}
                         </td>
+                        <td className="py-1.5 pr-3 tabular-nums text-[11px]">
+                          <TemperatureCell row={row} />
+                        </td>
                         <td className="py-1.5 pr-3">
                           <MemoryCell row={row} />
                         </td>
@@ -1594,8 +1732,8 @@ export function FleetResourceStrip({
                         </td>
                       </tr>
                     );
-                  })
-                )}
+                  });
+                })}
               </tbody>
             </table>
           </div>

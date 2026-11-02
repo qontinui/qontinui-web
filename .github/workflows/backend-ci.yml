@@ -31,6 +31,17 @@ on:
       # PR that drops a prefix must run the guard that catches it. The module
       # asserts this entry appears in BOTH filters.
       - 'frontend/src/services/http-client.ts'
+      # The image-slot specs tests/test_image_slot_specs.py validates (plan
+      # 2026-10-13-image-generation-and-visual-judgment, Phase 14): the
+      # frontend's TypeScript binding is declarations only, so this module is
+      # the ONE gate that refuses a malformed spec, and a spec-only PR must run
+      # it. The module asserts this entry appears in BOTH filters.
+      - 'frontend/image-slots/**'
+      # PLATFORM_ADMIN_REFUSAL, which tests/test_fleet_apps_platform_admin_gate.py
+      # reads (one line, one exact form): a frontend-only PR that reshapes it
+      # must run the check here, not fail a later backend PR. The module
+      # asserts this entry appears in BOTH filters.
+      - 'frontend/src/lib/api/fleet.ts'
       # scripts/ci/** — backend/tests/test_alembic_head_gate.py exercises
       # scripts/ci/{count_alembic_heads,notify_forked_open_prs,_alembic_graph}.py
       # directly, including a guard pinning the ABSENCE of a deleted retry
@@ -51,6 +62,13 @@ on:
       # edits ONLY web-guards.yml -- e.g. drops a gate step -- would not run
       # the roster tests that exist to catch exactly that.
       - '.github/workflows/web-guards.yml'
+      # tests/test_workflow_lint_drift.py executes workflow-lint.yml's zizmor
+      # `run:` body (the DRIFT base, plan
+      # 2026-10-24-workflow-lint-drift-judged-against-stale-pr-base). The
+      # regression it guards is an edit to that file ALONE, so without this
+      # entry the guard never runs on it. The module asserts this entry
+      # appears in BOTH filters.
+      - '.github/workflows/workflow-lint.yml'
       # The OTHER workflows `backend/tests/test_ci_timeout_marker.py` reads.
       # That module asserts, against the workflow FILES, that every marker
       # carries a job budget matching its job and an EXTERNAL_CANCEL_NOTE
@@ -98,9 +116,15 @@ on:
       - 'frontend/src/services/admin-dev-service.ts'
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
       - 'frontend/src/services/http-client.ts'
+      - 'frontend/image-slots/**'
+      # Read by tests/test_fleet_apps_platform_admin_gate.py; see the
+      # pull_request filter above.
+      - 'frontend/src/lib/api/fleet.ts'
       - 'scripts/ci/**'
       # See the pull_request filter above (gate lane rosters).
       - '.github/workflows/web-guards.yml'
+      # See the pull_request filter above (workflow-lint DRIFT base).
+      - '.github/workflows/workflow-lint.yml'
       - '.github/workflows/backend-coverage-producer.yml'
       - '.github/workflows/cross-browser-survey.yml'
       # e2e-playwright-stack.yml carries the marker; e2e-tests.yml calls it,
@@ -198,7 +222,11 @@ jobs:
     # p50 1.35 / p90 1.47 / max 1.52 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 5
     name: Lint & Format Check
-    # ubuntu-latest, NOT [self-hosted, qontinui].
+    # ubuntu-latest, NOT [self-hosted, public-pool]. (The `qontinui` label is
+    # not an option at all: this repo is PUBLIC, and qontinui-claude-config's
+    # scripts/lint-public-repo-runner-exposure.py refuses `qontinui` on a
+    # public repo -- a public job's only self-hosted target is `public-pool`,
+    # run as a separate unix user from private-repo jobs.)
     #
     # This job was pinned to the self-hosted pool because those runners had
     # Python 3.12 pre-installed plus a persistent pip cache, which avoided the
@@ -221,9 +249,10 @@ jobs:
     # and was green on the run where this job broke. So this restores a
     # configuration already proven in this file rather than inventing one.
     #
-    # Re-pinning to [self-hosted, qontinui] is fine once the pool image ships a
-    # 3.12 that setup-python can resolve (or once the runner tool cache is
-    # seeded with one). Re-verify against a real run before doing so; the
+    # Re-pinning to [self-hosted, public-pool] (never `qontinui`, which the
+    # public-repo runner-exposure lint refuses here) is fine once the pool
+    # image ships a 3.12 that setup-python can resolve (or once the runner
+    # tool cache is seeded with one). Re-verify against a real run before doing so; the
     # comment that used to live here asserted "pre-installed" as a standing
     # fact, and that assertion is exactly what went stale.
     runs-on: ubuntu-latest
@@ -246,7 +275,9 @@ jobs:
       # workspace is fresh per run and the clones cannot be stale. It is kept
       # deliberately: it costs nothing on a clean runner and is what makes the
       # step correct again the moment this job is re-pinned to the self-hosted
-      # pool, which DOES reuse $GITHUB_WORKSPACE/.. between runs.
+      # pool ([self-hosted, public-pool] -- `qontinui` is refused on this public
+      # repo by the public-repo runner-exposure lint), which DOES reuse
+      # $GITHUB_WORKSPACE/.. between runs.
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
         run: |
           cd "$GITHUB_WORKSPACE/.."
@@ -627,7 +658,6 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS auth;" \
             -c "CREATE SCHEMA IF NOT EXISTS cloud;" \
             -c "CREATE SCHEMA IF NOT EXISTS coord;" \
-            -c "CREATE SCHEMA IF NOT EXISTS strategy;" \
             -c "CREATE SCHEMA IF NOT EXISTS web;" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 

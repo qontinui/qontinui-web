@@ -19,10 +19,11 @@ import {
   ChevronRight,
   RotateCcw,
 } from "lucide-react";
-import {
-  useNextStepSettings,
-  type AutonomyLevel,
-} from "./_hooks/useNextStepSettings";
+import { useNextStepSettings } from "./_hooks/useNextStepSettings";
+import type {
+  AutonomyLevel,
+  NextStepDomain,
+} from "@/lib/api/operations/coordSettings";
 import { PrioritySetsSection } from "./_components/PrioritySetsSection";
 import { FixerSpawnToggle } from "./_components/FixerSpawnToggle";
 
@@ -33,6 +34,38 @@ const AUTONOMY_OPTIONS: { label: string; value: AutonomyLevel }[] = [
   { label: "Guidance", value: "guidance_only" },
   { label: "Auto", value: "auto_decide" },
 ];
+
+/**
+ * Is this domain's OWN autodispatch flag off? Each master domain has its own
+ * flag (served per domain as `master_flag` / `master_flag_enabled`); the
+ * top-level `master_enabled` is the next_step flag SPECIFICALLY (coord
+ * `next_step_settings::SettingsResponse::master_enabled`). So when coord
+ * serves no per-domain value, `master_enabled` answers only for next_step (or
+ * a domain whose `master_flag` names next_step's flag); for any other domain
+ * the answer is `"unknown"`, never borrowed.
+ */
+function domainMasterOff(
+  domain: Pick<
+    NextStepDomain,
+    | "requires_master"
+    | "master_flag_enabled"
+    | "master_flag"
+    | "decision_domain"
+  >,
+  nextStepFlagEnabled: boolean | null,
+  nextStepFlagName: string | null
+): boolean | "unknown" {
+  if (!domain.requires_master) return false;
+  if (typeof domain.master_flag_enabled === "boolean") {
+    return !domain.master_flag_enabled;
+  }
+  const isNextStepFlag =
+    domain.decision_domain === "next_step" ||
+    (nextStepFlagName !== null &&
+      (domain.master_flag ?? null) === nextStepFlagName);
+  if (!isNextStepFlag || nextStepFlagEnabled === null) return "unknown";
+  return !nextStepFlagEnabled;
+}
 
 function resolvedFromLabel(resolvedFrom: "system" | "tenant" | "repo"): string {
   return resolvedFrom === "system" ? "Default" : "Custom";
@@ -116,6 +149,8 @@ export default function CoordinationSettingsPage() {
   const primaryDomain = settings?.domains.find(
     (d) => d.decision_domain === "next_step"
   );
+  // The next_step flag's NAME, as coord serves it (absent on an older coord).
+  const nextStepFlagName = primaryDomain?.master_flag ?? null;
   const primaryOn = draft["next_step"] === "auto_decide";
   const prFixDomain = settings?.domains.find(
     (d) => d.decision_domain === "pr_fix"
@@ -135,28 +170,59 @@ export default function CoordinationSettingsPage() {
           </p>
         </div>
 
-        {/* Platform master-flag banner */}
-        {masterEnabled ? (
-          <div className="flex items-start gap-3 rounded-lg border border-border bg-background px-4 py-3">
-            <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
-            <p className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">
-                Platform autonomous dispatch: ENABLED
-              </span>{" "}
-              — operator-controlled, read-only. Your settings below take effect
-              when this flag is on.
-            </p>
-          </div>
-        ) : (
-          <div className="flex items-start gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/5 px-4 py-3">
+        {/* next_step autodispatch-flag banner. `master_enabled` is the
+            next_step flag specifically — not a platform-wide switch; every
+            other master domain has its own flag, shown on its row. */}
+        {masterEnabled === null ? (
+          <div
+            className="flex items-start gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/5 px-4 py-3"
+            data-testid="next-step-flag-banner"
+          >
             <AlertTriangle className="w-4 h-4 mt-0.5 text-yellow-500 shrink-0" />
             <p className="text-xs">
               <span className="font-medium text-yellow-400">
-                Platform autonomous dispatch: DISABLED by the operator.
+                Next-step autodispatch flag: UNKNOWN.
+              </span>{" "}
+              <span className="text-muted-foreground">
+                Coord&apos;s settings could not be read, so whether autonomous
+                next-step can run is unknown — not off.
+              </span>
+            </p>
+          </div>
+        ) : masterEnabled ? (
+          <div
+            className="flex items-start gap-3 rounded-lg border border-border bg-background px-4 py-3"
+            data-testid="next-step-flag-banner"
+          >
+            <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">
+                Next-step autodispatch flag
+                {nextStepFlagName ? ` (${nextStepFlagName})` : ""}: ON
+              </span>{" "}
+              — operator-controlled, read-only. The next-step setting below can
+              take effect while it is on. Other autodispatch domains are gated
+              by their own flags; a domain whose flag is off says so under
+              Advanced.
+            </p>
+          </div>
+        ) : (
+          <div
+            className="flex items-start gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/5 px-4 py-3"
+            data-testid="next-step-flag-banner"
+          >
+            <AlertTriangle className="w-4 h-4 mt-0.5 text-yellow-500 shrink-0" />
+            <p className="text-xs">
+              <span className="font-medium text-yellow-400">
+                Next-step autodispatch flag
+                {nextStepFlagName ? ` (${nextStepFlagName})` : ""}: OFF by the
+                operator.
               </span>{" "}
               <span className="text-muted-foreground">
                 You can save your preferences, but autonomous next-step will not
-                run until the operator re-enables it platform-wide.
+                run until the operator turns this flag on. Other autodispatch
+                domains are gated by their own flags; a domain whose flag is off
+                says so under Advanced.
               </span>
             </p>
           </div>
@@ -225,11 +291,21 @@ export default function CoordinationSettingsPage() {
             </p>
 
             {primaryDomain &&
-              primaryDomain.requires_master &&
-              !masterEnabled && (
-                <p className="text-xs text-yellow-500/80 pl-0.5">
-                  Note: effective dispatch is also gated on the platform master
-                  flag (currently off).
+              domainMasterOff(
+                primaryDomain,
+                masterEnabled,
+                nextStepFlagName
+              ) === true && (
+                <p
+                  className="text-xs text-yellow-500/80 pl-0.5"
+                  data-testid="next-step-master-flag-note"
+                >
+                  Note: effective dispatch is also gated on this domain&apos;s
+                  own autodispatch flag (
+                  <code className="font-mono">
+                    {primaryDomain.master_flag ?? "its master_flag"}
+                  </code>
+                  , currently off) — there is no platform-wide switch.
                 </p>
               )}
           </div>
@@ -262,7 +338,8 @@ export default function CoordinationSettingsPage() {
                 <span className="font-medium text-foreground">Guidance</span> =
                 agent decides within a frame ·{" "}
                 <span className="font-medium text-foreground">Auto</span> =
-                coordination decides (and, for next-step, may dispatch)
+                coordination decides (and, for next-step and the fixer domains,
+                may dispatch)
               </p>
 
               {/* Domain rows */}
@@ -271,8 +348,11 @@ export default function CoordinationSettingsPage() {
                   const currentLevel =
                     draft[domain.decision_domain] ?? domain.autonomy_level;
                   const isCustom = domain.resolved_from !== "system";
-                  const effectiveBlocked =
-                    domain.requires_master && !masterEnabled;
+                  const masterOff = domainMasterOff(
+                    domain,
+                    masterEnabled,
+                    nextStepFlagName
+                  );
 
                   return (
                     <div
@@ -312,9 +392,22 @@ export default function CoordinationSettingsPage() {
                         )}
                         <p className="text-xs text-muted-foreground">
                           Effective:{" "}
-                          {effectiveBlocked ? (
-                            <span className="text-yellow-500/80">
-                              No (master off)
+                          {masterOff === "unknown" ? (
+                            <span
+                              className="text-yellow-500/80"
+                              data-testid={`domain-master-unknown-${domain.decision_domain}`}
+                            >
+                              Unknown (coord did not report this domain&apos;s
+                              flag)
+                            </span>
+                          ) : masterOff ? (
+                            <span
+                              className="text-yellow-500/80"
+                              data-testid={`domain-master-off-${domain.decision_domain}`}
+                            >
+                              No (
+                              {domain.master_flag ?? "its autodispatch flag"}{" "}
+                              off)
                             </span>
                           ) : domain.effective ? (
                             <span className="text-green-500">Yes ✓</span>

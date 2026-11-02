@@ -74,6 +74,27 @@ export const colors = {
 } as const;
 
 /**
+ * Categorical chart series colours — IDENTITY, not severity — in fixed slot
+ * order. A chart assigns slots to its series in this order and never cycles
+ * them; a series past the last slot folds into a neutral "other"
+ * (`colors.text.tertiary`).
+ *
+ * Why these are not `brand.*`: the brand hues fail as a categorical set on the
+ * console's dark surfaces — slate blue and muted violet are ΔE 11.9 apart for
+ * full-colour vision and 5.9 under deuteranopia, and soft teal sits above the
+ * lightness band. These three pass every check of the dataviz palette
+ * validator (lightness band, chroma floor, adjacent-pair CVD ΔE ≥ 9.4,
+ * normal-vision ΔE ≥ 26.5, ≥ 3:1 contrast) against both `surface.canvas` and
+ * `surface.raised`. First used by `/admin/coord/overlord/flow`'s verdict
+ * histogram.
+ */
+export const chartCategorical = [
+  "#3987e5", // slot 1 — blue
+  "#d95926", // slot 2 — orange
+  "#199e70", // slot 3 — aqua
+] as const;
+
+/**
  * Semantic color tokens
  * Useful for mapping colors to semantic meanings
  */

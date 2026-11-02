@@ -68,6 +68,12 @@ export interface ChangeLogEntry {
   version_after: number | null;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
+  /** The device whose credential made the write, when a device did. Plan
+   *  `2026-10-07-agents-publish-documents-to-the-project-overview` D2. */
+  via_device?: string | null;
+  /** The session the writer REPORTED (`X-Overview-Session`) — a label,
+   *  never proof. */
+  via_session?: string | null;
 }
 
 export interface ChangeLogPage {
@@ -190,9 +196,13 @@ interface SendOptions {
 }
 
 async function send(
-  method: "GET" | "POST" | "PATCH" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   url: string,
-  options: SendOptions & { form?: FormData; timeoutMs?: number } = {}
+  options: SendOptions & {
+    form?: FormData;
+    timeoutMs?: number;
+    maxRetries?: number;
+  } = {}
 ): Promise<Response> {
   const headers: Record<string, string> = {};
   if (options.ifMatch !== undefined)
@@ -210,6 +220,9 @@ async function send(
     // answers a repeat with the record the first attempt made.
     idempotent: method === "POST" && Boolean(options.idempotencyKey),
     ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+    ...(options.maxRetries !== undefined
+      ? { maxRetries: options.maxRetries }
+      : {}),
   });
 }
 
@@ -291,6 +304,28 @@ export async function updateResource<T>(
 // (`lib/api/route-walker.test.ts`) can check it against the OpenAPI snapshot;
 // a generic `path` parameter would leave it unresolved.
 
+/**
+ * Replace the project's settings. This route REPLACES every field and defaults
+ * what is omitted, so `body` must carry all of them; build it with
+ * `saveBaseCurrency`, never by hand. It answers the bare settings, not an
+ * `{item}` envelope, and a stale `expected_version` is a 409 whose body has no
+ * server copy: a {@link ResourceError} with status 409, so re-read to continue.
+ *
+ * Never re-issued: the client would otherwise retry a PUT on a 5xx, and if the
+ * first attempt had landed the retry would 409 against its own write.
+ */
+export async function writeSettings<T>(
+  body: Record<string, unknown>
+): Promise<T> {
+  const response = await send("PUT", `${OVERVIEW_API}/settings`, {
+    body,
+    source: "ui",
+    maxRetries: 0,
+  });
+  if (!response.ok) throw await refusal<T>(response);
+  return (await response.json()) as T;
+}
+
 /** Delete an uploaded file; `version` is the one on screen (always 1). */
 export async function deleteFile<T>(
   id: string,
@@ -313,6 +348,46 @@ export async function deleteMilestone<T>(
   const response = await send(
     "DELETE",
     `${OVERVIEW_API}/milestones/${encodeURIComponent(id)}`,
+    { ifMatch: version, source: "ui" }
+  );
+  if (!response.ok) throw await refusal<T>(response);
+}
+
+/** Delete a recorded cost, built on `version` (the one on screen). */
+export async function deleteCostEntry<T>(
+  id: string,
+  version: number
+): Promise<void> {
+  const response = await send(
+    "DELETE",
+    `${OVERVIEW_API}/cost-entries/${encodeURIComponent(id)}`,
+    { ifMatch: version, source: "ui" }
+  );
+  if (!response.ok) throw await refusal<T>(response);
+}
+
+/** Delete a recurring cost that has no recorded periods (the server refuses
+ *  one that has: it is given an end date instead). */
+export async function deleteRecurringCost<T>(
+  id: string,
+  version: number
+): Promise<void> {
+  const response = await send(
+    "DELETE",
+    `${OVERVIEW_API}/recurring-costs/${encodeURIComponent(id)}`,
+    { ifMatch: version, source: "ui" }
+  );
+  if (!response.ok) throw await refusal<T>(response);
+}
+
+/** Delete a cost category no cost uses. */
+export async function deleteCostCategory<T>(
+  id: string,
+  version: number
+): Promise<void> {
+  const response = await send(
+    "DELETE",
+    `${OVERVIEW_API}/cost-categories/${encodeURIComponent(id)}`,
     { ifMatch: version, source: "ui" }
   );
   if (!response.ok) throw await refusal<T>(response);
@@ -416,17 +491,20 @@ export async function createResource<T>(
 }
 
 /** A record's write history, newest first — or, with `recordId` null, the
- *  whole resource's (every milestone, say). */
+ *  whole resource's (every milestone, say). `source` keeps only the writes
+ *  made one way (`api`: agents and scripts). */
 export async function fetchChangeLog(
   resource: string,
   recordId: string | null,
-  limit = 20
+  options: { limit?: number; source?: ChangeLogEntry["source"] } = {}
 ): Promise<ChangeLogPage> {
+  const { limit = 20, source } = options;
   const response = await send(
     "GET",
     `${OVERVIEW_API}/change-log${query({
       resource,
       ...(recordId === null ? {} : { record_id: recordId }),
+      ...(source ? { source } : {}),
       limit: String(limit),
     })}`
   );

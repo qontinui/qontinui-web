@@ -96,6 +96,37 @@ const eslintConfig = [
     },
   },
   {
+    // @qontinui/ui-bridge ships its root entry and its `/react` entry as
+    // SEPARATE bundles (tsup `splitting: false`), and each carries its own copy
+    // of `UIBridgeContext`. The app's provider is mounted from `/react`
+    // (src/lib/ui-bridge/provider.tsx), so a context hook imported from the
+    // package ROOT reads a different, never-provided context: it sees no
+    // bridge and its registration is silently inert. Five components did
+    // exactly that until this rule (finding fa4018f4). Import the context
+    // hooks from "@qontinui/ui-bridge/react".
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@qontinui/ui-bridge",
+              importNames: [
+                "useUIComponent",
+                "useUIElement",
+                "useUIState",
+                "useUIBridge",
+                "useUIBridgeOptional",
+              ],
+              message:
+                'Import this hook from "@qontinui/ui-bridge/react": the package root bundles its own UIBridgeContext, so the provider mounted from /react never reaches it and its registration is inert.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // CommonJS scripts (scripts/prod-probes/*.cjs): `require()` IS the import
     // syntax there, so the TS "no require imports" rule does not apply.
     files: ["**/*.cjs"],

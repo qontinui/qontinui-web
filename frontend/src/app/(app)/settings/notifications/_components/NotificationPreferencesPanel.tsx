@@ -57,14 +57,6 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
     label: "Replies",
     description: "Replies to your comments",
   },
-  team_invites: {
-    label: "Team invites",
-    description: "Invitations to join a team or organization",
-  },
-  project_updates: {
-    label: "Project updates",
-    description: "Status changes and milestones on your projects",
-  },
 };
 
 // ============================================================================

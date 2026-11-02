@@ -55,6 +55,7 @@ from app.api.v1.endpoints import (
     prompt_injections,
 )
 from app.core.config import settings
+from app.core.refusal import RefusalHTTPException
 from app.services import coord_proxy as services_coord_proxy
 from tests._coord_proxy_sleep import patch_coord_proxy_sleep
 
@@ -71,6 +72,10 @@ FULL_HEADERS = {
 
 NOT_REACHABLE = "coord is not reachable"
 TIMED_OUT = "timeout waiting for coord"
+#: What operations' own proxy helpers raise for a transport failure: a typed
+#: refusal (plan 2026-09-20-..., Phase D2), still an ``HTTPException`` with
+#: the same status and detail. The private copies elsewhere stay plain.
+OPS_TRANSPORT = RefusalHTTPException
 
 _REQ = httpx.Request("GET", "http://coord.test/coord/contract-probe")
 
@@ -202,13 +207,15 @@ def _get_family(cls: type[HTTPException]) -> dict[str, Cell]:
 
 
 _WRITE_FAMILY: dict[str, Cell] = {
-    **_transport(),
+    **_transport(OPS_TRANSPORT),
     # The one reader that maps a non-Connect transport error.
     "read_error": Cell(
         Raises(
             504,
-            "coord's answer was lost in transit (ReadError); "
-            "the change may have been applied",
+            "coord's answer was lost in transit (ReadError); the "
+            "outcome is unknown and the change may have been applied, so "
+            "re-read the current state before retrying",
+            OPS_TRANSPORT,
         )
     ),
     "coord_404_empty": Cell(Raises(404, "")),
@@ -221,14 +228,16 @@ _WRITE_FAMILY: dict[str, Cell] = {
         Raises(
             504,
             "coord answered 200 with a body that is not JSON; "
-            "the change may have been applied",
+            "the change may have been applied, so re-read the current "
+            "state before retrying",
+            OPS_TRANSPORT,
         )
     ),
 }
 
 # ``_proxy_coord_verbatim`` and the open-coded clone-credential route.
 _VERBATIM_FAMILY: dict[str, Cell] = {
-    **_transport(),
+    **_transport(OPS_TRANSPORT),
     "read_error": _READ_ERROR_ESCAPES,
     "coord_404_empty": Cell(Responds(404, {"detail": ""})),
     "coord_422_json": Cell(Responds(422, _JSON_ERROR_DICT)),
@@ -243,13 +252,13 @@ _VERBATIM_FAMILY: dict[str, Cell] = {
 }
 
 _DELETE_FAMILY: dict[str, Cell] = {
-    **_get_family(HTTPException),
+    **_get_family(OPS_TRANSPORT),
     "ok_200_empty": Cell(Returns({"status": "ok"})),
     "no_content_204": Cell(Returns({"status": "ok"})),
 }
 
 _PASSTHROUGH_FAMILY: dict[str, Cell] = {
-    **_transport(),
+    **_transport(OPS_TRANSPORT),
     "read_error": _READ_ERROR_ESCAPES,
     # Empty error body → the synthesized message, not an empty string.
     "coord_404_empty": Cell(Responds(404, {"error": "coord returned HTTP 404"})),
@@ -285,9 +294,15 @@ _POST_TO_COORD_503 = Cell(
 
 EXPECTED: dict[str, dict[str, Cell]] = {
     "ops_get": _get_family(operations.CoordTransportUnavailable),
-    "ops_post": _get_family(HTTPException),
+    # Transport arms stay CoordTransportUnavailable; only a JSON OBJECT error
+    # body becomes a dict detail — empty/HTML fall back to ``resp.text``.
+    "ops_get_structured_errors": {
+        **_get_family(operations.CoordTransportUnavailable),
+        "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
+    },
+    "ops_post": _get_family(OPS_TRANSPORT),
     "ops_post_structured_errors": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         # Only a JSON OBJECT becomes a dict detail; empty/HTML stay text.
         "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
     },
@@ -295,12 +310,12 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     # coord's own status passed through (the 202 row); ≥400 and non-JSON 2xx
     # behave exactly as plain ops_post.
     "ops_post_return_status": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         "ok_200_json": Cell(Returns((_OK_DICT, 200))),
         OK_202_JSON: Cell(Returns((_OK_DICT, 202))),
     },
     "ops_post_non_json_success_as_empty": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         "ok_200_empty": Cell(Returns({})),
         "no_content_204": Cell(Returns({})),
         "ok_200_text": Cell(Returns({})),
@@ -311,7 +326,7 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     # re-raised exception is its own ``__cause__``. Class, status and detail
     # are unchanged, which is all these cells assert.
     "ops_post_readable": {
-        **_get_family(HTTPException),
+        **_get_family(OPS_TRANSPORT),
         "coord_422_json": Cell(
             Raises(
                 422,
@@ -328,22 +343,60 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     "ops_delete": _DELETE_FAMILY,
     # body= switches the call to client.request("DELETE", ...); same answers.
     "ops_delete_with_body": _DELETE_FAMILY,
-    "ops_verbatim": _VERBATIM_FAMILY,
+    # The helper maps a non-Connect transport error; the open-coded
+    # clone-credential route still lets it escape (P3 latent defect (a),
+    # Phase 5 of the plan in this file's header). Driven as a POST, so the
+    # write arm: the outcome is unknown, re-read first.
+    "ops_verbatim": {
+        **_VERBATIM_FAMILY,
+        "read_error": Cell(
+            Raises(
+                504,
+                "coord's answer was lost in transit (ReadError); the "
+                "outcome is unknown and the change may have been applied, "
+                "so re-read the current state before retrying",
+                OPS_TRANSPORT,
+            )
+        ),
+    },
     "ops_route_clone_credential": _VERBATIM_FAMILY,
     "ops_passthrough": _PASSTHROUGH_FAMILY,
     # The POST arm (``client.post(json=body or {})``); same answer handling.
     "ops_passthrough_post": _PASSTHROUGH_FAMILY,
+    # Every transport and no-usable-answer arm is a typed refusal. A
+    # ConnectTimeout is raised before anything reached coord, so it is the 502
+    # "not reachable" arm here, not the 504 the shared transport family pins.
     "agent_registry_coord_request": {
-        **_transport(),
-        # httpx.RequestError arm: ReadError → 502, not an escape.
-        "read_error": Cell(Raises(502, NOT_REACHABLE)),
+        "connect_error": Cell(Raises(502, NOT_REACHABLE, RefusalHTTPException)),
+        "connect_timeout": Cell(Raises(502, NOT_REACHABLE, RefusalHTTPException)),
+        "read_timeout": Cell(Raises(504, TIMED_OUT, RefusalHTTPException)),
+        # httpx.RequestError arm: a ReadError may follow a sent request, so it
+        # is a 504 like ``_proxy_coord_write``'s; a 502 says nothing was sent.
+        "read_error": Cell(
+            Raises(
+                504,
+                "coord's answer was lost in transit (ReadError)",
+                RefusalHTTPException,
+            )
+        ),
         "coord_404_empty": Cell(Raises(404, "")),
         "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
         "coord_500_html": Cell(Raises(500, _HTML_BODY)),
         "ok_200_json": Cell(Returns(_OK_DICT)),
-        "ok_200_empty": _NOT_JSON_ESCAPES,
-        "no_content_204": _NOT_JSON_ESCAPES,
-        "ok_200_text": _NOT_JSON_ESCAPES,
+        # A 2xx with no usable body is a 504 as well: coord may have committed.
+        "ok_200_empty": Cell(
+            Raises(504, "coord answered 200 with no body", RefusalHTTPException)
+        ),
+        "no_content_204": Cell(
+            Raises(504, "coord answered 204 with no body", RefusalHTTPException)
+        ),
+        "ok_200_text": Cell(
+            Raises(
+                504,
+                "coord answered 200 with a body that is not JSON",
+                RefusalHTTPException,
+            )
+        ),
     },
     # The private copies raise PLAIN HTTPException on transport failure —
     # same status and detail as operations' CoordTransportUnavailable.
@@ -421,6 +474,16 @@ DELETE_BODY = {"role": "admin"}
 HELPERS: dict[str, Helper] = {
     "ops_get": Helper(
         _OPS_TARGET, "get", _fwd(operations._proxy_coord_get, PATH, tenant_id=TENANT)
+    ),
+    "ops_get_structured_errors": Helper(
+        _OPS_TARGET,
+        "get",
+        _fwd(
+            operations._proxy_coord_get,
+            PATH,
+            tenant_id=TENANT,
+            structured_errors=True,
+        ),
     ),
     "ops_post": Helper(
         _OPS_TARGET,
@@ -968,8 +1031,17 @@ _WIRE_ROWS: list[
         {"params": PARAMS, "json": BODY},
         ("params", "json"),
     ),
-    # The GET arm sends neither params nor json.
-    ("passthrough-get", "ops_passthrough", {}, (_url(),), {}, ()),
+    # The GET arm sends no json, and ``params`` verbatim: ``None`` when the
+    # caller passed no query (httpx puts nothing on the wire for it).
+    ("passthrough-get", "ops_passthrough", {}, (_url(),), {"params": None}, ()),
+    (
+        "passthrough-get_params",
+        "ops_passthrough",
+        {"params": PARAMS},
+        (_url(),),
+        {"params": PARAMS},
+        ("params",),
+    ),
     (
         "passthrough_post-body",
         "ops_passthrough_post",
@@ -1233,8 +1305,9 @@ async def test_client_timeout(
 
 def test_timeout_rows_cover_every_helper() -> None:
     covered = {row[1] for row in _TIMEOUT_ROWS}
-    # The three flag variants of post share ops_post's constructor call.
+    # The flag variants share their base helper's constructor call.
     assert covered | {
+        "ops_get_structured_errors",
         "ops_post_structured_errors",
         "ops_post_return_status",
         "ops_post_non_json_success_as_empty",

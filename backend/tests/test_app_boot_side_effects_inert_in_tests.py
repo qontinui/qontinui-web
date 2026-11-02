@@ -32,10 +32,9 @@ Two deliberate constraints on HOW this file tests that:
   Importing `app.main` is safe and not a boot: module import builds the FastAPI
   object and registers routes; only the lifespan runs startup.
   (`tests/test_security.py` already imports it at module scope.)
-* **`scheduler.start()` must stay UNgated.** Disabling the scheduler under tests
-  also stops `memory_reindex` / `memory_consolidate` / `memory_bridge_sync`,
-  which `test_memory_api_db.py` depends on — it reds a varying 1-5 tests there.
-  The one dangerous task is switched off per-task instead; that half is pinned by
+* **`scheduler.start()` stays UNgated** so the boot path under test is the
+  production one. `conftest.py::booted_app` STOPS the singleton straight after
+  boot instead; that half is pinned by
   `test_scheduler_dispatch_sweeper_off_in_tests.py` (not duplicated here).
 """
 
@@ -217,21 +216,19 @@ def test_boot_side_effect_is_gated(
 def test_scheduler_start_is_not_gated(
     startup_guards: dict[str, list[list[str]]],
 ) -> None:
-    """The global scheduler must still start under tests — explicit non-goal.
+    """The global scheduler must still be STARTED by boot under tests.
 
-    `test_memory_api_db.py` depends on `memory_reindex` / `memory_consolidate` /
-    `memory_bridge_sync` having run; with the scheduler off it fails a varying
-    1-5 tests per run. Only `scheduled_dispatch` is disabled, per-task, in
-    conftest.
+    Keeping `start()` ungated keeps the booted path the production one; the
+    singleton is then stopped by `conftest.py::booted_app`, which is pinned by
+    `test_scheduler_dispatch_sweeper_off_in_tests.py`.
     """
     occurrences = startup_guards.get(UNGATED_CALL)
     assert occurrences, f"startup_event no longer calls {UNGATED_CALL}()."
     for guards in occurrences:
         assert not any(_is_skip_guard(g) for g in guards), (
-            "scheduler.start() was gated out of test runs. That also stops the "
-            "memory jobs test_memory_api_db.py relies on. Disable the one "
-            "dangerous task via QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED "
-            "instead (see test_scheduler_dispatch_sweeper_off_in_tests.py)."
+            "scheduler.start() was gated out of test runs. Keep boot on the "
+            "production path; conftest.py::booted_app stops the singleton "
+            "after boot (see test_scheduler_dispatch_sweeper_off_in_tests.py)."
         )
 
 

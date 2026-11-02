@@ -115,6 +115,9 @@ SAMPLE_ROW = {
     "age_secs": 12.5,
     "cpu_cores": 16,
     "load_1m": None,
+    # Plan 2026-10-13-cpu-temperature-in-fleet-resource-telemetry: NULL means
+    # "not measured" and must survive the hop as null, never 0.
+    "cpu_temp_c": None,
     "mem_total_bytes": 34_359_738_368,
     "mem_available_bytes": 3_800_000_000,
     "commit_total_bytes": 68_719_476_736,
@@ -292,6 +295,33 @@ class TestResourceSamplesProxy:
             "source": "default",
             "verdict": "reject",
         }
+
+    def test_forwards_cpu_temp_c_untouched(self, auth_client: TestClient):
+        """``cpu_temp_c`` crosses the proxy unchanged: null stays null, 71.5 stays 71.5.
+
+        Plan ``2026-10-13-cpu-temperature-in-fleet-resource-telemetry``. The
+        proxy is a pass-through, so a null (unmeasured) must never be
+        defaulted to 0 and a reading must not be rounded or re-scaled.
+        """
+        measured_row = {
+            **SAMPLE_ROW,
+            "device_id": str(uuid4()),
+            "cpu_temp_c": 71.5,
+        }
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(
+                    200, {"latest": [SAMPLE_ROW, measured_row], "count": 2}
+                )
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        rows = resp.json()["latest"]
+        assert "cpu_temp_c" in rows[0] and rows[0]["cpu_temp_c"] is None
+        assert rows[1]["cpu_temp_c"] == 71.5
 
     def test_absent_floor_bands_are_not_defaulted_in(self, auth_client: TestClient):
         """A coord without the floor fields must arrive WITHOUT them.

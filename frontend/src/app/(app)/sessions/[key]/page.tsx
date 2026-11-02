@@ -59,7 +59,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConsolidatedSessionDetail } from "@/components/sessions/ConsolidatedSessionDetail";
-import { getSession } from "@/components/sessions/api";
+import { getSession } from "@/lib/api/operations/sessions";
 import {
   classifyAgentError,
   classifyLifecycleError,

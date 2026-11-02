@@ -1,0 +1,57 @@
+{
+  "label": "baseline (before the scene embeds)",
+  "measured_at": "2026-10-17T07:38:45.647Z",
+  "commit": "3f872b95e484987f00ed75caf42b2e0a5c40e852",
+  "base_url": "http://127.0.0.1:3101",
+  "build": "production (npm run build && next start)",
+  "lighthouse": "13.5.0",
+  "chrome_user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "runs_per_form_factor": 5,
+  "method": "scripts/lighthouse-marketing.mjs: median of N fresh-Chrome runs per path and form factor; mobile = Lighthouse default (simulated throttling), desktop = --preset=desktop",
+  "results": {
+    "/": {
+      "mobile": {
+        "performance_median": 70,
+        "performance_runs": [
+          57,
+          76,
+          70,
+          70,
+          69
+        ],
+        "accessibility": 93,
+        "best_practices": 96,
+        "seo": 91,
+        "fcp_ms": 1655,
+        "lcp_ms": 5107,
+        "tbt_ms": 459,
+        "cls": 0.0036,
+        "speed_index_ms": 2142,
+        "tti_ms": 5459,
+        "total_byte_weight": 669512,
+        "lcp_element": "div.min-h-screen > section.relative > div.container > p.text-xl (An open-source desktop app that orchestrates AI coding sessions with verificati…)"
+      },
+      "desktop": {
+        "performance_median": 98,
+        "performance_runs": [
+          98,
+          98,
+          98,
+          99,
+          97
+        ],
+        "accessibility": 93,
+        "best_practices": 96,
+        "seo": 91,
+        "fcp_ms": 434,
+        "lcp_ms": 1021,
+        "tbt_ms": 58,
+        "cls": 0.0011,
+        "speed_index_ms": 982,
+        "tti_ms": 1021,
+        "total_byte_weight": 665912,
+        "lcp_element": "div.min-h-screen > section.relative > div.container > h1.text-4xl (AI Development That Verifies Its Own Work)"
+      }
+    }
+  }
+}

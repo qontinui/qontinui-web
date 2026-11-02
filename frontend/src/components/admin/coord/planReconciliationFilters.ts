@@ -15,7 +15,7 @@ import type { ReconciliationRowData } from "./planReconciliationStatus";
  * over an open set, not a schema.
  *
  * **This filter is CLIENT-side, unlike the one it replaced.**
- * `GET /plan-library/reconciliation` takes `offset`, `limit` and
+ * `GET /plan-library/reconciliation` takes `cursor`, `limit` and
  * `include_coord` and nothing else, so the value narrows the rows on the
  * current page and asks the corpus nothing. The page states that scope
  * wherever the filter can empty the list; stating it is the whole difference

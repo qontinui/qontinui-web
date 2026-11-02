@@ -19,11 +19,21 @@ const toastWarning = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    get: (...args: unknown[]) => getMock(...args),
-    put: (...args: unknown[]) => putMock(...args),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
+    // The hooks call `httpClient.fetch` (the typed /operations client); route
+    // each request onto the per-verb mock the assertions below read.
+    fetch: async (url: string, init: { method?: string; body?: string }) => {
+      const method = init.method ?? "GET";
+      const body = JSON.parse(init.body ?? "null");
+      let out: unknown;
+      if (method === "GET") out = await getMock(url);
+      else if (method === "PUT") out = await putMock(url, body);
+      else throw new Error(`fetch mock: unexpected ${method} ${url}`);
+      // A mock that resolves a `Response` (an error path) is answered
+      // as-is, so a non-2xx goes through `readJson` like the real one.
+      return out instanceof Response
+        ? out
+        : new Response(JSON.stringify(out ?? null));
+    },
   },
 }));
 vi.mock("sonner", () => ({
@@ -140,5 +150,35 @@ describe("useCommandSafetyRewritePolicy", () => {
     // Not painted as the requested `off`: what runners resolve is UNKNOWN.
     expect(result.current.policy?.effective_level).toBe("on");
     expect(result.current.readbackError).toContain("502");
+  });
+
+  // ARMING (`useTenantFleetPolicyDial`): a dial's Refresh now says whether
+  // its read landed and is what is shown -- the signal the image generation
+  // panel uses to retire a repo's failed read-back, and that every dial built
+  // on the shared hook (this one included) now hands its caller.
+  it("reload resolves true for a read that landed, false for one that failed", async () => {
+    getMock.mockResolvedValueOnce(ON_NO_ROW);
+    const { result } = renderHook(() => useCommandSafetyRewritePolicy());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    getMock.mockResolvedValueOnce({
+      ...ON_NO_ROW,
+      effective_level: "off",
+      resolved_scope: "tenant",
+    });
+    let applied: unknown;
+    await act(async () => {
+      applied = await result.current.reload();
+    });
+    expect(applied).toBe(true);
+    expect(result.current.policy?.effective_level).toBe("off");
+
+    getMock.mockRejectedValueOnce(new Error("HTTP 502"));
+    await act(async () => {
+      applied = await result.current.reload();
+    });
+    expect(applied).toBe(false);
+    // The last confirmed value stays on screen; the failure is not "off".
+    expect(result.current.policy?.effective_level).toBe("off");
   });
 });

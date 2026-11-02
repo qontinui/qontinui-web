@@ -58,6 +58,15 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
     note: "list[RunnerWire] (endpoints/devices.py:249 response_model) — coord fleet proxy; ci-bot owned no devices on prod",
   },
   {
+    // The /runners Devices tab reads this beside `/devices`. Its device set
+    // comes from the same coord `/coord/devices/by-user` read (plus
+    // `get_coord_identity`), so with no coord in the hermetic stack it 502s.
+    // Same prod parity as the `/devices` stub: ci-bot owns no devices.
+    pattern: /\/api\/v1\/devices\/credential-overview(\?|$)/,
+    body: { devices: [] },
+    note: "DeviceCredentialOverviewResponse (endpoints/devices.py credential_overview response_model) — coord identity + device-list read; ci-bot owned no devices on prod",
+  },
+  {
     pattern: /\/api\/v1\/agent-registry(\?|$)/,
     // Anchored so ONLY the collection GET is stubbed: the pref write
     // (`/agent-registry/prefs/{agent_name}`) is a PUT and falls through

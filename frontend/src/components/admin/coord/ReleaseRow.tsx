@@ -43,7 +43,7 @@ import {
   lagLabel,
   releaseIdentity,
 } from "@/components/admin/coord/releaseStatus";
-import type { ReleaseHistoryEntry } from "@/services/runner-releases-service";
+import type { ReleaseHistoryEntry } from "@/lib/api/operations/releases";
 
 /**
  * An asset-presence chip.

@@ -1,0 +1,27 @@
+slot: sessions.avatar
+role: avatar_fallback
+job: "Show a calm automation run so a visitor reads that it takes work off their hands."
+audience: audience_profile/external-operator
+contexts:
+  breakpoints: [160, 320]
+  themes: [dark]
+  dpr: [1]
+aspect:
+  preferred: 1/1
+  allowed: []
+safe_areas:
+  kind: derived
+focal:
+  region: {x: 0.3, y: 0.2, width: 0.4, height: 0.6}
+  must_survive_crop: true
+style:
+  imagery: domain_spec/visual-system#imagery
+content:
+  must: [a laptop showing a workflow canvas]
+  must_not: [third-party logos]
+text_in_image:
+  kind: forbidden
+alt:
+  kind: decorative
+thresholds:
+  kind: from_visual_system
