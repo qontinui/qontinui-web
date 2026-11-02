@@ -74,6 +74,7 @@ import {
   type FormEvent,
 } from "react";
 import { Link2, Loader2 } from "lucide-react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -761,11 +762,33 @@ function BindingRow({
             </dl>
           }
           actions={
-            <UnbindForm
-              binding={binding}
-              state={unbindState}
-              onUnbind={onUnbind}
-            />
+            <>
+              {/* The doctor's way in for a repo bound here: the connected orgs
+                  list only this tenant's own org logins, so their repo links
+                  do not reach one from another tenant's org. Only the governing
+                  side gets the link. The org side's row answers "bound to
+                  <slug>" and, like its connected-orgs row, has no link: the
+                  checks would judge a tenant that no longer governs the repo. */}
+              {binding.caller_side === "bound" && (
+                <p className="text-xs text-muted-foreground">
+                  <Link
+                    href={`/admin/coord/onboarding-status?repo=${encodeURIComponent(
+                      binding.repo
+                    )}`}
+                    className="underline underline-offset-4 hover:text-foreground"
+                    data-testid={`repo-binding-doctor-${binding.repo}`}
+                    data-ui-bridge-id="operations.repo-binding-doctor"
+                  >
+                    Check this repository&apos;s onboarding
+                  </Link>
+                </p>
+              )}
+              <UnbindForm
+                binding={binding}
+                state={unbindState}
+                onUnbind={onUnbind}
+              />
+            </>
           }
         />
       </RecordRow>
@@ -1161,7 +1184,8 @@ export function RepoTenantBindings({
     // of the new tenant. An unbind still in flight keeps its entry (the busy
     // guard), but not its error: the other party's card lists the same repo,
     // and must not show this tenant's failure on its row. The failure path
-    // re-applies the error once the tenant it was sent under is active again.
+    // re-applies the error when its re-read settles, if the tenant it was sent
+    // under is active by then.
     setUnbindNotice(null);
     setUnbindStates((prev) =>
       Object.fromEntries(
