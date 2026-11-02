@@ -10,6 +10,7 @@
 
 import { DEVICE_A, DEVICE_B, ROSTER, listFx, statsFx } from "./coordSpawns";
 import {
+  admissionBody,
   concurrencyBody,
   defaultsBody,
   deliveryBody,
@@ -42,6 +43,7 @@ export interface SpawnsRoutes {
   delivery: (repo: string) => Answer;
   drain: () => Answer;
   concurrency: (url: string) => Answer;
+  admission: () => Answer;
   /** `PUT /agent-registry/admin/registry/{name}`. */
   putRegistry: (name: string, body: unknown) => Answer;
   /** `PUT /operations/coord/next-step-settings`. */
@@ -86,6 +88,7 @@ export function defaultSpawnsRoutes(): SpawnsRoutes {
     delivery: (repo) => ({ body: deliveryBody(repo) }),
     drain: () => ({ body: drainBody(Date.now()) }),
     concurrency: () => ({ body: concurrencyBody() }),
+    admission: () => ({ body: admissionBody() }),
     putRegistry: () => ({ body: {} }),
     putNextStep: () => ({ body: nextStepBody() }),
     patchMerge: () => ({ body: mergeSettingsBody() }),
@@ -134,6 +137,8 @@ export function answerSpawnsRequest(
   else if (op?.startsWith("/fleet/health")) answer = routes.fleet();
   else if (op?.startsWith("/fleet/dispatch-roles")) answer = routes.roles();
   else if (op?.startsWith("/fleet/drain")) answer = routes.drain();
+  else if (op?.startsWith("/fleet/spawn-admission"))
+    answer = routes.admission();
   else if (
     url.startsWith("/api/v1/agent-registry/admin/registry/") &&
     method === "PUT"

@@ -67,6 +67,7 @@ import {
   redMainKnobGate,
 } from "./mergeSettingsGates";
 import { followupScopeGate, runnerGate } from "./followupGates";
+import type { StallKnobRead } from "./spawnAdmission";
 import { pathVerdict, type PathVerdict } from "./spawnPathVerdict";
 import {
   lastSpawnedCell,
@@ -79,6 +80,8 @@ export interface MatrixInputs {
   defaults: ReadPart<AdminAgentRegistryRow[]>;
   nextStep: ReadPart<NextStepSettings>;
   mergeSettings: MergeSettingsRead;
+  /** The admission-stall knob as coord resolves it (`spawnAdmission.ts`). */
+  stallKnob: StallKnobRead;
   followup: FollowupRead;
   ledger: LedgerListView;
   /** The matrix's writes in flight or done, by gate key. */
@@ -261,7 +264,9 @@ function coordRow(
     );
   }
   if (words.tenantKnob === "auto_fix_admission_stall") {
-    gates.push(admissionStallKnobGate(inputs.mergeSettings, presenting));
+    gates.push(
+      admissionStallKnobGate(inputs.mergeSettings, inputs.stallKnob, presenting)
+    );
   }
   if (words.nextStepDomain) {
     const domain = words.nextStepDomain;

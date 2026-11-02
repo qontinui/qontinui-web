@@ -1,7 +1,7 @@
 /**
  * The Machines section's derivation — every arm, without a DOM: drain,
- * dispatch role, in flight against ceiling (UNKNOWN by a named missing door)
- * and sessions open now (coord's count, or UNKNOWN saying why — never 0), in
+ * dispatch role, in flight against ceiling (coord's count, or UNKNOWN saying
+ * why) and sessions open now (coord's count, or UNKNOWN saying why — never 0), in
  * operator mode and in presentation mode.
  */
 
@@ -11,9 +11,16 @@ import { parseDispatchRoles } from "@/components/operations/fleetDispatchRoles";
 import { parseFleetDrain } from "@/components/operations/fleetDrain";
 import { AS_OF, DEVICE_A, DEVICE_B, ROSTER } from "../__fixtures__/coordSpawns";
 import { ROLES_KNOWN } from "../__fixtures__/spawnsRoutes";
-import { concurrencyBody, drainBody } from "../__fixtures__/spawnPaths";
 import {
-  IN_FLIGHT_UNKNOWN,
+  admissionBody,
+  concurrencyBody,
+  drainBody,
+} from "../__fixtures__/spawnPaths";
+import {
+  IN_FLIGHT_UNKNOWN_PRESENTED,
+  parseSpawnAdmission,
+} from "./spawnAdmission";
+import {
   machineListStale,
   machineListUnknown,
   machineStatusLines,
@@ -32,6 +39,7 @@ function input(
     roles: parseDispatchRoles(ROLES_KNOWN),
     sessions: { data: concurrencyBody(), issue: null },
     sessionsWindowLabel: "the last 24 hours",
+    admission: parseSpawnAdmission(admissionBody()),
     nowMs: NOW,
     presenting: false,
     ...overrides,
@@ -72,13 +80,143 @@ describe("machineStatusLines", () => {
     expect(b.role.text).toBe("Bench");
   });
 
-  it("says in flight against ceiling is UNKNOWN on every line, naming the door no console reads", () => {
-    for (const line of machineStatusLines(input()) ?? []) {
+  it("reads each machine's in flight from coord's count against its ceiling", () => {
+    const lines = machineStatusLines(input());
+    expect(lineOf(lines, DEVICE_A).inFlight).toMatchObject({
+      state: "below_ceiling",
+      text: "2 of 3",
+      unknown: false,
+    });
+    // Coord's map lists every device holding a countable worktree: one it does
+    // not list holds none, once the map was read.
+    expect(lineOf(lines, DEVICE_B).inFlight).toMatchObject({
+      state: "below_ceiling",
+      text: "0 of 3",
+      unknown: false,
+    });
+  });
+
+  it("matches a device id whatever case coord's map spells it in", () => {
+    const lines = machineStatusLines(
+      input({
+        admission: parseSpawnAdmission(
+          admissionBody({
+            counts: {
+              device_inflight: { [DEVICE_A.toUpperCase()]: 1 },
+              tenant_inflight: 1,
+            },
+          })
+        ),
+      })
+    );
+    expect(lineOf(lines, DEVICE_A).inFlight.text).toBe("1 of 3");
+  });
+
+  it("says a machine at its ceiling is at it", () => {
+    const lines = machineStatusLines(
+      input({
+        admission: parseSpawnAdmission(
+          admissionBody({
+            counts: {
+              device_inflight: { [DEVICE_A]: 3 },
+              tenant_inflight: 3,
+            },
+          })
+        ),
+      })
+    );
+    expect(lineOf(lines, DEVICE_A).inFlight).toMatchObject({
+      state: "at_ceiling",
+      text: "3 of 3 — at ceiling",
+    });
+  });
+
+  it("says a count past its ceiling is over it: continuations are not refused", () => {
+    const lines = machineStatusLines(
+      input({
+        admission: parseSpawnAdmission(
+          admissionBody({
+            counts: {
+              device_inflight: { [DEVICE_A]: 5 },
+              tenant_inflight: 5,
+            },
+          })
+        ),
+      })
+    );
+    expect(lineOf(lines, DEVICE_A).inFlight).toMatchObject({
+      state: "over_ceiling",
+      text: "5 of 3 — over ceiling",
+    });
+  });
+
+  it("never names the service while presenting, loaded or still loading", () => {
+    for (const admission of [
+      { state: "loading" } as const,
+      parseSpawnAdmission(admissionBody()),
+    ]) {
+      const lines = machineStatusLines(input({ admission, presenting: true }));
+      const cell = lineOf(lines, DEVICE_A).inFlight;
+      expect(`${cell.text} ${cell.title}`).not.toMatch(/\bcoord\b/i);
+    }
+  });
+
+  it("marks a count with no ceiling, rather than reading it as within one", () => {
+    const lines = machineStatusLines(
+      input({ admission: parseSpawnAdmission(admissionBody({ ceilings: {} })) })
+    );
+    expect(lineOf(lines, DEVICE_A).inFlight).toMatchObject({
+      state: "ceiling_unknown",
+      text: "2 in flight",
+      unknown: true,
+    });
+  });
+
+  it("never reads an uncounted machine as zero: UNKNOWN with coord's reason", () => {
+    const lines = machineStatusLines(
+      input({
+        admission: parseSpawnAdmission(
+          admissionBody({
+            counts: null,
+            counts_unknown_reason: "tenant device list: boom",
+          })
+        ),
+      })
+    );
+    for (const line of lines ?? []) {
       expect(line.inFlight.unknown).toBe(true);
       expect(line.inFlight.text).toBe("UNKNOWN");
-      expect(line.inFlight.title).toContain("/coord/agent-fixer-arm-readiness");
+      expect(line.inFlight.title).toContain("tenant device list: boom");
     }
-    expect(IN_FLIGHT_UNKNOWN.operator).toContain("admission");
+  });
+
+  it("is UNKNOWN while the read is loading or failed, naming why", () => {
+    const loading = machineStatusLines(
+      input({ admission: { state: "loading" } })
+    );
+    expect(lineOf(loading, DEVICE_A).inFlight.text).toBe("UNKNOWN");
+    const failed = machineStatusLines(
+      input({
+        admission: { state: "unknown", reason: "answered HTTP 502" },
+      })
+    );
+    expect(lineOf(failed, DEVICE_A).inFlight).toMatchObject({
+      text: "UNKNOWN",
+      title: "answered HTTP 502",
+      unknown: true,
+    });
+  });
+
+  it("marks last good figures stale after a failed refresh", () => {
+    const known = parseSpawnAdmission(admissionBody());
+    if (known.state !== "known") throw new Error("fixture");
+    const lines = machineStatusLines(
+      input({ admission: { ...known, staleReason: "answered HTTP 502" } })
+    );
+    const cell = lineOf(lines, DEVICE_A).inFlight;
+    expect(cell.text).toBe("2 of 3 (stale)");
+    expect(cell.unknown).toBe(true);
+    expect(cell.title).toContain("answered HTTP 502");
   });
 
   it("never reads a machine the run record does not list as zero sessions", () => {
@@ -254,6 +392,10 @@ describe("in presentation mode", () => {
           state: "unknown",
           reason: "HTTP 500 from /coord/fleet/dispatch-roles",
         },
+        admission: {
+          state: "unknown",
+          reason: "HTTP 500 from /coord/fleet/spawn-admission",
+        },
       })
     );
     const all = (lines ?? []).flatMap((l) =>
@@ -272,7 +414,7 @@ describe("in presentation mode", () => {
     ]) {
       expect(joined, hidden).not.toContain(hidden);
     }
-    expect(joined).toContain(IN_FLIGHT_UNKNOWN.presented);
+    expect(joined).toContain(IN_FLIGHT_UNKNOWN_PRESENTED);
     expect(
       machineListUnknown({
         devices: null,

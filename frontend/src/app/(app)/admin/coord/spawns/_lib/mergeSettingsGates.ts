@@ -18,10 +18,10 @@
  * tenant's `rulebook_overrides` jsonb, which the settings PATCH replaces
  * WHOLE. A one-key write from here would have to re-send every other key it
  * read, and could erase one written meanwhile, so the matrix does not write
- * it. And when the key is absent the read serves no value at all — coord
- * resolves its own default in its place, which only
- * `coord_fixer_arm_readiness` reports — so the gate is UNKNOWN, naming the
- * missing read, rather than this page's copy of coord's default.
+ * it. And when the key is absent the settings read serves no value at all, so
+ * the gate shows the value coord resolves (`GET /coord/fleet/spawn-admission`,
+ * `spawnAdmission.ts`), and is UNKNOWN when that read did not answer, rather
+ * than this page's copy of coord's default.
  */
 
 import {
@@ -31,6 +31,7 @@ import {
   type AutoFixPrChoice,
   type AutoFixPrSource,
 } from "@/app/(app)/settings/coordination/_hooks/auto-fix-pr";
+import type { StallKnobRead } from "./spawnAdmission";
 import {
   ON_OFF_TEXT,
   onOffVerdict,
@@ -266,6 +267,7 @@ function recordedStallKnob(value: unknown): boolean | null {
 
 export function admissionStallKnobGate(
   read: MergeSettingsRead,
+  resolved: StallKnobRead,
   presenting: boolean
 ): MatrixGate {
   const overrides = read.profile?.rulebook_overrides ?? null;
@@ -276,7 +278,22 @@ export function admissionStallKnobGate(
   const recorded = recordedStallKnob(raw);
   let effective: GateCell;
   const unread = mergeSettingsUnread(read, presenting);
-  if (unread !== null) {
+  // Coord's own answer is the value its gate reads, including in place of an
+  // absent or unusable key. A stale one yields to a value read just now.
+  const freshRecorded = unread === null && recorded !== null;
+  if (resolved.value !== null && !(resolved.stale && freshRecorded)) {
+    effective = {
+      state: resolved.value ? "on" : "off",
+      text: resolved.value ? "On" : "Off",
+      title: presenting
+        ? "The project's setting."
+        : unread === null && recorded === null
+          ? "The tenant's merge settings hold no usable auto_fix_admission_stall value, so this is the value coord resolves in its place."
+          : "The value coord resolves for this tenant.",
+      tone: "known",
+      stale: resolved.stale,
+    };
+  } else if (unread !== null) {
     effective = unread;
   } else if (recorded !== null) {
     effective = {
@@ -292,10 +309,10 @@ export function admissionStallKnobGate(
     effective = unknownCell(
       "UNKNOWN",
       presenting
-        ? "This setting's value is not offered to this page."
+        ? "This setting's value could not be read."
         : raw === undefined || raw === null
-          ? "The tenant's merge settings record no auto_fix_admission_stall value, and no read this console makes serves the value coord resolves in its place (coord_fixer_arm_readiness reports it as conjuncts.repo_knob; no web door reads that), so it is unknown here."
-          : `The recorded auto_fix_admission_stall value (${JSON.stringify(raw)}) is not one coord recognises, so coord resolves its own default in its place — a value no read this console makes serves.`
+          ? `The tenant's merge settings record no auto_fix_admission_stall value, and the value coord resolves in its place could not be read: ${resolved.reason}.`
+          : `The recorded auto_fix_admission_stall value (${JSON.stringify(raw)}) is not one coord recognises, so coord resolves its own default in its place, which could not be read: ${resolved.reason}.`
     );
   }
   return {

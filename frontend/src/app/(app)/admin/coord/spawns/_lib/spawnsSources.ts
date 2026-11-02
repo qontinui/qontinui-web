@@ -16,6 +16,7 @@ export const SPAWNS_SOURCES = {
   mergeSettings: "coord merge settings",
   followupScopes: "coord follow-up scopes",
   sessionRuns: "coord session run record",
+  spawnAdmission: "coord spawn admission",
   fleetHealth: DEVOPS_SOURCES.fleetHealth,
   drainState: DEVOPS_SOURCES.drainState,
   dispatchRoles: DEVOPS_SOURCES.dispatchRoles,

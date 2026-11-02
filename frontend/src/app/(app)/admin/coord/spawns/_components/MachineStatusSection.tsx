@@ -5,10 +5,10 @@
  * may take, how much automated work it carries against its ceiling, and how
  * many sessions it has open now (`machineStatus.ts` derives every word).
  *
- * The in-flight column has no source the console can read yet, so the list
- * says so ONCE above its lines and each line's cell repeats it in its title —
- * the §3.8 "a fact the wire does not serve yet, stated once for the list"
- * pattern, never a column of zeros.
+ * The in-flight column is coord's own count against its ceiling. What holds
+ * across the machines (the total, the reasons work was held) or is unknown for
+ * all of them is said ONCE above the lines (`machineListNote`), never as a
+ * column of zeros.
  *
  * Machines are named through `MachineName` (D3.3): their real name for the
  * operator, their session alias ("Machine A") while presenting, from the one
@@ -34,11 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { UnknownNote } from "./UnknownNote";
 import { distinguishDevices } from "../_lib/deviceDistinction";
-import {
-  IN_FLIGHT_UNKNOWN,
-  type MachineCell,
-  type MachineStatusLine,
-} from "../_lib/machineStatus";
+import type { MachineCell, MachineStatusLine } from "../_lib/machineStatus";
 
 function CellValue({ cell, testId }: { cell: MachineCell; testId: string }) {
   if (cell.unknown) {
@@ -75,13 +71,10 @@ export function MachineStatusSection({
   listStale,
   presenting,
   sources,
-  showInFlight = true,
+  note,
 }: {
-  /**
-   * `false` while coord does not serve the spawn ledger: the page's one
-   * statement of that names the in-flight figure too (`LedgerUnservedNotice`).
-   */
-  showInFlight?: boolean;
+  /** What holds across the machines, or is unknown for all of them. */
+  note: { text: string; unknown: boolean };
   /** `null` while the roster is unknown — `listUnknown` says why. */
   lines: MachineStatusLine[] | null;
   listUnknown: string | null;
@@ -122,15 +115,16 @@ export function MachineStatusSection({
           {title}
         </h2>
       )}
-      {showInFlight && (
+      {note.unknown ? (
+        <UnknownNote role="status" data-testid="coord-spawns-inflight-note">
+          {note.text}
+        </UnknownNote>
+      ) : (
         <p
           className="text-xs text-muted-foreground m-0"
           data-testid="coord-spawns-inflight-note"
         >
-          In flight against ceiling, and the reasons work was held: UNKNOWN —{" "}
-          {presenting
-            ? IN_FLIGHT_UNKNOWN.presented
-            : IN_FLIGHT_UNKNOWN.operator}
+          {note.text}
         </p>
       )}
       {listStale && (
@@ -165,11 +159,7 @@ export function MachineStatusSection({
                 <th className="py-1 pr-3 font-medium">
                   {presenting ? "Work it may take" : "Dispatch role"}
                 </th>
-                {showInFlight && (
-                  <th className="py-1 pr-3 font-medium">
-                    In flight vs ceiling
-                  </th>
-                )}
+                <th className="py-1 pr-3 font-medium">In flight vs ceiling</th>
                 <th className="py-1 pr-3 font-medium">Sessions open now</th>
               </tr>
             </thead>
@@ -226,14 +216,12 @@ export function MachineStatusSection({
                       testId="coord-spawns-machine-role"
                     />
                   </td>
-                  {showInFlight && (
-                    <td className="py-1.5 pr-3">
-                      <CellValue
-                        cell={line.inFlight}
-                        testId="coord-spawns-machine-inflight"
-                      />
-                    </td>
-                  )}
+                  <td className="py-1.5 pr-3">
+                    <CellValue
+                      cell={line.inFlight}
+                      testId="coord-spawns-machine-inflight"
+                    />
+                  </td>
                   <td className="py-1.5 pr-3">
                     <CellValue
                       cell={line.sessions}

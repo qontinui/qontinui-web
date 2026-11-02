@@ -91,6 +91,7 @@ const {
   fetchDeviceVolumes,
   fetchFleetCiRunners,
   fetchFleetDispatchRoles,
+  fetchFleetSpawnAdmission,
   fetchFleetDrain,
   fetchFleetResourceSamples,
   fetchFleetStatus,
@@ -159,6 +160,12 @@ describe("coordFleet — fleet reads", () => {
       name: "fetchFleetDispatchRoles",
       call: () => fetchFleetDispatchRoles(POLL),
       url: "/api/v1/operations/fleet/dispatch-roles",
+      init: { maxRetries: 0, method: "GET", idempotent: true },
+    },
+    {
+      name: "fetchFleetSpawnAdmission",
+      call: () => fetchFleetSpawnAdmission(POLL),
+      url: "/api/v1/operations/fleet/spawn-admission",
       init: { maxRetries: 0, method: "GET", idempotent: true },
     },
     {

@@ -76,7 +76,6 @@ import {
 } from "./__fixtures__/coordSpawns";
 import { UNKNOWN_AMBER } from "@/components/console";
 import { LEDGER_DEPENDENTS } from "./_components/LedgerUnservedNotice";
-import { IN_FLIGHT_UNKNOWN } from "./_lib/machineStatus";
 import CoordSpawnsPage from "./page";
 
 /** Let every read in flight — including the poll's second, dependent step — land. */
@@ -221,7 +220,7 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     expect(
       screen.getByTestId("coord-spawns-ledger-dependents").textContent
     ).toBe(
-      `Until it is, this page does not show ${LEDGER_DEPENDENTS.join("; ")}. What is in flight on each machine against its ceiling is not shown either: ${IN_FLIGHT_UNKNOWN.operator}`
+      `Until it is, this page does not show ${LEDGER_DEPENDENTS.join("; ")}.`
     );
     // Said once: no strip, no second banner, and no section of UNKNOWNs.
     expect(
@@ -232,13 +231,15 @@ describe("/admin/coord/spawns — the ledger as coord serves it", () => {
     expect(screen.queryByTestId("coord-spawns-requests-summary")).toBeNull();
     expect(screen.queryByTestId("coord-spawns-placement-summary")).toBeNull();
     expect(screen.queryByTestId("coord-spawns-rate-section")).toBeNull();
-    // Nor a column of them: no Last spawned and no in-flight column.
+    // Nor a column of them: no Last spawned.
     expect(screen.queryAllByTestId("coord-spawns-path-last")).toHaveLength(0);
     expect(screen.queryByText("Last spawned")).toBeNull();
-    expect(screen.queryByTestId("coord-spawns-inflight-note")).toBeNull();
+    // In flight does not rest on the ledger, so it stays on the machine list.
     expect(
-      screen.queryAllByTestId("coord-spawns-machine-inflight")
-    ).toHaveLength(0);
+      screen
+        .getAllByTestId("coord-spawns-machine-inflight")
+        .map((c) => c.textContent)
+    ).toEqual(["2 of 3", "0 of 3"]);
     // The sections that do not rest on the ledger still render.
     expect(
       screen.getAllByTestId("coord-spawns-path-row").length

@@ -4241,6 +4241,7 @@ async def get_dev_action_detail(
 # - POST   /operations/fleet/undrain                     — release one (admin)
 # - GET    /operations/fleet/dispatch-roles              — machine dispatch roles
 # - PUT    /operations/fleet/dispatch-role               — set one (admin)
+# - GET    /operations/fleet/spawn-admission             — in flight, ceilings, holds
 # - GET    /operations/fleet/worktree-cap                — per-device worktree caps
 # - POST   /operations/fleet/worktree-cap                — set one (admin)
 # - POST   /operations/fleet/worktree-cap/clear          — remove one (admin)
@@ -5993,6 +5994,31 @@ async def get_fleet_dispatch_roles(
     unknown-must-not-render-as-a-default]``). The status is what lets it tell.
     """
     return await _proxy_coord_get("/coord/fleet/dispatch-roles", tenant_id=tenant_id)
+
+
+@router.get("/fleet/spawn-admission")
+async def get_fleet_spawn_admission(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Coord's spawn admission for the caller's tenant.
+
+    Proxies coord's ``GET /coord/fleet/spawn-admission`` with the body passed
+    through untouched (no ``response_model``): each machine's in-flight count,
+    the ceilings, the held counts and the admission-stall knob as coord
+    resolves it, each figure null with its reason when coord could not read it.
+
+    A 404 (coord predates the route), a 502/504, or an unrecognised body is
+    UNKNOWN to the browser — never "nothing in flight" (``[policy:
+    unknown-must-not-render-as-a-default]``). The status is what lets it tell.
+    """
+    # Above coord's per-figure budget (10 s, `spawn_admission_read.rs`), so a slow
+    # figure reaches the browser as coord's own null and reason rather than as
+    # this proxy giving up on the whole answer.
+    return await _proxy_coord_get(
+        "/coord/fleet/spawn-admission",
+        tenant_id=tenant_id,
+        timeout=httpx.Timeout(15.0),
+    )
 
 
 @router.put("/fleet/dispatch-role")

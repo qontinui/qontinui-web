@@ -263,3 +263,31 @@ export function concurrencyBody(
     ...overrides,
   };
 }
+
+/**
+ * Coord's spawn admission (`GET /coord/fleet/spawn-admission`): DEVICE_A with 2
+ * in flight against a ceiling of 3, DEVICE_B holding nothing coord can count,
+ * one spawn held at the ceiling, and the stall knob resolved on.
+ */
+export function admissionBody(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    as_of: AS_OF,
+    ceilings: {
+      COORD_AUTODISPATCH_MAX_INFLIGHT_PER_DEVICE: 3,
+      COORD_AUTODISPATCH_MAX_INFLIGHT_PER_TENANT: 10,
+    },
+    counts: {
+      device_inflight: { [DEVICE_A]: 2 },
+      tenant_inflight: 2,
+      autofix_allocations_last_hour: 1,
+    },
+    counts_unknown_reason: null,
+    shepherd_deferrals_24h_by_held_by: { inflight_cap: 1 },
+    shepherd_deferrals_unknown_reason: null,
+    auto_fix_admission_stall: true,
+    auto_fix_admission_stall_unknown_reason: null,
+    ...overrides,
+  };
+}
