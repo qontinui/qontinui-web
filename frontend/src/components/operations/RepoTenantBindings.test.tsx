@@ -297,6 +297,36 @@ describe("<RepoTenantBindings> read states", () => {
     expect(detail.textContent).toContain(BOUND_HERE.decision_ref);
   });
 
+  it("a repo bound here links to its onboarding doctor; a repo bound away does not", async () => {
+    routeFetch([
+      () =>
+        json({
+          bindings: [BOUND_HERE, BOUND_AWAY],
+          measured_at: "2026-10-24T08:00:00Z",
+        }),
+    ]);
+    render(<RepoTenantBindings />);
+
+    const here = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(here).getByRole("button", { expanded: false }));
+    const link = await screen.findByTestId(
+      `repo-binding-doctor-${BOUND_HERE.repo}`
+    );
+    // The same `?repo=` the connected-orgs rows link to, encoded the same way.
+    expect(link.getAttribute("href")).toBe(
+      `/admin/coord/onboarding-status?repo=${encodeURIComponent(BOUND_HERE.repo)}`
+    );
+
+    const away = screen.getByTestId(`repo-binding-row-${BOUND_AWAY.repo}`);
+    fireEvent.click(within(away).getByRole("button", { expanded: false }));
+    await screen.findByTestId(`repo-binding-detail-${BOUND_AWAY.repo}`);
+    expect(
+      screen.queryByTestId(`repo-binding-doctor-${BOUND_AWAY.repo}`)
+    ).toBeNull();
+  });
+
   it("an org with no tenant account is said to be bound to no tenant", async () => {
     routeFetch([
       () =>

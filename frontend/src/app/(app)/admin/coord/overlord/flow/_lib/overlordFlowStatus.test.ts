@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { FlowUnchangedSession } from "@/lib/api/operations/overlordFlow";
 import {
   FULL_FLOW,
   NULL_FLOW,
@@ -12,6 +13,7 @@ import {
   failureSentence,
   flowQuery,
   histogramPoints,
+  lastInterventionWords,
   metricTitle,
   metricValue,
   parseFlowReadFailure,
@@ -290,6 +292,86 @@ describe("pass scope and mode", () => {
     expect(scopeCounts(points)).toEqual({ filtered: 1, unknown: 2 });
     expect(passWord(points[0]!.scope)).toBe("unknown");
     expect(passWord(points[1]!.mode)).toBe("act");
+  });
+});
+
+describe("lastInterventionWords", () => {
+  const proven: FlowUnchangedSession = {
+    key: "s",
+    claude_session_id: "s",
+    terminal_id: "t",
+    session_name: null,
+    verdict: "STOPPED",
+    reason_codes: [],
+    consecutive_full_passes: 3,
+    first_seen_at: "2026-10-23T08:00:00Z",
+    last_seen_at: "2026-10-23T20:00:00Z",
+  };
+  const judged = {
+    intervention_id: "i",
+    stop_class: "B",
+    verb: "leave",
+    mode: "shadow",
+    executed: null,
+    outcome: null,
+    observed_at: "2026-10-23T19:00:00Z",
+  };
+  const at = (iso: string) => `at ${iso}`;
+
+  it("names the judgment, and its outcome only when one was observed", () => {
+    expect(
+      lastInterventionWords({ ...proven, last_intervention: judged }, at)
+    ).toBe(
+      "Last /next-move: class B, leave (shadow), at 2026-10-23T19:00:00Z."
+    );
+    expect(
+      lastInterventionWords(
+        { ...proven, last_intervention: { ...judged, outcome: "did_work" } },
+        at
+      )
+    ).toContain("outcome did_work");
+  });
+
+  it("never lets a live judgment read as carried out unless it was", () => {
+    const live = { ...judged, mode: "live", verb: "nudge" };
+    const words = (executed: boolean | null) =>
+      lastInterventionWords(
+        { ...proven, last_intervention: { ...live, executed } },
+        at
+      );
+    expect(words(true)).toContain("nudge (live),");
+    expect(words(false)).toContain("nudge (live, not executed),");
+    expect(words(null)).toContain("nudge (live, execution not recorded),");
+  });
+
+  it("says a proven session has no judgment recorded, not that none happened", () => {
+    expect(
+      lastInterventionWords({ ...proven, last_intervention: null }, at)
+    ).toBe("No /next-move judgment is recorded for this session.");
+  });
+
+  it("reads the field through the parser: null stays an answer, junk is none", () => {
+    const body = (last: unknown) => ({
+      ...FULL_FLOW,
+      unchanged: [{ ...FULL_FLOW.unchanged[0], last_intervention: last }],
+    });
+    const parsed = (last: unknown) =>
+      readFlowBody(body(last))?.unchanged?.[0]?.last_intervention;
+    expect(parsed(judged)).toEqual(judged);
+    expect(parsed(null)).toBeNull();
+    expect(parsed(undefined)).toBeUndefined();
+    expect(parsed({ stop_class: "A" })).toBeUndefined();
+    expect(parsed("A")).toBeUndefined();
+  });
+
+  it("claims nothing for a coord without the field or an unproven session", () => {
+    expect(lastInterventionWords(proven, at)).toBeNull();
+    expect(
+      lastInterventionWords(
+        { ...proven, claude_session_id: null, last_intervention: null },
+        at
+      )
+    ).toBeNull();
   });
 });
 

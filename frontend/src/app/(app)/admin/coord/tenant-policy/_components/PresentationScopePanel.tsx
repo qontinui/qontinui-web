@@ -39,6 +39,15 @@
  * - **A stale read** — when the latest read failed while an earlier one is
  *   held, the lists are labelled as the last read, not as in force:
  *   presentation mode withholds every title until a read succeeds.
+ * - **A refused read** — a 4xx carrying the typed refusal envelope that does
+ *   not ask to retry later: the backend has answered, and only the operator
+ *   can change the answer. It renders through `BackendErrorMessage`, which
+ *   shows the refusal's own sentence (for no project resolving: select one, or
+ *   be added to one) beside its next action, and the panel does not say to
+ *   wait for the backend. Any other failure is not known to be final, and
+ *   stays "could not be read": a bare 401 (a token refresh may yet succeed, or
+ *   it is coord's own), a bare 429 or 404, coord's answer relayed as text, a
+ *   5xx.
  * - **Last saved** — who last replaced the stored half and when, for every
  *   member the read serves it to, so a term that appeared or vanished has an
  *   author to ask. Under a stale read it says it is the last read's answer.
@@ -58,6 +67,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Loader2, Presentation } from "lucide-react";
 import {
+  BackendErrorMessage,
   RefreshButton,
   UNKNOWN_AMBER,
   absoluteTime,
@@ -80,6 +90,7 @@ import {
   savePresentationScope,
   type PresentationScopeRecord,
 } from "@/lib/api/presentationScope";
+import type { BackendError } from "@/lib/errors/backend-error-message";
 import { cn } from "@/lib/utils";
 import {
   baseOf,
@@ -150,9 +161,10 @@ function ScopePanel({
     return () => clearTimeout(timer);
   }, [store, snapshot]);
 
-  // A record read under another project selection is not this page's.
-  const record =
-    snapshot.selection === store.currentSelection() ? snapshot.record : null;
+  // A record read under another project selection is not this page's, and
+  // nor is a failure: nothing has been asked about the project selected now.
+  const readForSelection = snapshot.selection === store.currentSelection();
+  const record = readForSelection ? snapshot.record : null;
   const canEdit = record?.can_edit === true;
   const stored = record?.configured ?? null;
   // An edit made for another project (the selection changed underneath) is
@@ -266,14 +278,19 @@ function ScopePanel({
 
   const loading =
     record === null &&
-    (snapshot.state.status === "loading" ||
+    (!readForSelection ||
+      snapshot.state.status === "loading" ||
       snapshot.state.status === "unknown");
   const readFailure =
-    record === null && snapshot.failure !== null ? snapshot.failure : null;
+    readForSelection && record === null && snapshot.failure !== null
+      ? snapshot.failure
+      : null;
   // The latest read failed while an earlier one is held: those lists are the
   // last read, not what presentation mode applies (it withholds every title).
   const staleFailure =
     record !== null && snapshot.failure !== null ? snapshot.failure : null;
+  // Read only past the skeleton, so only under the selection it was read for.
+  const refusal = refusalOf(snapshot.failureError);
 
   return (
     <section
@@ -306,19 +323,40 @@ function ScopePanel({
         <Skeleton className="mt-4 h-16 w-full" />
       ) : record === null ? (
         <Notice testId="presentation-scope-unknown">
-          The presentation scope could not be read
-          {readFailure ? ` (${readFailure})` : ""}, so what presentation mode
-          may show is unknown — it withholds every title until it can be read.
-          Refresh once the backend answers.
+          {refusal ? (
+            <>
+              The backend refused to read the presentation scope, so what
+              presentation mode may show is unknown — it withholds every title
+              until it can be read. <RefusalBeside refusal={refusal} />
+            </>
+          ) : (
+            <>
+              The presentation scope could not be read
+              {readFailure ? ` (${readFailure})` : ""}, so what presentation
+              mode may show is unknown — it withholds every title until it can
+              be read. Refresh once the backend answers.
+            </>
+          )}
         </Notice>
       ) : (
         <div className="mt-4 space-y-4">
           {staleFailure !== null && (
             <Notice testId="presentation-scope-stale">
-              The latest read of the presentation scope failed ({staleFailure}),
-              so what is stored now is unknown and presentation mode withholds
-              every title until a read succeeds. The lists below are from an
-              earlier read.
+              {refusal ? (
+                <>
+                  The backend refused the latest read of the presentation scope,
+                  so what is stored now is unknown and presentation mode
+                  withholds every title until a read succeeds. The lists below
+                  are from an earlier read. <RefusalBeside refusal={refusal} />
+                </>
+              ) : (
+                <>
+                  The latest read of the presentation scope failed (
+                  {staleFailure}), so what is stored now is unknown and
+                  presentation mode withholds every title until a read succeeds.
+                  The lists below are from an earlier read.
+                </>
+              )}
             </Notice>
           )}
           <InForce record={record} current={staleFailure === null} />
@@ -751,6 +789,30 @@ function Chips({
         </Badge>
       ))}
     </span>
+  );
+}
+
+/**
+ * The failure when it is a refusal only the operator can change: a 4xx with
+ * the typed envelope, not asking to retry later. See the file header for what
+ * stays a failure.
+ */
+function refusalOf(error: BackendError | null): BackendError | null {
+  if (error === null || error.status >= 500) return null;
+  if (error.reading.kind !== "refusal") return null;
+  return error.reading.refusal.next_action.kind === "retry_later"
+    ? null
+    : error;
+}
+
+/** A refused read's own words, on a line of their own inside its notice. */
+function RefusalBeside({ refusal }: { refusal: BackendError }) {
+  return (
+    <BackendErrorMessage
+      error={refusal}
+      className="mt-1 flex"
+      data-testid="presentation-scope-refusal"
+    />
   );
 }
 

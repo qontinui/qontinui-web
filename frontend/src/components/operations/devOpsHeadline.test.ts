@@ -17,6 +17,7 @@ import {
   machinesHealthyFigure,
   workspacesInUseFigure,
 } from "./devOpsHeadline";
+import { fleetRosterCut } from "./fleetLiveness";
 import type {
   WorktreeSlotDevice,
   WorktreeSlotsResponse,
@@ -42,7 +43,13 @@ const device = (id: string, state?: string): FleetHealthDevice =>
   ({ device_id: id, hostname: `host-${id}`, state }) as FleetHealthDevice;
 
 describe("machinesHealthyFigure", () => {
-  const base = { devices: [], answered: true, error: null, asOfMs: T };
+  const base = {
+    devices: [],
+    answered: true,
+    error: null,
+    asOfMs: T,
+    cut: { kind: "whole" } as const,
+  };
 
   it("is UNKNOWN before the first answer — never 0", () => {
     const v = unknown(
@@ -100,6 +107,74 @@ describe("machinesHealthyFigure", () => {
     );
     expect(v.value).toBe("2 of 2");
     expect(v.detail).toMatch(/Every machine .* reports healthy/);
+  });
+
+  it("claims no whole fleet when coord cut abandoned rows from the list", () => {
+    const devices = [device("a", "healthy"), device("b", "degraded")];
+    const v = known(
+      machinesHealthyFigure({
+        ...base,
+        devices,
+        cut: fleetRosterCut({
+          devices,
+          truncated: true,
+          total: 4647,
+          degradable_dropped: 0,
+        }),
+      })
+    );
+    expect(v.value).toBe("1 of 2 listed");
+    expect(v.detail).toContain("1 degraded");
+    expect(v.detail).toContain("lists 2 of 4647 rows");
+    expect(v.detail).not.toMatch(/Every machine/);
+    expect(v.detail).not.toMatch(/Coord/);
+  });
+
+  it("names who is speaking when a cut leaves no rows at all", () => {
+    const v = known(
+      machinesHealthyFigure({
+        ...base,
+        cut: fleetRosterCut({
+          devices: [],
+          truncated: true,
+          total: 5,
+          degradable_dropped: 0,
+        }),
+      })
+    );
+    expect(v.value).toBe("0");
+    expect(v.detail).toBe(
+      "The coordination service lists 0 of 5 rows, and says none of the others could be degrading."
+    );
+  });
+
+  it("says only that the list may be cut when coord has not said it was", () => {
+    const devices = Array.from({ length: 1000 }, (_, i) =>
+      device(`d${i}`, "healthy")
+    );
+    const v = unknown(
+      machinesHealthyFigure({ ...base, devices, cut: fleetRosterCut({ devices }) })
+    );
+    expect(v.reason).toContain("reached its limit and may be cut off");
+    expect(v.reason).not.toContain("was cut off");
+  });
+
+  it("gives no figure when coord withheld a machine that could be degrading", () => {
+    const devices = [device("a", "healthy")];
+    const v = machinesHealthyFigure({
+      ...base,
+      devices,
+      cut: fleetRosterCut({
+        devices,
+        truncated: true,
+        total: 10_001,
+        degradable_dropped: 1,
+      }),
+    });
+    expect(v.state).toBe("unknown");
+    expect(v.state === "unknown" && v.reason).toContain(
+      "may leave out one that is degrading"
+    );
   });
 });
 

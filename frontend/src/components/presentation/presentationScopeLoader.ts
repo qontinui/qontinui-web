@@ -41,7 +41,10 @@
  *   made. Both withhold every title. A failed read is retried after
  *   {@link PRESENTATION_SCOPE_RETRY_MS}, and the failure stands until a read
  *   answers: a retry in flight has learned nothing yet, and the toggle's notice
- *   reads this state, so it would blink off on every retry.
+ *   reads this state, so it would blink off on every retry. The `BackendError`
+ *   behind a failure is kept too (`failureError`): a refusal's message is a
+ *   projection that leaves out the producer's own sentence, and the
+ *   tenant-policy form shows what the operator is told to do from it.
  *
  * The tenant-policy page's form (`PresentationScopePanel`, operator mode only)
  * reads the same store (`record`) — asking for the read itself, since nothing
@@ -60,6 +63,7 @@ import {
   fetchPresentationScope,
   type PresentationScopeRecord,
 } from "@/lib/api/presentationScope";
+import { BackendError } from "@/lib/errors/backend-error-message";
 import {
   ACTIVE_TENANT_STORAGE_KEY,
   readActiveTenantId,
@@ -90,6 +94,9 @@ export interface PresentationScopeSnapshot {
   /** When the last read failed, and why; both `null` after a success. */
   readonly failedAt: number | null;
   readonly failure: string | null;
+  /** The `BackendError` behind `failure`; `null` when it was no such error (a
+   *  lost connection, a timeout) and after a success. */
+  readonly failureError: BackendError | null;
 }
 
 const NOTHING_READ: PresentationScopeSnapshot = {
@@ -99,6 +106,7 @@ const NOTHING_READ: PresentationScopeSnapshot = {
   loadedAt: null,
   failedAt: null,
   failure: null,
+  failureError: null,
 };
 
 /**
@@ -254,6 +262,7 @@ export function createPresentationScopeStore(
           loadedAt: now(),
           failedAt: null,
           failure: null,
+          failureError: null,
         });
         return { status: "read", record };
       } catch (err) {
@@ -265,6 +274,7 @@ export function createPresentationScopeStore(
           selection,
           failedAt: now(),
           failure,
+          failureError: err instanceof BackendError ? err : null,
         });
         return { status: "failed", failure };
       } finally {
@@ -332,6 +342,7 @@ export function createPresentationScopeStore(
         loadedAt: now(),
         failedAt: null,
         failure: null,
+        failureError: null,
       });
       return true;
     },
