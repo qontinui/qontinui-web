@@ -34,7 +34,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
-from app.api.v1.endpoints.operations import ACTIVE_TENANT_HEADER
 from app.crud import overview_settings as crud
 from app.models.overview import OverviewSettings
 from app.models.user import User as UserModel
@@ -122,8 +121,7 @@ async def write_settings(
     # every field and neither its body nor its answer names a project, so it
     # refuses instead: a save built on one project's settings must not land on
     # another.
-    named = (request.headers.get(ACTIVE_TENANT_HEADER) or "").strip().lower()
-    if named and named != str(tenant_id):
+    if access.named_project_degraded:
         raise HTTPException(
             status_code=403,
             detail={
