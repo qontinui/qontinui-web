@@ -127,7 +127,10 @@ from app.services.coord_identity import (
     get_coord_identity,
     get_coord_identity_for_token,
 )
-from app.services.dev_dashboard_service import get_fleet_registry
+from app.services.dev_dashboard_service import (
+    CoLocatedRunnerRefused,
+    get_fleet_registry,
+)
 from app.services.email import (
     EmailTemplateService,
     EmailTransportService,
@@ -862,21 +865,22 @@ async def get_all_tasks(
     """Get all running tasks across all runners (cross-machine beacon).
 
     Scoped to the caller's own devices: the fleet registry is process-global
-    and the beacon path is unauthenticated, so tasks are filtered to runners
-    on a hostname the caller owns a device on — the same cross-tenant guard
-    applied by ``GET /fleet``. Without it, every caller saw every tenant's
-    running-task prompts and ids.
+    and the beacon path is unauthenticated, so only runners on a hostname the
+    caller owns a device on are dialled — the same cross-tenant guard applied
+    by ``GET /fleet``. Without it, every caller saw every tenant's running-task
+    prompts and ids. A beacon naming this backend's own host is dialled for a
+    platform admin only.
     """
     runners = await runner_crud.list_runners(db, current_user.id)
     owned_hostnames = {r.hostname.lower() for r in runners if r.hostname}
     registry = get_fleet_registry()
-    tasks = await registry.get_all_running_tasks()
-    owned_tasks = [
-        t for t in tasks if str(t.get("runner_hostname", "")).lower() in owned_hostnames
-    ]
+    found = await registry.get_all_running_tasks(
+        hostnames=owned_hostnames, may_reach_co_located=current_user.is_superuser
+    )
     return AggregatedTaskRuns(
-        task_runs=[RunnerTaskRun(**t) for t in owned_tasks],
-        total=len(owned_tasks),
+        task_runs=[RunnerTaskRun(**t) for t in found.tasks],
+        total=len(found.tasks),
+        withheld_co_located=found.withheld_co_located,
     )
 
 
@@ -895,6 +899,39 @@ async def _caller_owns_runner_host(
     host = runner_id.rsplit(":", 1)[0].lower()
     runners = await runner_crud.list_runners(db, user_id)
     return any((r.hostname or "").lower() == host for r in runners)
+
+
+#: Why a per-runner proxy refused a caller who is not a platform admin. Owning a
+#: device on the hostname proves nothing about the address: the beacon takes no
+#: credential, so a loopback address reaches whichever runner listens here with
+#: full local trust, the runner ``device_bridge_ws.runner_proxy`` keeps for
+#: platform admins. Binding a beacon to a proven device is the lasting fix (coord
+#: finding ``e66c681f-ee4a-4056-aaa7-0212814aafcc``); this holds until then.
+_CO_LOCATED_BEACON_ADMIN_ONLY = (
+    "this runner's beacon names this server's own address, and tasks at that "
+    "address are limited to platform administrators"
+)
+
+
+async def _proxy_beacon_runner(
+    current_user: UserModel,
+    runner_id: str,
+    path: str,
+    params: dict[str, Any] | None = None,
+) -> Any:
+    """GET ``path`` from a beacon's address, as ``current_user`` may."""
+    try:
+        return await get_fleet_registry().proxy_runner_request(
+            runner_id, path, params, may_reach_co_located=current_user.is_superuser
+        )
+    except CoLocatedRunnerRefused as exc:
+        raise refusal_error(
+            403,
+            RefusalCode.permission_denied,
+            NextActionKind.none_terminal,
+            _CO_LOCATED_BEACON_ADMIN_ONLY,
+            discriminator="co_located_beacon_admin_only",
+        ) from exc
 
 
 #: A runner task-run id, as the two per-runner proxies below take it.
@@ -938,8 +975,8 @@ async def get_runner_task_output(
         raise HTTPException(
             status_code=404, detail=f"Runner {runner_id} not found or unreachable"
         )
-    registry = get_fleet_registry()
-    result = await registry.proxy_runner_request(
+    result = await _proxy_beacon_runner(
+        current_user,
         runner_id,
         f"/task-runs/{task_run_id}/output",
         params={"tail_chars": tail_chars},
@@ -964,8 +1001,8 @@ async def get_runner_workflow_state(
         raise HTTPException(
             status_code=404, detail=f"Runner {runner_id} not found or unreachable"
         )
-    registry = get_fleet_registry()
-    result = await registry.proxy_runner_request(
+    result = await _proxy_beacon_runner(
+        current_user,
         runner_id,
         f"/task-runs/{task_run_id}/workflow-state",
     )

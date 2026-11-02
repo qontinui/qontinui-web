@@ -15,7 +15,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
+import { PLATFORM_ADMIN_REFUSAL } from "@/lib/api/fleet";
 import { DriftEntryDetail } from "../DriftEntryDetail";
+import { DRIFT_ADMIN_ONLY } from "../drift-api";
 import type {
   DriftEntryView,
   SpecDriftEntryView,
@@ -58,6 +60,13 @@ vi.mock("../SpecDriftDetail", () => ({
 
 const fetchDriftEntryMock = vi.fn();
 
+/** What `httpClient` throws for the backend's `require_admin` refusal. */
+const ADMIN_REFUSED = new Error(
+  `GET /api/v1/runs/run-1/drift/x failed: 403 - ${JSON.stringify({
+    message: PLATFORM_ADMIN_REFUSAL,
+  })}`,
+);
+
 vi.mock("../drift-api", async () => {
   const actual = await vi.importActual<typeof import("../drift-api")>(
     "../drift-api",
@@ -72,7 +81,7 @@ vi.mock("../drift-api", async () => {
 function makeWrapper() {
   const client = new QueryClient({
     defaultOptions: {
-      queries: { retry: false, gcTime: 0, staleTime: 0 },
+      queries: { retryDelay: 0, gcTime: 0, staleTime: 0 },
     },
   });
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -154,7 +163,7 @@ describe("DriftEntryDetail", () => {
   });
 
   it("surfaces a fetch error in the error panel", async () => {
-    fetchDriftEntryMock.mockRejectedValueOnce(new Error("boom"));
+    fetchDriftEntryMock.mockRejectedValue(new Error("boom"));
 
     render(<DriftEntryDetail runId="run-1" entryId="x" />, {
       wrapper: makeWrapper(),
@@ -166,5 +175,47 @@ describe("DriftEntryDetail", () => {
       ).toBeInTheDocument();
     });
     expect(screen.getByText(/boom/)).toBeInTheDocument();
+  });
+
+  it("shows a viewer who is not a platform admin the admin-only state", async () => {
+    fetchDriftEntryMock.mockRejectedValueOnce(ADMIN_REFUSED);
+
+    render(<DriftEntryDetail runId="run-1" entryId="x" />, {
+      wrapper: makeWrapper(),
+    });
+
+    expect(await screen.findByTestId("drift-admin-only")).toHaveTextContent(
+      DRIFT_ADMIN_ONLY,
+    );
+    expect(screen.queryByText(/failed to load/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the not-found panel when the runner has no such entry", async () => {
+    fetchDriftEntryMock.mockRejectedValue(
+      new Error(
+        `GET /api/v1/runs/run-1/drift/x failed: 404 - ${JSON.stringify({
+          message: "drift-entry-not-found",
+        })}`,
+      ),
+    );
+
+    render(<DriftEntryDetail runId="run-1" entryId="x" />, {
+      wrapper: makeWrapper(),
+    });
+
+    expect(await screen.findByText(/drift entry not found/i)).toBeInTheDocument();
+    expect(screen.queryByText(/failed to load/i)).not.toBeInTheDocument();
+    expect(fetchDriftEntryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not ask again after the refusal, as it does after a failure", async () => {
+    fetchDriftEntryMock.mockRejectedValue(ADMIN_REFUSED);
+
+    render(<DriftEntryDetail runId="run-1" entryId="x" />, {
+      wrapper: makeWrapper(),
+    });
+
+    await screen.findByTestId("drift-admin-only");
+    expect(fetchDriftEntryMock).toHaveBeenCalledTimes(1);
   });
 });

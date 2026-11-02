@@ -281,3 +281,7 @@ class AggregatedTaskRuns(BaseModel):
 
     task_runs: list[RunnerTaskRun]
     total: int
+    #: How many of the caller's runners were NOT dialled because their beacon
+    #: names this backend's own host, which is for platform admins only. It
+    #: tells that decision apart from a host with nothing running.
+    withheld_co_located: int = 0

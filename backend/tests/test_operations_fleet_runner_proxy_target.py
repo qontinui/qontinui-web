@@ -196,6 +196,12 @@ def member(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         "runner_crud.list_runners",
         AsyncMock(return_value=[SimpleNamespace(hostname=HOST)]),
     )
+    # The stand-in plays a runner on ANOTHER host, but loopback is the only
+    # address a test can serve. A beacon that truly names this backend's own
+    # host is refused to this caller: test_operations_co_located_beacon_gate.py.
+    monkeypatch.setattr(
+        "app.services.dev_dashboard_service._is_co_located", lambda *_: False
+    )
     return TestClient(app)
 
 
@@ -350,7 +356,7 @@ def test_a_filed_address_that_is_no_host_is_never_dialled_by_the_task_fan_out(
     resp = member.get(f"{API_PREFIX}/fleet/tasks")
 
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"task_runs": [], "total": 0}
+    assert resp.json() == {"task_runs": [], "total": 0, "withheld_co_located": 0}
     assert runner.seen == [], f"the runner was contacted: {runner.seen}"
 
 

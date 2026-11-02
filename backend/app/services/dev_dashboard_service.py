@@ -7,10 +7,14 @@ needed — this is ephemeral dev data.
 """
 
 import asyncio
+import ipaddress
+import socket
+from collections.abc import Collection
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
+import psutil
 import structlog
 
 from app.schemas.dev_dashboard import (
@@ -39,6 +43,62 @@ def _runner_url(runner: RegisteredRunner, path: str) -> httpx.URL:
     httpx resolves ``.`` and ``..`` segments in it.
     """
     return httpx.URL(scheme="http", host=runner.ip, port=runner.port, path=path)
+
+
+def _own_addresses() -> frozenset[str]:
+    """The addresses of this backend's own network interfaces.
+
+    Read from the interfaces, not by resolving the hostname, so it asks no DNS
+    and covers every interface. A read that fails leaves the loopback and
+    unspecified checks in :func:`_is_co_located` standing, and logs why.
+    """
+    try:
+        interfaces = psutil.net_if_addrs()
+    except OSError as e:
+        logger.warning("own_addresses_unreadable", error=str(e))
+        return frozenset()
+    return frozenset(
+        address.address.split("%", 1)[0]
+        for addresses in interfaces.values()
+        for address in addresses
+        if address.family in (socket.AF_INET, socket.AF_INET6)
+    )
+
+
+def _is_co_located(ip: str, own_addresses: Collection[str]) -> bool:
+    """Whether a beacon's address names this backend's own host.
+
+    Anyone can file any address: the beacon takes no credential. Dialling a
+    loopback address reaches whichever runner listens on this host, and that
+    runner admits the hop with full local trust, so it is the runner the
+    co-located arm of ``device_bridge_ws.runner_proxy`` keeps for platform admins
+    (coord finding ``e66c681f-ee4a-4056-aaa7-0212814aafcc``, item 2(d)). Another
+    of this host's addresses reaches it only where the runner was configured to
+    listen there and to accept that ``Host``; a default runner binds loopback and
+    refuses it. It is held to the same rule because nothing here can tell which
+    runner it is. A value that is not an address cannot be judged, so it counts
+    as this host.
+    """
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return True
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    return (
+        address.is_loopback or address.is_unspecified or str(address) in own_addresses
+    )
+
+
+class CoLocatedRunnerRefused(Exception):
+    """A beacon names this backend's own host, and the caller may not dial it."""
+
+
+class RunningTasks(NamedTuple):
+    """What one task fan-out found, and how many runners it did not dial."""
+
+    tasks: list[dict[str, Any]]
+    withheld_co_located: int
 
 
 class FleetRegistry:
@@ -114,11 +174,23 @@ class FleetRegistry:
         runner_id: str,
         path: str,
         params: dict[str, Any] | None = None,
+        *,
+        may_reach_co_located: bool,
     ) -> Any:
-        """Proxy an HTTP GET request to a specific runner."""
+        """Proxy an HTTP GET request to a specific runner.
+
+        ``may_reach_co_located`` says whether the caller may reach a runner on
+        this backend's own host; one who may not gets
+        :class:`CoLocatedRunnerRefused`. It is judged on the same snapshot of
+        the entry the request then dials: an unauthenticated beacon can re-file
+        the entry at any moment, so a check on an earlier read would prove
+        nothing about the address dialled.
+        """
         runner = await self.get_runner(runner_id)
         if not runner:
             return None
+        if not may_reach_co_located and _is_co_located(runner.ip, _own_addresses()):
+            raise CoLocatedRunnerRefused(runner_id)
 
         try:
             url = _runner_url(runner, path)
@@ -143,13 +215,36 @@ class FleetRegistry:
                 )
                 return None
 
-    async def get_all_running_tasks(self) -> list[dict[str, Any]]:
-        """Fetch running tasks from all healthy runners concurrently."""
+    async def get_all_running_tasks(
+        self, *, hostnames: Collection[str], may_reach_co_located: bool
+    ) -> RunningTasks:
+        """Fetch running tasks concurrently from the caller's healthy runners.
+
+        The scope is applied BEFORE dialling, so a stranger's entry is never
+        dialled for this caller. It does not make an entry trustworthy: an entry
+        filed under the caller's own host can still name any address, which stays
+        open until a beacon is bound to a proven device (coord finding
+        ``e66c681f-ee4a-4056-aaa7-0212814aafcc``, items 2(a) and 2(c)).
+        ``hostnames`` are the lower-cased hosts the caller owns a device on.
+        ``may_reach_co_located`` says whether the caller may reach a runner on
+        this backend's own host; the owned-host filter alone cannot keep one
+        out, because the task is labelled with the hostname the beacon claimed.
+        """
         async with self._lock:
-            runners = [r for r in self._runners.values() if r.is_healthy]
+            runners = [
+                r
+                for r in self._runners.values()
+                if r.is_healthy and r.hostname.lower() in hostnames
+            ]
+        withheld = 0
+        if not may_reach_co_located:
+            own_addresses = _own_addresses()
+            dialled = [r for r in runners if not _is_co_located(r.ip, own_addresses)]
+            withheld = len(runners) - len(dialled)
+            runners = dialled
 
         if not runners:
-            return []
+            return RunningTasks([], withheld)
 
         async def _fetch_tasks(
             client: httpx.AsyncClient, runner: RegisteredRunner
@@ -201,7 +296,7 @@ class FleetRegistry:
                     "fetch_tasks_exception",
                     error=str(result),
                 )
-        return all_tasks
+        return RunningTasks(all_tasks, withheld)
 
 
 # Singleton

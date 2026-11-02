@@ -50,7 +50,10 @@ from pathlib import Path
 #: ``refusal_error`` belongs in its own change. The PR's two NEW refusals
 #: (``_refuse_withheld_scopes``, ``_withheld_duplicate_conflict``) do use
 #: ``refusal_error``.
-BASELINE = 795
+#: 782 (from 795), the post-merge follow-up of qontinui-web#2001: ``runs_drift`` moved
+#: to ``refusal_error``, and the unmounted ``rag_export`` route module, whose
+#: free-text refusals were counted here, was deleted.
+BASELINE = 782
 
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 

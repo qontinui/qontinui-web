@@ -487,6 +487,12 @@ export interface RunnerTaskRun {
 export interface AggregatedTaskRuns {
   task_runs: RunnerTaskRun[];
   total: number;
+  /**
+   * The caller's runners not dialled because their beacon names the backend's
+   * own host, which is for platform admins only. Absent from a backend older
+   * than the field, which says nothing either way.
+   */
+  withheld_co_located?: number;
 }
 
 /**
