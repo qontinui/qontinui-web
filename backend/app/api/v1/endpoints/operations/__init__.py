@@ -9535,9 +9535,20 @@ _AGENT_SESSIONS_JOIN_LIMIT = 500
 #: `label` / `derived_name` / `search_text`). The two are therefore not the
 #: same search, and the difference is disclosed rather than smoothed over: a
 #: `q` that matches an agent session's activity text will not match its
-#: lifecycle twin's `intent.purpose` unless the words happen to coincide.
+#: lifecycle twin's `intent.purpose` unless the words happen to coincide —
+#: which is why :func:`list_coord_sessions` ALSO keeps every lifecycle row
+#: whose bridge names an agent row coord's search returned.
+#:
+#: ``claude_code_session_id`` is here so a pasted commit ``Session-Id:``
+#: trailer (the Claude Code session uuid, which the console strips to the bare
+#: id client-side) finds the lifecycle half directly — plan
+#: `2026-10-19-session-lookup-by-name-shows-claude-account-in-web` Phase 3.
+#: Without it the uuid matches only ``coord.sessions.id``, which is a
+#: DIFFERENT id space, so the lifecycle twin of the session the operator named
+#: would be filtered out of its own search.
 _SESSION_QUERY_FIELDS = (
     "id",
+    "claude_code_session_id",
     "repo",
     "branch",
     "session_kind",
@@ -9601,6 +9612,8 @@ def _bridge_owners(lifecycle: list[dict[str, Any]]) -> dict[str, str]:
 def _consolidate_sessions(
     lifecycle: list[dict[str, Any]],
     agents: list[dict[str, Any]] | None,
+    *,
+    filtered_out_bridges: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     """Join the lifecycle half to the agent half and emit D1's row classes.
 
@@ -9610,6 +9623,13 @@ def _consolidate_sessions(
     payload there is also no ``agent_only`` half, so a list that silently
     dropped those rows while confidently classifying the rest would be
     describing a fleet it did not read. One failed read, one honest answer.
+
+    ``filtered_out_bridges`` are the bridge values of lifecycle rows coord DID
+    serve but the presentation filters (``device`` / ``status``) removed. An
+    agent row bridged by one of them is the agent half of a session the
+    caller's filter excluded, so it is dropped with its lifecycle twin rather
+    than emitted as ``agent_only`` — which would assert "no ``coord.sessions``
+    row bridges this", the opposite of what coord served.
     """
     if agents is None:
         return [{**row, "row_class": None, "agent_session": None} for row in lifecycle]
@@ -9656,7 +9676,7 @@ def _consolidate_sessions(
         agent_id = agent.get("id")
         if not agent_id or str(agent_id) in consumed:
             continue
-        if str(agent_id) in owners:
+        if str(agent_id) in owners or str(agent_id) in filtered_out_bridges:
             # Bridged by SOME lifecycle row, just not one that claimed it above
             # (the owner was filtered out of this response). Emitting it as
             # `agent_only` would assert an absence we did not observe.
@@ -9718,7 +9738,11 @@ async def list_coord_sessions(
         description="Free-text filter. `shape=consolidated` only. The agent "
         "half is searched coord-side (full-text over label / derived_name / "
         "activity); the lifecycle half is matched here over the fields coord's "
-        "`/sessions` route exposes, which carries no search parameter.",
+        "`/sessions` route exposes (which carries no search parameter), "
+        "including `claude_code_session_id` so a pasted `Session-Id:` uuid "
+        "matches it. A lifecycle row whose bridge names an agent row coord's "
+        "search returned is kept too, so matching either half finds the "
+        "session.",
     ),
     status: Literal["live", "stale", "closed"] | None = Query(
         default=None,
@@ -9857,6 +9881,11 @@ async def list_coord_sessions(
         )
 
     # ---- presentation filters (NOT the security boundary — trap 7) ------
+    served_bridges = {
+        str(row["claude_code_session_id"])
+        for row in lifecycle
+        if row.get("claude_code_session_id")
+    }
     if device is not None:
         lifecycle = [
             row for row in lifecycle if str(row.get("device_id") or "") == str(device)
@@ -9867,11 +9896,33 @@ async def list_coord_sessions(
     if q:
         needle = q.strip().lower()
         if needle:
+            # Matching EITHER half finds the session. coord searched the agent
+            # half (its names, and once the session-identity stamp lands, the
+            # account-reporter's registry/tag names and the session uuid), and
+            # those words are not on the lifecycle row — so a lifecycle row is
+            # kept when its bridge names an agent row coord's search returned.
+            # Dropping it instead would leave that agent row with no owner and
+            # emit it as `agent_only`: a fabricated "no coord.sessions row".
+            matched_agent_ids = {
+                str(agent["id"]) for agent in agents or [] if agent.get("id")
+            }
             lifecycle = [
-                row for row in lifecycle if _session_matches_query(row, needle)
+                row
+                for row in lifecycle
+                if _session_matches_query(row, needle)
+                or str(row.get("claude_code_session_id") or "") in matched_agent_ids
             ]
+    kept_bridges = {
+        str(row["claude_code_session_id"])
+        for row in lifecycle
+        if row.get("claude_code_session_id")
+    }
 
-    rows = _consolidate_sessions(lifecycle, agents)
+    rows = _consolidate_sessions(
+        lifecycle,
+        agents,
+        filtered_out_bridges=frozenset(served_bridges - kept_bridges),
+    )
     counts = {"linked": 0, "lifecycle_only": 0, "agent_only": 0, "unknown": 0}
     for row in rows:
         counts[row.get("row_class") or "unknown"] += 1

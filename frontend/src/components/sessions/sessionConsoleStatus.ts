@@ -48,6 +48,7 @@ import {
   type RowStatus,
   type StatusPalette,
 } from "@/components/console/statusRow";
+import type { SessionAccountStamp } from "@/services/agent-sessions-api";
 import type { SessionRow } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -68,8 +69,14 @@ export type SessionRowClass =
   | "agent_only"
   | null;
 
-/** One `coord.agent_sessions` row as coord's `/coord/agent-sessions` emits it. */
-export interface AgentSessionHalf {
+/**
+ * One `coord.agent_sessions` row as coord's `/coord/agent-sessions` emits it.
+ *
+ * The account stamp ({@link SessionAccountStamp}) rides on it verbatim — the
+ * web backend passes the agent row through untouched, so an ABSENT key still
+ * means "coord does not serve it" by the time it reaches the console.
+ */
+export interface AgentSessionHalf extends SessionAccountStamp {
   id: string;
   user_id?: string | null;
   device_id?: string | null;

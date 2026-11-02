@@ -851,6 +851,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/sessions/census": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Census
+         * @description Proxy coord's ``GET /coord/sessions/census``.
+         *
+         *     Returns coord's ``CensusResponse`` verbatim plus ``served: true``. When
+         *     coord answers **404** (the deployed build does not serve the census yet)
+         *     this returns 200 with the UNKNOWN envelope::
+         *
+         *         {"served": false, "unknown_reason": "census_not_served",
+         *          "detail": "<coord's 404 body>"}
+         *
+         *     Every other failure keeps :func:`_proxy_coord_get`'s mapping (502/504 for
+         *     transport, coord's own status otherwise) — those are reads that did not
+         *     land, which the card renders as UNKNOWN with the status attached. Tenant
+         *     scoping is coord's, on the forwarded bearer, exactly as for the
+         *     neighbouring routes.
+         */
+        get: operations["api_v1_admin_sessions_census_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/stats": {
         parameters: {
             query?: never;
@@ -58785,6 +58818,44 @@ export interface operations {
             };
         };
     };
+    api_v1_admin_sessions_census_get: {
+        parameters: {
+            query?: {
+                /** @description A Claude Code session uuid or a coord.sessions id (coord matches both: a census row's `aliases` carry the coord ids). */
+                session_id?: string | null;
+                /** @description Prefix match over the census window name and coord's names. */
+                session_name?: string | null;
+                /** @description `owner/repo#n` — the PR whose author session to find. */
+                pr?: string | null;
+                /** @description Max rows coord returns (1..500). */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_admin_stats_get: {
         parameters: {
             query?: never;
@@ -80547,7 +80618,7 @@ export interface operations {
                 shape?: string | null;
                 /** @description Restrict to sessions on this coord device. `shape=consolidated` only. Spelled `device` (not `device_id`) because `/environments/sessions?device=` already builds exactly this deep link and the Phase 3 redirect preserves it verbatim. */
                 device?: string | null;
-                /** @description Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes, which carries no search parameter. */
+                /** @description Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes (which carries no search parameter), including `claude_code_session_id` so a pasted `Session-Id:` uuid matches it. A lifecycle row whose bridge names an agent row coord's search returned is kept too, so matching either half finds the session. */
                 q?: string | null;
                 /** @description Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers coord's `sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`. */
                 status?: ("live" | "stale" | "closed") | null;

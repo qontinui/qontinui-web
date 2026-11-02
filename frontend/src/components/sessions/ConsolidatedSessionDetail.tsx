@@ -27,7 +27,11 @@
  * | Steal / handoff | `SessionDetail` → `StealModal`, `HandoffModal` |
  *
  * Plus the tenth thing this phase adds: **both transcript stores**, labelled
- * (`TranscriptStoresPanel`).
+ * (`TranscriptStoresPanel`). And an eleventh, from plan
+ * `2026-10-19-session-lookup-by-name-shows-claude-account-in-web`: the
+ * identity panel (`SessionIdentityPanel`) — the Claude account, config dir,
+ * device and names the session was stamped with, plus the census's live
+ * status.
  *
  * ## The lifecycle probe, and why the halves are asked separately (D2)
  *
@@ -54,9 +58,13 @@ import { getSession } from "@/lib/api/operations/sessions";
 import { classifyLifecycleError, type LifecycleHalf } from "./sessionKeyResolution";
 import { SessionCardView } from "./SessionCardView";
 import { SessionDetail } from "./SessionDetail";
+import { SessionIdentityPanel } from "./SessionIdentityPanel";
 import { TranscriptStoresPanel, useTranscriptStores } from "./TranscriptStoresPanel";
 import type { HandoffTarget } from "./HandoffModal";
-import type { SessionCard } from "@/services/agent-sessions-api";
+import type {
+  SessionCard,
+  getSessionCensus,
+} from "@/services/agent-sessions-api";
 import type { ArtifactLister, OutputReader } from "./transcriptStores";
 
 export interface ConsolidatedSessionDetailProps {
@@ -81,6 +89,10 @@ export interface ConsolidatedSessionDetailProps {
   readOutput?: OutputReader;
   /** Injected for tests — the permanent archive's list read. */
   listArtifacts?: ArtifactLister;
+  /** Injected for tests — the session-census proxy read. */
+  readCensus?: typeof getSessionCensus;
+  /** Injected for tests so the identity panel's ages are deterministic. */
+  now?: number;
 }
 
 export function ConsolidatedSessionDetail({
@@ -91,6 +103,8 @@ export function ConsolidatedSessionDetail({
   fetchSession,
   readOutput,
   listArtifacts,
+  readCensus,
+  now,
 }: ConsolidatedSessionDetailProps) {
   const [lifecycle, setLifecycle] = useState<LifecycleHalf>({
     state: "loading",
@@ -149,7 +163,19 @@ export function ConsolidatedSessionDetail({
       data-session-id={sessionId}
     >
       {card ? (
-        <SessionCardView card={card} archiveSlot={archiveSlot} />
+        <>
+          {/* Which account, device and names — plan
+              `2026-10-19-session-lookup-by-name-shows-claude-account-in-web`
+              Phase 3. ABOVE the twin card: it is the answer to "what account
+              was this session on?", and the card below is everything else. */}
+          <SessionIdentityPanel
+            card={card}
+            hostnameFor={hostnameFor}
+            readCensus={readCensus}
+            now={now}
+          />
+          <SessionCardView card={card} archiveSlot={archiveSlot} />
+        </>
       ) : (
         <div
           className="rounded-lg border border-border p-4 space-y-3"

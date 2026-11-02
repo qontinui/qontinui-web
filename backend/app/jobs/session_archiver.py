@@ -863,8 +863,22 @@ def build_promotion(
     # * `organization_id` — the web-side ownership axis, resolved from a calling
     #   principal this job does not have. Guessing it is plan §3.6 rule 1.
     # * `account_label`, `config_dir`, `permission_mode`, `machine_hostname` —
-    #   filesystem facts. No coord read carries them; the runner's scanner reads
-    #   them off the account home it is walking.
+    #   filesystem facts the runner's scanner reads off the account home it is
+    #   walking. coord's agent-session rows now carry an `account` and a
+    #   `config_dir` too (the session-identity stamp, plan
+    #   `2026-10-19-session-lookup-by-name-shows-claude-account-in-web`), and
+    #   this job deliberately does NOT consume them: `account_label` is half of
+    #   this row's identity key `(claude_session_id, coalesce(account_label,
+    #   ''))`, and coord's label is not the scanner's. Both strip `.claude-`
+    #   from the config-dir basename, but coord labels the bare `~/.claude`
+    #   home `default` where the runner's `account_label_for`
+    #   (`session_archive/discovery.rs`) labels it `unknown` — so writing
+    #   coord's value here would key the rows this job inserts
+    #   `(id, 'default')` where the runner keys the same session
+    #   `(id, 'unknown')`: two rows for one default-home session, which
+    #   `_resolve_target` then counts as `ambiguous_identity` on every cycle.
+    #   The scanner stays the sole writer of these columns; aligning the two
+    #   vocabularies is a key migration, not a field fill.
     # * `turn_count`, `first_prompt`, `last_prompt`, `ai_title`,
     #   `secret_finding_*` — derived from the TRANSCRIPT BODY, which this job
     #   does not have (and, on the fallback path, has only in redacted form).
@@ -997,9 +1011,12 @@ def _resolve_target(
     rather than a sentinel row because "no row" and "too many rows" are
     genuinely different outcomes with different handling — the first inserts,
     the second must touch NOTHING. A Claude session id is unique per ACCOUNT
-    HOME, not globally, and no coord read exposes which account home a session
-    ran under, so when two stored rows share the id this job cannot choose
-    between them and must not try.
+    HOME, not globally, and no coord read says which of two account homes a
+    stored row belongs to — coord's session-identity stamp carries ONE
+    ``account`` per session id (the newest observation wins, in coord's census
+    vocabulary, not this key's), so it cannot tell two homes' rows apart. When
+    two stored rows share the id this job cannot choose between them and must
+    not try.
 
     Since the organization left ``uq_session_artifacts_identity``, "two stored
     rows share the id" can mean ONE thing — two account homes — so the refusal
@@ -1186,11 +1203,14 @@ class SqlArtifactStore:
     survive the identity change, and neither is about the organization:
 
     1. That function addresses a row by the FULL identity, account home
-       included, and this job cannot see an account home at all — no coord read
-       carries one (the runner's scanner reads it off the filesystem path it is
-       walking). So :meth:`snapshot` looks a candidate up by
-       ``claude_session_id``, which is the new identity minus the one component
-       this writer cannot observe.
+       included, and this job cannot observe the account home IN THE KEY'S
+       VOCABULARY. The runner's scanner reads it off the filesystem path it is
+       walking; coord's agent-session rows now carry an ``account`` too (the
+       session-identity stamp), but in coord's census vocabulary — ``default``
+       for the bare home where the key holds ``unknown`` — so it is not the
+       key's component (see the never-touched list in :func:`build_promotion`).
+       So :meth:`snapshot` looks a candidate up by ``claude_session_id``, which
+       is the new identity minus the one component this writer cannot supply.
     2. The write rules in :func:`_apply_fields` are STRICTER than the API's:
        a ``None`` never blanks a value, ``tenant_source`` is never weakened,
        and a body is only ever written onto a row that has none.

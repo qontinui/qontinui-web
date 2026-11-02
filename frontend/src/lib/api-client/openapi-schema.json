@@ -71669,6 +71669,122 @@
         ]
       }
     },
+    "/api/v1/admin/sessions/census": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/sessions/census``.\n\nReturns coord's ``CensusResponse`` verbatim plus ``served: true``. When\ncoord answers **404** (the deployed build does not serve the census yet)\nthis returns 200 with the UNKNOWN envelope::\n\n    {\"served\": false, \"unknown_reason\": \"census_not_served\",\n     \"detail\": \"<coord's 404 body>\"}\n\nEvery other failure keeps :func:`_proxy_coord_get`'s mapping (502/504 for\ntransport, coord's own status otherwise) \u2014 those are reads that did not\nland, which the card renders as UNKNOWN with the status attached. Tenant\nscoping is coord's, on the forwarded bearer, exactly as for the\nneighbouring routes.",
+        "operationId": "api_v1_admin_sessions_census_get",
+        "parameters": [
+          {
+            "description": "A Claude Code session uuid or a coord.sessions id (coord matches both: a census row's `aliases` carry the coord ids).",
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A Claude Code session uuid or a coord.sessions id (coord matches both: a census row's `aliases` carry the coord ids).",
+              "title": "Session Id"
+            }
+          },
+          {
+            "description": "Prefix match over the census window name and coord's names.",
+            "in": "query",
+            "name": "session_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Prefix match over the census window name and coord's names.",
+              "title": "Session Name"
+            }
+          },
+          {
+            "description": "`owner/repo#n` \u2014 the PR whose author session to find.",
+            "in": "query",
+            "name": "pr",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`owner/repo#n` \u2014 the PR whose author session to find.",
+              "title": "Pr"
+            }
+          },
+          {
+            "description": "Max rows coord returns (1..500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Max rows coord returns (1..500).",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Session Census Api V1 Admin Sessions Census Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Session Census",
+        "tags": [
+          "admin-agent-sessions"
+        ]
+      }
+    },
     "/api/v1/admin/stats": {
       "get": {
         "description": "Get overall platform statistics.",
@@ -109772,7 +109888,7 @@
             }
           },
           {
-            "description": "Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes, which carries no search parameter.",
+            "description": "Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes (which carries no search parameter), including `claude_code_session_id` so a pasted `Session-Id:` uuid matches it. A lifecycle row whose bridge names an agent row coord's search returned is kept too, so matching either half finds the session.",
             "in": "query",
             "name": "q",
             "required": false,
@@ -109785,7 +109901,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes, which carries no search parameter.",
+              "description": "Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes (which carries no search parameter), including `claude_code_session_id` so a pasted `Session-Id:` uuid matches it. A lifecycle row whose bridge names an agent row coord's search returned is kept too, so matching either half finds the session.",
               "title": "Q"
             }
           },

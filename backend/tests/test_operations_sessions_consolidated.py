@@ -447,3 +447,120 @@ class TestFilters:
         assert [row["id"] for row in r.json()["sessions"]] == ["s-web"]
         agent_call = next(c for c in stub.calls if "/coord/agent-sessions" in c[0])
         assert agent_call[1]["q"] == "console"
+
+
+# ---------------------------------------------------------------------------
+# Session lookup by id, name or trailer — plan
+# `2026-10-19-session-lookup-by-name-shows-claude-account-in-web` Phase 3
+# ---------------------------------------------------------------------------
+
+
+class TestSessionLookup:
+    def test_claude_code_session_id_is_a_lifecycle_query_field(self):
+        from app.api.v1.endpoints.operations import _SESSION_QUERY_FIELDS
+
+        assert "claude_code_session_id" in _SESSION_QUERY_FIELDS
+
+    def test_a_pasted_session_id_finds_the_lifecycle_half_by_its_bridge(
+        self, auth_client
+    ):
+        """A commit's `Session-Id:` trailer is the Claude Code session uuid —
+        `coord.sessions.claude_code_session_id`, NOT `coord.sessions.id`. The
+        console strips the prefix; the lifecycle half must still match it."""
+        stub = _CoordStub(
+            lifecycle=[
+                _lifecycle_row("s-bridged", bridge=BRIDGE),
+                {
+                    **_lifecycle_row("s-other", bridge=None),
+                    "repo": "qontinui-coord",
+                    "branch": "main",
+                    "intent": {"purpose": "unrelated"},
+                },
+            ],
+            # The deployed coord's full-text search cannot match a uuid yet, so
+            # the agent half returns nothing for it.
+            agents=[],
+        )
+        patcher = _with_coord(stub)
+        try:
+            r = auth_client.get(
+                f"{API_PREFIX}/sessions?shape=consolidated&q={BRIDGE.upper()}"
+            )
+        finally:
+            patcher.stop()
+        rows = r.json()["sessions"]
+        assert [row["id"] for row in rows] == ["s-bridged"]
+        # The agent half did not carry the bridged row: UNKNOWN, never
+        # `lifecycle_only` (which would claim no agent row CAN exist).
+        assert rows[0]["row_class"] is None
+        agent_call = next(c for c in stub.calls if "/coord/agent-sessions" in c[0])
+        assert agent_call[1]["q"] == BRIDGE.upper()
+
+    def test_a_name_only_the_agent_half_matched_keeps_its_lifecycle_twin(
+        self, auth_client
+    ):
+        """coord matched the name (a stamped / trailer name the lifecycle row
+        does not carry). Filtering the lifecycle twin out would orphan the
+        agent row and emit it as `agent_only` — a fabricated "no coord.sessions
+        row bridges this"."""
+        stub = _CoordStub(
+            lifecycle=[
+                _lifecycle_row("s-linked", bridge=BRIDGE),
+                {
+                    **_lifecycle_row("s-other", bridge=None),
+                    "intent": {"purpose": "unrelated"},
+                },
+            ],
+            agents=[_agent_row(BRIDGE)],
+        )
+        patcher = _with_coord(stub)
+        try:
+            r = auth_client.get(
+                f"{API_PREFIX}/sessions?shape=consolidated&q=spaceship-latency"
+            )
+        finally:
+            patcher.stop()
+        body = r.json()
+        assert [(row["id"], row["row_class"]) for row in body["sessions"]] == [
+            ("s-linked", "linked")
+        ]
+        assert body["sessions"][0]["agent_session"]["id"] == BRIDGE
+        assert body["row_class_counts"]["agent_only"] == 0
+
+    def test_a_status_filtered_lifecycle_row_takes_its_agent_half_with_it(
+        self, auth_client
+    ):
+        """`status=live` removes a CLOSED lifecycle row. Its agent half (coord's
+        own status word may still read `live`) is the other half of a session
+        the filter excluded — not an unbridged `agent_only` allocation."""
+        stub = _CoordStub(
+            lifecycle=[_lifecycle_row("s-closed", bridge=BRIDGE, state="closed")],
+            agents=[_agent_row(BRIDGE)],
+        )
+        patcher = _with_coord(stub)
+        try:
+            r = auth_client.get(f"{API_PREFIX}/sessions?shape=consolidated&status=live")
+        finally:
+            patcher.stop()
+        body = r.json()
+        assert body["sessions"] == []
+        assert body["row_class_counts"]["agent_only"] == 0
+
+    def test_a_truly_unbridged_agent_row_is_still_agent_only_under_a_filter(
+        self, auth_client
+    ):
+        """The guard above must not swallow a REAL `agent_only` row: one no
+        lifecycle row coord served bridges at all."""
+        unbridged = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+        stub = _CoordStub(
+            lifecycle=[_lifecycle_row("s-closed", bridge=BRIDGE, state="closed")],
+            agents=[_agent_row(unbridged)],
+        )
+        patcher = _with_coord(stub)
+        try:
+            r = auth_client.get(f"{API_PREFIX}/sessions?shape=consolidated&status=live")
+        finally:
+            patcher.stop()
+        assert [(row["id"], row["row_class"]) for row in r.json()["sessions"]] == [
+            (unbridged, "agent_only")
+        ]
