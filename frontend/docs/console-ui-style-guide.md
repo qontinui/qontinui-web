@@ -1767,10 +1767,13 @@ caption, and that IS the stop's sentence.
 `/admin/coord/overlord/flow` (plan
 `2026-10-23-the-overlord-keeps-no-record-of-session-flow-so-its-development-runs-on-anecdote`
 Phase 4) composes `HealthStrip`, `StatCluster`, `RecordList`/`RecordRow`/
-`RecordDetail`, `RowTime`, `CollapsiblePanel` and `RefreshButton`. It declares
-no attention table (its rows are not classified, so `RecordRow`'s `attention`
-is ABSENT, not `"none"`), and records two things rather than shipping them
-silently:
+`RecordDetail`, `RowTime`, `CollapsiblePanel` and `RefreshButton`. Its pass
+drill-down is the one read beside the strip's single payload: a
+`CollapsiblePanel` unmounts its children, so the pass list is read only once the
+panel opens, and a pass's rows only once that pass opens; a failure there stays
+in the panel and never reaches the strip. It declares no attention table (its
+rows are not classified, so `RecordRow`'s `attention` is ABSENT, not `"none"`),
+and records two things rather than shipping them silently:
 
 | Pattern | Where | What it is | Why it is not an existing rule |
 |---|---|---|---|
