@@ -46263,7 +46263,8 @@
               "available",
               "taken",
               "invalid",
-              "owner_unbound"
+              "owner_unbound",
+              "repo_bound_to_another_tenant"
             ],
             "title": "Status",
             "type": "string"
@@ -103377,7 +103378,7 @@
     },
     "/api/v1/operations/github/check-name": {
       "post": {
-        "description": "Check whether ``owner/name`` is available for a new repository.\n\nProxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards\nthe JSON verbatim: ``{status: \"available\"|\"taken\"|\"invalid\"|\n\"owner_unbound\", reason?, normalized_name}``. POST (despite the read\nsemantics) so the runner's provisioning flow talks one verb to this\nsurface; the upstream coord call is the GET.",
+        "description": "Check whether ``owner/name`` is available for a new repository.\n\nProxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards\nthe JSON verbatim: ``{status: \"available\"|\"taken\"|\"invalid\"|\n\"owner_unbound\"|\"repo_bound_to_another_tenant\", reason?, normalized_name}``.\n``repo_bound_to_another_tenant`` answers the tenant that owns the org when a\nper-repo binding hands this name to another tenant. A failed governing read\nis ``500 governing_tenant_unknown``. POST (despite the read\nsemantics) so the runner's provisioning flow talks one verb to this\nsurface; the upstream coord call is the GET.",
         "operationId": "api_v1_operations_github_check_name_post",
         "requestBody": {
           "content": {
@@ -103419,7 +103420,7 @@
     },
     "/api/v1/operations/github/clone-credential": {
       "post": {
-        "description": "Mint a repo-scoped, short-TTL, contents:read clone token for a single\nrepo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.\n\nPasses coord's status + JSON body through verbatim (like the onboarding\nclaim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when\nthe repo's owner isn't a GitHub account connected to the caller's workspace.",
+        "description": "Mint a repo-scoped, short-TTL, contents:read clone token for a single\nrepo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.\n\nPasses coord's status + JSON body through verbatim (like the onboarding\nclaim proxy) so the runner sees a clean ``403`` when the caller's tenant does\nnot govern the repo: ``repo_bound_to_another_tenant`` when it owns the repo's\norg but a per-repo binding hands the repo to another tenant, otherwise\n``repo_owner_not_connected``. A failed governing read is\n``500 governing_tenant_unknown``.",
         "operationId": "api_v1_operations_github_clone_credential_post",
         "requestBody": {
           "content": {
@@ -103459,7 +103460,7 @@
     },
     "/api/v1/operations/github/create-repo": {
       "post": {
-        "description": "Create a new GitHub repository under a connected account.\n\nProxies coord ``POST /coord/repos``. Success is coord's ``201\n{full_name, clone_url, html_url, default_branch}``; coord's error\nstatuses + bodies pass through VERBATIM \u2014 ``409 name_taken``,\n``403 owner_unbound``, ``409 user_authorization_required`` (whose body\ncarries the ``authorize_url`` the runner must surface), and\n``503 app_unconfigured``.\n\n``description`` is omitted from the forwarded body when unset so coord\nsees an honest wire shape (mirrors the onboarding claim proxy).",
+        "description": "Create a new GitHub repository under a connected account.\n\nProxies coord ``POST /coord/repos``. Success is coord's ``201\n{full_name, clone_url, html_url, default_branch}``; coord's error\nstatuses + bodies pass through VERBATIM \u2014 ``409 name_taken``,\n``403 owner_unbound``, ``403 repo_bound_to_another_tenant``,\n``500 governing_tenant_unknown``, ``409 user_authorization_required`` (whose body\ncarries the ``authorize_url`` the runner must surface), and\n``503 app_unconfigured``.\n\n``description`` is omitted from the forwarded body when unset so coord\nsees an honest wire shape (mirrors the onboarding claim proxy).",
         "operationId": "api_v1_operations_github_create_repo_post",
         "requestBody": {
           "content": {
@@ -103586,7 +103587,7 @@
     },
     "/api/v1/operations/github/push-credential": {
       "post": {
-        "description": "Mint a repo-scoped, short-TTL push token for ``owner/name``.\n\nProxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` \u2192\n``{token, expires_at}``. The write-scoped sibling of the contents:read\nclone-credential proxy above; coord enforces that the repo's owner is\nbound to the caller's tenant.",
+        "description": "Mint a repo-scoped, short-TTL push token for ``owner/name``.\n\nProxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` \u2192\n``{token, expires_at}``. The write-scoped sibling of the contents:read\nclone-credential proxy above; coord enforces that the caller's tenant\ngoverns the repo: a per-repo binding, else the owner's binding. A failed\ngoverning read is ``500 governing_tenant_unknown``.",
         "operationId": "api_v1_operations_github_push_credential_post",
         "requestBody": {
           "content": {
