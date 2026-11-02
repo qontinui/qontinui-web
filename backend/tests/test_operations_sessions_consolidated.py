@@ -545,6 +545,67 @@ class TestSessionLookup:
         body = r.json()
         assert body["sessions"] == []
         assert body["row_class_counts"]["agent_only"] == 0
+        # Hidden, but COUNTED — the session must not vanish silently.
+        assert body["withheld_by_filter"] == 1
+        # It is not a row of any class: the class counts still sum to `count`.
+        assert sum(body["row_class_counts"].values()) == body["count"] == 0
+
+    def test_a_name_search_narrowed_by_status_counts_the_disagreeing_session(
+        self, auth_client
+    ):
+        """`?status=stale&q=<name>`: coord's agent half matched the name AND
+        reads `stale`, while the lifecycle half reads `active`. The stale tab
+        hides it — and says how many it hid."""
+        stub = _CoordStub(
+            lifecycle=[_lifecycle_row("s-active", bridge=BRIDGE, state="active")],
+            agents=[{**_agent_row(BRIDGE), "status": "stale"}],
+        )
+        patcher = _with_coord(stub)
+        try:
+            r = auth_client.get(
+                f"{API_PREFIX}/sessions?shape=consolidated&status=stale"
+                "&q=spaceship-latency"
+            )
+        finally:
+            patcher.stop()
+        body = r.json()
+        assert body["sessions"] == []
+        assert body["withheld_by_filter"] == 1
+
+    def test_halves_on_different_devices_are_counted_under_a_device_filter(
+        self, auth_client
+    ):
+        stub = _CoordStub(
+            lifecycle=[_lifecycle_row("s-b", bridge=BRIDGE, device_id=DEVICE_B)],
+            # coord's agent read is device-filtered on ITS device column.
+            agents=[_agent_row(BRIDGE, device_id=DEVICE_A)],
+        )
+        patcher = _with_coord(stub)
+        try:
+            r = auth_client.get(
+                f"{API_PREFIX}/sessions?shape=consolidated&device={DEVICE_A}"
+            )
+        finally:
+            patcher.stop()
+        body = r.json()
+        assert body["sessions"] == []
+        assert body["withheld_by_filter"] == 1
+
+    def test_nothing_is_withheld_without_a_filter_or_without_an_agent_read(
+        self, auth_client
+    ):
+        for agents, status in (([_agent_row(BRIDGE)], 200), (None, 502)):
+            stub = _CoordStub(
+                lifecycle=[_lifecycle_row("s-1", bridge=BRIDGE, state="closed")],
+                agents=agents,
+                agent_status=status,
+            )
+            patcher = _with_coord(stub)
+            try:
+                r = auth_client.get(f"{API_PREFIX}/sessions?shape=consolidated")
+            finally:
+                patcher.stop()
+            assert r.json()["withheld_by_filter"] == 0
 
     def test_a_truly_unbridged_agent_row_is_still_agent_only_under_a_filter(
         self, auth_client
@@ -561,6 +622,10 @@ class TestSessionLookup:
             r = auth_client.get(f"{API_PREFIX}/sessions?shape=consolidated&status=live")
         finally:
             patcher.stop()
-        assert [(row["id"], row["row_class"]) for row in r.json()["sessions"]] == [
+        body = r.json()
+        assert [(row["id"], row["row_class"]) for row in body["sessions"]] == [
             (unbridged, "agent_only")
         ]
+        # The closed lifecycle row's agent half was never served, so nothing
+        # coord matched was hidden.
+        assert body["withheld_by_filter"] == 0

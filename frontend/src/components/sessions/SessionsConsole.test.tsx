@@ -930,3 +930,30 @@ describe("search by name, session id, or a pasted trailer line", () => {
     );
   });
 });
+
+describe("matches hidden by a server filter are counted, never silent", () => {
+  it("an emptied tab says how many matches the filter hid", async () => {
+    mount(envelope([], { withheld_by_filter: 2 }), { initialStatus: "stale" });
+    const empty = await screen.findByTestId("sessions-console-empty");
+    expect(empty).toHaveTextContent(/No sessions match this filter/i);
+    expect(
+      screen.getByTestId("sessions-console-empty-withheld")
+    ).toHaveTextContent("2 matches hidden by this filter");
+  });
+
+  it("a non-empty tab says it too, above the list", async () => {
+    mount(envelope([LINKED], { withheld_by_filter: 1 }), {
+      initialStatus: "live",
+    });
+    await screen.findAllByTestId("sessions-console-row");
+    expect(screen.getByTestId("sessions-console-withheld")).toHaveTextContent(
+      "1 match hidden by this filter"
+    );
+  });
+
+  it("says nothing when nothing was hidden, or the backend did not report it", async () => {
+    mount(envelope([LINKED], { withheld_by_filter: 0 }));
+    await screen.findAllByTestId("sessions-console-row");
+    expect(screen.queryByTestId("sessions-console-withheld")).toBeNull();
+  });
+});

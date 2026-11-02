@@ -391,6 +391,10 @@ export function SessionsConsole({
 
   const rows = useMemo(() => payload?.sessions ?? [], [payload]);
   const agentHalfFailed = payload?.agent_half?.read === "failed";
+  // Sessions the server-side status/machine filter hid although their agent
+  // half matched — the halves disagree. Counted so a narrowed tab never loses
+  // a session silently (`withheld_by_filter` on the envelope).
+  const withheld = payload?.withheld_by_filter ?? 0;
 
   // The READ axis. Keyed on `loaded`, per `readFailure.ts`.
   const unknown = readIsUnknown(loaded, readFailed);
@@ -727,6 +731,10 @@ export function SessionsConsole({
         />
       </div>
 
+      {withheld > 0 && visible.length > 0 && (
+        <WithheldNote count={withheld} testId="sessions-console-withheld" />
+      )}
+
       <RecordList
         items={visible}
         itemKey={(r, i) => r.id || `row-${i}`}
@@ -743,6 +751,7 @@ export function SessionsConsole({
           <EmptyState
             unknown={unknown}
             error={error}
+            withheld={withheld}
             // `work` counts here for the same reason every other facet does:
             // a list emptied by "hide finished" must say a FILTER emptied it,
             // not report an idle fleet. That is the same
@@ -1016,10 +1025,13 @@ function SessionConsoleRow({
 function EmptyState({
   unknown,
   error,
+  withheld,
   filtered,
 }: {
   unknown: boolean;
   error: string | null;
+  /** Sessions the server filter hid although their agent half matched. */
+  withheld: number;
   filtered: boolean;
 }) {
   if (unknown) {
@@ -1049,7 +1061,31 @@ function EmptyState({
           ? "coord answered — nothing matched. Clear a filter to widen the question."
           : "Start a session from any runner and it will surface here."}
       </p>
+      {withheld > 0 && (
+        <div className="mt-2 flex justify-center">
+          <WithheldNote count={withheld} testId="sessions-console-empty-withheld" />
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * "N matches hidden by this filter" — sessions the status/machine filter
+ * removed although coord's agent half matched it. Without this a session whose
+ * two halves disagree (lifecycle `active`, agent `stale`) would vanish from
+ * every narrowed tab with nothing counted.
+ */
+function WithheldNote({ count, testId }: { count: number; testId: string }) {
+  return (
+    <p
+      className="text-xs text-amber-300/90"
+      data-testid={testId}
+      title="coord's agent-session half matched this filter, but the session's lifecycle half (its coord.sessions row) did not — the two halves disagree on status or machine. Widen the status tab or clear the machine filter to see them."
+    >
+      {count} {count === 1 ? "match" : "matches"} hidden by this filter — the
+      session&apos;s two halves disagree on status or machine
+    </p>
   );
 }
 

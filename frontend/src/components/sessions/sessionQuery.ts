@@ -25,6 +25,12 @@
  * value is preferred when both are present — it names exactly one session,
  * where a name may name several. A `Session-Id` value that starts with a uuid
  * is cut to that uuid, so a glued suffix cannot leak into the query.
+ *
+ * A value is also cut at the OTHER trailer keys this fleet's commits carry
+ * beside these two — `Claude-Session:`, `Co-Authored-By:`, `Plan:` — matched
+ * in their canonical spelling only. Deliberately NOT a generic `Word:` rule:
+ * a session name derived from a plan or commit title can contain `feat: …`
+ * or `fix: …`, and cutting there would search for half a name.
  */
 
 /** Which trailer a query was lifted out of, if any. */
@@ -44,6 +50,13 @@ export interface NormalizedSessionQuery {
  */
 const TRAILER_RE =
   /session-(id|name)[ \t]*:[ \t]*(.*?)(?=session-(?:id|name)[ \t]*:|\r?\n|$)/gis;
+
+/**
+ * The other trailer keys a fleet commit carries, as the fleet writes them
+ * (`prepare-commit-msg`, the harness attribution line, the plan trailer).
+ * Case-SENSITIVE on purpose — see the module doc.
+ */
+const OTHER_FLEET_TRAILER_RE = /(?:Claude-Session|Co-Authored-By|Plan)[ \t]*:/;
 
 const UUID_PREFIX_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -66,7 +79,9 @@ export function normalizeSessionQuery(raw: string): NormalizedSessionQuery {
     const kind: SessionQueryTrailer =
       (match[1] ?? "").toLowerCase() === "id" ? "Session-Id" : "Session-Name";
     sawTrailer ??= kind;
-    const value = (match[2] ?? "").trim();
+    const raw = match[2] ?? "";
+    const cut = OTHER_FLEET_TRAILER_RE.exec(raw);
+    const value = (cut ? raw.slice(0, cut.index) : raw).trim();
     if (!value) continue;
     if (kind === "Session-Id" && id === null) {
       id = UUID_PREFIX_RE.exec(value)?.[0] ?? value;

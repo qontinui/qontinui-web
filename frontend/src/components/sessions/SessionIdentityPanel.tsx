@@ -27,12 +27,11 @@ import { Fingerprint } from "lucide-react";
 import {
   getSessionCensus,
   type SessionCard,
-  type SessionCensusResponse,
 } from "@/services/agent-sessions-api";
-import type { HalfResult } from "./sessionKeyResolution";
 import {
   classifyCensusError,
   deriveCardIdentity,
+  type CensusHalf,
   deriveLiveStatus,
   type Fact,
   type LiveStatus,
@@ -53,7 +52,7 @@ export function SessionIdentityPanel({
   readCensus,
   now,
 }: SessionIdentityPanelProps) {
-  const [census, setCensus] = useState<HalfResult<SessionCensusResponse>>({
+  const [census, setCensus] = useState<CensusHalf>({
     state: "loading",
   });
 

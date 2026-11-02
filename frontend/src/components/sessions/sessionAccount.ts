@@ -48,7 +48,6 @@ import {
   type SessionCensusResponse,
   type SessionCensusRow,
 } from "@/services/agent-sessions-api";
-import type { HalfResult } from "./sessionKeyResolution";
 import type { ConsolidatedSessionRow } from "./sessionConsoleStatus";
 
 // ---------------------------------------------------------------------------
@@ -365,17 +364,18 @@ export type LiveStatus =
   | { state: "unknown"; text: string; title: string };
 
 /**
- * Classify a thrown census read. The proxy answers coord's 404 as a 200
- * not-served envelope, so a 404 that still reaches here is the same fact
- * (`absent`, which {@link deriveLiveStatus} reads as "census not served");
- * anything else is a read that did not land.
+ * The census read's state. No `absent` arm, unlike the resolver halves: the
+ * proxy answers coord's typed `no_such_route` 404 as a 200 not-served
+ * envelope, and passes every OTHER 404 through as an error — so a 404 that
+ * reaches the client is a read that did not land, not an answer.
  */
-export function classifyCensusError(
-  err: unknown
-): HalfResult<SessionCensusResponse> {
-  if (err instanceof AgentSessionsApiError && err.status === 404) {
-    return { state: "absent" };
-  }
+export type CensusHalf =
+  | { state: "loading" }
+  | { state: "resolved"; value: SessionCensusResponse }
+  | { state: "unknown"; detail: string };
+
+/** Classify a thrown census read — always a read that did not land. */
+export function classifyCensusError(err: unknown): CensusHalf {
   const detail =
     err instanceof AgentSessionsApiError
       ? `${err.status}: ${err.message}`
@@ -407,7 +407,7 @@ export function censusRowFor(
  * ended session and an unobserved one look identical from here otherwise.
  */
 export function deriveLiveStatus(
-  half: HalfResult<SessionCensusResponse>,
+  half: CensusHalf,
   sessionId: string,
   opts: { now?: number } = {}
 ): LiveStatus {
@@ -423,12 +423,6 @@ export function deriveLiveStatus(
   if (half.state === "unknown") {
     return unknown(`census read failed (${half.detail})`);
   }
-  if (half.state === "absent") {
-    // The proxy turns coord's 404 into the not-served envelope, so a raw 404
-    // reaching here is the same fact by another route.
-    return unknown("census not served");
-  }
-
   const census = half.value;
   if (!census.served) {
     return unknown(

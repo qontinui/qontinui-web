@@ -25,6 +25,7 @@ old DB-direct cross-schema SQL path).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -629,7 +630,9 @@ class _HttpxClient:
         resp = MagicMock(spec=httpx.Response)
         resp.status_code = self._status
         resp.json.return_value = self._body
-        resp.text = str(self._body)
+        resp.text = (
+            self._body if isinstance(self._body, str) else json.dumps(self._body)
+        )
         return resp
 
 
@@ -706,13 +709,21 @@ class TestSessionCensusProxy:
         assert captured["params"] is None
 
     def test_coord_404_is_the_unknown_envelope_not_an_error_or_empty_census(self):
-        """The deployed coord answers 404 no_such_route. Driven through the REAL
-        ``_proxy_coord_get`` so the 404 it raises is the one converted."""
+        """The deployed coord answers its typed 404 no_such_route. Driven
+        through the REAL ``_proxy_coord_get`` so the 404 it raises is the one
+        converted."""
         from app.api.v1.endpoints import agent_sessions as mod
 
         sid = str(uuid4())
         seen: dict[str, Any] = {}
-        fake = _HttpxClient(404, {"error": "no_such_route"}, seen)
+        # The shape of coord's router fallback (`doors.rs` `no_such_route`).
+        body = {
+            "error": "no_such_route",
+            "method": "GET",
+            "path": "/coord/sessions/census",
+            "did_you_mean": [],
+        }
+        fake = _HttpxClient(404, body, seen)
         app = _build_app()
         with patch.object(mod.httpx, "AsyncClient", fake):
             client = TestClient(app)
@@ -728,6 +739,32 @@ class TestSessionCensusProxy:
         assert "count" not in body
         assert seen["url"].endswith("/coord/sessions/census")
         assert seen["params"] == {"session_id": sid}
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"error": "not_found", "detail": "a route-level 404"},
+            "<html>404 Not Found</html>",
+            "",
+        ],
+        ids=["other-typed-404", "html-404", "empty-404"],
+    )
+    def test_a_404_that_is_not_no_such_route_passes_through_as_an_error(
+        self, body: Any
+    ):
+        """Only coord's typed fallback means "not served". A 404 from
+        anything else — a proxy in front of coord, a future route-level 404 —
+        is a failed read and stays one."""
+        from app.api.v1.endpoints import agent_sessions as mod
+
+        seen: dict[str, Any] = {}
+        fake = _HttpxClient(404, body, seen)
+        app = _build_app()
+        with patch.object(mod.httpx, "AsyncClient", fake):
+            client = TestClient(app)
+            resp = client.get(f"/api/v1/admin/sessions/census?session_id={uuid4()}")
+        assert resp.status_code == 404
+        assert "served" not in resp.json()
 
     @pytest.mark.parametrize("status", [403, 500, 502, 504])
     def test_other_failures_propagate_as_failed_reads(self, status: int):

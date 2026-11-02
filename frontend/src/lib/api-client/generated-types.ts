@@ -863,14 +863,16 @@ export interface paths {
          * @description Proxy coord's ``GET /coord/sessions/census``.
          *
          *     Returns coord's ``CensusResponse`` verbatim plus ``served: true``. When
-         *     coord answers **404** (the deployed build does not serve the census yet)
-         *     this returns 200 with the UNKNOWN envelope::
+         *     coord answers its typed **404** ``{"error": "no_such_route"}`` (the
+         *     deployed build does not serve the census yet) this returns 200 with the
+         *     UNKNOWN envelope::
          *
          *         {"served": false, "unknown_reason": "census_not_served",
          *          "detail": "<coord's 404 body>"}
          *
-         *     Every other failure keeps :func:`_proxy_coord_get`'s mapping (502/504 for
-         *     transport, coord's own status otherwise) — those are reads that did not
+         *     Every other failure — any other 404 included — keeps
+         *     :func:`_proxy_coord_get`'s mapping (502/504 for transport, coord's own
+         *     status otherwise) — those are reads that did not
          *     land, which the card renders as UNKNOWN with the status attached. Tenant
          *     scoping is coord's, on the forwarded bearer, exactly as for the
          *     neighbouring routes.
@@ -16494,7 +16496,7 @@ export interface paths {
          *
          *     Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
          *
-         *     With ``shape=consolidated`` the envelope gains three fields and every
+         *     With ``shape=consolidated`` the envelope gains four fields and every
          *     row gains two (plan `2026-08-26-sessions-console-consolidation` D1)::
          *
          *         { "count": <int>, "scope": "all", "shape": "consolidated",
@@ -16503,7 +16505,14 @@ export interface paths {
          *                           "agent_session": {...}|null }, ... ],
          *           "row_class_counts": {"linked": n, "lifecycle_only": n,
          *                                "agent_only": n, "unknown": n},
+         *           "withheld_by_filter": n,
          *           "agent_half": {"read": "ok"} | {"read": "failed", "detail": "..."} }
+         *
+         *     ``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter
+         *     hid although their agent half matched it — the two halves disagree (e.g.
+         *     lifecycle ``active``, agent ``stale``). They are not rows of any class, so
+         *     they sit beside ``row_class_counts`` rather than in it (its values still
+         *     sum to ``count``).
          *
          *     ``row_class: null`` is UNKNOWN and is load-bearing — see the block
          *     comment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.
