@@ -41,6 +41,39 @@ describe("resolveUpstream", () => {
     expect(() => resolveUpstream("coord", env)).toThrow(/Set COORD_URL/);
   });
 
+  // A runner session exports COORD_URL=wss://coord.qontinui.io/ws, and Next
+  // refuses the whole config over a rewrite destination that is not http(s).
+  it.each([
+    "wss://coord.qontinui.io/ws",
+    "ws://localhost:9870/ws",
+    "WSS://c/ws",
+  ])("treats a websocket COORD_URL (%s) as unset", (COORD_URL) => {
+    expect(
+      resolveUpstream("coord", { COORD_URL, NODE_ENV: "development" })
+    ).toEqual({ kind: "url", url: DEV_DEFAULTS.coord });
+    expect(
+      resolveUpstream("coord", { COORD_URL, NODE_ENV: "production" })
+    ).toEqual({ kind: "unresolved", route: unresolvedRoute("coord") });
+  });
+
+  it("names the variable when a deploy build has only a websocket COORD_URL", () => {
+    expect(() =>
+      resolveUpstream("coord", {
+        COORD_URL: "wss://coord.qontinui.io/ws",
+        VERCEL_ENV: "production",
+      })
+    ).toThrow(/misconfigured.*Set COORD_URL/);
+  });
+
+  it("falls through a websocket BACKEND_URL to NEXT_PUBLIC_API_URL", () => {
+    expect(
+      resolveUpstream("backend", {
+        BACKEND_URL: "wss://b.internal",
+        NEXT_PUBLIC_API_URL: "https://api.example.com",
+      })
+    ).toEqual({ kind: "url", url: "https://api.example.com" });
+  });
+
   it("treats a blank value as unset", () => {
     expect(() =>
       resolveUpstream("backend", {
