@@ -227,6 +227,8 @@ export interface FlowView {
     p90Secs: Metric;
     byTriage: number | undefined;
     byAbsent: number | undefined;
+    /** Missing across a runner build change: not in `count`. */
+    absentUnproven: number | undefined;
   };
   nudge: {
     nudged: number | undefined;
@@ -234,6 +236,8 @@ export interface FlowView {
     finished: number | undefined;
     progressRate: Metric;
     finishRate: Metric;
+    /** Went missing across a runner build change: not in `finishRate`. */
+    finishUnproven: number | undefined;
     unmeasured: number | undefined;
   };
   /** `null` = the list did not arrive (unknown), `[]` = coord found none. */
@@ -453,6 +457,7 @@ export function readFlowBody(body: unknown): FlowView | null {
       medianSecs: metric(ttc.median_secs),
       p90Secs: metric(ttc.p90_secs),
       ...closedBy(ttc.closed_by, ttcCount),
+      absentUnproven: count(ttc.absent_unproven),
     },
     nudge: {
       nudged: count(nudge.nudged),
@@ -460,6 +465,7 @@ export function readFlowBody(body: unknown): FlowView | null {
       finished: count(nudge.finished),
       progressRate: metric(nudge.progress_rate),
       finishRate: metric(nudge.finish_rate),
+      finishUnproven: count(nudge.finish_unproven),
       unmeasured: count(nudge.unmeasured_progress),
     },
     unchanged: unchangedOf(body.unchanged),

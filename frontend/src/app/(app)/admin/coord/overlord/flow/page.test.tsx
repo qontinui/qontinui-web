@@ -72,6 +72,12 @@ describe("/admin/coord/overlord/flow", () => {
     expect(screen.getByTestId("overlord-flow-ttc-absent")).toHaveTextContent(
       "gone from a full pass1"
     );
+    expect(
+      screen.getByTestId("overlord-flow-ttc-absent-unproven")
+    ).toHaveTextContent("gone across a rebuild2");
+    expect(
+      screen.getByTestId("overlord-flow-nudge-finish-unproven")
+    ).toHaveTextContent("gone across a rebuild1");
 
     // Nudge rates with their counts and the unmeasured remainder.
     expect(
