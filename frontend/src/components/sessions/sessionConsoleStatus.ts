@@ -139,6 +139,14 @@ export interface ConsolidatedSessionsResponse {
   shape: string;
   sessions: ConsolidatedSessionRow[];
   row_class_counts: Record<string, number>;
+  /**
+   * Sessions the `device` / `status` SERVER filter hid although coord's agent
+   * half matched it — the two halves disagree (lifecycle `active`, agent
+   * `stale`; or different machines). Not rows of any class, so not in
+   * `row_class_counts`. Optional: absent from a backend that predates it, which
+   * is "not reported", never zero — the console shows nothing rather than `0`.
+   */
+  withheld_by_filter?: number;
   /** `{read: "ok"}`, or `{read: "failed", detail}` — the join axis's own read. */
   agent_half: { read: string; detail?: string };
 }

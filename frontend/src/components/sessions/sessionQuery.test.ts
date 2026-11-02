@@ -71,6 +71,34 @@ describe("normalizeSessionQuery", () => {
     ).toBe(SID);
   });
 
+  it("cuts a glued Session-Name value at the other fleet trailer keys", () => {
+    for (const next of [
+      "Claude-Session: https://claude.ai/code/session_01ABC",
+      "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+      "Plan: 2026-10-19-session-lookup-by-name-shows-claude-account-in-web phases: 3",
+      `Session-Id: ${SID}`,
+    ]) {
+      expect(
+        normalizeSessionQuery(`Session-Name: spaceship-latency${next}`).query
+      ).toBe(next.startsWith("Session-Id") ? SID : "spaceship-latency");
+    }
+  });
+
+  it("cuts a non-uuid Session-Id value at a glued fleet trailer too", () => {
+    expect(
+      normalizeSessionQuery("Session-Id: legacy-idClaude-Session: x").query
+    ).toBe("legacy-id");
+  });
+
+  it("does NOT cut a name at a generic `word:` — plan-derived names contain them", () => {
+    expect(
+      normalizeSessionQuery("Session-Name: feat: ship the console").query
+    ).toBe("feat: ship the console");
+    expect(
+      normalizeSessionQuery("Session-Name: fix: the plan: phase 2").query
+    ).toBe("fix: the plan: phase 2");
+  });
+
   it("a prefix with no value yet sends NO query, not the literal word", () => {
     expect(normalizeSessionQuery("Session-Id:")).toEqual({
       query: "",

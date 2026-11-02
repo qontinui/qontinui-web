@@ -33,10 +33,11 @@ export type AgentSessionStatus = "live" | "stale" | "closed";
 /**
  * The durable account stamp on `coord.agent_sessions` — which Claude account
  * (config dir) a session ran on, and the names it was known by. Plan
- * `2026-10-19-session-lookup-by-name-shows-claude-account-in-web` Phase 1:
- * a runner reporter posts these for every session id its box can still
- * resolve (live or ended), and coord serves them on every
- * `GET /coord/agent-sessions` list row and every `:id` resolver card.
+ * `2026-10-19-session-lookup-by-name-shows-claude-account-in-web` Phases 1-2:
+ * once the coord stamp lands, a runner reporter posts these for every session
+ * id its box can still resolve (live or ended), and coord serves them on every
+ * `GET /coord/agent-sessions` list row and every `:id` resolver card. Until
+ * then the deployed coord omits the keys entirely — the ABSENT arm below.
  *
  * Every field is OPTIONAL **and** nullable, and the two say different things —
  * a consumer must NOT collapse them:

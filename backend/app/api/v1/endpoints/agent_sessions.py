@@ -46,6 +46,7 @@ forwarded so coord authorizes and scopes the read.
 from __future__ import annotations
 
 import contextvars
+import json
 from datetime import datetime
 from typing import Any, Literal
 from urllib.parse import quote
@@ -359,17 +360,35 @@ async def get_agent_session_lineage(
 # running RIGHT NOW.
 #
 # **A 404 is not "not live".** The census read never 404s on a miss — it
-# answers 200 with ``liveness: unknown`` rows — so a 404 means the deployed
-# coord does not serve the route at all (``no_such_route``; the plan's Phase 0
-# diagnostic measured exactly that). Re-raising it would make the card treat
-# the whole detail as failed, and passing an empty ``sessions`` list through
-# would let a consumer read "no census row" as "not running". So the 404 is
-# turned into a typed UNKNOWN envelope with NO ``sessions`` key at all: a
-# consumer that forgets to check ``served`` gets ``undefined``, not a fabricated
-# empty census.
+# answers 200 with ``liveness: unknown`` rows — and a deployed coord that does
+# not serve the route at all answers its router's TYPED fallback,
+# ``404 {"error": "no_such_route", ...}`` (``doors.rs`` ``no_such_route``; the
+# plan's Phase 0 diagnostic measured exactly that). Re-raising that would make
+# the card treat the whole detail as failed, and passing an empty ``sessions``
+# list through would let a consumer read "no census row" as "not running". So
+# THAT 404 — keyed on coord's typed body, not on the status alone — is turned
+# into an UNKNOWN envelope with NO ``sessions`` key at all: a consumer that
+# forgets to check ``served`` gets ``undefined``, not a fabricated empty census.
+# Any other 404 (a proxy in front of coord, a future route-level 404) is not
+# evidence the route is unserved and passes through as the error it is.
 
-#: The ``unknown_reason`` the census proxy serves when coord answers 404.
+#: The ``unknown_reason`` the census proxy serves for coord's ``no_such_route``.
 CENSUS_NOT_SERVED = "census_not_served"
+
+
+def _is_coord_no_such_route(detail: object) -> bool:
+    """Is this coord's typed router fallback, ``{"error": "no_such_route"}``?
+
+    ``_proxy_coord_get`` carries coord's raw body as the ``HTTPException``
+    detail, so this parses it rather than trusting the status code alone.
+    """
+    if not isinstance(detail, str):
+        return False
+    try:
+        body = json.loads(detail)
+    except ValueError:
+        return False
+    return isinstance(body, dict) and body.get("error") == "no_such_route"
 
 
 @router.get("/sessions/census")
@@ -406,14 +425,16 @@ async def get_session_census(
     """Proxy coord's ``GET /coord/sessions/census``.
 
     Returns coord's ``CensusResponse`` verbatim plus ``served: true``. When
-    coord answers **404** (the deployed build does not serve the census yet)
-    this returns 200 with the UNKNOWN envelope::
+    coord answers its typed **404** ``{"error": "no_such_route"}`` (the
+    deployed build does not serve the census yet) this returns 200 with the
+    UNKNOWN envelope::
 
         {"served": false, "unknown_reason": "census_not_served",
          "detail": "<coord's 404 body>"}
 
-    Every other failure keeps :func:`_proxy_coord_get`'s mapping (502/504 for
-    transport, coord's own status otherwise) — those are reads that did not
+    Every other failure — any other 404 included — keeps
+    :func:`_proxy_coord_get`'s mapping (502/504 for transport, coord's own
+    status otherwise) — those are reads that did not
     land, which the card renders as UNKNOWN with the status attached. Tenant
     scoping is coord's, on the forwarded bearer, exactly as for the
     neighbouring routes.
@@ -435,7 +456,7 @@ async def get_session_census(
             "/coord/sessions/census", params=params or None
         )
     except HTTPException as exc:
-        if exc.status_code == 404:
+        if exc.status_code == 404 and _is_coord_no_such_route(exc.detail):
             return {
                 "served": False,
                 "unknown_reason": CENSUS_NOT_SERVED,

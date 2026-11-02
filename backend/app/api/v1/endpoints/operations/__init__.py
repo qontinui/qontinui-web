@@ -9614,8 +9614,10 @@ def _consolidate_sessions(
     agents: list[dict[str, Any]] | None,
     *,
     filtered_out_bridges: frozenset[str] = frozenset(),
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], int]:
     """Join the lifecycle half to the agent half and emit D1's row classes.
+
+    Returns ``(rows, withheld_by_filter)``.
 
     ``agents is None`` means the agent read did NOT land. Every row then
     carries ``row_class: null`` — UNKNOWN — including the rows whose bridge
@@ -9630,9 +9632,19 @@ def _consolidate_sessions(
     caller's filter excluded, so it is dropped with its lifecycle twin rather
     than emitted as ``agent_only`` — which would assert "no ``coord.sessions``
     row bridges this", the opposite of what coord served.
+
+    Dropped, but never SILENTLY: such a row is a session coord's own (agent
+    half) filter matched while its lifecycle half did not — the two halves
+    disagree on status or device — so it is counted in ``withheld_by_filter``
+    and the console says "N matches hidden by this filter" rather than
+    letting the session vanish from every narrowed tab with nothing to show
+    for it.
     """
     if agents is None:
-        return [{**row, "row_class": None, "agent_session": None} for row in lifecycle]
+        return (
+            [{**row, "row_class": None, "agent_session": None} for row in lifecycle],
+            0,
+        )
 
     agents_by_id: dict[str, dict[str, Any]] = {}
     for agent in agents:
@@ -9645,6 +9657,7 @@ def _consolidate_sessions(
     owners = _bridge_owners(lifecycle)
     consumed: set[str] = set()
     out: list[dict[str, Any]] = []
+    withheld = 0
 
     for row in lifecycle:
         bridge = row.get("claude_code_session_id")
@@ -9676,10 +9689,16 @@ def _consolidate_sessions(
         agent_id = agent.get("id")
         if not agent_id or str(agent_id) in consumed:
             continue
-        if str(agent_id) in owners or str(agent_id) in filtered_out_bridges:
+        if str(agent_id) in owners:
             # Bridged by SOME lifecycle row, just not one that claimed it above
             # (the owner was filtered out of this response). Emitting it as
             # `agent_only` would assert an absence we did not observe.
+            continue
+        if str(agent_id) in filtered_out_bridges:
+            # Its lifecycle twin was served and then removed by the caller's
+            # `device` / `status` filter. Same reasoning — not `agent_only` —
+            # but COUNTED, because coord's agent-side filter did match it.
+            withheld += 1
             continue
         out.append(
             {
@@ -9696,7 +9715,7 @@ def _consolidate_sessions(
             }
         )
 
-    return out
+    return out, withheld
 
 
 @router.get("/sessions")
@@ -9771,7 +9790,7 @@ async def list_coord_sessions(
 
     Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
 
-    With ``shape=consolidated`` the envelope gains three fields and every
+    With ``shape=consolidated`` the envelope gains four fields and every
     row gains two (plan `2026-08-26-sessions-console-consolidation` D1)::
 
         { "count": <int>, "scope": "all", "shape": "consolidated",
@@ -9780,7 +9799,14 @@ async def list_coord_sessions(
                           "agent_session": {...}|null }, ... ],
           "row_class_counts": {"linked": n, "lifecycle_only": n,
                                "agent_only": n, "unknown": n},
+          "withheld_by_filter": n,
           "agent_half": {"read": "ok"} | {"read": "failed", "detail": "..."} }
+
+    ``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter
+    hid although their agent half matched it — the two halves disagree (e.g.
+    lifecycle ``active``, agent ``stale``). They are not rows of any class, so
+    they sit beside ``row_class_counts`` rather than in it (its values still
+    sum to ``count``).
 
     ``row_class: null`` is UNKNOWN and is load-bearing — see the block
     comment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.
@@ -9918,7 +9944,7 @@ async def list_coord_sessions(
         if row.get("claude_code_session_id")
     }
 
-    rows = _consolidate_sessions(
+    rows, withheld_by_filter = _consolidate_sessions(
         lifecycle,
         agents,
         filtered_out_bridges=frozenset(served_bridges - kept_bridges),
@@ -9932,6 +9958,7 @@ async def list_coord_sessions(
         "shape": _SESSIONS_SHAPE_CONSOLIDATED,
         "sessions": rows,
         "row_class_counts": counts,
+        "withheld_by_filter": withheld_by_filter,
         "agent_half": agent_half,
     }
 

@@ -410,12 +410,14 @@ describe("deriveLiveStatus", () => {
     expect(status.text).not.toMatch(/not live/);
   });
 
-  it("a raw 404 that reached the client is the same 'not served' fact", () => {
+  it("a 404 that reached the client is a FAILED read, not 'not served'", () => {
+    // The proxy turns only coord's typed `no_such_route` into the not-served
+    // envelope; any other 404 it passes through is evidence of nothing.
     const half = classifyCensusError(
-      new AgentSessionsApiError(404, "no_such_route")
+      new AgentSessionsApiError(404, "Not Found")
     );
     expect(deriveLiveStatus(half, SID).text).toBe(
-      "live status UNKNOWN — census not served"
+      "live status UNKNOWN — census read failed (404: Not Found)"
     );
   });
 
