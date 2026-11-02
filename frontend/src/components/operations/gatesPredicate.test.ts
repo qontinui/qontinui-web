@@ -139,6 +139,13 @@ describe("humanizeDurationSecs", () => {
     expect(humanizeDurationSecs(30)).toBe("30s");
   });
 
+  it("keeps the remainder of a duration that is not a whole unit", () => {
+    expect(humanizeDurationSecs(5_400)).toBe("1h 30m");
+    expect(humanizeDurationSecs(90)).toBe("1m 30s");
+    expect(humanizeDurationSecs(129_600)).toBe("1d 12h");
+    expect(humanizeDurationSecs(172_799)).toBe("1d 23h 59m 59s");
+  });
+
   it("handles edge cases", () => {
     expect(humanizeDurationSecs(0)).toBe("0s");
     expect(humanizeDurationSecs(undefined)).toBe("?");

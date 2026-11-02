@@ -40,7 +40,10 @@ function formatLabels(
   return `{${inner}}`;
 }
 
-/** Humanize a duration given in seconds, e.g. 604800 → "7d", 3600 → "1h". */
+/**
+ * Humanize a duration given in seconds without losing any of it, e.g.
+ * 604800 → "7d", 5400 → "1h 30m", 90 → "1m 30s".
+ */
 export function humanizeDurationSecs(secs: number | undefined): string {
   if (secs === undefined || secs === null || Number.isNaN(secs)) return "?";
   if (secs <= 0) return "0s";
@@ -48,15 +51,18 @@ export function humanizeDurationSecs(secs: number | undefined): string {
     [86_400, "d"],
     [3_600, "h"],
     [60, "m"],
-    [1, "s"],
   ];
+  const parts: string[] = [];
+  let rest = secs;
   for (const [size, label] of units) {
-    if (secs % size === 0 || secs >= size) {
-      const n = Math.floor(secs / size);
-      if (n >= 1) return `${n}${label}`;
+    const n = Math.floor(rest / size);
+    if (n >= 1) {
+      parts.push(`${n}${label}`);
+      rest -= n * size;
     }
   }
-  return `${secs}s`;
+  if (rest > 0) parts.push(`${rest}s`);
+  return parts.join(" ");
 }
 
 /** Render an absolute timestamp compactly (date + HH:MM, locale-aware). */
