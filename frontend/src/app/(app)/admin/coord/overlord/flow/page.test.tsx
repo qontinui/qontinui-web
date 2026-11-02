@@ -13,6 +13,8 @@ import userEvent from "@testing-library/user-event";
 import {
   FULL_FLOW,
   NULL_FLOW,
+  PASS_DETAIL,
+  PASS_LIST,
   RUNNERS_ALL_COVERED,
   RUNNERS_TWO_SHORT,
   SESSION_ID,
@@ -22,8 +24,12 @@ import {
 // `lib/api/operations/overlordFlow.test.ts`. The mock receives the query so
 // the window assertions can read what the page asked for.
 const fetchFlow = vi.fn();
+const fetchPasses = vi.fn();
+const fetchPass = vi.fn();
 vi.mock("@/lib/api/operations/overlordFlow", () => ({
   fetchOverlordFlow: (query: string) => fetchFlow(query),
+  fetchOverlordPasses: (query: string) => fetchPasses(query),
+  fetchOverlordPass: (id: string) => fetchPass(id),
 }));
 
 import CoordOverlordFlowPage from "./page";
@@ -42,6 +48,9 @@ async function strip() {
 
 beforeEach(() => {
   fetchFlow.mockReset();
+  fetchPasses.mockReset();
+  fetchPass.mockReset();
+  window.localStorage.clear();
 });
 
 describe("/admin/coord/overlord/flow", () => {
@@ -56,7 +65,7 @@ describe("/admin/coord/overlord/flow", () => {
     );
     expect(fetchFlow).toHaveBeenCalledTimes(1);
     expect(fetchFlow).toHaveBeenCalledWith(
-      "window_hours=168&unchanged_min_passes=3"
+      "window_hours=168&unchanged_min_passes=3&group_by=overlord_version"
     );
 
     // Time to close: median, p90, count and the closed_by split.
@@ -399,7 +408,7 @@ describe("/admin/coord/overlord/flow", () => {
     await userEvent.click(screen.getByTestId("overlord-flow-window-24h"));
     await waitFor(() =>
       expect(fetchFlow).toHaveBeenLastCalledWith(
-        "window_hours=24&unchanged_min_passes=3"
+        "window_hours=24&unchanged_min_passes=3&group_by=overlord_version"
       )
     );
     // The 7d rows must not survive as the 24h answer: the new read failed
@@ -416,7 +425,7 @@ describe("/admin/coord/overlord/flow", () => {
     await userEvent.click(screen.getByTestId("overlord-flow-window-30d"));
     await waitFor(() =>
       expect(fetchFlow).toHaveBeenLastCalledWith(
-        "window_hours=720&unchanged_min_passes=3"
+        "window_hours=720&unchanged_min_passes=3&group_by=overlord_version"
       )
     );
     // What renders for 30d is the 30d answer, in 30d words.
@@ -508,5 +517,477 @@ describe("/admin/coord/overlord/flow", () => {
       await screen.findByTestId("overlord-flow-unchanged-stale-empty")
     ).toHaveTextContent("None at the last good read");
     expect(screen.queryByTestId("overlord-flow-unchanged-empty")).toBeNull();
+  });
+
+  describe("what the first read left unread", () => {
+    async function openPanel(testId: string, name: RegExp) {
+      const user = userEvent.setup();
+      const panel = await screen.findByTestId(testId);
+      await user.click(within(panel).getByRole("button", { name }));
+      return { user, panel };
+    }
+
+    it("traces the time-to-close tile to its sessions, newest close first", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      render(<CoordOverlordFlowPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("overlord-flow-closed-summary")
+        ).toHaveTextContent("4 in the last 7 days")
+      );
+      const { user } = await openPanel(
+        "overlord-flow-closed",
+        /closed sessions/i
+      );
+      const rows = screen.getAllByTestId("overlord-flow-closed-row");
+      expect(rows[0]).toHaveTextContent("terminal term-3");
+      expect(rows[0]).toHaveTextContent("30m");
+      await user.click(within(rows[0]).getByRole("button"));
+      expect(
+        screen.getByTestId("overlord-flow-closed-no-session")
+      ).toBeInTheDocument();
+      await user.click(within(rows[1]).getByRole("button"));
+      expect(screen.getByTestId("overlord-flow-closed-open")).toHaveAttribute(
+        "href",
+        `/sessions/${SESSION_ID}`
+      );
+      expect(
+        screen.getByTestId("overlord-flow-closed-later-stop")
+      ).toHaveTextContent("it may not have been stopped for all of this time");
+      expect(
+        screen.getByTestId("overlord-flow-closed-caption")
+      ).toHaveTextContent("first stop seen in this window");
+    });
+
+    it("says a cut closed list is cut, and how many the tile counted", async () => {
+      fetchFlow.mockResolvedValue({
+        ...FULL_FLOW,
+        time_to_close: {
+          ...FULL_FLOW.time_to_close,
+          count: 10,
+          sessions_truncated: true,
+        },
+      });
+      render(<CoordOverlordFlowPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("overlord-flow-closed-summary")
+        ).toHaveTextContent("4+ in")
+      );
+      await openPanel("overlord-flow-closed", /closed sessions/i);
+      expect(screen.getByTestId("overlord-flow-closed-cut")).toHaveTextContent(
+        "The 4 that first stopped most recently, of 10 closed sessions"
+      );
+    });
+
+    it("renders an unreadable closed list as unknown, not empty", async () => {
+      fetchFlow.mockResolvedValue({
+        ...FULL_FLOW,
+        time_to_close: { ...FULL_FLOW.time_to_close, sessions: [{}] },
+      });
+      render(<CoordOverlordFlowPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("overlord-flow-closed-summary")
+        ).toHaveTextContent("not read — unknown")
+      );
+      await openPanel("overlord-flow-closed", /closed sessions/i);
+      expect(
+        screen.getByTestId("overlord-flow-closed-unknown")
+      ).toBeInTheDocument();
+    });
+
+    it("compares the numbers per overlord version from the one payload", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      render(<CoordOverlordFlowPage />);
+      const rows = await screen.findAllByTestId("overlord-flow-versions-row");
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toHaveTextContent("2d0c39d0d5");
+      expect(rows[0]).toHaveTextContent("no data");
+      expect(rows[1]).toHaveTextContent("none recorded");
+      expect(rows[1]).toHaveTextContent("1h 30m");
+      expect(fetchFlow).toHaveBeenCalledTimes(1);
+    });
+
+    it("renders absent groups as unknown, not as no versions", async () => {
+      fetchFlow.mockResolvedValue({ ...FULL_FLOW, groups: null });
+      render(<CoordOverlordFlowPage />);
+      expect(
+        await screen.findByTestId("overlord-flow-versions-unknown")
+      ).toBeInTheDocument();
+    });
+
+    it("says no nudge was sent only when none was", async () => {
+      fetchFlow.mockResolvedValue({
+        ...NULL_FLOW,
+        nudge: { ...NULL_FLOW.nudge, nudged: 3, unmeasured_progress: 3 },
+      });
+      render(<CoordOverlordFlowPage />);
+      const rate = await screen.findByTestId(
+        "overlord-flow-nudge-progress-rate"
+      );
+      await waitFor(() => expect(rate).toHaveTextContent("no data"));
+      expect(rate.getAttribute("title")).toBe(
+        "no data — no nudge in this window has a progress measurement yet"
+      );
+    });
+
+    it("shows nudges still awaiting a later pass", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      render(<CoordOverlordFlowPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("overlord-flow-nudge-pending")
+        ).toHaveTextContent("1")
+      );
+    });
+
+    it("says reading, not unreadable, while the first read is in flight", async () => {
+      fetchFlow.mockReturnValue(new Promise(() => {}));
+      render(<CoordOverlordFlowPage />);
+      expect(
+        await screen.findByTestId("overlord-flow-versions-reading")
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("overlord-flow-versions-unknown")
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId("overlord-flow-histogram-reading")
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("overlord-flow-closed-summary")
+      ).toHaveTextContent("reading…");
+    });
+
+    it("says unreadable once a first read has failed", async () => {
+      fetchFlow.mockRejectedValue(rejection(503, { error: "db_unavailable" }));
+      render(<CoordOverlordFlowPage />);
+      expect(
+        await screen.findByTestId("overlord-flow-versions-unknown")
+      ).toBeInTheDocument();
+    });
+
+    it("carries a capped read's caveat into every list derived from it", async () => {
+      fetchFlow.mockResolvedValue({ ...FULL_FLOW, truncated: true });
+      render(<CoordOverlordFlowPage />);
+      expect(
+        await screen.findByTestId("overlord-flow-versions-capped")
+      ).toHaveTextContent("capped the passes");
+      expect(
+        screen.getByTestId("overlord-flow-histogram-caption")
+      ).toHaveTextContent("capped the passes");
+      await openPanel("overlord-flow-closed", /closed sessions/i);
+      expect(
+        screen.getByTestId("overlord-flow-closed-capped")
+      ).toBeInTheDocument();
+    });
+
+    it("marks a version's cut unchanged count as a floor", async () => {
+      fetchFlow.mockResolvedValue({
+        ...FULL_FLOW,
+        groups: [{ ...FULL_FLOW.groups[1], unchanged_truncated: true }],
+      });
+      render(<CoordOverlordFlowPage />);
+      const [row] = await screen.findAllByTestId("overlord-flow-versions-row");
+      expect(row).toHaveTextContent("1+");
+    });
+
+    it("does not read a version too short to show one as zero unchanged", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      render(<CoordOverlordFlowPage />);
+      const [short, long] = await screen.findAllByTestId(
+        "overlord-flow-versions-row"
+      );
+      const cells = (row: HTMLElement) =>
+        Array.from(row.children).map((c) => c.textContent);
+      // census 1, threshold 3: `unchanged` is the second-last column.
+      expect(cells(short).at(-2)).toBe("no data");
+      expect(cells(long).at(-2)).toBe("1");
+    });
+
+    it("keeps a version's zero unknown when its census count did not arrive", async () => {
+      const { census_passes_considered: _gone, ...group } = FULL_FLOW.groups[0];
+      fetchFlow.mockResolvedValue({ ...FULL_FLOW, groups: [group] });
+      render(<CoordOverlordFlowPage />);
+      const [row] = await screen.findAllByTestId("overlord-flow-versions-row");
+      expect(Array.from(row.children).at(-2)?.textContent).toBe("–");
+    });
+
+    it("marks the closed count a floor when coord did not say the list is whole", async () => {
+      const { sessions_truncated: _gone, ...ttc } = FULL_FLOW.time_to_close;
+      fetchFlow.mockResolvedValue({ ...FULL_FLOW, time_to_close: ttc });
+      render(<CoordOverlordFlowPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("overlord-flow-closed-summary")
+        ).toHaveTextContent("4+ in")
+      );
+    });
+
+    it("says it does not know whether an unchanged list with rows was cut", async () => {
+      const body = { ...FULL_FLOW } as Record<string, unknown>;
+      delete body.unchanged_truncated;
+      fetchFlow.mockResolvedValue(body);
+      render(<CoordOverlordFlowPage />);
+      expect(
+        await screen.findByTestId("overlord-flow-unchanged-cut-unknown")
+      ).toBeInTheDocument();
+    });
+
+    it("does not call an unreadable list cut down to zero", async () => {
+      fetchFlow.mockResolvedValue({
+        ...FULL_FLOW,
+        unchanged: [{}],
+        unchanged_truncated: true,
+      });
+      render(<CoordOverlordFlowPage />);
+      expect(
+        await screen.findByTestId("overlord-flow-unchanged-absent")
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("overlord-flow-unchanged-cut")
+      ).not.toBeInTheDocument();
+    });
+
+    it("says a cut unchanged list is cut", async () => {
+      fetchFlow.mockResolvedValue({ ...FULL_FLOW, unchanged_truncated: true });
+      render(<CoordOverlordFlowPage />);
+      expect(
+        await screen.findByTestId("overlord-flow-unchanged-cut")
+      ).toHaveTextContent("these 2 held longest");
+    });
+
+    it("says a cut verdict series is cut", async () => {
+      fetchFlow.mockResolvedValue({
+        ...FULL_FLOW,
+        verdict_series_truncated: true,
+      });
+      render(<CoordOverlordFlowPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("overlord-flow-histogram-caption")
+        ).toHaveTextContent("only the newest 3 passes are drawn")
+      );
+    });
+
+    it("reads passes only on opening, then a pass's rows on opening it", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      fetchPasses.mockResolvedValue(PASS_LIST);
+      fetchPass.mockResolvedValue(PASS_DETAIL);
+      render(<CoordOverlordFlowPage />);
+      await screen.findAllByTestId("overlord-flow-versions-row");
+      expect(fetchPasses).not.toHaveBeenCalled();
+
+      const { user } = await openPanel("overlord-flow-passes", /passes/i);
+      await waitFor(() => expect(fetchPasses).toHaveBeenCalledTimes(1));
+      expect(fetchPasses.mock.calls[0][0]).toMatch(/^since=.*&limit=200$/);
+      const passes = await screen.findAllByTestId("overlord-flow-pass");
+      expect(passes).toHaveLength(2);
+      expect(passes[0]).toHaveTextContent("3 rows");
+      expect(fetchPass).not.toHaveBeenCalled();
+
+      await user.click(within(passes[0]).getByRole("button"));
+      await waitFor(() => expect(fetchPass).toHaveBeenCalledWith("p-new"));
+      const rows = await screen.findAllByTestId("overlord-flow-pass-row");
+      // The terminals the pass could not read lead.
+      expect(rows[0]).toHaveTextContent("UNKNOWN");
+      expect(rows[0]).toHaveTextContent("terminal term-2");
+      const busy = rows.find((r) => r.textContent?.includes("BUSY"));
+      expect(within(busy as HTMLElement).getByRole("link")).toHaveAttribute(
+        "href",
+        `/sessions/${SESSION_ID}`
+      );
+      expect(busy).toHaveTextContent("input prompt not found on screen");
+      const nudged = rows.find((r) => r.textContent?.includes("STOPPED"));
+      expect(nudged).toHaveTextContent("nudge (sent_unconfirmed)");
+    });
+
+    it("renders a failed pass list as unknown, and leaves the strip alone", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      fetchPasses.mockRejectedValue(
+        rejection(503, { error: "db_unavailable" })
+      );
+      render(<CoordOverlordFlowPage />);
+      const s = await strip();
+      await waitFor(() =>
+        expect(s).toHaveTextContent("2 sessions have not moved")
+      );
+      await openPanel("overlord-flow-passes", /passes/i);
+      expect(
+        await screen.findByTestId("overlord-flow-passes-unknown")
+      ).toHaveTextContent("This is not an empty list");
+      expect(s).toHaveTextContent("2 sessions have not moved");
+    });
+
+    it("keeps the last good pass list on a failed refresh, and says so", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      fetchPasses.mockResolvedValueOnce(PASS_LIST);
+      fetchPasses.mockRejectedValueOnce(
+        rejection(503, { error: "db_unavailable" })
+      );
+      render(<CoordOverlordFlowPage />);
+      const { user } = await openPanel("overlord-flow-passes", /passes/i);
+      await screen.findAllByTestId("overlord-flow-pass");
+      await user.click(screen.getByTestId("overlord-flow-refresh"));
+      expect(
+        await screen.findByTestId("overlord-flow-passes-stale")
+      ).toHaveTextContent("last good read");
+      expect(screen.getAllByTestId("overlord-flow-pass")).toHaveLength(2);
+    });
+
+    it("drops a pass list from the old window when it lands late", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      let landOld: (v: unknown) => void = () => {};
+      fetchPasses.mockReturnValueOnce(
+        new Promise((resolve) => {
+          landOld = resolve;
+        })
+      );
+      fetchPasses.mockResolvedValueOnce({
+        ...PASS_LIST,
+        passes: [PASS_LIST.passes[1]],
+        total_matching: 1,
+      });
+      render(<CoordOverlordFlowPage />);
+      const { user } = await openPanel("overlord-flow-passes", /passes/i);
+      await waitFor(() => expect(fetchPasses).toHaveBeenCalledTimes(1));
+      await user.click(screen.getByTestId("overlord-flow-window-24h"));
+      await waitFor(() =>
+        expect(screen.getAllByTestId("overlord-flow-pass")).toHaveLength(1)
+      );
+      landOld(PASS_LIST);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(screen.getAllByTestId("overlord-flow-pass")).toHaveLength(1);
+    });
+
+    it("drops a pass's rows when they land after it was closed", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      fetchPasses.mockResolvedValue(PASS_LIST);
+      let land: (v: unknown) => void = () => {};
+      fetchPass.mockReturnValueOnce(
+        new Promise((resolve) => {
+          land = resolve;
+        })
+      );
+      fetchPass.mockReturnValueOnce(new Promise(() => {}));
+      render(<CoordOverlordFlowPage />);
+      const { user } = await openPanel("overlord-flow-passes", /passes/i);
+      const [first] = await screen.findAllByTestId("overlord-flow-pass");
+      const toggle = within(first).getAllByRole("button")[0];
+      await user.click(toggle);
+      await waitFor(() => expect(fetchPass).toHaveBeenCalledTimes(1));
+      await user.click(toggle);
+      await user.click(toggle);
+      await waitFor(() => expect(fetchPass).toHaveBeenCalledTimes(2));
+      land(PASS_DETAIL);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(
+        screen.queryByTestId("overlord-flow-pass-row")
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId("overlord-flow-pass-reading")
+      ).toBeInTheDocument();
+    });
+
+    it("keeps the newer pass list when an older refresh lands after it", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      let landOlder: (v: unknown) => void = () => {};
+      fetchPasses.mockReturnValueOnce(
+        new Promise((resolve) => {
+          landOlder = resolve;
+        })
+      );
+      fetchPasses.mockResolvedValueOnce(PASS_LIST);
+      render(<CoordOverlordFlowPage />);
+      const { user } = await openPanel("overlord-flow-passes", /passes/i);
+      await waitFor(() => expect(fetchPasses).toHaveBeenCalledTimes(1));
+      await user.click(screen.getByTestId("overlord-flow-refresh"));
+      await waitFor(() =>
+        expect(screen.getAllByTestId("overlord-flow-pass")).toHaveLength(2)
+      );
+      landOlder({ ...PASS_LIST, passes: [PASS_LIST.passes[1]] });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(screen.getAllByTestId("overlord-flow-pass")).toHaveLength(2);
+    });
+
+    it("keeps an open pass's newer rows when an older refresh lands after them", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      fetchPasses.mockResolvedValue(PASS_LIST);
+      let landOlder: (v: unknown) => void = () => {};
+      fetchPass.mockReturnValueOnce(
+        new Promise((resolve) => {
+          landOlder = resolve;
+        })
+      );
+      fetchPass.mockResolvedValueOnce(PASS_DETAIL);
+      render(<CoordOverlordFlowPage />);
+      const { user } = await openPanel("overlord-flow-passes", /passes/i);
+      const [first] = await screen.findAllByTestId("overlord-flow-pass");
+      await user.click(within(first).getAllByRole("button")[0]);
+      await waitFor(() => expect(fetchPass).toHaveBeenCalledTimes(1));
+      await user.click(screen.getByTestId("overlord-flow-refresh"));
+      expect(
+        await screen.findAllByTestId("overlord-flow-pass-row")
+      ).toHaveLength(3);
+      landOlder({
+        ok: true,
+        pass: { ...PASS_DETAIL.pass, rows: PASS_DETAIL.pass.rows.slice(0, 1) },
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(screen.getAllByTestId("overlord-flow-pass-row")).toHaveLength(3);
+    });
+
+    it("lets a refresh recover an open pass that failed to read", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      fetchPasses.mockResolvedValue(PASS_LIST);
+      fetchPass.mockRejectedValueOnce(
+        rejection(503, { error: "db_unavailable" })
+      );
+      fetchPass.mockResolvedValueOnce(PASS_DETAIL);
+      render(<CoordOverlordFlowPage />);
+      const { user } = await openPanel("overlord-flow-passes", /passes/i);
+      const [first] = await screen.findAllByTestId("overlord-flow-pass");
+      await user.click(within(first).getAllByRole("button")[0]);
+      await screen.findByTestId("overlord-flow-pass-unknown");
+      await user.click(screen.getByTestId("overlord-flow-refresh"));
+      expect(
+        await screen.findAllByTestId("overlord-flow-pass-row")
+      ).toHaveLength(3);
+      expect(
+        screen.queryByTestId("overlord-flow-pass-unknown")
+      ).not.toBeInTheDocument();
+    });
+
+    it("keeps an open pass's last good rows on a failed refresh, and says so", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      fetchPasses.mockResolvedValue(PASS_LIST);
+      fetchPass.mockResolvedValueOnce(PASS_DETAIL);
+      fetchPass.mockRejectedValueOnce(
+        rejection(503, { error: "db_unavailable" })
+      );
+      render(<CoordOverlordFlowPage />);
+      const { user } = await openPanel("overlord-flow-passes", /passes/i);
+      const [first] = await screen.findAllByTestId("overlord-flow-pass");
+      await user.click(within(first).getAllByRole("button")[0]);
+      await screen.findAllByTestId("overlord-flow-pass-row");
+      await user.click(screen.getByTestId("overlord-flow-refresh"));
+      expect(
+        await screen.findByTestId("overlord-flow-pass-stale")
+      ).toHaveTextContent("last good read");
+      expect(screen.getAllByTestId("overlord-flow-pass-row")).toHaveLength(3);
+    });
+
+    it("renders a failed read of one pass as unknown, not as no rows", async () => {
+      fetchFlow.mockResolvedValue(FULL_FLOW);
+      fetchPasses.mockResolvedValue(PASS_LIST);
+      fetchPass.mockRejectedValue(rejection(404, { error: "pass_not_found" }));
+      render(<CoordOverlordFlowPage />);
+      const { user } = await openPanel("overlord-flow-passes", /passes/i);
+      const passes = await screen.findAllByTestId("overlord-flow-pass");
+      await user.click(within(passes[0]).getByRole("button"));
+      expect(
+        await screen.findByTestId("overlord-flow-pass-unknown")
+      ).toHaveTextContent("which is not the same as it having none");
+    });
   });
 });
