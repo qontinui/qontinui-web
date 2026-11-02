@@ -61,6 +61,16 @@ describe("readFlowBody", () => {
     expect(v.nudge.nudged).toBeUndefined();
   });
 
+  it("keeps a coord that sends no absent_unproven apart from a real zero", () => {
+    const read = (ttc: object) =>
+      readFlowBody({ ok: true, time_to_close: ttc })!.timeToClose
+        .absentUnproven;
+    expect(read({ count: 0, absent_unproven: 49 })).toBe(49);
+    expect(read({ count: 0, absent_unproven: 0 })).toBe(0);
+    expect(read({ count: 0 })).toBeUndefined();
+    expect(read({ count: 0, absent_unproven: null })).toBeUndefined();
+  });
+
   it("reads a missing closed_by kind as zero only when the rest add up", () => {
     const complete = readFlowBody({
       ok: true,

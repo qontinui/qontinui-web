@@ -44,6 +44,7 @@ export const FULL_FLOW = {
     median_secs: 5400,
     p90_secs: 20000,
     closed_by: { triage: 3, absent: 1 },
+    absent_unproven: 2,
     sessions: [
       {
         key: SESSION_ID,
@@ -58,6 +59,7 @@ export const FULL_FLOW = {
     nudged: 10,
     progressed: 4,
     finished: 2,
+    finish_unproven: 1,
     progress_rate: 0.4,
     finish_rate: 0.2,
     unmeasured_progress: 3,
