@@ -13648,13 +13648,13 @@ export interface paths {
          * @description Proxy coord's ``GET /coord/fleet/worktree-slots`` (tenant-scoped).
          *
          *     Fleet-wide worktree-allocation-slot occupancy: how many of each device's
-         *     ``COORD_MAX_WORKTREES`` slots are occupied, and by what. Response shape
+         *     ``max_worktrees`` slots are occupied, and by what. Response shape
          *     is coord-authored and passed through untouched::
          *
          *         {"tenant_id": "<uuid>", "device_count": <int>, "truncated": false,
          *          "device_cap": 100, "census_window_secs": 900,
          *          "devices": [{"device_id": "<uuid>", "hostname": "<string>|null",
-         *              "active_worktrees": <int>, "max_worktrees": 8,
+         *              "active_worktrees": <int>, "max_worktrees": <int>,
          *              "census_recent_rows": <int>,
          *              "occupants": {"shown": 0, "total": 0, "truncated": false,
          *                             "rows": []}}]}
@@ -13663,7 +13663,7 @@ export interface paths {
          *     that device within the narrow (``census_window_secs``, default 900s)
          *     window, so ``active_worktrees`` for that device could not be
          *     corroborated as live and the caller MUST render that row UNKNOWN — never
-         *     an idle/empty machine and never a healthy ``0/8`` — see the frontend
+         *     an idle/empty machine and never a healthy ``0/<max>`` — see the frontend
          *     hook and `FleetResourceStrip`'s existing honesty rules.
          *
          *     Error answers pass through verbatim, status and JSON body, for the same

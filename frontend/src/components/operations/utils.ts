@@ -104,6 +104,16 @@ export const POLL_INTERVAL_MS = 5_000;
 export const DEVICE_STATUS_POLL_FALLBACK_MS = 5_000;
 
 /**
+ * How often the device-status stream re-reads the fleet while its socket is
+ * open. A frame is not a complete feed: coord sends one only to sockets on the
+ * replica that took the report, and drops it for a subscriber whose queue is
+ * full (qontinui-coord `status.rs`, `device_status_ws.rs`). So without this an
+ * open socket can miss a report until the next reconnect or Refresh, and the
+ * answer that dates the list only gets older.
+ */
+export const DEVICE_STATUS_LIVE_REREAD_MS = 60_000;
+
+/**
  * Convert an ISO timestamp to a human-friendly relative string.
  * e.g. "3s ago", "2m ago", "1h ago", "3d ago"
  *

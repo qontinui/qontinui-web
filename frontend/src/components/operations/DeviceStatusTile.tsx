@@ -235,8 +235,9 @@ function PresentedStatusRow({
  *   reported (plan `2026-10-23-console-presentation-spaces` D3; served policy
  *   `verification-and-evidence` `silent-empty-is-unknown`).
  * - `stale` — a fleet read answered earlier and the latest one failed. The
- *   list holds that answer's rows (and any pushed since); its count stands,
- *   but an empty one says so in the past tense, qualified by the failure.
+ *   list holds that answer's rows (and any pushed since); its count stands.
+ *   An empty one says so in the past tense, qualified by the failure, and one
+ *   with rows says they are the last received.
  * - `loading` — nothing has failed, and no fleet read has answered yet. Its
  *   count is a dash (R6: a count nobody fetched is `–`, never `0`).
  * - `answered` — the latest fleet read answered: the count and the empty
@@ -282,12 +283,20 @@ function deviceStatusCount(
 function EmptyDeviceStatusList({
   state,
   error,
+  answeredAtMs,
   presenting,
 }: {
   state: DeviceStatusListState;
   error: string | null;
+  answeredAtMs: number | null;
   presenting: boolean;
 }) {
+  // The stale sentence's date: when the answer it describes arrived. An empty
+  // list has no row to date it by, and "now" would be the failed read's time.
+  const lastAnswered =
+    answeredAtMs === null
+      ? ""
+      : `, ${relativeTime(new Date(answeredAtMs).toISOString())}`;
   switch (state) {
     case "loading":
       return (
@@ -323,11 +332,12 @@ function EmptyDeviceStatusList({
           data-testid="device-status-stale-empty"
         >
           {presenting ? (
-            "No machine had reported what it is working on at the last read that succeeded. The latest read failed, so whether one has reported since is not known."
+            `No machine had reported what it is working on at the last read that succeeded${lastAnswered}. The latest read failed, so whether one has reported since is not known.`
           ) : (
             <>
-              No devices were reporting status at the last read that answered.
-              The latest read failed ({error}), so this may be out of date.
+              No devices were reporting status at the last read that answered
+              {lastAnswered}. The latest read failed ({error}), so this may be
+              out of date.
             </>
           )}
         </div>
@@ -446,9 +456,10 @@ export function DeviceStatusTile({
                     holds it under 10 s) — never that the list stopped. A
                     re-read that fails is said elsewhere: always by the error
                     badge; by the count ("unknown") while no read has ever
-                    answered; and by the body while the list is empty (UNKNOWN,
-                    or the past-tense stale sentence). So these words hold
-                    whether or not a re-read succeeds. */}
+                    answered; and by the body once one has (the past-tense stale
+                    sentence, or the last-known one over rows) or while the list
+                    is empty (UNKNOWN). So these words hold whether or not a
+                    re-read succeeds. */}
                 {presenting
                   ? "re-read every few seconds"
                   : "polling (WS offline)"}
@@ -478,93 +489,109 @@ export function DeviceStatusTile({
         <EmptyDeviceStatusList
           state={listState}
           error={error}
+          answeredAtMs={stream.answeredAtMs}
           presenting={presenting}
         />
       ) : (
-        <ul
-          className="flex flex-col gap-1.5"
-          data-ui-bridge-id="operations.device-status-list"
-        >
-          {sortedRows.map((row) => {
-            const staleness = classifyAge(row.updated_at);
-            if (presenting) {
-              return (
-                <PresentedStatusRow
-                  key={row.device_id}
-                  row={row}
-                  staleness={staleness}
-                />
-              );
-            }
-            const repoBranch = repoBranchLabel(row);
-            const identity = identityLabel(row);
-            return (
-              <li
-                key={row.device_id}
-                data-ui-bridge-id="operations.device-status-row"
-                data-device-id={row.device_id}
-                data-staleness={staleness}
-                className={`grid grid-cols-[10rem_minmax(0,1.4fr)_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-border/40 px-3 py-2 text-sm ${rowTintClass(staleness)} ${rowTextClass(staleness)}`}
-              >
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => focusMachineCard(row.hostname)}
-                      className="text-left font-medium truncate hover:underline disabled:cursor-default disabled:no-underline"
-                      disabled={!row.hostname}
-                      data-ui-bridge-id="operations.device-status-identity"
-                    >
-                      {identity}
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="font-mono text-[11px]">
-                    {row.device_id}
-                  </TooltipContent>
-                </Tooltip>
-
-                <span
-                  className="truncate text-foreground/90"
-                  data-ui-bridge-id="operations.device-status-task"
-                >
-                  {row.current_task ?? (
-                    <span className="text-muted-foreground italic">idle</span>
-                  )}
-                </span>
-
-                <span
-                  className="truncate font-mono text-xs text-muted-foreground"
-                  data-ui-bridge-id="operations.device-status-repo-branch"
-                >
-                  {repoBranch ?? ""}
-                </span>
-
-                <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
-                  <StalledBadge
-                    mostStalled={row.most_stalled_session}
-                    count={row.stalled_session_count}
+        <>
+          {listState === "stale" && (
+            <p
+              className="mb-2 text-xs text-muted-foreground"
+              data-testid="device-status-last-known"
+            >
+              {presenting
+                ? "The latest read failed, so these are the last reports received; a machine may have reported since."
+                : `The latest read failed (${error}), so these are the last reports received; a device may have reported since.`}
+            </p>
+          )}
+          <ul
+            className="flex flex-col gap-1.5"
+            data-ui-bridge-id="operations.device-status-list"
+          >
+            {sortedRows.map((row) => {
+              const staleness = classifyAge(row.updated_at);
+              if (presenting) {
+                return (
+                  <PresentedStatusRow
+                    key={row.device_id}
+                    row={row}
+                    staleness={staleness}
                   />
-                  {row.free_text && (
-                    <span
-                      className="italic max-w-[14rem] truncate"
-                      data-ui-bridge-id="operations.device-status-free-text"
-                      title={row.free_text}
+                );
+              }
+              const repoBranch = repoBranchLabel(row);
+              const identity = identityLabel(row);
+              return (
+                <li
+                  key={row.device_id}
+                  data-ui-bridge-id="operations.device-status-row"
+                  data-device-id={row.device_id}
+                  data-staleness={staleness}
+                  className={`grid grid-cols-[10rem_minmax(0,1.4fr)_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-border/40 px-3 py-2 text-sm ${rowTintClass(staleness)} ${rowTextClass(staleness)}`}
+                >
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => focusMachineCard(row.hostname)}
+                        className="text-left font-medium truncate hover:underline disabled:cursor-default disabled:no-underline"
+                        disabled={!row.hostname}
+                        data-ui-bridge-id="operations.device-status-identity"
+                      >
+                        {identity}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      className="font-mono text-[11px]"
                     >
-                      {row.free_text}
-                    </span>
-                  )}
+                      {row.device_id}
+                    </TooltipContent>
+                  </Tooltip>
+
                   <span
-                    className="tabular-nums"
-                    data-ui-bridge-id="operations.device-status-updated-at"
-                    title={new Date(row.updated_at).toLocaleString()}
+                    className="truncate text-foreground/90"
+                    data-ui-bridge-id="operations.device-status-task"
                   >
-                    {relativeTime(row.updated_at)}
+                    {row.current_task ?? (
+                      <span className="text-muted-foreground italic">idle</span>
+                    )}
                   </span>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+
+                  <span
+                    className="truncate font-mono text-xs text-muted-foreground"
+                    data-ui-bridge-id="operations.device-status-repo-branch"
+                  >
+                    {repoBranch ?? ""}
+                  </span>
+
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+                    <StalledBadge
+                      mostStalled={row.most_stalled_session}
+                      count={row.stalled_session_count}
+                    />
+                    {row.free_text && (
+                      <span
+                        className="italic max-w-[14rem] truncate"
+                        data-ui-bridge-id="operations.device-status-free-text"
+                        title={row.free_text}
+                      >
+                        {row.free_text}
+                      </span>
+                    )}
+                    <span
+                      className="tabular-nums"
+                      data-ui-bridge-id="operations.device-status-updated-at"
+                      title={new Date(row.updated_at).toLocaleString()}
+                    >
+                      {relativeTime(row.updated_at)}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </section>
   );

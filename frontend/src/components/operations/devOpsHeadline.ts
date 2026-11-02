@@ -28,6 +28,7 @@
  *   hostname into a sentence, so the strip needs no aliasing at all.
  */
 
+import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
 import type { HeadlineValue } from "@/components/presentation";
 import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 import {
@@ -59,13 +60,35 @@ export const DEVOPS_SOURCES = {
 } as const;
 
 /**
+ * The device-status read's as-of, the one both sections that show it date it
+ * by (style guide section 3.11). It dates its rows, so it is the newest
+ * report's time, and a read that answered with no row is dated by that answer's
+ * arrival. A read that has never answered is UNKNOWN, even with rows pushed by
+ * frame: one device's row is not a read of the fleet. So is one whose rows
+ * carry no time that parses.
+ */
+export function deviceStatusReadAsOf({
+  byHostname,
+  everSeeded,
+  answeredAtMs,
+}: Pick<
+  UseDeviceStatusStreamResult,
+  "byHostname" | "everSeeded" | "answeredAtMs"
+>): string | number | null {
+  if (!everSeeded) return null;
+  if (byHostname.size === 0) return answeredAtMs;
+  return latestInstant([...byHostname.values()].map((row) => row.updated_at));
+}
+
+/**
  * The newest of several instants (ISO-8601), or `null` when none parses.
  *
  * The as-of of a read whose body dates its ROWS rather than itself — coord's
  * disk telemetry (`observed_at` per volume), the device-status stream
  * (`updated_at` per machine): the time its newest measurement was true. An
  * undatable row adds nothing, and a read with no datable row is UNKNOWN as of
- * nothing — never "now".
+ * nothing — never "now". What an answered empty device-status list is dated by
+ * is `deviceStatusReadAsOf`'s to say.
  */
 export function latestInstant(
   values: Iterable<string | null | undefined>

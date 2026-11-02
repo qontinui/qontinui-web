@@ -8,9 +8,13 @@ import {
   fetchDeviceStatusResponse,
 } from "@/lib/api/operations/deviceStatus";
 import { useSingleFlight } from "./useSingleFlightPoll";
-import { DEVICE_STATUS_POLL_FALLBACK_MS } from "./utils";
+import {
+  DEVICE_STATUS_LIVE_REREAD_MS,
+  DEVICE_STATUS_POLL_FALLBACK_MS,
+} from "./utils";
 import type { DeviceStatus, DeviceStatusResponse } from "./types";
 import {
+  applyFramesOverRead,
   indexDeviceStatusRows,
   mergeDeviceStatusRow,
 } from "./deviceStatusRows";
@@ -126,6 +130,12 @@ export interface UseDeviceStatusStreamResult {
    *  no fleet read has ever succeeded — though rows may have arrived by
    *  frame. */
   everSeeded: boolean;
+  /** When the latest successful FLEET read's answer arrived, or `null` before
+   *  there has been one. A failed read never moves it, and neither does a
+   *  pushed frame. The body carries no time of its own and dates its ROWS, so
+   *  this is what dates a read that answered with no row at all (style guide
+   *  section 3.11). */
+  answeredAtMs: number | null;
   /** Force a REST refetch (used by the `Refresh` button on the UI). */
   refetch: () => Promise<void>;
 }
@@ -151,6 +161,9 @@ export interface UseDeviceStatusStreamResult {
  *    ONE retry timer re-reads with capped backoff until a read succeeds —
  *    whichever path the failed read came from. Success, polling, socket
  *    close, tab hide and unmount all retire that timer.
+ * 6. While the socket is open, re-read the fleet every minute, because its
+ *    frames are not a complete feed (`DEVICE_STATUS_LIVE_REREAD_MS`). A frame
+ *    that lands during any read is applied over that read's rows.
  *
  * Socket ownership: `wsRef` holds the one socket this hook owns. Each connect
  * attempt carries a generation; an attempt overtaken while it awaited its token
@@ -168,6 +181,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   const [error, setError] = useState<string | null>(null);
   const [seeded, setSeeded] = useState(false);
   const [everSeeded, setEverSeeded] = useState(false);
+  const [answeredAtMs, setAnsweredAtMs] = useState<number | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -189,6 +203,9 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   // `clearSeedRetry` bumps the generation, so a timer from an older chain
   // acts on nothing.
   const seedRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  /** Frames that arrived while a fleet read was on the wire (see
+   *  `applyFramesOverRead`). */
+  const framesDuringReadRef = useRef<DeviceStatus[]>([]);
   const seedRetryGenRef = useRef(0);
   const seedRetryAttemptsRef = useRef(0);
   // `seedFromRest` arms the retry and the retry calls `seedFromRest`; this ref
@@ -206,6 +223,9 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   // stream seeded nor clears a fleet-read failure. Letting it do either would
   // hide a REST route that keeps failing behind a working socket.
   const applyRow = useCallback((row: DeviceStatus) => {
+    if (inFlightRequestsRef.current.size > 0) {
+      framesDuringReadRef.current.push(row);
+    }
     setByHostname((prev) => mergeDeviceStatusRow(prev, row));
   }, []);
 
@@ -265,10 +285,16 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       if (!claimLanding()) return "superseded_or_unmounted";
       // Newest row per key: coord serves newest-first, and a plain set-loop
       // would leave the OLDEST row under a shared hostname.
-      setByHostname(indexDeviceStatusRows(data.devices ?? []));
+      setByHostname(
+        applyFramesOverRead(
+          indexDeviceStatusRows(data.devices ?? []),
+          framesDuringReadRef.current
+        )
+      );
       setError(null);
       setSeeded(true);
       setEverSeeded(true);
+      setAnsweredAtMs(Date.now());
       seedRetryAttemptsRef.current = 0;
       clearSeedRetry();
       return "ok";
@@ -286,6 +312,9 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       return "failed";
     } finally {
       inFlightRequestsRef.current.delete(request);
+      if (inFlightRequestsRef.current.size === 0) {
+        framesDuringReadRef.current = [];
+      }
     }
   }, [clearSeedRetry]);
 
@@ -556,6 +585,19 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     cancelInFlightReads,
   ]);
 
+  // While the socket is open, re-read slowly: its frames are not a complete
+  // feed (`DEVICE_STATUS_LIVE_REREAD_MS`). A failed read's retry already owns
+  // re-reading, so this adds no read to a route that is down, and a tick skips
+  // while a read is on the wire.
+  useEffect(() => {
+    if (!connected) return;
+    const timer = setInterval(() => {
+      if (document.hidden || seedRetryTimerRef.current !== null) return;
+      tickSeed();
+    }, DEVICE_STATUS_LIVE_REREAD_MS);
+    return () => clearInterval(timer);
+  }, [connected, tickSeed]);
+
   // Tab visibility — drop the WS while hidden to avoid burning
   // browser-side resources, reconnect on return.
   useEffect(() => {
@@ -593,6 +635,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     error,
     seeded,
     everSeeded,
+    answeredAtMs,
     refetch,
   };
 }

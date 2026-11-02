@@ -10,18 +10,20 @@
  * lane turns red. Both arrive from coord: `pressure` from
  * `device_resource_samples::lane_pressure` (the same function §B1's CI ranker
  * reads), and `headroom` from the floor coord's admission actually enforces.
- * The plan's thesis is *"if the dashboard says a machine is red, the
- * dispatcher must already have stopped sending it work"*, which is only true
- * while both consumers read ONE definition of **both** the number and the
- * verdict.
+ * Both consumers must read ONE definition of **both** the number and that
+ * grade. The plan's thesis went further, *"if the dashboard says a machine is
+ * red, the dispatcher must already have stopped sending it work"*, and coord
+ * does not do that: its dispatchers rank on the number and only prefer
+ * (`ci_dispatch.rs`, "Resource headroom is a RANKING input, never a filter"), so
+ * a red row means a guard on that machine refuses what reaches it.
  *
  * ## Why there is no threshold constant here any more
  *
  * §C1 first shipped with `SATURATED_AT = 0.85` / `WARN_AT = 0.6` decided in
  * TypeScript while coord's real admission behaviour was **byte floors**. The
  * ratio was shared; the verdict was not — so the strip could render amber
- * while the ranker had already stopped electing the machine. Sharing the
- * number without the threshold is not sharing the decision.
+ * on a threshold no guard applied. Sharing the number without the threshold is
+ * not sharing the decision.
  *
  * The floors cannot be re-expressed as a pressure threshold either: they are
  * on **different columns** (`commit_available` on host, `mem_available` on
@@ -174,7 +176,7 @@ export type PressureFloorBasis = "swap_ratio" | "thread_ratio";
  * `ci_node` reads free commit, and nothing in the fleet floors
  * `mem_available_bytes`. They are NOT unguarded, though — `ci_node` defers on
  * `swap_used / swap_total >= 0.5`. A WSL row at swap 0.6 rendering "no guard
- * acting" while the dispatcher steps back is the exact inversion this surface
+ * acting" while `ci_node` defers is the exact inversion this surface
  * exists to remove, so the ratio guard is reported too.
  *
  * This is not the thing we refused to do. Projecting a *byte* floor onto a
@@ -211,13 +213,13 @@ export type Headroom = "ok" | "warn" | "breach" | "unknown";
  *
  * `breach` and `warn` are materially different events, not two shades of one:
  * a breached lane **refuses** the work (the build fails now) while a warned
- * lane **waits** for headroom (the build is late). Colour alone cannot carry
+ * lane can make it **wait** for headroom (the build is late). Colour alone cannot carry
  * that, and §C3 requires the operator to see whether the lane defers or
  * rejects at its floor — so the strip says it.
  */
 export const HEADROOM_MEANING: Record<Headroom, string> = {
   ok: "above every floor coord could evaluate — memory, disk and task saturation — so work is being accepted",
-  warn: "at or below the deferring floor (or within the server's amber margin above it) — work waits for headroom rather than failing",
+  warn: "at or below the deferring floor, or within the server's amber margin above it — work is waiting for headroom or about to, or is ranked last for dispatch, rather than failing",
   breach:
     "at or below the rejecting floor — a guard is refusing work right now, so builds fail here",
   unknown:
@@ -939,7 +941,7 @@ export function headroomTone(
  */
 export const HEADROOM_LABEL: Record<Headroom, string> = {
   ok: "accepting work",
-  warn: "work waits",
+  warn: "work may wait",
   breach: "work refused",
   unknown: "unknown",
 };
@@ -1283,9 +1285,8 @@ export interface FleetAdmissionSummary {
  * accepting work is a red fleet state — it is the one this plan was written
  * after.
  *
- * Counted from `headroom`, the same verdict the row is coloured from and the
- * same one the dispatcher acts on, so the header and the table can never
- * disagree — and neither can disagree with coord.
+ * Counted from `headroom`, the same verdict the row is coloured from, so the
+ * header and the table can never disagree.
  *
  * `unknown` is reported alongside rather than folded into either bucket. It
  * is neither "fine" nor "breaching", and collapsing it into the first is

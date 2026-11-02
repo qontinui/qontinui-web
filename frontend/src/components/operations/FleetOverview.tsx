@@ -30,7 +30,11 @@ import {
 import { statusOnlyErrorText } from "@/lib/api/operations/base";
 import { CollapsiblePanel } from "@/components/console";
 import { SectionCaption, usePresentationMode } from "@/components/presentation";
-import { DEVOPS_SOURCES, latestInstant } from "./devOpsHeadline";
+import {
+  DEVOPS_SOURCES,
+  deviceStatusReadAsOf,
+  latestInstant,
+} from "./devOpsHeadline";
 import { FAILURE_SENTENCE_WITHHELD } from "./presentedFailure";
 import {
   resolveMachineVolumes,
@@ -674,8 +678,9 @@ export function FleetOverview({
   );
 
   // The as-of of the two reads whose bodies date their ROWS, not themselves:
-  // the newest disk measurement coord holds, and the newest device-status
-  // report. UNKNOWN (null) while a read has not answered or dates nothing.
+  // the newest disk measurement coord holds, and the device-status read
+  // (`deviceStatusReadAsOf`). UNKNOWN (null) while a read has not answered or
+  // dates nothing.
   const diskAsOf = useMemo(
     () =>
       volumes.state === "ok"
@@ -687,13 +692,7 @@ export function FleetOverview({
         : null,
     [volumes]
   );
-  const deviceStatusAsOf = useMemo(
-    () =>
-      latestInstant(
-        [...deviceStatus.byHostname.values()].map((row) => row.updated_at)
-      ),
-    [deviceStatus.byHostname]
-  );
+  const deviceStatusAsOf = deviceStatusReadAsOf(deviceStatus);
 
   // The presentation lens (plan `2026-10-23-console-presentation-spaces`
   // Phase 7). The section caption states the source and as-of of EVERY read

@@ -11,8 +11,15 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 
+import { HEADROOM_LABEL } from "./fleetResources";
 import { FleetResourceStrip } from "./FleetResourceStrip";
 import { renderInPresentationMode } from "@/test/presentation";
 import type {
@@ -292,6 +299,17 @@ describe("§C3 — the WSL lane's headroom is shown coupled to the host", () => 
     expect(
       screen.getByTestId("fleet-resource-coupled-headroom").textContent
     ).toMatch(/coupled: unknown/);
+  });
+});
+
+describe("the admission verdict's hover card", () => {
+  it("does not say a red lane has stopped receiving work: coord ranks and only prefers", async () => {
+    renderStrip({ latest: [sample()], history: [] });
+    const verb = screen.getByTestId("fleet-resource-admission-verb");
+    fireEvent.focus(verb.parentElement as HTMLElement);
+    const card = await screen.findByRole("tooltip");
+    expect(card).toHaveTextContent(/coord ranks machines by load/);
+    expect(card.textContent).not.toMatch(/stopped sending/);
   });
 });
 
@@ -581,7 +599,9 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     const legend =
       screen.getByTestId("fleet-resource-floors").textContent ?? "";
     expect(legend).not.toMatch(/stopped electing/i);
-    expect(legend).toMatch(/a red row\s+means a guard on that lane is refusing work/);
+    expect(legend).toMatch(
+      /a red row\s+means a guard on that lane is refusing work/
+    );
   });
 
   it("presenting: no operator legend, and its one unknown said in plain words", () => {
@@ -691,6 +711,7 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     const margin =
       screen.getByTestId("fleet-resource-warn-margin").textContent ?? "";
     expect(margin).toMatch(/byte floor/i);
+    expect(margin).toContain(HEADROOM_LABEL.warn);
     expect(margin).toMatch(/x1\.5/);
     expect(margin).toMatch(/pressure ceiling/i);
     expect(margin).toMatch(/no early band/i);
@@ -885,7 +906,7 @@ describe("§C3 — the row is coloured from `headroom`, never from the ratio", (
     expect(row.getAttribute("data-tone")).toBe("warn");
     expect(
       within(row).getByTestId("fleet-resource-admission").textContent
-    ).toMatch(/work waits/);
+    ).toMatch(/work may wait/);
   });
 
   it("renders ok as normal", () => {
@@ -995,7 +1016,7 @@ describe("§C3 — the row is coloured from `headroom`, never from the ratio", (
     renderStrip({ latest: [sample({ headroom: "warn" })], history: [] });
     expect(
       screen.getByTestId("fleet-resource-admission-verb").textContent
-    ).toBe("builds wait");
+    ).toBe("builds may wait");
   });
 
   it("forces a stale row's verdict to unknown, whatever coord last said", () => {
