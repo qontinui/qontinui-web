@@ -73,6 +73,15 @@ export const FULL_FLOW = {
       consecutive_full_passes: 3,
       first_seen_at: "2026-10-23T08:00:00Z",
       last_seen_at: "2026-10-23T20:00:00Z",
+      last_intervention: {
+        intervention_id: "0190aaaa-0000-7000-8000-000000000001",
+        stop_class: "A",
+        verb: "nudge",
+        mode: "live",
+        executed: true,
+        outcome: "did_work",
+        observed_at: "2026-10-23T19:00:00Z",
+      },
     },
     {
       key: "terminal:term-9",

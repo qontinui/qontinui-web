@@ -51,6 +51,20 @@ export interface FlowNudge {
   unmeasured_progress: number;
 }
 
+/** The newest `/next-move` judgment recorded for a session. */
+export interface FlowLastIntervention {
+  intervention_id: string;
+  stop_class: string;
+  verb: string;
+  mode: string;
+  /** `null` = the row predates the `executed` flag: unknown, not false. */
+  executed: boolean | null;
+  /** `null` = no outcome observed yet. */
+  outcome: string | null;
+  /** When the judged stop was observed; dates the judgment, not a later edit. */
+  observed_at: string;
+}
+
 /** A session whose verdict and reasons held across consecutive full passes. */
 export interface FlowUnchangedSession {
   key: string;
@@ -63,6 +77,11 @@ export interface FlowUnchangedSession {
   consecutive_full_passes: number;
   first_seen_at: string;
   last_seen_at: string;
+  /**
+   * `null` = none recorded, or no Claude session id to join on. Absent = a
+   * coord that predates the join, which says nothing either way.
+   */
+  last_intervention?: FlowLastIntervention | null;
 }
 
 export interface FlowUnknownShare {
