@@ -12,8 +12,8 @@ Without a database (always runs):
 
 1. Chain wiring, static SQL, and nothing dropped.
 2. ``downgrade()`` restores the exact function body and comment of revision 01,
-   and the new body is that body plus the zero-row delete, so the delta
-   arithmetic pinned by the revision 01 tests cannot have moved.
+   and the new body is that body plus exactly the zero-row delete lines, so the
+   delta arithmetic pinned by the revision 01 tests cannot have moved.
 
 With a database (skipped when none is reachable; a skip proves nothing). Point
 the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
@@ -26,7 +26,8 @@ the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
 6. A writer racing a zero-row delete of one rollup row ends exact, whether the
    deleter commits or rolls back, and the delete still holds the SHARED fence.
 7. Up, down, up: the old body comes back and leaves zero rows in place, and the
-   new body comes back too.
+   re-upgrade clears those rows, skips a row a writer holds, keeps every other
+   row, and brings the new body back.
 """
 
 from __future__ import annotations
@@ -73,6 +74,25 @@ _V1_FILENAME = "coord_policy_outcome_counts_01_rollup.py"
 # Pinned as a literal, not read back from the module, so a re-point of
 # down_revision is a deliberate two-file change.
 _PARENT_REVISION_ID = "coord_agent_sessions_identity_01"
+
+# The lines the new function body adds to the revision 01 body, in order.
+_ADDED_BODY_LINES = [
+    "zero_rows tid[];",
+    "-- A row left at n = 0 counts nothing. Delete it here, or it would",
+    "-- stay for good and every later read of its key would scan it.",
+    "-- These rows were locked by the upsert just above, so this cannot",
+    "-- wait on another writer and their ctid cannot change first.",
+    "WITH applied AS (",
+    "RETURNING c.ctid AS row_tid, c.n",
+    ")",
+    "SELECT array_agg(a.row_tid) INTO zero_rows",
+    "FROM applied a",
+    "WHERE a.n = 0;",
+    "IF zero_rows IS NOT NULL THEN",
+    "DELETE FROM coord.policy_outcome_counts c",
+    "WHERE c.ctid = ANY (zero_rows) AND c.n = 0;",
+    "END IF;",
+]
 
 _LABELED: dict[str, object] = {
     "category": "confirmed",
@@ -144,8 +164,8 @@ def test_revision_ids_are_wired_and_the_parent_is_a_real_sibling() -> None:
 
 
 def test_every_execute_is_static_and_nothing_is_dropped() -> None:
-    for fn in ("upgrade", "downgrade"):
-        assert len(_literals(_revision_path(), fn)) == 2, fn
+    assert len(_literals(_revision_path(), "upgrade")) == 3
+    assert len(_literals(_revision_path(), "downgrade")) == 2
     scan = _guard.scan_source(
         _revision_path().read_text(encoding="utf-8"), _revision_path()
     )
@@ -176,12 +196,25 @@ def test_new_body_is_the_old_body_plus_the_zero_row_delete() -> None:
         else line
         for line in old
     ]
-    remaining = iter(new)
-    missing = [line for line in old if line not in remaining]
-    assert not missing, f"revision 01 lines gone or reordered: {missing}"
-    added = "\n".join(new)
-    assert "RETURNING c.ctid AS row_tid, c.n" in added
-    assert "WHERE c.ctid = ANY (zero_rows) AND c.n = 0;" in added
+    added: list[str] = []
+    matched = 0
+    for line in new:
+        if matched < len(old) and line == old[matched]:
+            matched += 1
+        else:
+            added.append(line)
+    assert matched == len(old), f"revision 01 line gone: {old[matched:][:1]}"
+    assert added == _ADDED_BODY_LINES
+
+
+def test_the_existing_zero_row_delete_runs_after_the_function_and_never_waits() -> None:
+    calls = upgrade_execute_calls(_revision_path(), function="upgrade")
+    delete = calls[-1]
+    assert delete.sql is not None
+    assert delete.sql.lstrip().startswith("DELETE FROM coord.policy_outcome_counts")
+    assert "FOR UPDATE SKIP LOCKED" in delete.sql
+    assert delete.in_autocommit_block, "its row locks must last one statement"
+    assert not any(c.in_autocommit_block for c in calls[:-1])
 
 
 # ---------------------------------------------------------------------------
@@ -444,10 +477,46 @@ def test_up_down_up() -> None:
         assert _counts(engine) == {}, "the old body still counts to zero"
         assert _row_total(engine) == 1, "the old body leaves the zero row in place"
 
-        run_alembic(backend_root(), url, "upgrade", _REVISION_ID)
+        # Beside that zero row: a live row, an unseeded negative row, and a zero
+        # row a writer holds. The re-upgrade clears only the free zero row.
+        later: dict[str, object] = {**_LABELED, "labeled_at": "2026-10-30T14:00:00Z"}
+        below: dict[str, object] = {**_LABELED, "labeled_at": "2026-10-30T15:00:00Z"}
+        held: dict[str, object] = {**_LABELED, "labeled_at": "2026-10-30T16:00:00Z"}
+        with engine.begin() as conn:
+            _insert(conn, [later])
+            rid = _insert(conn, [below])[0]
+            _insert(conn, [held])
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE coord.policy_outcome_counts SET n = 0"
+                    " WHERE to_char(labeled_hour, 'HH24') = '15'"
+                )
+            )
+        _delete_where(engine, f"resolution_id = '{rid}'")
+        _delete_where(engine, "outcome_labeled_at = '2026-10-30T16:00:00Z'")
+        assert _row_total(engine) == 4
+        with engine.connect() as holder:
+            tx = holder.begin()
+            holder.execute(
+                text(
+                    "SELECT 1 FROM coord.policy_outcome_counts"
+                    " WHERE to_char(labeled_hour, 'HH24') = '16' FOR UPDATE"
+                )
+            )
+            run_alembic(backend_root(), url, "upgrade", _REVISION_ID)
+            tx.rollback()
         assert "zero_rows" in _function_source(engine)
+        assert _counts(engine) == {
+            _key("confirmed", "2026-10-30 14:00"): 1,
+            _key("confirmed", "2026-10-30 15:00"): -1,
+        }
+        assert _row_total(engine) == 3, "only the row the writer held stays at zero"
+
+        # The new body is live again.
         with engine.begin() as conn:
             _insert(conn, [_LABELED])
-        assert _counts(engine) == {_key("confirmed"): 1}
-        _delete_where(engine, "outcome_category IS NOT NULL")
-        assert _row_total(engine) == 0, "the new body deletes it again"
+        assert _counts(engine)[_key("confirmed")] == 1
+        _delete_where(engine, "outcome_labeled_at = '2026-10-30T13:00:00Z'")
+        assert _key("confirmed") not in _counts(engine)
+        assert _row_total(engine) == 3, "the new body deletes it again"
