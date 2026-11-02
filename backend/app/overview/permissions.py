@@ -50,6 +50,7 @@ from app.api.deps import DeviceTokenContext, current_active_user_optional, get_a
 from app.api.v1.endpoints.operations import (
     ACTIVE_TENANT_HEADER,
     _effective_tenant_id,
+    _selected_member_tenant_id,
     capture_caller_bearer,
 )
 from app.core.refusal import (
@@ -259,6 +260,8 @@ class OverviewAccess:
     #: The device the request came through, when ``kind == "device"``. The
     #: change log records it beside ``actor`` (plan D2).
     via_device: UUID | None
+    #: See :attr:`OverviewCaller.named_project_degraded`.
+    named_project_degraded: bool = False
 
     def can_edit(self, rule: PermissionRule) -> bool:
         if rule in DEVICE_REFUSALS and self.via_device is not None:
@@ -282,6 +285,10 @@ class OverviewCaller:
     tenant_id: UUID
     #: The caller's roles in THIS tenant — never a union across tenants.
     roles: tuple[str, ...]
+    #: The request named a project the caller is not a member of, so
+    #: ``tenant_id`` is their home project instead. Harmless for a read; a route
+    #: that replaces a project's state whole refuses on it.
+    named_project_degraded: bool = False
 
 
 async def _operator_caller(request: Request) -> OverviewCaller:
@@ -309,7 +316,14 @@ async def _operator_caller(request: Request) -> OverviewCaller:
         if membership.tenant_id == tenant_id:
             roles = tuple(membership.roles)
             break
-    return OverviewCaller(tenant_id=tenant_id, roles=roles)
+    return OverviewCaller(
+        tenant_id=tenant_id,
+        roles=roles,
+        named_project_degraded=(
+            bool((active or "").strip())
+            and _selected_member_tenant_id(identity, active) is None
+        ),
+    )
 
 
 async def _device_caller(
@@ -395,6 +409,7 @@ async def get_overview_access(
     access = OverviewAccess(
         tenant_id=caller.tenant_id,
         roles=caller.roles,
+        named_project_degraded=caller.named_project_degraded,
         editing_roles=(
             tuple(settings.editing_roles)
             if settings is not None and settings.editing_roles is not None

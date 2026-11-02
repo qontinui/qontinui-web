@@ -328,6 +328,21 @@ async def admin_a(async_db_session: AsyncSession, api_user):
 
 
 @pytest_asyncio.fixture()
+async def degraded_admin_a(async_db_session: AsyncSession, api_user):
+    """Admin of home project A, whose request named a project they are not in."""
+    from app.overview.permissions import OverviewCaller, get_overview_caller
+
+    app = _build_app(
+        db_session=async_db_session, user=api_user, tenant_id=TENANT_A, is_admin=True
+    )
+    app.dependency_overrides[get_overview_caller] = lambda: OverviewCaller(
+        tenant_id=TENANT_A, roles=("admin",), named_project_degraded=True
+    )
+    async with _client(app) as c:
+        yield c
+
+
+@pytest_asyncio.fixture()
 async def member_a(async_db_session: AsyncSession, api_user):
     """A plain member (coord ``operator``) of project A — read-only."""
     app = _build_app(
@@ -1079,6 +1094,57 @@ class TestRollupHonesty:
 # ===========================================================================
 
 
+class TestNamedProjectResolution:
+    """Which named projects count as degraded, through the real resolver."""
+
+    @pytest.mark.parametrize(
+        ("named", "tenant_id", "degraded"),
+        [
+            (str(TENANT_B), TENANT_B, False),
+            ("project-b", TENANT_B, False),
+            (f"  {TENANT_B}  ", TENANT_B, False),
+            (str(TENANT_A), TENANT_A, False),
+            ("cccccccc-0000-4000-8000-000000000003", TENANT_A, True),
+            ("not-a-project", TENANT_A, True),
+            ("   ", TENANT_A, False),
+            (None, TENANT_A, False),
+        ],
+    )
+    async def test_operator_caller(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        named: str | None,
+        tenant_id: UUID,
+        degraded: bool,
+    ) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        from app.overview import permissions
+
+        identity = SimpleNamespace(
+            home_tenant_id=TENANT_A,
+            tenants=[
+                SimpleNamespace(tenant_id=TENANT_A, slug="project-a", roles=("admin",)),
+                SimpleNamespace(
+                    tenant_id=TENANT_B, slug="project-b", roles=("operator",)
+                ),
+            ],
+        )
+        monkeypatch.setattr(
+            permissions, "get_coord_identity", AsyncMock(return_value=identity)
+        )
+        monkeypatch.setattr(permissions, "capture_caller_bearer", lambda _r: None)
+        headers = {} if named is None else {permissions.ACTIVE_TENANT_HEADER: named}
+
+        caller = await permissions._operator_caller(
+            SimpleNamespace(headers=headers)  # type: ignore[arg-type]
+        )
+
+        assert caller.tenant_id == tenant_id
+        assert caller.named_project_degraded is degraded
+
+
 class TestSettings:
     async def test_unsaved_settings_read_as_the_defaults_not_as_absent(
         self, member_a: httpx.AsyncClient
@@ -1115,7 +1181,7 @@ class TestSettings:
         assert second.json()["version"] == version + 1
 
     async def test_a_save_naming_a_project_the_caller_is_not_in_is_refused(
-        self, admin_a: httpx.AsyncClient
+        self, admin_a: httpx.AsyncClient, degraded_admin_a: httpx.AsyncClient
     ) -> None:
         # A read degrades to the caller's home project here. A write must not:
         # it would replace the home project's settings with another's.
@@ -1123,25 +1189,16 @@ class TestSettings:
         assert stored.status_code == 200, stored.text
         version = stored.json()["version"]
 
-        refused = await admin_a.put(
-            f"{API}/settings",
-            json={"base_currency": "GBP"},
-            headers={"X-Qontinui-Active-Tenant": str(TENANT_B)},
+        refused = await degraded_admin_a.put(
+            f"{API}/settings", json={"base_currency": "GBP"}
         )
         assert refused.status_code == 403
         assert refused.json()["detail"]["error"] == "project_not_active"
-        after = (await admin_a.get(f"{API}/settings")).json()
-        assert after["base_currency"] == "EUR"
-        assert after["version"] == version
 
-        for spelling in (str(TENANT_A), str(TENANT_A).upper()):
-            named = await admin_a.put(
-                f"{API}/settings",
-                json={"base_currency": "GBP"},
-                headers={"X-Qontinui-Active-Tenant": spelling},
-            )
-            assert named.status_code == 200, named.text
-        assert (await admin_a.get(f"{API}/settings")).json()["base_currency"] == "GBP"
+        read = await degraded_admin_a.get(f"{API}/settings")
+        assert read.status_code == 200
+        assert read.json()["base_currency"] == "EUR"
+        assert read.json()["version"] == version
 
     async def test_a_stale_version_is_refused_with_the_current_one(
         self, admin_a: httpx.AsyncClient

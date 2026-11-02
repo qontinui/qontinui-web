@@ -421,24 +421,33 @@ def _effective_tenant_roles(
     return identity.roles
 
 
+def _selected_member_tenant_id(
+    identity: CoordIdentity, active_tenant: str | None
+) -> UUID | None:
+    """The tenant ``active_tenant`` names, when the operator is a member of it
+    (matched against ``identity.tenants`` by id, or slug defensively)."""
+    selection = (active_tenant or "").strip()
+    if selection:
+        for t in identity.tenants:
+            if str(t.tenant_id) == selection or t.slug == selection:
+                return t.tenant_id
+    return None
+
+
 def _effective_tenant_id(
     identity: CoordIdentity, active_tenant: str | None
 ) -> UUID | None:
     """The operator's EFFECTIVE tenant id: the active-switcher selection when
-    the operator is a member of it (matched against ``identity.tenants`` by
-    id, or slug defensively), else the home tenant.
+    the operator is a member of it, else the home tenant.
 
     The WS bridges use this: a browser ``WebSocket`` cannot send the
     ``X-Qontinui-Active-Tenant`` header, so the selection rides a query
     param and is membership-validated here — mirroring coord's
     ``auth::apply_active_tenant_override`` (non-member selection degrades
     to home, never widens)."""
-    selection = (active_tenant or "").strip()
-    if selection:
-        for t in identity.tenants:
-            if str(t.tenant_id) == selection or t.slug == selection:
-                return t.tenant_id
-    return identity.home_tenant_id
+    return _selected_member_tenant_id(identity, active_tenant) or (
+        identity.home_tenant_id
+    )
 
 
 async def require_coord_tenant_admin_target(
