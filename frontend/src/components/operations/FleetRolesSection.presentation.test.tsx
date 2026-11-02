@@ -30,7 +30,7 @@ vi.mock("./useFleetDispatchRoles", () => ({
 }));
 
 import { FixedPresentationMode } from "@/components/presentation";
-import { parseDispatchRoles } from "./fleetDispatchRoles";
+import { parseDispatchRoles, presentedLaneState } from "./fleetDispatchRoles";
 import { FleetRolesSection } from "./FleetRolesSection";
 
 const DEVICE_A = "3e7e4b04-75de-4efb-b718-c8ce8fcf7b17";
@@ -140,6 +140,62 @@ describe("FleetRolesSection?present=1 — coord's own words stay with the operat
     );
     expect(document.body.textContent).not.toMatch(/machine_dispatch_roles/);
     expect(document.body.textContent).not.toMatch(/not provisioned/);
+  });
+
+  it("says a lane state it cannot name was not recognised, row and detail alike", () => {
+    const [first, ...rest] = RAW;
+    const token = "paused_by_ops_v9:tbl_coord_x";
+    roles.read = readOf([
+      {
+        ...first!,
+        lanes: { ...first!.lanes, agent: { ...lane, effective: token } },
+      },
+      ...rest,
+    ]);
+    render(panel());
+    const row = shownRows().find((r) =>
+      r.textContent?.includes("not recognised")
+    );
+    expect(row).toBeTruthy();
+    fireEvent.click(toggle(row!));
+    // The detail says so itself: never a calm "open" beside the row's words.
+    expect(screen.getByTestId("fleet-roles-lanes")).toHaveTextContent(
+      "not recognised"
+    );
+    for (const raw of [token, token.replaceAll("_", " ")]) {
+      expect(document.body.textContent).not.toContain(raw);
+    }
+  });
+
+  it.each([
+    ["open", "open"],
+    ["closed_by_role", "closed by role"],
+    ["closed_by_drain", "closed by drain"],
+    ["not_registered", "not registered"],
+    ["unknown", "unknown"],
+    [null, "unknown"],
+    ["paused_by_ops", "not recognised"],
+    ["constructor", "not recognised"],
+  ])("presentedLaneState(%j) is %s", (effective, want) => {
+    expect(presentedLaneState(effective)).toBe(want);
+  });
+
+  it("(control) words the lane states coord serves", () => {
+    const [first, ...rest] = RAW;
+    roles.read = readOf([
+      {
+        ...first!,
+        lanes: {
+          agent: { ...lane, effective: "closed_by_role" },
+          ci: { ...lane, effective: "closed_by_drain" },
+        },
+      },
+      ...rest,
+    ]);
+    render(panel());
+    expect(document.body.textContent).toContain(
+      "Sessions: closed by role · CI: closed by drain"
+    );
   });
 
   it("says a role was not recognised without quoting coord's token, row and detail alike", () => {
