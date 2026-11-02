@@ -167,7 +167,10 @@ import { QUESTION_QUEUE_HREF } from "@/components/operations/fleetConditions";
 import { useFleetWorktreeSlots } from "@/components/operations/useFleetWorktreeSlots";
 import { presentedFailureReason } from "@/components/operations/presentedFailure";
 import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
-import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
+import {
+  fleetRosterCut,
+  summarizeFleetLiveness,
+} from "@/components/operations/fleetLiveness";
 import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
 import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
@@ -275,6 +278,7 @@ export default function CoordDevOpsPage() {
         loading: fleet.loading,
         error: fleet.error,
         answered: fleet.data !== null,
+        cut: fleetRosterCut(fleet.data),
       }),
     [devices, fleet.loading, fleet.error, fleet.data]
   );
@@ -494,7 +498,9 @@ export default function CoordDevOpsPage() {
             label:
               liveness.total === null
                 ? "machines unknown — not read yet"
-                : `machines ${liveness.total}`,
+                : liveness.rosterNote === null
+                  ? `machines ${liveness.total}`
+                  : `machines ${liveness.total} · ${liveness.rosterNote}`,
             tone: "muted",
             "data-testid": "coord-devops-machines-badge",
           },
