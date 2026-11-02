@@ -84,17 +84,21 @@ not touch the triggers. ``CREATE OR REPLACE FUNCTION`` takes no lock on
 ``upgrade()`` also deletes every row already at ``n = 0``, once. Otherwise a zero
 row made earlier would stay if coord seeded its key first, because the seeder
 does not revisit a seeded key and reconcile sees no drift. A downgrade followed
-by a re-upgrade leaves the same residue. With this delete, neither the landing
-order against qontinui-coord#3583 nor a round trip can strand one.
+by a re-upgrade leaves the same residue. With this delete, the landing order
+against qontinui-coord#3583 and a round trip leave only the rare residue
+described below.
 
 It runs in an autocommit block, after the batch holding the new function has
-committed, so no new zero row can appear behind it and its row locks last one
-statement. ``FOR UPDATE SKIP LOCKED`` means it never waits on a writer and cannot
+committed, so no statement that fires from then on can leave a new zero row, and
+its row locks last one statement. ``FOR UPDATE SKIP LOCKED`` means it never waits on a writer and cannot
 deadlock with a multi-row upsert, which locks rows in key order while this scan
 locks them in heap order. A row it skips is held by a live writer, whose commit
-either moves the count or, under the new body, deletes the row. A row that
-writer then rolls back stays at zero, which is harmless and rare. The table has
-no index on ``n``, so this is one scan of the rollup, which is small.
+either moves the count or, under the new body, deletes the row. Two rare cases
+can still leave a row at zero: a held row whose writer rolls back, and a row that
+a transaction already in flight under the old body takes to zero and commits
+after this statement. Neither makes a count wrong; each costs a later read one
+extra row. The table has no index on ``n``, so this scans the rollup, which is
+small.
 
 ## Downgrade
 
@@ -286,7 +290,7 @@ def upgrade() -> None:
         """
     )
     # The new function must be committed first, so autocommit_block ends the
-    # batch transaction before this runs and no new zero row can appear behind it.
+    # batch transaction before this runs and later statements use the new body.
     with op.get_context().autocommit_block():
         op.execute(
             """

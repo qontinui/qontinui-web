@@ -496,6 +496,13 @@ def test_up_down_up() -> None:
         _delete_where(engine, f"resolution_id = '{rid}'")
         _delete_where(engine, "outcome_labeled_at = '2026-10-30T16:00:00Z'")
         assert _row_total(engine) == 4
+        # run_alembic runs on this thread, so a DELETE that waited on the holder
+        # would hang rather than fail. Bound it; env.py RESET returns to this value.
+        with engine.begin() as conn:
+            database = conn.execute(text("SELECT current_database()")).scalar_one()
+            conn.exec_driver_sql(
+                f"""ALTER DATABASE "{database}" SET lock_timeout = '30s'"""
+            )
         with engine.connect() as holder:
             tx = holder.begin()
             holder.execute(
