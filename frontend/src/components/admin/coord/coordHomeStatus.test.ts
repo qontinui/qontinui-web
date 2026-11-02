@@ -38,6 +38,7 @@ import {
   sourceRawLine,
   sourceRowReason,
   sourceTimeWords,
+  needsRecommendationShareSentence,
   unservedDecisionsSentence,
   parseBlockState,
   parseOptions,
@@ -1881,13 +1882,13 @@ describe("a served key spelled like an Object.prototype member", () => {
   });
 });
 
-describe("needs_me questions_coverage — a stale scan's counts are never definite", () => {
-  function staleBody(needs: Record<string, unknown>) {
-    const body = calmBody();
-    body.needs_me = { state: "read", ...needs };
-    return body;
-  }
+function needsBody(needs: Record<string, unknown>) {
+  const body = calmBody();
+  body.needs_me = { state: "read", ...needs };
+  return body;
+}
 
+describe("needs_me questions_coverage — a stale scan's counts are never definite", () => {
   it.each([
     ["read", "read"],
     ["stale", "stale"],
@@ -1895,14 +1896,14 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
     ["maybe", "unknown"],
   ])("reads questions_coverage %p as %p", (raw, want) => {
     const view = parseProjectState(
-      staleBody({ total: 0, items: [], questions_coverage: raw })
+      needsBody({ total: 0, items: [], questions_coverage: raw })
     )!;
     expect(view.needsMe.coverage).toBe(want);
   });
 
   it("does not say nothing needs you over a stale zero", () => {
     const view = parseProjectState(
-      staleBody({
+      needsBody({
         total: 0,
         omitted: 0,
         items: [],
@@ -1959,7 +1960,7 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
     (_label, machines, over) => {
       // Every coord block read (correctness included): only the roster or the
       // degradations list keeps the page from calm.
-      const body = staleBody({
+      const body = needsBody({
         total: 0,
         omitted: 0,
         items: [],
@@ -1976,7 +1977,7 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
   it("says the qualified zero alone when everything else is read and calm", () => {
     const strip = deriveHomeStrip(
       parseProjectState(
-        staleBody({
+        needsBody({
           total: 0,
           omitted: 0,
           items: [],
@@ -1990,7 +1991,7 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
 
   it("marks a stale count as possibly off in the headline", () => {
     const view = parseProjectState(
-      staleBody({
+      needsBody({
         total: 2,
         omitted: 0,
         items: [
@@ -2017,7 +2018,7 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
   it("leaves a read (or unserved) coverage's zero as the definite answer", () => {
     for (const coverage of ["read", undefined]) {
       const view = parseProjectState(
-        staleBody({
+        needsBody({
           total: 0,
           omitted: 0,
           items: [],
@@ -2031,7 +2032,7 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
 
   it("reads a null share as unknown, never as zero", () => {
     const view = parseProjectState(
-      staleBody({
+      needsBody({
         total: 0,
         items: [],
         questions_coverage: "stale",
@@ -2042,5 +2043,78 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
       withRecommendation: null,
       total: null,
     });
+  });
+});
+
+describe("needsRecommendationShareSentence", () => {
+  const needs = (fields: Record<string, unknown>) =>
+    parseProjectState(needsBody({ total: 5, items: [], ...fields }))!.needsMe;
+  const share = (with_recommendation: unknown, total: unknown = 5) => ({
+    shape_share: { with_recommendation, total },
+  });
+
+  it.each([
+    [
+      "a count over the whole set",
+      share(3),
+      "3 of 5 decisions came with a recommendation.",
+    ],
+    [
+      "none of them, which is a count",
+      share(0),
+      "0 of 5 decisions came with a recommendation.",
+    ],
+    [
+      "a scan coord calls stale qualifies the count",
+      { ...share(3), questions_coverage: "stale" },
+      "3 of 5 decisions came with a recommendation (may be off).",
+    ],
+    [
+      "a null count is unknown, never zero",
+      share(null),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a share over another total is not this count's",
+      share(3, 4),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a negative share is not a count",
+      share(-1),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a fractional share is not a count",
+      share(2.5),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "one decision is singular",
+      { total: 1, ...share(1, 1) },
+      "1 of 1 decision came with a recommendation.",
+    ],
+    [
+      "a share larger than its total is not a count",
+      share(6),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+  ])("%s", (_name, fields, want) => {
+    expect(needsRecommendationShareSentence(needs(fields))).toBe(want);
+  });
+
+  it.each([
+    ["coord served no share", {}],
+    ["nothing is waiting", { total: 0, ...share(0, 0) }],
+    ["no usable count", { total: null, ...share(1, null) }],
+  ])("says nothing when %s", (_name, fields) => {
+    expect(needsRecommendationShareSentence(needs(fields))).toBeNull();
+  });
+
+  it("says nothing for a block that was not read", () => {
+    const view = parseProjectState(
+      needsBody({ state: "could_not_read", total: 5, ...share(3) })
+    )!;
+    expect(needsRecommendationShareSentence(view.needsMe)).toBeNull();
   });
 });

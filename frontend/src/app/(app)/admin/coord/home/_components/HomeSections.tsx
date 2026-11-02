@@ -137,6 +137,7 @@ import {
   needsDisplayCount,
   needsCountMayBeOff,
   NEEDS_COUNT_MAY_BE_OFF_WORDS,
+  needsRecommendationShareSentence,
   nothingNeedsYou,
   lastGoodReadPhrase,
   namedUnitAgePhrase,
@@ -665,6 +666,7 @@ export function NeedsYouSection({
   const count = needsDisplayCount(needs);
   // Coord called its scan stale: the count shows, never as a definite total.
   const mayBeOff = needsCountMayBeOff(needs);
+  const recommendationShare = needsRecommendationShareSentence(needs);
   const header = read
     ? `${served} shown of ${count ?? "an unknown number"}${
         mayBeOff && count !== null ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""
@@ -722,6 +724,14 @@ export function NeedsYouSection({
               )
           ).join(" · ")}
           {mayBeOff && ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}`}
+        </p>
+      )}
+      {recommendationShare !== null && (
+        <p
+          className="m-0 text-xs text-muted-foreground"
+          data-testid="coord-home.needs-you.recommendation-share"
+        >
+          {recommendationShare}
         </p>
       )}
       {read && needs.retirement === "unsupported" && (

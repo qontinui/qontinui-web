@@ -837,6 +837,39 @@ export function needsCountMayBeOff(needs: NeedsMeView): boolean {
 export const NEEDS_COUNT_MAY_BE_OFF_WORDS = "(may be off)";
 
 /**
+ * How many of the decisions waiting came with a recommendation: coord's count
+ * over ALL of them, which the 20 rows it lists cannot say (`shape_share`;
+ * `audience_profile/human-operator`, *Escalation shape*).
+ * A `null` count is UNKNOWN (the column is absent, or the scan stopped short),
+ * never zero. `null` when there is nothing to say it about: no read block, no
+ * usable total, or a block from a coord that serves no share at all.
+ */
+export function needsRecommendationShareSentence(
+  needs: NeedsMeView
+): string | null {
+  const share = needs.shapeShare;
+  const count = needsDisplayCount(needs);
+  if (share === null || count === null || count === 0) return null;
+  const known = share.withRecommendation;
+  // A share over some other total, or one that is not a count of it, is not
+  // this count's.
+  if (
+    known === null ||
+    share.total !== count ||
+    !Number.isInteger(known) ||
+    known < 0 ||
+    known > count
+  ) {
+    return "How many of these decisions came with a recommendation is not known.";
+  }
+  return `${known} of ${count} ${
+    count === 1 ? "decision" : "decisions"
+  } came with a recommendation${
+    needsCountMayBeOff(needs) ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""
+  }.`;
+}
+
+/**
  * The sentence for a read needs_me block that counted decisions but served
  * none of them. `count` is {@link needsDisplayCount}; `null` is an unknown
  * number, never a zero. One decision is singular ("1 decision … did not
