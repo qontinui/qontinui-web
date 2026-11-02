@@ -58830,7 +58830,7 @@ export interface operations {
     api_v1_admin_sessions_census_get: {
         parameters: {
             query?: {
-                /** @description A Claude Code session uuid or a coord.sessions id (coord matches both: a census row's `aliases` carry the coord ids). */
+                /** @description A Claude Code session uuid or a coord session id (coord matches both: a census row's `aliases` carry the coord ids). */
                 session_id?: string | null;
                 /** @description Prefix match over the census window name and coord's names. */
                 session_name?: string | null;
