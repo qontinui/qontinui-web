@@ -32,6 +32,7 @@ import {
   readinessCounts,
   resolveReadiness,
   sessionActionGates,
+  workStatusLabel,
   sortRunnerSessions,
   type FleetSessionRow,
   type ReadinessRead,
@@ -260,6 +261,73 @@ describe("the runner wind-down palette", () => {
     expect(
       paletteDisagreements(RUNNER_SESSION_ATTENTION_BY_KIND, RUNNER_SESSION_PALETTE)
     ).toEqual([]);
+  });
+});
+
+describe("workStatusLabel", () => {
+  const now = Date.parse("2026-09-13T12:00:00Z");
+  const labelled = (over: Partial<FleetSessionRow>) =>
+    workStatusLabel(record({ session: session(over) }), now);
+
+  it("says how long ago a finished session finished", () => {
+    expect(
+      labelled({
+        sessionStatus: "finished",
+        sessionStatusSince: "2026-09-13T09:00:00Z",
+      })
+    ).toBe("finished (3h ago)");
+  });
+
+  it("leaves the time out when coord served none: UNKNOWN, not a duration", () => {
+    expect(labelled({ sessionStatus: "finished" })).toBe("finished");
+    expect(labelled({ sessionStatus: "finished", sessionStatusSince: null })).toBe(
+      "finished"
+    );
+    expect(
+      labelled({ sessionStatus: "finished", sessionStatusSince: "not a time" })
+    ).toBe("finished");
+  });
+
+  it("never dates a stalled row: that clock belongs to the status it stalled in", () => {
+    expect(
+      labelled({
+        sessionStatus: "stalled",
+        sessionStatusSince: "2026-09-13T09:00:00Z",
+      })
+    ).toBe("stalled");
+  });
+
+  it("reads a stamp within ordinary clock skew as now", () => {
+    expect(
+      labelled({
+        sessionStatus: "finished",
+        sessionStatusSince: "2026-09-13T12:00:30Z",
+      })
+    ).toBe("finished (just now)");
+  });
+
+  it("leaves the time out when a stamp is further ahead than ordinary skew", () => {
+    expect(
+      labelled({
+        sessionStatus: "finished",
+        sessionStatusSince: "2026-09-13T12:02:00Z",
+      })
+    ).toBe("finished");
+  });
+
+  it("does not date an unknown status", () => {
+    expect(
+      workStatusLabel(
+        record({
+          session: session({
+            sessionStatus: null,
+            sessionStatusSince: "2026-09-13T09:00:00Z",
+          }),
+        }),
+        now
+      )
+    ).toBe("UNKNOWN");
+    expect(workStatusLabel(record({ session: null }), now)).toBe("UNKNOWN");
   });
 });
 
