@@ -89,6 +89,7 @@ import {
   describeLiveSessions,
   describeRole,
   describeRoleEffect,
+  presentedLaneState,
   describeRoleWriteError,
   formatGiB,
   laneNotRegistered,
@@ -127,7 +128,11 @@ function machineWriteKey(c: {
     : `host:${(c.ciHostName ?? "").trim().toLowerCase()}`;
 }
 
-function laneSummary(m: RoleMachine, maybeCut: boolean): string {
+function laneSummary(
+  m: RoleMachine,
+  maybeCut: boolean,
+  presenting: boolean
+): string {
   if (!m.registered)
     return maybeCut
       ? "no lanes shown — may be cut from a truncated read"
@@ -138,7 +143,9 @@ function laneSummary(m: RoleMachine, maybeCut: boolean): string {
       `${LANE_LABEL[l]}: ${
         l === "agent" && m.hostOnly
           ? "n/a"
-          : (m.lanes![l].effective ?? "unknown")
+          : presenting
+            ? presentedLaneState(m.lanes![l].effective)
+            : (m.lanes![l].effective ?? "unknown")
       }`
   )
     .join(" · ")
@@ -267,7 +274,7 @@ function LanesTable({ m, maybeCut }: { m: RoleMachine; maybeCut: boolean }) {
                 ) : lane.effective === null ? (
                   "not served"
                 ) : presenting ? (
-                  lane.effective.replaceAll("_", " ")
+                  presentedLaneState(lane.effective)
                 ) : (
                   lane.effective
                 )}
@@ -579,7 +586,8 @@ export function FleetRolesSection() {
                 }
                 reason={laneSummary(
                   m,
-                  read.state === "known" && read.rosterTruncated === true
+                  read.state === "known" && read.rosterTruncated === true,
+                  presenting
                 )}
                 attention={m.unrecognisedRole !== null ? "waiting" : undefined}
                 expanded={expanded}

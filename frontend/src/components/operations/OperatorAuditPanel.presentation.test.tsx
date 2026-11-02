@@ -28,7 +28,7 @@ vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ isCoordAdmin: true, loading: false, user: { id: "u-1" } }),
 }));
 
-import { UNKNOWN_AMBER } from "@/components/console";
+import { absoluteTime, UNKNOWN_AMBER } from "@/components/console";
 import {
   FixedPresentationMode,
   NAVIGATION_ONLY_ATTRIBUTE,
@@ -286,5 +286,89 @@ describe("OperatorAuditPanel?present=1 — a presented row carries no audit id",
     fireEvent.click(screen.getByTestId("operator-audit-refresh"));
     await waitFor(() => expect(presentedRows()).toHaveLength(2));
     expect(presentedRows().map((r) => r.open)).toEqual([true, false]);
+  });
+});
+
+describe("OperatorAuditPanel?present=1 — a blast radius says what an outsider can read", () => {
+  async function presentRow(row: AuditRow): Promise<HTMLElement> {
+    getMock.mockResolvedValue({ audit: [row], count: 1 });
+    render(<Panel presenting />);
+    fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
+    const shown = await screen.findByTestId("audit-row-presented");
+    fireEvent.click(shown.querySelector("button[aria-expanded]")!);
+    return screen.getByTestId("audit-blast-presented");
+  }
+
+  it("withholds a commit prefix and words the clearance's writer", async () => {
+    const blast = await presentRow({
+      ...DRAIN_ROW,
+      action: "pr_merge.escalate_override",
+      metadata: { head_sha: "deadbeefcafe0123", via: "agent_evidence" },
+    });
+    expect(blast).toHaveTextContent("an agent, on evidence");
+    expect(blast).toHaveTextContent("withheld in presentation mode");
+    expect(document.body.textContent).not.toContain("deadbeefcafe");
+    expect(document.body.textContent).not.toContain("agent_evidence");
+  });
+
+  it("withholds a policy's internal name and its level, and shows its version", async () => {
+    const blast = await presentRow({
+      ...DRAIN_ROW,
+      action: "fleet_policy.upsert",
+      metadata: {
+        domain: "github_hosted_ci",
+        level: "tightening_only",
+        version: 7,
+      },
+    });
+    expect(blast).toHaveTextContent("Policy version");
+    expect(blast).toHaveTextContent(/7/);
+    expect(document.body.textContent).not.toContain("github_hosted_ci");
+    expect(document.body.textContent).not.toContain("tightening_only");
+  });
+
+  it("withholds a version that is not a count", async () => {
+    await presentRow({ ...DRAIN_ROW, metadata: { version: "tbl_x" } });
+    expect(document.body.textContent).not.toContain("tbl_x");
+  });
+
+  it("reads an expiry as a time", async () => {
+    const until = "2026-10-28T10:00:00Z";
+    const blast = await presentRow({
+      ...DRAIN_ROW,
+      metadata: { drained: true, until },
+    });
+    expect(blast).toHaveTextContent(absoluteTime(until));
+    expect(blast.textContent).not.toContain(until);
+  });
+
+  it("withholds an expiry that is not a time", async () => {
+    const blast = await presentRow({
+      ...DRAIN_ROW,
+      // `Date.parse` reads this one as a date in 2001.
+      metadata: { drained: true, until: "tbl_x 12" },
+    });
+    expect(blast).toHaveTextContent("withheld in presentation mode");
+    expect(document.body.textContent).not.toContain("tbl_x");
+  });
+});
+
+describe("OperatorAuditPanel — a failed read", () => {
+  async function failedRead(presenting: boolean) {
+    getMock.mockRejectedValue(new Error("boom"));
+    render(<Panel presenting={presenting} />);
+    fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
+    await screen.findByText(/This says nothing about whether anyone changed/);
+  }
+
+  it("presenting: says nothing of the route, its role or a status", async () => {
+    await failedRead(true);
+    expect(document.body.textContent).not.toMatch(/gates this route|403/);
+  });
+
+  it("(operator) keeps what a 403 means", async () => {
+    await failedRead(false);
+    expect(document.body.textContent).toMatch(/gates this route/);
+    expect(document.body.textContent).toMatch(/a 403\s+here means/);
   });
 });

@@ -58,6 +58,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { AlertTriangle, ScrollText } from "lucide-react";
 import {
+  absoluteTime,
   CollapsiblePanel,
   NAVIGATION_ONLY_PROPS,
   RecordDetail,
@@ -86,8 +87,10 @@ import {
   auditResourceRepo,
   auditScope,
   indexDevices,
+  isAuditCount,
+  isAuditTimestamp,
   presentedAuditActionLabel,
-  VERBATIM_BLAST_KEYS,
+  presentedClearanceWriter,
 } from "./auditPresentation";
 import { DEVOPS_SOURCES } from "./devOpsHeadline";
 import { FAILURE_REASON_WITHHELD } from "./presentedFailure";
@@ -288,12 +291,15 @@ function PresentedNilOperator() {
 /** What a withheld blast-radius value reads as. */
 const BLAST_VALUE_WITHHELD = "withheld in presentation mode";
 
+function BlastValueWithheld() {
+  return <span className="text-muted-foreground">{BLAST_VALUE_WITHHELD}</span>;
+}
+
 /**
  * One promoted blast-radius value as an outsider sees it: a count instead of
  * tenant ids, an alias instead of a device id, repositories only when
- * provably first-party, and an operator never. A value is shown as it is only
- * when its key is one `VERBATIM_BLAST_KEYS` vouches for; anything else is
- * redacted or withheld, never shown on trust.
+ * provably first-party, and an operator never. A value is shown only under an
+ * arm of its own here; anything else is withheld, never shown on trust.
  */
 function PresentedBlastValue({
   row,
@@ -359,16 +365,31 @@ function PresentedBlastValue({
     }
     case "target_operator_id":
       return <>an operator — {BLAST_VALUE_WITHHELD}</>;
-    default:
-      // Drained / released, an expiry, a clearance writer, a policy name, a
-      // level, a version, a commit prefix: coord's fixed vocabulary, times
-      // and numbers. A key not vouched for could hold anything (D3.3: a
-      // blocklist fails open), so it is withheld.
-      return VERBATIM_BLAST_KEYS.has(item.key) ? (
+    case "drained":
+      // Only ever "drained" or "released" (`operatorAudit.ts`).
+      return <>{item.value}</>;
+    case "until":
+      // Unparsed, it is whatever the writer stamped; a time reads as a time.
+      return isAuditTimestamp(item.value) ? (
+        <>{absoluteTime(item.value)}</>
+      ) : (
+        <BlastValueWithheld />
+      );
+    case "version":
+      return isAuditCount(item.value) ? (
         <>{item.value}</>
       ) : (
-        <span className="text-muted-foreground">{BLAST_VALUE_WITHHELD}</span>
+        <BlastValueWithheld />
       );
+    case "via": {
+      const writer = presentedClearanceWriter(item.value);
+      return writer !== null ? <>{writer}</> : <BlastValueWithheld />;
+    }
+    default:
+      // A commit prefix, a policy's internal name, a policy's level (opaque to
+      // coord itself on a domain that declares none), and any key added without
+      // an arm: any of them could hold anything (D3.3: a blocklist fails open).
+      return <BlastValueWithheld />;
   }
 }
 
@@ -851,9 +872,17 @@ export function OperatorAuditPanel({
                       failed (D3.3). */}
                   {presenting ? `${FAILURE_REASON_WITHHELD}.` : read.reason}{" "}
                   This says nothing about whether anyone changed anything; it is
-                  a statement about the request. Coord gates this route on the{" "}
-                  <code className="font-mono">admin</code> role, so a 403 here
-                  means the account lacks it, not that the feed is empty.
+                  a statement about the request.
+                  {/* Route, role and status: what the operator acts on. */}
+                  {!presenting && (
+                    <>
+                      {" "}
+                      Coord gates this route on the{" "}
+                      <code className="font-mono">admin</code> role, so a 403
+                      here means the account lacks it, not that the feed is
+                      empty.
+                    </>
+                  )}
                 </p>
               </div>
             </div>
