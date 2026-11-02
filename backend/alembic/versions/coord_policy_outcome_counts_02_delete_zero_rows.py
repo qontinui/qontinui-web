@@ -36,12 +36,15 @@ hourly buckets, the keys, the fence and the delta arithmetic are unchanged. An
 absent row and a row at zero already read the same to every coord reader and to
 reconcile, so no coord change is needed.
 
-Addressing the rows by ``ctid`` needs no key match. A match over seven nullable
-columns needs ``IS NOT DISTINCT FROM``, which cannot use the unique index, so it
-would scan the rollup. ``AND c.n = 0`` stays on the DELETE as a guard.
+Addressing the rows by ``ctid`` needs no key match. Four of the seven key columns
+are nullable, so a match needs ``IS NOT DISTINCT FROM``, which cannot use the
+unique index, and it would read every row of the policy through
+``ix_policy_outcome_counts_policy_surface``. ``AND c.n = 0`` stays on the DELETE
+as a guard.
 
-A statement that leaves no row at zero, which is every single-row label, only
-gains the ``array_agg`` over its own upsert: no extra write and no extra lock.
+A statement that leaves no row at zero, which is every label on a seeded key,
+only gains the ``array_agg`` over its own upsert: no extra write and no extra
+lock.
 
 ## Concurrency
 
@@ -54,9 +57,11 @@ SHARED fence lock and, from its upsert, the lock on every row it touched.
   row is back and the waiter updates it. Either way the count is exact.
 * Against deadlock. The DELETE touches only rows this statement already locked,
   so it adds no new lock order to the one in ``coord_policy_outcome_counts_01``.
-* Against the seeder and reconcile. They hold the fence EXCLUSIVE, which this
-  function waits for before it upserts, so a replace and a zero-row delete of
-  one key never interleave.
+* Against the seeder and reconcile. A replace holds the fence EXCLUSIVE, which
+  this function waits for before it upserts, so a replace and a zero-row delete
+  of one key never interleave. Reconcile's drift check takes no fence, but it
+  reads one REPEATABLE READ snapshot and treats an absent row as zero, so a
+  zero-row delete cannot read as drift.
 * An unseeded key can still go negative and that row stays. Only ``n = 0`` is
   deleted. A row at ``-1`` that a later label takes to zero is deleted, which
   reads the same as the zero it holds.
@@ -72,21 +77,30 @@ coord's seeder checks that this function's body contains
 writes a trust marker. The body still takes that lock, and this revision does
 not touch the triggers. ``CREATE OR REPLACE FUNCTION`` takes no lock on
 ``coord.policy_rule_resolutions``, so unlike the trigger DDL in
-``coord_policy_outcome_counts_01`` it needs no autocommit block or lock_timeout,
-and it runs in the batch transaction with the version stamp.
+``coord_policy_outcome_counts_01`` it needs no autocommit block or lock_timeout.
 
-## No backfill
+## Zero rows that already exist
 
-coord has not seeded any key in production yet: its seeder is in
-qontinui-coord#3583, which is still open. Any zero row made before this revision
-is replaced when its key is first seeded, and seeding writes only non-zero
-counts.
+``upgrade()`` also deletes every row already at ``n = 0``, once. Otherwise a zero
+row made earlier would stay if coord seeded its key first, because the seeder
+does not revisit a seeded key and reconcile sees no drift. A downgrade followed
+by a re-upgrade leaves the same residue. With this delete, neither the landing
+order against qontinui-coord#3583 nor a round trip can strand one.
+
+It runs in an autocommit block, after the batch holding the new function has
+committed, so no new zero row can appear behind it and its row locks last one
+statement. ``FOR UPDATE SKIP LOCKED`` means it never waits on a writer and cannot
+deadlock with a multi-row upsert, which locks rows in key order while this scan
+locks them in heap order. A row it skips is held by a live writer, whose commit
+either moves the count or, under the new body, deletes the row. A row that
+writer then rolls back stays at zero, which is harmless and rare. The table has
+no index on ``n``, so this is one scan of the rollup, which is small.
 
 ## Downgrade
 
 Restores the exact function body and comment of
 ``coord_policy_outcome_counts_01``. Rows are untouched: a deleted zero row
-already read as zero, and later zero rows simply stay.
+already read as zero, and later zero rows simply stay until the next upgrade.
 
 ## Merge-train classifier disposition
 
@@ -112,7 +126,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Replace the function body with one that deletes rows that reach zero."""
+    """Make the function delete rows that reach zero, then clear existing ones."""
     op.execute(
         """
         CREATE OR REPLACE FUNCTION coord.policy_outcome_counts_apply()
@@ -260,7 +274,7 @@ def upgrade() -> None:
                  WHERE c.ctid = ANY (zero_rows) AND c.n = 0;
             END IF;
 
-RETURN NULL;
+            RETURN NULL;
         END
         $fn$
         """
@@ -271,6 +285,21 @@ RETURN NULL;
             'Statement trigger body maintaining coord.policy_outcome_counts from the transition tables of coord.policy_rule_resolutions: +1 per labeled NEW row, -1 per labeled OLD row, per full rollup key, zero-sum groups dropped, and a row whose n reaches zero is deleted. Takes pg_advisory_xact_lock_shared(774177001, hashtext(coalesce(decision_domain, empty) || pipe || coalesce(surface, empty))) per key before upserting: the coord seeding fence, which the seeder takes exclusive. On TRUNCATE empties the rollup and the seeded set and clears seed_state. Any error here aborts the writing statement.'
         """
     )
+    # The new function must be committed first, so autocommit_block ends the
+    # batch transaction before this runs and no new zero row can appear behind it.
+    with op.get_context().autocommit_block():
+        op.execute(
+            """
+            DELETE FROM coord.policy_outcome_counts c
+             WHERE c.n = 0
+               AND c.ctid IN (
+                   SELECT z.ctid
+                     FROM coord.policy_outcome_counts z
+                    WHERE z.n = 0
+                      FOR UPDATE SKIP LOCKED
+               )
+            """
+        )
 
 
 def downgrade() -> None:
