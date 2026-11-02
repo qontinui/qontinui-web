@@ -13994,7 +13994,10 @@ export interface paths {
          *
          *     Proxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards
          *     the JSON verbatim: ``{status: "available"|"taken"|"invalid"|
-         *     "owner_unbound", reason?, normalized_name}``. POST (despite the read
+         *     "owner_unbound"|"repo_bound_to_another_tenant", reason?, normalized_name}``.
+         *     ``repo_bound_to_another_tenant`` answers the tenant that owns the org when a
+         *     per-repo binding hands this name to another tenant. A failed governing read
+         *     is ``500 governing_tenant_unknown``. POST (despite the read
          *     semantics) so the runner's provisioning flow talks one verb to this
          *     surface; the upstream coord call is the GET.
          */
@@ -14020,8 +14023,11 @@ export interface paths {
          *     repo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.
          *
          *     Passes coord's status + JSON body through verbatim (like the onboarding
-         *     claim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when
-         *     the repo's owner isn't a GitHub account connected to the caller's workspace.
+         *     claim proxy) so the runner sees a clean ``403`` when the caller's tenant does
+         *     not govern the repo: ``repo_bound_to_another_tenant`` when it owns the repo's
+         *     org but a per-repo binding hands the repo to another tenant, otherwise
+         *     ``repo_owner_not_connected``. A failed governing read is
+         *     ``500 governing_tenant_unknown``.
          */
         post: operations["api_v1_operations_github_clone_credential_post"];
         delete?: never;
@@ -14046,7 +14052,8 @@ export interface paths {
          *     Proxies coord ``POST /coord/repos``. Success is coord's ``201
          *     {full_name, clone_url, html_url, default_branch}``; coord's error
          *     statuses + bodies pass through VERBATIM — ``409 name_taken``,
-         *     ``403 owner_unbound``, ``409 user_authorization_required`` (whose body
+         *     ``403 owner_unbound``, ``403 repo_bound_to_another_tenant``,
+         *     ``500 governing_tenant_unknown``, ``409 user_authorization_required`` (whose body
          *     carries the ``authorize_url`` the runner must surface), and
          *     ``503 app_unconfigured``.
          *
@@ -14123,8 +14130,9 @@ export interface paths {
          *
          *     Proxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` →
          *     ``{token, expires_at}``. The write-scoped sibling of the contents:read
-         *     clone-credential proxy above; coord enforces that the repo's owner is
-         *     bound to the caller's tenant.
+         *     clone-credential proxy above; coord enforces that the caller's tenant
+         *     governs the repo: a per-repo binding, else the owner's binding. A failed
+         *     governing read is ``500 governing_tenant_unknown``.
          */
         post: operations["api_v1_operations_github_push_credential_post"];
         delete?: never;
@@ -48056,7 +48064,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "available" | "taken" | "invalid" | "owner_unbound";
+            status: "available" | "taken" | "invalid" | "owner_unbound" | "repo_bound_to_another_tenant";
         };
         /**
          * RepoPushCredentialResponse

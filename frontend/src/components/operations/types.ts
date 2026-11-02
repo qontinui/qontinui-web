@@ -302,6 +302,9 @@ export interface GatePredicate {
   // time_elapsed (Phase 1)
   since?: string;
   duration_secs?: number;
+  // "N seconds after gate X clears". When set, coord ignores `since` and stores
+  // it as a parked far-future stamp, so it must not be rendered.
+  since_gate?: string | null;
   // plan_ready (plan 2026-06-05-visible-gate-continuations-and-plan-ready-predicate)
   // Clears when the named plan reaches status `vetted` and all its sibling
   // gates are cleared. The slug lives in the predicate (the coord evaluator

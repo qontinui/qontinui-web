@@ -21,7 +21,11 @@ import {
   absoluteTime,
 } from "@/components/console";
 import type { FlowUnchangedSession } from "@/lib/api/operations/overlordFlow";
-import { sessionHref, verdictWords } from "../_lib/overlordFlowStatus";
+import {
+  lastInterventionWords,
+  sessionHref,
+  verdictWords,
+} from "../_lib/overlordFlowStatus";
 
 export function UnchangedRow({
   row,
@@ -38,6 +42,7 @@ export function UnchangedRow({
     row.reason_codes.length > 0
       ? row.reason_codes.join(", ")
       : "no reason codes";
+  const judgment = lastInterventionWords(row, absoluteTime);
   return (
     <RecordRow
       data-testid="overlord-flow-unchanged-row"
@@ -77,6 +82,14 @@ export function UnchangedRow({
               ? absoluteTime(row.first_seen_at)
               : "at an unknown time"}
             .
+            {judgment ? (
+              <span
+                className="block mt-1"
+                data-testid="overlord-flow-unchanged-judgment"
+              >
+                {judgment}
+              </span>
+            ) : null}
           </p>
         }
         actions={

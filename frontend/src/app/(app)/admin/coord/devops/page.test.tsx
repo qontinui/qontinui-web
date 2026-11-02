@@ -483,6 +483,46 @@ describe("/admin/coord/devops", () => {
     expect(within(card).getByText("sessions")).toBeInTheDocument();
   });
 
+  it("says what coord's row cap left out of the machines it counts", async () => {
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy"),
+        coordDevice("d-2", "spaceship", "healthy"),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { truncated: true, total: 4647, degradable_dropped: 0 },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-devops-machines-badge")).toHaveTextContent(
+        "machines 2 · 4647 roster rows"
+      )
+    );
+    expect(screen.getByTestId("coord-devops-health-strip")).toHaveTextContent(
+      "All 2 listed machines healthy"
+    );
+  });
+
+  it("marks the badge when coord's cut may hide a degrading machine", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { truncated: true, total: 10_001, degradable_dropped: 1 },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-devops-machines-badge")).toHaveTextContent(
+        "machines 1 · 10001 roster rows, some health unknown"
+      )
+    );
+  });
+
   it("renders a device present only in /fleet/health as unknown, and does not drop it", async () => {
     // `ghost` reports to coord as HEALTHY but appears in no runner inventory.
     // The row must exist, and its runner-side state must be `unknown` — the

@@ -554,6 +554,21 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     }
   });
 
+  it("gives no machine figure when coord's cap withheld a machine that could be degrading", async () => {
+    mockRoutes({
+      healthExtras: { truncated: true, total: 10_001, degradable_dropped: 1 },
+    });
+    seedDeviceStatus();
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    await settle();
+
+    const machines = await screen.findByTestId("devops-headline-machines");
+    await waitFor(() =>
+      expect(machines).toHaveTextContent(/may leave out one that is degrading/)
+    );
+    expect(machines).not.toHaveTextContent("2 of 3");
+  });
+
   it("opens with three headline figures, each with its provenance", async () => {
     mockRoutes();
     seedDeviceStatus();

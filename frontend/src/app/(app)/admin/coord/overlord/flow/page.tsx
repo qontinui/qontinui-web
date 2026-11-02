@@ -128,8 +128,18 @@ function timeToCloseStats(v: FlowView | null): Stat[] {
       label: "gone from a full pass",
       value: countValue(t?.byAbsent),
       tone: "muted",
-      title: "no longer present in a later full pass on the same runner",
+      title:
+        "no longer present in a later full pass on the same runner and build",
       "data-testid": "overlord-flow-ttc-absent",
+    },
+    {
+      key: "absentUnproven",
+      label: "gone across a rebuild",
+      value: countValue(t?.absentUnproven),
+      tone: "muted",
+      title:
+        "stopped, then missing from a later full pass on a different or unknown runner build: a rebuild restarts the runner, so these are not counted as closed",
+      "data-testid": "overlord-flow-ttc-absent-unproven",
     },
   ];
 }
@@ -142,7 +152,7 @@ function nudgeProgressStats(v: FlowView | null): Stat[] {
       label: "progressed",
       value: n ? metricValue(n.progressRate, percentWords) : null,
       title: n
-        ? metricTitle(n.progressRate, "no nudge was sent in this window")
+        ? metricTitle(n.progressRate, "no nudge in this window was measured")
         : UNKNOWN_TITLE,
       "data-testid": "overlord-flow-nudge-progress-rate",
     },
@@ -175,7 +185,10 @@ function nudgeFinishStats(v: FlowView | null): Stat[] {
       label: "finished",
       value: n ? metricValue(n.finishRate, percentWords) : null,
       title: n
-        ? metricTitle(n.finishRate, "no nudge was sent in this window")
+        ? metricTitle(
+            n.finishRate,
+            "no nudge in this window has a known outcome"
+          )
         : UNKNOWN_TITLE,
       "data-testid": "overlord-flow-nudge-finish-rate",
     },
@@ -187,6 +200,15 @@ function nudgeFinishStats(v: FlowView | null): Stat[] {
           ? `${n.finished}/${n.nudged}`
           : null,
       "data-testid": "overlord-flow-nudge-finish-counts",
+    },
+    {
+      key: "unproven",
+      label: "gone across a rebuild",
+      value: countValue(n?.finishUnproven),
+      tone: "muted",
+      title:
+        "nudged, then missing from a later full pass on a different or unknown runner build: unknown whether they finished, so not in the rate",
+      "data-testid": "overlord-flow-nudge-finish-unproven",
     },
   ];
 }
