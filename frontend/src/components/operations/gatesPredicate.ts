@@ -19,8 +19,8 @@ import type { ContinuationSpawn, GatePredicate } from "./types";
 /** Max characters of the continuation prompt's first line shown in the summary. */
 const CONTINUATION_PROMPT_MAX = 80;
 
-/** Characters of a device UUID shown when no friendlier name is available. */
-const DEVICE_ID_SHORT = 8;
+/** Characters of a UUID shown when no friendlier name is available. */
+const ID_SHORT = 8;
 
 const OP_SYMBOL: Record<string, string> = {
   gt: ">",
@@ -128,8 +128,14 @@ export function humanizePredicate(p: GatePredicate | null | undefined): string {
     }
     case "time_elapsed":
       if (p.duration_secs !== undefined) {
+        const duration = humanizeDurationSecs(p.duration_secs);
+        // With `since_gate` the clock starts when that gate clears; coord parks
+        // `since` at 9999-12-31 and ignores it, so it is not a start time.
+        if (p.since_gate) {
+          return `time_elapsed: ${duration} after gate ${p.since_gate.slice(0, ID_SHORT)} clears`;
+        }
         const from = p.since ? ` from ${formatAbsTs(p.since)}` : "";
-        return `time_elapsed: ${humanizeDurationSecs(p.duration_secs)}${from}`;
+        return `time_elapsed: ${duration}${from}`;
       }
       return "time_elapsed";
     case "plan_ready":
@@ -207,7 +213,7 @@ function shortDevice(
   hostname?: string | null
 ): string {
   if (hostname) return hostname;
-  if (deviceId) return deviceId.slice(0, DEVICE_ID_SHORT);
+  if (deviceId) return deviceId.slice(0, ID_SHORT);
   return "an unknown device";
 }
 
