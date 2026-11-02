@@ -4,7 +4,7 @@ Side D / Phase 4 of plan
 ``D:/qontinui-root/plans/coord-agent-session-id-tracking.md`` — the
 ``/admin/agent-sessions`` panel backend.
 
-Three read-only endpoints exposing the agent-session lineage data:
+Four read-only endpoints exposing the agent-session lineage data:
 
 * ``GET /api/v1/admin/agent-sessions`` — list sessions with
   live/user/since/limit filters plus the session-identity-registry
@@ -16,6 +16,11 @@ Three read-only endpoints exposing the agent-session lineage data:
 
 * ``GET /api/v1/admin/agent-sessions/{session_id}/lineage`` — the
   per-session action timeline.
+
+* ``GET /api/v1/admin/sessions/census`` — coord's per-device session census
+  (is the process running now?), with coord's ``404`` (route not served by
+  the deployed build) turned into a typed UNKNOWN envelope rather than an
+  error or an empty census.
 
 Architectural decision (Phase 2 of
 ``2026-05-30-web-coord-schema-boundary-decoupling.md``): the web
@@ -342,3 +347,106 @@ async def get_agent_session_lineage(
     _capture_caller_context(request)
 
     return await _proxy_coord_get(f"/coord/agent-sessions/{session_id}/lineage")
+
+
+# ---- GET /admin/sessions/census ------------------------------------------
+#
+# Plan ``2026-10-19-session-lookup-by-name-shows-claude-account-in-web``
+# Phase 3: the session detail card's LIVE facts ("live now" / "last acted")
+# come from coord's per-device session census, ``GET /coord/sessions/census``
+# (qontinui-coord#2738). The durable account stamp is on the agent-session
+# card; the census is the only source that can say whether the process is
+# running RIGHT NOW.
+#
+# **A 404 is not "not live".** The census read never 404s on a miss — it
+# answers 200 with ``liveness: unknown`` rows — so a 404 means the deployed
+# coord does not serve the route at all (``no_such_route``; the plan's Phase 0
+# diagnostic measured exactly that). Re-raising it would make the card treat
+# the whole detail as failed, and passing an empty ``sessions`` list through
+# would let a consumer read "no census row" as "not running". So the 404 is
+# turned into a typed UNKNOWN envelope with NO ``sessions`` key at all: a
+# consumer that forgets to check ``served`` gets ``undefined``, not a fabricated
+# empty census.
+
+#: The ``unknown_reason`` the census proxy serves when coord answers 404.
+CENSUS_NOT_SERVED = "census_not_served"
+
+
+@router.get("/sessions/census")
+async def get_session_census(
+    request: Request,
+    session_id: str | None = Query(
+        None,
+        max_length=128,
+        description=(
+            "A Claude Code session uuid or a coord.sessions id (coord matches "
+            "both: a census row's `aliases` carry the coord ids)."
+        ),
+    ),
+    session_name: str | None = Query(
+        None,
+        max_length=1024,
+        description="Prefix match over the census window name and coord's names.",
+    ),
+    pr: str | None = Query(
+        None,
+        max_length=256,
+        description="`owner/repo#n` — the PR whose author session to find.",
+    ),
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=_LIST_MAX_LIMIT,
+        description=f"Max rows coord returns (1..{_LIST_MAX_LIMIT}).",
+    ),
+    _user: User = Depends(
+        get_current_active_user_async
+    ),  # any authenticated tenant member
+) -> Any:
+    """Proxy coord's ``GET /coord/sessions/census``.
+
+    Returns coord's ``CensusResponse`` verbatim plus ``served: true``. When
+    coord answers **404** (the deployed build does not serve the census yet)
+    this returns 200 with the UNKNOWN envelope::
+
+        {"served": false, "unknown_reason": "census_not_served",
+         "detail": "<coord's 404 body>"}
+
+    Every other failure keeps :func:`_proxy_coord_get`'s mapping (502/504 for
+    transport, coord's own status otherwise) — those are reads that did not
+    land, which the card renders as UNKNOWN with the status attached. Tenant
+    scoping is coord's, on the forwarded bearer, exactly as for the
+    neighbouring routes.
+    """
+    _capture_caller_context(request)
+
+    params: dict[str, Any] = {}
+    if session_id is not None:
+        params["session_id"] = session_id
+    if session_name is not None:
+        params["session_name"] = session_name
+    if pr is not None:
+        params["pr"] = pr
+    if limit is not None:
+        params["limit"] = limit
+
+    try:
+        payload = await _proxy_coord_get(
+            "/coord/sessions/census", params=params or None
+        )
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return {
+                "served": False,
+                "unknown_reason": CENSUS_NOT_SERVED,
+                "detail": str(exc.detail),
+            }
+        raise
+    if not isinstance(payload, dict):
+        # coord answered 2xx with something that is not a census envelope.
+        # Not an answer either way — a 502 the card renders as UNKNOWN.
+        raise HTTPException(
+            status_code=502,
+            detail="coord's session census answered a body that is not an object",
+        )
+    return {**payload, "served": True}
