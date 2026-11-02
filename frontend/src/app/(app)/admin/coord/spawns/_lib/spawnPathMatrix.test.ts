@@ -88,6 +88,7 @@ function inputs(overrides: Partial<MatrixInputs> = {}): MatrixInputs {
     defaults: ok(defaultsBody().agents),
     nextStep: ok(nextStepBody()),
     mergeSettings: mergeSettingsRead(),
+    stallKnob: { value: null, reason: "coord did not answer", stale: false },
     followup: {
       loading: false,
       repos: [...REPOS],
@@ -516,7 +517,52 @@ describe("each switch carries coord's own value", () => {
     expect(unknown.effective.title).toContain(
       "record no auto_fix_admission_stall value"
     );
-    expect(unknown.effective.title).toContain("coord_fixer_arm_readiness");
+    expect(unknown.effective.title).toContain("coord did not answer");
+
+    // The value coord resolves wins over its absence and over a recorded one.
+    const resolved = deriveSpawnPathMatrix(
+      inputs({ stallKnob: { value: false, reason: "", stale: false } })
+    );
+    const offKnob = gateOf(
+      resolved,
+      "admission_stall_fix_dispatch",
+      "knob:auto_fix_admission_stall"
+    );
+    expect(offKnob.effective).toMatchObject({ state: "off", tone: "known" });
+    expect(offKnob.effective.title).toContain("coord resolves in its place");
+    expect(offKnob.verdict).toBe("off");
+
+    // A stale resolved value yields to a value the settings read just now.
+    const staleOverRecorded = deriveSpawnPathMatrix(
+      inputs({
+        stallKnob: { value: true, reason: "", stale: true },
+        mergeSettings: mergeSettingsRead(
+          mergeSettingsBody(undefined, {
+            auto_fix_red_main: true,
+            rulebook_overrides: { auto_fix_admission_stall: "false" },
+          })
+        ),
+      })
+    );
+    expect(
+      gateOf(
+        staleOverRecorded,
+        "admission_stall_fix_dispatch",
+        "knob:auto_fix_admission_stall"
+      ).effective
+    ).toMatchObject({ state: "off", stale: false });
+
+    // A read that kept its last good value says so.
+    const stale = deriveSpawnPathMatrix(
+      inputs({ stallKnob: { value: true, reason: "", stale: true } })
+    );
+    expect(
+      gateOf(
+        stale,
+        "admission_stall_fix_dispatch",
+        "knob:auto_fix_admission_stall"
+      ).effective.stale
+    ).toBe(true);
 
     const typo = deriveSpawnPathMatrix(
       inputs({

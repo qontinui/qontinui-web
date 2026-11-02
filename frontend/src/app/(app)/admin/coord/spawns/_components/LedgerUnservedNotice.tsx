@@ -6,17 +6,14 @@
  * collapsed under it (`ledgerServed.ts`): the strip itself, each path's "Last
  * spawned", where spawns were placed, the spawn requests and the hourly rate.
  * Each is named once, here, and not rendered as a column or a section of
- * UNKNOWNs. What is in flight on each machine does not rest on the ledger: it
- * is unshown for the reason `IN_FLIGHT_UNKNOWN` (`machineStatus.ts`) states,
- * and the notice gives that reason beside the list since the column
- * collapses with the rest.
+ * UNKNOWNs. What is in flight on each machine does not rest on the ledger
+ * (`spawnAdmission.ts`), so it stays on the machine list.
  */
 
 import { AlertTriangle } from "lucide-react";
 import { UNKNOWN_AMBER } from "@/components/console";
 import { cn } from "@/lib/utils";
 import { spawnIssueTextFor, type SpawnReadIssue } from "../_lib/spawnStatus";
-import { IN_FLIGHT_UNKNOWN } from "../_lib/machineStatus";
 
 /** What the page leaves out while the ledger is not served, in page order. */
 export const LEDGER_DEPENDENTS = [
@@ -52,11 +49,6 @@ export function LedgerUnservedNotice({
         </p>
         <p className="m-0 text-xs" data-testid="coord-spawns-ledger-dependents">
           Until it is, this page does not show {LEDGER_DEPENDENTS.join("; ")}.
-          What is in flight on each machine against its ceiling is not shown
-          either:{" "}
-          {presenting
-            ? IN_FLIGHT_UNKNOWN.presented
-            : IN_FLIGHT_UNKNOWN.operator}
         </p>
       </div>
     </div>

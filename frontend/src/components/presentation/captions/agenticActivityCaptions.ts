@@ -41,12 +41,10 @@ export const AGENTIC_ACTIVITY_CAPTIONS = {
   },
   "agentic-activity.machines": {
     title: "Machines",
-    oneLiner: copy`Every ${term("device", "machine")} that can host sessions: whether it is taking new work, what kind of work it may take, and how many sessions it has open now.`,
+    oneLiner: copy`Every ${term("device", "machine")} that can host sessions: whether it is taking new work, what kind of work it may take, how much automated work it carries against its limit, and how many sessions it has open now.`,
     // What the list shows and nothing about placement it does not: a drained
     // machine is refused new sessions (coord's drain interlock), and a role
-    // closes lanes. How much work each carries against its ceiling is not
-    // offered to this page; the section's own note says so, and the page
-    // caption already says an unread value is unknown.
+    // closes lanes.
     whyItMatters: copy`A machine taken out of service with a ${term("drain")}, or limited to one kind of work, is sent no new sessions, so each machine's standing is visible before any work is placed on it.`,
   },
   "agentic-activity.requests": {

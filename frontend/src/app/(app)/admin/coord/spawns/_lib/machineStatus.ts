@@ -15,16 +15,14 @@
  * | drain | coord's drain map (`/fleet/drain`) — Dev Ops' read | `useFleetDrain`, `resolveDeviceDrain` |
  * | dispatch role | `/fleet/dispatch-roles` | `useFleetDispatchRoles`, `describeRole` |
  * | sessions open now | coord's session run record (`/session-runs/concurrency`), `open_now` | `useSessionConcurrency`, session-load's `machineLines` (its silent-machine rule) |
- * | in flight vs ceiling, held reasons | — | none: see {@link IN_FLIGHT_UNKNOWN} |
+ * | in flight vs ceiling, held reasons | coord's spawn admission (`/fleet/spawn-admission`) | `useSpawnAdmission`, `spawnAdmission.ts` |
  *
- * ## In flight against ceiling is UNKNOWN, by a named missing door
+ * ## In flight against ceiling is coord's count, or UNKNOWN saying why
  *
- * Coord states each device's in-flight autofix count, the ceilings and the
- * held reasons only in `GET /coord/agent-fixer-arm-readiness` (`admission`),
- * a door that admits coord-signed device and agent tokens and refuses the
- * operator's sign-in the web backend forwards. No web passthrough reads it, so
- * the column says so — once for the list and in each line's title — rather
- * than rendering a 0 or a blank.
+ * A machine's cell reads "2 of 6" from coord's own map and ceiling, and never
+ * a 0 for a figure coord could not state. The held reasons are coord's across
+ * the tenant, not per machine, so the list states them once
+ * (`machineListNote`).
  *
  * ## A failed roster refresh keeps the list, and says so
  *
@@ -61,6 +59,10 @@ import {
   type ConcurrencyWire,
   type SessionLoadIssue,
 } from "@/app/(app)/admin/coord/session-load/_lib/sessionLoadStatus";
+import {
+  IN_FLIGHT_UNKNOWN_PRESENTED,
+  type SpawnAdmissionRead,
+} from "./spawnAdmission";
 
 /** One value on a machine's line. */
 export interface MachineCell {
@@ -99,17 +101,11 @@ export interface MachineStatusInput {
   sessions: SessionsRead;
   /** The window the session read covers, in words ("the last 24 hours"). */
   sessionsWindowLabel: string;
+  /** Coord's spawn admission read. */
+  admission: SpawnAdmissionRead;
   nowMs: number;
   presenting: boolean;
 }
-
-/** Why in-flight against ceiling cannot be shown — once per list, and per line. */
-export const IN_FLIGHT_UNKNOWN = {
-  operator:
-    "No web door reads coord's spawn-admission counts. Each device's in-flight autofix count, the ceilings and the held reasons are served only by GET /coord/agent-fixer-arm-readiness (its admission block), which admits coord-signed device and agent tokens and refuses the operator sign-in the web backend forwards.",
-  presented:
-    "How much automated work each machine carries against its limit is not shown yet: the coordination service does not offer that figure to this console.",
-} as const;
 
 function unknown(text: string, title?: string): MachineCell {
   return { state: "unknown", text, title, unknown: true };
@@ -274,6 +270,79 @@ function sessionsCell(
   };
 }
 
+function inFlightCell(
+  read: SpawnAdmissionRead,
+  deviceId: string,
+  presenting: boolean
+): MachineCell {
+  if (read.state === "loading") {
+    return unknown(
+      "UNKNOWN",
+      presenting
+        ? "How much automated work this machine carries is still being read."
+        : "Coord's spawn admission is still being read."
+    );
+  }
+  if (read.state === "unknown") {
+    return unknown(
+      "UNKNOWN",
+      presenting ? IN_FLIGHT_UNKNOWN_PRESENTED : read.reason
+    );
+  }
+  const { deviceInflight, ceilingPerDevice, countsUnknownReason } = read.facts;
+  if (deviceInflight === null) {
+    return unknown(
+      "UNKNOWN",
+      presenting
+        ? IN_FLIGHT_UNKNOWN_PRESENTED
+        : `This machine's in-flight count is unknown: ${countsUnknownReason}.`
+    );
+  }
+  const count = deviceInflight[deviceId.trim().toLowerCase()] ?? 0;
+  const stale = read.staleReason !== null;
+  // Continuations are counted and never refused, so a count can pass its
+  // ceiling: that is a fact to state, and "at" would understate it.
+  const position =
+    ceilingPerDevice === null
+      ? "ceiling_unknown"
+      : count > ceilingPerDevice
+        ? "over_ceiling"
+        : count === ceilingPerDevice
+          ? "at_ceiling"
+          : "below_ceiling";
+  const value =
+    ceilingPerDevice === null
+      ? `${count} in flight`
+      : `${count} of ${ceilingPerDevice}${
+          position === "over_ceiling"
+            ? " — over ceiling"
+            : position === "at_ceiling"
+              ? " — at ceiling"
+              : ""
+        }`;
+  const staleNote = !stale
+    ? ""
+    : presenting
+      ? " From the last good read."
+      : ` From the last good read: ${read.staleReason}.`;
+  const ceilingNote =
+    ceilingPerDevice === null
+      ? presenting
+        ? " Its limit could not be read."
+        : " Coord's answer carried no per-machine ceiling."
+      : "";
+  return {
+    state: position,
+    text: `${value}${stale ? " (stale)" : ""}`,
+    title: `${
+      presenting
+        ? "Automated work counted against this machine's limit. Some work may run past the limit."
+        : "Coord-dispatched allocations counted toward this machine's ceiling, across every tenant it serves; an allocation counts before its session starts and can keep counting without one until coord's in-flight horizon passes, so this need not match the sessions open now. At the ceiling coord refuses further automated dispatches here; continuations are counted but not refused, so the count can pass it."
+    }${ceilingNote}${staleNote}`,
+    unknown: stale || ceilingPerDevice === null,
+  };
+}
+
 /** One line per machine in the fleet roster, in the roster's own order. */
 export function machineStatusLines(
   input: MachineStatusInput
@@ -285,12 +354,7 @@ export function machineStatusLines(
     stale: input.devicesError !== null,
     drain: drainCell(input.drain, d.device_id, input.nowMs, input.presenting),
     role: roleCell(input.roles, d.device_id, input.presenting),
-    inFlight: unknown(
-      "UNKNOWN",
-      input.presenting
-        ? IN_FLIGHT_UNKNOWN.presented
-        : IN_FLIGHT_UNKNOWN.operator
-    ),
+    inFlight: inFlightCell(input.admission, d.device_id, input.presenting),
     sessions: sessionsCell(
       input.sessions,
       d.device_id,

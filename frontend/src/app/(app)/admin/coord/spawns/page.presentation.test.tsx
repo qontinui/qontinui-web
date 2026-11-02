@@ -96,6 +96,7 @@ import {
   CONTROL_PRESENTED_NOTE,
   OTHER_RUNNER_STARTS,
 } from "./_components/SpawnPathMatrix";
+import { IN_FLIGHT_UNKNOWN_PRESENTED } from "./_lib/spawnAdmission";
 import CoordSpawnsPage from "./page";
 
 /** Every caption the page carries. */
@@ -777,6 +778,10 @@ describe("/admin/coord/spawns?present=1", () => {
   });
 
   it("still says a failed read is UNKNOWN, in fixed words", async () => {
+    routes.admission = () => ({
+      status: 502,
+      body: { detail: `coord unreachable at ${FAILED_URL}` },
+    });
     renderInPresentationMode(<CoordSpawnsPage />, { scope: SCOPE });
     await settle();
     const sessions = screen.getAllByTestId("coord-spawns-machine-sessions");
@@ -786,9 +791,13 @@ describe("/admin/coord/spawns?present=1", () => {
         "How many sessions this machine has open could not be read."
       );
     }
-    expect(
-      screen.getByTestId("coord-spawns-inflight-note").textContent
-    ).toContain("does not offer that figure");
+    const note = screen.getByTestId("coord-spawns-inflight-note").textContent;
+    expect(note).toContain("UNKNOWN — it could not be read");
+    expect(note).not.toContain(FAILED_URL);
+    for (const cell of screen.getAllByTestId("coord-spawns-machine-inflight")) {
+      expect(cell.textContent).toBe("UNKNOWN");
+      expect(cell.getAttribute("title")).toBe(IN_FLIGHT_UNKNOWN_PRESENTED);
+    }
   });
 
   it("says a failed ledger, stats or role read in fixed words — never the failure's own text", async () => {
@@ -822,7 +831,7 @@ describe("/admin/coord/spawns?present=1", () => {
     const paths = screen.getByTestId("coord-spawns-paths-caption");
     expect(paths.querySelectorAll("[data-provenance]").length).toBe(6);
     const machines = screen.getByTestId("coord-spawns-machines-caption");
-    expect(machines.querySelectorAll("[data-provenance]").length).toBe(4);
+    expect(machines.querySelectorAll("[data-provenance]").length).toBe(5);
     // The session read failed: its chip says UNKNOWN rather than an age.
     const unknownChips = [
       ...machines.querySelectorAll("[data-provenance]"),

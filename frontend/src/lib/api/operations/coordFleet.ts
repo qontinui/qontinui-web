@@ -654,6 +654,19 @@ export async function fetchFleetDispatchRoles(
   return readJson<unknown>(res, `GET ${url}`);
 }
 
+/** `GET /fleet/spawn-admission` (`get_fleet_spawn_admission`), validated by `parseSpawnAdmission`. */
+export async function fetchFleetSpawnAdmission(
+  options: HttpOptions = {}
+): Promise<unknown> {
+  const url = `${OPERATIONS_BASE}/fleet/spawn-admission`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<unknown>(res, `GET ${url}`);
+}
+
 /**
  * `PUT /fleet/dispatch-role` body. Exactly one of `device_id` /
  * `ci_host_name` names the machine; no author field — coord stamps it.

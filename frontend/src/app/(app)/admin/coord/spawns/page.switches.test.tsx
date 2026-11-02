@@ -91,6 +91,7 @@ import {
 } from "./__fixtures__/spawnsRoutes";
 import { listFx, rowFx } from "./__fixtures__/coordSpawns";
 import {
+  admissionBody,
   defaultsBody,
   effectiveBody,
   mergeSettingsBody,
@@ -364,11 +365,11 @@ describe("the spawn-path matrix — what coord serves", () => {
     ).toBeNull();
   });
 
-  it("states the in-flight UNKNOWN once for the machine list, and names machines for the operator", async () => {
+  it("states what holds across the machines once, and names machines for the operator", async () => {
     await renderPage();
-    expect(
-      screen.getByTestId("coord-spawns-inflight-note").textContent
-    ).toContain("/coord/agent-fixer-arm-readiness");
+    expect(screen.getByTestId("coord-spawns-inflight-note").textContent).toBe(
+      "This tenant, across machines: 2 of 10 in flight. Merge-shepherd holds recorded in the last 24 hours (records, not spawns: a held pull request can record again): at the in-flight limit 1."
+    );
     const names = screen
       .getAllByTestId("coord-spawns-machine-name")
       .map((n) => n.textContent);
@@ -381,8 +382,60 @@ describe("the spawn-path matrix — what coord serves", () => {
       within(b!).getByTestId("coord-spawns-machine-drain").textContent
     ).toMatch(/^out of service/);
     expect(
+      within(a!).getByTestId("coord-spawns-machine-inflight").textContent
+    ).toBe("2 of 3");
+    expect(
       within(b!).getByTestId("coord-spawns-machine-inflight").textContent
-    ).toBe("UNKNOWN");
+    ).toBe("0 of 3");
+  });
+
+  it("says a coord that predates the admission read is UNKNOWN, on the list and each machine", async () => {
+    routes.admission = () => ({ status: 404, body: { detail: "Not Found" } });
+    await renderPage();
+    expect(
+      screen.getByTestId("coord-spawns-inflight-note").textContent
+    ).toContain("/coord/fleet/spawn-admission answered 404");
+    for (const cell of screen.getAllByTestId("coord-spawns-machine-inflight")) {
+      expect(cell.textContent).toBe("UNKNOWN");
+    }
+  });
+
+  it("keeps the last good figures, marked stale, through a failed refresh, and drops them when coord no longer serves the read", async () => {
+    await renderPage();
+    const inFlight = () =>
+      screen
+        .getAllByTestId("coord-spawns-machine-inflight")
+        .map((c) => c.textContent);
+    expect(inFlight()).toEqual(["2 of 3", "0 of 3"]);
+
+    routes.admission = () => ({ status: 502, body: { detail: "down" } });
+    fireEvent.click(screen.getByTestId("coord-spawns-refresh"));
+    await settle();
+    expect(inFlight()).toEqual(["2 of 3 (stale)", "0 of 3 (stale)"]);
+    expect(
+      screen.getByTestId("coord-spawns-inflight-note").textContent
+    ).toContain("from the last good read");
+
+    routes.admission = () => ({ status: 404, body: { detail: "Not Found" } });
+    fireEvent.click(screen.getByTestId("coord-spawns-refresh"));
+    await settle();
+    expect(inFlight()).toEqual(["UNKNOWN", "UNKNOWN"]);
+  });
+
+  it("gives the stalled-train knob coord's resolved value when the settings record none, and Off stops the path", async () => {
+    routes.admission = () => ({
+      body: admissionBody({ auto_fix_admission_stall: false }),
+    });
+    await renderPage();
+    await openPath("admission_stall_fix_dispatch");
+    expect(
+      within(gate("knob:auto_fix_admission_stall")).getByText("Off")
+    ).toBeTruthy();
+    expect(
+      within(pathRow("admission_stall_fix_dispatch")).getByTestId(
+        "coord-spawns-path-verdict"
+      ).textContent
+    ).toMatch(/^Off/);
   });
 });
 
@@ -421,8 +474,14 @@ describe("the spawn-path matrix — a path's effective state is its verdict acro
   });
 
   it("reads UNKNOWN, not On, when the registry switch is on but another governing switch is unknown", async () => {
-    // The stall knob is not recorded, so nothing this console reads serves it.
+    // The stall knob is not recorded, and coord could not read what it resolves.
     routes.merge = () => ({ body: mergeSettingsBody() });
+    routes.admission = () => ({
+      body: admissionBody({
+        auto_fix_admission_stall: null,
+        auto_fix_admission_stall_unknown_reason: "PG acquire: timed out",
+      }),
+    });
     await renderPage();
     const row = pathRow("admission_stall_fix_dispatch");
     expect(
@@ -434,6 +493,17 @@ describe("the spawn-path matrix — a path's effective state is its verdict acro
     expect(verdict.getAttribute("title")).toContain(
       "responder knob for a stalled merge queue is unknown"
     );
+  });
+
+  it("reads On for a stalled-train path once coord says what it resolves for an unrecorded knob", async () => {
+    routes.merge = () => ({ body: mergeSettingsBody() });
+    await renderPage();
+    const gates = verdictOf("admission_stall_fix_dispatch");
+    expect(gates.getAttribute("data-verdict")).not.toBe("unknown");
+    await openPath("admission_stall_fix_dispatch");
+    expect(
+      within(gate("knob:auto_fix_admission_stall")).getByText("On")
+    ).toBeTruthy();
   });
 
   it("reads UNKNOWN when the merge settings could not be read, though the registry switch is on", async () => {

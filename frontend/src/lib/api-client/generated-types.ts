@@ -13461,6 +13461,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/fleet/spawn-admission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fleet Spawn Admission
+         * @description Coord's spawn admission for the caller's tenant.
+         *
+         *     Proxies coord's ``GET /coord/fleet/spawn-admission`` with the body passed
+         *     through untouched (no ``response_model``): each machine's in-flight count,
+         *     the ceilings, the held counts and the admission-stall knob as coord
+         *     resolves it, each figure null with its reason when coord could not read it.
+         *
+         *     A 404 (coord predates the route), a 502/504, or an unrecognised body is
+         *     UNKNOWN to the browser — never "nothing in flight" (``[policy:
+         *     unknown-must-not-render-as-a-default]``). The status is what lets it tell.
+         */
+        get: operations["api_v1_operations_fleet_spawn_admission_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/fleet/tasks": {
         parameters: {
             query?: never;
@@ -77392,6 +77421,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_fleet_spawn_admission_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

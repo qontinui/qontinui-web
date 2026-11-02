@@ -34,8 +34,8 @@
  *   their existing doors, and what a row shows after a write is coord's
  *   read-back.
  * - **Machines** (`MachineStatusSection`, derived by `machineStatus.ts`): one
- *   line per machine — drain, dispatch role, in flight against ceiling (an
- *   UNKNOWN naming the door no console reads yet) and the sessions open now.
+ *   line per machine — drain, dispatch role, in flight against ceiling
+ *   (coord's spawn admission, `useSpawnAdmission`) and the sessions open now.
  *
  * ## What this page will not say
  *
@@ -45,9 +45,8 @@
  *   the strip's place (`LedgerUnservedNotice`), naming every section that
  *   rests on the ledger — the strip, each path's Last spawned, the counts,
  *   the placement and the chart — none of which renders as a column or a
- *   section of UNKNOWNs while it holds. The notice also says that in flight
- *   per machine is not shown, for its own reason, which does not rest on the
- *   ledger: the one `IN_FLIGHT_UNKNOWN` (`machineStatus.ts`) states.
+ *   section of UNKNOWNs while it holds. In flight per machine does not rest on
+ *   the ledger and stays on the machine list.
  * - **0 for a number coord could not state.** A share over no ended request, a
  *   percentile over no started one, a device with no wait sample: `unknown`.
  * - **"Finished" for a session whose outcome nobody reported.** The row status
@@ -126,6 +125,7 @@ import {
   machineStatusLines,
 } from "./_lib/machineStatus";
 import { ledgerUnserved } from "./_lib/ledgerServed";
+import { machineListNote, stallKnobOf } from "./_lib/spawnAdmission";
 import { deriveSpawnPathMatrix } from "./_lib/spawnPathMatrix";
 import {
   SPAWN_WINDOWS,
@@ -139,6 +139,7 @@ import {
   useSessionConcurrency,
   SESSIONS_WINDOW,
 } from "./_lib/useSessionConcurrency";
+import { useSpawnAdmission } from "./_lib/useSpawnAdmission";
 import { SPAWNS_POLL_MS, useSpawnLedger } from "./_lib/useSpawnLedger";
 import { useSpawnPathSwitches } from "./_lib/useSpawnPathSwitches";
 import { clockTime, usePageClock } from "./_lib/useSpawnPageContext";
@@ -161,6 +162,7 @@ export default function CoordSpawnsPage() {
   const drain = useFleetDrain();
   const switches = useSpawnPathSwitches();
   const sessions = useSessionConcurrency();
+  const admission = useSpawnAdmission();
   const roster = useMemo(() => fleet.data?.devices ?? NO_DEVICES, [fleet.data]);
   const spec = windowSpec(windowId);
 
@@ -200,6 +202,7 @@ export default function CoordSpawnsPage() {
         defaults: switches.defaults,
         nextStep: switches.nextStep,
         mergeSettings: switches.mergeSettings,
+        stallKnob: stallKnobOf(admission.read),
         followup: switches.followup,
         ledger: { list, issue: listIssue, windowLabel: spec.label },
         writes: switches.writes,
@@ -210,6 +213,7 @@ export default function CoordSpawnsPage() {
       switches.defaults,
       switches.nextStep,
       switches.mergeSettings,
+      admission.read,
       switches.followup,
       switches.writes,
       list,
@@ -237,6 +241,7 @@ export default function CoordSpawnsPage() {
       roles: dispatchRoles.read,
       sessions: { data: sessions.data, issue: sessions.issue },
       sessionsWindowLabel: SESSIONS_WINDOW.label,
+      admission: admission.read,
       nowMs,
       presenting,
     };
@@ -244,6 +249,7 @@ export default function CoordSpawnsPage() {
       lines: machineStatusLines(input),
       unknown: machineListUnknown(input),
       stale: machineListStale(input),
+      note: machineListNote(admission.read, presenting),
     };
   }, [
     fleet.data,
@@ -253,6 +259,7 @@ export default function CoordSpawnsPage() {
     dispatchRoles.read,
     sessions.data,
     sessions.issue,
+    admission.read,
     nowMs,
     presenting,
   ]);
@@ -265,6 +272,7 @@ export default function CoordSpawnsPage() {
       ledger.refresh(),
       switches.refresh(),
       sessions.refresh(),
+      admission.refresh(),
       fleet.refresh(),
       dispatchRoles.refresh(),
       drain.refresh(),
@@ -425,7 +433,7 @@ export default function CoordSpawnsPage() {
       />
 
       <MachineStatusSection
-        showInFlight={unserved === null}
+        note={machines.note}
         lines={machines.lines}
         listUnknown={machines.unknown}
         listStale={machines.stale}
@@ -435,6 +443,7 @@ export default function CoordSpawnsPage() {
           { source: SPAWNS_SOURCES.drainState, asOf: drain.asOfMs },
           { source: SPAWNS_SOURCES.dispatchRoles, asOf: dispatchRoles.asOfMs },
           { source: SPAWNS_SOURCES.sessionRuns, asOf: sessions.asOf },
+          { source: SPAWNS_SOURCES.spawnAdmission, asOf: admission.asOfMs },
         ]}
       />
 
