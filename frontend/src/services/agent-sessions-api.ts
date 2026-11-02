@@ -214,9 +214,12 @@ export class AgentSessionsApiError extends Error {
 async function parseError(res: Response): Promise<AgentSessionsApiError> {
   let message = `Request failed (${res.status})`;
   try {
-    const body = (await res.json()) as { detail?: unknown };
+    // A refusal_error body carries its sentence under `message`, not `detail`.
+    const body = (await res.json()) as { detail?: unknown; message?: unknown };
     if (typeof body.detail === "string" && body.detail) {
       message = body.detail;
+    } else if (typeof body.message === "string" && body.message) {
+      message = body.message;
     }
   } catch {
     // Non-JSON body — keep the status-based default message.
