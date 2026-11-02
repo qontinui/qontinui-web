@@ -71,6 +71,7 @@ import {
   RedactedText,
   SectionCaption,
   usePresentationMode,
+  useRowKey,
 } from "@/components/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -391,10 +392,12 @@ function PresentedAuditRow({
   const presentedAction = presentedAuditActionLabel(row.action);
   const machine = auditResourceMachine(row, byId);
   const actor = auditActorMachine(row, byId);
+  // No `audit_id` on any attribute here: it is an internal id, a UUID (D3.3).
+  // So the test ids name no row, and the list keys it (`useRowKey`), which
+  // makes `data-row-key` an alias.
   return (
     <RecordRow
-      rowKey={row.audit_id}
-      data-testid={`audit-row-${row.audit_id}`}
+      data-testid="audit-row-presented"
       identity={
         <span data-audit-action-mapped={actionLabel.mapped ? "true" : "false"}>
           {presentedAction}
@@ -438,7 +441,7 @@ function PresentedAuditRow({
       onToggle={onToggle}
     >
       <RecordDetail
-        data-testid={`audit-detail-${row.audit_id}`}
+        data-testid="audit-detail-presented"
         why={
           <div className="space-y-1">
             <p className="text-xs">
@@ -478,7 +481,7 @@ function PresentedAuditRow({
           </div>
         }
         problems={
-          <div data-testid={`audit-blast-${row.audit_id}`}>
+          <div data-testid="audit-blast-presented">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Blast radius
             </p>
@@ -522,6 +525,7 @@ export function OperatorAuditPanel({
   devices?: readonly FleetDeviceRef[];
 } = {}) {
   const { presenting } = usePresentationMode();
+  const rowKey = useRowKey();
   const byId = useMemo(() => indexDevices(devices), [devices]);
   const [filterId, setFilterId] = useState(DEFAULT_AUDIT_FILTER_ID);
   const [read, setRead] = useState<AuditRead>({ state: "loading" });
@@ -857,7 +861,12 @@ export function OperatorAuditPanel({
             <RecordList
               items={visibleRows}
               loaded={read.state === "ok"}
-              itemKey={(row, i) => row.audit_id || `audit-${i}`}
+              // Written to each row's `data-row-key`: while presenting, an alias
+              // of the audit id (D3.3), stable across a refresh, so the open
+              // row stays on its record.
+              itemKey={(row, i) =>
+                rowKey("audit", row.audit_id || `audit-${i}`)
+              }
               expandedKey={openKey}
               onExpandedKeyChange={setOpenKey}
               empty={
@@ -898,7 +907,9 @@ export function OperatorAuditPanel({
                     {resourceKeyFilter ? (
                       <>
                         for resource key{" "}
-                        <span className="font-mono">{resourceKeyFilter}</span>{" "}
+                        <span className="font-mono">
+                          {resourceKeyFilter}
+                        </span>{" "}
                       </>
                     ) : null}
                     rows for this tenant at all &mdash; coord applies the filter
