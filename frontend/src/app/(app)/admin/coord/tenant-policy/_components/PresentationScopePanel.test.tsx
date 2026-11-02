@@ -12,8 +12,9 @@
  * re-read after a save observed (in flight, read, failed, and never a read
  * sent before the save), a later read failing under a held record, a
  * re-read under an open edit, the project changing under an open edit and
- * under a save in flight, an unreadable scope, owners coord could not list,
- * and the panel in presentation mode.
+ * under a save in flight, an unreadable scope, a refused read against the
+ * failures a later read may clear, owners coord could not list, and the panel
+ * in presentation mode.
  */
 
 import {
@@ -45,7 +46,10 @@ import {
   type PresentationScopeStore,
 } from "@/components/presentation";
 import { PresentationScopeConflict } from "@/lib/api/presentationScope";
-import { BackendError } from "@/lib/errors/backend-error-message";
+import {
+  BackendError,
+  readErrorBody,
+} from "@/lib/errors/backend-error-message";
 import { absoluteTime } from "@/components/console";
 import { PresentationScopePanel } from "./PresentationScopePanel";
 
@@ -794,6 +798,185 @@ describe("PresentationScopePanel — what the re-read after a save observed", ()
     expect(screen.getByTestId("presentation-scope-in-force")).toHaveTextContent(
       "In force"
     );
+  });
+});
+
+describe("PresentationScopePanel — a refused read", () => {
+  const NO_PROJECT_SENTENCE =
+    "No project could be resolved for this request: select a project you " +
+    "belong to, or ask a project admin to add you.";
+
+  /** A body carrying the refusal envelope, as `backend/app/core/refusal.py`
+   *  serves it, read at `status` through the real reader. */
+  function enveloped(status: number, nextAction: object): BackendError {
+    const body = {
+      error: "tenant_not_resolved",
+      message: NO_PROJECT_SENTENCE,
+      refusal: {
+        code: "permission_denied",
+        discriminator: "tenant_not_resolved",
+        next_action: nextAction,
+        glossary_terms: [],
+        detail: NO_PROJECT_SENTENCE,
+        source: "web_backend",
+        observed_at: "2026-10-27T00:00:00+00:00",
+      },
+    };
+    const error = new BackendError(
+      readErrorBody(JSON.stringify(body), status),
+      status
+    );
+    expect(error.reading.kind).toBe("refusal");
+    return error;
+  }
+
+  /** The read's 403 when no project resolves for the caller
+   *  (`backend/app/api/v1/endpoints/presentation.py`). */
+  const noProject = () => enveloped(403, { kind: "fix_request" });
+
+  it("shows the refusal's own sentence, and does not say to wait for the backend", async () => {
+    load.mockRejectedValue(noProject());
+    renderPanel();
+    const notice = await screen.findByTestId("presentation-scope-unknown");
+    expect(notice).toHaveTextContent("refused to read the presentation scope");
+    expect(notice).toHaveTextContent("withholds every title");
+    expect(notice).not.toHaveTextContent("Refresh once the backend answers");
+    const refusal = screen.getByTestId("presentation-scope-refusal");
+    expect(refusal).toHaveAttribute("data-refusal", "structured");
+    expect(refusal).toHaveTextContent(NO_PROJECT_SENTENCE);
+    expect(screen.queryByTestId("presentation-scope-form")).toBeNull();
+  });
+
+  /** An envelope inside a string field: not what this route's relay carries
+   *  today, so this pins the reader's classification of one. */
+  function relayed(status: number): BackendError {
+    const coordBody = JSON.stringify({
+      refusal: {
+        code: "permission_denied",
+        next_action: { kind: "fix_request" },
+        glossary_terms: [],
+        detail: "from coord",
+        source: "coord",
+        observed_at: "2026-10-27T00:00:00+00:00",
+      },
+    });
+    const error = new BackendError(
+      readErrorBody(JSON.stringify({ message: coordBody }), status),
+      status
+    );
+    expect(error.reading.kind).toBe("refusal_from_text");
+    return error;
+  }
+
+  /** A body with no envelope, through the real reader: what the backend's
+   *  error handler serves for a string detail. */
+  function bare(status: number, message: string): BackendError {
+    const body = { error: "UNAUTHORIZED", message, timestamp: 1, path: "/x" };
+    const error = new BackendError(
+      readErrorBody(JSON.stringify(body), status),
+      status
+    );
+    expect(error.reading.kind).toBe("unstructured");
+    return error;
+  }
+
+  it.each<[string, () => BackendError]>([
+    ["a bare 401", () => bare(401, "not_authenticated")],
+    [
+      "coord's 401, its JSON body relayed as the detail",
+      () =>
+        bare(
+          401,
+          JSON.stringify({
+            error: "invalid operator token",
+            credential_free_doors: {},
+          })
+        ),
+    ],
+    ["a bare 429", () => bare(429, "Slow down")],
+    ["a bare 404", () => bare(404, "HTTP 404")],
+    ["coord's refusal relayed as text", () => relayed(401)],
+    ["a bare 502", () => bare(502, "Coord is down")],
+  ])("does not read %s as a refusal", async (_, make) => {
+    const error = make();
+    load.mockRejectedValue(error);
+    renderPanel();
+    const notice = await screen.findByTestId("presentation-scope-unknown");
+    expect(notice).toHaveTextContent(`could not be read (${error.message})`);
+    expect(notice).toHaveTextContent("Refresh once the backend answers");
+    expect(screen.queryByTestId("presentation-scope-refusal")).toBeNull();
+  });
+
+  it.each<[string, () => BackendError]>([
+    [
+      "an envelope asking to retry later",
+      () => enveloped(429, { kind: "retry_later", retry_after_s: 30 }),
+    ],
+    ["an envelope on a 5xx", () => enveloped(500, { kind: "report_defect" })],
+  ])("does not read %s as a refusal either", async (_, error) => {
+    load.mockRejectedValue(error());
+    renderPanel();
+    const notice = await screen.findByTestId("presentation-scope-unknown");
+    expect(notice).toHaveTextContent("could not be read");
+    expect(screen.queryByTestId("presentation-scope-refusal")).toBeNull();
+  });
+
+  it("says so over a held record too, and clears when a read answers", async () => {
+    renderPanel();
+    await screen.findByTestId("presentation-scope-in-force");
+    load.mockRejectedValueOnce(noProject());
+    await act(async () => {
+      await store.reload();
+    });
+    const notice = screen.getByTestId("presentation-scope-stale");
+    expect(notice).toHaveTextContent("refused the latest read");
+    expect(notice).toHaveTextContent("from an earlier read");
+    expect(screen.getByTestId("presentation-scope-refusal")).toHaveTextContent(
+      NO_PROJECT_SENTENCE
+    );
+    expect(screen.getByTestId("presentation-scope-in-force")).toHaveTextContent(
+      "Last read (not in force)"
+    );
+    await act(async () => {
+      await store.reload();
+    });
+    expect(screen.queryByTestId("presentation-scope-stale")).toBeNull();
+    expect(screen.queryByTestId("presentation-scope-refusal")).toBeNull();
+  });
+
+  it("stands while its retry is out, and never renders under another project", async () => {
+    load.mockRejectedValueOnce(noProject());
+    const { rerender } = renderPanel();
+    await screen.findByTestId("presentation-scope-refusal");
+
+    // A's retry is out: it has learned nothing yet, so the refusal stands.
+    let rejectRetry: (reason: unknown) => void = () => {};
+    load.mockImplementationOnce(
+      () =>
+        new Promise<never>((_, reject) => {
+          rejectRetry = reject;
+        })
+    );
+    act(() => {
+      void store.reload();
+    });
+    expect(screen.getByTestId("presentation-scope-refusal")).toHaveTextContent(
+      NO_PROJECT_SENTENCE
+    );
+
+    // The selection changes with that read still out, so the store still holds
+    // A's failure, and nothing has been asked about B.
+    selection.value = OTHER_TENANT;
+    rerender(<PresentationScopePanel store={store} />);
+    expect(screen.queryByTestId("presentation-scope-refusal")).toBeNull();
+    expect(screen.queryByTestId("presentation-scope-unknown")).toBeNull();
+
+    // A's answer lands, and B is read.
+    await act(async () => {
+      rejectRetry(noProject());
+    });
+    await screen.findByTestId("presentation-scope-in-force");
+    expect(screen.queryByTestId("presentation-scope-refusal")).toBeNull();
   });
 });
 
