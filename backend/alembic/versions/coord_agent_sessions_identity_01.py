@@ -101,10 +101,9 @@ Safety
 All five columns are nullable with no default, so each ADD is catalogue-only
 and rewrites no row. ``coord.agent_sessions`` is written on every session
 heartbeat, so the ACCESS EXCLUSIVE wait is bounded with
-``SET LOCAL lock_timeout = '3s'`` and restored afterwards -- env.py runs the
-whole upgrade batch in one transaction, so an unrestored ``SET LOCAL`` would
-impose the ceiling on every later revision (the
-``coord_agent_sessions_context_01`` bracket). Every SQL string is a static
+``SET LOCAL lock_timeout = '3s'`` and restored afterwards. The restore is
+belt-and-braces: env.py's ``_reset_revision_settings`` already RESETs
+lock_timeout after each applied step. Every SQL string is a static
 literal, so the revision renders unchanged in offline ``--sql`` mode, and no
 comment body carries a ``:word`` sequence, which SQLAlchemy ``text()`` would
 read as a bind parameter. Downgrade drops the five columns ``IF EXISTS``; the
@@ -116,12 +115,10 @@ earlier revision in this chain spells any of these five columns on this table.
 Merge-train classifier disposition
 ==================================
 
-The lock bracket makes ``upgrade()`` unclassifiable to coord's migration
-classifier (``SET ...`` matches no branch of ``classify_sql_statement``), so an
-``auto_if_provably_safe`` escalate policy covering this glob returns Blocked
-rather than clearing. That is the known price of the guard, the same one
-``coord_agent_sessions_context_01`` and ``coord_pr_state_observed_at_01``
-document, not a defect.
+Every statement here is a shape coord's migration classifier admits
+(``SET LOCAL lock_timeout``, ``ADD COLUMN IF NOT EXISTS`` with no default,
+``COMMENT ON COLUMN`` with plain literals), so a Blocked verdict on this
+revision is a real finding, not an expected one.
 """
 
 from collections.abc import Sequence
@@ -221,8 +218,8 @@ def upgrade() -> None:
         """
     )
 
-    # env.py runs the whole batch in one transaction, so leaving this set would
-    # silently impose a 3 s ceiling on the next revision's DDL too.
+    # Belt-and-braces: env.py's _reset_revision_settings already RESETs
+    # lock_timeout after each applied step.
     op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 

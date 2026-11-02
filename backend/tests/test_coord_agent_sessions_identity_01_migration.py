@@ -16,8 +16,9 @@ coord's agent-sessions list and card. What is pinned:
    every session -- the literal-shape assertions refuse one;
 3. no index and no backfill: only ``op.execute`` is called (the plan resolves
    name search onto the existing ``search_text`` full-text index);
-4. both directions bound the DDL's lock wait and restore the default, because
-   env.py runs the batch in one transaction;
+4. both directions bound the DDL's lock wait and restore the default
+   (belt-and-braces: env.py's ``_reset_revision_settings`` already RESETs
+   lock_timeout after each applied step);
 5. every SQL string is one static literal with no ``:word`` bind-parameter
    sequence (``op.execute`` wraps a string in SQLAlchemy ``text()``, which
    would read ``:device_id`` inside a comment as a parameter and fail the
@@ -222,8 +223,9 @@ def test_both_directions_bound_the_lock_wait_and_restore_it() -> None:
     """``SET LOCAL lock_timeout`` first, ``DEFAULT`` last, in both directions.
 
     coord writes ``coord.agent_sessions`` on every session heartbeat, so an
-    unbounded ACCESS EXCLUSIVE wait queues in front of it. The restore matters
-    because env.py runs the batch in ONE transaction.
+    unbounded ACCESS EXCLUSIVE wait queues in front of it. The restore is
+    belt-and-braces: env.py's ``_reset_revision_settings`` already RESETs
+    lock_timeout after each applied step.
     """
     for name in ("upgrade", "downgrade"):
         literals = _execute_literals(_function(name))
