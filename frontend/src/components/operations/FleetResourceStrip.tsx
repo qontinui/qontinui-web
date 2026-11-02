@@ -93,7 +93,10 @@ import {
   useMachineAliaser,
   usePresentationMode,
 } from "@/components/presentation";
-import { deviceStateBadgeVariant } from "./FleetHealthSummary";
+import {
+  deviceStateBadgeVariant,
+  deviceStateLabel,
+} from "./FleetHealthSummary";
 import { PressureSparkline } from "./PressureSparkline";
 import { presentedFailureReason } from "./presentedFailure";
 import {
@@ -1104,8 +1107,8 @@ function FloorsLegend({
         data-testid="fleet-resource-floors-missing"
       >
         {missingFloors} lane{missingFloors === 1 ? " has" : "s have"} a limit
-        that was not reported, so room for more work there reads unknown —
-        which is not healthy.
+        that was not reported, so room for more work there reads unknown — which
+        is not healthy.
       </p>
     ) : null;
   }
@@ -1184,9 +1187,9 @@ function FloorsLegend({
         and a recoverable delay never becomes a failed build. Both are shown;
         neither is inferred. The row&apos;s colour is coord&apos;s{" "}
         <em>admission verdict</em> against these floors — not a band over the
-        pressure ratio. This page keeps no threshold of its own: a red row
-        means a guard on that lane is refusing work. Memory and disk are kept
-        apart because memory frees on its own and disk does not.
+        pressure ratio. This page keeps no threshold of its own: a red row means
+        a guard on that lane is refusing work. Memory and disk are kept apart
+        because memory frees on its own and disk does not.
       </p>
       {missingFloors > 0 && (
         <p
@@ -1566,7 +1569,7 @@ export function FleetResourceStrip({
                                   variant={deviceStateBadgeVariant(group.state)}
                                   data-coord-state={group.state}
                                 >
-                                  {group.state}
+                                  {deviceStateLabel(group.state)}
                                 </Badge>
                               )}
                             </span>

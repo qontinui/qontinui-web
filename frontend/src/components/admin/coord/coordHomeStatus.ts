@@ -2054,8 +2054,8 @@ export function deriveHomeStrip(
   // Coord's project state already lists a degrading machine as a row of its
   // own (`machineHealth.ts`); the roster read beside it adds only the
   // degrading machines that list does not show — never one twice — and says
-  // which machines have no verdict. An abandoned machine is a decision, not a
-  // degradation. Unread is UNKNOWN.
+  // which machines have no verdict. An abandoned machine (silent past coord's
+  // timer) is not a degradation. Unread is UNKNOWN.
   const machines = read.machines ?? null;
   const mc = machines?.counts ?? null;
   const unlistedDegrading =

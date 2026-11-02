@@ -167,10 +167,8 @@ import { QUESTION_QUEUE_HREF } from "@/components/operations/fleetConditions";
 import { useFleetWorktreeSlots } from "@/components/operations/useFleetWorktreeSlots";
 import { presentedFailureReason } from "@/components/operations/presentedFailure";
 import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
-import {
-  fleetRosterCut,
-  summarizeFleetLiveness,
-} from "@/components/operations/fleetLiveness";
+import { isLiveMachine } from "@/components/admin/coord/machineHealth";
+import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
 import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
 import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
@@ -255,6 +253,7 @@ export default function CoordDevOpsPage() {
     presenting
   );
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
+  const liveDevices = useMemo(() => devices.filter(isLiveMachine), [devices]);
   // The page's clock, advanced independently of every read. A runner's
   // `coord_credential` report goes stale by TIME alone
   // (`resolveCoordCredential`), and the runner that stopped reporting is
@@ -275,10 +274,10 @@ export default function CoordDevOpsPage() {
     () =>
       summarizeFleetLiveness({
         devices,
+        completeness: fleet.data,
         loading: fleet.loading,
         error: fleet.error,
         answered: fleet.data !== null,
-        cut: fleetRosterCut(fleet.data),
       }),
     [devices, fleet.loading, fleet.error, fleet.data]
   );
@@ -328,14 +327,16 @@ export default function CoordDevOpsPage() {
    */
   const credentials = useMemo(
     () =>
+      // Live machines only, the population the strip's `machines N` counts: an
+      // abandoned row has no credential anyone is going to go and fix.
       summarizeCoordCredentials(
-        devices,
+        liveDevices,
         deviceStatus.byHostname,
         fleet.data?.credential_dark_scrape_up,
         nowMs
       ),
     [
-      devices,
+      liveDevices,
       deviceStatus.byHostname,
       fleet.data?.credential_dark_scrape_up,
       nowMs,
@@ -469,7 +470,7 @@ export default function CoordDevOpsPage() {
           new is fetched. */}
       <DevOpsHeadlineStrip
         health={fleet}
-        devices={devices}
+        devices={liveDevices}
         worktreeSlots={worktreeSlots}
         ciRunnerMirror={ciRunnerMirror}
       />
@@ -491,16 +492,20 @@ export default function CoordDevOpsPage() {
         data-testid="coord-devops-health-strip"
         level={liveness.level}
         headline={liveness.headline}
-        detail={liveness.detail}
+        detail={
+          !presenting && liveness.navReconcile !== null
+            ? `${liveness.detail} ${liveness.navReconcile}`
+            : liveness.detail
+        }
         badges={[
           {
             key: "machines",
             label:
               liveness.total === null
-                ? "machines unknown — not read yet"
-                : liveness.rosterNote === null
-                  ? `machines ${liveness.total}`
-                  : `machines ${liveness.total} · ${liveness.rosterNote}`,
+                ? fleet.data === null
+                  ? "machines unknown — not read yet"
+                  : "machines unknown"
+                : `machines ${liveness.total}${liveness.totalIsFloor ? "+" : ""}${liveness.rosterNote === null ? "" : ` · ${liveness.rosterNote}`}`,
             tone: "muted",
             "data-testid": "coord-devops-machines-badge",
           },
@@ -541,6 +546,16 @@ export default function CoordDevOpsPage() {
                 },
               ]
             : []),
+          ...(liveness.ciOffline > 0
+            ? [
+                {
+                  key: "ci-offline",
+                  label: `CI offline ${liveness.ciOffline}`,
+                  tone: "default" as const,
+                  "data-testid": "coord-devops-ci-offline-badge",
+                },
+              ]
+            : []),
           // Rendered even though it is not red, for the same reason the
           // pipeline page's collapsed header carries it: a fleet whose
           // telemetry has gone dark would otherwise render as "machines N"
@@ -552,6 +567,19 @@ export default function CoordDevOpsPage() {
                   label: `unknown ${liveness.unknown}`,
                   tone: "muted" as const,
                   "data-testid": "coord-devops-unknown-badge",
+                },
+              ]
+            : []),
+          // Not a share of "machines": silent past coord's timer, and on a
+          // long-lived tenant most of the roster. Muted, and said apart. A
+          // floor when rows were cut: the unlisted ones are not counted here.
+          ...(liveness.abandoned > 0
+            ? [
+                {
+                  key: "abandoned",
+                  label: `abandoned ${liveness.abandoned}${liveness.abandonedIsFloor ? "+" : ""}`,
+                  tone: "muted" as const,
+                  "data-testid": "coord-devops-abandoned-badge",
                 },
               ]
             : []),
