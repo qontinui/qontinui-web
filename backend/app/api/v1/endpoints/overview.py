@@ -34,6 +34,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
+from app.api.v1.endpoints.operations import ACTIVE_TENANT_HEADER
 from app.crud import overview_settings as crud
 from app.models.overview import OverviewSettings
 from app.models.user import User as UserModel
@@ -116,6 +117,25 @@ async def write_settings(
     """Save the project's settings. Tenant admin only — they include
     ``editing_roles``, which decides who else may edit."""
     tenant_id = access.tenant_id
+    # A person's named project degrades to their home project when they are not
+    # a member of it, which is the right answer for a read. This route replaces
+    # every field and neither its body nor its answer names a project, so it
+    # refuses instead: a save built on one project's settings must not land on
+    # another.
+    named = (request.headers.get(ACTIVE_TENANT_HEADER) or "").strip().lower()
+    if named and named != str(tenant_id):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "project_not_active",
+                "code": "project_not_active",
+                "message": (
+                    "You aren't a member of the project this save names, so "
+                    "nothing was saved. Reload this page and check which "
+                    "project is selected."
+                ),
+            },
+        )
     # Lock first, so the audit row's "before" is the row this write replaces,
     # not a copy a concurrent save has already moved past.
     existing = await db.get(

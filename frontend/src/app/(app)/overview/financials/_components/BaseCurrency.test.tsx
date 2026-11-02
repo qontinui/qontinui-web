@@ -106,6 +106,27 @@ describe("BaseCurrency", () => {
     api.fetchCatalog.mockResolvedValue(catalog(true));
   });
 
+  it("says so when the backend refuses a save naming a project the caller left", async () => {
+    api.writeSettings.mockRejectedValue(
+      new ResourceError(
+        403,
+        "project_not_active",
+        "You aren't a member of the project this save names."
+      )
+    );
+    const onChanged = show();
+    type(await openEditor(), "EUR");
+    clickSave();
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          '[data-ui-bridge-id="overview.costs.base-currency.problem"]'
+        )?.textContent
+      ).toBe("You aren't a member of the project this save names.")
+    );
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
   it("sends every other setting back unchanged, and the version it read", async () => {
     api.writeSettings.mockResolvedValue({
       ...STORED,
@@ -118,6 +139,7 @@ describe("BaseCurrency", () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
 
     expect(api.writeSettings).toHaveBeenCalledTimes(1);
+    expect(api.writeSettings.mock.calls[0]![1]).toBe("t1");
     expect(api.writeSettings.mock.calls[0]![0]).toStrictEqual({
       base_currency: "EUR",
       fx_rates: { CHF: "0.91", GBP: { rate: "0.79", as_of: "2026-10-01" } },
