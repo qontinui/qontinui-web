@@ -254,7 +254,11 @@ async def redeem_pair_code_endpoint(
     # That row lock is held across this call, and coord's pair-cli upserts
     # the device's coord.devices row on its own connection. An operator's
     # revoke or authorize-redeem, which lock that device row before the
-    # pair-code rows, can therefore wait on this redeem. When coord is
+    # pair-code rows, can therefore wait on this redeem — but only when this
+    # code is BOUND to that device, because their ``cancel_pending_for_device``
+    # touches bound codes only. An unbound code's redeem shares no lock with
+    # them at all (the race that leaves is closed by authorize-redeem deleting
+    # every key row; see ``revoke_device_credentials``). When coord is
     # blocked on that row it has received the request, so the call is not
     # retried: it ends after one 10 s read timeout with a 504. Postgres sees
     # no cycle, so it is a bounded stall, not an aborted deadlock. (When coord

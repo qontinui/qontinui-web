@@ -38,7 +38,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import device_crud, pair_code_crud
@@ -256,13 +256,13 @@ class TestAuthorizeRedeem:
             "mint": AsyncMock(return_value=_code_row(device_id)),
             "cancel": AsyncMock(return_value=1),
             "clear": AsyncMock(return_value=True),
-            "delete_revoked": AsyncMock(return_value=True),
+            "delete_key": AsyncMock(return_value=True),
         }
         with (
             patch.object(pair_code_crud, "mint_pair_code", mocks["mint"]),
             patch.object(pair_code_crud, "cancel_pending_for_device", mocks["cancel"]),
             patch.object(device_crud, "set_credential_revoked_at", mocks["clear"]),
-            patch.object(dmk_crud, "delete_if_revoked", mocks["delete_revoked"]),
+            patch.object(dmk_crud, "delete_for_device", mocks["delete_key"]),
         ):
             yield mocks
 
@@ -370,7 +370,7 @@ class TestAuthorizeRedeem:
         assert writes["mint"].call_args.kwargs["bound_device_id"] == path_device
         assert writes["cancel"].call_args.args[1] == path_device
         assert writes["clear"].call_args.args[1:] == (path_device, None)
-        assert writes["delete_revoked"].call_args.args[1] == path_device
+        assert writes["delete_key"].call_args.args[1] == path_device
 
     def test_authorize_mints_a_bound_code_and_never_returns_it(self) -> None:
         device_id, tenant = uuid4(), uuid4()
@@ -1183,12 +1183,6 @@ class TestDatabaseBacked:
         self, async_db_session: AsyncSession, test_user
     ) -> None:
         device_id = await _device(async_db_session, test_user.id)
-        await dmk_crud.mint(
-            async_db_session,
-            device_id=device_id,
-            owner_user_id=test_user.id,
-            tenant_id=_TENANT,
-        )
         coord = _Coord()
         token = coord.token(device_id, expired_ago_s=_DAY_S)
         live_claims = {
@@ -1204,6 +1198,14 @@ class TestDatabaseBacked:
                 # A pending authorization exists before the revoke...
                 pre = await client.post(f"{API_PREFIX}/{device_id}/authorize-redeem")
                 assert pre.status_code == 202, pre.text
+                # ...and the device holds a key (minted after that
+                # authorization, which deletes any key that predates it).
+                await dmk_crud.mint(
+                    async_db_session,
+                    device_id=device_id,
+                    owner_user_id=test_user.id,
+                    tenant_id=_TENANT,
+                )
                 revoke = await client.post(
                     f"{API_PREFIX}/{device_id}/machine-credential/revoke"
                 )
@@ -1306,16 +1308,102 @@ class TestDatabaseBacked:
         assert await pair_code_crud.get_redeemable(async_db_session, old.code) is None
 
     @pytest.mark.asyncio
-    async def test_delete_if_revoked_leaves_a_usable_key(
-        self, async_db_session: AsyncSession, test_user
+    @pytest.mark.parametrize("revoked", [True, False], ids=["revoked", "usable"])
+    async def test_delete_for_device_removes_the_key_whatever_its_state(
+        self, async_db_session: AsyncSession, test_user, revoked: bool
     ) -> None:
         device_id = await _device(async_db_session, test_user.id)
         await dmk_crud.mint(
             async_db_session, device_id=device_id, owner_user_id=test_user.id
         )
-        assert await dmk_crud.delete_if_revoked(async_db_session, device_id) is False
+        if revoked:
+            await dmk_crud.revoke(async_db_session, device_id)
+        assert await dmk_crud.delete_for_device(async_db_session, device_id) is True
         keys = await dmk_crud.list_for_devices(async_db_session, [device_id])
-        assert device_id in keys
+        assert device_id not in keys
+        assert await dmk_crud.delete_for_device(async_db_session, device_id) is False
+
+    @pytest.mark.asyncio
+    async def test_a_key_left_by_a_redeem_racing_a_revoke_never_survives_re_arm(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The race: a redeem passed its unlocked deny check, the revoke then
+        committed against a device with NO key row (so it revoked nothing),
+        and the redeem inserted an UNREVOKED key. That state is built
+        directly: deny set + unrevoked key. authorize-redeem must remove the
+        key, and the re-pair through the new bound code must mint a fresh one
+        (outcome ``minted``), not keep the suspect key."""
+        from app.services import device_machine_key_automint as automint_mod
+
+        device_id = await _device(async_db_session, test_user.id)
+        await async_db_session.execute(
+            update(Device)
+            .where(Device.device_id == device_id)
+            .values(tenant_id=_TENANT, credential_revoked_at=datetime.now(UTC))
+        )
+        suspect_key, suspect = await dmk_crud.mint(
+            async_db_session,
+            device_id=device_id,
+            owner_user_id=test_user.id,
+            tenant_id=_TENANT,
+        )
+        assert suspect.revoked_at is None
+        suspect_hash = suspect.dmk_hash
+        await async_db_session.commit()
+
+        coord = _Coord()
+        token = coord.token(device_id, expired_ago_s=3 * _DAY_S)
+        coord_resp = MagicMock(spec=httpx.Response)
+        coord_resp.status_code = 201
+        coord_resp.json.return_value = {"device_id": str(device_id), "token": "jwt"}
+        coord_resp.text = ""
+        recorder = MagicMock()
+
+        async with _asgi_client(async_db_session, test_user.id) as client:
+            with _operator(
+                tenants=(_TENANT,), owned_rows={device_id: _row(device_id, _TENANT)}
+            ):
+                auth = await client.post(f"{API_PREFIX}/{device_id}/authorize-redeem")
+            assert auth.status_code == 202, auth.text
+            assert await dmk_crud.get_by_hash(async_db_session, suspect_hash) is None
+
+            with coord.installed():
+                collected = await client.get(
+                    f"{API_PREFIX}/{device_id}/pending-redeem",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            assert collected.status_code == 200, collected.text
+
+            with (
+                patch(
+                    "app.api.v1.endpoints.pair_codes.post_to_coord",
+                    AsyncMock(return_value=coord_resp),
+                ),
+                patch(
+                    "app.api.v1.endpoints.pair_codes.coord_service_account"
+                ) as bridge,
+                patch.object(automint_mod, "logger", recorder),
+            ):
+                bridge.enabled = True
+                bridge._headers = AsyncMock(return_value={})
+                redeemed = await client.post(
+                    f"{API_PREFIX}/pair-codes/{collected.json()['code']}/redeem",
+                    json={"device_id": str(device_id), "hostname": "merytshost"},
+                )
+
+        assert redeemed.status_code == 200, redeemed.text
+        outcomes = [
+            c.kwargs["outcome"]
+            for c in recorder.info.call_args_list + recorder.warning.call_args_list
+            if c.args and c.args[0] == "device_machine_key_automint"
+        ]
+        assert outcomes == ["minted"]
+        fresh = redeemed.json()["device_machine_key"]
+        assert fresh.startswith("dmk_") and fresh != suspect_key
+        keys = await dmk_crud.list_for_devices(async_db_session, [device_id])
+        await async_db_session.refresh(keys[device_id])
+        assert keys[device_id].dmk_hash == dmk_crud.hash_device_machine_key(fresh)
+        assert keys[device_id].revoked_at is None
 
     @pytest.mark.asyncio
     async def test_unbound_code_keeps_the_default_ttl_and_no_binding(
@@ -1489,7 +1577,7 @@ class TestFailClosedEdges:
             ),
             patch.object(pair_code_crud, "cancel_pending_for_device", AsyncMock()),
             patch.object(device_crud, "set_credential_revoked_at", AsyncMock()),
-            patch.object(dmk_crud, "delete_if_revoked", AsyncMock(return_value=False)),
+            patch.object(dmk_crud, "delete_for_device", AsyncMock(return_value=False)),
         ):
             resp = TestClient(_app()).post(f"{API_PREFIX}/{device_id}/authorize-redeem")
         assert resp.status_code == 202, resp.text

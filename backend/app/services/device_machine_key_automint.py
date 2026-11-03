@@ -53,8 +53,10 @@ async def automint_on_pairing(
     ``tenant_id`` is the tenant this pairing was made in (``None`` when the
     door could not establish it). The key is minted only when it equals the
     device's home tenant, ``coord.devices.tenant_id`` — the tenant coord's
-    service-mint resolves for every device JWT the key will yield, and which a
-    pairing into a second tenant never moves. The anchor is the device, not
+    service-mint resolves for every device JWT the key will yield. The legacy
+    ``/coord/devices/pair-cli`` route both pairing doors call never moves it
+    (``KeepExisting``); only an explicit home write or the first pairing of a
+    register-only row sets it. The anchor is the device, not
     whichever pairing wrote the key row first: an unbound pair code's holder
     chooses the ``device_id`` it presents, so trusting the stored row would let
     a foreign pairing squat a key and lock the rightful tenant out for good.

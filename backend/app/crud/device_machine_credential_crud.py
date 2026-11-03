@@ -290,15 +290,19 @@ async def revoke(db: AsyncSession, device_id: UUID) -> DeviceMachineCredential |
     return cred
 
 
-async def delete_if_revoked(db: AsyncSession, device_id: UUID) -> bool:
-    """Delete ``device_id``'s credential row when (and only when) it is revoked.
+async def delete_for_device(db: AsyncSession, device_id: UUID) -> bool:
+    """Delete ``device_id``'s credential row, revoked or not.
 
-    An operator's ``authorize-redeem`` re-arms a revoked device. The runner's
-    unattended re-enrolment (``/self-mint``) refuses to mint over a REVOKED
-    row, by design — a device must not undo its own revocation — so the
-    operator's explicit act removes the dead row and lets the next self-mint
-    enrol a fresh key. A usable (unrevoked) row is left untouched. Returns
-    whether a row was deleted. Caller commits.
+    An operator's ``authorize-redeem`` re-arms a device by having it re-pair
+    through a new bound code, and that redeem mints a fresh key because no
+    row exists. Every key that predates the re-arm is suspect, not only a
+    revoked one: a pairing that passed its (unlocked) deny check before a
+    revoke committed, on a device that then had no key row, inserts an
+    UNREVOKED key after the revoke — ``/exchange`` refuses it while the deny
+    stands, but keeping it across the re-arm would make it usable and leave
+    the rightful runner's next pairing with ``kept_usable_key``. Deleting
+    the row also lets ``/self-mint`` enrol (it refuses over a REVOKED row).
+    Returns whether a row was deleted. Caller commits.
     """
     stmt = (
         select(DeviceMachineCredential)
@@ -307,12 +311,15 @@ async def delete_if_revoked(db: AsyncSession, device_id: UUID) -> bool:
         .execution_options(populate_existing=True)
     )
     cred = (await db.execute(stmt)).scalar_one_or_none()
-    if cred is None or cred.revoked_at is None:
+    if cred is None:
         return False
+    was_revoked = cred.revoked_at is not None
     await db.delete(cred)
     await db.flush()
     logger.info(
-        "devenv_device_machine_key_revoked_row_deleted", device_id=str(device_id)
+        "devenv_device_machine_key_row_deleted",
+        device_id=str(device_id),
+        was_revoked=was_revoked,
     )
     return True
 

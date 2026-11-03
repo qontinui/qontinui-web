@@ -1396,8 +1396,10 @@ async def authorize_redeem(
       device (the newest authorization supersedes);
     * clears ``coord.devices.credential_revoked_at`` — re-arming is this
       explicit act, never a side effect;
-    * deletes a REVOKED machine-key row so the runner's ``/self-mint`` can
-      enrol a fresh key (a usable key is left alone).
+    * deletes the device's machine-key row, revoked or not: the device
+      re-pairs through the new code, whose redeem mints a fresh key, and any
+      key that predates the re-arm is suspect (see
+      :func:`~app.crud.device_machine_credential_crud.delete_for_device`).
 
     202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
     the device collects it, through ``/pending-redeem``.
@@ -1432,7 +1434,7 @@ async def authorize_redeem(
         db, device_id, except_code=code_row.code
     )
     await device_crud.set_credential_revoked_at(db, device_id, None)
-    revoked_key_deleted = await dmk_crud.delete_if_revoked(db, device_id)
+    machine_key_deleted = await dmk_crud.delete_for_device(db, device_id)
     await db.commit()
 
     logger.info(
@@ -1442,7 +1444,7 @@ async def authorize_redeem(
         tenant_id=str(tenant_id),
         code_prefix=code_row.code[:2],
         superseded=superseded,
-        revoked_key_deleted=revoked_key_deleted,
+        machine_key_deleted=machine_key_deleted,
         expires_at=code_row.expires_at.isoformat(),
     )
     return AuthorizeRedeemResponse(device_id=device_id, expires_at=code_row.expires_at)
@@ -1666,7 +1668,14 @@ async def revoke_device_credentials(
     #   so coord can mark a just-revoked device paired. No key or JWT reaches
     #   the runner on that path (web answered 504 and rolled back).
     #
-    # A redeem that commits first has its fresh key revoked by the step below.
+    # A redeem racing this revoke can finish in either order. If it commits
+    # FIRST, its fresh key is revoked by the step below. If this revoke
+    # commits first while the redeem is past its (unlocked) deny check and
+    # the device had no key row, ``dmk_crud.revoke`` finds nothing and the
+    # redeem then inserts an UNREVOKED key. ``/exchange`` refuses it while
+    # the deny stands, and the only way to lift the deny, authorize-redeem,
+    # deletes the device's key row whatever its state
+    # (``dmk_crud.delete_for_device``), so that key never becomes usable.
     revoked_at = datetime.now(UTC)
     cancelled = await pair_code_crud.cancel_pending_for_device(db, device_id)
     await dmk_crud.revoke(db, device_id)

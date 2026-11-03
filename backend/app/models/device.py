@@ -229,8 +229,11 @@ class Device(Base):
     # ---- Home tenant (alembic ``coord_devices_tenant_id``) ----------------
     #
     # The device's authoritative (home) tenant; coord's service-mint resolves
-    # the tenant of every device JWT a machine key yields from it, and a
-    # pairing into a second tenant never moves it. NOT NULL in the database
+    # the tenant of every device JWT a machine key yields from it. The legacy
+    # ``/coord/devices/pair-cli`` route both web pairing doors call never
+    # moves it (``KeepExisting``); only an explicit home write (a pair-complete
+    # naming a home) or the first pairing of a register-only row sets it
+    # (qontinui-coord ``UPSERT_PAIRED_DEVICE_SQL``). NOT NULL in the database
     # since ``coord_tenant_id_not_null``; coord writes it. Mapped so web can
     # READ it (the pairing machine-key guard anchors on it): web never sets
     # it. ``FetchedValue`` declares the value as the database's, so an INSERT
