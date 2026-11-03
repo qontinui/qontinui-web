@@ -56,6 +56,15 @@ export interface VerificationMetricsState {
   /** `generated_at` of the last non-degraded answer this browser saw. */
   lastGood: string | null;
   reload: () => Promise<void>;
+  /**
+   * Re-read the metrics alone, quietly: the current answer stays on screen
+   * until the new one arrives (no loading state, no refutation re-read). For
+   * a change that moves one number — a recorded operator label moves the
+   * agreement line's operator n. Stable across renders and always reads for
+   * the project and window on screen NOW, so a caller that captured it before
+   * a project switch cannot write the old project's answer.
+   */
+  rereadMetrics: () => Promise<void>;
 }
 
 export function useVerificationMetrics(
@@ -76,6 +85,12 @@ export function useVerificationMetrics(
   // A later read supersedes an earlier one still in flight (tenant or window
   // switched mid-read): only the newest may write.
   const generation = useRef(0);
+  // A later quiet re-read supersedes an earlier one; a full reload (which
+  // bumps `generation`) supersedes both.
+  const quietGeneration = useRef(0);
+  // What `rereadMetrics` reads for: always the current render's inputs.
+  const current = useRef({ tenantId, windowParam, hold, tenantError });
+  current.current = { tenantId, windowParam, hold, tenantError };
 
   const reload = useCallback(async () => {
     const gen = ++generation.current;
@@ -138,6 +153,35 @@ export function useVerificationMetrics(
     await Promise.all([metricsP, refutedP]);
   }, [tenantId, windowParam]);
 
+  const rereadMetrics = useCallback(async () => {
+    const {
+      tenantId: tid,
+      windowParam: win,
+      hold: held,
+      tenantError: te,
+    } = current.current;
+    // Nothing to read for (or a read is already pending its project).
+    if (held || te !== null) return;
+    const gen = generation.current;
+    const quiet = ++quietGeneration.current;
+    const stale = () =>
+      gen !== generation.current || quiet !== quietGeneration.current;
+    try {
+      const metrics = parseVerificationMetrics(
+        await fetchVerificationMetrics(win)
+      );
+      if (stale()) return;
+      if (!metrics.degraded) {
+        writeLastGood(tid, metrics.generated_at);
+        setLastGood(metrics.generated_at);
+      }
+      setRead({ status: "ok", metrics });
+    } catch (err: unknown) {
+      if (stale()) return;
+      setRead({ status: "error", reason: couldNotLookReason(err) });
+    }
+  }, []);
+
   useEffect(() => {
     if (tenantError !== null) {
       ++generation.current;
@@ -151,5 +195,5 @@ export function useVerificationMetrics(
     void reload();
   }, [hold, reload, tenantError]);
 
-  return { read, refuted, lastGood, reload };
+  return { read, refuted, lastGood, reload, rereadMetrics };
 }

@@ -473,12 +473,8 @@ function PopulatedBody({
 export default function CoordVerificationPage() {
   const { activeTenantId, loading, error: tenantsError } = useTenant();
   const [windowId, setWindowId] = useState<WindowId>("28d");
-  const { read, refuted, lastGood, reload } = useVerificationMetrics(
-    activeTenantId,
-    loading,
-    windowId,
-    tenantsError
-  );
+  const { read, refuted, lastGood, reload, rereadMetrics } =
+    useVerificationMetrics(activeTenantId, loading, windowId, tenantsError);
   const view = useMemo(() => deriveTrustView(read, lastGood), [read, lastGood]);
   const health = useMemo(() => deriveVerificationHealth(view), [view]);
   const agreement = useMemo(
@@ -641,9 +637,12 @@ export default function CoordVerificationPage() {
       </section>
 
       {/* A recorded label moves the agreement line's operator n, so re-read the
-          metrics (not the sample: that would replace the control's own
-          answer with a re-read of the same row). */}
-      <LabelSampleSection view={labelSample} onRecorded={() => void reload()} />
+          metrics quietly (no loading flicker) — not the sample: that would
+          replace the control's own answer with a re-read of the same row. */}
+      <LabelSampleSection
+        view={labelSample}
+        onRecorded={() => void rereadMetrics()}
+      />
 
       {metrics && (
         <>
