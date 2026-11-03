@@ -77,7 +77,11 @@ async def automint_on_pairing(
     pair-code redeem commits its code consumption in that same transaction.
     With ``commit=True`` the helper also commits (pair-cli has nothing else to
     commit); a commit failure is then reported as ``failed``. Otherwise the
-    caller commits.
+    caller commits, and the logged outcome is PRE-commit: the line carries
+    ``committed=false`` and a ``minted`` there describes a key that exists
+    only if the caller's commit succeeds. The pair-code redeem's own
+    ``pair_code_redeemed`` line (``dmk_minted``), written after its commit, is
+    the record that it did.
 
     Logs exactly one ``device_machine_key_automint`` outcome and never raises:
 
@@ -96,6 +100,7 @@ async def automint_on_pairing(
     outcome = "minted"
     error: str | None = None
     device_tenant: UUID | None = None
+    committed = False
     try:
         async with db.begin_nested():
             anchor = await device_crud.get_credential_anchor(db, device_id)
@@ -119,6 +124,7 @@ async def automint_on_pairing(
                 )
         if commit:
             await db.commit()
+            committed = True
     except dmk_crud.DeviceMachineKeyConcurrentMintError:
         device_machine_key = None
         outcome = "lost_insert_race"
@@ -142,6 +148,7 @@ async def automint_on_pairing(
         owner_user_id=str(owner_user_id),
         tenant_id=str(tenant_id) if tenant_id is not None else None,
         device_tenant_id=str(device_tenant) if device_tenant is not None else None,
+        committed=committed,
         error=error,
     )
     return device_machine_key

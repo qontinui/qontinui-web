@@ -656,11 +656,48 @@ class TestRevoke:
             patch.object(
                 device_crud, "set_credential_revoked_at", AsyncMock(return_value=False)
             ),
+            patch.object(
+                pair_code_crud, "cancel_pending_for_device", AsyncMock(return_value=0)
+            ),
         ):
             resp = TestClient(app).post(self._url(device_id))
         assert resp.status_code == 404, resp.text
         db.commit.assert_not_called()
         db.rollback.assert_awaited_once()
+
+    def test_revoke_takes_the_shared_lock_order(self) -> None:
+        """device row -> pair-code rows -> machine-key row, as authorize-redeem
+        and the pair-code redeem (pair-code lock held while the auto-mint locks
+        the key) do. Revoking the key before cancelling the codes inverted it
+        against a concurrent redeem of a code bound to this device: deadlock."""
+        device_id, tenant = uuid4(), uuid4()
+        order: list[str] = []
+
+        def _step(name: str, result: Any) -> AsyncMock:
+            async def _record(*_a: Any, **_k: Any) -> Any:
+                order.append(name)
+                return result
+
+            return AsyncMock(side_effect=_record)
+
+        with (
+            _operator(
+                tenants=(tenant,), owned_rows={device_id: _row(device_id, tenant)}
+            ),
+            patch.object(device_crud, "lock_device_row", _step("device", True)),
+            patch.object(
+                pair_code_crud, "cancel_pending_for_device", _step("pair_codes", 0)
+            ),
+            patch.object(dmk_crud, "revoke", _step("machine_key", None)),
+            patch.object(
+                device_crud, "set_credential_revoked_at", _step("device_deny", True)
+            ),
+        ):
+            resp = TestClient(_app()).post(self._url(device_id))
+
+        assert resp.status_code == 200, resp.text
+        assert order.index("device") < order.index("pair_codes")
+        assert order.index("pair_codes") < order.index("machine_key")
 
 
 def _usable_cred(device_id: UUID) -> DeviceMachineCredential:

@@ -1184,7 +1184,9 @@ async def pair_cli(
     # re-armed) — see :func:`automint_on_pairing`, which the pair-code redeem
     # shares. Additive field; existing consumers ignore it.
     # The tenant this pairing was made in is the one coord stamped into the
-    # device JWT it just issued; coord's pair-cli response body carries none.
+    # device JWT it just issued. coord's pair-cli response body carries none
+    # (``PairCompleteResponse`` is ``{token, device_id, user_id, jti, exp}``,
+    # qontinui-coord ``crates/coord/src/routes_phase3.rs``).
     device_machine_key = await automint_on_pairing(
         db,
         device_id=device_uuid,
@@ -1414,6 +1416,8 @@ async def authorize_redeem(
             },
         )
 
+    # Lock order: device row -> pair-code rows -> machine-key row, the order
+    # every path shares (see :func:`revoke_device_credentials`).
     # Mint first so ``except_code`` below can name the new code. Its collision
     # retry uses a SAVEPOINT, so the row lock above survives it.
     code_row = await pair_code_crud.mint_pair_code(
@@ -1631,7 +1635,17 @@ async def revoke_device_credentials(
                 "message": "No device row to revoke; nothing was changed.",
             },
         )
+    # Lock order, shared by every path that touches more than one of these
+    # rows: device row -> pair-code rows -> machine-key row. authorize-redeem
+    # takes them in that order, and the pair-code redeem holds its pair-code
+    # row lock when its auto-mint locks the machine-key row. Cancelling the
+    # pending codes BEFORE revoking the key keeps this path in the same order;
+    # the other way round, a concurrent redeem of a code bound to this device
+    # (pair-code held, waiting on the key) and this revoke (key held, waiting
+    # on the code) deadlock. A redeem that commits first has its fresh key
+    # revoked by the step below.
     revoked_at = datetime.now(UTC)
+    cancelled = await pair_code_crud.cancel_pending_for_device(db, device_id)
     await dmk_crud.revoke(db, device_id)
     if not await device_crud.set_credential_revoked_at(db, device_id, revoked_at):
         await db.rollback()
@@ -1643,7 +1657,6 @@ async def revoke_device_credentials(
                 "message": "No device row to revoke; nothing was changed.",
             },
         )
-    cancelled = await pair_code_crud.cancel_pending_for_device(db, device_id)
     await db.commit()
 
     logger.info(

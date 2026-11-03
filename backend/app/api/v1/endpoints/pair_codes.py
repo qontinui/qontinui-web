@@ -352,6 +352,8 @@ async def redeem_pair_code_endpoint(
         door="pair_code_redeem",
     )
     await db.commit()
+    # The auto-mint's own outcome line is pre-commit (``committed=false``);
+    # ``dmk_minted`` on ``pair_code_redeemed`` below is the committed record.
 
     expires_at_raw = coord_body.get("exp")
     from datetime import datetime as _dt
