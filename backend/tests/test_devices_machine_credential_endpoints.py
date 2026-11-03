@@ -417,6 +417,47 @@ class TestPairCliAutoMint:
         assert body["token"] == "device-jwt"
         assert body["device_machine_key"] is None
 
+    def test_mint_keeps_its_guards_and_coords_tenant(self) -> None:
+        """The shared pairing helper still refuses to re-arm a revoked key or
+        rotate a usable one, and mints under the tenant coord answered."""
+        from app.services.device_machine_key_automint import (
+            SELF_MINT_RENEWAL_WINDOW,
+        )
+
+        tenant = uuid4()
+        client = TestClient(self._app())
+        with (
+            _patch_enabled(),
+            patch("app.services.coord_proxy.httpx.AsyncClient") as MockClient,
+            patch.object(
+                dmk_crud,
+                "mint",
+                AsyncMock(
+                    side_effect=dmk_crud.DeviceMachineKeyStillUsableError(_DEVICE_ID)
+                ),
+            ) as mock_mint,
+        ):
+            instance = self._configure_client(MockClient)
+            instance.post.return_value = _mock_httpx_response(
+                json_data={
+                    "device_id": str(_DEVICE_ID),
+                    "token": "device-jwt",
+                    "tenant_id": str(tenant),
+                }
+            )
+            resp = client.post(
+                f"{API_PREFIX}/pair-cli",
+                json=self._BODY,
+                headers={"Authorization": "Bearer cognito-tok"},
+            )
+
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["device_machine_key"] is None
+        kwargs = mock_mint.call_args.kwargs
+        assert kwargs["tenant_id"] == tenant
+        assert kwargs["refuse_if_revoked"] is True
+        assert kwargs["refuse_if_usable_beyond"] == SELF_MINT_RENEWAL_WINDOW
+
 
 # ---------------------------------------------------------------------------
 # POST /{id}/machine-credential/self-mint — live PAIRED device JWT, own device

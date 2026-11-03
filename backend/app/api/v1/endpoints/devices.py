@@ -106,6 +106,10 @@ from app.services.coord_service_account import (
     coord_service_account,
 )
 from app.services.device_credential_deny import refuse_if_credential_revoked
+from app.services.device_machine_key_automint import (
+    SELF_MINT_RENEWAL_WINDOW,
+    automint_on_pairing,
+)
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.services.workflow_dispatcher import HEALTHY_HEARTBEAT_WINDOW_SECONDS
 
@@ -116,13 +120,6 @@ router = APIRouter()
 # The nil UUID is a "no tenant" placeholder runner UI sign-in sends on first
 # pairing; ``pair_cli`` treats it as absent rather than forwarding it.
 _NIL_UUID = UUID(int=0)
-
-#: ``/self-mint`` renews a key only when it is absent, expired, or expires
-#: within this window; a key usable for longer is refused with a 409 rather
-#: than rotated (see :func:`self_mint_device_machine_credential`). The
-#: ``pair-cli`` auto-mint uses the same window, so a re-pair never rotates a
-#: key the runner can still use (coord finding ``414676cf``).
-SELF_MINT_RENEWAL_WINDOW = timedelta(days=7)
 
 #: How long past its ``exp`` a coord-signed device JWT still proves which box
 #: is polling ``/pending-redeem`` (plan
@@ -1182,49 +1179,32 @@ async def pair_cli(
     # Auto-mint a device machine key (``dmk_``) for this device+owner so
     # every paired runner receives one out-of-box (zero extra setup) and can
     # recover a device JWT after a >30-day outage with no user session (4b).
-    # Best-effort: a mint failure must NEVER fail the pairing — the runner
-    # simply won't have the cold-start credential and falls back to the
-    # interactive re-login path. Additive field; existing consumers ignore it.
-    #
-    # It mints ONLY when the device has no key, or its key is expired or
-    # within :data:`SELF_MINT_RENEWAL_WINDOW` of expiry (coord finding
-    # ``414676cf``). ``dmk_crud.mint`` keeps one row per device, so rotating
-    # a still-usable key on every call invalidated the runner's stored key
-    # whenever the runner failed to persist the new one. A usable key is kept
-    # and ``device_machine_key`` is ``None`` — the runner keeps the key it
-    # has. A revoked key, or a device whose credentials an operator revoked,
-    # is never re-armed here: only an operator's ``authorize-redeem`` does.
+    # Best-effort and guarded (a usable key is kept, a revoked one is never
+    # re-armed) — see :func:`automint_on_pairing`, which the pair-code redeem
+    # shares. Additive field; existing consumers ignore it.
     device_machine_key: str | None = None
-    dmk_outcome = "minted"
+    tenant_raw = coord_body.get("tenant_id")
     try:
-        if await device_crud.get_credential_revoked_at(db, device_uuid) is not None:
-            dmk_outcome = "device_credential_revoked"
-        else:
-            tenant_raw = coord_body.get("tenant_id")
-            tenant_id = UUID(str(tenant_raw)) if tenant_raw else None
-            device_machine_key, _cred = await dmk_crud.mint(
-                db,
-                device_id=device_uuid,
-                owner_user_id=current_user.id,
-                tenant_id=tenant_id,
-                refuse_if_revoked=True,
-                refuse_if_usable_beyond=SELF_MINT_RENEWAL_WINDOW,
-            )
-            await db.commit()
-    except dmk_crud.DeviceMachineKeyStillUsableError:
-        device_machine_key = None
-        dmk_outcome = "kept_usable_key"
-    except dmk_crud.DeviceMachineKeyRevokedError:
-        device_machine_key = None
-        dmk_outcome = "machine_key_revoked"
-    except Exception as exc:  # noqa: BLE001 — never break pairing on mint
-        device_machine_key = None
-        dmk_outcome = "failed"
+        tenant_id = UUID(str(tenant_raw)) if tenant_raw else None
+    except (ValueError, TypeError):
+        # Never break pairing on a malformed tenant: skip the mint.
         logger.warning(
-            "pair_cli_dmk_automint_failed",
-            user_id=str(current_user.id),
+            "device_machine_key_automint",
+            door="pair_cli",
+            outcome="failed",
             device_id=str(device_uuid),
-            error=str(exc),
+            owner_user_id=str(current_user.id),
+            tenant_id=None,
+            error=f"coord pair-cli returned malformed tenant_id {tenant_raw!r}",
+        )
+    else:
+        device_machine_key = await automint_on_pairing(
+            db,
+            device_id=device_uuid,
+            owner_user_id=current_user.id,
+            tenant_id=tenant_id,
+            door="pair_cli",
+            commit=True,
         )
 
     logger.info(
@@ -1232,7 +1212,6 @@ async def pair_cli(
         user_id=str(current_user.id),
         device_id=str(device_uuid),
         dmk_minted=device_machine_key is not None,
-        dmk_outcome=dmk_outcome,
     )
     return PairCliResponse(
         device_id=device_uuid,

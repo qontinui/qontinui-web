@@ -42,6 +42,7 @@ from app.services.coord_identity import get_coord_identity
 from app.services.coord_proxy import post_to_coord
 from app.services.coord_service_account import coord_service_account
 from app.services.device_credential_deny import refuse_if_credential_revoked
+from app.services.device_machine_key_automint import automint_on_pairing
 
 logger = structlog.get_logger(__name__)
 
@@ -335,6 +336,21 @@ async def redeem_pair_code_endpoint(
     # get_redeemable() guarantees this is the single successful
     # consume; concurrent attempts will have failed at that gate.
     await pair_code_crud.mark_redeemed(db, row=row, device_id=coord_device_id)
+
+    # Hand the box a device machine key (``dmk_``) exactly as pair-cli does,
+    # so a pair-code-paired runner can recover a device JWT with no user
+    # session (plan ``2026-11-03-pair-code-pairing-mints-no-device-machine-key``).
+    # Minted under the code's burned-in issuer + tenant, in a SAVEPOINT, before
+    # the single commit: the code's consumption and the key's issuance commit
+    # together under the row lock, and a mint failure rolls back only the key
+    # row — it never fails the redeem (the key is then simply ``None``).
+    device_machine_key = await automint_on_pairing(
+        db,
+        device_id=coord_device_id,
+        owner_user_id=row.issued_by_user_id,
+        tenant_id=row.tenant_id,
+        door="pair_code_redeem",
+    )
     await db.commit()
 
     expires_at_raw = coord_body.get("exp")
@@ -350,6 +366,7 @@ async def redeem_pair_code_endpoint(
         tenant_id=str(row.tenant_id),
         device_id=str(coord_device_id),
         issued_by=str(row.issued_by_user_id),
+        dmk_minted=device_machine_key is not None,
     )
     return PairCodeRedeemOut(
         user_id=row.issued_by_user_id,
@@ -357,4 +374,5 @@ async def redeem_pair_code_endpoint(
         device_id=coord_device_id,
         expires_at=expires_at_dt,
         device_token_jwt=str(coord_token),
+        device_machine_key=device_machine_key,
     )

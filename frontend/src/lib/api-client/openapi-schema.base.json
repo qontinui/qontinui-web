@@ -37888,13 +37888,25 @@
         "type": "object"
       },
       "PairCodeRedeemOut": {
-        "description": "Response body for ``POST /api/v1/devices/pair-codes/{code}/redeem``.\n\nMirrors the canonical ``PairCompleteResponse`` shape that the\nrunner's ``pair.rs::PairCompleteResponse`` decoder consumes:\n``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``.\nThe runner uses the same decoder for both the paste-pair and the\nheadless ``pair-cli`` paths.",
+        "description": "Response body for ``POST /api/v1/devices/pair-codes/{code}/redeem``.\n\nMirrors the canonical ``PairCompleteResponse`` shape that the\nrunner's ``pair.rs::PairCompleteResponse`` decoder consumes:\n``{ user_id, tenant_id, device_id, expires_at, device_token_jwt }``,\nplus ``device_machine_key`` (the same additive field pair-cli returns).\nThe runner uses the same decoder for both the paste-pair and the\nheadless ``pair-cli`` paths.",
         "properties": {
           "device_id": {
             "description": "The runner's device UUID.",
             "format": "uuid",
             "title": "Device Id",
             "type": "string"
+          },
+          "device_machine_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Device machine key (``dmk_``) minted for this device at redeem, returned exactly once \u2014 the cold-start credential the runner exchanges for a device JWT with no user session. ``null`` when the device already holds a key usable beyond the renewal window, its key or credentials are revoked, or the best-effort mint failed.",
+            "title": "Device Machine Key"
           },
           "device_token_jwt": {
             "description": "Coord-issued device-token JWT.",
