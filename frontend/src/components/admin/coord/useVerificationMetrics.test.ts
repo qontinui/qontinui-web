@@ -82,4 +82,66 @@ describe("useVerificationMetrics rereadMetrics", () => {
     expect(readLastGood("t-new")).toBe("2026-11-03T01:00:00Z");
     expect(readLastGood("t-old")).not.toBe("2026-11-03T01:00:00Z");
   });
+
+  it("a full reload yields to a quiet re-read begun after it, and supersedes one begun before it", async () => {
+    api.fetchVerificationMetrics.mockResolvedValue(populated());
+    const { result, rerender } = renderHook(
+      ({ win }) => useVerificationMetrics("t-1", false, win),
+      { initialProps: { win: "28d" } }
+    );
+    await waitFor(() => expect(result.current.read.status).toBe("ok"));
+
+    const deferred = () => {
+      let resolve: (v: unknown) => void = () => {};
+      const p = new Promise((r) => {
+        resolve = r;
+      });
+      return { p, resolve };
+    };
+    const generatedAt = () =>
+      result.current.read.status === "ok"
+        ? result.current.read.metrics.generated_at
+        : null;
+
+    // (a) reload in flight, THEN a quiet re-read: the re-read's answer wins
+    // even though the reload's answer arrives last.
+    const full = deferred();
+    const quiet = deferred();
+    api.fetchVerificationMetrics
+      .mockReturnValueOnce(full.p)
+      .mockReturnValueOnce(quiet.p);
+    rerender({ win: "7d" });
+    let q: Promise<void> = Promise.resolve();
+    act(() => {
+      q = result.current.rereadMetrics();
+    });
+    await act(async () => {
+      quiet.resolve(populated({ generated_at: "2026-11-03T02:00:00Z" }));
+      await q;
+    });
+    await act(async () => {
+      full.resolve(populated({ generated_at: "2026-11-03T01:00:00Z" }));
+    });
+    expect(generatedAt()).toBe("2026-11-03T02:00:00Z");
+
+    // (b) a quiet re-read in flight, THEN a full reload: the reload wins even
+    // though the re-read's answer arrives last.
+    const quiet2 = deferred();
+    const full2 = deferred();
+    api.fetchVerificationMetrics
+      .mockReturnValueOnce(quiet2.p)
+      .mockReturnValueOnce(full2.p);
+    act(() => {
+      q = result.current.rereadMetrics();
+    });
+    rerender({ win: "28d" });
+    await act(async () => {
+      full2.resolve(populated({ generated_at: "2026-11-03T04:00:00Z" }));
+    });
+    await act(async () => {
+      quiet2.resolve(populated({ generated_at: "2026-11-03T03:00:00Z" }));
+      await q;
+    });
+    expect(generatedAt()).toBe("2026-11-03T04:00:00Z");
+  });
 });
