@@ -5141,10 +5141,13 @@ async def create_work_artifact_edge(
     A ``spawned_followup`` may also carry ``anchors`` (the files it is about:
     ``{repo: "owner/name", path, line_start?, line_end?, symbol?}``),
     ``size_class`` (``trivial`` | ``small`` | ``plan_sized``) and — when it names
-    no file — ``unanchored_reason``. All OPTIONAL for now (plan
-    ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down`` D3:
-    the refusal of the note-only shape lands after every writer sends the new
-    one). They are stored atomically with a new follow-up; a re-post that lands
+    no file — ``unanchored_reason``. On the ONE-ENDED form they are REQUIRED
+    (plan ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``
+    D3): a non-empty ``anchors`` or a non-blank ``unanchored_reason``, and a
+    ``size_class`` — otherwise 422, because a note-only follow-up can never be
+    matched to the diff that would fix it. A follow-up written already owned
+    (``to_id`` supplied) is not open, is never matched, and may omit them. They
+    are stored atomically with a new follow-up; a re-post that lands
     on an existing one fills only what it lacks (anchors when it has none, a
     class when it is unclassified) and never overwrites —
     ``PUT /plan-library/edges/{edge_id}/anchors`` replaces. The response's
@@ -5240,6 +5243,31 @@ async def create_work_artifact_edge(
                 detail=(
                     "unanchored_reason contradicts a non-empty anchors list — "
                     "a follow-up either names its files or says why it cannot."
+                ),
+            )
+
+    # D3: an OPEN follow-up must be matchable. The one-ended form is the only
+    # one that enters the open queue, so it is the one refused. An owned
+    # follow-up (``to_id`` supplied) is not open and is never matched, and the
+    # runner's ``/plan-library/links`` forwards exactly that shape without
+    # these fields — refusing it would refuse a live writer.
+    if open_target_ok and payload.to_id is None:
+        missing = []
+        if not payload.anchors and payload.unanchored_reason is None:
+            missing.append(
+                "a non-empty 'anchors' (the files it is about) or an "
+                "'unanchored_reason' (why it names none)"
+            )
+        if payload.size_class is None:
+            missing.append("'size_class' (trivial | small | plan_sized)")
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"A one-ended '{SPAWNED_FOLLOWUP_RELATION}' requires "
+                    f"{' and '.join(missing)}. A note-only follow-up cannot be "
+                    "matched to the diff that would fix it, so it is refused "
+                    "rather than queued unmatchable."
                 ),
             )
 

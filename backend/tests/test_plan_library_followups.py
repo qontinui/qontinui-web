@@ -19,8 +19,10 @@ come from the endpoint rather than from an IntegrityError the DB CHECK raises.
 
 Plan ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``
 Phase 3 extends the follow-up with a closure state and file anchors, and the
-second half of this file pins it: the new write fields are optional and stored
-(the note-only shape is still accepted until Phase 6 step 6), anchor paths are
+second half of this file pins it: the new write fields are stored, a one-ended
+follow-up with neither anchors nor an ``unanchored_reason``, or with no
+``size_class``, is a 422 (D3, Phase 6 step 6) while an owned one is exempt,
+anchor paths are
 refused with a reason when not normalized, every (state, target) pair of the
 transition table is either legal or a 409 naming the state, a claim on a
 resolved row is a 409, ``match`` returns exactly the rows anchored on the
@@ -35,7 +37,7 @@ Layering mirrors ``tests/test_plan_library_api.py``: ``httpx.AsyncClient`` over
 from __future__ import annotations
 
 from collections.abc import Mapping
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -143,14 +145,46 @@ async def _make_artifact(
     return resp.json()["artifact"]["id"]
 
 
+#: The ``unanchored_reason`` :func:`_spawn` sends — the minimal shape D3 accepts.
+NO_FILE_REASON = "names no file (test)"
+
+
 async def _spawn(
     client: httpx.AsyncClient, artifact_id: str, note: str
 ) -> httpx.Response:
-    """POST the one-ended form exactly as the binding contract spells it."""
+    """POST the smallest one-ended follow-up D3 accepts: a note, a reason it
+    names no file, and a size class. The row reads open and unanchored."""
     return await client.post(
         f"{API_PREFIX}/{artifact_id}/edges",
-        json={"relation": "spawned_followup", "note": note, "to_id": None},
+        json={
+            "relation": "spawned_followup",
+            "note": note,
+            "to_id": None,
+            "unanchored_reason": NO_FILE_REASON,
+            "size_class": "small",
+        },
     )
+
+
+async def _seed_note_only(db: AsyncSession, artifact_id: str, note: str) -> str:
+    """Write a LEGACY note-only follow-up beneath the HTTP door.
+
+    Every follow-up recorded before D3's refusal has this shape — no anchors,
+    no reason, unclassified — and those rows stay in the queue. The door now
+    refuses the shape, so a test that needs one seeds it through crud.
+    """
+    origin = await crud.get_artifact(db, UUID(artifact_id), org_id=None)
+    assert origin is not None
+    edge, created = await crud.create_edge(
+        db,
+        from_artifact=origin,
+        to_artifact=None,
+        relation="spawned_followup",
+        note=note,
+        created_by="test",
+    )
+    assert created
+    return str(edge.id)
 
 
 # ===========================================================================
@@ -855,6 +889,10 @@ def _anchor(path: str, repo: str = REPO, **hints: object) -> dict[str, object]:
 async def _spawn_with(
     client: httpx.AsyncClient, artifact_id: str, note: str, **fields: object
 ) -> httpx.Response:
+    """POST a one-ended follow-up with ``fields``; ``size_class`` defaults to
+    ``small`` because D3 requires one (pass ``size_class=None`` to omit it —
+    a JSON null is the same as absent)."""
+    fields.setdefault("size_class", "small")
     return await client.post(
         f"{API_PREFIX}/{artifact_id}/edges",
         json={"relation": "spawned_followup", "note": note, "to_id": None, **fields},
@@ -893,18 +931,130 @@ async def _followups(client: httpx.AsyncClient, **params: str | int) -> dict:
     return resp.json()
 
 
-class TestNewFieldsAreOptionalOnTheWriteDoor:
-    """D3, re-vet: ``anchors`` / ``size_class`` / ``unanchored_reason`` are
-    ACCEPTED and STORED now, and the note-only shape is still accepted — the
-    refusal is Phase 6 step 6, after every writer sends the new shape."""
+class TestD3RefusesAnUnmatchableFollowup:
+    """D3 (Phase 6 step 6): a one-ended ``spawned_followup`` must name its
+    files (``anchors``) or say why it cannot (``unanchored_reason``), and must
+    carry a ``size_class`` — otherwise 422, and nothing is written."""
 
-    async def test_note_only_is_still_accepted_and_reads_unanchored(
-        self, client: httpx.AsyncClient
+    @pytest.mark.parametrize(
+        ("fields", "named"),
+        [
+            ({}, ("anchors", "unanchored_reason", "size_class")),
+            ({"size_class": "trivial"}, ("anchors", "unanchored_reason")),
+            ({"size_class": "small", "anchors": []}, ("anchors", "unanchored_reason")),
+            ({"anchors": [{"repo": REPO, "path": "a.py"}]}, ("size_class",)),
+            ({"unanchored_reason": "no file is involved"}, ("size_class",)),
+            (
+                {"anchors": [{"repo": REPO, "path": "a.py"}], "size_class": None},
+                ("size_class",),
+            ),
+        ],
+        ids=[
+            "note-only",
+            "class-but-no-anchor-or-reason",
+            "empty-anchors",
+            "anchors-but-no-class",
+            "reason-but-no-class",
+            "explicit-null-class",
+        ],
+    )
+    async def test_the_refusal_names_what_is_missing(
+        self,
+        client: httpx.AsyncClient,
+        fields: dict[str, object],
+        named: tuple[str, ...],
+    ) -> None:
+        plan = await _make_artifact(client, stem="d3refuse")
+        resp = await client.post(
+            f"{API_PREFIX}/{plan}/edges",
+            json={
+                "relation": "spawned_followup",
+                "note": "a finding",
+                "to_id": None,
+                **fields,
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        detail = resp.json()["detail"]
+        assert isinstance(detail, str), detail  # the endpoint answered, not pydantic
+        for name in named:
+            assert name in detail, (name, detail)
+        if named == ("size_class",):
+            assert "unanchored_reason" not in detail, detail
+        assert (await _followups(client))["total"] == 0
+        edges = (await client.get(f"{API_PREFIX}/{plan}")).json()["edges"]
+        assert edges == []
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"anchors": [{"repo": REPO, "path": "a.py"}], "size_class": "trivial"},
+            {"unanchored_reason": "no file is involved", "size_class": "plan_sized"},
+        ],
+        ids=["anchored", "unanchored-with-reason"],
+    )
+    async def test_the_new_shape_is_accepted(
+        self, client: httpx.AsyncClient, fields: dict[str, object]
+    ) -> None:
+        """The control: the refusal above is not refusing every follow-up."""
+        plan = await _make_artifact(client, stem="d3accept")
+        resp = await client.post(
+            f"{API_PREFIX}/{plan}/edges",
+            json={
+                "relation": "spawned_followup",
+                "note": "a finding",
+                "to_id": None,
+                **fields,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["followup"]["size_class"] == fields["size_class"]
+        assert (await _followups(client))["total"] == 1
+
+    async def test_an_owned_followup_is_exempt(self, client: httpx.AsyncClient) -> None:
+        """``to_id`` supplied: not open, never matched — and the runner's
+        ``/plan-library/links`` forwards exactly this shape with no anchors or
+        class, so refusing it would refuse a live writer."""
+        plan = await _make_artifact(client, stem="d3owned")
+        owner = await _make_artifact(client, stem="d3owned-target")
+        resp = await client.post(
+            f"{API_PREFIX}/{plan}/edges",
+            json={"relation": "spawned_followup", "to_id": owner, "note": "owned"},
+        )
+        assert resp.status_code == 201, resp.text
+
+    async def test_a_note_only_repost_of_a_legacy_row_is_refused_too(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Idempotence does not reopen the old shape: a writer re-posting a
+        legacy note-only row must send the new one, which fills it."""
+        plan = await _make_artifact(client, stem="d3repost")
+        await _seed_note_only(async_db_session, plan, "legacy finding")
+        resp = await client.post(
+            f"{API_PREFIX}/{plan}/edges",
+            json={
+                "relation": "spawned_followup",
+                "note": "legacy finding",
+                "to_id": None,
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
+
+class TestTheFollowupFieldsAreStored:
+    """``anchors`` / ``size_class`` / ``unanchored_reason`` are stored and read
+    back; a legacy note-only row still reads open, unanchored, unclassified."""
+
+    async def test_a_legacy_note_only_row_reads_unanchored_and_unclassified(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
         plan = await _make_artifact(client, stem="noteonly")
-        resp = await _spawn(client, plan, "a finding with no file")
-        assert resp.status_code == 201, resp.text
-        followup = resp.json()["followup"]
+        edge_id = await _seed_note_only(
+            async_db_session, plan, "a finding with no file"
+        )
+        items = (await _followups(client))["items"]
+        assert [i["edge_id"] for i in items] == [edge_id]
+        followup = items[0]
         assert followup["state"] == "open"
         assert followup["anchors"] == []
         assert followup["size_class"] is None
@@ -1024,14 +1174,13 @@ class TestNewFieldsAreOptionalOnTheWriteDoor:
         assert (await _followups(client))["total"] == 0
 
     async def test_a_repost_fills_what_the_row_lacks_and_overwrites_nothing(
-        self, client: httpx.AsyncClient
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
         """Before anchors existed every follow-up was note-only; a writer
         re-posting one WITH anchors is how they arrive — not silently dropped.
         A row that already has anchors keeps them (PUT is the replace door)."""
         plan = await _make_artifact(client, stem="repostfill")
-        first = await _spawn(client, plan, "a finding")
-        edge_id = first.json()["id"]
+        edge_id = await _seed_note_only(async_db_session, plan, "a finding")
 
         filled = await _spawn_with(
             client, plan, "a finding", anchors=[_anchor("x.py")], size_class="small"
@@ -1314,7 +1463,7 @@ class TestResolvedRowsLeaveTheOpenQueue:
 
 class TestFollowupFilters:
     async def test_repo_size_class_and_anchored_filters(
-        self, client: httpx.AsyncClient
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
         plan = await _make_artifact(client, stem="filters")
         in_repo = (
@@ -1327,7 +1476,8 @@ class TestFollowupFilters:
                 client, plan, "other repo", anchors=[_anchor("b.py", repo=OTHER_REPO)]
             )
         ).json()["id"]
-        bare = (await _spawn(client, plan, "no anchor")).json()["id"]
+        # Unclassified rows are legacy-only now (D3 refuses a new one).
+        bare = await _seed_note_only(async_db_session, plan, "no anchor")
 
         def ids(page: dict) -> set[str]:
             return {i["edge_id"] for i in page["items"]}
@@ -1338,10 +1488,8 @@ class TestFollowupFilters:
         assert ids(await _followups(client, anchored="true")) == {in_repo, other}
         assert ids(await _followups(client, anchored="false")) == {bare}
         assert ids(await _followups(client, size_class="trivial")) == {in_repo}
-        assert ids(await _followups(client, size_class="unclassified")) == {
-            other,
-            bare,
-        }
+        assert ids(await _followups(client, size_class="small")) == {other}
+        assert ids(await _followups(client, size_class="unclassified")) == {bare}
         page = await _followups(
             client, repo=REPO, size_class="trivial", anchored="true"
         )

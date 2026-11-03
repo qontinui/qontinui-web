@@ -270,10 +270,11 @@ class WorkArtifactEdgeCreate(BaseModel):
     A ``spawned_followup`` may also carry what makes it MATCHABLE (plan
     ``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down``
     D2/D3): ``anchors`` (the files it is about), ``size_class`` and — when it
-    names no file — ``unanchored_reason``. All three are OPTIONAL on this
-    door for now: every writer still sends the note-only shape, and refusing
-    it before they send the new one would stop the queue filling (D3's refusal
-    is sequenced after the writers). They apply to ``spawned_followup`` only.
+    names no file — ``unanchored_reason``. They apply to ``spawned_followup``
+    only. On the one-ended form the endpoint REQUIRES ``size_class`` and either
+    a non-empty ``anchors`` or a non-blank ``unanchored_reason`` (D3, a 422
+    otherwise); they stay optional here because an owned follow-up (``to_id``
+    supplied) may omit them.
     """
 
     model_config = ConfigDict(extra="forbid")
