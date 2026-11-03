@@ -61,11 +61,19 @@ def _device_credential_not_revoked():
     (plan ``2026-09-26-authenticate-and-perpetually-renew-a-specific-runner-
     from-qontinui-web`` Phase 4). These tests run against a mock session, so
     the read is stubbed to "not revoked"; the revoked arm is covered in
-    ``test_devices_operator_credential_controls.py``."""
+    ``test_devices_operator_credential_controls.py``. ``/mint`` and
+    ``/self-mint`` re-read the deny through the locked anchor read just
+    before writing the key; that read is stubbed to "no row" (not revoked)
+    here, and tests that need an anchor patch it themselves."""
     from app.crud import device_crud
 
-    with patch.object(
-        device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+    with (
+        patch.object(
+            device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+        ),
+        patch.object(
+            device_crud, "get_credential_anchor", AsyncMock(return_value=None)
+        ),
     ):
         yield
 

@@ -40,6 +40,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import sessionmaker
 
 from app.crud import device_crud, pair_code_crud
 from app.crud import device_machine_credential_crud as dmk_crud
@@ -728,6 +729,47 @@ class TestRevoke:
         assert resp.status_code == 200, resp.text
         assert order.index("device") < order.index("pair_codes")
         assert order.index("pair_codes") < order.index("machine_key")
+
+    def test_revoke_writes_the_deny_in_the_cancels_transaction(self) -> None:
+        """The invariant that makes a BOUND redeem's unlocked deny read safe:
+        the deny and the UPDATE of the bound pair-code rows commit together,
+        in one transaction, so the revoke cannot commit before a redeem
+        holding that code's row lock. Statement order inside it is not the
+        point; exactly one commit, after both writes, is."""
+        from app.api.deps import get_async_db
+
+        device_id, tenant = uuid4(), uuid4()
+        order: list[str] = []
+
+        def _step(name: str, result: Any) -> AsyncMock:
+            async def _record(*_a: Any, **_k: Any) -> Any:
+                order.append(name)
+                return result
+
+            return AsyncMock(side_effect=_record)
+
+        db = _fake_db()
+        db.commit = _step("commit", None)
+        app = _app()
+        app.dependency_overrides[get_async_db] = lambda: db
+        with (
+            _operator(
+                tenants=(tenant,), owned_rows={device_id: _row(device_id, tenant)}
+            ),
+            patch.object(
+                pair_code_crud, "cancel_pending_for_device", _step("pair_codes", 0)
+            ),
+            patch.object(dmk_crud, "revoke", _step("machine_key", None)),
+            patch.object(
+                device_crud, "set_credential_revoked_at", _step("device_deny", True)
+            ),
+        ):
+            resp = TestClient(app).post(self._url(device_id))
+
+        assert resp.status_code == 200, resp.text
+        assert order.count("commit") == 1
+        assert order[-1] == "commit"
+        assert {"pair_codes", "device_deny"} <= set(order[:-1])
 
 
 def _usable_cred(device_id: UUID) -> DeviceMachineCredential:
@@ -1421,12 +1463,15 @@ class TestDatabaseBacked:
     async def test_a_key_left_by_a_redeem_racing_a_revoke_never_survives_re_arm(
         self, async_db_session: AsyncSession, test_user
     ) -> None:
-        """The race: a redeem passed its unlocked deny check, the revoke then
-        committed against a device with NO key row (so it revoked nothing),
-        and the redeem inserted an UNREVOKED key. That state is built
-        directly: deny set + unrevoked key. authorize-redeem must remove the
-        key, and the re-pair through the new bound code must mint a fresh one
-        (outcome ``minted``), not keep the suspect key."""
+        """A deny beside an UNREVOKED key. No current door can produce it:
+        every key-writing door now reads the deny under a lock that serializes
+        it with the revoke (see ``revoke_device_credentials``). It exists only
+        as a LEGACY row, written by a build that predated those locks, where a
+        redeem or a mint passed its unlocked deny check, the revoke committed
+        against a device with no key row, and the mint then inserted an
+        unrevoked key. The state is built directly. authorize-redeem must
+        remove the key, and the re-pair through the new bound code must mint a
+        fresh one (outcome ``minted``), not keep the suspect key."""
         from app.services import device_machine_key_automint as automint_mod
 
         device_id = await _device(async_db_session, test_user.id)
@@ -1582,12 +1627,138 @@ class TestDatabaseBacked:
         assert await device_crud.lock_device_row(async_db_session, revoked_device)
         assert not await device_crud.lock_device_row(async_db_session, uuid4())
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("lock_for_share", [True, False])
+    async def test_credential_anchor_share_lock_blocks_a_for_update(
+        self, test_engine: Any, lock_for_share: bool
+    ) -> None:
+        """Two real connections. A reads the anchor inside an open
+        transaction; B then asks for the same ``coord.devices`` row ``FOR
+        UPDATE NOWAIT`` (what revoke and authorize-redeem take). With
+        ``lock_for_share`` B must be refused with lock_not_available
+        (55P03); without it B must get the row. Removing
+        ``with_for_update(read=True)`` from ``get_credential_anchor`` fails
+        the True case. The row is COMMITTED (B cannot see an uncommitted
+        one), so it is deleted again in ``finally``."""
+        from sqlalchemy import delete, text
+        from sqlalchemy.exc import DBAPIError
+
+        device_id = uuid4()
+        makers = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        async with makers() as setup:
+            setup.add(
+                Device(
+                    device_id=device_id,
+                    user_id=None,
+                    name=f"runner-{device_id.hex[:6]}",
+                    hostname="lockhost",
+                    state="healthy",
+                )
+            )
+            await setup.commit()
+        try:
+            async with makers() as a, makers() as b:
+                anchor = await device_crud.get_credential_anchor(
+                    a, device_id, lock_for_share=lock_for_share
+                )
+                assert anchor is not None  # A's transaction is now open
+                probe = text(
+                    "SELECT device_id FROM coord.devices "
+                    "WHERE device_id = :d FOR UPDATE NOWAIT"
+                )
+                if lock_for_share:
+                    with pytest.raises(DBAPIError) as exc:
+                        await b.execute(probe, {"d": device_id})
+                    orig = exc.value.orig
+                    sqlstate = getattr(orig, "sqlstate", None) or getattr(
+                        orig, "pgcode", None
+                    )
+                    assert sqlstate == "55P03", repr(orig)
+                    await b.rollback()
+                else:
+                    got = (await b.execute(probe, {"d": device_id})).scalar_one()
+                    assert got == device_id
+                    await b.rollback()
+                await a.rollback()
+        finally:
+            async with makers() as cleanup:
+                await cleanup.execute(
+                    delete(Device).where(Device.device_id == device_id)
+                )
+                await cleanup.commit()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("door", ["mint", "self-mint"])
+    async def test_a_mint_door_rereads_the_deny_before_writing_the_key(
+        self, async_db_session: AsyncSession, test_user, door: str
+    ) -> None:
+        """The door's early deny check is an unlocked read, and ``/self-mint``
+        calls coord between it and the mint, so a revoke can commit in
+        between. That stale read is simulated by stubbing
+        ``get_credential_revoked_at`` to "not revoked" while the row carries
+        a deny. The locked re-read in ``_mint_machine_credential`` must still
+        refuse with the same 403 and write no key."""
+        device_id = await _device(async_db_session, test_user.id)
+        await async_db_session.execute(
+            update(Device)
+            .where(Device.device_id == device_id)
+            .values(tenant_id=_TENANT, credential_revoked_at=datetime.now(UTC))
+        )
+        live_claims = {
+            "sub_type": "device",
+            "device_id": str(device_id),
+            "user_id": str(test_user.id),
+            "mint_provenance": "paired",
+        }
+        anchor_read = AsyncMock(wraps=device_crud.get_credential_anchor)
+        async with _asgi_client(async_db_session, test_user.id) as client:
+            with (
+                _operator(
+                    tenants=(_TENANT,), owned_rows={device_id: _row(device_id, _TENANT)}
+                ),
+                patch.object(
+                    device_crud,
+                    "get_credential_revoked_at",
+                    AsyncMock(return_value=None),
+                ),
+                patch.object(device_crud, "get_credential_anchor", anchor_read),
+                patch(
+                    "app.api.deps._verify_device_jwt",
+                    AsyncMock(return_value=(live_claims, test_user)),
+                ),
+                patch.object(
+                    coord_device,
+                    "get_device_state",
+                    AsyncMock(return_value=_row(device_id, _TENANT)),
+                ),
+                patch.object(dmk_crud, "mint", wraps=dmk_crud.mint) as mint,
+            ):
+                resp = await client.post(
+                    f"{API_PREFIX}/{device_id}/machine-credential/{door}",
+                    headers={"Authorization": "Bearer live-device-jwt"},
+                )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "device_credential_revoked"
+        mint.assert_not_called()
+        assert anchor_read.await_args is not None
+        assert anchor_read.await_args.kwargs == {"lock_for_share": True}
+        rows = (
+            (
+                await async_db_session.execute(
+                    select(DeviceMachineCredential).where(
+                        DeviceMachineCredential.device_id == device_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows == []
+
 
 # ---------------------------------------------------------------------------
 # Fail-closed edges (mock session)
 # ---------------------------------------------------------------------------
-
-
 class TestFailClosedEdges:
     def test_redeem_refuses_when_the_deny_is_unreadable(self) -> None:
         from app.api.deps import get_async_db
@@ -1826,7 +1997,9 @@ class TestFailClosedEdges:
 
     def test_owner_mint_loses_the_race_to_a_concurrent_revoke(self) -> None:
         """The deny read passed, but the key was revoked before the locked
-        re-read in ``dmk_crud.mint``: the mint refuses instead of rotating."""
+        re-read in ``dmk_crud.mint``: the mint refuses instead of rotating.
+        (The device-row deny re-read reads no deny here; a deny it does see
+        is ``test_a_mint_door_rereads_the_deny_before_writing_the_key``.)"""
         device_id, tenant = uuid4(), uuid4()
         with (
             _operator(
@@ -1834,6 +2007,9 @@ class TestFailClosedEdges:
             ),
             patch.object(
                 device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+            ),
+            patch.object(
+                device_crud, "get_credential_anchor", AsyncMock(return_value=None)
             ),
             patch.object(
                 dmk_crud,

@@ -1685,24 +1685,34 @@ async def revoke_device_credentials(
     #   so coord can mark a just-revoked device paired. No key or JWT reaches
     #   the runner on that path (web answered 504 and rolled back).
     #
-    # A pairing that mints a key concurrently is serialized with this path,
-    # so it can never commit an unrevoked key after this revoke:
-    # * a redeem of a code BOUND to this device holds that code's row lock,
-    #   which ``cancel_pending_for_device`` above waits on. The redeem commits
-    #   first (its deny read, plain, still sees no deny: the deny is written
-    #   after the wait), and ``dmk_crud.revoke`` below then revokes its key.
-    # * pair-cli and a redeem of an UNBOUND code read the device row
-    #   ``FOR SHARE`` in the auto-mint (``lock_device_row=True``). If that
-    #   read comes first, this path waits on the device-row lock above until
-    #   the pairing commits, then revokes its key; if this revoke holds the
-    #   row first, the pairing's read waits and then sees the deny.
-    # The same two arguments order a pairing against ``authorize-redeem``,
-    # which also holds the device row and waits on bound codes. Should a
-    # deny-plus-unrevoked-key state exist anyway (rows from before this
-    # change), ``authorize-redeem`` deletes every key of a denied device.
-    # The bound path's deny read stays an unlocked read; it is correct only
-    # because both operator paths write the deny AFTER waiting on the bound
-    # code — keep that ordering. No other window is known.
+    # Every web door that writes a machine key is serialized with this path,
+    # so none can commit an unrevoked key beside a deny this path commits:
+    # * a redeem of a code BOUND to this device locks that code's row (P,
+    #   ``get_redeemable``) before it reads the deny, and holds it until it
+    #   commits. This path writes the deny in the SAME TRANSACTION as its
+    #   UPDATE of that row (``cancel_pending_for_device``), and that UPDATE
+    #   waits on P, so this path's commit lands after the redeem's commit;
+    #   ``dmk_crud.revoke``, run after that wait, then revokes the redeem's
+    #   key. Statement order inside the transaction does not decide the
+    #   commit order; the shared transaction does. If this path commits first,
+    #   the cancel has set the code's ``expires_at`` and the redeem's locked
+    #   ``get_redeemable`` refuses it. That redeem's deny read stays
+    #   an UNLOCKED read, and it may: it is correct only because of this
+    #   shared transaction.
+    # * pair-cli and a redeem of an UNBOUND code read the device row ``FOR
+    #   SHARE`` in the auto-mint (``lock_device_row=True``); ``/mint`` and
+    #   ``/self-mint`` read it ``FOR SHARE`` in ``_mint_machine_credential``
+    #   immediately before writing the key. If that read comes first, this
+    #   path waits on the device-row lock above until the mint commits, then
+    #   revokes its key; if this path holds the row first, the read waits and
+    #   then sees the deny (the mint doors refuse with 403; the pairing doors
+    #   mint no key).
+    # The same arguments order every key-writing door against
+    # ``authorize-redeem``, which also holds the device row and updates the
+    # bound codes in the transaction that clears the deny. A deny beside an
+    # unrevoked key can therefore exist only as a row written by a build that
+    # predated these locks; ``authorize-redeem`` deletes every key of a
+    # denied device, which also clears such a row on re-arm.
     revoked_at = datetime.now(UTC)
     cancelled = await pair_code_crud.cancel_pending_for_device(db, device_id)
     await dmk_crud.revoke(db, device_id)
@@ -1918,6 +1928,7 @@ async def mint_device_machine_credential(
             owner_user_id=current_user.id,
             tenant_id=tenant_id,
             via="user_bearer",
+            door="mint",
             refuse_if_revoked=True,
         )
     except dmk_crud.DeviceMachineKeyRevokedError as exc:
@@ -2076,6 +2087,7 @@ async def self_mint_device_machine_credential(
             owner_user_id=device_ctx.user_id,
             tenant_id=tenant_id,
             via="device_jwt",
+            door="self_mint",
             refuse_if_revoked=True,
             refuse_if_usable_beyond=SELF_MINT_RENEWAL_WINDOW,
         )
@@ -2202,6 +2214,7 @@ async def _mint_machine_credential(
     owner_user_id: UUID,
     tenant_id: UUID | None,
     via: str,
+    door: str,
     refuse_if_revoked: bool = False,
     refuse_if_usable_beyond: timedelta | None = None,
 ) -> DeviceMachineCredentialMintResponse:
@@ -2213,7 +2226,24 @@ async def _mint_machine_credential(
     authenticating arm in the log line. The ``refuse_*`` guards pass through
     to ``dmk_crud.mint``, which evaluates them under its row lock and raises
     its typed errors (the caller maps them to HTTP).
+
+    The device's deny is re-read HERE, in the mint's own transaction and
+    immediately before the key row is written, with ``FOR SHARE`` on the
+    ``coord.devices`` row (``door`` names the caller in the refusal log). The
+    callers' earlier deny check is an unlocked read, and ``/self-mint`` calls
+    coord's ``/state`` between that read and this point, so a revoke can
+    commit in between; without this re-read the mint would then write an
+    unrevoked key beside a fresh deny. Holding the share lock, the mint and
+    the operator's revoke / ``authorize-redeem`` (which take the row ``FOR
+    UPDATE``) are serialized: either the locked read sees the deny and the
+    mint refuses with the same 403, or the operator path waits for the mint
+    to commit and then revokes (or, on authorize, scopes its delete by) the
+    key it wrote. Lock order is device row then machine-key row (D -> K, the
+    ``FOR UPDATE`` inside ``dmk_crud.mint``), the same as the operator paths;
+    neither ``/mint`` nor ``/self-mint`` holds a pair-code row lock (P), so
+    the D -> P wait those paths take cannot close a cycle with this one.
     """
+    await refuse_if_credential_revoked(db, device_id, door=door, lock_device_row=True)
     plaintext, cred = await dmk_crud.mint(
         db,
         device_id=device_id,

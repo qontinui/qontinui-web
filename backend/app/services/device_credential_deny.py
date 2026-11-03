@@ -23,15 +23,29 @@ logger = structlog.get_logger(__name__)
 
 
 async def refuse_if_credential_revoked(
-    db: AsyncSession, device_id: UUID, *, door: str
+    db: AsyncSession, device_id: UUID, *, door: str, lock_device_row: bool = False
 ) -> None:
     """403 ``device_credential_revoked`` while the device's deny is set.
 
     Fail-closed: a read that fails is a 503 refusal, logged with the device
     id, never a pass.
+
+    ``lock_device_row`` reads the deny through
+    :func:`device_crud.get_credential_anchor` with ``FOR SHARE`` on the
+    ``coord.devices`` row, held until the caller's transaction ends. The
+    operator's revoke and ``authorize-redeem`` hold that row ``FOR UPDATE``,
+    so a locked read sees a deny either committed, and neither can commit a
+    deny change until the caller commits. Only a caller holding no pair-code
+    row lock may ask for it (see ``get_credential_anchor``).
     """
     try:
-        revoked_at = await device_crud.get_credential_revoked_at(db, device_id)
+        if lock_device_row:
+            anchor = await device_crud.get_credential_anchor(
+                db, device_id, lock_for_share=True
+            )
+            revoked_at = anchor.credential_revoked_at if anchor else None
+        else:
+            revoked_at = await device_crud.get_credential_revoked_at(db, device_id)
     except Exception as exc:  # noqa: BLE001 — any read failure refuses
         logger.error(
             "device_credential_revoked_read_failed",
@@ -57,6 +71,7 @@ async def refuse_if_credential_revoked(
             device_id=str(device_id),
             door=door,
             revoked_at=revoked_at.isoformat(),
+            locked_read=lock_device_row,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
