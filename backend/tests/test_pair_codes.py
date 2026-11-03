@@ -711,10 +711,13 @@ class TestRedeemMintsDeviceMachineKey:
                     f"/api/v1/devices/pair-codes/{code}/redeem",
                     json={"device_id": str(device_id), "hostname": "host-a"},
                 )
+        self.automint_logs = [
+            call.kwargs
+            for call in recorder.info.call_args_list + recorder.warning.call_args_list
+            if call.args and call.args[0] == "device_machine_key_automint"
+        ]
         if outcomes is not None:
-            for call in recorder.info.call_args_list + recorder.warning.call_args_list:
-                if call.args and call.args[0] == "device_machine_key_automint":
-                    outcomes.append(call.kwargs["outcome"])
+            outcomes.extend(kw["outcome"] for kw in self.automint_logs)
         return resp
 
     async def _mint_code(self, async_db_session: AsyncSession, test_user):
@@ -795,6 +798,8 @@ class TestRedeemMintsDeviceMachineKey:
         assert resp.status_code == 200, resp.text
         assert resp.json()["device_machine_key"] is None
         assert outcomes == [expected_outcome]
+        # ``committed`` is meaningful only for a minted outcome.
+        assert self.automint_logs[0]["committed"] is None
         await self._assert_consumed(async_db_session, row.code, device_id)
 
     # -- minting -------------------------------------------------------------
@@ -817,6 +822,8 @@ class TestRedeemMintsDeviceMachineKey:
 
         assert resp.status_code == 200, resp.text
         assert outcomes == ["minted"]
+        # The redeem owns the commit, so the helper's line is pre-commit.
+        assert self.automint_logs[0]["committed"] is False
         key = resp.json()["device_machine_key"]
         assert isinstance(key, str) and key.startswith("dmk_")
 

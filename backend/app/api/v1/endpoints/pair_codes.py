@@ -250,6 +250,13 @@ async def redeem_pair_code_endpoint(
     # honest 503 + Retry-After when coord stays unavailable. Safe here:
     # the code is only marked redeemed after coord succeeds, and the
     # row lock from get_redeemable() serializes concurrent attempts.
+    #
+    # That row lock is held across this call, and coord's pair-cli upserts
+    # the device's coord.devices row on its own connection. An operator's
+    # revoke or authorize-redeem, which lock that device row before the
+    # pair-code rows, can therefore wait on this redeem until the call
+    # returns or times out (10 s per attempt, up to 3 attempts). Postgres
+    # sees no cycle, so it is a bounded stall, not an aborted deadlock.
     resp = await post_to_coord(
         "/coord/devices/pair-cli",
         headers=headers,
@@ -352,8 +359,9 @@ async def redeem_pair_code_endpoint(
         door="pair_code_redeem",
     )
     await db.commit()
-    # The auto-mint's own outcome line is pre-commit (``committed=false``);
-    # ``dmk_minted`` on ``pair_code_redeemed`` below is the committed record.
+    # The auto-mint's own outcome line is pre-commit (a ``minted`` outcome
+    # carries ``committed=false``); ``dmk_minted`` on ``pair_code_redeemed``
+    # below is the committed record.
 
     expires_at_raw = coord_body.get("exp")
     from datetime import datetime as _dt

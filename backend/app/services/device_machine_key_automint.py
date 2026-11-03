@@ -77,9 +77,10 @@ async def automint_on_pairing(
     pair-code redeem commits its code consumption in that same transaction.
     With ``commit=True`` the helper also commits (pair-cli has nothing else to
     commit); a commit failure is then reported as ``failed``. Otherwise the
-    caller commits, and the logged outcome is PRE-commit: the line carries
-    ``committed=false`` and a ``minted`` there describes a key that exists
-    only if the caller's commit succeeds. The pair-code redeem's own
+    caller commits, and the logged outcome is PRE-commit. ``committed`` is
+    logged only for ``outcome=minted`` (``None`` otherwise, when nothing was
+    written): ``false`` there describes a key that exists only if the
+    caller's commit succeeds. The pair-code redeem's own
     ``pair_code_redeemed`` line (``dmk_minted``), written after its commit, is
     the record that it did.
 
@@ -148,7 +149,7 @@ async def automint_on_pairing(
         owner_user_id=str(owner_user_id),
         tenant_id=str(tenant_id) if tenant_id is not None else None,
         device_tenant_id=str(device_tenant) if device_tenant is not None else None,
-        committed=committed,
+        committed=committed if outcome == "minted" else None,
         error=error,
     )
     return device_machine_key

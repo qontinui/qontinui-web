@@ -1416,8 +1416,9 @@ async def authorize_redeem(
             },
         )
 
-    # Lock order: device row -> pair-code rows -> machine-key row, the order
-    # every path shares (see :func:`revoke_device_credentials`).
+    # Lock order within web: device row -> pair-code rows -> machine-key row
+    # (D -> P -> K). An in-flight pair-code redeem can still stall this path;
+    # see :func:`revoke_device_credentials` for why and for how long.
     # Mint first so ``except_code`` below can name the new code. Its collision
     # retry uses a SAVEPOINT, so the row lock above survives it.
     code_row = await pair_code_crud.mint_pair_code(
@@ -1635,15 +1636,24 @@ async def revoke_device_credentials(
                 "message": "No device row to revoke; nothing was changed.",
             },
         )
-    # Lock order, shared by every path that touches more than one of these
-    # rows: device row -> pair-code rows -> machine-key row. authorize-redeem
-    # takes them in that order, and the pair-code redeem holds its pair-code
-    # row lock when its auto-mint locks the machine-key row. Cancelling the
-    # pending codes BEFORE revoking the key keeps this path in the same order;
-    # the other way round, a concurrent redeem of a code bound to this device
-    # (pair-code held, waiting on the key) and this revoke (key held, waiting
-    # on the code) deadlock. A redeem that commits first has its fresh key
-    # revoked by the step below.
+    # Lock order WITHIN WEB: device row -> pair-code rows -> machine-key row
+    # (D -> P -> K). authorize-redeem takes them in that order, and the
+    # pair-code redeem holds its pair-code row lock (P) when its auto-mint
+    # locks the machine-key row (K). Cancelling the pending codes BEFORE
+    # revoking the key keeps this path in the same order; the other way round,
+    # a redeem of a code bound to this device (P held, waiting on K) and this
+    # revoke (K held, waiting on P) form a cycle Postgres sees and aborts.
+    #
+    # That is NOT the whole picture. The redeem holds P across its call to
+    # coord's pair-cli, and coord's handler upserts this same coord.devices
+    # row (D) on its own connection. So, across processes, the redeem takes
+    # P then D, and this path, holding D and waiting on P, stalls behind an
+    # in-flight redeem. Postgres sees no cycle (web's connection is idle in a
+    # transaction while coord waits on D), so nothing aborts it; it ends when
+    # the redeem's coord call gives up (``post_to_coord``: 10 s per attempt,
+    # up to 3 attempts), its 504 rolls back and releases P. The stall is
+    # bounded, not a deadlock. The same holds for authorize-redeem. A redeem
+    # that commits first has its fresh key revoked by the step below.
     revoked_at = datetime.now(UTC)
     cancelled = await pair_code_crud.cancel_pending_for_device(db, device_id)
     await dmk_crud.revoke(db, device_id)

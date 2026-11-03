@@ -547,10 +547,12 @@ async def get_credential_anchor(
     ``None`` when ``coord.devices`` has no row for it.
 
     A plain read, deliberately without a row lock: the pair-code redeem calls
-    it while holding its pair-code row lock, and ``authorize-redeem`` takes
-    the device row lock BEFORE touching pair-code rows
-    (``cancel_pending_for_device``), so locking the device row here would
-    invert that order. A failed read RAISES.
+    it while holding its pair-code row lock, and ``authorize-redeem`` and the
+    credential revoke take the device row lock BEFORE touching pair-code rows
+    (``cancel_pending_for_device``), so a device-row lock here would put the
+    reverse order inside web. (The redeem already meets the device row across
+    processes: coord's pair-cli upserts it while the redeem waits on that
+    call — see ``revoke_device_credentials``.) A failed read RAISES.
     """
     stmt = select(Device.tenant_id, Device.credential_revoked_at).where(
         Device.device_id == device_id
