@@ -50,61 +50,84 @@ async def automint_on_pairing(
 ) -> str | None:
     """Mint a ``dmk_`` for a just-paired device; return its plaintext or None.
 
+    ``tenant_id`` is the tenant this pairing was made in (``None`` when the
+    door could not establish it). The key is minted only when it equals the
+    device's home tenant, ``coord.devices.tenant_id`` — the tenant coord's
+    service-mint resolves for every device JWT the key will yield, and which a
+    pairing into a second tenant never moves. The anchor is the device, not
+    whichever pairing wrote the key row first: an unbound pair code's holder
+    chooses the ``device_id`` it presents, so trusting the stored row would let
+    a foreign pairing squat a key and lock the rightful tenant out for good.
+    The check covers the no-key path as well as the rotate. When the tenants
+    match, an existing row is rotated (subject to the guards below) whatever
+    tenant it records, so a squatted or NULL-tenant row is repaired by the
+    rightful tenant's next pairing. The tenant is the boundary, not the owner:
+    a re-pair by another operator of the same tenant re-owns the key to that
+    operator, as pair-cli always has (``/exchange`` resolves the JWT's owner
+    and tenant from ``coord.devices``; the key's owner is a label).
+
     It mints ONLY when the device has no key, or its key is expired or within
-    :data:`SELF_MINT_RENEWAL_WINDOW` of expiry. ``dmk_crud.mint`` keeps one row
-    per device, so rotating a still-usable key on every pairing invalidated the
-    runner's stored key whenever the runner failed to persist the new one. A
-    usable key is kept and ``None`` is returned — the runner keeps the key it
-    has. A revoked key, or a device whose credentials an operator revoked, is
-    never re-armed here: only an operator's ``authorize-redeem`` does.
+    :data:`SELF_MINT_RENEWAL_WINDOW` of expiry, so a re-pair never invalidates
+    a key the runner still holds. A revoked key, or a device whose credentials
+    an operator revoked, is never re-armed here: only an operator's
+    ``authorize-redeem`` does.
 
-    Nor is a key recorded under a different tenant than ``tenant_id`` (a NULL
-    on either side counts as different) ever rotated: the rotate rewrites the
-    row's owner and tenant, and an unbound pair code's holder chooses the
-    ``device_id`` it presents, so rotating would re-own another tenant's key
-    under the code issuer's tenant and strand that tenant's runner. The tenant
-    is the boundary, not the owner: a re-pair by another operator of the same
-    tenant re-owns the key to that operator, as pair-cli always has.
+    Every read and the mint run inside a SAVEPOINT, so a failure rolls back
+    only its own work and leaves the caller's transaction usable — the
+    pair-code redeem commits its code consumption in that same transaction.
+    With ``commit=True`` the helper also commits (pair-cli has nothing else to
+    commit); a commit failure is then reported as ``failed``. Otherwise the
+    caller commits.
 
-    Every database statement runs inside a SAVEPOINT, so a failed read or mint
-    rolls back only its own work and leaves the caller's transaction usable —
-    the pair-code redeem commits its code consumption in that same
-    transaction. With ``commit=True`` the helper also commits (pair-cli has
-    nothing else to commit); a commit failure is then reported as ``failed``.
-    Otherwise the caller commits.
+    Logs exactly one ``device_machine_key_automint`` outcome and never raises:
 
-    Logs exactly one ``device_machine_key_automint`` outcome: ``minted`` /
-    ``kept_usable_key`` / ``machine_key_revoked`` / ``foreign_tenant_key`` /
-    ``device_credential_revoked`` / ``failed``. Never raises.
+    * ``minted`` — the plaintext is returned;
+    * ``kept_usable_key`` — the device's key is usable beyond the window;
+    * ``lost_insert_race`` — a concurrent mint created the device's first key;
+    * ``machine_key_revoked`` / ``device_credential_revoked`` — revoked;
+    * ``device_tenant_unknown`` — no ``coord.devices`` row, or no tenant on it
+      (fail closed);
+    * ``pairing_tenant_unknown`` — the door could not say which tenant it
+      paired in (fail closed);
+    * ``foreign_tenant_key`` — the pairing tenant is not the device's;
+    * ``failed`` — anything else (the error is logged).
     """
     device_machine_key: str | None = None
     outcome = "minted"
     error: str | None = None
+    device_tenant: UUID | None = None
     try:
         async with db.begin_nested():
-            if await device_crud.get_credential_revoked_at(db, device_id) is not None:
+            anchor = await device_crud.get_credential_anchor(db, device_id)
+            device_tenant = anchor.tenant_id if anchor is not None else None
+            if anchor is not None and anchor.credential_revoked_at is not None:
                 outcome = "device_credential_revoked"
+            elif device_tenant is None:
+                outcome = "device_tenant_unknown"
+            elif tenant_id is None:
+                outcome = "pairing_tenant_unknown"
+            elif tenant_id != device_tenant:
+                outcome = "foreign_tenant_key"
             else:
                 device_machine_key, _cred = await dmk_crud.mint(
                     db,
                     device_id=device_id,
                     owner_user_id=owner_user_id,
-                    tenant_id=tenant_id,
+                    tenant_id=device_tenant,
                     refuse_if_revoked=True,
                     refuse_if_usable_beyond=SELF_MINT_RENEWAL_WINDOW,
-                    refuse_if_foreign_tenant=True,
                 )
         if commit:
             await db.commit()
+    except dmk_crud.DeviceMachineKeyConcurrentMintError:
+        device_machine_key = None
+        outcome = "lost_insert_race"
     except dmk_crud.DeviceMachineKeyStillUsableError:
         device_machine_key = None
         outcome = "kept_usable_key"
     except dmk_crud.DeviceMachineKeyRevokedError:
         device_machine_key = None
         outcome = "machine_key_revoked"
-    except dmk_crud.DeviceMachineKeyForeignTenantError:
-        device_machine_key = None
-        outcome = "foreign_tenant_key"
     except Exception as exc:  # noqa: BLE001 — never break pairing on mint
         device_machine_key = None
         outcome = "failed"
@@ -118,6 +141,7 @@ async def automint_on_pairing(
         device_id=str(device_id),
         owner_user_id=str(owner_user_id),
         tenant_id=str(tenant_id) if tenant_id is not None else None,
+        device_tenant_id=str(device_tenant) if device_tenant is not None else None,
         error=error,
     )
     return device_machine_key

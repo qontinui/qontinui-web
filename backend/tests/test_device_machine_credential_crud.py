@@ -362,8 +362,12 @@ class TestMintSelfGuardsRaceAndBoundary:
             return await real_execute(stmt, *args, **kwargs)
 
         monkeypatch.setattr(async_db_session, "execute", execute)
-        with pytest.raises(dmk_crud.DeviceMachineKeyStillUsableError):
+        # Still the 409-mapped StillUsable for /self-mint, but as the precise
+        # subclass, so the pairing auto-mint can report a lost race rather
+        # than claim it found a usable key.
+        with pytest.raises(dmk_crud.DeviceMachineKeyConcurrentMintError) as exc:
             await _self_mint(async_db_session, device_id)
+        assert isinstance(exc.value, dmk_crud.DeviceMachineKeyStillUsableError)
         monkeypatch.undo()
 
         # Session still usable (savepoint), and the winner's key is intact.
@@ -425,89 +429,6 @@ class TestMintSelfGuardsRaceAndBoundary:
         )
         with pytest.raises(dmk_crud.DeviceMachineKeyStillUsableError):
             await _self_mint(async_db_session, device_id)
-
-
-# ``refuse_if_foreign_tenant`` — the pairing auto-mint's tenant boundary
-# (plan ``2026-11-03-pair-code-pairing-mints-no-device-machine-key``).
-
-
-async def _pairing_mint(session: AsyncSession, device_id, tenant_id):
-    return await dmk_crud.mint(
-        session,
-        device_id=device_id,
-        owner_user_id=None,
-        tenant_id=tenant_id,
-        refuse_if_revoked=True,
-        refuse_if_usable_beyond=_WINDOW,
-        refuse_if_foreign_tenant=True,
-    )
-
-
-@pytest.mark.asyncio
-class TestMintForeignTenantGuard:
-    async def _expired_key(self, session: AsyncSession, tenant_id):
-        device_id = uuid4()
-        _, first = await dmk_crud.mint(
-            session, device_id=device_id, owner_user_id=None, tenant_id=tenant_id
-        )
-        await _set_row(
-            session, device_id, expires_at=datetime.now(UTC) - timedelta(days=1)
-        )
-        return device_id, first.dmk_hash
-
-    async def test_other_tenants_expired_key_is_refused_and_untouched(
-        self, async_db_session: AsyncSession
-    ) -> None:
-        owner_tenant = uuid4()
-        device_id, first_hash = await self._expired_key(async_db_session, owner_tenant)
-        with pytest.raises(dmk_crud.DeviceMachineKeyForeignTenantError):
-            await _pairing_mint(async_db_session, device_id, uuid4())
-        kept = await dmk_crud.get_by_hash(async_db_session, first_hash)
-        assert kept is not None
-        await async_db_session.refresh(kept)
-        assert kept.tenant_id == owner_tenant
-
-    @pytest.mark.parametrize("stored_null", [True, False], ids=["stored", "pairing"])
-    async def test_a_null_tenant_on_either_side_is_foreign(
-        self, async_db_session: AsyncSession, stored_null: bool
-    ) -> None:
-        tenant = uuid4()
-        device_id, _ = await self._expired_key(
-            async_db_session, None if stored_null else tenant
-        )
-        with pytest.raises(dmk_crud.DeviceMachineKeyForeignTenantError):
-            await _pairing_mint(
-                async_db_session, device_id, tenant if stored_null else None
-            )
-
-    async def test_same_tenant_expired_key_is_rotated(
-        self, async_db_session: AsyncSession
-    ) -> None:
-        tenant = uuid4()
-        device_id, first_hash = await self._expired_key(async_db_session, tenant)
-        _, second = await _pairing_mint(async_db_session, device_id, tenant)
-        assert second.dmk_hash != first_hash
-        assert second.tenant_id == tenant
-
-    async def test_no_existing_key_mints(self, async_db_session: AsyncSession) -> None:
-        tenant = uuid4()
-        plaintext, cred = await _pairing_mint(async_db_session, uuid4(), tenant)
-        assert plaintext.startswith("dmk_")
-        assert cred.tenant_id == tenant
-
-    async def test_guard_off_by_default_keeps_the_unconditional_rotate(
-        self, async_db_session: AsyncSession
-    ) -> None:
-        device_id, first_hash = await self._expired_key(async_db_session, uuid4())
-        new_tenant = uuid4()
-        _, second = await dmk_crud.mint(
-            async_db_session,
-            device_id=device_id,
-            owner_user_id=None,
-            tenant_id=new_tenant,
-        )
-        assert second.dmk_hash != first_hash
-        assert second.tenant_id == new_tenant
 
 
 class TestViolatedConstraint:

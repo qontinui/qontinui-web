@@ -30,6 +30,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    FetchedValue,
     ForeignKey,
     Integer,
     String,
@@ -223,6 +224,24 @@ class Device(Base):
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp of the most recent CI job executed by this runner.",
+    )
+
+    # ---- Home tenant (alembic ``coord_devices_tenant_id``) ----------------
+    #
+    # The device's authoritative (home) tenant; coord's service-mint resolves
+    # the tenant of every device JWT a machine key yields from it, and a
+    # pairing into a second tenant never moves it. NOT NULL in the database
+    # since ``coord_tenant_id_not_null``; coord writes it. Mapped so web can
+    # READ it (the pairing machine-key guard anchors on it): web never sets
+    # it. ``FetchedValue`` declares the value as the database's, so an INSERT
+    # that leaves it unset OMITS the column; without it SQLAlchemy sends an
+    # explicit NULL for an unset nullable column, which the NOT NULL would
+    # refuse (``test_device_model_parity`` pins that).
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=True,
+        server_default=FetchedValue(),
+        comment="The device's home tenant (coord-written).",
     )
 
     # ---- Credential deny (alembic ``devcred_01``) -----------------------

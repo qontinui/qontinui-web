@@ -882,12 +882,22 @@ class TestCredentialOverview:
 
 class TestPairCliKeepsAUsableKey:
     _BODY = {"hostname": "spaceship"}
+    #: The tenant coord's pair-cli stamps into the device JWT it issues.
+    _TENANT = UUID("77777777-7777-7777-7777-777777777777")
 
     @contextmanager
     def _coord_pair_cli(self, device_id: UUID) -> Iterator[None]:
         resp = MagicMock(spec=httpx.Response)
         resp.status_code = 201
-        resp.json.return_value = {"device_id": str(device_id), "token": "device-jwt"}
+        import jwt as pyjwt
+
+        token = pyjwt.encode(
+            {"sub": f"device:{device_id}", "tenant_id": str(self._TENANT)},
+            "test-only-signing-key-32-bytes-long!",
+            "HS256",
+        )
+        self.issued_token = token
+        resp.json.return_value = {"device_id": str(device_id), "token": token}
         resp.text = ""
         with (
             patch.object(coord_service_account, "_admin_secret", "test-secret"),
@@ -913,6 +923,15 @@ class TestPairCliKeepsAUsableKey:
             self._coord_pair_cli(device_id),
             patch.object(
                 device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+            ),
+            patch.object(
+                device_crud,
+                "get_credential_anchor",
+                AsyncMock(
+                    return_value=device_crud.DeviceCredentialAnchor(
+                        tenant_id=self._TENANT, credential_revoked_at=None
+                    )
+                ),
             ),
             patch.object(
                 dmk_crud,
@@ -945,7 +964,7 @@ class TestPairCliKeepsAUsableKey:
             resp = self._post(device_id)
         assert resp.status_code == 403, resp.text
         assert resp.json()["detail"]["code"] == "device_credential_revoked"
-        assert "device-jwt" not in resp.text
+        assert self.issued_token not in resp.text
         mint.assert_not_called()
 
     def test_coord_refusal_discloses_no_revocation_state(self) -> None:
@@ -1467,7 +1486,7 @@ class TestFailClosedEdges:
             resp = helper._post(device_id)
         assert resp.status_code == 503, resp.text
         assert resp.json()["detail"]["code"] == "device_credential_state_unavailable"
-        assert "device-jwt" not in resp.text
+        assert helper.issued_token not in resp.text
         mint.assert_not_called()
 
     @contextmanager

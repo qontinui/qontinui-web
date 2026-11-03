@@ -27,6 +27,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
+import jwt as pyjwt
 import structlog
 from fastapi import (
     APIRouter,
@@ -1182,30 +1183,16 @@ async def pair_cli(
     # Best-effort and guarded (a usable key is kept, a revoked one is never
     # re-armed) — see :func:`automint_on_pairing`, which the pair-code redeem
     # shares. Additive field; existing consumers ignore it.
-    device_machine_key: str | None = None
-    tenant_raw = coord_body.get("tenant_id")
-    try:
-        tenant_id = UUID(str(tenant_raw)) if tenant_raw else None
-    except (ValueError, TypeError):
-        # Never break pairing on a malformed tenant: skip the mint.
-        logger.warning(
-            "device_machine_key_automint",
-            door="pair_cli",
-            outcome="failed",
-            device_id=str(device_uuid),
-            owner_user_id=str(current_user.id),
-            tenant_id=None,
-            error=f"coord pair-cli returned malformed tenant_id {tenant_raw!r}",
-        )
-    else:
-        device_machine_key = await automint_on_pairing(
-            db,
-            device_id=device_uuid,
-            owner_user_id=current_user.id,
-            tenant_id=tenant_id,
-            door="pair_cli",
-            commit=True,
-        )
+    # The tenant this pairing was made in is the one coord stamped into the
+    # device JWT it just issued; coord's pair-cli response body carries none.
+    device_machine_key = await automint_on_pairing(
+        db,
+        device_id=device_uuid,
+        owner_user_id=current_user.id,
+        tenant_id=_issued_token_tenant(str(coord_token)),
+        door="pair_cli",
+        commit=True,
+    )
 
     logger.info(
         "pair_cli_completed",
@@ -1219,6 +1206,24 @@ async def pair_cli(
         user_id=current_user.id,
         device_machine_key=device_machine_key,
     )
+
+
+def _issued_token_tenant(token: str) -> UUID | None:
+    """The ``tenant_id`` claim of a device JWT coord just issued, or ``None``.
+
+    Read WITHOUT signature verification on purpose: the token is not a
+    caller's assertion but coord's own answer on web's server-to-coord call,
+    exactly as trusted as the response body it arrived in, and it is used
+    only to choose whether to mint a machine key, which fails closed on
+    ``None``. Verifying it would make machine-key issuance depend on JWKS
+    reachability for no added trust.
+    """
+    try:
+        claims = pyjwt.decode(token, options={"verify_signature": False})
+        raw = claims.get("tenant_id")
+        return UUID(str(raw)) if raw else None
+    except (pyjwt.PyJWTError, ValueError, TypeError, AttributeError):
+        return None
 
 
 # ---------------------------------------------------------------------------
