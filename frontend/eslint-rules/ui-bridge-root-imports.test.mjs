@@ -10,8 +10,9 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { Linter } from "eslint";
-import eslintConfig from "../eslint.config.mjs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { ESLint, Linter } from "eslint";
 import {
   UI_BRIDGE_CONTEXT_BOUND_EXPORTS,
   UI_BRIDGE_CONTEXT_FREE_EXPORTS,
@@ -51,29 +52,44 @@ describe("ui-bridge root-import partition", () => {
 });
 
 describe("eslint config enforces the context-bound list", () => {
-  const block = eslintConfig.find(
-    (entry) => entry?.rules?.["no-restricted-imports"] !== undefined,
-  );
-  const lint = (names) =>
+  // Resolve the rule the way eslint does for a real app file, so a later config
+  // entry that overrides or turns off no-restricted-imports fails this suite.
+  const frontendDir = dirname(dirname(fileURLToPath(import.meta.url)));
+  const resolveRule = async (filePath) => {
+    const config = await new ESLint({
+      cwd: frontendDir,
+    }).calculateConfigForFile(filePath);
+    const rule = config.rules?.["no-restricted-imports"];
+    expect(
+      rule,
+      `no-restricted-imports is not configured for ${filePath}`
+    ).toBeDefined();
+    return rule;
+  };
+  const lint = async (names, filePath = "src/components/x.tsx") =>
     new Linter({ configType: "flat" })
-      .verify(
-        `import { ${names.join(", ")} } from "@qontinui/ui-bridge";`,
-        [
-          {
-            languageOptions: { ecmaVersion: "latest", sourceType: "module" },
-            rules: block.rules,
-          },
-        ],
-      )
+      .verify(`import { ${names.join(", ")} } from "@qontinui/ui-bridge";`, [
+        {
+          languageOptions: { ecmaVersion: "latest", sourceType: "module" },
+          rules: { "no-restricted-imports": await resolveRule(filePath) },
+        },
+      ])
       .filter((m) => m.ruleId === "no-restricted-imports");
 
-  it("flags every context-bound name imported from the package root", () => {
-    expect(lint(UI_BRIDGE_CONTEXT_BOUND_EXPORTS)).toHaveLength(
-      UI_BRIDGE_CONTEXT_BOUND_EXPORTS.length,
-    );
-  });
+  it.each([
+    "src/components/x.tsx",
+    "src/lib/ui-bridge/x.ts",
+    "src/app/x/page.tsx",
+  ])(
+    "flags every context-bound name imported from the root in %s",
+    async (filePath) => {
+      expect(
+        await lint(UI_BRIDGE_CONTEXT_BOUND_EXPORTS, filePath)
+      ).toHaveLength(UI_BRIDGE_CONTEXT_BOUND_EXPORTS.length);
+    }
+  );
 
-  it("leaves every context-free name importable from the package root", () => {
-    expect(lint(UI_BRIDGE_CONTEXT_FREE_EXPORTS)).toEqual([]);
+  it("leaves every context-free name importable from the package root", async () => {
+    expect(await lint(UI_BRIDGE_CONTEXT_FREE_EXPORTS)).toEqual([]);
   });
 });
