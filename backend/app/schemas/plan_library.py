@@ -263,8 +263,10 @@ class WorkArtifactEdgeCreate(BaseModel):
     EXACTLY ONE of ``to_id`` (outgoing) or ``from_id`` (incoming).
 
     For ``spawned_followup`` both may be omitted: that is the one-ended form,
-    ``{"relation": "spawned_followup", "note": "<text>", "to_id": null}``, and
-    ``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal
+    ``{"relation": "spawned_followup", "note": "<text>", "to_id": null,
+    "unanchored_reason": "<why no file>", "size_class": "small"}`` (or
+    ``anchors`` in place of ``unanchored_reason``), and ``note`` is then
+    REQUIRED. Supplying ``to_id`` alongside it is still legal
     and records a follow-up that already has an owner.
 
     A ``spawned_followup`` may also carry what makes it MATCHABLE (plan

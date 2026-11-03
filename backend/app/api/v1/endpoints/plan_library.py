@@ -5128,9 +5128,10 @@ async def create_work_artifact_edge(
     definition has no artifact to point at yet, so it may be posted with BOTH
     endpoints omitted::
 
-        {"relation": "spawned_followup", "note": "<text>", "to_id": null}
+        {"relation": "spawned_followup", "note": "<text>", "to_id": null,
+         "unanchored_reason": "<why no file>", "size_class": "small"}
 
-    ``note`` is then required and must not be blank — with no far end it is the
+    (or ``anchors`` in place of ``unanchored_reason``). ``note`` is then required and must not be blank — with no far end it is the
     entire content of the row, and an empty one puts an unactionable entry in
     the open-follow-ups queue forever. Supplying ``to_id`` is still allowed and
     records a follow-up that already has an owner; ``from_id`` is not, because

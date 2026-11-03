@@ -979,8 +979,11 @@ class TestD3RefusesAnUnmatchableFollowup:
         assert isinstance(detail, str), detail  # the endpoint answered, not pydantic
         for name in named:
             assert name in detail, (name, detail)
+        # Only what is missing is named, in both directions.
         if named == ("size_class",):
             assert "unanchored_reason" not in detail, detail
+        if "size_class" not in named:
+            assert "size_class" not in detail, detail
         assert (await _followups(client))["total"] == 0
         edges = (await client.get(f"{API_PREFIX}/{plan}")).json()["edges"]
         assert edges == []
@@ -1027,9 +1030,10 @@ class TestD3RefusesAnUnmatchableFollowup:
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
         """Idempotence does not reopen the old shape: a writer re-posting a
-        legacy note-only row must send the new one, which fills it."""
+        legacy note-only row must send the new one, which fills it. The refused
+        re-post leaves the legacy row exactly as it was."""
         plan = await _make_artifact(client, stem="d3repost")
-        await _seed_note_only(async_db_session, plan, "legacy finding")
+        edge_id = await _seed_note_only(async_db_session, plan, "legacy finding")
         resp = await client.post(
             f"{API_PREFIX}/{plan}/edges",
             json={
@@ -1039,6 +1043,17 @@ class TestD3RefusesAnUnmatchableFollowup:
             },
         )
         assert resp.status_code == 422, resp.text
+        items = (await _followups(client))["items"]
+        assert [i["edge_id"] for i in items] == [edge_id]
+        assert items[0]["anchors"] == []
+        assert items[0]["size_class"] is None
+        assert items[0]["unanchored_reason"] is None
+
+        filled = await _spawn(client, plan, "legacy finding")
+        assert filled.status_code == 200, filled.text
+        assert filled.json()["id"] == edge_id
+        assert filled.json()["followup"]["size_class"] == "small"
+        assert filled.json()["followup"]["unanchored_reason"] == NO_FILE_REASON
 
 
 class TestTheFollowupFieldsAreStored:
