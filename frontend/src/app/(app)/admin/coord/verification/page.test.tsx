@@ -5,7 +5,7 @@
  * renders "could not look" with no number from it.
  */
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const http = vi.hoisted(() => ({ fetch: vi.fn() }));
@@ -247,6 +247,61 @@ describe("CoordVerificationPage — verifier agreement and the operator label", 
       verification_id: clickedId,
       truth: "holds",
     });
+  });
+
+  it("a recorded label re-reads the metrics (the agreement line's operator n moved); a 409 does not", async () => {
+    const reads = (part: string) => () =>
+      http.fetch.mock.calls.filter(([u]) => String(u).includes(part)).length;
+    const metricsReads = reads("/verification/metrics");
+    const sampleReads = reads("/verification/label-sample");
+    const refutedReads = reads("/findings");
+    serveAll(populated({ judge_agreement: judgeAgreement() }), {
+      label: recorded,
+    });
+    const { unmount } = render(<CoordVerificationPage />);
+    let [first] = await sampleRows();
+    await screen.findByTestId("coord-verification-agreement");
+    const before = metricsReads();
+    const sampleBefore = sampleReads();
+    const refutedBefore = refutedReads();
+    expect(sampleBefore).toBeGreaterThan(0);
+    expect(refutedBefore).toBeGreaterThan(0);
+    fireEvent.click(
+      within(first as HTMLElement).getByTestId("coord-verification-label-holds")
+    );
+    let outcome = await screen.findByTestId("coord-verification-label-outcome");
+    expect(outcome.getAttribute("data-label-outcome")).toBe("recorded");
+    await vi.waitFor(() => expect(metricsReads()).toBe(before + 1));
+    // Quiet: neither the page nor the refutation list went back to loading.
+    expect(refutedReads()).toBe(refutedBefore);
+    expect(screen.queryByTestId("coord-verification-series")).toBeTruthy();
+    // Let the re-read settle, then: the control keeps its own answer — the
+    // sample is not re-read over it.
+    await act(async () => {});
+    expect(sampleReads()).toBe(sampleBefore);
+    expect(
+      screen.getByTestId("coord-verification-label-outcome").textContent
+    ).toContain("Recorded: held up");
+    unmount();
+
+    http.fetch.mockReset();
+    serveAll(populated({ judge_agreement: judgeAgreement() }), {
+      label: () =>
+        new Response(
+          JSON.stringify({ error: "duplicate_label", message: "m", id: "e" }),
+          { status: 409 }
+        ),
+    });
+    render(<CoordVerificationPage />);
+    [first] = await sampleRows();
+    await screen.findByTestId("coord-verification-agreement");
+    const before409 = metricsReads();
+    fireEvent.click(
+      within(first as HTMLElement).getByTestId("coord-verification-label-holds")
+    );
+    outcome = await screen.findByTestId("coord-verification-label-outcome");
+    expect(outcome.getAttribute("data-label-outcome")).toBe("already_labelled");
+    expect(metricsReads()).toBe(before409);
   });
 
   it("a 409 shows 'already labelled', not an error", async () => {
