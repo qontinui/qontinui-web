@@ -117,6 +117,8 @@ const eslintConfig = [
                 "useUIState",
                 "useUIBridge",
                 "useUIBridgeOptional",
+                "useDragSource",
+                "useDropZone",
               ],
               message:
                 'Import this hook from "@qontinui/ui-bridge/react": the package root bundles its own UIBridgeContext, so the provider mounted from /react never reaches it and its registration is inert.',
