@@ -227,7 +227,13 @@ function AgreementLine({ agreement }: { agreement: AgreementView }) {
   );
 }
 
-function LabelSampleItem({ row }: { row: LabelSampleRow }) {
+function LabelSampleItem({
+  row,
+  onRecorded,
+}: {
+  row: LabelSampleRow;
+  onRecorded: () => void;
+}) {
   // One record, one line (R2): identity, verdict, time, then the answer slot
   // last. Text overflow truncates with a title; the verdict id lives in a
   // title only (R8).
@@ -266,13 +272,21 @@ function LabelSampleItem({ row }: { row: LabelSampleRow }) {
         <OperatorLabelControl
           verificationId={row.verificationId}
           className="max-w-[60ch]"
+          onRecorded={onRecorded}
         />
       )}
     </li>
   );
 }
 
-function LabelSampleSection({ view }: { view: LabelSampleView }) {
+function LabelSampleSection({
+  view,
+  onRecorded,
+}: {
+  view: LabelSampleView;
+  /** A label was recorded: the agreement line's operator n is now stale. */
+  onRecorded: () => void;
+}) {
   return (
     <section
       className="space-y-1"
@@ -297,7 +311,11 @@ function LabelSampleSection({ view }: { view: LabelSampleView }) {
       {view.state === "rows" && (
         <ul className="space-y-1">
           {view.rows.map((row) => (
-            <LabelSampleItem key={row.verificationId} row={row} />
+            <LabelSampleItem
+              key={row.verificationId}
+              row={row}
+              onRecorded={onRecorded}
+            />
           ))}
         </ul>
       )}
@@ -622,7 +640,10 @@ export default function CoordVerificationPage() {
         </p>
       </section>
 
-      <LabelSampleSection view={labelSample} />
+      {/* A recorded label moves the agreement line's operator n, so re-read the
+          metrics (not the sample: that would replace the control's own
+          answer with a re-read of the same row). */}
+      <LabelSampleSection view={labelSample} onRecorded={() => void reload()} />
 
       {metrics && (
         <>

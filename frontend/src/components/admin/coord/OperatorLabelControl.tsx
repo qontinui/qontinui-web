@@ -46,9 +46,16 @@ type ControlState =
 export function OperatorLabelControl({
   verificationId,
   className,
+  onRecorded,
 }: {
   verificationId: string;
   className?: string;
+  /**
+   * Called once coord has recorded the label (`recorded` only — an
+   * already-labelled verdict changed nothing), so the page can re-read the
+   * verifier-agreement line whose operator n the new label just moved.
+   */
+  onRecorded?: () => void;
 }) {
   const [state, setState] = useState<ControlState>({ status: "idle" });
 
@@ -56,6 +63,7 @@ export function OperatorLabelControl({
     setState({ status: "sending", truth });
     const result = await recordOperatorLabel(verificationId, truth);
     setState({ status: "done", result });
+    if (result.kind === "recorded") onRecorded?.();
   };
 
   if (state.status === "done") {

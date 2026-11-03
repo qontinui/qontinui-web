@@ -249,6 +249,50 @@ describe("CoordVerificationPage — verifier agreement and the operator label", 
     });
   });
 
+  it("a recorded label re-reads the metrics (the agreement line's operator n moved); a 409 does not", async () => {
+    const metricsReads = () =>
+      http.fetch.mock.calls.filter(([u]) =>
+        String(u).includes("/verification/metrics")
+      ).length;
+    serveAll(populated({ judge_agreement: judgeAgreement() }), {
+      label: recorded,
+    });
+    const { unmount } = render(<CoordVerificationPage />);
+    let [first] = await sampleRows();
+    await screen.findByTestId("coord-verification-agreement");
+    const before = metricsReads();
+    fireEvent.click(
+      within(first as HTMLElement).getByTestId("coord-verification-label-holds")
+    );
+    let outcome = await screen.findByTestId("coord-verification-label-outcome");
+    expect(outcome.getAttribute("data-label-outcome")).toBe("recorded");
+    await vi.waitFor(() => expect(metricsReads()).toBe(before + 1));
+    // The control keeps its own answer: the sample is not re-read over it.
+    expect(
+      screen.getByTestId("coord-verification-label-outcome").textContent
+    ).toContain("Recorded: held up");
+    unmount();
+
+    http.fetch.mockReset();
+    serveAll(populated({ judge_agreement: judgeAgreement() }), {
+      label: () =>
+        new Response(
+          JSON.stringify({ error: "duplicate_label", message: "m", id: "e" }),
+          { status: 409 }
+        ),
+    });
+    render(<CoordVerificationPage />);
+    [first] = await sampleRows();
+    await screen.findByTestId("coord-verification-agreement");
+    const before409 = metricsReads();
+    fireEvent.click(
+      within(first as HTMLElement).getByTestId("coord-verification-label-holds")
+    );
+    outcome = await screen.findByTestId("coord-verification-label-outcome");
+    expect(outcome.getAttribute("data-label-outcome")).toBe("already_labelled");
+    expect(metricsReads()).toBe(before409);
+  });
+
   it("a 409 shows 'already labelled', not an error", async () => {
     serveAll(populated({ judge_agreement: judgeAgreement() }), {
       label: () =>
