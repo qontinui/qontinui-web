@@ -16,10 +16,48 @@ import { ESLint, Linter } from "eslint";
 import {
   UI_BRIDGE_CONTEXT_BOUND_EXPORTS,
   UI_BRIDGE_CONTEXT_FREE_EXPORTS,
+  UI_BRIDGE_ROOT_ONLY_CONTEXT_FREE_REACT_EXPORTS,
 } from "./ui-bridge-root-imports.mjs";
 
 const reactEntry = await import("@qontinui/ui-bridge/react");
 const installed = Object.keys(reactEntry).filter((k) => k !== "default");
+const rootEntry = await import("@qontinui/ui-bridge");
+const reactNames = new Set(installed);
+// A hook (`use*`) or a function component (PascalCase, not a class) that the
+// root exports and /react does not. Root-only classes are not React.
+const isHookOrComponent = (name, value) =>
+  typeof value === "function" &&
+  (/^use[A-Z]/.test(name) ||
+    (/^[A-Z]/.test(name) &&
+      !/^class\b/.test(Function.prototype.toString.call(value))));
+const rootOnlyReact = Object.entries(rootEntry)
+  .filter(
+    ([name, value]) => !reactNames.has(name) && isHookOrComponent(name, value)
+  )
+  .map(([name]) => name);
+
+describe("ui-bridge root-only React exports", () => {
+  // The /react partition cannot see a hook or component the root exports and
+  // /react does not: there is no /react copy, so one that read UIBridgeContext
+  // would read the root bundle's never-provided context.
+  it("lists every root-only hook and function component of the installed root", () => {
+    const listed = new Set(UI_BRIDGE_ROOT_ONLY_CONTEXT_FREE_REACT_EXPORTS);
+    // A new name here: check its body in node_modules/@qontinui/ui-bridge/dist/index.mjs.
+    // If it reads no context, add it to UI_BRIDGE_ROOT_ONLY_CONTEXT_FREE_REACT_EXPORTS;
+    // if it reads UIBridgeContext, it is unusable from root in this app —
+    // restrict it in eslint.config.mjs and ask ui-bridge to export it from /react.
+    expect(rootOnlyReact.filter((name) => !listed.has(name))).toEqual([]);
+  });
+
+  it("lists no root-only name the installed root does not export", () => {
+    const exported = new Set(rootOnlyReact);
+    expect(
+      UI_BRIDGE_ROOT_ONLY_CONTEXT_FREE_REACT_EXPORTS.filter(
+        (name) => !exported.has(name)
+      )
+    ).toEqual([]);
+  });
+});
 
 describe("ui-bridge root-import partition", () => {
   it("classifies every runtime export of the installed /react entry", () => {
@@ -90,6 +128,11 @@ describe("eslint config enforces the context-bound list", () => {
   );
 
   it("leaves every context-free name importable from the package root", async () => {
-    expect(await lint(UI_BRIDGE_CONTEXT_FREE_EXPORTS)).toEqual([]);
+    expect(
+      await lint([
+        ...UI_BRIDGE_CONTEXT_FREE_EXPORTS,
+        ...UI_BRIDGE_ROOT_ONLY_CONTEXT_FREE_REACT_EXPORTS,
+      ])
+    ).toEqual([]);
   });
 });

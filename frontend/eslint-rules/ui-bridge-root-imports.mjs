@@ -85,5 +85,28 @@ export const UI_BRIDGE_CONTEXT_FREE_EXPORTS = [
   "UI_BRIDGE_TEST_ID_ATTR",
 ];
 
+/**
+ * Root-only React exports: hooks (`use*`) and function components the package
+ * ROOT exports and `/react` does not, so there is no `/react` copy to import
+ * instead. Each one here was checked against 0.35.0 to read no context,
+ * directly or through a helper: `useInspector` is local state plus DOM
+ * listeners and a caller-supplied lookup; `useUIBridgeToasts` is
+ * `useSyncExternalStore` over a module-level store; `Inspector`,
+ * `InspectorOverlay` and `InfoPanel` take everything as props (InfoPanel's
+ * annotations come from the global annotation store). The partition above
+ * cannot see these names, so the suite requires every root-only hook or
+ * function component to be listed here: a ui-bridge bump that adds one fails
+ * until someone checks whether it reads `UIBridgeContext` — which, imported
+ * from root, it would read inertly. Root-only classes are not React and are
+ * out of scope.
+ */
+export const UI_BRIDGE_ROOT_ONLY_CONTEXT_FREE_REACT_EXPORTS = [
+  "Inspector",
+  "InspectorOverlay",
+  "InfoPanel",
+  "useInspector",
+  "useUIBridgeToasts",
+];
+
 export const UI_BRIDGE_ROOT_IMPORT_MESSAGE =
   'Import this from "@qontinui/ui-bridge/react": the package root bundles its own UIBridgeContext, so the provider mounted from /react never reaches it and its registration is inert.';
