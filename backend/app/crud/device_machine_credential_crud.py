@@ -82,6 +82,17 @@ class DeviceMachineKeyRevokedError(Exception):
         self.device_id = device_id
 
 
+class DeviceMachineKeyForeignTenantError(Exception):
+    """:func:`mint` refused to rotate a key recorded under a different tenant
+    than the one the caller mints for."""
+
+    def __init__(self, device_id: UUID) -> None:
+        super().__init__(
+            f"device machine key for {device_id} belongs to a different tenant"
+        )
+        self.device_id = device_id
+
+
 class DeviceMachineKeyStillUsableError(Exception):
     """:func:`mint` refused to rotate a key that is still usable for longer
     than the caller's ``refuse_if_usable_beyond`` window."""
@@ -133,6 +144,7 @@ async def mint(
     ttl_days: int = DEVICE_MACHINE_KEY_TTL_DAYS,
     refuse_if_revoked: bool = False,
     refuse_if_usable_beyond: timedelta | None = None,
+    refuse_if_foreign_tenant: bool = False,
 ) -> tuple[str, DeviceMachineCredential]:
     """Mint (or rotate) the device machine key for ``device_id``.
 
@@ -155,6 +167,12 @@ async def mint(
       :class:`DeviceMachineKeyStillUsableError` instead of being rotated.
       The same error is raised when no row existed but a concurrent mint
       inserted one first (the unique constraint on ``device_id``).
+    * ``refuse_if_foreign_tenant`` — an existing row whose ``tenant_id`` is
+      not exactly ``tenant_id`` (a NULL on either side counts as different:
+      ownership that cannot be proven equal is not equal) raises
+      :class:`DeviceMachineKeyForeignTenantError` instead of being rotated —
+      the rotate rewrites ``owner_user_id``/``tenant_id``, so it would
+      re-own another tenant's key and strand that tenant's runner.
 
     Returns ``(plaintext_key, credential)`` — the plaintext is delivered to
     the runner exactly once. The caller commits.
@@ -176,6 +194,10 @@ async def mint(
     if cred is not None:
         if refuse_if_revoked and cred.revoked_at is not None:
             raise DeviceMachineKeyRevokedError(device_id)
+        if refuse_if_foreign_tenant and (
+            cred.tenant_id is None or cred.tenant_id != tenant_id
+        ):
+            raise DeviceMachineKeyForeignTenantError(device_id)
         if (
             refuse_if_usable_beyond is not None
             and cred.revoked_at is None

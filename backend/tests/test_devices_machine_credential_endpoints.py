@@ -457,6 +457,38 @@ class TestPairCliAutoMint:
         assert kwargs["tenant_id"] == tenant
         assert kwargs["refuse_if_revoked"] is True
         assert kwargs["refuse_if_usable_beyond"] == SELF_MINT_RENEWAL_WINDOW
+        assert kwargs["refuse_if_foreign_tenant"] is True
+
+    def test_foreign_tenant_key_is_kept_and_pairing_succeeds(self) -> None:
+        client = TestClient(self._app())
+        with (
+            _patch_enabled(),
+            patch("app.services.coord_proxy.httpx.AsyncClient") as MockClient,
+            patch.object(
+                dmk_crud,
+                "mint",
+                AsyncMock(
+                    side_effect=dmk_crud.DeviceMachineKeyForeignTenantError(_DEVICE_ID)
+                ),
+            ),
+        ):
+            instance = self._configure_client(MockClient)
+            instance.post.return_value = _mock_httpx_response(
+                json_data={
+                    "device_id": str(_DEVICE_ID),
+                    "token": "device-jwt",
+                    "tenant_id": str(uuid4()),
+                }
+            )
+            resp = client.post(
+                f"{API_PREFIX}/pair-cli",
+                json=self._BODY,
+                headers={"Authorization": "Bearer cognito-tok"},
+            )
+
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["token"] == "device-jwt"
+        assert resp.json()["device_machine_key"] is None
 
 
 # ---------------------------------------------------------------------------

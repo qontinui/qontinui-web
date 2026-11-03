@@ -58,6 +58,14 @@ async def automint_on_pairing(
     has. A revoked key, or a device whose credentials an operator revoked, is
     never re-armed here: only an operator's ``authorize-redeem`` does.
 
+    Nor is a key recorded under a different tenant than ``tenant_id`` (a NULL
+    on either side counts as different) ever rotated: the rotate rewrites the
+    row's owner and tenant, and an unbound pair code's holder chooses the
+    ``device_id`` it presents, so rotating would re-own another tenant's key
+    under the code issuer's tenant and strand that tenant's runner. The tenant
+    is the boundary, not the owner: a re-pair by another operator of the same
+    tenant re-owns the key to that operator, as pair-cli always has.
+
     Every database statement runs inside a SAVEPOINT, so a failed read or mint
     rolls back only its own work and leaves the caller's transaction usable —
     the pair-code redeem commits its code consumption in that same
@@ -66,7 +74,7 @@ async def automint_on_pairing(
     Otherwise the caller commits.
 
     Logs exactly one ``device_machine_key_automint`` outcome: ``minted`` /
-    ``kept_usable_key`` / ``machine_key_revoked`` /
+    ``kept_usable_key`` / ``machine_key_revoked`` / ``foreign_tenant_key`` /
     ``device_credential_revoked`` / ``failed``. Never raises.
     """
     device_machine_key: str | None = None
@@ -84,6 +92,7 @@ async def automint_on_pairing(
                     tenant_id=tenant_id,
                     refuse_if_revoked=True,
                     refuse_if_usable_beyond=SELF_MINT_RENEWAL_WINDOW,
+                    refuse_if_foreign_tenant=True,
                 )
         if commit:
             await db.commit()
@@ -93,6 +102,9 @@ async def automint_on_pairing(
     except dmk_crud.DeviceMachineKeyRevokedError:
         device_machine_key = None
         outcome = "machine_key_revoked"
+    except dmk_crud.DeviceMachineKeyForeignTenantError:
+        device_machine_key = None
+        outcome = "foreign_tenant_key"
     except Exception as exc:  # noqa: BLE001 — never break pairing on mint
         device_machine_key = None
         outcome = "failed"

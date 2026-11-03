@@ -837,3 +837,181 @@ class TestRedeemMintsDeviceMachineKey:
         await async_db_session.refresh(creds[0])
         assert creds[0].dmk_hash == stored_hash
         assert creds[0].dmk_hash == dmk_crud.hash_device_machine_key(existing_key)
+
+    # -- the guards, end to end through the redeem ---------------------------
+
+    async def _assert_consumed(
+        self, async_db_session: AsyncSession, code: str, device_id: UUID
+    ) -> None:
+        consumed = await pair_code_crud.find_by_code(async_db_session, code)
+        assert consumed is not None
+        await async_db_session.refresh(consumed)
+        assert consumed.redeemed_at is not None
+        assert consumed.redeemed_by_device_id == device_id
+
+    @staticmethod
+    def _snapshot(cred) -> tuple:
+        return (
+            cred.dmk_hash,
+            cred.dmk_prefix,
+            cred.owner_user_id,
+            cred.tenant_id,
+            cred.expires_at,
+            cred.revoked_at,
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "expires_in",
+        [timedelta(days=-1), timedelta(days=2)],
+        ids=["expired", "near_expiry"],
+    )
+    async def test_another_tenants_key_is_never_re_owned(
+        self, async_db_session: AsyncSession, test_user, expires_in: timedelta
+    ) -> None:
+        """An unbound code's holder chooses the device id it presents. A key
+        recorded under ANOTHER tenant is not rotated — even one that is
+        expired or near expiry, which the renewal window would otherwise
+        rotate — because the rotate re-owns it under the code's tenant."""
+        from app.crud import device_machine_credential_crud as dmk_crud
+
+        other_tenant = uuid4()
+        device_id = uuid4()
+        _key, existing = await dmk_crud.mint(
+            async_db_session,
+            device_id=device_id,
+            owner_user_id=test_user.id,
+            tenant_id=other_tenant,
+        )
+        existing.expires_at = datetime.now(UTC) + expires_in
+        await async_db_session.commit()
+        before = self._snapshot(existing)
+
+        row = await self._mint_code(async_db_session, test_user)
+        resp = await self._redeem(async_db_session, row.code, device_id)
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["device_machine_key"] is None
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        await async_db_session.refresh(cred)
+        assert self._snapshot(cred) == before
+        assert cred.tenant_id == other_tenant
+        await self._assert_consumed(async_db_session, row.code, device_id)
+
+    @pytest.mark.asyncio
+    async def test_same_tenant_expired_key_is_renewed(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The tenant guard does not block the renewal it exists beside: an
+        expired key of the code's own tenant is rotated."""
+        from app.crud import device_machine_credential_crud as dmk_crud
+
+        device_id = uuid4()
+        _key, existing = await dmk_crud.mint(
+            async_db_session,
+            device_id=device_id,
+            owner_user_id=test_user.id,
+            tenant_id=_FIXTURE_TENANT_ID,
+        )
+        existing.expires_at = datetime.now(UTC) - timedelta(days=1)
+        await async_db_session.commit()
+        old_hash = existing.dmk_hash
+
+        row = await self._mint_code(async_db_session, test_user)
+        resp = await self._redeem(async_db_session, row.code, device_id)
+
+        assert resp.status_code == 200, resp.text
+        new_key = resp.json()["device_machine_key"]
+        assert isinstance(new_key, str) and new_key.startswith("dmk_")
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        await async_db_session.refresh(cred)
+        assert cred.dmk_hash != old_hash
+        assert cred.dmk_hash == dmk_crud.hash_device_machine_key(new_key)
+
+    @pytest.mark.asyncio
+    async def test_a_revoked_machine_key_is_never_re_armed(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        from app.crud import device_machine_credential_crud as dmk_crud
+
+        device_id = uuid4()
+        await dmk_crud.mint(
+            async_db_session,
+            device_id=device_id,
+            owner_user_id=test_user.id,
+            tenant_id=_FIXTURE_TENANT_ID,
+        )
+        revoked = await dmk_crud.revoke(async_db_session, device_id)
+        assert revoked is not None
+        await async_db_session.commit()
+        before = self._snapshot(revoked)
+
+        row = await self._mint_code(async_db_session, test_user)
+        resp = await self._redeem(async_db_session, row.code, device_id)
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["device_machine_key"] is None
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        await async_db_session.refresh(cred)
+        assert self._snapshot(cred) == before
+        assert cred.revoked_at is not None and cred.dmk_hash == ""
+        await self._assert_consumed(async_db_session, row.code, device_id)
+
+    @pytest.mark.asyncio
+    async def test_a_device_whose_credentials_are_revoked_gets_no_key(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The redeem refuses such a device up front (403, code unconsumed),
+        so the helper's own arm is reached only when an operator's revoke
+        lands after that check — simulated by passing the up-front check
+        while ``coord.devices.credential_revoked_at`` is set."""
+        from app.models.device import Device
+
+        device_id = uuid4()
+        async_db_session.add(
+            Device(
+                device_id=device_id,
+                name="host-a",
+                hostname="host-a",
+                state="healthy",
+                credential_revoked_at=datetime.now(UTC),
+            )
+        )
+        await async_db_session.commit()
+
+        row = await self._mint_code(async_db_session, test_user)
+        with patch(
+            "app.api.v1.endpoints.pair_codes.refuse_if_credential_revoked",
+            AsyncMock(return_value=None),
+        ):
+            resp = await self._redeem(async_db_session, row.code, device_id)
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["device_machine_key"] is None
+        assert await self._credentials_for(async_db_session, device_id) == []
+        await self._assert_consumed(async_db_session, row.code, device_id)
+
+    @pytest.mark.asyncio
+    async def test_a_revoked_device_is_refused_before_anything_is_consumed(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        from app.models.device import Device
+
+        device_id = uuid4()
+        async_db_session.add(
+            Device(
+                device_id=device_id,
+                name="host-a",
+                hostname="host-a",
+                state="healthy",
+                credential_revoked_at=datetime.now(UTC),
+            )
+        )
+        await async_db_session.commit()
+
+        row = await self._mint_code(async_db_session, test_user)
+        resp = await self._redeem(async_db_session, row.code, device_id)
+
+        assert resp.status_code == 403, resp.text
+        assert await self._credentials_for(async_db_session, device_id) == []
+        assert await pair_code_crud.get_redeemable(async_db_session, row.code)
