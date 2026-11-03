@@ -541,22 +541,25 @@ class DeviceCredentialAnchor:
 
 
 async def get_credential_anchor(
-    db: AsyncSession, device_id: UUID
+    db: AsyncSession, device_id: UUID, *, lock_for_share: bool
 ) -> DeviceCredentialAnchor | None:
     """The device's home ``tenant_id`` and credential deny, in one read;
-    ``None`` when ``coord.devices`` has no row for it.
+    ``None`` when ``coord.devices`` has no row for it. A failed read RAISES.
 
-    A plain read, deliberately without a row lock: the pair-code redeem calls
-    it while holding its pair-code row lock, and ``authorize-redeem`` and the
-    credential revoke take the device row lock BEFORE touching pair-code rows
-    (``cancel_pending_for_device``), so a device-row lock here would put the
-    reverse order inside web. (The redeem already meets the device row across
-    processes: coord's pair-cli upserts it while the redeem waits on that
-    call — see ``revoke_device_credentials``.) A failed read RAISES.
+    ``lock_for_share`` takes ``FOR SHARE`` on the device row, serializing the
+    caller with the operator's revoke and ``authorize-redeem`` (both hold it
+    ``FOR UPDATE``): the read then sees a deny committed by either, and
+    neither can commit a deny change until the caller's transaction ends.
+    Only a caller holding NO pair-code row lock may ask for it: the operator
+    paths lock the device row and then wait on bound pair-code rows, so a
+    caller holding a bound code's lock and requesting the device row would
+    close a cycle Postgres aborts. See ``automint_on_pairing``.
     """
     stmt = select(Device.tenant_id, Device.credential_revoked_at).where(
         Device.device_id == device_id
     )
+    if lock_for_share:
+        stmt = stmt.with_for_update(read=True)
     row = (await db.execute(stmt)).one_or_none()
     if row is None:
         return None

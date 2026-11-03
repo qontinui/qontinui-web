@@ -813,15 +813,24 @@ class TestRedeemMintsDeviceMachineKey:
             get_authenticated_device_credential,
         )
         from app.api.v1.endpoints.devices import router as devices_router
+        from app.crud import device_crud
         from app.services.coord_service_account import coord_service_account
 
         device_id = await self._device(async_db_session)
         row = await self._mint_code(async_db_session, test_user)
         outcomes: list[str] = []
-        resp = await self._redeem(async_db_session, row.code, device_id, outcomes)
+        with patch.object(
+            device_crud,
+            "get_credential_anchor",
+            wraps=device_crud.get_credential_anchor,
+        ) as anchor_read:
+            resp = await self._redeem(async_db_session, row.code, device_id, outcomes)
 
         assert resp.status_code == 200, resp.text
         assert outcomes == ["minted"]
+        # An UNBOUND code shares no pair-code lock with the operator paths, so
+        # the auto-mint serializes with them on the device row (FOR SHARE).
+        assert anchor_read.call_args.kwargs == {"lock_for_share": True}
         # The redeem owns the commit, so the helper's line is pre-commit.
         assert self.automint_logs[0]["committed"] is False
         key = resp.json()["device_machine_key"]

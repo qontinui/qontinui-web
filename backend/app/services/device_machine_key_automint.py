@@ -46,6 +46,7 @@ async def automint_on_pairing(
     owner_user_id: UUID,
     tenant_id: UUID | None,
     door: PairingDoor,
+    lock_device_row: bool,
     commit: bool = False,
 ) -> str | None:
     """Mint a ``dmk_`` for a just-paired device; return its plaintext or None.
@@ -55,8 +56,8 @@ async def automint_on_pairing(
     device's home tenant, ``coord.devices.tenant_id`` — the tenant coord's
     service-mint resolves for every device JWT the key will yield. The legacy
     ``/coord/devices/pair-cli`` route both pairing doors call never moves it
-    (``KeepExisting``); only an explicit home write or the first pairing of a
-    register-only row sets it. The anchor is the device, not
+    (``KeepExisting``); it is set by the INSERT of a brand-new row, an
+    explicit home write, or the first pairing of a register-only row. The anchor is the device, not
     whichever pairing wrote the key row first: an unbound pair code's holder
     chooses the ``device_id`` it presents, so trusting the stored row would let
     a foreign pairing squat a key and lock the rightful tenant out for good.
@@ -67,6 +68,20 @@ async def automint_on_pairing(
     a re-pair by another operator of the same tenant re-owns the key to that
     operator, as pair-cli always has (``/exchange`` resolves the JWT's owner
     and tenant from ``coord.devices``; the key's owner is a label).
+
+    ``lock_device_row`` reads the device row ``FOR SHARE``, which serializes
+    this pairing with an operator's revoke and ``authorize-redeem`` (both hold
+    the row ``FOR UPDATE``). Pass ``True`` whenever the caller holds no
+    pair-code row lock: pair-cli, and a redeem of an UNBOUND code (which the
+    operator paths never lock). A revoke that commits first is then seen as a
+    deny, and one that comes second waits for this commit and revokes the
+    fresh key; an ``authorize-redeem`` likewise sees or waits. Pass ``False``
+    for a redeem of a code BOUND to the device: the redeem holds that code's
+    row lock, and both operator paths lock the device row and then wait on
+    their device's bound codes, so asking for the device row here would close
+    a cycle Postgres aborts. That case is serialized through the code's row
+    lock instead — the operator path waits for the redeem to commit before it
+    revokes, or re-arms, anything.
 
     It mints ONLY when the device has no key, or its key is expired or within
     :data:`SELF_MINT_RENEWAL_WINDOW` of expiry, so a re-pair never invalidates
@@ -106,7 +121,9 @@ async def automint_on_pairing(
     committed = False
     try:
         async with db.begin_nested():
-            anchor = await device_crud.get_credential_anchor(db, device_id)
+            anchor = await device_crud.get_credential_anchor(
+                db, device_id, lock_for_share=lock_device_row
+            )
             device_tenant = anchor.tenant_id if anchor is not None else None
             if anchor is not None and anchor.credential_revoked_at is not None:
                 outcome = "device_credential_revoked"

@@ -256,9 +256,9 @@ async def redeem_pair_code_endpoint(
     # revoke or authorize-redeem, which lock that device row before the
     # pair-code rows, can therefore wait on this redeem — but only when this
     # code is BOUND to that device, because their ``cancel_pending_for_device``
-    # touches bound codes only. An unbound code's redeem shares no lock with
-    # them at all (the race that leaves is closed by authorize-redeem deleting
-    # every key row; see ``revoke_device_credentials``). When coord is
+    # touches bound codes only. An unbound code's redeem shares no pair-code
+    # lock with them; its auto-mint serializes with them on the device row
+    # instead (FOR SHARE; see ``revoke_device_credentials``). When coord is
     # blocked on that row it has received the request, so the call is not
     # retried: it ends after one 10 s read timeout with a 504. Postgres sees
     # no cycle, so it is a bounded stall, not an aborted deadlock. (When coord
@@ -365,6 +365,10 @@ async def redeem_pair_code_endpoint(
         owner_user_id=row.issued_by_user_id,
         tenant_id=row.tenant_id,
         door="pair_code_redeem",
+        # Lock the device row only for an UNBOUND code: a bound code's row
+        # lock (held here) already serializes this redeem with the operator
+        # paths, which would deadlock against a device-row request.
+        lock_device_row=row.bound_device_id is None,
     )
     await db.commit()
     # The auto-mint's own outcome line is pre-commit (a ``minted`` outcome

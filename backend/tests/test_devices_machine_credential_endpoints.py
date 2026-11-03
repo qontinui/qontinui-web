@@ -395,7 +395,7 @@ class TestPairCliAutoMint:
             patch.object(dmk_crud, "mint", mint),
             patch.object(
                 device_crud, "get_credential_anchor", AsyncMock(return_value=anchor)
-            ),
+            ) as anchor_read,
             patch.object(automint_mod, "logger", recorder),
         ):
             instance = AsyncMock()
@@ -413,6 +413,8 @@ class TestPairCliAutoMint:
                 json=self._BODY,
                 headers={"Authorization": "Bearer cognito-tok"},
             )
+        # pair-cli holds no pair-code lock, so it locks the device row.
+        assert anchor_read.call_args.kwargs == {"lock_for_share": True}
         outcomes = [
             c.kwargs["outcome"]
             for c in recorder.info.call_args_list + recorder.warning.call_args_list

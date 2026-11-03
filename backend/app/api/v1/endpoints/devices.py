@@ -1193,6 +1193,9 @@ async def pair_cli(
         owner_user_id=current_user.id,
         tenant_id=_issued_token_tenant(str(coord_token)),
         door="pair_cli",
+        # pair-cli holds no pair-code row lock, so it may lock the device row
+        # (FOR SHARE), serializing with a concurrent revoke/authorize-redeem.
+        lock_device_row=True,
         commit=True,
     )
 
@@ -1396,10 +1399,18 @@ async def authorize_redeem(
       device (the newest authorization supersedes);
     * clears ``coord.devices.credential_revoked_at`` — re-arming is this
       explicit act, never a side effect;
-    * deletes the device's machine-key row, revoked or not: the device
-      re-pairs through the new code, whose redeem mints a fresh key, and any
-      key that predates the re-arm is suspect (see
-      :func:`~app.crud.device_machine_credential_crud.delete_for_device`).
+    * removes machine-key rows that must not outlive the authorization
+      (:func:`~app.crud.device_machine_credential_crud.delete_for_device`):
+      when the device WAS under a deny, its key row whatever its state (any
+      key predating the re-arm is suspect); otherwise only a REVOKED row. A
+      usable key on a never-revoked device is kept — it is how a runner
+      offline past its JWT grace recovers on its own (``/exchange``).
+
+    What re-keys a device whose row was removed is its next pairing, which
+    mints a fresh key because no row exists: an operator pair code or
+    ``pair-cli``, or the bound code minted here IF the runner collects it
+    through ``/pending-redeem`` (a runner build without that poller never
+    does). ``/self-mint`` also enrols one, given a live paired device JWT.
 
     202 ``{device_id, expires_at}`` — the code itself is NEVER returned; only
     the device collects it, through ``/pending-redeem``.
@@ -1433,8 +1444,12 @@ async def authorize_redeem(
     superseded = await pair_code_crud.cancel_pending_for_device(
         db, device_id, except_code=code_row.code
     )
+    # Read the deny BEFORE clearing it, under the device-row lock held above.
+    was_denied = await device_crud.get_credential_revoked_at(db, device_id) is not None
     await device_crud.set_credential_revoked_at(db, device_id, None)
-    machine_key_deleted = await dmk_crud.delete_for_device(db, device_id)
+    machine_key_deleted = await dmk_crud.delete_for_device(
+        db, device_id, only_revoked=not was_denied
+    )
     await db.commit()
 
     logger.info(
@@ -1444,6 +1459,8 @@ async def authorize_redeem(
         tenant_id=str(tenant_id),
         code_prefix=code_row.code[:2],
         superseded=superseded,
+        was_denied=was_denied,
+        key_delete_scope="any" if was_denied else "revoked_only",
         machine_key_deleted=machine_key_deleted,
         expires_at=code_row.expires_at.isoformat(),
     )
@@ -1668,14 +1685,24 @@ async def revoke_device_credentials(
     #   so coord can mark a just-revoked device paired. No key or JWT reaches
     #   the runner on that path (web answered 504 and rolled back).
     #
-    # A redeem racing this revoke can finish in either order. If it commits
-    # FIRST, its fresh key is revoked by the step below. If this revoke
-    # commits first while the redeem is past its (unlocked) deny check and
-    # the device had no key row, ``dmk_crud.revoke`` finds nothing and the
-    # redeem then inserts an UNREVOKED key. ``/exchange`` refuses it while
-    # the deny stands, and the only way to lift the deny, authorize-redeem,
-    # deletes the device's key row whatever its state
-    # (``dmk_crud.delete_for_device``), so that key never becomes usable.
+    # A pairing that mints a key concurrently is serialized with this path,
+    # so it can never commit an unrevoked key after this revoke:
+    # * a redeem of a code BOUND to this device holds that code's row lock,
+    #   which ``cancel_pending_for_device`` above waits on. The redeem commits
+    #   first (its deny read, plain, still sees no deny: the deny is written
+    #   after the wait), and ``dmk_crud.revoke`` below then revokes its key.
+    # * pair-cli and a redeem of an UNBOUND code read the device row
+    #   ``FOR SHARE`` in the auto-mint (``lock_device_row=True``). If that
+    #   read comes first, this path waits on the device-row lock above until
+    #   the pairing commits, then revokes its key; if this revoke holds the
+    #   row first, the pairing's read waits and then sees the deny.
+    # The same two arguments order a pairing against ``authorize-redeem``,
+    # which also holds the device row and waits on bound codes. Should a
+    # deny-plus-unrevoked-key state exist anyway (rows from before this
+    # change), ``authorize-redeem`` deletes every key of a denied device.
+    # The bound path's deny read stays an unlocked read; it is correct only
+    # because both operator paths write the deny AFTER waiting on the bound
+    # code — keep that ordering. No other window is known.
     revoked_at = datetime.now(UTC)
     cancelled = await pair_code_crud.cancel_pending_for_device(db, device_id)
     await dmk_crud.revoke(db, device_id)

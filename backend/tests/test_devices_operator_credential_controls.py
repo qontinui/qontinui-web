@@ -257,12 +257,14 @@ class TestAuthorizeRedeem:
             "cancel": AsyncMock(return_value=1),
             "clear": AsyncMock(return_value=True),
             "delete_key": AsyncMock(return_value=True),
+            "denied": AsyncMock(return_value=None),
         }
         with (
             patch.object(pair_code_crud, "mint_pair_code", mocks["mint"]),
             patch.object(pair_code_crud, "cancel_pending_for_device", mocks["cancel"]),
             patch.object(device_crud, "set_credential_revoked_at", mocks["clear"]),
             patch.object(dmk_crud, "delete_for_device", mocks["delete_key"]),
+            patch.object(device_crud, "get_credential_revoked_at", mocks["denied"]),
         ):
             yield mocks
 
@@ -371,6 +373,34 @@ class TestAuthorizeRedeem:
         assert writes["cancel"].call_args.args[1] == path_device
         assert writes["clear"].call_args.args[1:] == (path_device, None)
         assert writes["delete_key"].call_args.args[1] == path_device
+
+    @pytest.mark.parametrize(
+        ("denied_at", "only_revoked"),
+        [(None, True), (datetime(2026, 11, 1, tzinfo=UTC), False)],
+        ids=["never_revoked_keeps_a_usable_key", "denied_drops_any_key"],
+    )
+    def test_key_delete_scope_follows_the_prior_deny(
+        self, denied_at: datetime | None, only_revoked: bool
+    ) -> None:
+        """The deny is read BEFORE it is cleared, and decides the scope."""
+        device_id, tenant = uuid4(), uuid4()
+        order: list[str] = []
+        with (
+            _operator(
+                tenants=(tenant,), owned_rows={device_id: _row(device_id, tenant)}
+            ),
+            self._writes(device_id) as writes,
+        ):
+            writes["denied"].side_effect = lambda *_a, **_k: (
+                order.append("read_deny") or denied_at
+            )
+            writes["clear"].side_effect = lambda *_a, **_k: (
+                order.append("clear_deny") or True
+            )
+            resp = TestClient(_app()).post(self._url(device_id))
+        assert resp.status_code == 202, resp.text
+        assert order == ["read_deny", "clear_deny"]
+        assert writes["delete_key"].call_args.kwargs == {"only_revoked": only_revoked}
 
     def test_authorize_mints_a_bound_code_and_never_returns_it(self) -> None:
         device_id, tenant = uuid4(), uuid4()
@@ -1168,6 +1198,11 @@ class TestDatabaseBacked:
                 patch(
                     "app.api.v1.endpoints.pair_codes.coord_service_account"
                 ) as bridge,
+                patch.object(
+                    device_crud,
+                    "get_credential_anchor",
+                    wraps=device_crud.get_credential_anchor,
+                ) as anchor_read,
             ):
                 bridge.enabled = True
                 bridge._headers = AsyncMock(return_value={})
@@ -1177,6 +1212,10 @@ class TestDatabaseBacked:
                 )
         assert resp.status_code == 200, resp.text
         assert resp.json()["device_token_jwt"] == "jwt"
+        # A BOUND code's redeem holds that code's row lock, which the operator
+        # paths wait on while holding the device row: it must not ask for the
+        # device row too (a cycle Postgres would abort).
+        assert anchor_read.call_args.kwargs == {"lock_for_share": False}
 
     @pytest.mark.asyncio
     async def test_revoke_arms_every_refusal_and_authorize_clears_it(
@@ -1308,9 +1347,28 @@ class TestDatabaseBacked:
         assert await pair_code_crud.get_redeemable(async_db_session, old.code) is None
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("revoked", [True, False], ids=["revoked", "usable"])
-    async def test_delete_for_device_removes_the_key_whatever_its_state(
-        self, async_db_session: AsyncSession, test_user, revoked: bool
+    @pytest.mark.parametrize(
+        ("revoked", "only_revoked", "deleted"),
+        [
+            (True, False, True),
+            (False, False, True),
+            (True, True, True),
+            (False, True, False),
+        ],
+        ids=[
+            "any:revoked",
+            "any:usable",
+            "only_revoked:revoked",
+            "only_revoked:usable",
+        ],
+    )
+    async def test_delete_for_device_scope(
+        self,
+        async_db_session: AsyncSession,
+        test_user,
+        revoked: bool,
+        only_revoked: bool,
+        deleted: bool,
     ) -> None:
         device_id = await _device(async_db_session, test_user.id)
         await dmk_crud.mint(
@@ -1318,10 +1376,46 @@ class TestDatabaseBacked:
         )
         if revoked:
             await dmk_crud.revoke(async_db_session, device_id)
-        assert await dmk_crud.delete_for_device(async_db_session, device_id) is True
+        assert (
+            await dmk_crud.delete_for_device(
+                async_db_session, device_id, only_revoked=only_revoked
+            )
+            is deleted
+        )
         keys = await dmk_crud.list_for_devices(async_db_session, [device_id])
-        assert device_id not in keys
-        assert await dmk_crud.delete_for_device(async_db_session, device_id) is False
+        assert (device_id not in keys) is deleted
+
+    @pytest.mark.asyncio
+    async def test_a_never_revoked_devices_usable_key_survives_authorize(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Authenticate is offered for any runner whose posture is not live,
+        e.g. one offline past its JWT grace that was never revoked. Its usable
+        key is how it recovers on its own (``/exchange``), so authorize-redeem
+        must leave it alone."""
+        device_id = await _device(async_db_session, test_user.id)
+        key, cred = await dmk_crud.mint(
+            async_db_session,
+            device_id=device_id,
+            owner_user_id=test_user.id,
+            tenant_id=_TENANT,
+        )
+        key_hash = cred.dmk_hash
+        await async_db_session.commit()
+
+        async with _asgi_client(async_db_session, test_user.id) as client:
+            with _operator(
+                tenants=(_TENANT,), owned_rows={device_id: _row(device_id, _TENANT)}
+            ):
+                auth = await client.post(f"{API_PREFIX}/{device_id}/authorize-redeem")
+        assert auth.status_code == 202, auth.text
+
+        kept = await dmk_crud.get_by_hash(async_db_session, key_hash)
+        assert kept is not None
+        await async_db_session.refresh(kept)
+        assert kept.revoked_at is None
+        assert kept.dmk_hash == dmk_crud.hash_device_machine_key(key)
+        assert dmk_crud.is_usable(kept)
 
     @pytest.mark.asyncio
     async def test_a_key_left_by_a_redeem_racing_a_revoke_never_survives_re_arm(
@@ -1577,6 +1671,9 @@ class TestFailClosedEdges:
             ),
             patch.object(pair_code_crud, "cancel_pending_for_device", AsyncMock()),
             patch.object(device_crud, "set_credential_revoked_at", AsyncMock()),
+            patch.object(
+                device_crud, "get_credential_revoked_at", AsyncMock(return_value=None)
+            ),
             patch.object(dmk_crud, "delete_for_device", AsyncMock(return_value=False)),
         ):
             resp = TestClient(_app()).post(f"{API_PREFIX}/{device_id}/authorize-redeem")
