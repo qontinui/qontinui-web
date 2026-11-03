@@ -3,6 +3,10 @@ import { fileURLToPath } from "url";
 import { FlatCompat } from "@eslint/eslintrc";
 
 import qontinuiWeb from "./eslint-rules/index.mjs";
+import {
+  UI_BRIDGE_CONTEXT_BOUND_EXPORTS,
+  UI_BRIDGE_ROOT_IMPORT_MESSAGE,
+} from "./eslint-rules/ui-bridge-root-imports.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -111,61 +115,12 @@ const eslintConfig = [
           paths: [
             {
               name: "@qontinui/ui-bridge",
-              // Every context-bound export of the `/react` entry (hooks AND the
-              // providers/scopes, since a root-imported provider mounts the
-              // root bundle's context, which no `/react` hook reads). Listed
-              // whole rather than per incident: #2037 and #2068 each fixed the
-              // one hook that had bitten, and the next unlisted hook would
-              // fail the same silent way. Pure helpers (trackElementBbox, useBuildIdWatcher,
-              // pollForTaggedElement, routePatternFromParams, createRouteUnmatchedSignal, the *_ATTR
-              // constants) carry no context and stay importable from root.
-              importNames: [
-                "UIBridgeProvider",
-                "UIBridgeComponentScope",
-                "UIBridgeWindowProvider",
-                "RouteUnmatchedContext",
-                "CaptureHostFrame",
-                "AutoRegisterProvider",
-                "CommandRelayListener",
-                "State",
-                "TransitionTo",
-                "useUIBridge",
-                "useUIBridgeRequired",
-                "useUIBridgeEcho",
-                "useCommandRelay",
-                "useRouteAwareness",
-                "useKeyboardShortcuts",
-                "useUIBridgeContext",
-                "useUIBridgeOptional",
-                "useUIBridgeWindowLabel",
-                "useUIElement",
-                "useUIElementRef",
-                "useUIComponent",
-                "useUIComponentAction",
-                "useOwningComponent",
-                "useUIState",
-                "useUIStateGroup",
-                "useActiveStates",
-                "useStateSnapshot",
-                "useUITransition",
-                "useTransitions",
-                "useAvailableTransitions",
-                "useUINavigation",
-                "useCanNavigateTo",
-                "useNavigationPath",
-                "useAutoRegister",
-                "useUIAnnotation",
-                "usePageContext",
-                "useMarkRouteUnmatched",
-                "useRouteUnmatchedSignal",
-                "useUIRelationship",
-                "useUIRelationships",
-                "useDragSource",
-                "useDropZone",
-                "useUndoRedo",
-              ],
-              message:
-                'Import this from "@qontinui/ui-bridge/react": the package root bundles its own UIBridgeContext, so the provider mounted from /react never reaches it and its registration is inert.',
+              // Every context-bound export of the `/react` entry, partitioned
+              // against the installed package by
+              // eslint-rules/ui-bridge-root-imports.test.mjs so a ui-bridge
+              // bump cannot add an unlisted context hook.
+              importNames: UI_BRIDGE_CONTEXT_BOUND_EXPORTS,
+              message: UI_BRIDGE_ROOT_IMPORT_MESSAGE,
             },
           ],
         },
