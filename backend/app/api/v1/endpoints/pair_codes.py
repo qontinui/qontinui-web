@@ -254,9 +254,13 @@ async def redeem_pair_code_endpoint(
     # That row lock is held across this call, and coord's pair-cli upserts
     # the device's coord.devices row on its own connection. An operator's
     # revoke or authorize-redeem, which lock that device row before the
-    # pair-code rows, can therefore wait on this redeem until the call
-    # returns or times out (10 s per attempt, up to 3 attempts). Postgres
-    # sees no cycle, so it is a bounded stall, not an aborted deadlock.
+    # pair-code rows, can therefore wait on this redeem. When coord is
+    # blocked on that row it has received the request, so the call is not
+    # retried: it ends after one 10 s read timeout with a 504. Postgres sees
+    # no cycle, so it is a bounded stall, not an aborted deadlock. (When coord
+    # is unreachable, connect failures are retried — up to 3 x 10 s plus
+    # backoff, ~32 s, then 503 — and the operator path waits that long.) See
+    # ``revoke_device_credentials`` for what the 504 leaves behind in coord.
     resp = await post_to_coord(
         "/coord/devices/pair-cli",
         headers=headers,

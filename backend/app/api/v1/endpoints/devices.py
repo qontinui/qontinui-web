@@ -1649,11 +1649,24 @@ async def revoke_device_credentials(
     # row (D) on its own connection. So, across processes, the redeem takes
     # P then D, and this path, holding D and waiting on P, stalls behind an
     # in-flight redeem. Postgres sees no cycle (web's connection is idle in a
-    # transaction while coord waits on D), so nothing aborts it; it ends when
-    # the redeem's coord call gives up (``post_to_coord``: 10 s per attempt,
-    # up to 3 attempts), its 504 rolls back and releases P. The stall is
-    # bounded, not a deadlock. The same holds for authorize-redeem. A redeem
-    # that commits first has its fresh key revoked by the step below.
+    # transaction while coord waits on D), so nothing aborts it. Coord DID
+    # receive that request, so ``post_to_coord`` does not retry it: the call
+    # ends after ONE 10 s read timeout with a 504, the redeem rolls back and
+    # releases P. The stall is bounded (~10 s), not a deadlock. The same
+    # holds for authorize-redeem.
+    #
+    # Two things that bound does not cover, both left for a structural fix
+    # (claim-then-commit the code, or a lock_timeout) outside this change:
+    # * When coord is UNREACHABLE the call retries connect failures (up to 3
+    #   attempts of 10 s plus backoff, ~32 s) before a 503, and this path
+    #   waits on P that whole time — an ordinary lock wait.
+    # * After web's 504, coord's blocked upsert is still pending; it lands
+    #   once this revoke commits, and its WHERE does not check
+    #   ``credential_revoked_at`` (qontinui-coord ``UPSERT_PAIRED_DEVICE_SQL``),
+    #   so coord can mark a just-revoked device paired. No key or JWT reaches
+    #   the runner on that path (web answered 504 and rolled back).
+    #
+    # A redeem that commits first has its fresh key revoked by the step below.
     revoked_at = datetime.now(UTC)
     cancelled = await pair_code_crud.cancel_pending_for_device(db, device_id)
     await dmk_crud.revoke(db, device_id)

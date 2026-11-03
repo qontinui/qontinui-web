@@ -384,6 +384,7 @@ class TestPairCliAutoMint:
         from app.services import device_machine_key_automint as automint_mod
 
         recorder = MagicMock()
+        self.recorder = recorder
         anchor = device_crud.DeviceCredentialAnchor(
             tenant_id=device_tenant, credential_revoked_at=None
         )
@@ -429,6 +430,13 @@ class TestPairCliAutoMint:
         body = resp.json()
         assert body["device_machine_key"] == "dmk_auto-minted-secret"
         assert outcomes == ["minted"]
+        # pair-cli lets the helper commit, so its minted line is post-commit.
+        (minted_line,) = [
+            c.kwargs
+            for c in self.recorder.info.call_args_list
+            if c.args and c.args[0] == "device_machine_key_automint"
+        ]
+        assert minted_line["committed"] is True
         kwargs = mint.call_args.kwargs
         assert kwargs["owner_user_id"] == _USER_ID
         assert kwargs["tenant_id"] == _PAIR_TENANT
