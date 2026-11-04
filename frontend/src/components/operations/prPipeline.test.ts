@@ -2988,7 +2988,7 @@ describe.each(PROMISE_ROWS)("D2 table on %s", (_token, base, lead) => {
     }
   );
 
-  it("arming D2: exhausted maps to author and reads the ceiling from the payload", () => {
+  it("exhausted → author, and the ceiling comes from the payload", () => {
     const status = statusOf({
       state: "exhausted",
       attempts: 9,
@@ -3158,7 +3158,7 @@ describe("D4 — the health summary counts BEHIND rows by what coord will do", (
     held: 0,
   };
 
-  it("arming D4: counts one per state plus held and the absent-block unknown", () => {
+  it("counts one per state, plus held and the absent-block unknown", () => {
     const counts = countsOf([
       behindBase(1, { state: "eligible" }),
       behindBase(2, { state: "in_progress" }),
