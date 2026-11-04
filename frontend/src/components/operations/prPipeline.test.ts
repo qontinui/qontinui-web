@@ -2988,7 +2988,7 @@ describe.each(PROMISE_ROWS)("D2 table on %s", (_token, base, lead) => {
     }
   );
 
-  it("exhausted → author, and the ceiling comes from the payload", () => {
+  it("arming D2: exhausted maps to author and reads the ceiling from the payload", () => {
     const status = statusOf({
       state: "exhausted",
       attempts: 9,
@@ -3158,7 +3158,7 @@ describe("D4 — the health summary counts BEHIND rows by what coord will do", (
     held: 0,
   };
 
-  it("counts one per state, plus held and the absent-block unknown", () => {
+  it("arming D4: counts one per state plus held and the absent-block unknown", () => {
     const counts = countsOf([
       behindBase(1, { state: "eligible" }),
       behindBase(2, { state: "in_progress" }),
@@ -3200,6 +3200,19 @@ describe("D4 — the health summary counts BEHIND rows by what coord will do", (
       unknown: 2,
       held: 3,
     });
+  });
+
+  it("totals and the refused count sum the per-state buckets", () => {
+    const counts = {
+      ...ZERO,
+      eligible: 1,
+      in_progress: 2,
+      exhausted: 1,
+      suppressed: 1,
+      disabled: 1,
+      unknown: 2,
+      held: 3,
+    };
     expect(behindCountsTotal(counts)).toBe(11);
     expect(behindRefusedCount(counts)).toBe(3);
   });
