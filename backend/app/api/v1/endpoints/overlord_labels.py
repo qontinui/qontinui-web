@@ -56,13 +56,31 @@ def _coord_detail(resp: httpx.Response) -> Any:
     return parsed if isinstance(parsed, dict) else resp.text[:500]
 
 
+def _coord_code(detail: Any) -> str | None:
+    """Coord's machine code from its error body (``error`` or ``code``), if any."""
+    if isinstance(detail, dict):
+        for key in ("error", "code"):
+            value = detail.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
 def _refuse_coord(resp: httpx.Response) -> HTTPException:
     """Coord 4xx passes through with its status; anything else is a 502.
 
     Except 401/403: those refuse WEB's service credential, not the operator, who
     already passed :func:`require_coord_tenant_admin`. Passed through, they would
     read in the browser as the operator's own session failing, so they are a 502.
+
+    Every 502 carries coord's own status and body (``coord_status``,
+    ``coord_detail``) plus a ``message``: the console renders ``detail.message``
+    ahead of ``detail.error``, so without it the operator would see only the
+    bare ``coord_upstream_error`` code and none of what coord said.
     """
+    coord_detail = _coord_detail(resp)
+    code = _coord_code(coord_detail)
+    answered = f"{resp.status_code}" + (f" {code}" if code else "")
     if resp.status_code in (401, 403):
         logger.warning(
             "overlord_label_coord_refused_web",
@@ -73,18 +91,27 @@ def _refuse_coord(resp: httpx.Response) -> HTTPException:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={
                 "error": "coord_upstream_error",
+                "message": (
+                    f"coord refused web's service credential (coord answered "
+                    f"{answered}); your own session is fine"
+                ),
                 "coord_status": resp.status_code,
-                "coord_detail": _coord_detail(resp),
+                "coord_detail": coord_detail,
             },
         )
     if 400 <= resp.status_code < 500:
-        return HTTPException(status_code=resp.status_code, detail=_coord_detail(resp))
+        return HTTPException(status_code=resp.status_code, detail=coord_detail)
     logger.warning(
         "overlord_label_coord_error", status=resp.status_code, body=resp.text[:500]
     )
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        detail={"error": "coord_upstream_error", "coord_status": resp.status_code},
+        detail={
+            "error": "coord_upstream_error",
+            "message": f"coord failed (coord answered {answered})",
+            "coord_status": resp.status_code,
+            "coord_detail": coord_detail,
+        },
     )
 
 
