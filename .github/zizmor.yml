@@ -24,7 +24,13 @@ rules:
   # Revisit when both accept it.
   self-repository:
     ignore:
-      - backend-ci.yml # ./.github/actions/fleet-nouns-vocab
+      - backend-ci.yml # ./.github/actions/fleet-nouns-vocab, self-hosted-host-provisioned
+      - cross-browser-survey.yml # ./.github/actions/self-hosted-host-provisioned
+      - e2e-playwright-stack.yml # ./.github/actions/self-hosted-host-provisioned
+      - memory-recall-eval.yml # ./.github/actions/self-hosted-host-provisioned
+      - migration-reversal.yml # ./.github/actions/self-hosted-host-provisioned (x2)
+      - spec-ci.yml # ./.github/actions/self-hosted-host-provisioned
+      - style-gate.yml # ./.github/actions/self-hosted-host-provisioned
       - backend-coverage-producer.yml # ./.github/actions/fleet-nouns-vocab
       - frontend-ci.yml # ./.github/actions/fleet-nouns-vocab, spawn-contract (x2 each)
       - frontend-coverage-producer.yml # ./.github/actions/fleet-nouns-vocab, spawn-contract
@@ -36,8 +42,11 @@ rules:
   # QONTINUI_FLEET_NOUNS_FILE and QONTINUI_SPAWN_CONTRACT_FILE, each
   # "$GITHUB_WORKSPACE/.sibling/...": a path built from a runner-provided
   # constant after a sha256 check of the file, with no PR- or input-controlled
-  # part. (Ignore entries match the file name, and this repo has exactly these
-  # two action.yml files.)
+  # part. A third, .github/actions/self-hosted-host-provisioned/action.yml,
+  # appends /usr/lib/postgresql/<major>/bin to $GITHUB_PATH, the major coming
+  # from the calling workflow's literal `with:` (or its job env PG_MAJOR), never
+  # from PR text. (Ignore entries match the file name, so `action.yml` covers
+  # all three.)
   github-env:
     ignore:
       - action.yml

@@ -153,7 +153,7 @@ jobs:
   reverse:
     needs: detect
     if: needs.detect.outputs.relevant == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
     # Same gap as backend-ci.yml's `test`: an apt-dependent job with no
     # job-level bound, so its ceiling was GitHub's DEFAULT 360 minutes -- not a
     # value this repo chose. This workflow is named in the plan's own Why
@@ -222,8 +222,20 @@ jobs:
         with:
           persist-credentials: false
 
+      # The webdb self-hosted pool (WEB_CI_DB_LANE) has no sudo, so the apt/sudo
+      # steps below run on github-hosted only and the host must already carry
+      # what they install. Plan
+      # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
+      - name: "Self-hosted: host provisioned"
+        if: runner.environment == 'self-hosted'
+        uses: ./.github/actions/self-hosted-host-provisioned
+        with:
+          tools: git
+          pg-major: 16
+
       # qontinui (a path-dep) pulls torch — large enough to overflow runner disk.
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
@@ -255,6 +267,7 @@ jobs:
           poetry install
 
       - name: Install postgresql-client
+        if: runner.environment == 'github-hosted'
         id: apt_psql
         # ONLY the apt-get call lives in this step, and it is the entire reason
         # for the bound: it reaches an external mirror at job time and is the
@@ -932,7 +945,7 @@ jobs:
     name: Migration Reversal Tested
     needs: detect
     if: needs.detect.outputs.relevant == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MIGRATION_REVERSAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
     # Read the repo only: the checkout and the base/head object reads. Narrower
     # than the workflow default (which adds `actions: read` for the
     # explainer's run lookup -- the explainer here falls back to that lookup
@@ -984,6 +997,18 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      # The webdb self-hosted pool (WEB_CI_DB_LANE) has no sudo, so the apt/sudo
+      # steps below run on github-hosted only and the host must already carry
+      # what they install. Plan
+      # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
+      - name: "Self-hosted: host provisioned"
+        if: runner.environment == 'self-hosted'
+        uses: ./.github/actions/self-hosted-host-provisioned
+        with:
+          tools: git python3
+          pg-major: '${{ env.PG_MAJOR }}'
+          pg-tools: psql pg_dump
 
       # The qualifier below is Python's own parser and tokenizer at work on
       # the PR's revision files (scripts/ci/mrt_qualify.py), so its verdict
@@ -1118,7 +1143,7 @@ jobs:
 
       # qontinui (a path-dep) pulls torch — large enough to overflow runner disk.
       - name: Free disk space
-        if: env.MRT_DOC_ONLY != '1'
+        if: runner.environment == 'github-hosted' && env.MRT_DOC_ONLY != '1'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
@@ -1239,7 +1264,7 @@ jobs:
           fi
 
       - name: Install postgresql-client
-        if: env.MRT_DOC_ONLY != '1'
+        if: runner.environment == 'github-hosted' && env.MRT_DOC_ONLY != '1'
         id: apt_psql
         # Same guarded, apt-only, bounded step as `reverse` -- see the long
         # note there for why only apt lives here and why it is bounded.

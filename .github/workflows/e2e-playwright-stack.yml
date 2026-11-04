@@ -88,7 +88,7 @@ on:
 jobs:
   playwright:
     name: Playwright (chromium)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_E2E_PLAYWRIGHT_STACK || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
     # Job cap — see e2e-tests.yml's `backend-tests` for why this workflow
     # needed one. Sized from 28 green shard runs on `main` (2026-08-18/19):
     # p50 ~12m, p90 ~18m, max 41m39s (run 32264216432 shard 2/4, which went
@@ -164,6 +164,17 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+
+      # The webdb self-hosted pool (WEB_CI_DB_LANE) has no sudo, so the apt/sudo
+      # steps below run on github-hosted only and the host must already carry
+      # what they install. Plan
+      # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
+      - name: "Self-hosted: host provisioned"
+        if: runner.environment == 'self-hosted'
+        uses: ./.github/actions/self-hosted-host-provisioned
+        with:
+          tools: git curl
+          pg-major: 16
 
       # Both backend pyproject.toml and frontend package.json have path
       # deps on these five sibling repos. Without this clone, `pip
@@ -474,6 +485,7 @@ jobs:
       # would be a step name available to APT_STEP_OUTCOMES, and nothing in
       # this pair runs apt.
       - name: Restore Playwright apt font cache
+        if: runner.environment == 'github-hosted'
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         continue-on-error: true
         with:
@@ -504,6 +516,7 @@ jobs:
       # boundary. This step touches local disk only -- no network, nothing to
       # stall - so it is deliberately unbounded and deliberately has no `id:`.
       - name: Seed apt archives from cache
+        if: runner.environment == 'github-hosted'
         run: |
           set -uo pipefail
           cache_dir="$HOME/.cache/qontinui-apt-playwright"
@@ -526,6 +539,7 @@ jobs:
           fi
 
       - name: Install Playwright browser system deps (apt)
+        if: runner.environment == 'github-hosted'
         id: apt_playwright
         # Sized from a per-half measurement, not from the fused step: each green
         # run's log was cut at the boundary between apt's last output line and the
@@ -574,7 +588,7 @@ jobs:
       # `-maxdepth 1` `*.deb` glob below matches the top level only, so
       # `partial/` -- one level deeper -- is never picked up.
       - name: Stage apt archives for cache
-        if: always()
+        if: always() && runner.environment == 'github-hosted'
         run: |
           set -uo pipefail
           cache_dir="$HOME/.cache/qontinui-apt-playwright"
@@ -643,9 +657,32 @@ jobs:
         # tail does NOT come from here - not once in 40 samples.
         timeout-minutes: 2
         working-directory: ./frontend
-        run: npx playwright install chromium
+        # On the webdb self-hosted pool, slot.sh exports PLAYWRIGHT_BROWSERS_PATH
+        # at a ROOT-OWNED, READ-ONLY cache that already holds chromium for one
+        # Playwright version (its .version stamp). `playwright install` against
+        # a read-only path does not finish: measured on nawa 2026-11-04 as an
+        # unprivileged user, it timed out after 300 s. Chromium itself launches
+        # from that cache fine (measured the same day). So: skip the install
+        # when the cache is read-only and its stamp is this project's version;
+        # on a version mismatch, install into a job-local path instead.
+        run: |
+          set -euo pipefail
+          if [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ ! -w "$PLAYWRIGHT_BROWSERS_PATH" ]; then
+            want="$(npx playwright --version | awk '{print $2}')"
+            have="$(cat "$PLAYWRIGHT_BROWSERS_PATH/.version" 2>/dev/null || true)"
+            if [ -n "$want" ] && [ "$want" = "$have" ]; then
+              echo "chromium from the read-only cache $PLAYWRIGHT_BROWSERS_PATH (playwright $want); skipping install"
+              exit 0
+            fi
+            echo "::warning title=browser cache version mismatch::read-only cache is playwright '${have}', this project is '${want}'; installing into a job-local path"
+            PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/ms-playwright"
+            export PLAYWRIGHT_BROWSERS_PATH
+            echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+          fi
+          npx playwright install chromium
 
       - name: Install postgresql-client
+        if: runner.environment == 'github-hosted'
         id: apt_psql
         # ONLY the apt-get call lives in this step, and it is the entire reason
         # for the bound: it reaches an external mirror at job time and is the
