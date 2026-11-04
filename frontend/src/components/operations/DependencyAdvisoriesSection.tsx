@@ -339,6 +339,15 @@ export function DependencyAdvisoriesSection({ nowMs }: { nowMs: number }) {
               last census cycle {formatAge(cycle.ageSecs)}
               {cycle.stale && " · stale"}
             </Badge>
+            {data.truncated && (
+              <Badge
+                variant="warning"
+                className="ml-1"
+                data-testid="dependency-advisories-truncated-badge"
+              >
+                list truncated: coord holds more repos than shown
+              </Badge>
+            )}
           </>
         ) : null
       }

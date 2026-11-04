@@ -72,6 +72,8 @@ export interface DependencyCensusRow {
 export interface DependencyAdvisoriesPayload {
   available: boolean;
   census: DependencyCensusRow[];
+  /** coord capped the census page (its `limit`): more repos exist than listed. */
+  truncated: boolean;
 }
 
 /** A census older than this (36 h) is flagged stale. */
@@ -151,7 +153,7 @@ export function parseDependencyAdvisoriesPayload(
     if (row === null) return null;
     census.push(row);
   }
-  return { available: true, census };
+  return { available: true, census, truncated: b.truncated === true };
 }
 
 /**

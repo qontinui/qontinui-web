@@ -288,6 +288,20 @@ describe("parseDependencyAdvisoriesPayload", () => {
     expect(parsed?.census).toHaveLength(1);
   });
 
+  it("carries coord's truncated flag, and an absent flag reads as not truncated", () => {
+    expect(
+      parseDependencyAdvisoriesPayload({
+        available: true,
+        census: [],
+        truncated: true,
+      })?.truncated
+    ).toBe(true);
+    expect(
+      parseDependencyAdvisoriesPayload({ available: true, census: [] })
+        ?.truncated
+    ).toBe(false);
+  });
+
   it("refuses a body without available: true, so it reads as a failed read, not an empty census", () => {
     expect(parseDependencyAdvisoriesPayload({ census: [] })).toBeNull();
     expect(

@@ -3394,6 +3394,41 @@ describe("/admin/coord/devops — Rust advisory census", () => {
     expect(cycle).toHaveAttribute("data-stale", "false");
   });
 
+  it("flags a census page coord truncated, so a capped list never reads as the whole fleet", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        truncated: true,
+        census: [censusRow({ repo: "qontinui/a" })],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("dependency-advisories-truncated-badge")
+    ).toHaveTextContent("list truncated");
+  });
+
+  it("shows no truncated badge when coord did not truncate", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        truncated: false,
+        census: [censusRow({ repo: "qontinui/a" })],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await screen.findByTestId("dependency-advisories-last-cycle");
+    expect(
+      screen.queryByTestId("dependency-advisories-truncated-badge")
+    ).toBeNull();
+  });
+
   it("flags the last census cycle stale when even the newest row is past 36h", async () => {
     mockWithCensus({
       status: 200,
