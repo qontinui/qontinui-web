@@ -49,6 +49,7 @@ from sqlalchemy.pool import NullPool
 
 from app.api.v1.endpoints.memory import (
     MemoryPrincipal,
+    _require_agent_scope_ref,
     _resolve_agent_scope_ref,
     scope_visibility,
 )
@@ -88,6 +89,10 @@ _NOT_FOUND_BY_ID = {"detail": "memory record not found in your tenant"}
 _DEVICE_B_ID = UUID("33333333-3333-4333-8333-333333333333")
 _A_REF = str(_FIXTURE_DEVICE_ID)
 _B_REF = str(_DEVICE_B_ID)
+# A device id with hex LETTERS: A's and B's ids are all digits, so their
+# upper-cased forms are identical and could not exercise case handling.
+_DEVICE_C_ID = UUID("abcdef00-0000-4000-8000-0000000000ab")
+_C_REF = str(_DEVICE_C_ID)
 
 _A_CONTENT = "the heron note private to device A"
 _B_CONTENT = "the heron note private to device B"
@@ -144,6 +149,10 @@ def _as_a(mc: MemoryClient) -> MemoryClient:
 
 def _as_b(mc: MemoryClient) -> MemoryClient:
     return mc.as_principal(_principal(mc, device_id=_DEVICE_B_ID))
+
+
+def _as_c(mc: MemoryClient) -> MemoryClient:
+    return mc.as_principal(_principal(mc, device_id=_DEVICE_C_ID))
 
 
 def _as_no_device(mc: MemoryClient) -> MemoryClient:
@@ -267,13 +276,13 @@ class TestScopeVisibility:
 
     def test_omitted_and_own_refs_resolve_to_the_canonical_own_ref(self) -> None:
         principal = MemoryPrincipal(
-            tenant_id=uuid4(), device_id=_FIXTURE_DEVICE_ID, actor="device"
+            tenant_id=uuid4(), device_id=_DEVICE_C_ID, actor="device"
         )
         visibility = scope_visibility(principal)
-        for given in (None, _A_REF, _A_REF.upper()):
+        for given in (None, _C_REF, _C_REF.upper()):
             assert (
                 _resolve_agent_scope_ref(principal, visibility, "agent", given)
-                == _A_REF
+                == _C_REF
             )
         # Non-agent scopes pass through untouched.
         assert _resolve_agent_scope_ref(principal, visibility, "tenant", "x") == "x"
@@ -631,6 +640,12 @@ class TestForeignAgentRowSideChannels:
 
 
 class TestUpperCasedOwnRef:
+    """Device C's id carries hex LETTERS, so its upper-cased form really
+    differs (the fixture devices' ids are all digits, where it would not)."""
+
+    def test_the_lettered_device_id_differs_when_upper_cased(self) -> None:
+        assert _C_REF.upper() != _C_REF
+
     def test_a_row_keyed_on_the_upper_cased_own_ref_is_the_callers(
         self, mc: MemoryClient
     ) -> None:
@@ -638,29 +653,123 @@ class TestUpperCasedOwnRef:
             _as_admitted(mc, "coord_service"),
             "a heron note keyed on the upper-cased device id",
             scope="agent",
-            scope_ref=_A_REF.upper(),
+            scope_ref=_C_REF.upper(),
         )
-        _as_a(mc)
+        _as_c(mc)
         assert upper in _listed(mc)
         assert mc.client.get(f"/api/v1/memory/records/{upper}").status_code == 200
+        # ...and the query door finds it too: the device's query ref resolves
+        # to its LOWER-cased id, so the retrieval arms must match the agent
+        # arm case-insensitively, as the visibility predicate does.
+        for ref in (None, _C_REF, _C_REF.upper()):
+            body = {"scopes": ["agent"]} | ({"scope_ref": ref} if ref else {})
+            resp = _query(mc, **body)
+            assert resp.status_code == 200, resp.text
+            assert [h["memory_id"] for h in resp.json()["hits"]] == [upper]
+
+    @pytest.mark.parametrize("actor", ["coord_service", "operator"])
+    def test_admitted_query_matches_the_agent_ref_case_insensitively(
+        self, mc: MemoryClient, actor: str
+    ) -> None:
+        """An admitted principal's ref is passed through verbatim; the agent
+        arm's ``lower()`` on both sides widens its match on letter case only."""
+        own = _write(_as_c(mc), "a heron note device C owns", scope="agent")
+        _as_admitted(mc, actor)
+        for ref in (_C_REF, _C_REF.upper()):
+            resp = _query(mc, scopes=["agent"], scope_ref=ref)
+            assert resp.status_code == 200, resp.text
+            assert [h["memory_id"] for h in resp.json()["hits"]] == [own]
+        # Case is the ONLY widening: another device's ref still misses.
+        resp = _query(mc, scopes=["agent"], scope_ref=_B_REF)
+        assert resp.json()["hits"] == []
 
     def test_writing_and_querying_the_upper_cased_own_ref_is_admitted(
         self, mc: MemoryClient, memory_engine: AsyncEngine
     ) -> None:
-        _as_a(mc)
+        _as_c(mc)
         memory_id = _write(
             mc,
             "a heron note written upper-cased",
             scope="agent",
-            scope_ref=_A_REF.upper(),
+            scope_ref=_C_REF.upper(),
         )
-        # Stored under the canonical ref, where the exact-match retrieval of
-        # the caller's own partition finds it.
-        assert _scope_ref_of(memory_engine, memory_id) == _A_REF
-        resp = _query(mc, scopes=["agent"], scope_ref=_A_REF.upper())
+        # Stored under the canonical lower-cased ref.
+        assert _scope_ref_of(memory_engine, memory_id) == _C_REF
+        resp = _query(mc, scopes=["agent"], scope_ref=_C_REF.upper())
         assert resp.status_code == 200, resp.text
-        assert resp.json()["query_echo"]["scope_ref"] == _A_REF
+        assert resp.json()["query_echo"]["scope_ref"] == _C_REF
         assert [h["memory_id"] for h in resp.json()["hits"]] == [memory_id]
+
+
+class TestAgentScopeRefIsRequired:
+    """A NULL or blank agent ``scope_ref`` is refused for EVERY principal on
+    write and on the supersede resolved pair: such a row is visible to no
+    device, and its reindex job (partition ``agent:``) is claimable by none.
+    Mirrors coord's ``(None, None)`` arm of ``clamp_private_scope_ref``."""
+
+    @pytest.mark.parametrize("actor", ["coord_service", "operator"])
+    @pytest.mark.parametrize("ref", [None, "", "   "])
+    def test_admitted_agent_write_with_no_ref_is_a_422_and_writes_nothing(
+        self,
+        mc: MemoryClient,
+        memory_engine: AsyncEngine,
+        actor: str,
+        ref: str | None,
+    ) -> None:
+        _as_admitted(mc, actor)
+        before = _live_rows(memory_engine)
+        extra = {} if ref is None else {"scope_ref": ref}
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record("a shared fact riding along"),
+                    _record("an agent note with no owner", scope="agent", **extra),
+                ]
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "requires a non-empty scope_ref" in resp.json()["detail"]
+        assert _live_rows(memory_engine) == before
+
+    def test_a_device_omitting_the_ref_still_writes_into_its_own(
+        self, mc: MemoryClient, memory_engine: AsyncEngine
+    ) -> None:
+        memory_id = _write(_as_a(mc), "a device A note with no ref", scope="agent")
+        assert _scope_ref_of(memory_engine, memory_id) == _A_REF
+
+    @pytest.mark.parametrize("actor", ["coord_service", "operator"])
+    def test_admitted_supersede_into_agent_with_no_ref_is_a_422(
+        self, mc: MemoryClient, memory_engine: AsyncEngine, actor: str
+    ) -> None:
+        """The resolved pair: a tenant predecessor's NULL ref is inherited."""
+        corpus = _Corpus(mc)
+        resp = _as_admitted(mc, actor).client.post(
+            f"/api/v1/memory/records/{corpus.tenant}/supersede",
+            json={"title": "moved", "content": "moved into nobody", "scope": "agent"},
+        )
+        assert resp.status_code == 422, resp.text
+        assert _successor_of(memory_engine, corpus.tenant) is None
+        named = mc.client.post(
+            f"/api/v1/memory/records/{corpus.tenant}/supersede",
+            json={
+                "title": "moved",
+                "content": "moved into device B",
+                "scope": "agent",
+                "scope_ref": _B_REF,
+            },
+        )
+        assert named.status_code == 200, named.text
+
+    def test_the_refusal_is_typed(self) -> None:
+        with pytest.raises(RefusalHTTPException) as caught:
+            _require_agent_scope_ref("agent", None)
+        exc = caught.value
+        assert exc.status_code == 422
+        assert exc.refusal.code is RefusalCode.invalid_request
+        assert exc.refusal.discriminator == "memory_agent_scope_ref_required"
+        _require_agent_scope_ref("tenant", None)
+        _require_agent_scope_ref("agent", _A_REF)
 
 
 class TestPrincipalWithNoDevice:
@@ -770,8 +879,8 @@ class TestLifecycleSelectors:
         for scope, ref in (
             ("tenant", None),
             ("tenant", None),
-            ("agent", _A_REF),
-            ("agent", _A_REF.upper()),
+            ("agent", _C_REF),
+            ("agent", _C_REF.upper()),
             ("agent", _B_REF),
             ("agent", None),
         ):
@@ -800,5 +909,5 @@ class TestLifecycleSelectors:
         assert sorted(targeted) == sorted(partition_of)
         for job in jobs:
             assert len({partition_of[UUID(str(t))] for t in job}) == 1, job
-        # Device A's two rows (one upper-cased) share one job.
+        # Device C's two rows (one upper-cased) share one job.
         assert len(jobs) == 4

@@ -902,6 +902,37 @@ def _resolve_agent_scope_ref(
     )
 
 
+_AGENT_SCOPE_REF_REQUIRED_REFUSAL = (
+    "scope 'agent' requires a non-empty scope_ref: agent-scoped records are "
+    "retrievable only by an exact scope_ref match, so one written without a "
+    "ref could never be read back, and no device could claim its jobs. Pass "
+    "the owning device id as scope_ref, or use scope 'tenant'."
+)
+
+
+def _require_agent_scope_ref(scope: str | None, scope_ref: str | None) -> None:
+    """422 when a WRITE lands in ``agent`` with no (or a blank) ``scope_ref``.
+
+    For EVERY principal, on the resolved pair: a device's omitted ref was
+    already resolved to its own by :func:`_resolve_agent_scope_ref`, so this
+    bites only an admitted principal (coord service, operator) that omits
+    it — mirroring coord's ``(None, None)`` refusal in
+    ``clamp_private_scope_ref``. A NULL-ref agent row is invisible to every
+    clamped principal, and its reindex job (partition ``agent:``) would be
+    claimable by none of them, so it is refused rather than stored.
+    """
+    if scope != store.AGENT_SCOPE:
+        return
+    if scope_ref is None or not scope_ref.strip():
+        raise refusal_error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            RefusalCode.invalid_request,
+            NextActionKind.fix_request,
+            _AGENT_SCOPE_REF_REQUIRED_REFUSAL,
+            discriminator="memory_agent_scope_ref_required",
+        )
+
+
 # The not-found answer of every by-id route that HIDES a withheld row: the
 # by-id read, the graph root, supersede's predecessor, the two hold verbs and
 # delete. A withheld row and an unknown id get this same detail, so none of
@@ -1061,6 +1092,7 @@ async def write_records(
         resolved_ref = _resolve_agent_scope_ref(
             principal, visibility, rec.scope, rec.scope_ref
         )
+        _require_agent_scope_ref(rec.scope, resolved_ref)
         resolved_records.append(
             rec
             if resolved_ref == rec.scope_ref
@@ -1989,6 +2021,7 @@ async def supersede_record(
         successor_scope,
         payload.scope_ref if payload.scope_ref is not None else old["scope_ref"],
     )
+    _require_agent_scope_ref(successor_scope, successor_scope_ref)
 
     rt = redact_text(payload.title)
     rc = redact_text(payload.content)
