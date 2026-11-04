@@ -30,6 +30,7 @@ import {
   ROUTE_DISABLED_TEXT,
 } from "./coordPollError";
 import type {
+  DangerBar,
   DeviceStatus,
   DeviceVolumes,
   MachineVolumes,
@@ -85,13 +86,64 @@ export function toVolumeReading(raw: unknown): VolumeReading | null {
   const total = raw.total_bytes;
   const free = raw.free_bytes;
   const observed = raw.observed_at;
-  return {
+  const reading: VolumeReading = {
     volume,
     total_bytes: typeof total === "number" ? total : Number.NaN,
     free_bytes: typeof free === "number" ? free : Number.NaN,
     observed_at: typeof observed === "string" ? observed : null,
   };
+  // The grading fields are carried only when coord sent them, so an older
+  // coord's reading is exactly what it was before they existed.
+  if ("read_only" in raw) {
+    reading.read_only =
+      typeof raw.read_only === "boolean" ? raw.read_only : null;
+  }
+  if (typeof raw.danger_bar === "string" && DANGER_BARS.has(raw.danger_bar)) {
+    reading.danger_bar = raw.danger_bar as DangerBar;
+  }
+  if ("danger_bar_bytes" in raw) {
+    reading.danger_bar_bytes =
+      typeof raw.danger_bar_bytes === "number" ? raw.danger_bar_bytes : null;
+  }
+  return reading;
 }
+
+const DANGER_BARS = new Set<string>([
+  "reserve",
+  "scaled_floor",
+  "read_only",
+  "read_only_unknown",
+]);
+
+/** A `danger_bar` that means "not graded against the disk reserve". */
+export type UngradedReason = Exclude<DangerBar, "reserve">;
+
+/**
+ * Why a volume is NOT graded against the disk reserve, or `null` when it is
+ * (including a coord that sends no `danger_bar`, which behaves as before).
+ */
+export function volumeUngradedReason(v: VolumeReading): UngradedReason | null {
+  const bar = v.danger_bar;
+  return bar === undefined || bar === "reserve" ? null : bar;
+}
+
+/** Narrow a wire reason token (e.g. from `ungraded_volumes`) to a known one. */
+export function isUngradedReason(token: string): token is UngradedReason {
+  return token !== "reserve" && DANGER_BARS.has(token);
+}
+
+/**
+ * The words for each ungraded reason. Shared by the per-volume rows and the
+ * admission tooltip so the two surfaces cannot describe one volume two ways.
+ */
+export const UNGRADED_REASON_TEXT: Record<UngradedReason, string> = {
+  scaled_floor:
+    "no larger than the disk floor (e.g. an EFI partition), so coord grades it against a floor scaled to its own size, not the disk reserve",
+  read_only:
+    "mounted read-only, so its free space is not graded -- capacity is not the question",
+  read_only_unknown:
+    "small and full, and its runner did not say whether it is read-only, so coord cannot grade it -- UNKNOWN, not healthy",
+};
 
 /**
  * What {@link groupFlatRows} made of a flat row list.
@@ -494,6 +546,11 @@ export function resolveMachineVolumes(
  * predicts the next "0 bytes free" incident. `null` when the read did not
  * answer or no device has reported, which the caller renders as `unknown`
  * (never `0 B`, never green).
+ *
+ * A volume coord says it does NOT grade against the reserve (`danger_bar`
+ * present and not `reserve`: a read-only ISO, an EFI partition) is skipped —
+ * its raw bytes against the page's client threshold would paint a healthy
+ * machine red. A coord that sends no `danger_bar` behaves as before.
  */
 export function tightestVolume(fetched: VolumesFetch): VolumeReading | null {
   if (fetched.state !== "ok") return null;
@@ -501,10 +558,25 @@ export function tightestVolume(fetched: VolumesFetch): VolumeReading | null {
   for (const entry of fetched.byDevice.values()) {
     for (const v of entry.volumes) {
       if (!Number.isFinite(v.free_bytes)) continue;
+      if (volumeUngradedReason(v) !== null) continue;
       if (worst === null || v.free_bytes < worst.free_bytes) worst = v;
     }
   }
   return worst;
+}
+
+/**
+ * Whether ANY readable volume row arrived. Lets the "Tightest volume" tile
+ * say "none graded" rather than "none reported" when every row was skipped by
+ * {@link tightestVolume} because coord does not grade it — a fleet whose only
+ * volumes are read-only has reported, and saying otherwise is a false claim.
+ */
+export function anyVolumeReported(fetched: VolumesFetch): boolean {
+  if (fetched.state !== "ok") return false;
+  for (const entry of fetched.byDevice.values()) {
+    if (entry.volumes.length > 0) return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------

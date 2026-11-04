@@ -471,6 +471,44 @@ export interface ResourceSampleRow {
    * `saturation` — see the module header.
    */
   headroom?: Headroom | null;
+  /**
+   * Volumes coord did NOT grade against the disk floor while computing
+   * `headroom`, each with the reason (plan
+   * `2026-11-03-devops-headroom-grades-read-only-and-esp-volumes-against-the-disk-floor`
+   * D8): `scaled_floor` (graded against a floor scaled to the volume's own
+   * size), `read_only`, or `read_only_unknown` (the arm that makes `headroom`
+   * read `unknown`). Absent = a coord that predates the field. Read through
+   * {@link ungradedVolumes}, never directly.
+   */
+  ungraded_volumes?: unknown;
+}
+
+/** One entry of {@link ResourceSampleRow.ungraded_volumes}, validated. */
+export interface UngradedVolume {
+  volume: string;
+  /** A known reason token, or the raw word from a coord newer than this build. */
+  reason: string;
+}
+
+/**
+ * The row's `ungraded_volumes`, keeping only well-formed entries. An absent or
+ * malformed field yields `[]`: the tooltip then says nothing about ungraded
+ * volumes, which is what a coord predating the field also says.
+ */
+export function ungradedVolumes(
+  row: Pick<ResourceSampleRow, "ungraded_volumes"> | null | undefined
+): UngradedVolume[] {
+  const raw = row?.ungraded_volumes;
+  if (!Array.isArray(raw)) return [];
+  const out: UngradedVolume[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const { volume, reason } = item as Record<string, unknown>;
+    if (typeof volume !== "string" || volume.length === 0) continue;
+    if (typeof reason !== "string" || reason.length === 0) continue;
+    out.push({ volume, reason });
+  }
+  return out;
 }
 
 export interface HistoryPoint {

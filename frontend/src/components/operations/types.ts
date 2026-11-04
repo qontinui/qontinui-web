@@ -594,7 +594,39 @@ export interface VolumeReading {
   free_bytes: number;
   /** RFC 3339, or `null` when coord served no timestamp. */
   observed_at: string | null;
+  /**
+   * Whether the publisher saw this volume mounted read-only. `null` = the
+   * runner did not say (every build predating the field): UNKNOWN, never
+   * `false`. Absent = a coord that predates the field.
+   */
+  read_only?: boolean | null;
+  /**
+   * WHICH bar coord grades this volume's free space against (plan
+   * `2026-11-03-devops-headroom-grades-read-only-and-esp-volumes-against-the-disk-floor`
+   * D7). Absent = a coord that predates the field, or a token this build does
+   * not recognize: the volume is treated as graded against the reserve, as
+   * before — the conservative reading, which can only over-warn.
+   */
+  danger_bar?: DangerBar;
+  /** The bar's size in bytes; `null` when coord grades against none. */
+  danger_bar_bytes?: number | null;
 }
+
+/**
+ * coord's per-volume grading basis.
+ *
+ * - `reserve` — the full disk reserve / floor; the ordinary case.
+ * - `scaled_floor` — a volume no larger than the floor (an EFI system
+ *   partition), graded against a floor scaled to its own size.
+ * - `read_only` — mounted read-only; capacity is not graded at all.
+ * - `read_only_unknown` — small, full, and its runner did not say whether it
+ *   is read-only, so coord cannot grade it: UNKNOWN, not healthy.
+ */
+export type DangerBar =
+  | "reserve"
+  | "scaled_floor"
+  | "read_only"
+  | "read_only_unknown";
 
 /** One device's entry in the fleet volumes payload. */
 export interface DeviceVolumes {

@@ -129,7 +129,9 @@ import {
   saturationSourceLabel,
   STALE_AFTER_SECS,
   threadHeadroom,
+  ungradedVolumes,
 } from "./fleetResources";
+import { isUngradedReason, UNGRADED_REASON_TEXT } from "./fleetVolumes";
 import type {
   FleetDeviceRef,
   FloorDetail,
@@ -753,9 +755,14 @@ function RejectClause({ detail }: { detail: FloorDetail }) {
  * of signal is not health.
  */
 function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
+  const { presenting } = usePresentationMode();
   const headroom: Headroom =
     row.freshness === "fresh" ? rowHeadroom(row.sample) : "unknown";
   const report = headroomReport(row.sample);
+  // Withheld with the sample on a dead row, like the floors below: a list of
+  // ungraded volumes is only as current as the sample it came with.
+  const ungraded =
+    row.freshness === "unknown" ? [] : ungradedVolumes(row.sample);
 
   const pressureFloor = row.sample?.pressure_floor;
   // §C1 suppresses the SWAP figure on a lane that derives swap from the commit
@@ -818,6 +825,25 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
                   : report === "unrecognized"
                     ? "coord reported an admission state this build does not recognize — a coord newer than this page. Unrecognized is NOT healthy."
                     : "coord did not report an admission state for this lane — an older coord, or a lane it does not admit on. Unknown is NOT healthy."}
+            </div>
+          )}
+          {ungraded.length > 0 && (
+            <div data-testid="fleet-resource-admission-ungraded">
+              <div>Volumes not graded against the disk floor:</div>
+              <ul className="list-disc pl-4 text-muted-foreground">
+                {ungraded.map((u, i) => (
+                  <li key={`${i}-${u.volume}`} data-ungraded-reason={u.reason}>
+                    {/* A mount names a path someone chose (D3.3). */}
+                    <span className="font-mono">
+                      {presenting ? `Volume ${i + 1}` : u.volume}
+                    </span>
+                    {" — "}
+                    {isUngradedReason(u.reason)
+                      ? UNGRADED_REASON_TEXT[u.reason]
+                      : `coord gave reason "${u.reason}", which this build does not recognize`}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </TooltipContent>
@@ -1104,8 +1130,8 @@ function FloorsLegend({
         data-testid="fleet-resource-floors-missing"
       >
         {missingFloors} lane{missingFloors === 1 ? " has" : "s have"} a limit
-        that was not reported, so room for more work there reads unknown —
-        which is not healthy.
+        that was not reported, so room for more work there reads unknown — which
+        is not healthy.
       </p>
     ) : null;
   }
@@ -1184,9 +1210,9 @@ function FloorsLegend({
         and a recoverable delay never becomes a failed build. Both are shown;
         neither is inferred. The row&apos;s colour is coord&apos;s{" "}
         <em>admission verdict</em> against these floors — not a band over the
-        pressure ratio. This page keeps no threshold of its own: a red row
-        means a guard on that lane is refusing work. Memory and disk are kept
-        apart because memory frees on its own and disk does not.
+        pressure ratio. This page keeps no threshold of its own: a red row means
+        a guard on that lane is refusing work. Memory and disk are kept apart
+        because memory frees on its own and disk does not.
       </p>
       {missingFloors > 0 && (
         <p

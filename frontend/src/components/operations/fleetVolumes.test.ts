@@ -8,6 +8,9 @@ import {
   resolveDeviceVolumes,
   resolveMachineVolumes,
   tightestVolume,
+  anyVolumeReported,
+  isUngradedReason,
+  volumeUngradedReason,
   toVolumeReading,
   volumesReliabilityWarning,
   VOLUMES_NOT_YET_READ,
@@ -551,6 +554,163 @@ describe("tightestVolume", () => {
 
   it("returns null (→ unknown) when the read did not answer", () => {
     expect(tightestVolume(VOLUMES_NOT_YET_READ)).toBeNull();
+  });
+});
+
+// Plan 2026-11-03-devops-headroom-grades-read-only-and-esp-volumes-against-the-disk-floor
+// Phase 2: the tile must not take a volume coord does not grade against the
+// reserve, and must behave exactly as before against an older coord.
+describe("danger_bar: volumes coord does not grade against the reserve", () => {
+  const NAWA = "44444444-4444-4444-4444-444444444444";
+
+  it("carries danger_bar, danger_bar_bytes and read_only off the wire", () => {
+    expect(
+      toVolumeReading({
+        volume: "/mnt/winiso",
+        total_bytes: 8_150_000_000,
+        free_bytes: 0,
+        observed_at: null,
+        danger_bar: "read_only",
+        danger_bar_bytes: null,
+        read_only: true,
+      })
+    ).toEqual({
+      volume: "/mnt/winiso",
+      total_bytes: 8_150_000_000,
+      free_bytes: 0,
+      observed_at: null,
+      danger_bar: "read_only",
+      danger_bar_bytes: null,
+      read_only: true,
+    });
+  });
+
+  it("keeps read_only: null as UNKNOWN, never false", () => {
+    const r = toVolumeReading({ volume: "/", read_only: null });
+    expect(r?.read_only).toBeNull();
+    expect(r?.read_only).not.toBe(false);
+  });
+
+  it("an older coord's row gains no grading keys at all", () => {
+    expect(
+      toVolumeReading({
+        volume: "D:",
+        total_bytes: 1,
+        free_bytes: 1,
+        observed_at: null,
+      })
+    ).toEqual({
+      volume: "D:",
+      total_bytes: 1,
+      free_bytes: 1,
+      observed_at: null,
+    });
+  });
+
+  it("drops an unrecognized danger_bar token (treated as graded, as before)", () => {
+    const r = toVolumeReading({ volume: "D:", danger_bar: "lunar_floor" });
+    expect(r).not.toBeNull();
+    expect(r!.danger_bar).toBeUndefined();
+    expect(volumeUngradedReason(r!)).toBeNull();
+  });
+
+  it("names only the non-reserve bars as ungraded", () => {
+    const base = {
+      volume: "v",
+      total_bytes: 1,
+      free_bytes: 1,
+      observed_at: null,
+    };
+    expect(volumeUngradedReason(base)).toBeNull();
+    expect(volumeUngradedReason({ ...base, danger_bar: "reserve" })).toBeNull();
+    for (const bar of [
+      "scaled_floor",
+      "read_only",
+      "read_only_unknown",
+    ] as const) {
+      expect(volumeUngradedReason({ ...base, danger_bar: bar })).toBe(bar);
+      expect(isUngradedReason(bar)).toBe(true);
+    }
+    expect(isUngradedReason("reserve")).toBe(false);
+    expect(isUngradedReason("lunar_floor")).toBe(false);
+  });
+
+  it("tightestVolume skips read-only, unknown and scaled-floor volumes", () => {
+    const fetched = indexDeviceVolumes([
+      {
+        device_id: NAWA,
+        volumes: [
+          {
+            volume: "/",
+            total_bytes: 1_000_000_000_000,
+            free_bytes: 454_556_381_184,
+            observed_at: null,
+            danger_bar: "reserve",
+          },
+          {
+            volume: "/mnt/winiso",
+            total_bytes: 8_150_000_000,
+            free_bytes: 0,
+            observed_at: null,
+            danger_bar: "read_only_unknown",
+          },
+          {
+            volume: "/boot/efi",
+            total_bytes: 1_020_000_000,
+            free_bytes: 1_011_924_992,
+            observed_at: null,
+            danger_bar: "scaled_floor",
+          },
+          {
+            volume: "/media/iso",
+            total_bytes: 4_000_000_000,
+            free_bytes: 0,
+            observed_at: null,
+            danger_bar: "read_only",
+          },
+        ],
+      },
+    ]);
+    expect(tightestVolume(fetched)?.volume).toBe("/");
+  });
+
+  it("an older coord (no danger_bar) still takes the full ISO, as today", () => {
+    const fetched = indexDeviceVolumes([
+      {
+        device_id: NAWA,
+        volumes: [
+          { volume: "/", total_bytes: 100, free_bytes: 50, observed_at: null },
+          {
+            volume: "/mnt/winiso",
+            total_bytes: 8,
+            free_bytes: 0,
+            observed_at: null,
+          },
+        ],
+      },
+    ]);
+    expect(tightestVolume(fetched)?.volume).toBe("/mnt/winiso");
+  });
+
+  it("all volumes ungraded: no tightest, but the fleet DID report", () => {
+    const fetched = indexDeviceVolumes([
+      {
+        device_id: NAWA,
+        volumes: [
+          {
+            volume: "/mnt/winiso",
+            total_bytes: 8,
+            free_bytes: 0,
+            observed_at: null,
+            danger_bar: "read_only",
+          },
+        ],
+      },
+    ]);
+    expect(tightestVolume(fetched)).toBeNull();
+    expect(anyVolumeReported(fetched)).toBe(true);
+    expect(anyVolumeReported(indexDeviceVolumes([]))).toBe(false);
+    expect(anyVolumeReported(VOLUMES_NOT_YET_READ)).toBe(false);
   });
 });
 

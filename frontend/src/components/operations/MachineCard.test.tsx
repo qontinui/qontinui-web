@@ -306,6 +306,112 @@ describe("MachineCard — free disk space", () => {
   });
 });
 
+describe("MachineCard — volumes coord does not grade against the reserve", () => {
+  // Plan 2026-11-03-devops-headroom-grades-read-only-and-esp-volumes-against-the-disk-floor
+  // Phase 2: nawa's read-only ISO (0 B free) and EFI partition (~1 GB free)
+  // painted a healthy machine red from raw bytes against the client floor.
+  const now = new Date().toISOString();
+  const DEVICE = "00000000-0000-0000-0000-000000000001";
+
+  function renderVolumes(
+    volumes: import("./types").VolumeReading[]
+  ): HTMLElement {
+    return renderCard(
+      baseGroup({
+        volumes: { state: "reported", deviceId: DEVICE, volumes },
+      })
+    ).container;
+  }
+
+  it.each([
+    ["read_only", "/mnt/winiso", 0, /mounted read-only/],
+    [
+      "read_only_unknown",
+      "/mnt/winiso",
+      0,
+      /did not say whether it is read-only/,
+    ],
+    ["scaled_floor", "/boot/efi", 0, /floor scaled to its own size/],
+  ] as const)(
+    "renders a %s volume muted with its reason, never in red",
+    (bar, volume, free, reason) => {
+      const container = renderVolumes([
+        {
+          volume,
+          total_bytes: 8 * 1024 ** 3,
+          free_bytes: free,
+          observed_at: now,
+          danger_bar: bar,
+          danger_bar_bytes: bar === "scaled_floor" ? 102_000_000 : null,
+          read_only: bar === "read_only" ? true : null,
+        },
+      ]);
+      const row = container.querySelector(
+        `[data-operations-volume="${volume}"]`
+      );
+      expect(row?.getAttribute("data-operations-volume-ungraded")).toBe(bar);
+      expect(row?.innerHTML ?? "").not.toMatch(/bg-red-500|text-red-500/);
+      expect(row?.innerHTML ?? "").not.toMatch(/bg-amber-500|bg-green-500/);
+      const reasonEl = row?.querySelector(
+        "[data-operations-volume-ungraded-reason]"
+      );
+      expect(reasonEl?.textContent ?? "").toMatch(
+        /Not graded against the disk reserve/
+      );
+      expect(reasonEl?.textContent ?? "").toMatch(reason);
+    }
+  );
+
+  it("names the scaled floor when coord serves its size", () => {
+    const container = renderVolumes([
+      {
+        volume: "/boot/efi",
+        total_bytes: 1_020_000_000,
+        free_bytes: 1_010_000_000,
+        observed_at: now,
+        danger_bar: "scaled_floor",
+        danger_bar_bytes: 102_000_000,
+      },
+    ]);
+    expect(
+      container.querySelector("[data-operations-volume-ungraded-reason]")
+        ?.textContent ?? ""
+    ).toMatch(/scaled floor/);
+  });
+
+  it("still paints a full volume graded against the reserve red", () => {
+    const container = renderVolumes([
+      {
+        volume: "C:",
+        total_bytes: 1_900_000_000_000,
+        free_bytes: 0,
+        observed_at: now,
+        danger_bar: "reserve",
+        danger_bar_bytes: 32_000_000_000,
+      },
+    ]);
+    const row = container.querySelector('[data-operations-volume="C:"]');
+    expect(row?.hasAttribute("data-operations-volume-ungraded")).toBe(false);
+    expect(row?.querySelector(".bg-red-500")).not.toBeNull();
+  });
+
+  it("an older coord that sends no danger_bar renders as before (red)", () => {
+    const container = renderVolumes([
+      {
+        volume: "/mnt/winiso",
+        total_bytes: 8_150_000_000,
+        free_bytes: 0,
+        observed_at: now,
+      },
+    ]);
+    const row = container.querySelector(
+      '[data-operations-volume="/mnt/winiso"]'
+    );
+    expect(row?.hasAttribute("data-operations-volume-ungraded")).toBe(false);
+    expect(row?.querySelector(".bg-red-500")).not.toBeNull();
+  });
+});
+
 describe("MachineCard — HealthDot third state", () => {
   it("renders healthy and unhealthy runners as distinct filled dots", () => {
     const { container } = renderCard(

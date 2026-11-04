@@ -33,6 +33,7 @@ import { SectionCaption, usePresentationMode } from "@/components/presentation";
 import { DEVOPS_SOURCES, latestInstant } from "./devOpsHeadline";
 import { FAILURE_SENTENCE_WITHHELD } from "./presentedFailure";
 import {
+  anyVolumeReported,
   resolveMachineVolumes,
   tightestVolume,
   volumesReliabilityWarning,
@@ -993,7 +994,11 @@ export function FleetOverview({
                     ? "not read"
                     : volumesWarning
                       ? "partial read"
-                      : "none reported"
+                      : anyVolumeReported(volumes)
+                        ? // Every reported volume is one coord does not
+                          // grade against the reserve (read-only, EFI).
+                          "none graded"
+                        : "none reported"
               }
               variant={
                 worstSeverity === "critical"

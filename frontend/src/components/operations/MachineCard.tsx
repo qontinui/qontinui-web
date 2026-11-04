@@ -57,6 +57,7 @@ import { DeviceDrainControl } from "./DeviceDrainControl";
 import type { CiCapacityJoin } from "./ciCapacity";
 import type { DeviceDrainState, DrainTarget } from "./fleetDrain";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
+import { UNGRADED_REASON_TEXT, volumeUngradedReason } from "./fleetVolumes";
 
 /**
  * What draining a GitHub Actions runner registration does and does not do.
@@ -250,7 +251,13 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
         // severity — `volumeSeverity` returns `null` for it rather than
         // banding it green, which is precisely the fabricated-healthy render
         // this feature exists to remove. It renders muted instead.
-        const severity = volumeSeverity(v.free_bytes);
+        //
+        // A volume coord does not grade against the reserve (read-only ISO,
+        // EFI partition) has no severity on THIS page's threshold either:
+        // its raw bytes against the client floor would paint a healthy
+        // machine red. It renders muted, with the reason in words.
+        const ungraded = volumeUngradedReason(v);
+        const severity = ungraded ? null : volumeSeverity(v.free_bytes);
 
         const barColor =
           severity === "critical"
@@ -277,6 +284,7 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
           <div
             key={`${i}-${v.volume}`}
             data-operations-volume={presenting ? undefined : v.volume}
+            data-operations-volume-ungraded={ungraded ?? undefined}
           >
             <div className="flex items-baseline justify-between gap-2">
               <span className="font-mono text-sm font-medium">{name}</span>
@@ -306,6 +314,21 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
               <p className="mt-1 text-xs text-muted-foreground italic">
                 Capacity unknown -- coord reported no usable total for this
                 volume, so the percentage cannot be computed.
+              </p>
+            )}
+
+            {ungraded && (
+              <p
+                className="mt-1 text-xs text-muted-foreground"
+                data-operations-volume-ungraded-reason={ungraded}
+              >
+                Not graded against the disk reserve:{" "}
+                {UNGRADED_REASON_TEXT[ungraded]}
+                {ungraded === "scaled_floor" &&
+                  typeof v.danger_bar_bytes === "number" &&
+                  Number.isFinite(v.danger_bar_bytes) &&
+                  ` (scaled floor ${formatBytes(v.danger_bar_bytes)})`}
+                .
               </p>
             )}
 
