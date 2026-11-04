@@ -943,6 +943,25 @@ export interface Clause {
   links: string[];
   position: number;
   source: Record<string, unknown> | null;
+  /**
+   * The whole `## clause:` block, verbatim, for a clause the labelled model
+   * cannot carry without loss (prose, or labelled lines mixed with prose).
+   * Non-null ⇒ every labelled field above is at its default and coord compiles
+   * `body` unchanged into the served document. Optional because a coord that
+   * predates `coord.policy_clauses.body` (qontinui-web#1537,
+   * qontinui-coord#2551) does not send it.
+   */
+  body?: string | null;
+}
+
+/**
+ * True when `clause` is a RAW (verbatim-`body`) clause. Its labelled fields
+ * are empty and coord's clause `PATCH` writes only those fields, which the
+ * compiler ignores while `body` is set — so a raw clause must not be edited
+ * through the labelled editor.
+ */
+export function isRawClause(clause: { body?: string | null }): boolean {
+  return clause.body != null;
 }
 
 /** `POST …/clauses` body — the full clause shape sans server-managed fields. */
@@ -1331,6 +1350,8 @@ export interface MergeClauseSide {
   anti_triggers: string[];
   depends_on: string[];
   links: string[];
+  /** Verbatim block for a raw clause — see {@link Clause.body}. */
+  body?: string | null;
 }
 
 /** One clause name's row in the merge view. Absent side = absent on that side. */
