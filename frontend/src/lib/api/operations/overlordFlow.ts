@@ -48,6 +48,7 @@ export interface FlowNudge {
   finished: number;
   /** `null` when `nudged == 0`. */
   progress_rate: number | null;
+  /** `finished / (nudged - finish_unproven)`; `null` when that is `0 / 0`. */
   finish_rate: number | null;
   /** Went missing across a runner build change: not in `finish_rate`. */
   finish_unproven: number;
