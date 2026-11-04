@@ -41,7 +41,9 @@ import {
   BEHIND_FRESHEN_AUTHOR_GLYPH_KINDS,
   BEHIND_FRESHEN_CLASS,
   derivePrStatus,
+  derivePrsHealthCounts,
   mergeStatusLabel,
+  prsHealthHeadline,
   PR_AUTHOR_GLYPH_STATUSES,
   PR_MERGE_STATUS_CLASS,
   PR_STATUS_PALETTE,
@@ -499,3 +501,56 @@ describe("the freshen reading on the two promise tokens", () => {
     expect(status.reason).toBe("needs a review");
   });
 });
+
+describe("the /admin/coord/prs health headline", () => {
+  const unknownRow = { merge_status: "behind-base", base_branch: "main" };
+  const waitingRow = { merge_status: "awaiting-specialist-review" };
+  const updatingRow = {
+    merge_status: "ci-failed-stale-base",
+    base_branch: "main",
+    freshen: {
+      state: "in_progress" as const,
+      attempts: 1,
+      max_attempts: 6,
+      last_attempt_at: null,
+      skip: null,
+      reason: "x",
+    },
+  };
+
+  it("counts an UNKNOWN freshen reading on its own, not as waiting", () => {
+    const counts = derivePrsHealthCounts([
+      unknownRow,
+      { ...unknownRow, freshen: { ...updatingRow.freshen, state: "unknown" } },
+      waitingRow,
+      updatingRow,
+    ]);
+    expect(counts).toEqual({ author: 0, waiting: 2, freshenUnknown: 2 });
+  });
+
+  it("never says 'Nothing needs you' while any coord update is UNKNOWN", () => {
+    const counts = derivePrsHealthCounts([unknownRow, waitingRow]);
+    const headline = prsHealthHeadline(counts, 2, "open");
+    expect(headline).toBe(
+      "1 PR whose coord update is UNKNOWN · 1 waiting on the train"
+    );
+    expect(headline).not.toMatch(/Nothing needs you/);
+  });
+
+  it("still says it when every wait is observed", () => {
+    expect(
+      prsHealthHeadline(
+        derivePrsHealthCounts([waitingRow, updatingRow]),
+        2,
+        "open"
+      )
+    ).toBe("Nothing needs you — 2 waiting on the train");
+  });
+
+  it("an author row still leads", () => {
+    expect(
+      prsHealthHeadline({ author: 1, waiting: 0, freshenUnknown: 3 }, 4, "open")
+    ).toBe("1 PR needs a human now");
+  });
+});
+

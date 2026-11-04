@@ -54,7 +54,7 @@ import {
   type HealthBadge,
   type HealthStripLevel,
 } from "@/components/console";
-import { derivePrStatus } from "./prStatus";
+import { derivePrsHealthCounts, prsHealthHeadline } from "./prStatus";
 
 // Auto-refresh cadence — matches the gates dashboard.
 const AUTO_REFRESH_MS = 45_000;
@@ -221,26 +221,12 @@ export default function CoordPrsPage() {
     badges: HealthBadge[];
   } | null => {
     if (!data) return null;
-    let author = 0;
-    let waiting = 0;
-    for (const p of data.prs) {
-      const a = derivePrStatus(p).attention;
-      if (a === "author") author += 1;
-      else if (a === "waiting") waiting += 1;
-    }
+    const counts = derivePrsHealthCounts(data.prs);
+    const { author, waiting, freshenUnknown } = counts;
     const total = data.prs.length;
     const level: HealthStripLevel =
-      author > 0 ? "red" : waiting > 0 ? "amber" : "green";
-    const headline =
-      author > 0
-        ? `${author} PR${author === 1 ? "" : "s"} need${author === 1 ? "s" : ""} a human now`
-        : waiting > 0
-          ? `Nothing needs you — ${waiting} waiting on the train`
-          : total > 0
-            ? "Every open PR is moving on its own"
-            : tab === "merged"
-              ? "No PRs merged in the last 24h"
-              : "No open PRs";
+      author > 0 ? "red" : waiting + freshenUnknown > 0 ? "amber" : "green";
+    const headline = prsHealthHeadline(counts, total, tab);
     return {
       level,
       headline,
@@ -252,6 +238,13 @@ export default function CoordPrsPage() {
           tone: author > 0 ? "attention" : "muted",
           title:
             "PRs whose blocking reason nothing else will clear — see prStatus.ts for the audit.",
+        },
+        {
+          key: "freshen-unknown",
+          label: `update UNKNOWN ${freshenUnknown}`,
+          tone: freshenUnknown > 0 ? "waiting" : "muted",
+          title:
+            "Behind base (or red on a stale base) and coord served no reading of whether it will update the branch.",
         },
         {
           key: "waiting",

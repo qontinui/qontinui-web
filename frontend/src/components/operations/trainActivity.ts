@@ -46,7 +46,7 @@ import type {
   TrainHealth,
 } from "./mergeTypes";
 import { redactSecrets } from "./mergeTypes";
-import { freshenGroupClause } from "./prMergeStatus";
+import { freshenGroupClause, readBehindFreshen } from "./prMergeStatus";
 import {
   deriveCandidateChurn,
   economicsFor,
@@ -1912,9 +1912,16 @@ function deriveReasons(args: {
             .filter((a): a is number => a != null)
         : [];
 
+    // A freshen token coord SERVED a refusal for is graded as the PR pages
+    // grade it (`behind-freshen-refused`, author red): nobody else is coming,
+    // so it is a block on this axis, not a wait.
+    const freshenRefused =
+      (code === "behind-base" || code === "ci-failed-stale-base") &&
+      prsIn.some((p) => readBehindFreshen(p).kind === "behind-freshen-refused");
+
     reasons.push({
       code,
-      severity: meta.severity,
+      severity: freshenRefused ? "blocking" : meta.severity,
       label: meta.label,
       detail: detailFor(code, prsIn),
       prCount: prsIn.length,

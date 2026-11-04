@@ -189,6 +189,12 @@ function attemptClause(freshen: PrFreshen | null | undefined): string {
   return last ? `${count}, last ${last}` : count;
 }
 
+/** `6 tries`, or the ceiling unnamed when coord served no number for it. */
+function ceilingClause(freshen: PrFreshen | null | undefined): string {
+  const max = freshen?.max_attempts;
+  return max == null ? "its attempt ceiling" : `${max} tries`;
+}
+
 /** Coord's own clause, for the two rows whose table text cannot say why. */
 function coordClause(freshen: PrFreshen | null | undefined): string {
   const clause = redactSecrets(freshen?.reason?.trim() ?? "");
@@ -233,8 +239,8 @@ export function readBehindFreshen(pr: {
     case "exhausted":
       return reading(
         `${shortLead} — coord gave up`,
-        `${lead} — coord stopped updating it after ${freshen?.max_attempts} ` +
-          `tries and handed it to its unlandable shepherd; it needs a rebase ` +
+        `${lead} — coord stopped updating it after ${ceilingClause(freshen)} ` +
+          `and handed it to its unlandable shepherd; it needs a rebase ` +
           `by an author or agent`
       );
     case "ineligible": {
