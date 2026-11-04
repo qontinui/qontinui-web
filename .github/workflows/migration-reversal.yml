@@ -187,11 +187,20 @@ jobs:
           POSTGRES_USER: qontinui_user
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: qontinui_test
+        # PGDATA on a tmpfs: the database is throwaway, so a commit never waits on
+        # a WAL fsync to the runner's disk. Measured on the webdb self-hosted pool
+        # (1500 autocommit statements in the container): 1.9 s on disk, 0.7 s on
+        # tmpfs, and the on-disk figure degrades with whatever else shares that
+        # host's disk. Expected to be no slower on hosted. The tmpfs is RAM charged
+        # to the job (on the pool, to the slot's MemoryMax). Plan
+        # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool,
+        # Phase 2b.
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --tmpfs /var/lib/postgresql/data
         ports:
           - 5432:5432
 
@@ -974,11 +983,20 @@ jobs:
           POSTGRES_USER: qontinui_user
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: qontinui_test
+        # PGDATA on a tmpfs: the database is throwaway, so a commit never waits on
+        # a WAL fsync to the runner's disk. Measured on the webdb self-hosted pool
+        # (1500 autocommit statements in the container): 1.9 s on disk, 0.7 s on
+        # tmpfs, and the on-disk figure degrades with whatever else shares that
+        # host's disk. Expected to be no slower on hosted. The tmpfs is RAM charged
+        # to the job (on the pool, to the slot's MemoryMax). Plan
+        # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool,
+        # Phase 2b.
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --tmpfs /var/lib/postgresql/data
         ports:
           - 5432:5432
 
