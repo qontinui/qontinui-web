@@ -59,9 +59,9 @@ export const FULL_FLOW = {
     nudged: 10,
     progressed: 4,
     finished: 2,
-    finish_unproven: 1,
+    finish_unproven: 2,
     progress_rate: 0.4,
-    finish_rate: 0.2,
+    finish_rate: 0.25,
     unmeasured_progress: 3,
   },
   unchanged: [
@@ -152,6 +152,7 @@ export const NULL_FLOW = {
     median_secs: null,
     p90_secs: null,
     closed_by: {},
+    absent_unproven: 0,
     sessions: [],
   },
   nudge: {
@@ -160,6 +161,7 @@ export const NULL_FLOW = {
     finished: 0,
     progress_rate: null,
     finish_rate: null,
+    finish_unproven: 0,
     unmeasured_progress: 0,
   },
   unchanged: [],
