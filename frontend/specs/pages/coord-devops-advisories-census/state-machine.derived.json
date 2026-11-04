@@ -1,0 +1,180 @@
+{
+  "version": "1.0",
+  "id": "coord-devops-advisories-census",
+  "name": "CoordDevopsAdvisoriesCensus",
+  "description": "Dev Ops Overview (/admin/coord/devops), the Rust advisory census section — plan 2026-11-02-rust-advisories-have-no-fleet-consumer Phase 5. metadata.routeStubs fulfills GET /api/v1/operations/coord/dependency-advisories with a two-repo census: one vulnerable repo with one open advisory and one repo in state unknown with its reason. Both rows carry a fixed 2026-01-01 observed_at, so both are past the 36h staleness bound on any run and the stale badge is deterministic. page.test.tsx renders the page from this stub body and checks every containsText assertion below. Authored from the component source and its vitest render, NOT from a live UI Bridge snapshot (no dev stack on the authoring box): run it through Spec CI before counting it green. Each text assertion carries its expected text twice: as `expected` for a containsText-aware spec-check, and as `target.criteria.textContains`, because Spec CI's harness matches `target.criteria` alone.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": [
+      "admin",
+      "coord",
+      "devops",
+      "rust-advisories",
+      "route-stub"
+    ],
+    "extraSettleMs": 3500,
+    "settleUntilPresent": [
+      {
+        "id": "dependency-advisories-section"
+      }
+    ],
+    "routeStubs": [
+      {
+        "urlPattern": "**/api/v1/operations/coord/dependency-advisories**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "available": true,
+          "census": [
+            {
+              "repo": "qontinui/spec-ci-vulnerable",
+              "ecosystem": "cargo",
+              "sha": "aaaaaaa1111111111111111111111111111111aa",
+              "db_commit": "bbbbbbb2222222222222222222222222222222bb",
+              "state": "vulnerable",
+              "reason": null,
+              "advisory_count": 1,
+              "observed_at": "2026-01-01T00:00:00Z",
+              "age_secs": 3600,
+              "advisories": [
+                {
+                  "advisory_id": "RUSTSEC-2099-0001",
+                  "package": "spec-ci-crate",
+                  "version": "0.1.0",
+                  "patched": [
+                    ">=0.1.1"
+                  ],
+                  "severity": "high",
+                  "ignored": false,
+                  "first_seen_at": "2026-01-01T00:00:00Z",
+                  "last_seen_at": "2026-01-01T00:00:00Z",
+                  "resolved_at": null
+                }
+              ]
+            },
+            {
+              "repo": "qontinui/spec-ci-unknown",
+              "ecosystem": "cargo",
+              "sha": null,
+              "db_commit": null,
+              "state": "unknown",
+              "reason": "cargo-audit not installed on the scheduling box",
+              "advisory_count": 0,
+              "observed_at": "2026-01-01T00:00:00Z",
+              "age_secs": 3600,
+              "advisories": []
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "states": [
+    {
+      "id": "coord-devops-advisories-census-panel",
+      "name": "Dev Ops — Rust advisory census",
+      "description": "The Rust advisories section rendered from the stubbed census: per-repo state, the unknown row's reason, and the stale flag.",
+      "provenance": {
+        "source": "ai-generated"
+      },
+      "assertions": [
+        {
+          "id": "coord-devops-advisories-census-panel-elem-0",
+          "description": "The Rust advisories section mounts",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "dependency-advisories-section"
+            },
+            "label": "The Rust advisories section mounts"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-devops-advisories-census-panel-elem-1",
+          "description": "the vulnerable repo is counted in the summary",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "containsText",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "dependency-advisories-vulnerable-badge",
+              "textContains": "1 vulnerable"
+            },
+            "label": "the vulnerable repo is counted in the summary"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true,
+          "expected": "1 vulnerable"
+        },
+        {
+          "id": "coord-devops-advisories-census-panel-elem-2",
+          "description": "the unknown-state repo is counted as unknown, not clean",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "containsText",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "dependency-advisories-unknown-badge",
+              "textContains": "1 unknown"
+            },
+            "label": "the unknown-state repo is counted as unknown, not clean"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true,
+          "expected": "1 unknown"
+        },
+        {
+          "id": "coord-devops-advisories-census-panel-elem-3",
+          "description": "a census older than 36h is flagged stale",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "containsText",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "dependency-advisories-stale-badge",
+              "textContains": "2 stale"
+            },
+            "label": "a census older than 36h is flagged stale"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true,
+          "expected": "2 stale"
+        },
+        {
+          "id": "coord-devops-advisories-census-panel-elem-4",
+          "description": "the unknown-state repo shows its reason",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "containsText",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "dependency-advisories-reason",
+              "textContains": "cargo-audit not installed on the scheduling box"
+            },
+            "label": "the unknown-state repo shows its reason"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true,
+          "expected": "cargo-audit not installed on the scheduling box"
+        }
+      ]
+    }
+  ]
+}

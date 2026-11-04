@@ -1001,6 +1001,9 @@ function routeForSpec(
     "overview-domain-cost-unfalsifiable": "/overview",
     "coord-devops-readout-known": "/admin/coord/devops",
     "coord-devops-readout-unknown": "/admin/coord/devops",
+    // The Rust advisory census section (plan
+    // `2026-11-02-rust-advisories-have-no-fleet-consumer` Phase 5).
+    "coord-devops-advisories-census": "/admin/coord/devops",
     // Dynamic detail routes — sentinel ids for stubbed fetch resolution.
     "ai-tasks-detail": "/ai-tasks/spec-ci-sentinel-task",
     "captures-detail": "/captures/spec-ci-sentinel-session",

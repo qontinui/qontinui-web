@@ -75,7 +75,7 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It opens SEVEN POLLS, each of a DIFFERENT route: `/fleet/health` here at
+ * It opens EIGHT POLLS, each of a DIFFERENT route: `/fleet/health` here at
  * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
  * the same rows to both the strip and the CI panel), `/fleet/drain` here at
  * 30 s, `/fleet/dispatch-roles` inside `FleetRolesSection` at 30 s (plan
@@ -91,7 +91,12 @@
  * Phase 8 — a trailing-window percentile no other read on the page carries,
  * which is why the strip's one badge built from it is the single exception to
  * R1's "derived from data already on the page": the page owns that read, and
- * the strip still only renders what it was handed). Two
+ * the strip still only renders what it was handed). An EIGHTH,
+ * `/coord/dependency-advisories` at 5 min, is owned by
+ * `DependencyAdvisoriesSection` itself (plan
+ * `2026-11-02-rust-advisories-have-no-fleet-consumer` Phase 5): the fleet Rust
+ * advisory census, one row per repo, read by nothing else on the page — and
+ * mounted operator-only, so presentation mode makes no such read. Two
  * polls of ONE route would be two chances to disagree about what the fleet
  * looks like right now; one poll per route is one read per fact, which is the
  * shape this page is built on — worktree-slot occupancy is a fact from a
@@ -151,6 +156,7 @@ import {
   usePresentationMode,
 } from "@/components/presentation";
 import {
+  DependencyAdvisoriesSection,
   FleetConditionsPanel,
   FleetOverview,
   FleetResourcesSection,
@@ -709,6 +715,16 @@ export default function CoordDevOpsPage() {
           uses, so a machine with no worktree-slots entry still gets a row,
           rendered unknown rather than dropped. */}
       <FleetWorktreeSlotsSection devices={devices} slots={worktreeSlots} />
+
+      {/* The fleet Rust advisory census, one row per repo (plan
+          `2026-11-02-rust-advisories-have-no-fleet-consumer` Phase 5): the
+          audited sha, the advisory-DB commit, the census age and coord's
+          state, so a stale or UNKNOWN census is visible — and a missing one
+          reads UNKNOWN, never clean. Operator-only: open advisories name
+          exploitable packages in the tenant's repos, which is not material
+          for the presentation lens, and unmounting it here means
+          presentation mode makes no read for it. */}
+      {!presenting && <DependencyAdvisoriesSection nowMs={nowMs} />}
 
       {/* 5. Who changed what. Plan
           `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5.
