@@ -514,9 +514,9 @@ describe("/admin/coord/devops", () => {
     render(<CoordDevOpsPage />);
 
     await waitFor(() =>
-      expect(screen.getByTestId("coord-devops-machines-badge")).toHaveTextContent(
-        "machines 2 · 4647 roster rows"
-      )
+      expect(
+        screen.getByTestId("coord-devops-machines-badge")
+      ).toHaveTextContent("machines 2 · 4647 roster rows")
     );
     expect(screen.getByTestId("coord-devops-health-strip")).toHaveTextContent(
       "All 2 listed machines healthy"
@@ -534,9 +534,9 @@ describe("/admin/coord/devops", () => {
     render(<CoordDevOpsPage />);
 
     await waitFor(() =>
-      expect(screen.getByTestId("coord-devops-machines-badge")).toHaveTextContent(
-        "machines 1 · 10001 roster rows, some health unknown"
-      )
+      expect(
+        screen.getByTestId("coord-devops-machines-badge")
+      ).toHaveTextContent("machines 1 · 10001 roster rows, some health unknown")
     );
   });
 
@@ -3409,6 +3409,26 @@ describe("/admin/coord/devops — Rust advisory census", () => {
     expect(
       await screen.findByTestId("dependency-advisories-truncated-badge")
     ).toHaveTextContent("list truncated");
+  });
+
+  it("keeps the truncated flag when the returned page holds no Rust row", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        truncated: true,
+        census: [censusRow({ repo: "qontinui/npm-only", ecosystem: "npm" })],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("dependency-advisories-truncated-badge")
+    ).toHaveTextContent("list truncated");
+    const empty = screen.getByTestId("dependency-advisories-empty");
+    expect(empty).toHaveTextContent("Coord truncated its census list");
+    expect(empty).not.toHaveTextContent("for any repo");
   });
 
   it("shows no truncated badge when coord did not truncate", async () => {

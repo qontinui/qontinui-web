@@ -279,13 +279,24 @@ export function DependencyAdvisoriesSection({ nowMs }: { nowMs: number }) {
       contentClassName="space-y-3"
       summary={
         unavailable || empty ? (
-          <Badge
-            variant="warning"
-            className="ml-2"
-            data-testid="dependency-advisories-unknown-badge"
-          >
-            unknown
-          </Badge>
+          <>
+            <Badge
+              variant="warning"
+              className="ml-2"
+              data-testid="dependency-advisories-unknown-badge"
+            >
+              unknown
+            </Badge>
+            {data?.truncated && (
+              <Badge
+                variant="warning"
+                className="ml-1"
+                data-testid="dependency-advisories-truncated-badge"
+              >
+                list truncated: coord holds more repos than shown
+              </Badge>
+            )}
+          </>
         ) : data ? (
           <>
             <Badge variant="outline" className="ml-2">
@@ -413,9 +424,10 @@ export function DependencyAdvisoriesSection({ nowMs }: { nowMs: number }) {
                     <span className="font-medium text-foreground">
                       No census recorded yet — UNKNOWN.
                     </span>{" "}
-                    Coord holds no Rust advisory census for any repo, so no
-                    repo&apos;s advisory state is known. This is not
-                    &quot;clean&quot;.
+                    {data?.truncated
+                      ? "Coord truncated its census list and the page it returned holds no Rust row, so this view cannot tell which repos have one."
+                      : "Coord holds no Rust advisory census for any repo, so no repo's advisory state is known."}{" "}
+                    This is not &quot;clean&quot;.
                   </p>
                 ) : null
               }
