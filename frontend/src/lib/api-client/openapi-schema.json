@@ -47012,9 +47012,21 @@
       "RepoNameCheckResponse": {
         "description": "Success body for ``POST /operations/github/check-name`` (forwarded\nverbatim from coord's ``GET /coord/repos/availability``).",
         "properties": {
+          "normalized_changed": {
+            "default": false,
+            "title": "Normalized Changed",
+            "type": "boolean"
+          },
           "normalized_name": {
-            "title": "Normalized Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Name"
           },
           "reason": {
             "anyOf": [
@@ -47040,8 +47052,7 @@
           }
         },
         "required": [
-          "status",
-          "normalized_name"
+          "status"
         ],
         "title": "RepoNameCheckResponse",
         "type": "object"
@@ -105542,7 +105553,7 @@
     },
     "/api/v1/operations/github/check-name": {
       "post": {
-        "description": "Check whether ``owner/name`` is available for a new repository.\n\nProxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards\nthe JSON verbatim: ``{status: \"available\"|\"taken\"|\"invalid\"|\n\"owner_unbound\"|\"repo_bound_to_another_tenant\", reason?, normalized_name}``.\n``repo_bound_to_another_tenant`` answers the tenant that owns the org when a\nper-repo binding hands this name to another tenant. A failed governing read\nis ``500 governing_tenant_unknown``. POST (despite the read\nsemantics) so the runner's provisioning flow talks one verb to this\nsurface; the upstream coord call is the GET.",
+        "description": "Check whether ``owner/name`` is available for a new repository.\n\nProxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards\nthe JSON verbatim: ``{status: \"available\"|\"taken\"|\"invalid\"|\n\"owner_unbound\"|\"repo_bound_to_another_tenant\", reason, normalized_name,\nnormalized_changed}``. ``reason`` is set only for ``invalid``;\n``normalized_name`` is null when the owner or the name is invalid, and\n``normalized_changed`` says whether normalizing changed the requested name.\n``repo_bound_to_another_tenant`` answers the tenant that owns the org when a\nper-repo binding hands this name to another tenant. A failed governing read\nis ``500 governing_tenant_unknown``. POST (despite the read\nsemantics) so the runner's provisioning flow talks one verb to this\nsurface; the upstream coord call is the GET.",
         "operationId": "api_v1_operations_github_check_name_post",
         "requestBody": {
           "content": {

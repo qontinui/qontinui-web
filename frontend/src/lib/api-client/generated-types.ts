@@ -13994,7 +13994,10 @@ export interface paths {
          *
          *     Proxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards
          *     the JSON verbatim: ``{status: "available"|"taken"|"invalid"|
-         *     "owner_unbound"|"repo_bound_to_another_tenant", reason?, normalized_name}``.
+         *     "owner_unbound"|"repo_bound_to_another_tenant", reason, normalized_name,
+         *     normalized_changed}``. ``reason`` is set only for ``invalid``;
+         *     ``normalized_name`` is null when the owner or the name is invalid, and
+         *     ``normalized_changed`` says whether normalizing changed the requested name.
          *     ``repo_bound_to_another_tenant`` answers the tenant that owns the org when a
          *     per-repo binding hands this name to another tenant. A failed governing read
          *     is ``500 governing_tenant_unknown``. POST (despite the read
@@ -48056,8 +48059,13 @@ export interface components {
          *     verbatim from coord's ``GET /coord/repos/availability``).
          */
         RepoNameCheckResponse: {
+            /**
+             * Normalized Changed
+             * @default false
+             */
+            normalized_changed: boolean;
             /** Normalized Name */
-            normalized_name: string;
+            normalized_name?: string | null;
             /** Reason */
             reason?: string | null;
             /**
