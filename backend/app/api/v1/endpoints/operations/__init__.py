@@ -4266,6 +4266,8 @@ async def get_dev_action_detail(
 # - GET    /operations/claude-accounts                   — per-device Claude
 #                                                          account roster
 # - GET    /operations/fleet/volumes                     — free space, all devices
+# - GET    /operations/coord/dependency-advisories       — fleet Rust advisory
+#                                                          census per repo
 # - GET    /operations/devices/{device_id}/volumes       — free space, one device
 # - GET    /operations/agent-questions/pending           — Wave-3 prep
 # - GET    /operations/agent-questions/{id}              — Wave-3a single lookup
@@ -7141,6 +7143,53 @@ async def get_fleet_worktree_slots(
     """
     return await _proxy_coord_passthrough(
         "GET", "/coord/fleet/worktree-slots", tenant_id=tenant_id
+    )
+
+
+# ---- Dependency advisories (the fleet Rust advisory census) ---------------
+#
+# Plan ``2026-11-02-rust-advisories-have-no-fleet-consumer`` Phase 5. Backs
+# the "Rust advisories" section on ``/admin/coord/devops``: one census row per
+# repo (sha, advisory-DB commit, observed_at, state) with its open advisories.
+
+
+@router.get("/coord/dependency-advisories")
+async def get_coord_dependency_advisories(
+    repo: str | None = Query(default=None),
+    include_resolved: bool = Query(default=False),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/dependency-advisories`` (tenant-scoped).
+
+    Response shape is coord-authored and passed through untouched::
+
+        {"available": true,
+         "census": [{"repo", "ecosystem", "sha", "db_commit",
+                     "state": "clean|vulnerable|not_applicable|unknown",
+                     "reason", "advisory_count", "observed_at", "age_secs",
+                     "advisories": [{"advisory_id", "package", "version",
+                                     "patched": [...], "severity", "ignored",
+                                     "first_seen_at", "last_seen_at",
+                                     "resolved_at"}]}]}
+
+    A repo with no census row is ABSENT from ``census`` — the caller renders
+    an empty list as "no census recorded yet" (UNKNOWN), never as clean.
+
+    Error answers pass through verbatim, status and JSON body, for the same
+    reason as :func:`get_fleet_worktree_slots`: coord answers
+    ``503 {"error": "dependency_advisories_surface_unavailable", ...}`` until
+    its migration applies, and the section names that state specifically
+    rather than a generic proxy failure. ``repo`` is forwarded only when set,
+    so an absent filter reaches coord as absent.
+    """
+    params: dict[str, Any] = {"include_resolved": include_resolved}
+    if repo:
+        params["repo"] = repo
+    return await _proxy_coord_passthrough(
+        "GET",
+        "/coord/dependency-advisories",
+        tenant_id=tenant_id,
+        params=params,
     )
 
 

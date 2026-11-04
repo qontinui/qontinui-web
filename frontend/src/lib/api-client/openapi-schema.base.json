@@ -96734,6 +96734,66 @@
         ]
       }
     },
+    "/api/v1/operations/coord/dependency-advisories": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/dependency-advisories`` (tenant-scoped).\n\nResponse shape is coord-authored and passed through untouched::\n\n    {\"available\": true,\n     \"census\": [{\"repo\", \"ecosystem\", \"sha\", \"db_commit\",\n                 \"state\": \"clean|vulnerable|not_applicable|unknown\",\n                 \"reason\", \"advisory_count\", \"observed_at\", \"age_secs\",\n                 \"advisories\": [{\"advisory_id\", \"package\", \"version\",\n                                 \"patched\": [...], \"severity\", \"ignored\",\n                                 \"first_seen_at\", \"last_seen_at\",\n                                 \"resolved_at\"}]}]}\n\nA repo with no census row is ABSENT from ``census`` \u2014 the caller renders\nan empty list as \"no census recorded yet\" (UNKNOWN), never as clean.\n\nError answers pass through verbatim, status and JSON body, for the same\nreason as :func:`get_fleet_worktree_slots`: coord answers\n``503 {\"error\": \"dependency_advisories_surface_unavailable\", ...}`` until\nits migration applies, and the section names that state specifically\nrather than a generic proxy failure. ``repo`` is forwarded only when set,\nso an absent filter reaches coord as absent.",
+        "operationId": "api_v1_operations_coord_dependency_advisories_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_resolved",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Resolved",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Dependency Advisories Api V1 Operations Coord Dependency Advisories Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Dependency Advisories",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/devices/pair-start": {
       "post": {
         "description": "Proxy POST /coord/devices/pair-start with server-injected tenant_id.\n\nCoord's pair-start is a public route whose PairStartRequest requires\ntenant_id in the body (``routes_phase3.rs::PairStartRequest``). This\nproxy resolves the operator's home tenant via get_tenant_id and\ninjects it into the body before forwarding, so the frontend never has\nto know or pass the tenant_id. Coord treats it as a request and proves\nthe completing user's membership at pair-complete.",

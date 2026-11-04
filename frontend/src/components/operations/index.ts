@@ -127,6 +127,7 @@ export { FleetConditionsPanel } from "./FleetConditionsPanel";
 export type { FleetConditionsPanelProps } from "./FleetConditionsPanel";
 export { FleetResourcesSection } from "./FleetResourcesSection";
 export { FleetWorktreeSlotsSection } from "./FleetWorktreeSlotsSection";
+export { DependencyAdvisoriesSection } from "./DependencyAdvisoriesSection";
 export { buildWorktreeSlotRows, slotRowIsKnown } from "./fleetWorktreeSlots";
 export type { WorktreeSlotRow } from "./fleetWorktreeSlots";
 export { DevOpsHeadlineStrip } from "./DevOpsHeadlineStrip";

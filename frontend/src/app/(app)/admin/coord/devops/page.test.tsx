@@ -310,6 +310,13 @@ interface Fixture {
    * served, which the strip must render as UNKNOWN.
    */
   faultToVisibility?: unknown;
+  /**
+   * What `GET /operations/coord/dependency-advisories` answers with (plan
+   * `2026-11-02-rust-advisories-have-no-fleet-consumer` Phase 5), status and
+   * body. `undefined` falls through to the generic `{}` 200 below — a body
+   * that is not a census, which the section must render as UNKNOWN.
+   */
+  dependencyAdvisories?: { status: number; body: unknown };
 }
 
 function mockRoutes(fixture: Fixture) {
@@ -345,6 +352,16 @@ function mockRoutes(fixture: Fixture) {
   });
   httpFetch.mockImplementation((url: unknown) => {
     const u = String(url);
+    if (
+      u.includes("/coord/dependency-advisories") &&
+      fixture.dependencyAdvisories !== undefined
+    ) {
+      return Promise.resolve(
+        new Response(JSON.stringify(fixture.dependencyAdvisories.body), {
+          status: fixture.dependencyAdvisories.status,
+        })
+      );
+    }
     if (u.includes("/fleet/drain")) {
       if (fixture.drain === undefined) {
         // A coord that serves no drain read. NOT an empty drain map — the
@@ -497,9 +514,9 @@ describe("/admin/coord/devops", () => {
     render(<CoordDevOpsPage />);
 
     await waitFor(() =>
-      expect(screen.getByTestId("coord-devops-machines-badge")).toHaveTextContent(
-        "machines 2 · 4647 roster rows"
-      )
+      expect(
+        screen.getByTestId("coord-devops-machines-badge")
+      ).toHaveTextContent("machines 2 · 4647 roster rows")
     );
     expect(screen.getByTestId("coord-devops-health-strip")).toHaveTextContent(
       "All 2 listed machines healthy"
@@ -517,9 +534,9 @@ describe("/admin/coord/devops", () => {
     render(<CoordDevOpsPage />);
 
     await waitFor(() =>
-      expect(screen.getByTestId("coord-devops-machines-badge")).toHaveTextContent(
-        "machines 1 · 10001 roster rows, some health unknown"
-      )
+      expect(
+        screen.getByTestId("coord-devops-machines-badge")
+      ).toHaveTextContent("machines 1 · 10001 roster rows, some health unknown")
     );
   });
 
@@ -3017,5 +3034,534 @@ describe("/admin/coord/devops — the presentation lens (plan 2026-10-23-console
 
     await screen.findByTestId("coord-devops-health-strip");
     expect(document.querySelector("[data-presentation-caption]")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rust advisory census (plan `2026-11-02-rust-advisories-have-no-fleet-consumer`
+// Phase 5). The arming: per-repo census age and UNKNOWN rows are shown, and a
+// missing census reads UNKNOWN, not clean.
+// ---------------------------------------------------------------------------
+
+function censusRow(overrides: Record<string, unknown>) {
+  return {
+    repo: "qontinui/qontinui-coord",
+    ecosystem: "rust",
+    sha: "fe1dde77f00000000000000000000000000000aa",
+    db_commit: "abc1234def000000000000000000000000000bb",
+    state: "clean",
+    reason: null,
+    advisory_count: 0,
+    observed_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    age_secs: 7200,
+    advisories: [],
+    ...overrides,
+  };
+}
+
+function advisory(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    advisory_id: id,
+    package: "tokio",
+    version: "1.0.0",
+    patched: [">=1.0.1"],
+    severity: "high",
+    ignored: false,
+    first_seen_at: "2026-11-03T10:00:00Z",
+    last_seen_at: "2026-11-04T10:00:00Z",
+    resolved_at: null,
+    ...overrides,
+  };
+}
+
+function mockWithCensus(dependencyAdvisories: {
+  status: number;
+  body: unknown;
+}) {
+  mockRoutes({
+    devices: [coordDevice("d-1", "msi", "healthy")],
+    runners: [runner("msi")],
+    samples: [],
+    dependencyAdvisories,
+  });
+}
+
+function censusRowFor(repo: string): HTMLElement {
+  const row = screen
+    .getAllByTestId("dependency-advisories-row")
+    .find((r) => r.textContent?.includes(repo));
+  if (!row) throw new Error(`no census row for ${repo}`);
+  return row;
+}
+
+describe("/admin/coord/devops — Rust advisory census", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    routerPush.mockReset();
+    deviceStatusRows.clear();
+    window.localStorage.clear();
+  });
+
+  it("renders one row per repo with its state, open (non-ignored) count, sha and DB commit", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        census: [
+          censusRow({ repo: "qontinui/qontinui-coord" }),
+          censusRow({
+            repo: "qontinui/qontinui-runner",
+            sha: "1234567890abcdef",
+            db_commit: "feedbeef00",
+            state: "vulnerable",
+            advisory_count: 3,
+            advisories: [
+              advisory("RUSTSEC-2026-0001"),
+              advisory("RUSTSEC-2026-0002", { package: "rustls" }),
+              advisory("RUSTSEC-2026-0003", { ignored: true }),
+            ],
+          }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("dependency-advisories-row")).toHaveLength(2)
+    );
+    const runnerRow = censusRowFor("qontinui/qontinui-runner");
+    expect(
+      within(runnerRow).getByTestId("dependency-advisories-state")
+    ).toHaveTextContent("vulnerable");
+    // Two open: the ignored one is not counted.
+    expect(
+      within(runnerRow).getByTestId("dependency-advisories-open-count")
+    ).toHaveTextContent("2 open");
+    expect(runnerRow).toHaveTextContent("1234567");
+    expect(
+      within(runnerRow).getByTestId("dependency-advisories-db-commit")
+    ).toHaveTextContent("db feedbee");
+    expect(
+      within(runnerRow).getByTestId("dependency-advisories-age")
+    ).toHaveTextContent("2h ago");
+
+    const coordRow = censusRowFor("qontinui/qontinui-coord");
+    expect(
+      within(coordRow).getByTestId("dependency-advisories-state")
+    ).toHaveTextContent("clean");
+    expect(
+      within(coordRow).getByTestId("dependency-advisories-open-count")
+    ).toHaveTextContent("0 open");
+    expect(
+      within(coordRow).queryByTestId("dependency-advisories-stale")
+    ).toBeNull();
+
+    // The vulnerable repo sorts first and the summary counts it.
+    expect(screen.getAllByTestId("dependency-advisories-row")[0]).toBe(
+      runnerRow
+    );
+    expect(
+      screen.getByTestId("dependency-advisories-vulnerable-badge")
+    ).toHaveTextContent("1 vulnerable");
+
+    // Expanding lists the open advisories — id, package, version, patched —
+    // and not the ignored one.
+    fireEvent.click(within(runnerRow).getByRole("button"));
+    const items = within(runnerRow).getAllByTestId(
+      "dependency-advisories-advisory"
+    );
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent("RUSTSEC-2026-0001");
+    expect(items[0]).toHaveTextContent("tokio 1.0.0");
+    expect(items[0]).toHaveTextContent("patched: >=1.0.1");
+    for (const item of items) {
+      expect(item).not.toHaveTextContent("RUSTSEC-2026-0003");
+    }
+    expect(
+      items.map((i) => i.textContent?.match(/RUSTSEC-\d{4}-\d{4}/)?.[0])
+    ).toEqual(["RUSTSEC-2026-0001", "RUSTSEC-2026-0002"]);
+  });
+
+  it("a 503 before coord's migration applies renders UNKNOWN, never clean or 0 advisories", async () => {
+    mockWithCensus({
+      status: 503,
+      body: {
+        error: "dependency_advisories_surface_unavailable",
+        detail: "relation coord.dependency_census does not exist",
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const unavailable = await screen.findByTestId(
+      "dependency-advisories-unavailable"
+    );
+    expect(unavailable).toHaveTextContent("Census unavailable — UNKNOWN");
+    expect(unavailable).toHaveTextContent(
+      "dependency-advisory store is not available yet"
+    );
+    expect(
+      screen.getByTestId("dependency-advisories-unknown-badge")
+    ).toHaveTextContent("unknown");
+    const section = screen.getByTestId("dependency-advisories-section");
+    expect(
+      within(section).queryByTestId("dependency-advisories-row")
+    ).toBeNull();
+    // No count is rendered at all: the only "0 advisories" on the section is
+    // the sentence saying this is NOT that.
+    expect(section).not.toHaveTextContent(/\d+ open/);
+    expect(
+      within(section).queryByTestId("dependency-advisories-state")
+    ).toBeNull();
+  });
+
+  it("an empty census renders 'no census recorded yet' — UNKNOWN, not clean", async () => {
+    mockWithCensus({ status: 200, body: { available: true, census: [] } });
+
+    render(<CoordDevOpsPage />);
+
+    const empty = await screen.findByTestId("dependency-advisories-empty");
+    expect(empty).toHaveTextContent("No census recorded yet — UNKNOWN");
+    expect(
+      screen.getByTestId("dependency-advisories-unknown-badge")
+    ).toBeInTheDocument();
+    const section = screen.getByTestId("dependency-advisories-section");
+    expect(
+      within(section).queryByTestId("dependency-advisories-state")
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(/\d+ open/);
+  });
+
+  it("a body that is not a census (no `available: true`) is UNKNOWN, not empty", async () => {
+    mockWithCensus({ status: 200, body: { census: [] } });
+
+    render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("dependency-advisories-unavailable")
+    ).toHaveTextContent("without a dependency-advisory census body");
+    expect(screen.queryByTestId("dependency-advisories-empty")).toBeNull();
+  });
+
+  it("flags a census older than 36h as stale, whatever its state says", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        census: [
+          censusRow({
+            repo: "qontinui/qontinui-schemas",
+            observed_at: new Date(Date.now() - 72 * 3600 * 1000).toISOString(),
+            // Disagrees with observed_at on purpose: a fresh 60 s here would
+            // render "1m ago" and no stale flag if this were the field read.
+            age_secs: 60,
+          }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await waitFor(() => censusRowFor("qontinui/qontinui-schemas"));
+    expect(
+      within(row).getByTestId("dependency-advisories-stale")
+    ).toHaveTextContent("stale");
+    expect(
+      within(row).getByTestId("dependency-advisories-age")
+    ).toHaveTextContent("3d ago");
+    expect(
+      within(row).getByTestId("dependency-advisories-reason")
+    ).toHaveTextContent("census older than 36h");
+    // A stale clean is not calm: amber, not none.
+    expect(
+      row.querySelector("[data-console-row]")?.getAttribute("data-attention")
+    ).toBe("waiting");
+    expect(
+      screen.getByTestId("dependency-advisories-stale-badge")
+    ).toHaveTextContent("1 stale");
+  });
+
+  it("an unknown-state repo shows its reason and a count of –, never 0", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        census: [
+          censusRow({
+            repo: "qontinui/qontinui-supervisor",
+            state: "unknown",
+            reason: "cargo-audit not installed on the scheduling box",
+            advisory_count: 0,
+          }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await waitFor(() =>
+      censusRowFor("qontinui/qontinui-supervisor")
+    );
+    expect(
+      within(row).getByTestId("dependency-advisories-state")
+    ).toHaveTextContent("unknown");
+    expect(
+      within(row).getByTestId("dependency-advisories-reason")
+    ).toHaveTextContent("cargo-audit not installed on the scheduling box");
+    expect(
+      within(row).getByTestId("dependency-advisories-open-count")
+    ).toHaveTextContent("– open");
+    expect(
+      within(row).getByTestId("dependency-advisories-open-count")
+    ).not.toHaveTextContent("0 open");
+    expect(
+      screen.getByTestId("dependency-advisories-unknown-badge")
+    ).toHaveTextContent("1 unknown");
+  });
+
+  it("meets every assertion of the coord-devops-advisories-census UI Bridge spec, rendered from its own stub", async () => {
+    // The spec is authored from this render, not from a live snapshot; this
+    // pins the two together so an edit to either one fails here first.
+    const spec = JSON.parse(
+      readFileSync(
+        join(
+          __dirname,
+          "../../../../../../specs/pages/coord-devops-advisories-census/state-machine.derived.json"
+        ),
+        "utf8"
+      )
+    ) as {
+      metadata: { routeStubs: { urlPattern: string; body: unknown }[] };
+      states: {
+        assertions: {
+          assertionType: string;
+          target: { criteria: { id: string; textContains?: string } };
+        }[];
+      }[];
+    };
+    const stub = spec.metadata.routeStubs.find((r) =>
+      r.urlPattern.includes("/coord/dependency-advisories")
+    );
+    expect(stub).toBeDefined();
+    mockWithCensus({ status: 200, body: stub!.body });
+
+    render(<CoordDevOpsPage />);
+
+    await screen.findAllByTestId("dependency-advisories-row");
+    const assertions = spec.states.flatMap((st) => st.assertions);
+    expect(assertions.length).toBeGreaterThan(0);
+    for (const a of assertions) {
+      const { id, textContains } = a.target.criteria;
+      const matches = screen.queryAllByTestId(id);
+      expect(matches.length, id).toBeGreaterThan(0);
+      if (a.assertionType === "containsText") {
+        expect(
+          matches.some((el) => el.textContent?.includes(textContains ?? "")),
+          `${id} contains "${textContains}"`
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("says the list covers recorded repos only, and dates the newest row as the last census cycle", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        census: [
+          censusRow({
+            repo: "qontinui/a",
+            observed_at: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+          }),
+          censusRow({
+            repo: "qontinui/b",
+            observed_at: new Date(Date.now() - 50 * 3600 * 1000).toISOString(),
+          }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("dependency-advisories-scope-note")
+    ).toHaveTextContent("Lists only repos with a recorded Rust census");
+    const cycle = screen.getByTestId("dependency-advisories-last-cycle");
+    // The NEWEST row (5h), not the oldest (50h).
+    expect(cycle).toHaveTextContent("last census cycle 5h ago");
+    expect(cycle).toHaveAttribute("data-stale", "false");
+  });
+
+  it("flags a census page coord truncated, so a capped list never reads as the whole fleet", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        truncated: true,
+        census: [censusRow({ repo: "qontinui/a" })],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("dependency-advisories-truncated-badge")
+    ).toHaveTextContent("list truncated");
+  });
+
+  it("keeps the truncated flag when the returned page holds no Rust row", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        truncated: true,
+        census: [censusRow({ repo: "qontinui/npm-only", ecosystem: "npm" })],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("dependency-advisories-truncated-badge")
+    ).toHaveTextContent("list truncated");
+    const empty = screen.getByTestId("dependency-advisories-empty");
+    expect(empty).toHaveTextContent("Coord truncated its census list");
+    expect(empty).not.toHaveTextContent("for any repo");
+  });
+
+  it("shows no truncated badge when coord did not truncate", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        truncated: false,
+        census: [censusRow({ repo: "qontinui/a" })],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await screen.findByTestId("dependency-advisories-last-cycle");
+    expect(
+      screen.queryByTestId("dependency-advisories-truncated-badge")
+    ).toBeNull();
+  });
+
+  it("flags the last census cycle stale when even the newest row is past 36h", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        census: [
+          censusRow({
+            repo: "qontinui/a",
+            observed_at: new Date(Date.now() - 40 * 3600 * 1000).toISOString(),
+          }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const cycle = await screen.findByTestId("dependency-advisories-last-cycle");
+    expect(cycle).toHaveAttribute("data-stale", "true");
+    expect(cycle).toHaveTextContent("stale");
+  });
+
+  it("reads only ecosystem rust rows, and a census of other ecosystems is no Rust census", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        census: [censusRow({ repo: "qontinui/web", ecosystem: "npm" })],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("dependency-advisories-empty")
+    ).toHaveTextContent("No census recorded yet — UNKNOWN");
+    expect(screen.queryByTestId("dependency-advisories-row")).toBeNull();
+  });
+
+  it("keeps one row per (repo, ecosystem) and drops the non-rust one", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        census: [
+          censusRow({ repo: "qontinui/both" }),
+          censusRow({ repo: "qontinui/both", ecosystem: "npm" }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("dependency-advisories-row")).toHaveLength(1)
+    );
+    expect(
+      screen.getAllByTestId("dependency-advisories-row")[0]
+    ).toHaveAttribute("data-row-key", "qontinui/both:rust");
+  });
+
+  it("flags clean-with-open-advisories as a contradiction, amber like vulnerable-with-nothing-open", async () => {
+    mockWithCensus({
+      status: 200,
+      body: {
+        available: true,
+        census: [
+          censusRow({
+            repo: "qontinui/clean-but-open",
+            advisories: [advisory("RUSTSEC-2026-0009")],
+          }),
+          censusRow({ repo: "qontinui/vuln-but-none", state: "vulnerable" }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const cleanRow = await waitFor(() =>
+      censusRowFor("qontinui/clean-but-open")
+    );
+    const vulnRow = censusRowFor("qontinui/vuln-but-none");
+    expect(
+      within(cleanRow).getByTestId("dependency-advisories-reason")
+    ).toHaveTextContent("state clean, but 1 open advisory listed");
+    expect(
+      within(vulnRow).getByTestId("dependency-advisories-reason")
+    ).toHaveTextContent("state vulnerable, but no open advisory listed");
+    const attentionOf = (row: HTMLElement) =>
+      row.querySelector("[data-console-row]")?.getAttribute("data-attention");
+    expect(attentionOf(cleanRow)).toBe("waiting");
+    expect(attentionOf(cleanRow)).toBe(attentionOf(vulnRow));
+    // The collapsed header counts contradictions, so a calm-looking summary
+    // cannot hide one.
+    expect(
+      screen.getByTestId("dependency-advisories-contradiction-badge")
+    ).toHaveTextContent("2 contradictions");
+  });
+
+  it("is not mounted in presentation mode, and makes no read there", async () => {
+    mockWithCensus({ status: 200, body: { available: true, census: [] } });
+
+    render(
+      <FixedPresentationMode presenting>
+        <CoordDevOpsPage />
+      </FixedPresentationMode>
+    );
+
+    await screen.findByTestId("coord-devops-health-strip");
+    expect(screen.queryByTestId("dependency-advisories-section")).toBeNull();
+    expect(
+      httpFetch.mock.calls.filter((c) =>
+        String(c[0]).includes("/coord/dependency-advisories")
+      )
+    ).toHaveLength(0);
   });
 });

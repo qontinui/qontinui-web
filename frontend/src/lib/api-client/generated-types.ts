@@ -10615,6 +10615,47 @@ export interface paths {
         patch: operations["api_v1_operations_coord_composition_rules_composition_rule_id_patch"];
         trace?: never;
     };
+    "/api/v1/operations/coord/dependency-advisories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Dependency Advisories
+         * @description Proxy coord's ``GET /coord/dependency-advisories`` (tenant-scoped).
+         *
+         *     Response shape is coord-authored and passed through untouched::
+         *
+         *         {"available": true,
+         *          "census": [{"repo", "ecosystem", "sha", "db_commit",
+         *                      "state": "clean|vulnerable|not_applicable|unknown",
+         *                      "reason", "advisory_count", "observed_at", "age_secs",
+         *                      "advisories": [{"advisory_id", "package", "version",
+         *                                      "patched": [...], "severity", "ignored",
+         *                                      "first_seen_at", "last_seen_at",
+         *                                      "resolved_at"}]}]}
+         *
+         *     A repo with no census row is ABSENT from ``census`` — the caller renders
+         *     an empty list as "no census recorded yet" (UNKNOWN), never as clean.
+         *
+         *     Error answers pass through verbatim, status and JSON body, for the same
+         *     reason as :func:`get_fleet_worktree_slots`: coord answers
+         *     ``503 {"error": "dependency_advisories_surface_unavailable", ...}`` until
+         *     its migration applies, and the section names that state specifically
+         *     rather than a generic proxy failure. ``repo`` is forwarded only when set,
+         *     so an absent filter reaches coord as absent.
+         */
+        get: operations["api_v1_operations_coord_dependency_advisories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/coord/devices/pair-start": {
         parameters: {
             query?: never;
@@ -74348,6 +74389,38 @@ export interface operations {
                 };
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_dependency_advisories_get: {
+        parameters: {
+            query?: {
+                repo?: string | null;
+                include_resolved?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
