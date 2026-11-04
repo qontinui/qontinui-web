@@ -156,7 +156,8 @@ describe("LandPreviewPanel — honest non-coverage (pending → note, not empty)
         note: "deploy targets undeclared",
       },
     },
-    risk: { risky: false, reasons: [] },
+    // coord sends a null verdict when CI is unpredicted and no reason tripped.
+    risk: { risky: null, reasons: [] },
   };
 
   it("ci.pending renders the note as the explanation, not an empty list", () => {
