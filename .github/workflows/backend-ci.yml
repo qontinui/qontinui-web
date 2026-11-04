@@ -1485,7 +1485,7 @@ jobs:
     # shard SKIPS this job, and a skipped check is not a red check -- the
     # aggregate would go MISSING at exactly the moment it needs to say no.
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - name: Assert every shard succeeded
@@ -1601,7 +1601,7 @@ jobs:
     # `always()` so a failed or budget-cancelled shard still gets measured --
     # a shard cancelled AT its budget is the loudest over_margin there is.
     if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     timeout-minutes: 5
     # Same scopes as the workflow-level `permissions:` today; restated here so
     # the jobs read this job makes (`actions: read`) survives any later
