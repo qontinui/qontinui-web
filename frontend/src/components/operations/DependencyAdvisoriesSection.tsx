@@ -19,13 +19,22 @@
  * - A row in state `unknown`: its count is `–`, and its reason is shown.
  * - A stale or undatable census: a `stale` badge and amber attention, whatever
  *   its state says.
+ * - A verdict its own rows contradict (`clean` with an open advisory,
+ *   `vulnerable` with none): amber, with the contradiction as its reason.
+ * - A partial census as a clean fleet: rows exist only for repos coord holds a
+ *   census for, so the header says the list covers recorded repos only and
+ *   dates the newest row as "last census cycle" — stale-flagged past 36 h. No
+ *   expected-repo list is invented client side.
+ *
+ * Only `ecosystem === "rust"` rows are read (the section is "Rust
+ * advisories"), keyed `${repo}:${ecosystem}`.
  *
  * ## Operator-only
  *
- * The page mounts this inside `OperatorOnly`: open advisories name
- * exploitable packages in the tenant's repos, which is not material for the
- * presentation lens. The section owns its poll (as `FleetRolesSection` does),
- * so presentation mode makes no read for it at all.
+ * The page mounts this under `{!presenting && …}`, so the presentation lens
+ * never renders it: open advisories name exploitable packages in the tenant's
+ * repos. The section owns its poll (as `FleetRolesSection` does), so
+ * unmounting it means presentation mode makes no read for it at all.
  */
 
 import { useMemo, useState } from "react";
@@ -43,6 +52,9 @@ import {
 import { formatAge } from "./fleetResources";
 import {
   CENSUS_STALE_AFTER_SECS,
+  censusRowKey,
+  lastCensusCycle,
+  rustCensusRows,
   shortSha,
   sortCensusViews,
   viewCensusRow,
@@ -75,6 +87,7 @@ function openCountText(view: CensusRowView): string {
 /** The muted line under a row's reason: what the row cannot claim. */
 function rowReason(view: CensusRowView): string | undefined {
   const parts: string[] = [];
+  if (view.contradiction) parts.push(view.contradiction);
   if (view.state === "unknown" || view.state === "unrecognised") {
     parts.push(
       view.row.reason ??
@@ -226,7 +239,9 @@ export function DependencyAdvisoriesSection({ nowMs }: { nowMs: number }) {
     () =>
       data
         ? sortCensusViews(
-            data.census.map((row) => viewCensusRow(row, nowMs, fetchedAtMs))
+            rustCensusRows(data.census).map((row) =>
+              viewCensusRow(row, nowMs, fetchedAtMs)
+            )
           )
         : [],
     [data, nowMs, fetchedAtMs]
@@ -244,11 +259,14 @@ export function DependencyAdvisoriesSection({ nowMs }: { nowMs: number }) {
     return { vulnerable, unknown, stale };
   }, [views]);
 
+  const cycle = useMemo(() => lastCensusCycle(views), [views]);
+
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   // Nothing read yet, and the read failed: the whole census is UNKNOWN.
   const unavailable = data === null && error !== null;
-  const empty = data !== null && data.census.length === 0;
+  // No Rust row: a body holding only other ecosystems is no Rust census.
+  const empty = data !== null && views.length === 0;
 
   return (
     <CollapsiblePanel
@@ -298,6 +316,15 @@ export function DependencyAdvisoriesSection({ nowMs }: { nowMs: number }) {
                 {counts.stale} stale
               </Badge>
             )}
+            <Badge
+              variant={cycle.stale ? "warning" : "outline"}
+              className="ml-1"
+              data-testid="dependency-advisories-last-cycle"
+              data-stale={cycle.stale ? "true" : "false"}
+            >
+              last census cycle {formatAge(cycle.ageSecs)}
+              {cycle.stale && " · stale"}
+            </Badge>
           </>
         ) : null
       }
@@ -336,12 +363,22 @@ export function DependencyAdvisoriesSection({ nowMs }: { nowMs: number }) {
               not current.
             </p>
           )}
+          {!empty && data && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="dependency-advisories-scope-note"
+            >
+              Lists only repos with a recorded Rust census. A repo coord has
+              never censused does not appear here, so this list is not the fleet
+              and its rows are not a fleet-wide all-clear.
+            </p>
+          )}
           {loading && !data ? (
             <Skeleton className="h-16 w-full" />
           ) : (
             <RecordList
               items={views}
-              itemKey={(v) => v.row.repo}
+              itemKey={(v) => censusRowKey(v.row)}
               expandedKey={expandedKey}
               onExpandedKeyChange={setExpandedKey}
               empty={

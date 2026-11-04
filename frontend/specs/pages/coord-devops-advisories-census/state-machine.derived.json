@@ -31,7 +31,7 @@
           "census": [
             {
               "repo": "qontinui/spec-ci-vulnerable",
-              "ecosystem": "cargo",
+              "ecosystem": "rust",
               "sha": "aaaaaaa1111111111111111111111111111111aa",
               "db_commit": "bbbbbbb2222222222222222222222222222222bb",
               "state": "vulnerable",
@@ -57,7 +57,7 @@
             },
             {
               "repo": "qontinui/spec-ci-unknown",
-              "ecosystem": "cargo",
+              "ecosystem": "rust",
               "sha": null,
               "db_commit": null,
               "state": "unknown",
@@ -173,6 +173,44 @@
           "reviewed": false,
           "enabled": true,
           "expected": "cargo-audit not installed on the scheduling box"
+        },
+        {
+          "id": "coord-devops-advisories-census-panel-elem-5",
+          "description": "the newest row dates the census cycle, stale past 36h",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "containsText",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "dependency-advisories-last-cycle",
+              "textContains": "stale"
+            },
+            "label": "the newest row dates the census cycle, stale past 36h"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true,
+          "expected": "stale"
+        },
+        {
+          "id": "coord-devops-advisories-census-panel-elem-6",
+          "description": "the list says it covers recorded repos only",
+          "category": "text-content",
+          "severity": "critical",
+          "assertionType": "containsText",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "dependency-advisories-scope-note",
+              "textContains": "Lists only repos with a recorded Rust census"
+            },
+            "label": "the list says it covers recorded repos only"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true,
+          "expected": "Lists only repos with a recorded Rust census"
         }
       ]
     }

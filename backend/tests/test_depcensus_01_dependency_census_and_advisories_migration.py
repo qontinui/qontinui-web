@@ -5,7 +5,8 @@ Pins the contract coord's ``/coord/dependency-advisories`` route (plan
 the advisory steward (Phase 4) rely on:
 
 1. **Shape**: both tables with their exact column contracts, both keys and the
-   ``state`` CHECK by definition, and every index by its exact definition. All
+   ``state`` CHECK by definition, and every index by its exact definition (the
+   open-advisory index is partial, ``WHERE resolved_at IS NULL``). All
    of it is gone after downgrade.
 2. **Closed state vocabulary**: ``clean`` / ``vulnerable`` / ``not_applicable``
    / ``unknown`` are stored; anything else is refused by
@@ -120,9 +121,10 @@ _EXPECTED_ADVISORY_INDEXES: dict[str, str] = {
         "ON coord.dependency_advisories USING btree "
         "(tenant_id, repo, ecosystem, advisory_id, package)"
     ),
-    "ix_dependency_advisories_tenant_resolved": (
-        "CREATE INDEX ix_dependency_advisories_tenant_resolved "
-        "ON coord.dependency_advisories USING btree (tenant_id, resolved_at)"
+    "ix_dependency_advisories_tenant_open": (
+        "CREATE INDEX ix_dependency_advisories_tenant_open "
+        "ON coord.dependency_advisories USING btree (tenant_id) "
+        "WHERE (resolved_at IS NULL)"
     ),
 }
 
@@ -198,7 +200,10 @@ def test_depcensus_01_ddl_is_coord_qualified_and_drops_only_in_downgrade() -> No
         "CHECK (state IN ('clean', 'vulnerable', 'not_applicable', 'unknown'))"
         in upgrade_body
     )
-    assert "ON coord.dependency_advisories (tenant_id, resolved_at)" in upgrade_body
+    assert "ON coord.dependency_advisories (tenant_id)" in upgrade_body
+    assert "WHERE resolved_at IS NULL" in upgrade_body
+    assert "(tenant_id, resolved_at)" not in upgrade_body
+    assert "COMMENT ON COLUMN coord.dependency_census.updated_at IS" in upgrade_body
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +280,17 @@ def _assert_shape(engine: Engine) -> None:
                 {"t": table},
             ).scalar_one()
             assert comment and "2026-11-02-rust-advisories" in comment, table
+        # updated_at has no trigger; its comment says the writer sets it.
+        updated_comment = conn.execute(
+            text(
+                "SELECT col_description(to_regclass('coord.dependency_census'), "
+                "(SELECT attnum FROM pg_attribute WHERE attrelid = "
+                "to_regclass('coord.dependency_census') AND attname = 'updated_at'))"
+            )
+        ).scalar_one()
+        assert updated_comment and "sets it explicitly on every upsert" in (
+            updated_comment
+        )
 
 
 def _assert_absent(engine: Engine) -> None:

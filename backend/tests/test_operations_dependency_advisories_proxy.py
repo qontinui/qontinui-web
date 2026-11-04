@@ -13,7 +13,7 @@ FastAPI app with a mocked ``httpx.AsyncClient``. The properties under test:
   rows and their ``reason`` — because the caller, not this proxy, decides how
   an unknown or missing census renders (UNKNOWN, never clean),
 * ``include_resolved`` always rides the wire, ``repo`` only when set,
-* the operator bearer is forwarded,
+* the operator bearer AND the active-tenant selection are forwarded,
 * coord's ``503 dependency_advisories_surface_unavailable`` reaches the
   browser with its status AND JSON body intact,
 * a transport failure is a 502/504, never a fabricated empty census.
@@ -31,6 +31,7 @@ TEST_TENANT_ID = uuid4()
 ROUTE = "/api/v1/operations/coord/dependency-advisories"
 COORD_PATH = "/coord/dependency-advisories"
 TEST_BEARER = "test-cognito-access-token"
+TEST_ACTIVE_TENANT = str(uuid4())
 
 
 def _build_test_app() -> FastAPI:
@@ -50,6 +51,8 @@ def _build_test_app() -> FastAPI:
         # out of this ContextVar, and a sync override would set it in a worker
         # thread the request task never sees.
         operations_module._caller_bearer.set(TEST_BEARER)
+        # The dashboard's tenant-switcher selection, which coord re-scopes on.
+        operations_module._caller_active_tenant.set(TEST_ACTIVE_TENANT)
         return TEST_TENANT_ID
 
     test_app.dependency_overrides[get_tenant_id] = _tenant_override
@@ -86,7 +89,7 @@ CENSUS_PAYLOAD = {
     "census": [
         {
             "repo": "qontinui/qontinui-coord",
-            "ecosystem": "cargo",
+            "ecosystem": "rust",
             "sha": "fe1dde77f0000000000000000000000000000000",
             "db_commit": "abc1234def0000000000000000000000000000",
             "state": "vulnerable",
@@ -110,7 +113,7 @@ CENSUS_PAYLOAD = {
         },
         {
             "repo": "qontinui/qontinui-runner",
-            "ecosystem": "cargo",
+            "ecosystem": "rust",
             "sha": None,
             "db_commit": None,
             "state": "unknown",
@@ -166,6 +169,18 @@ class TestDependencyAdvisoriesProxy:
         )
         headers = mock_instance.get.call_args.kwargs["headers"]
         assert headers["Authorization"] == f"Bearer {TEST_BEARER}"
+
+    def test_active_tenant_header_is_forwarded(self, auth_client: TestClient):
+        """Coord scopes the census to the tenant the operator switched to;
+        without this header it would answer for the home tenant instead."""
+        from app.api.v1.endpoints.operations import ACTIVE_TENANT_HEADER
+
+        _, mock_instance = _get(
+            auth_client, ROUTE, response=_mock_response(200, CENSUS_PAYLOAD)
+        )
+        headers = mock_instance.get.call_args.kwargs["headers"]
+        assert ACTIVE_TENANT_HEADER == "X-Qontinui-Active-Tenant"
+        assert headers[ACTIVE_TENANT_HEADER] == TEST_ACTIVE_TENANT
 
     def test_surface_unavailable_503_body_is_verbatim(self, auth_client: TestClient):
         body = {

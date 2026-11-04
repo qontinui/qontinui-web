@@ -48,8 +48,13 @@ adding one.
   hit; an ``unknown`` census resolves nothing. A hit that reappears clears it.
 * ``ignored`` records that the repo's ``.cargo/audit.toml`` ignores the
   advisory. The row stays, so an accepted advisory is still visible.
-* ``ix_dependency_advisories_tenant_resolved`` on ``(tenant_id, resolved_at)``
-  serves the open-advisory read (``resolved_at IS NULL``).
+* ``ix_dependency_advisories_tenant_open`` is a PARTIAL index on
+  ``(tenant_id) WHERE resolved_at IS NULL``: it serves the open-advisory read
+  and holds only open rows, so resolved history does not grow it.
+
+``dependency_census.updated_at`` defaults to ``now()`` on insert but has NO
+trigger: coord, the only writer, sets it explicitly on every upsert (its column
+comment says so), so a stale ``updated_at`` means coord did not write the row.
 
 ## Head choice
 
@@ -68,8 +73,8 @@ against ``coord.*``.
 
 ## Safety
 
-Additive: two ``CREATE TABLE IF NOT EXISTS`` on new names, one index on a table
-this file creates, and ``COMMENT ON``. No existing table is touched, so there
+Additive: two ``CREATE TABLE IF NOT EXISTS`` on new names, one partial index on
+a table this file creates, and ``COMMENT ON``. No existing table is touched, so there
 is no lock on a hot table and nothing to backfill. The ``coord_tenant`` roles
 receive their privileges through ``coordrls_01``'s default privileges.
 ``downgrade`` drops only what ``upgrade`` created.
@@ -130,10 +135,12 @@ def upgrade() -> None:
         """
     )
     # The open-advisory read: WHERE tenant_id = $1 AND resolved_at IS NULL.
+    # Partial, so only open rows are indexed and resolved history never grows it.
     op.execute(
         """
-        CREATE INDEX IF NOT EXISTS ix_dependency_advisories_tenant_resolved
-            ON coord.dependency_advisories (tenant_id, resolved_at)
+        CREATE INDEX IF NOT EXISTS ix_dependency_advisories_tenant_open
+            ON coord.dependency_advisories (tenant_id)
+            WHERE resolved_at IS NULL
         """
     )
 
@@ -170,6 +177,12 @@ def upgrade() -> None:
     )
     op.execute(
         """
+        COMMENT ON COLUMN coord.dependency_census.updated_at IS
+            'When coord last wrote this row. No trigger maintains it: the writer (coord) sets it explicitly on every upsert; the now() default covers the first insert only.'
+        """
+    )
+    op.execute(
+        """
         COMMENT ON TABLE coord.dependency_advisories IS
             'One row per advisory per package per repo lockfile, updated in place on re-observation. resolved_at IS NULL = still open. Plan 2026-11-02-rust-advisories-have-no-fleet-consumer.'
         """
@@ -201,6 +214,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop both tables; their index and constraints go with them."""
+    """Drop both tables; the partial open-advisory index and every constraint go
+    with them."""
     op.execute("DROP TABLE IF EXISTS coord.dependency_advisories")
     op.execute("DROP TABLE IF EXISTS coord.dependency_census")

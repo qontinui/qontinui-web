@@ -20,7 +20,18 @@
  *   verdict from three days ago is not a statement about today's lockfile or
  *   today's advisory DB, so the row is flagged and raised to `waiting`.
  * - A census whose age cannot be established (no parseable `observed_at` and
- *   no `age_secs`) is treated as stale — an undatable reading is not fresh.
+ *   no `age_secs`, or an `observed_at` more than
+ *   {@link CLOCK_SKEW_ALLOWANCE_SECS} in the future) is treated as stale — an
+ *   undatable reading is not fresh, and a future stamp is not "age 0".
+ * - A verdict its own rows contradict — `clean` with an open advisory, or
+ *   `vulnerable` with none — is amber and says so, never calm.
+ * - The census only holds repos coord has a row for, so the list is NOT the
+ *   fleet: {@link lastCensusCycle} dates the newest row, and the section says
+ *   the list covers recorded repos only. No expected-repo list is invented
+ *   here.
+ * - The section is titled "Rust advisories", so it reads only
+ *   `ecosystem === "rust"` rows ({@link rustCensusRows}), keyed
+ *   `${repo}:${ecosystem}` ({@link censusRowKey}).
  */
 
 import type { Attention } from "@/components/console";
@@ -65,6 +76,15 @@ export interface DependencyAdvisoriesPayload {
 
 /** A census older than this (36 h) is flagged stale. */
 export const CENSUS_STALE_AFTER_SECS = 36 * 3600;
+
+/**
+ * How far in the future an `observed_at` may sit before it is undatable
+ * rather than clock skew between coord's writer and this browser: 5 min.
+ */
+export const CLOCK_SKEW_ALLOWANCE_SECS = 300;
+
+/** The ecosystem value the census writes for a Cargo lockfile. */
+export const RUST_ECOSYSTEM = "rust";
 
 const isStr = (v: unknown): v is string => typeof v === "string";
 const strOrNull = (v: unknown): string | null => (isStr(v) ? v : null);
@@ -149,7 +169,13 @@ export function censusAgeSecs(
 ): number | null {
   if (row.observed_at) {
     const t = Date.parse(row.observed_at);
-    if (!Number.isNaN(t)) return Math.max(0, (nowMs - t) / 1000);
+    if (!Number.isNaN(t)) {
+      const secs = (nowMs - t) / 1000;
+      // A stamp past the skew allowance is a wrong clock somewhere, not a
+      // fresh census: undatable, and the caller renders that as stale.
+      if (secs < -CLOCK_SKEW_ALLOWANCE_SECS) return null;
+      return Math.max(0, secs);
+    }
   }
   if (row.age_secs !== null && answeredAtMs !== null) {
     return Math.max(0, row.age_secs + (nowMs - answeredAtMs) / 1000);
@@ -174,6 +200,8 @@ export interface CensusRowView {
   ageSecs: number | null;
   /** Older than the bound, or undatable. */
   stale: boolean;
+  /** The verdict and the rows disagree, in words; `null` when they agree. */
+  contradiction: string | null;
   attention: Attention;
 }
 
@@ -202,13 +230,25 @@ export function viewCensusRow(
   const measured = state === "clean" || state === "vulnerable";
   const ageSecs = censusAgeSecs(row, nowMs, answeredAtMs);
   const stale = ageSecs === null || ageSecs > CENSUS_STALE_AFTER_SECS;
+  // A verdict its own rows contradict is not a calm state either way round:
+  // `vulnerable` with nothing open, or `clean` with something open. Both are
+  // amber (`waiting`) — we do not know which half is right.
+  let contradiction: string | null = null;
+  if (state === "vulnerable" && open.length === 0) {
+    contradiction = "state vulnerable, but no open advisory listed";
+  } else if (state === "clean" && open.length > 0) {
+    contradiction = `state clean, but ${open.length} open ${
+      open.length === 1 ? "advisory" : "advisories"
+    } listed`;
+  }
   let attention: Attention = "none";
   if (state === "vulnerable" && open.length > 0) attention = "author";
-  else if (state === "unknown" || state === "unrecognised" || stale) {
-    attention = "waiting";
-  } else if (state === "vulnerable") {
-    // Vulnerable with nothing open in the list coord sent: the verdict and
-    // the rows disagree, which is not a calm state either.
+  else if (
+    state === "unknown" ||
+    state === "unrecognised" ||
+    stale ||
+    contradiction !== null
+  ) {
     attention = "waiting";
   }
   return {
@@ -219,7 +259,47 @@ export function viewCensusRow(
     ignoredCount: row.advisories.filter((a) => a.ignored).length,
     ageSecs,
     stale,
+    contradiction,
     attention,
+  };
+}
+
+/** The rows a "Rust advisories" surface reads: `ecosystem === "rust"` only. */
+export function rustCensusRows(
+  census: DependencyCensusRow[]
+): DependencyCensusRow[] {
+  return census.filter((row) => row.ecosystem === RUST_ECOSYSTEM);
+}
+
+/** A row's identity: coord keys the census by (repo, ecosystem). */
+export function censusRowKey(row: DependencyCensusRow): string {
+  return `${row.repo}:${row.ecosystem ?? ""}`;
+}
+
+/** When the newest census row was observed, and whether that is stale. */
+export interface CensusCycle {
+  /** Age of the newest datable row; `null` when no row can be dated. */
+  ageSecs: number | null;
+  /** Older than the bound, or no datable row at all. */
+  stale: boolean;
+}
+
+/**
+ * The census cycle's age: the youngest datable row (the newest `observed_at`).
+ * Rows only exist for repos coord holds a census for, so this is the one
+ * fleet-level freshness signal the body carries — a whole census that stopped
+ * running shows here even when every row it left reads `clean`.
+ */
+export function lastCensusCycle(views: CensusRowView[]): CensusCycle {
+  let newest: number | null = null;
+  for (const v of views) {
+    if (v.ageSecs !== null && (newest === null || v.ageSecs < newest)) {
+      newest = v.ageSecs;
+    }
+  }
+  return {
+    ageSecs: newest,
+    stale: newest === null || newest > CENSUS_STALE_AFTER_SECS,
   };
 }
 

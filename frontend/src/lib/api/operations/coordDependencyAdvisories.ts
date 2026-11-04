@@ -9,10 +9,10 @@
  * `GET <url> failed: <status> - <body>` — the shape `httpStatusOf` /
  * `httpBodyOf` read, which is how the hook tells coord's
  * `503 dependency_advisories_surface_unavailable` apart from any other
- * failure. Returns `unknown`: the one reader,
- * `parseDependencyAdvisoriesPayload` in
- * `components/operations/useDependencyAdvisories.ts`, validates the body
- * before anything renders it.
+ * failure. Returns `unknown`: the one reader, `useDependencyAdvisories`,
+ * validates the body with `parseDependencyAdvisoriesPayload` (in
+ * `components/operations/dependencyAdvisories.ts`) before anything renders
+ * it.
  */
 
 import type { HttpOptions } from "@/services/http-client";
