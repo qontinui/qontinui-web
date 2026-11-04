@@ -178,6 +178,9 @@ export function censusAgeSecs(
     }
   }
   if (row.age_secs !== null && answeredAtMs !== null) {
+    // The same rule as observed_at: a negative age past the skew allowance
+    // is a wrong clock, not a fresh census.
+    if (row.age_secs < -CLOCK_SKEW_ALLOWANCE_SECS) return null;
     return Math.max(0, row.age_secs + (nowMs - answeredAtMs) / 1000);
   }
   return null;

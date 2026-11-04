@@ -288,7 +288,7 @@ def _assert_shape(engine: Engine) -> None:
                 "to_regclass('coord.dependency_census') AND attname = 'updated_at'))"
             )
         ).scalar_one()
-        assert updated_comment and "sets it explicitly on every upsert" in (
+        assert updated_comment and "MUST set it explicitly on every upsert" in (
             updated_comment
         )
 

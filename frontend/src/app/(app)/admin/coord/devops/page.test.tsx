@@ -3485,6 +3485,11 @@ describe("/admin/coord/devops — Rust advisory census", () => {
       row.querySelector("[data-console-row]")?.getAttribute("data-attention");
     expect(attentionOf(cleanRow)).toBe("waiting");
     expect(attentionOf(cleanRow)).toBe(attentionOf(vulnRow));
+    // The collapsed header counts contradictions, so a calm-looking summary
+    // cannot hide one.
+    expect(
+      screen.getByTestId("dependency-advisories-contradiction-badge")
+    ).toHaveTextContent("2 contradictions");
   });
 
   it("is not mounted in presentation mode, and makes no read there", async () => {

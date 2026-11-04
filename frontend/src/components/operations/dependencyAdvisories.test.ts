@@ -102,6 +102,19 @@ describe("censusAgeSecs", () => {
     const r = row({ observed_at: new Date(NOW + 60_000).toISOString() });
     expect(censusAgeSecs(r, NOW, NOW)).toBe(0);
   });
+
+  it("treats a negative age_secs past the skew allowance as undatable", () => {
+    const r = row({
+      observed_at: null,
+      age_secs: -(CLOCK_SKEW_ALLOWANCE_SECS + 60),
+    });
+    expect(censusAgeSecs(r, NOW, NOW)).toBeNull();
+  });
+
+  it("reads a negative age_secs within the skew allowance as age 0", () => {
+    const r = row({ observed_at: null, age_secs: -60 });
+    expect(censusAgeSecs(r, NOW, NOW)).toBe(0);
+  });
 });
 
 describe("viewCensusRow — staleness", () => {

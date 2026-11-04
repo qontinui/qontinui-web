@@ -251,12 +251,14 @@ export function DependencyAdvisoriesSection({ nowMs }: { nowMs: number }) {
     let vulnerable = 0;
     let unknown = 0;
     let stale = 0;
+    let contradictions = 0;
     for (const v of views) {
+      if (v.contradiction !== null) contradictions += 1;
       if (v.state === "vulnerable") vulnerable += 1;
       if (v.state === "unknown" || v.state === "unrecognised") unknown += 1;
       if (v.stale) stale += 1;
     }
-    return { vulnerable, unknown, stale };
+    return { vulnerable, unknown, stale, contradictions };
   }, [views]);
 
   const cycle = useMemo(() => lastCensusCycle(views), [views]);
@@ -305,6 +307,18 @@ export function DependencyAdvisoriesSection({ nowMs }: { nowMs: number }) {
                 data-testid="dependency-advisories-unknown-badge"
               >
                 {counts.unknown} unknown
+              </Badge>
+            )}
+            {counts.contradictions > 0 && (
+              <Badge
+                variant="warning"
+                className="ml-1"
+                data-testid="dependency-advisories-contradiction-badge"
+              >
+                {counts.contradictions}{" "}
+                {counts.contradictions === 1
+                  ? "contradiction"
+                  : "contradictions"}
               </Badge>
             )}
             {counts.stale > 0 && (

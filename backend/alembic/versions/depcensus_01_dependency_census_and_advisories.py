@@ -53,7 +53,7 @@ adding one.
   and holds only open rows, so resolved history does not grow it.
 
 ``dependency_census.updated_at`` defaults to ``now()`` on insert but has NO
-trigger: coord, the only writer, sets it explicitly on every upsert (its column
+trigger: coord, the only writer, MUST set it explicitly on every upsert (its column
 comment says so), so a stale ``updated_at`` means coord did not write the row.
 
 ## Head choice
@@ -178,7 +178,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.dependency_census.updated_at IS
-            'When coord last wrote this row. No trigger maintains it: the writer (coord) sets it explicitly on every upsert; the now() default covers the first insert only.'
+            'When coord last wrote this row. No trigger maintains it: the writer (coord /coord/dependency-advisories) MUST set it explicitly on every upsert; the now() default covers the first insert only.'
         """
     )
     op.execute(
