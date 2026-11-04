@@ -135,6 +135,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # The webdb self-hosted pool (WEB_CI_DB_LANE) has no sudo, so the apt/sudo
+      # steps below run on github-hosted only and the host must already carry
+      # what they install. Plan
+      # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
+      - name: "Self-hosted: host provisioned"
+        if: runner.environment == 'self-hosted'
+        uses: ./.github/actions/self-hosted-host-provisioned
+        with:
+          tools: git curl
+          pg-major: 16
+
       - name: Clone sibling dependencies
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -347,6 +358,7 @@ jobs:
       # would be a step name available to APT_STEP_OUTCOMES, and nothing in
       # this pair runs apt.
       - name: Restore Playwright apt font cache
+        if: runner.environment == 'github-hosted'
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         continue-on-error: true
         with:
@@ -377,6 +389,7 @@ jobs:
       # boundary. This step touches local disk only -- no network, nothing to
       # stall - so it is deliberately unbounded and deliberately has no `id:`.
       - name: Seed apt archives from cache
+        if: runner.environment == 'github-hosted'
         run: |
           set -uo pipefail
           cache_dir="$HOME/.cache/qontinui-apt-playwright"
@@ -399,6 +412,7 @@ jobs:
           fi
 
       - name: Install Playwright system deps (apt, chromium + ${{ matrix.engine }})
+        if: runner.environment == 'github-hosted'
         id: apt_playwright
         # Sized from a per-half measurement, not from the fused step: each green
         # run's log was cut at the boundary between apt's last output line and the
@@ -450,7 +464,7 @@ jobs:
       # `-maxdepth 1` `*.deb` glob below matches the top level only, so
       # `partial/` -- one level deeper -- is never picked up.
       - name: Stage apt archives for cache
-        if: always()
+        if: always() && runner.environment == 'github-hosted'
         run: |
           set -uo pipefail
           cache_dir="$HOME/.cache/qontinui-apt-playwright"
@@ -528,6 +542,7 @@ jobs:
         run: npx playwright install chromium ${{ matrix.engine }}
 
       - name: Install postgresql-client
+        if: runner.environment == 'github-hosted'
         id: apt_psql
         # ONLY the apt-get call lives in this step, and it is the entire reason
         # for the bound: it reaches an external mirror at job time and is the

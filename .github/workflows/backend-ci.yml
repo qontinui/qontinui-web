@@ -338,7 +338,7 @@ jobs:
 
   test:
     name: Run Tests (shard ${{ matrix.shard }}/6)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
     # SHARDED SIX WAYS (plan
     # 2026-09-12-web-gating-run-tests-fills-its-budget-so-the-suite-is-sharded).
     #
@@ -486,10 +486,22 @@ jobs:
         with:
           persist-credentials: false
 
+      # The webdb self-hosted pool (WEB_CI_DB_LANE) has no sudo, so the apt/sudo
+      # steps below run on github-hosted only and the host must already carry
+      # what they install. Plan
+      # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
+      - name: "Self-hosted: host provisioned"
+        if: runner.environment == 'self-hosted'
+        uses: ./.github/actions/self-hosted-host-provisioned
+        with:
+          tools: git curl python3
+          pg-major: 16
+
       # qontinui (a path-dep) pulls in torch from pytorch-cu128 — wheels
       # are large enough to overflow the runner's default disk. Remove
       # preinstalled SDKs/runtimes that this workflow doesn't use.
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
@@ -590,6 +602,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Install postgresql-client
+        if: runner.environment == 'github-hosted'
         id: apt_psql
         # ONLY the apt-get call lives in this step, and it is the entire reason
         # for the bound: it reaches an external mirror at job time and is the

@@ -114,7 +114,7 @@ jobs:
     # p50 3.67 / p90 4.51 / max 7.47 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 15
     name: Recall eval (report only)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_MEMORY_RECALL_EVAL || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
     defaults:
       run:
         working-directory: ./backend
@@ -143,9 +143,20 @@ jobs:
         with:
           persist-credentials: false
 
+      # The webdb self-hosted pool (WEB_CI_DB_LANE) has no sudo, so the apt/sudo
+      # steps below run on github-hosted only and the host must already carry
+      # what they install. Plan
+      # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
+      - name: "Self-hosted: host provisioned"
+        if: runner.environment == 'self-hosted'
+        uses: ./.github/actions/self-hosted-host-provisioned
+        with:
+          tools: git curl python3
+
       # qontinui (a path-dep) pulls torch from pytorch-cu128; the wheels
       # overflow the runner's default disk without this.
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
