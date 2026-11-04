@@ -8,11 +8,20 @@
  *    `remediation_state=none` and the recurrence sort;
  *  - clicking a sort key reorders the read (the second click flips the order);
  *  - "Load more" follows `next_cursor` under the SAME query and appends;
- *  - a degraded proxy answer reads as UNKNOWN, never as "no dossiers".
+ *  - a degraded proxy answer reads as UNKNOWN, never as "no dossiers";
+ *  - a `?slug=` / `?preset=no-plan` deep link seeds the FIRST read (one read,
+ *    not a default read thrown away), and the slug chip clears it;
+ *  - the first-seen and updated date ranges reach coord.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const httpGet = vi.fn();
@@ -88,6 +97,67 @@ function lastQuery(): URLSearchParams {
 describe("CoordDossiersPage", () => {
   beforeEach(() => {
     httpGet.mockReset();
+    window.history.replaceState(null, "", "/admin/coord/dossiers");
+  });
+
+  it("a ?slug= deep link is the first read, and its chip clears it", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/admin/coord/dossiers?slug=worktree-sibling-build-dependency"
+    );
+    httpGet.mockResolvedValue(page([dossier()]));
+    render(<CoordDossiersPage />);
+    await screen.findAllByTestId("coord-dossier-row");
+
+    expect(urls()).toHaveLength(1);
+    expect(lastQuery().get("slug")).toBe("worktree-sibling-build-dependency");
+
+    await userEvent.click(screen.getByTestId("coord-dossiers-slug-filter"));
+    await waitFor(() => expect(lastQuery().get("slug")).toBeNull());
+    expect(screen.queryByTestId("coord-dossiers-slug-filter")).toBeNull();
+    expect(window.location.search).toBe("");
+  });
+
+  it("a ?preset=no-plan deep link opens on the No plan yet view", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/admin/coord/dossiers?preset=no-plan"
+    );
+    httpGet.mockResolvedValue(page([dossier()]));
+    render(<CoordDossiersPage />);
+    await screen.findAllByTestId("coord-dossier-row");
+
+    expect(urls()).toHaveLength(1);
+    const q = lastQuery();
+    expect(q.getAll("readiness")).toEqual(["ready_for_pvi"]);
+    expect(q.getAll("remediation_state")).toEqual(["none"]);
+    expect(q.get("sort")).toBe("recurrence_count");
+    expect(q.get("order")).toBe("desc");
+  });
+
+  it("the first-seen and updated date ranges reach coord", async () => {
+    httpGet.mockResolvedValue(page([dossier()]));
+    render(<CoordDossiersPage />);
+    await screen.findAllByTestId("coord-dossier-row");
+
+    const set = (id: string, v: string) => {
+      const input = screen.getByTestId(id) as HTMLInputElement;
+      // A date input takes its value whole, not keystroke by keystroke.
+      fireEvent.change(input, { target: { value: v } });
+    };
+    set("coord-dossiers-first-seen-since", "2026-06-01");
+    set("coord-dossiers-first-seen-until", "2026-07-01");
+    set("coord-dossiers-updated-since", "2026-10-20");
+    set("coord-dossiers-updated-until", "2026-10-25");
+    await waitFor(() =>
+      expect(lastQuery().get("updated_until")).toBe("2026-10-25")
+    );
+    const q = lastQuery();
+    expect(q.get("first_seen_since")).toBe("2026-06-01");
+    expect(q.get("first_seen_until")).toBe("2026-07-01");
+    expect(q.get("updated_since")).toBe("2026-10-20");
   });
 
   it("renders a row per dossier with the live remediation badge", async () => {
@@ -139,6 +209,7 @@ describe("CoordDossiersPage", () => {
     await screen.findAllByTestId("coord-dossier-row");
 
     await userEvent.click(screen.getByTestId("coord-dossiers-preset-no-plan"));
+    expect(window.location.search).toBe("?preset=no-plan");
     await waitFor(() =>
       expect(lastQuery().getAll("remediation_state")).toEqual(["none"])
     );

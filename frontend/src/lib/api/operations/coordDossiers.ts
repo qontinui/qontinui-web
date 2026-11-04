@@ -38,12 +38,20 @@ export interface DossiersQuery {
   readiness?: readonly string[];
   /** Repeated `remediation_state=` keys (the live roll-up, plan D6). */
   remediationState?: readonly string[];
+  /** Exact `slug=` — one dossier, the deep-link form (`?slug=` on the page). */
+  slug?: string;
   q?: string;
   recurrenceMin?: number | null;
   recurrenceMax?: number | null;
   /** ISO `YYYY-MM-DD`. */
   lastSeenSince?: string;
   lastSeenUntil?: string;
+  /** ISO `YYYY-MM-DD` — when the defect was first seen. */
+  firstSeenSince?: string;
+  firstSeenUntil?: string;
+  /** ISO `YYYY-MM-DD` — when the head was last folded. */
+  updatedSince?: string;
+  updatedUntil?: string;
   /** `null` / absent sends no key (either). */
   hasOpenRemediation?: boolean | null;
   sort?: DossierSort;
@@ -59,6 +67,7 @@ export function dossiersQueryString(query: DossiersQuery): string {
   for (const r of query.readiness ?? []) qs.append("readiness", r);
   for (const s of query.remediationState ?? [])
     qs.append("remediation_state", s);
+  if (query.slug) qs.set("slug", query.slug);
   if (query.q) qs.set("q", query.q);
   if (typeof query.recurrenceMin === "number")
     qs.set("recurrence_min", String(query.recurrenceMin));
@@ -66,6 +75,10 @@ export function dossiersQueryString(query: DossiersQuery): string {
     qs.set("recurrence_max", String(query.recurrenceMax));
   if (query.lastSeenSince) qs.set("last_seen_since", query.lastSeenSince);
   if (query.lastSeenUntil) qs.set("last_seen_until", query.lastSeenUntil);
+  if (query.firstSeenSince) qs.set("first_seen_since", query.firstSeenSince);
+  if (query.firstSeenUntil) qs.set("first_seen_until", query.firstSeenUntil);
+  if (query.updatedSince) qs.set("updated_since", query.updatedSince);
+  if (query.updatedUntil) qs.set("updated_until", query.updatedUntil);
   if (
     query.hasOpenRemediation !== null &&
     query.hasOpenRemediation !== undefined
