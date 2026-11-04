@@ -18,6 +18,11 @@
  * by hand, with the counterpart named. Where the two disagreed, `prPipeline`
  * won, because its table is the one with the incident history behind it.
  *
+ * The per-token table itself is `PR_ATTENTION_BY_MERGE_STATUS` in
+ * `components/operations/prMergeStatus.ts`: `prPipeline` borrows it, and a
+ * component must not reach into a route directory for it. It is imported, NOT
+ * re-exported, so one table has one declaring module.
+ *
  * ## What this replaces
  *
  * `MERGE_STATUS_TONE` inline in `PrsTable.tsx`, whose own comment described
@@ -36,9 +41,10 @@
  *   return a verdict.
  * - `behind-base` was `warning` amber and stays amber — the same reading
  *   `prPipeline` gives `needs-rebase`. That amber is NOT a promise: coord's
- *   BEHIND freshen MAY bring the branch current, but whether it will (it gives
- *   up after an attempt ceiling, a content gate can suppress it, a kill switch
- *   can disable it) is not served yet, so the reading is UNKNOWN (plan
+ *   BEHIND freshen gives up after an attempt ceiling, a content gate can
+ *   suppress it and a kill switch can disable it, so the token alone reads
+ *   UNKNOWN. When coord serves `freshen` the row reads that instead, through
+ *   `readBehindFreshen` (plan
  *   `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`).
  * - `review-required` was `warning` amber. It becomes **red**: `prPipeline`
  *   files its counterpart `requirements` as `author`, because a required
@@ -47,7 +53,6 @@
  *   reason — coord parks the PR and waits for a human; nothing times out.
  */
 
-import type { Attention } from "@/components/console/attention";
 import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
 import {
   AUTHOR_RED,
@@ -56,82 +61,22 @@ import {
   UNKNOWN_AMBER,
   WAITING_AMBER,
 } from "@/components/console/statusRow";
+import {
+  BEHIND_FRESHEN_ATTENTION_BY_KIND,
+  isFreshenPromiseToken,
+  PR_ATTENTION_BY_MERGE_STATUS,
+  readBehindFreshen,
+  type BehindFreshenKind,
+} from "@/components/operations/prMergeStatus";
+import type { PrFreshen } from "@/components/operations/mergeTypes";
 import type { PrMergeStatus } from "@/services/admin-dev-service";
 
 /**
- * The audited kind → attention table. TOTAL over `PrMergeStatus`, one
- * documented row each, with its `prPipeline` counterpart named:
- *
- * | merge_status | attention | `prPipeline` counterpart | why |
- * |---|---|---|---|
- * | `ready` | `none` | `ready` | CLEAN; coord will pick it up. |
- * | `queued` | `none` | `queued` | In coord's queue. |
- * | `ci-pending` | `none` | `checks-pending` | CI is still running. **The original bug was painting this red**; it needs nobody. |
- * | `draft` | `none` | `draft` | Intentionally parked by its author. |
- * | `behind-base` | `waiting` | `needs-rebase` | BEHIND, and no other block coord knows of — which includes a verdict coord never evaluated (any other known block gets its own token, and `prPipeline` renders that as `behind-held-*`). Coord's BEHIND freshen MAY bring it current; whether it will is not served yet — UNKNOWN, not a promise. Amber, not red: no author move is known to be owed. |
- * | `awaiting-specialist-review` | `waiting` | (escalation arm) | The specialist review is dispatched; a verdict is coming back. That is a nameable clearer, which is what amber requires. |
- * | `conflicts` | `author` | `conflict` / `not-mergeable` | A real merge conflict. Only a human resolves it. |
- * | `ci-failed` | `author` | `checks-failing` | A check reported failure. **The other half of the original bug** — this is the state that genuinely needs a push. |
- * | `ci-failed-stale-base` | `waiting` | `needs-rebase` (same clearer) | A check is red, but the PR's base is stale — `main` has moved past the CI base, so the red may be main's fault rather than this PR's. coord diagnosed it (predicate code `ci-not-green-stale-base`), and coord's OWN stale-base freshen MAY update the branch and re-run CI — but it refuses a distance-only stale base outright, and whether it will act on this PR is not served yet (UNKNOWN). Amber because red would send the author to fix a failure that may not be theirs, not because the freshen is promised. |
- * | `ci-failed-infra-kill` | `waiting` | (none — see why) | Added by qontinui-coord#2723 and mapped here AHEAD of coord emitting it: every failing check run at the head failed on a SELF-HOSTED runner with zero failed steps — an infrastructure failure (runner lost, host down, setup/credential error), proven by coord's own per-job classifier. Not the author's code, so never author red. The remedy is re-running the failed jobs once the runner is healthy — infra/operator-side, named in coord's `blocking_summary`. Nothing clears it on its own (coord's bounded re-run reflex is a deferred phase), so `WAITING_AMBER` would promise a self-clearing that never comes: like `terminal-proposal-held` it is a real block with no self-clearing promise and no author move, so it sits at `UNKNOWN_AMBER`. No `prPipeline` counterpart: no existing `UnifiedStatusKind` fits (there it still reads as `checks-failing`, `author`). |
- * | `required-checks-missing` | `author` | `checks-failing` (same class) | A required check is UNSATISFIED. coord reconciles `required_checks_satisfied` against GitHub's aggregate at hydration, so a surviving `false` may never clear on its own. `trainActivity` grades it `blocking` and names `ci-failed` — not `behind-base` — as its sibling; amber here would promise a clearer that does not exist. |
- * | `review-required` | `author` | `requirements` | A required review or ruleset condition is unmet. Nothing dispatches the reviewer for you. |
- * | `blast-radius-block` | `author` | `requirements` | Over the repo's line budget: coord parks it and waits for a human decision. No timer clears it. |
- * | `ready-but-unlanded` | `author` | `conflict-stranded` (same class) | coord says ready and it has not landed — a wedge. The promise that something else would land it is demonstrably false. |
- * | `dependency-upstream-closed` | `author` | (none — see why) | A `coord:stacked-on=` / `coord:downstream-of=` label names an upstream PR that is CLOSED and did not land (qontinui-coord#2819). Unlike its `has-cross-repo-dependency` sibling inside `predicate-blocked`, no other party is coming: the edge never clears on its own, and coord classifies it `AuthorActs`. The move is to re-anchor the label onto the successor PR, or remove it if the upstream's content already landed — coord's `blocking_summary` names the dead parent. No `prPipeline` counterpart: its `blocked` row carries the "lands after the other PR" promise this state exists to retract. |
- * | `repo-unreachable` | `author` | `not-mergeable` | coord cannot clone the repo (deleted/renamed, or App access revoked). Not fixable by a rebase or a re-evaluate; a human must restore access. |
- * | `predicate-blocked` | `waiting` | (none — see why) | coord's merge predicate is holding the PR with no more specific token. A real block, so never calm. But it is a RESIDUE bucket spanning states with OPPOSITE readings: `main-red` and `has-cross-repo-dependency` clear themselves with no author action, while `has-blocking-label` needs a human and `dry-run-mode` is operator config. Red would assert "someone must act now", false for at least two members; plain `WAITING_AMBER` would promise "something else will clear this", false for at least two others. So it sits at the IGNORANCE FLOOR alongside `unknown` — we cannot say whose move it is. It differs from `unknown` in that coord DID diagnose it and names the specific code in `blocking_summary`, which `derivePrStatus` already surfaces as the badge's `reason`/`title`, so the operator can read the real cause off the row. No `prPipeline` counterpart genuinely fits: `blocked` (`waiting`) covers only the cross-repo-dependency member and carries the "lands after the other PR" promise this bucket cannot make, so naming it would be an invented alignment. |
- * | `terminal-proposal-held` | `waiting` | (none — see why) | Green + CLEAN + open, but the train's only proposal at this head is TERMINAL and HELD, so coord will not re-cut it (already-landed, merge-resolution-discarded, reap-hardcap, superseded-empty candidate, merged, plain cancelled). Split out of `ready-but-unlanded`, which keeps the no-proposal stall and every terminal coord re-cuts or re-probes itself (infra / transient errors, content and textual conflicts, shadow-landed). Like `predicate-blocked` it is a real block whose members disagree about whose move it is — linearize / close / push a new head are the AUTHOR's, a hardcap cancel-unblock is the OPERATOR's — so red would name the wrong actor for half of it and `WAITING_AMBER` would promise a self-clearing that never comes. It sits at the IGNORANCE FLOOR with `UNKNOWN_AMBER`, and coord's `blocking_summary` (the badge's `reason`/`title`) names the actual move. No `prPipeline` counterpart: `conflict-stranded` is `author`, which is the misreading this row exists to avoid. |
- * | `landed-open` | `none` | `merged` (`isMergedPr` reads the token) | coord LANDED this PR at its CURRENT head and GitHub has not closed it yet — the phantom-open ff-land window. Nobody's move: the code is on the base branch, no author can clear it, and coord's own sweep does the close (`pr_merge_phantom_open_stuck` fires when it cannot). Its `none` siblings are `ready`/`queued`/`draft`, not `unknown` — this is the one state where we know MORE than usual, not less. |
- * | `unknown` | `waiting` | `unknown` | R3's IGNORANCE FLOOR. We cannot say whose move this is, and calm would assert nothing is wrong. |
+ * What a row on this page can be: coord's token verbatim, or — only on the two
+ * tokens that make a freshen promise, and only when coord SERVED a reading
+ * that changes who must act — the shared freshen kind.
  */
-export const PR_ATTENTION_BY_MERGE_STATUS: Record<PrMergeStatus, Attention> = {
-  // --- nobody is blocked → never red or amber -------------------------------
-  ready: "none",
-  queued: "none",
-  "ci-pending": "none",
-  draft: "none",
-  // Landed at this head; GitHub has not closed it yet. Calm is RIGHT here and
-  // is not an ignorance claim — the opposite: coord corroborated a `merged`
-  // proposal at this PR's exact current head. Amber would promise a clearer
-  // that is not a person, and red would send someone to act on finished work.
-  "landed-open": "none",
-  // --- waiting on something other than the author → amber ------------------
-  "behind-base": "waiting",
-  "awaiting-specialist-review": "waiting",
-  // Red on a stale base: not the author's red. Coord's own freshen MAY update
-  // the branch and re-run CI; whether it will is not served yet (UNKNOWN).
-  "ci-failed-stale-base": "waiting",
-  // Red from a self-hosted runner kill (zero failed steps; qontinui-coord#2723):
-  // the remedy is a re-run once the runner is healthy — infra/operator-side,
-  // not the author's code. No operator attention exists in this vocabulary;
-  // `author` would be the misreading coord split this token out to stop.
-  // Palette is the ignorance floor, not the self-clearing amber — see below.
-  "ci-failed-infra-kill": "waiting",
-  // --- someone must act now → red ------------------------------------------
-  conflicts: "author",
-  "ci-failed": "author",
-  // Split out of `review-required`, but it belongs to the CI dimension, not to
-  // a reviewer (coord's own `merge_verdict.rs` maps it to `"ci"`). Same
-  // attention either way: nothing dispatches the missing check for you.
-  "required-checks-missing": "author",
-  "review-required": "author",
-  "blast-radius-block": "author",
-  "ready-but-unlanded": "author",
-  "repo-unreachable": "author",
-  // A dep edge onto a CLOSED, unlanded upstream: no other party will clear
-  // it, so it leaves the `predicate-blocked` floor for author red.
-  "dependency-upstream-closed": "author",
-  // --- we do not know → the ignorance floor, amber's lighter sibling --------
-  // coord's residue token: a real block whose members disagree about whose
-  // move it is, so neither red nor the self-clearing promise is honest.
-  "predicate-blocked": "waiting",
-  // The HELD half of the old `ready-but-unlanded`: a diagnosed block whose
-  // move is the author's for some members and the operator's for others, so
-  // the same floor as `predicate-blocked`, never `author` red.
-  "terminal-proposal-held": "waiting",
-  unknown: "waiting",
-};
+export type PrRowKind = PrMergeStatus | BehindFreshenKind;
 
 export const PR_MERGE_STATUS_CLASS: Record<PrMergeStatus, string> = {
   ready: "bg-green-500/5 text-green-300 border-green-500/25",
@@ -140,13 +85,14 @@ export const PR_MERGE_STATUS_CLASS: Record<PrMergeStatus, string> = {
   draft: "bg-transparent text-muted-foreground border-border border-dashed",
   // INERT, the same calm `queued` gets: nothing is owed on this PR.
   "landed-open": INERT,
-  // UNKNOWN_AMBER: whether coord's freshen will act is not served yet, so the
-  // self-clearing amber would draw a promise nothing observed.
+  // UNKNOWN_AMBER: a row keeps this kind only when coord served no freshen
+  // reading (or served `unknown`), so the self-clearing amber would draw a
+  // promise nothing observed. A served reading moves to `BEHIND_FRESHEN_CLASS`.
   "behind-base": UNKNOWN_AMBER,
   "awaiting-specialist-review": WAITING_AMBER,
-  // A CI red coord exonerates the author from. Coord's own freshen MAY clear
-  // it (update the branch, re-run CI); whether it will is not served yet, so
-  // it sits at the ignorance floor rather than the self-clearing amber.
+  // A CI red coord exonerates the author from. Same reading as `behind-base`:
+  // this kind means no freshen reading was served, so the ignorance floor
+  // rather than the self-clearing amber.
   "ci-failed-stale-base": UNKNOWN_AMBER,
   conflicts: AUTHOR_RED,
   "ci-failed": AUTHOR_RED,
@@ -178,10 +124,30 @@ export const PR_AUTHOR_GLYPH_STATUSES: ReadonlySet<PrMergeStatus> = new Set(
   )
 );
 
-export const PR_STATUS_PALETTE: StatusPalette<PrMergeStatus> = {
-  badgeClass: PR_MERGE_STATUS_CLASS,
-  authorGlyphKinds: PR_AUTHOR_GLYPH_STATUSES,
-  doneGlyphKinds: new Set<PrMergeStatus>(["ready"]),
+/**
+ * The served freshen readings. `behind-freshening` earns the self-clearing
+ * amber because coord named itself as the clearer; `behind-freshen-refused` is
+ * red because coord said it will not.
+ */
+export const BEHIND_FRESHEN_CLASS: Record<BehindFreshenKind, string> = {
+  "behind-freshening": WAITING_AMBER,
+  "behind-freshen-refused": AUTHOR_RED,
+};
+
+export const BEHIND_FRESHEN_AUTHOR_GLYPH_KINDS: ReadonlySet<BehindFreshenKind> =
+  new Set(
+    (
+      Object.keys(BEHIND_FRESHEN_ATTENTION_BY_KIND) as BehindFreshenKind[]
+    ).filter((k) => BEHIND_FRESHEN_ATTENTION_BY_KIND[k] === "author")
+  );
+
+export const PR_STATUS_PALETTE: StatusPalette<PrRowKind> = {
+  badgeClass: { ...PR_MERGE_STATUS_CLASS, ...BEHIND_FRESHEN_CLASS },
+  authorGlyphKinds: new Set<PrRowKind>([
+    ...PR_AUTHOR_GLYPH_STATUSES,
+    ...BEHIND_FRESHEN_AUTHOR_GLYPH_KINDS,
+  ]),
+  doneGlyphKinds: new Set<PrRowKind>(["ready"]),
 };
 
 /**
@@ -205,11 +171,29 @@ export function mergeStatusLabel(status: string | null | undefined): string {
  * `reason`, so the badge's native `title` answers "why?" on every row — the
  * `StatusBadge` contract. A `merge_status` this build does not know falls to
  * `unknown`, i.e. to the ignorance floor, rather than rendering unstyled.
+ *
+ * The two promise tokens are the exception, and the only one: they read
+ * coord's `freshen` block through `readBehindFreshen`, the same function
+ * `prPipeline` renders from, so the two pages cannot disagree about whether
+ * coord will update a branch. Coord's `blocking_summary` on those tokens says
+ * only that the branch needs updating, so it stays in the row's title rather
+ * than standing in as the answer.
  */
 export function derivePrStatus(pr: {
   merge_status?: string | null;
   blocking_summary?: string | null;
-}): RowStatus<PrMergeStatus> {
+  base_branch?: string | null;
+  freshen?: PrFreshen | null;
+}): RowStatus<PrRowKind> {
+  if (isFreshenPromiseToken(pr.merge_status)) {
+    const reading = readBehindFreshen(pr);
+    return {
+      kind: reading.kind ?? pr.merge_status,
+      label: reading.label ?? mergeStatusLabel(pr.merge_status),
+      reason: reading.reason,
+      attention: reading.attention,
+    };
+  }
   const known =
     !!pr.merge_status &&
     Object.prototype.hasOwnProperty.call(

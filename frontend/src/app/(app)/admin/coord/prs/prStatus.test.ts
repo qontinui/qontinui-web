@@ -26,9 +26,22 @@ import {
 } from "@/components/console/statusRow";
 import type { PrMergeStatus } from "@/services/admin-dev-service";
 import {
+  ATTENTION_BY_KIND as PIPELINE_ATTENTION,
+  buildPipelineRows,
+} from "@/components/operations/prPipeline";
+import type {
+  PrFreshen,
+  PrRow as PipelinePr,
+} from "@/components/operations/mergeTypes";
+import {
+  BEHIND_FRESHEN_ATTENTION_BY_KIND,
+  PR_ATTENTION_BY_MERGE_STATUS,
+} from "@/components/operations/prMergeStatus";
+import {
+  BEHIND_FRESHEN_AUTHOR_GLYPH_KINDS,
+  BEHIND_FRESHEN_CLASS,
   derivePrStatus,
   mergeStatusLabel,
-  PR_ATTENTION_BY_MERGE_STATUS,
   PR_AUTHOR_GLYPH_STATUSES,
   PR_MERGE_STATUS_CLASS,
   PR_STATUS_PALETTE,
@@ -261,14 +274,19 @@ describe("the readings the palette audit cannot make", () => {
         ).toEqual({
           kind: token,
           label,
-          reason: summary,
+          // A promise token's reason says whether coord will act; coord's
+          // summary stays in the row's title.
+          reason:
+            token === "ci-failed-stale-base"
+              ? "CI red on a stale base — main moved past it; whether coord will freshen it is UNKNOWN"
+              : summary,
           attention: "waiting",
         });
       });
     }
 
     it("gives the stale-base red the self-clearing amber, and the infra kill the floor", () => {
-      // coord's freshen clears a stale-base red on its own; nothing clears an
+      // coord's freshen MAY clear a stale-base red; nothing clears an
       // infra kill yet (no auto re-run), so the self-clearing amber would lie
       // — the `terminal-proposal-held` precedent. The train-activity tab
       // grades the same infra kill `blocking` (its "operator action needed"),
@@ -356,5 +374,128 @@ describe("derivePrStatus", () => {
     expect(mergeStatusLabel("terminal-proposal-held")).toBe(
       "terminal proposal held"
     );
+  });
+});
+
+// Plan `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`,
+// D2: this page and the pipeline render one mapping, so they cannot disagree.
+describe("the freshen reading on the two promise tokens", () => {
+  const TOKENS = ["behind-base", "ci-failed-stale-base"] as const;
+  const STATES = [
+    ["eligible", "behind-freshening", "waiting"],
+    ["in_progress", "behind-freshening", "waiting"],
+    ["exhausted", "behind-freshen-refused", "author"],
+    ["ineligible", "behind-freshen-refused", "author"],
+    ["suppressed", "behind-freshen-refused", "author"],
+    ["disabled", "behind-freshen-refused", "author"],
+  ] as const;
+  const block = (state: PrFreshen["state"]): PrFreshen => ({
+    state,
+    attempts: 2,
+    max_attempts: 6,
+    last_attempt_at: null,
+    skip: state === "ineligible" ? "ineligible:distance_arm_not_shipped" : null,
+    reason: "coord's clause",
+  });
+
+  describe.each(TOKENS)("%s", (token) => {
+    it.each(STATES)("%s → %s, %s", (state, kind, attention) => {
+      const status = derivePrStatus({
+        merge_status: token,
+        base_branch: "main",
+        blocking_summary: "branch is behind base — needs an update/rebase",
+        freshen: block(state),
+      });
+      expect(status.kind).toBe(kind);
+      expect(status.attention).toBe(attention);
+      expect(BEHIND_FRESHEN_ATTENTION_BY_KIND[kind]).toBe(attention);
+      expect(status.reason).not.toMatch(/no action needed|auto-rebase/i);
+    });
+
+    it("unknown → the token's own floor, not a promise", () => {
+      const status = derivePrStatus({
+        merge_status: token,
+        base_branch: "main",
+        freshen: block("unknown"),
+      });
+      expect(status.kind).toBe(token);
+      expect(status.attention).toBe("waiting");
+      expect(status.label).toBe(mergeStatusLabel(token));
+      expect(status.reason).toContain("UNKNOWN");
+    });
+
+    it("an absent block (older coord) → the same UNKNOWN, over coord's summary", () => {
+      const status = derivePrStatus({
+        merge_status: token,
+        base_branch: "main",
+        blocking_summary: "branch is behind base — needs an update/rebase",
+      });
+      expect(status.kind).toBe(token);
+      expect(status.attention).toBe("waiting");
+      expect(status.reason).toContain("UNKNOWN");
+    });
+
+    it.each([
+      ...STATES,
+      ["unknown", null, "waiting"] as const,
+      [null, null, "waiting"] as const,
+    ])("%s reads word for word as the pipeline row does", (state) => {
+      const freshen = state ? block(state) : undefined;
+      const pipelinePr: PipelinePr = {
+        repo: "qontinui/qontinui-web",
+        pr_number: 1,
+        branch: "b",
+        base_branch: "main",
+        head_sha: "abc",
+        pr_state: "open",
+        mergeable: true,
+        merge_state_status: token === "behind-base" ? "BEHIND" : "BLOCKED",
+        review_decision: null,
+        required_checks_satisfied: true,
+        last_refreshed_at: null,
+        last_predicate_eval_at: null,
+        ci_lifecycle: "complete",
+        ci_conclusion: "success",
+        correlation_id: null,
+        merge_status: token,
+        freshen,
+      };
+      const row = buildPipelineRows([pipelinePr], [])[0].status;
+      const page = derivePrStatus(pipelinePr);
+      expect(page.reason).toBe(row.reason);
+      expect(page.attention).toBe(row.attention);
+    });
+  });
+
+  it("the served kinds grade the same in both pages' tables, and paint it", () => {
+    expect(
+      paletteDisagreements(BEHIND_FRESHEN_ATTENTION_BY_KIND, {
+        badgeClass: BEHIND_FRESHEN_CLASS,
+        authorGlyphKinds: BEHIND_FRESHEN_AUTHOR_GLYPH_KINDS,
+      })
+    ).toEqual([]);
+    for (const kind of [
+      "behind-freshening",
+      "behind-freshen-refused",
+    ] as const) {
+      expect(PIPELINE_ATTENTION[kind]).toBe(
+        BEHIND_FRESHEN_ATTENTION_BY_KIND[kind]
+      );
+    }
+    expect(BEHIND_FRESHEN_CLASS["behind-freshening"]).toBe(WAITING_AMBER);
+    expect(BEHIND_FRESHEN_CLASS["behind-freshen-refused"]).toBe(AUTHOR_RED);
+    expect([...BEHIND_FRESHEN_AUTHOR_GLYPH_KINDS]).toEqual([
+      "behind-freshen-refused",
+    ]);
+  });
+
+  it("a freshen block on a token that names its own block changes nothing", () => {
+    const status = derivePrStatus({
+      merge_status: "review-required",
+      blocking_summary: "needs a review",
+      freshen: block("exhausted"),
+    });
+    expect(status.kind).toBe("review-required");
+    expect(status.reason).toBe("needs a review");
   });
 });

@@ -520,7 +520,7 @@ describe("buildRepoTrainRows — why it is paused", () => {
     // Both are reds coord exonerates the author from: an infra-kill (every
     // failing check run was a self-hosted runner kill with zero failed steps,
     // qontinui-coord#2723) and a red on a stale base (coord's BEHIND freshen
-    // MAY clear it; whether it will is UNKNOWN). Unmapped they fell into `unrecognized-status`; folded
+    // is the remedy). Unmapped they fell into `unrecognized-status`; folded
     // into `ci-failed` they would read as "red CI, the author's move".
     const rows = buildRepoTrainRows(
       [],
@@ -558,13 +558,12 @@ describe("buildRepoTrainRows — why it is paused", () => {
     expect(stale!.severity).toBe("waiting");
     expect(stale!.prNumbers).toEqual([42]);
     expect(stale!.detail).toContain("not the author's move");
-    // Never a promise that coord will act: whether its freshen runs on this
-    // PR is not served (plan 2026-10-27-behind-main-no-action-needed-…).
-    expect(stale!.detail).toContain("UNKNOWN");
+    // Coord served no `freshen` on this row: no promise it will update it.
+    expect(stale!.detail).toContain("Whether coord will update it is UNKNOWN.");
     expect(stale!.detail).not.toMatch(/coord freshens/);
 
-    // The infra kill blocks the train; the stale-base red waits (on a freshen
-    // that may or may not come), with `behind-base`; both outrank a plain running CI.
+    // The infra kill blocks the train; the stale-base red waits on coord's
+    // freshen, with `behind-base`; both outrank a plain running CI.
     expect(codes.indexOf("ci-failed-infra-kill")).toBeLessThan(
       codes.indexOf("ci-failed-stale-base")
     );
