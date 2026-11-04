@@ -21,12 +21,7 @@ import { TaskRunCard } from "./TaskRunCard";
 import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
 import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { coordDeviceHostKey } from "./coordCredentialStatus";
-import {
-  formatBytes,
-  POLL_INTERVAL_MS,
-  relativeTime,
-  volumeSeverity,
-} from "./utils";
+import { formatBytes, POLL_INTERVAL_MS, relativeTime } from "./utils";
 import { statusOnlyErrorText } from "@/lib/api/operations/base";
 import { CollapsiblePanel } from "@/components/console";
 import { SectionCaption, usePresentationMode } from "@/components/presentation";
@@ -36,6 +31,7 @@ import {
   anyVolumeReported,
   resolveMachineVolumes,
   tightestVolume,
+  volumeGradedSeverity,
   volumesReliabilityWarning,
   type VolumesFetch,
 } from "./fleetVolumes";
@@ -653,7 +649,9 @@ export function FleetOverview({
    */
   const worstFreeVolume = useMemo(() => tightestVolume(volumes), [volumes]);
   const worstSeverity = worstFreeVolume
-    ? volumeSeverity(worstFreeVolume.free_bytes)
+    ? // Graded against the volume's own bar (a scaled floor for a small
+      // volume), never the client reserve alone.
+      volumeGradedSeverity(worstFreeVolume)
     : null;
   const volumesRead = volumes.state === "ok";
   /**
@@ -995,9 +993,9 @@ export function FleetOverview({
                     : volumesWarning
                       ? "partial read"
                       : anyVolumeReported(volumes)
-                        ? // Every reported volume is one coord does not
-                          // grade against the reserve (read-only, EFI).
-                          "none graded"
+                        ? // Every reported volume was skipped: read-only,
+                          // or a small volume healthy on its own bar.
+                          "none at risk"
                         : "none reported"
               }
               variant={

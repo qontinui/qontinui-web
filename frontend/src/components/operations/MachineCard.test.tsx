@@ -324,30 +324,24 @@ describe("MachineCard — volumes coord does not grade against the reserve", () 
   }
 
   it.each([
-    ["read_only", "/mnt/winiso", 0, /mounted read-only/],
-    [
-      "read_only_unknown",
-      "/mnt/winiso",
-      0,
-      /did not say whether it is read-only/,
-    ],
-    ["scaled_floor", "/boot/efi", 0, /floor scaled to its own size/],
+    ["read_only", /mounted read-only/],
+    ["read_only_unknown", /did not say whether it is read-only/],
   ] as const)(
     "renders a %s volume muted with its reason, never in red",
-    (bar, volume, free, reason) => {
+    (bar, reason) => {
       const container = renderVolumes([
         {
-          volume,
+          volume: "/mnt/winiso",
           total_bytes: 8 * 1024 ** 3,
-          free_bytes: free,
+          free_bytes: 0,
           observed_at: now,
           danger_bar: bar,
-          danger_bar_bytes: bar === "scaled_floor" ? 102_000_000 : null,
+          danger_bar_bytes: null,
           read_only: bar === "read_only" ? true : null,
         },
       ]);
       const row = container.querySelector(
-        `[data-operations-volume="${volume}"]`
+        '[data-operations-volume="/mnt/winiso"]'
       );
       expect(row?.getAttribute("data-operations-volume-ungraded")).toBe(bar);
       expect(row?.innerHTML ?? "").not.toMatch(/bg-red-500|text-red-500/);
@@ -362,21 +356,44 @@ describe("MachineCard — volumes coord does not grade against the reserve", () 
     }
   );
 
-  it("names the scaled floor when coord serves its size", () => {
+  it("an ESP-shaped scaled_floor volume is not red, with a scaled-floor note", () => {
     const container = renderVolumes([
       {
         volume: "/boot/efi",
         total_bytes: 1_020_000_000,
-        free_bytes: 1_010_000_000,
+        free_bytes: 1_011_924_992,
         observed_at: now,
         danger_bar: "scaled_floor",
         danger_bar_bytes: 102_000_000,
       },
     ]);
+    const row = container.querySelector('[data-operations-volume="/boot/efi"]');
+    expect(row?.innerHTML ?? "").not.toMatch(/bg-red-500|text-red-500/);
+    expect(row?.getAttribute("data-operations-volume-severity")).toBe("ok");
     expect(
-      container.querySelector("[data-operations-volume-ungraded-reason]")
+      row?.querySelector("[data-operations-volume-scaled-floor]")
         ?.textContent ?? ""
-    ).toMatch(/scaled floor/);
+    ).toMatch(/floor scaled to its own size/);
+  });
+
+  it("an arm-5 scaled_floor volume (20 GiB, 0 free, 2 GiB bar) paints red", () => {
+    const GIB = 1024 ** 3;
+    const container = renderVolumes([
+      {
+        volume: "/var",
+        total_bytes: 20 * GIB,
+        free_bytes: 0,
+        observed_at: now,
+        danger_bar: "scaled_floor",
+        danger_bar_bytes: 2 * GIB,
+      },
+    ]);
+    const row = container.querySelector('[data-operations-volume="/var"]');
+    expect(row?.getAttribute("data-operations-volume-severity")).toBe(
+      "critical"
+    );
+    expect(row?.querySelector(".bg-red-500")).not.toBeNull();
+    expect(row?.hasAttribute("data-operations-volume-ungraded")).toBe(false);
   });
 
   it("still paints a full volume graded against the reserve red", () => {

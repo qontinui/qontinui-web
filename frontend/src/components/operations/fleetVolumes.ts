@@ -29,6 +29,7 @@ import {
   deadlineText,
   ROUTE_DISABLED_TEXT,
 } from "./coordPollError";
+import { volumeSeverity, type VolumeSeverity } from "./utils";
 import type {
   DangerBar,
   DeviceStatus,
@@ -118,13 +119,50 @@ const DANGER_BARS = new Set<string>([
 /** A `danger_bar` that means "not graded against the disk reserve". */
 export type UngradedReason = Exclude<DangerBar, "reserve">;
 
+/** The bars under which coord does not grade capacity at all. */
+export type SkippedGradeReason = "read_only" | "read_only_unknown";
+
 /**
- * Why a volume is NOT graded against the disk reserve, or `null` when it is
- * (including a coord that sends no `danger_bar`, which behaves as before).
+ * Why a volume's capacity is NOT graded at all (read-only, or small-and-full
+ * with read-only unknown), or `null` when it is graded against something.
+ * `scaled_floor` IS graded -- against its own bar, see {@link scaledFloorBar}.
  */
-export function volumeUngradedReason(v: VolumeReading): UngradedReason | null {
+export function volumeSkipsGrading(
+  v: VolumeReading
+): SkippedGradeReason | null {
   const bar = v.danger_bar;
-  return bar === undefined || bar === "reserve" ? null : bar;
+  return bar === "read_only" || bar === "read_only_unknown" ? bar : null;
+}
+
+/**
+ * The scaled floor a small volume is graded against, or `null` when the volume
+ * is not on that bar OR coord served no usable size for it. In the second case
+ * the volume falls back to the reserve, like an absent or unknown token: the
+ * conservative reading, which can only over-warn.
+ */
+export function scaledFloorBar(v: VolumeReading): number | null {
+  if (v.danger_bar !== "scaled_floor") return null;
+  const bar = v.danger_bar_bytes;
+  return typeof bar === "number" && Number.isFinite(bar) ? bar : null;
+}
+
+/**
+ * The page's severity for one volume, graded against the bar coord grades it
+ * against.
+ *
+ * - read-only / read-only-unknown: `null` (muted; capacity is not graded).
+ * - scaled floor with a served size: `critical` at or below the bar, exactly
+ *   as a reserve breach paints; `ok` above it (an EFI partition at 1 GB free
+ *   against a ~100 MB bar). A small writable volume that really filled is red.
+ * - everything else (reserve, absent or unknown token): the client reserve
+ *   bands, as before.
+ */
+export function volumeGradedSeverity(v: VolumeReading): VolumeSeverity | null {
+  if (volumeSkipsGrading(v) !== null) return null;
+  if (!Number.isFinite(v.free_bytes)) return null;
+  const bar = scaledFloorBar(v);
+  if (bar !== null) return v.free_bytes <= bar ? "critical" : "ok";
+  return volumeSeverity(v.free_bytes);
 }
 
 /** Narrow a wire reason token (e.g. from `ungraded_volumes`) to a known one. */
@@ -547,10 +585,16 @@ export function resolveMachineVolumes(
  * answer or no device has reported, which the caller renders as `unknown`
  * (never `0 B`, never green).
  *
- * A volume coord says it does NOT grade against the reserve (`danger_bar`
- * present and not `reserve`: a read-only ISO, an EFI partition) is skipped —
- * its raw bytes against the page's client threshold would paint a healthy
- * machine red. A coord that sends no `danger_bar` behaves as before.
+ * Volumes are taken by the bar coord grades them against:
+ *
+ * - read-only / read-only-unknown are skipped -- their raw bytes against the
+ *   client reserve would paint a healthy machine red.
+ * - a scaled-floor volume takes part only when it is IN DANGER (free at or
+ *   below its own bar). Free bytes on different bars do not rank against each
+ *   other honestly, so a healthy EFI partition never outranks a big disk, and
+ *   a small writable volume that really filled always can.
+ * - everything else (including a coord that sends no `danger_bar`) ranks by
+ *   raw free bytes, as before.
  */
 export function tightestVolume(fetched: VolumesFetch): VolumeReading | null {
   if (fetched.state !== "ok") return null;
@@ -558,7 +602,9 @@ export function tightestVolume(fetched: VolumesFetch): VolumeReading | null {
   for (const entry of fetched.byDevice.values()) {
     for (const v of entry.volumes) {
       if (!Number.isFinite(v.free_bytes)) continue;
-      if (volumeUngradedReason(v) !== null) continue;
+      if (volumeSkipsGrading(v) !== null) continue;
+      const bar = scaledFloorBar(v);
+      if (bar !== null && v.free_bytes > bar) continue;
       if (worst === null || v.free_bytes < worst.free_bytes) worst = v;
     }
   }
@@ -567,9 +613,9 @@ export function tightestVolume(fetched: VolumesFetch): VolumeReading | null {
 
 /**
  * Whether ANY readable volume row arrived. Lets the "Tightest volume" tile
- * say "none graded" rather than "none reported" when every row was skipped by
- * {@link tightestVolume} because coord does not grade it — a fleet whose only
- * volumes are read-only has reported, and saying otherwise is a false claim.
+ * say "none at risk on its bar" rather than "none reported" when every row was
+ * skipped by {@link tightestVolume} (read-only, or a healthy scaled-floor
+ * volume) -- such a fleet HAS reported, and saying otherwise is a false claim.
  */
 export function anyVolumeReported(fetched: VolumesFetch): boolean {
   if (fetched.state !== "ok") return false;

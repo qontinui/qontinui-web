@@ -29,7 +29,6 @@ import {
   readingAgeMs,
   relativeTime,
   VOLUME_STALE_AFTER_MS,
-  volumeSeverity,
 } from "./utils";
 import { StatusBadge } from "@/components/console";
 import {
@@ -57,7 +56,12 @@ import { DeviceDrainControl } from "./DeviceDrainControl";
 import type { CiCapacityJoin } from "./ciCapacity";
 import type { DeviceDrainState, DrainTarget } from "./fleetDrain";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
-import { UNGRADED_REASON_TEXT, volumeUngradedReason } from "./fleetVolumes";
+import {
+  scaledFloorBar,
+  UNGRADED_REASON_TEXT,
+  volumeGradedSeverity,
+  volumeSkipsGrading,
+} from "./fleetVolumes";
 
 /**
  * What draining a GitHub Actions runner registration does and does not do.
@@ -252,12 +256,13 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
         // banding it green, which is precisely the fabricated-healthy render
         // this feature exists to remove. It renders muted instead.
         //
-        // A volume coord does not grade against the reserve (read-only ISO,
-        // EFI partition) has no severity on THIS page's threshold either:
-        // its raw bytes against the client floor would paint a healthy
-        // machine red. It renders muted, with the reason in words.
-        const ungraded = volumeUngradedReason(v);
-        const severity = ungraded ? null : volumeSeverity(v.free_bytes);
+        // Graded against the bar coord grades it against: a read-only (or
+        // read-only-unknown) volume has no severity and renders muted with
+        // its reason; a small volume on a scaled floor is red only at or
+        // below that floor, exactly as a reserve breach paints.
+        const ungraded = volumeSkipsGrading(v);
+        const scaledBar = scaledFloorBar(v);
+        const severity = volumeGradedSeverity(v);
 
         const barColor =
           severity === "critical"
@@ -285,6 +290,7 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
             key={`${i}-${v.volume}`}
             data-operations-volume={presenting ? undefined : v.volume}
             data-operations-volume-ungraded={ungraded ?? undefined}
+            data-operations-volume-severity={severity ?? "none"}
           >
             <div className="flex items-baseline justify-between gap-2">
               <span className="font-mono text-sm font-medium">{name}</span>
@@ -323,12 +329,17 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
                 data-operations-volume-ungraded-reason={ungraded}
               >
                 Not graded against the disk reserve:{" "}
-                {UNGRADED_REASON_TEXT[ungraded]}
-                {ungraded === "scaled_floor" &&
-                  typeof v.danger_bar_bytes === "number" &&
-                  Number.isFinite(v.danger_bar_bytes) &&
-                  ` (scaled floor ${formatBytes(v.danger_bar_bytes)})`}
-                .
+                {UNGRADED_REASON_TEXT[ungraded]}.
+              </p>
+            )}
+            {scaledBar !== null && (
+              <p
+                className="mt-1 text-xs text-muted-foreground"
+                data-operations-volume-scaled-floor={scaledBar}
+              >
+                Graded against a floor scaled to its own size (
+                {formatBytes(scaledBar)}), not the disk reserve -- it is no
+                larger than the disk floor.
               </p>
             )}
 

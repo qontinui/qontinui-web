@@ -10,7 +10,9 @@ import {
   tightestVolume,
   anyVolumeReported,
   isUngradedReason,
-  volumeUngradedReason,
+  scaledFloorBar,
+  volumeGradedSeverity,
+  volumeSkipsGrading,
   toVolumeReading,
   volumesReliabilityWarning,
   VOLUMES_NOT_YET_READ,
@@ -611,31 +613,70 @@ describe("danger_bar: volumes coord does not grade against the reserve", () => {
     const r = toVolumeReading({ volume: "D:", danger_bar: "lunar_floor" });
     expect(r).not.toBeNull();
     expect(r!.danger_bar).toBeUndefined();
-    expect(volumeUngradedReason(r!)).toBeNull();
+    expect(volumeSkipsGrading(r!)).toBeNull();
+    expect(scaledFloorBar(r!)).toBeNull();
   });
 
-  it("names only the non-reserve bars as ungraded", () => {
+  it("only read_only and read_only_unknown skip grading", () => {
     const base = {
       volume: "v",
       total_bytes: 1,
       free_bytes: 1,
       observed_at: null,
     };
-    expect(volumeUngradedReason(base)).toBeNull();
-    expect(volumeUngradedReason({ ...base, danger_bar: "reserve" })).toBeNull();
-    for (const bar of [
-      "scaled_floor",
-      "read_only",
-      "read_only_unknown",
-    ] as const) {
-      expect(volumeUngradedReason({ ...base, danger_bar: bar })).toBe(bar);
+    expect(volumeSkipsGrading(base)).toBeNull();
+    expect(volumeSkipsGrading({ ...base, danger_bar: "reserve" })).toBeNull();
+    expect(
+      volumeSkipsGrading({ ...base, danger_bar: "scaled_floor" })
+    ).toBeNull();
+    for (const bar of ["read_only", "read_only_unknown"] as const) {
+      expect(volumeSkipsGrading({ ...base, danger_bar: bar })).toBe(bar);
+      expect(volumeGradedSeverity({ ...base, danger_bar: bar })).toBeNull();
+    }
+    for (const bar of ["scaled_floor", "read_only", "read_only_unknown"]) {
       expect(isUngradedReason(bar)).toBe(true);
     }
     expect(isUngradedReason("reserve")).toBe(false);
     expect(isUngradedReason("lunar_floor")).toBe(false);
   });
 
-  it("tightestVolume skips read-only, unknown and scaled-floor volumes", () => {
+  it("grades a scaled_floor volume against its own bar, not the reserve", () => {
+    const GIB = 1024 ** 3;
+    // Arm 5: a small writable volume that really filled.
+    const arm5 = {
+      volume: "/var",
+      total_bytes: 20 * GIB,
+      free_bytes: 0,
+      observed_at: null,
+      danger_bar: "scaled_floor" as const,
+      danger_bar_bytes: 2 * GIB,
+    };
+    expect(volumeGradedSeverity(arm5)).toBe("critical");
+    expect(volumeGradedSeverity({ ...arm5, free_bytes: 2 * GIB })).toBe(
+      "critical"
+    );
+    // The ESP: 1.01 GB free against a 102 MB bar is healthy, though the
+    // client reserve (25 GiB) alone would call it critical.
+    const esp = {
+      volume: "/boot/efi",
+      total_bytes: 1_020_000_000,
+      free_bytes: 1_011_924_992,
+      observed_at: null,
+      danger_bar: "scaled_floor" as const,
+      danger_bar_bytes: 102_000_000,
+    };
+    expect(volumeGradedSeverity(esp)).toBe("ok");
+    // No usable bar size: falls back to the reserve, as an absent token does.
+    expect(volumeGradedSeverity({ ...esp, danger_bar_bytes: null })).toBe(
+      "critical"
+    );
+    expect(scaledFloorBar({ ...esp, danger_bar_bytes: null })).toBeNull();
+    // Absent token: reserve bands, as before.
+    const { danger_bar: _b, danger_bar_bytes: _n, ...plain } = esp;
+    expect(volumeGradedSeverity(plain)).toBe("critical");
+  });
+
+  it("tightestVolume skips read-only, unknown and a healthy scaled-floor volume", () => {
     const fetched = indexDeviceVolumes([
       {
         device_id: NAWA,
@@ -660,6 +701,7 @@ describe("danger_bar: volumes coord does not grade against the reserve", () => {
             free_bytes: 1_011_924_992,
             observed_at: null,
             danger_bar: "scaled_floor",
+            danger_bar_bytes: 102_000_000,
           },
           {
             volume: "/media/iso",
@@ -672,6 +714,55 @@ describe("danger_bar: volumes coord does not grade against the reserve", () => {
       },
     ]);
     expect(tightestVolume(fetched)?.volume).toBe("/");
+  });
+
+  it("an arm-5 volume (small, writable, full) can be the tightest", () => {
+    const GIB = 1024 ** 3;
+    const fetched = indexDeviceVolumes([
+      {
+        device_id: NAWA,
+        volumes: [
+          {
+            volume: "/",
+            total_bytes: 1000 * GIB,
+            free_bytes: 5 * GIB,
+            observed_at: null,
+            danger_bar: "reserve",
+          },
+          {
+            volume: "/var",
+            total_bytes: 20 * GIB,
+            free_bytes: 0,
+            observed_at: null,
+            danger_bar: "scaled_floor",
+            danger_bar_bytes: 2 * GIB,
+          },
+        ],
+      },
+    ]);
+    const worst = tightestVolume(fetched);
+    expect(worst?.volume).toBe("/var");
+    expect(volumeGradedSeverity(worst!)).toBe("critical");
+  });
+
+  it("a scaled-floor volume with no served bar size ranks as before", () => {
+    const fetched = indexDeviceVolumes([
+      {
+        device_id: NAWA,
+        volumes: [
+          { volume: "/", total_bytes: 100, free_bytes: 50, observed_at: null },
+          {
+            volume: "/boot/efi",
+            total_bytes: 10,
+            free_bytes: 9,
+            observed_at: null,
+            danger_bar: "scaled_floor",
+            danger_bar_bytes: null,
+          },
+        ],
+      },
+    ]);
+    expect(tightestVolume(fetched)?.volume).toBe("/boot/efi");
   });
 
   it("an older coord (no danger_bar) still takes the full ISO, as today", () => {
