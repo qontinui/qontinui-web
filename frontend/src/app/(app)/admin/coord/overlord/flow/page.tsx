@@ -177,6 +177,16 @@ function nudgeProgressStats(v: FlowView | null): Stat[] {
   ];
 }
 
+/**
+ * `finished / (nudged - finishUnproven)` — the fraction coord's `finish_rate`
+ * is. A coord that sends no `finish_unproven` predates the split and divided
+ * by `nudged`, so that is its denominator.
+ */
+function finishCountsValue(n: FlowView["nudge"] | undefined): string | null {
+  if (!n || n.finished === undefined || n.nudged === undefined) return null;
+  return `${n.finished}/${n.nudged - (n.finishUnproven ?? 0)}`;
+}
+
 function nudgeFinishStats(v: FlowView | null): Stat[] {
   const n = v?.nudge;
   return [
@@ -194,11 +204,14 @@ function nudgeFinishStats(v: FlowView | null): Stat[] {
     },
     {
       key: "finished",
-      label: "of nudged",
-      value:
-        n && n.finished !== undefined && n.nudged !== undefined
-          ? `${n.finished}/${n.nudged}`
-          : null,
+      // A coord that sends no `finish_unproven` divided by every nudge, so
+      // the denominator is not "known outcome" there and must not say so.
+      label: n?.finishUnproven === undefined ? "of nudged" : "of known outcome",
+      value: finishCountsValue(n),
+      title:
+        n?.finishUnproven === undefined
+          ? "finished out of every nudged session: this coord does not count sessions gone across a rebuild apart, so they are in the denominator as not finished"
+          : "finished out of the nudged sessions whose outcome is known: the rate's own numerator and denominator, so sessions gone across a rebuild are left out",
       "data-testid": "overlord-flow-nudge-finish-counts",
     },
     {

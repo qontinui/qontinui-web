@@ -77,7 +77,7 @@ describe("/admin/coord/overlord/flow", () => {
     ).toHaveTextContent("gone across a rebuild2");
     expect(
       screen.getByTestId("overlord-flow-nudge-finish-unproven")
-    ).toHaveTextContent("gone across a rebuild1");
+    ).toHaveTextContent("gone across a rebuild2");
 
     // Nudge rates with their counts and the unmeasured remainder.
     expect(
@@ -91,10 +91,10 @@ describe("/admin/coord/overlord/flow", () => {
     ).toHaveTextContent("unmeasured3");
     expect(
       screen.getByTestId("overlord-flow-nudge-finish-rate")
-    ).toHaveTextContent("finished20%");
+    ).toHaveTextContent("finished25%");
     expect(
       screen.getByTestId("overlord-flow-nudge-finish-counts")
-    ).toHaveTextContent("of nudged2/10");
+    ).toHaveTextContent("of known outcome2/8");
 
     // UNKNOWN share is the LATEST pass's (5%), not the older one's (50%).
     expect(screen.getByTestId("overlord-flow-unknown-share")).toHaveTextContent(
@@ -191,6 +191,23 @@ describe("/admin/coord/overlord/flow", () => {
     ]) {
       expect(screen.getByTestId(id).textContent).not.toMatch(/0%|\b0s\b/);
     }
+  });
+
+  it("divides finished by the rate's own denominator, nudged when coord sends no unproven count", async () => {
+    const { finish_unproven: _dropped, ...olderNudge } = FULL_FLOW.nudge;
+    fetchFlow.mockResolvedValue({
+      ...FULL_FLOW,
+      nudge: { ...olderNudge, finish_rate: 0.2 },
+    });
+    render(<CoordOverlordFlowPage />);
+
+    const counts = await screen.findByTestId(
+      "overlord-flow-nudge-finish-counts"
+    );
+    await waitFor(() => expect(counts).toHaveTextContent("of nudged2/10"));
+    expect(
+      screen.getByTestId("overlord-flow-nudge-finish-unproven")
+    ).not.toHaveTextContent(/rebuild\d/);
   });
 
   it("renders a 503 schema_migration_pending as UNKNOWN everywhere", async () => {
