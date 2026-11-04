@@ -46,6 +46,7 @@ import type {
   TrainHealth,
 } from "./mergeTypes";
 import { redactSecrets } from "./mergeTypes";
+import { freshenGroupClause } from "./prMergeStatus";
 import {
   deriveCandidateChurn,
   economicsFor,
@@ -196,9 +197,9 @@ export type PauseReasonCode =
   /** coord's `ci-failed-stale-base` merge_status: CI is red but `main` has
    *  moved past the PR's CI base, so the red may be main's fault. `waiting`,
    *  with `behind-base`: it is not author work, and coord's own stale-base
-   *  freshen MAY update the branch and re-run CI — but whether it will is not
-   *  served yet (it refuses a distance-only stale base outright), so this is
-   *  an UNKNOWN wait, not a promise. Plan
+   *  freshen MAY update the branch and re-run CI — it refuses a distance-only
+   *  stale base outright, so the reason's detail states what coord served per
+   *  PR (`freshenGroupClause`), and this wait is not a promise. Plan
    *  `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`. */
   | "ci-failed-stale-base"
   | "ci-pending"
@@ -292,8 +293,8 @@ const REASON_RANK: Record<PauseReasonCode, number> = {
   "blast-radius-block": 15,
   "review-required": 16,
   // Beside `behind-base`, for the reason they share a possible clearer: coord's
-  // own BEHIND freshen, which MAY bring either current (whether it will is not
-  // served yet — UNKNOWN). A red on a stale base is not a diagnosis of the PR,
+  // own BEHIND freshen, which MAY bring either current (`detailFor` says what
+  // coord served for these PRs). A red on a stale base is not a diagnosis of the PR,
   // so it ranks below every author-side red rather than with `ci-failed`.
   "ci-failed-stale-base": 17,
   "behind-base": 18,
@@ -356,7 +357,7 @@ const REASON_META: Record<
     severity: "blocking",
   },
   // `waiting`, with `behind-base`: not the author's red. Coord's freshen MAY
-  // clear it; whether it will is not served yet, so this is an UNKNOWN wait.
+  // clear it; `detailFor` says what coord served for these PRs.
   "ci-failed-stale-base": {
     label: "CI red on a stale base",
     severity: "waiting",
@@ -2021,9 +2022,8 @@ function detailFor(code: PauseReasonCode, prs: PrRow[]): string {
     case "ci-failed-stale-base":
       return (
         `${n} PR${plural} with red CI on a stale base — main has moved past ` +
-        `the CI base, so the red may be main's; not the author's move. ` +
-        `coord's freshen MAY update the branch and re-run CI, but whether it ` +
-        `will act on ${n === 1 ? "it" : "them"} is not served yet — UNKNOWN.`
+        `the CI base, so the red may be main's; not the author's move unless ` +
+        `coord will not update the branch. ${freshenGroupClause(prs)}`
       );
     case "ci-pending": {
       const contexts = [
@@ -2057,7 +2057,10 @@ function detailFor(code: PauseReasonCode, prs: PrRow[]): string {
       );
     }
     case "behind-base":
-      return `${n} PR${plural} behind base — needs an update before landing.`;
+      return (
+        `${n} PR${plural} behind base — needs an update before landing. ` +
+        freshenGroupClause(prs)
+      );
     // The "or a required check" hedge this copy used to carry was the
     // conflation showing through the prose. The token now separates the two
     // causes, so the copy can name one actor each.
