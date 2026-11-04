@@ -2398,3 +2398,41 @@ describe("candidate-CI churn — fleet totals on the summary", () => {
     expect(s.churn.greenDiscarded).toBe(10);
   });
 });
+
+// Plan 2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act:
+// a freshen token coord SERVED a refusal for is graded as the PR pages grade it.
+describe("freshen-token severity follows coord's served reading", () => {
+  const served = (state: string) => ({
+    state: state as "exhausted",
+    attempts: 6,
+    max_attempts: 6,
+    last_attempt_at: null,
+    skip: null,
+    reason: "served",
+  });
+  const reasonFor = (code: string, prs: ReturnType<typeof pr>[]) =>
+    buildRepoTrainRows([], prs, null, NOW)[0]!.reasons.find(
+      (r) => r.code === code
+    );
+
+  for (const code of ["behind-base", "ci-failed-stale-base"] as const) {
+    for (const state of ["exhausted", "ineligible", "suppressed", "disabled"]) {
+      it(`${code} with a served ${state} is blocking`, () => {
+        const reason = reasonFor(code, [
+          pr({ pr_number: 1, merge_status: code, freshen: served(state) }),
+          pr({ pr_number: 2, merge_status: code }),
+        ]);
+        expect(reason!.severity).toBe("blocking");
+      });
+    }
+
+    it(`${code} with only eligible / unknown / absent readings stays waiting`, () => {
+      const reason = reasonFor(code, [
+        pr({ pr_number: 1, merge_status: code, freshen: served("eligible") }),
+        pr({ pr_number: 2, merge_status: code, freshen: served("unknown") }),
+        pr({ pr_number: 3, merge_status: code }),
+      ]);
+      expect(reason!.severity).toBe("waiting");
+    });
+  }
+});

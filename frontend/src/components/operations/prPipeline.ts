@@ -1828,7 +1828,7 @@ export type BehindCounts = Record<BehindBucket, number>;
 const BEHIND_BUCKET_LABEL: ReadonlyArray<
   readonly [BehindBucket, string, string]
 > = [
-  ["eligible", "eligible", "coord may update the branch"],
+  ["eligible", "eligible", "coord updating the branch (eligible)"],
   ["in_progress", "in progress", "coord is updating the branch"],
   ["exhausted", "exhausted", "coord stopped after its attempt ceiling"],
   ["ineligible", "ineligible", "coord does not freshen this kind"],
@@ -1878,13 +1878,20 @@ export function behindBucketOf(pr: PrRow): BehindBucket | null {
 /**
  * D4's count, one per PR. Only PR rows carry a `pr`; a multi-repo group's own
  * row has none, and each of its members has a row of its own.
+ *
+ * A row with an active proposal is rendered from that proposal
+ * (`statusFromProposal`, the same predicate `buildPipelineRows` uses), not
+ * from GitHub's BEHIND, so it is not counted: the train holds it, and a
+ * bucket here would contradict what its row says.
  */
 export function deriveBehindCounts(rows: PipelineRow[]): BehindCounts {
   const counts = Object.fromEntries(
     BEHIND_BUCKET_LABEL.map(([bucket]) => [bucket, 0])
   ) as BehindCounts;
   for (const row of rows) {
-    const bucket = row.pr ? behindBucketOf(row.pr) : null;
+    if (!row.pr) continue;
+    if (row.activeProposal && !isMergedPr(row.pr)) continue;
+    const bucket = behindBucketOf(row.pr);
     if (bucket) counts[bucket] += 1;
   }
   return counts;

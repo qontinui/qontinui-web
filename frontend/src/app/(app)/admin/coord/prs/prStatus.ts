@@ -210,3 +210,53 @@ export function derivePrStatus(pr: {
     attention: PR_ATTENTION_BY_MERGE_STATUS[kind],
   };
 }
+
+/**
+ * The `/admin/coord/prs` health-strip counts, from the same `derivePrStatus`
+ * the rows render from. A promise-token row whose freshen reading is UNKNOWN
+ * (no block served, or `unknown`) is counted on its own and NOT as waiting:
+ * nothing observed says the train or coord will move it, so it must not be
+ * folded into "nothing needs you".
+ */
+export interface PrsHealthCounts {
+  author: number;
+  waiting: number;
+  freshenUnknown: number;
+}
+
+export function derivePrsHealthCounts(
+  prs: ReadonlyArray<Parameters<typeof derivePrStatus>[0]>
+): PrsHealthCounts {
+  const counts: PrsHealthCounts = { author: 0, waiting: 0, freshenUnknown: 0 };
+  for (const p of prs) {
+    const status = derivePrStatus(p);
+    if (status.attention === "author") counts.author += 1;
+    else if (
+      isFreshenPromiseToken(p.merge_status) &&
+      readBehindFreshen(p).kind === null
+    )
+      counts.freshenUnknown += 1;
+    else if (status.attention === "waiting") counts.waiting += 1;
+  }
+  return counts;
+}
+
+/** The strip's headline. "Nothing needs you" only when nothing is UNKNOWN. */
+export function prsHealthHeadline(
+  counts: PrsHealthCounts,
+  total: number,
+  tab: "open" | "merged" | string
+): string {
+  const { author, waiting, freshenUnknown } = counts;
+  const plural = (n: number) => (n === 1 ? "" : "s");
+  if (author > 0)
+    return `${author} PR${plural(author)} need${author === 1 ? "s" : ""} a human now`;
+  if (freshenUnknown > 0)
+    return (
+      `${freshenUnknown} PR${plural(freshenUnknown)} whose coord update is UNKNOWN` +
+      (waiting > 0 ? ` · ${waiting} waiting on the train` : "")
+    );
+  if (waiting > 0) return `Nothing needs you — ${waiting} waiting on the train`;
+  if (total > 0) return "Every open PR is moving on its own";
+  return tab === "merged" ? "No PRs merged in the last 24h" : "No open PRs";
+}

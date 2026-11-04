@@ -3311,3 +3311,49 @@ describe("D4 — the health summary counts BEHIND rows by what coord will do", (
     }
   });
 });
+
+describe("D4 review follow-ups", () => {
+  it("skips a BEHIND row the train holds: its row renders from the proposal", () => {
+    const rows = buildPipelineRows(
+      [
+        pr({
+          merge_state_status: "BEHIND",
+          merge_status: "behind-base",
+          freshen: freshen({ state: "exhausted" }),
+        }),
+      ],
+      [proposal({ status: "awaiting-ci" })]
+    );
+    expect(rows[0].status.kind).toBe("awaiting-ci");
+    expect(behindCountsTotal(deriveBehindCounts(rows))).toBe(0);
+  });
+
+  it("an exhausted reading with no served ceiling never prints 'null'", () => {
+    const { reason } = readBehindFreshen({
+      merge_status: "behind-base",
+      base_branch: "main",
+      freshen: freshen({
+        state: "exhausted",
+        max_attempts: null as unknown as number,
+      }),
+    });
+    expect(reason).not.toContain("null");
+    expect(reason).toContain("after its attempt ceiling");
+  });
+
+  it("the eligible bucket's title reads like its row", () => {
+    expect(
+      behindCountsBadgeTitle({
+        eligible: 1,
+        in_progress: 0,
+        exhausted: 0,
+        ineligible: 0,
+        suppressed: 0,
+        disabled: 0,
+        unknown: 0,
+        held: 0,
+      })
+    ).toContain("eligible 1: coord updating");
+  });
+});
+
