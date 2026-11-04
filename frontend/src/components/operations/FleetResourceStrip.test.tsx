@@ -1237,12 +1237,23 @@ describe("admission tooltip — ungraded_volumes", () => {
     const list = await waitFor(() =>
       screen.getAllByTestId("fleet-resource-admission-ungraded")
     );
-    const text = list[0].textContent ?? "";
-    expect(text).toMatch(/not graded against the disk floor/);
-    expect(text).toMatch(/\/mnt\/winiso/);
-    expect(text).toMatch(/did not say whether it is read-only/);
-    expect(text).toMatch(/\/boot\/efi/);
-    expect(text).toMatch(/floor scaled to its own size/);
+    // The two facts sit under two headings: the ESP IS graded (against its
+    // own size); the ISO is not graded.
+    const scaled = list[0].querySelector('[data-ungraded-group="scaled"]');
+    const notGraded = list[0].querySelector('[data-ungraded-group="ungraded"]');
+    expect(scaled?.textContent ?? "").toMatch(
+      /Graded against a floor scaled to the volume's size/
+    );
+    expect(scaled?.textContent ?? "").toMatch(/\/boot\/efi/);
+    expect(scaled?.textContent ?? "").not.toMatch(/winiso|Not graded/);
+    expect(notGraded?.textContent ?? "").toMatch(
+      /Not graded \(read-only \/ unknown\)/
+    );
+    expect(notGraded?.textContent ?? "").toMatch(/\/mnt\/winiso/);
+    expect(notGraded?.textContent ?? "").toMatch(
+      /did not say whether it is read-only/
+    );
+    expect(notGraded?.textContent ?? "").not.toMatch(/efi/);
   });
 
   it("says an unrecognized reason is unrecognized, not healthy", async () => {

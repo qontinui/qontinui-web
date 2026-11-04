@@ -829,21 +829,48 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
           )}
           {ungraded.length > 0 && (
             <div data-testid="fleet-resource-admission-ungraded">
-              <div>Volumes not graded against the disk floor:</div>
-              <ul className="list-disc pl-4 text-muted-foreground">
-                {ungraded.map((u, i) => (
-                  <li key={`${i}-${u.volume}`} data-ungraded-reason={u.reason}>
-                    {/* A mount names a path someone chose (D3.3). */}
-                    <span className="font-mono">
-                      {presenting ? `Volume ${i + 1}` : u.volume}
-                    </span>
-                    {" — "}
-                    {isUngradedReason(u.reason)
-                      ? UNGRADED_REASON_TEXT[u.reason]
-                      : `coord gave reason "${u.reason}", which this build does not recognize`}
-                  </li>
-                ))}
-              </ul>
+              {/* Two different facts: a scaled-floor volume IS graded, against
+                  its own size; a read-only or unknown one is not graded. */}
+              {(
+                [
+                  [
+                    "scaled",
+                    "Graded against a floor scaled to the volume's size, not the disk floor:",
+                    ungraded.filter((u) => u.reason === "scaled_floor"),
+                  ],
+                  [
+                    "ungraded",
+                    "Not graded (read-only / unknown):",
+                    ungraded.filter((u) => u.reason !== "scaled_floor"),
+                  ],
+                ] as const
+              ).map(([group, heading, items]) =>
+                items.length === 0 ? null : (
+                  <div key={group} data-ungraded-group={group}>
+                    <div>{heading}</div>
+                    <ul className="list-disc pl-4 text-muted-foreground">
+                      {items.map((u) => {
+                        const n = ungraded.indexOf(u) + 1;
+                        return (
+                          <li
+                            key={`${n}-${u.volume}`}
+                            data-ungraded-reason={u.reason}
+                          >
+                            {/* A mount names a path someone chose (D3.3). */}
+                            <span className="font-mono">
+                              {presenting ? `Volume ${n}` : u.volume}
+                            </span>
+                            {" — "}
+                            {isUngradedReason(u.reason)
+                              ? UNGRADED_REASON_TEXT[u.reason]
+                              : `coord gave reason "${u.reason}", which this build does not recognize`}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )
+              )}
             </div>
           )}
         </TooltipContent>

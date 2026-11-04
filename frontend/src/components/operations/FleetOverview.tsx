@@ -21,17 +21,15 @@ import { TaskRunCard } from "./TaskRunCard";
 import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
 import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { coordDeviceHostKey } from "./coordCredentialStatus";
-import { formatBytes, POLL_INTERVAL_MS, relativeTime } from "./utils";
+import { POLL_INTERVAL_MS, relativeTime } from "./utils";
 import { statusOnlyErrorText } from "@/lib/api/operations/base";
 import { CollapsiblePanel } from "@/components/console";
 import { SectionCaption, usePresentationMode } from "@/components/presentation";
 import { DEVOPS_SOURCES, latestInstant } from "./devOpsHeadline";
 import { FAILURE_SENTENCE_WITHHELD } from "./presentedFailure";
 import {
-  anyVolumeReported,
   resolveMachineVolumes,
-  tightestVolume,
-  volumeGradedSeverity,
+  tightestVolumeTile,
   volumesReliabilityWarning,
   type VolumesFetch,
 } from "./fleetVolumes";
@@ -645,15 +643,9 @@ export function FleetOverview({
    * (the fleet-volumes read did not answer — says nothing about any disk) vs
    * "none reported" (the read answered, and no device has telemetry yet).
    * Collapsing both into "unknown" is the same conflation the parse layer was
-   * fixed for.
+   * fixed for. Decided by `tightestVolumeTile` (computed as `tightestTile`
+   * once `presenting` is known, below).
    */
-  const worstFreeVolume = useMemo(() => tightestVolume(volumes), [volumes]);
-  const worstSeverity = worstFreeVolume
-    ? // Graded against the volume's own bar (a scaled floor for a small
-      // volume), never the client reserve alone.
-      volumeGradedSeverity(worstFreeVolume)
-    : null;
-  const volumesRead = volumes.state === "ok";
   /**
    * Set when the response was only PARTLY readable. The rows that were dropped
    * named no device, so they cannot be attributed to a machine — which means
@@ -702,6 +694,10 @@ export function FleetOverview({
   // is told what this list is even while it loads or has failed. Nothing here
   // renders for the operator.
   const { presenting } = usePresentationMode();
+  const tightestTile = useMemo(
+    () => tightestVolumeTile(volumes, { presenting }),
+    [volumes, presenting]
+  );
   const caption = (
     <SectionCaption
       id="dev-ops.machines"
@@ -981,32 +977,8 @@ export function FleetOverview({
             <StatBadge
               icon={HardDrive}
               label="Tightest volume"
-              value={
-                worstFreeVolume
-                  ? // The mount names a path someone chose; an outsider gets
-                    // the figure without it (D3.3, as `VolumeRows` does).
-                    presenting
-                    ? `${formatBytes(worstFreeVolume.free_bytes)} free`
-                    : `${formatBytes(worstFreeVolume.free_bytes)} free (${worstFreeVolume.volume})`
-                  : !volumesRead
-                    ? "not read"
-                    : volumesWarning
-                      ? "partial read"
-                      : anyVolumeReported(volumes)
-                        ? // Every reported volume was skipped: read-only,
-                          // or a small volume healthy on its own bar.
-                          "none at risk"
-                        : "none reported"
-              }
-              variant={
-                worstSeverity === "critical"
-                  ? "destructive"
-                  : worstSeverity === "warn"
-                    ? "warning"
-                    : worstSeverity === "ok"
-                      ? "success"
-                      : "outline"
-              }
+              value={tightestTile.value}
+              variant={tightestTile.variant}
             />
 
             {/* Refresh indicator. `lastUpdated` is the refresh loop's own

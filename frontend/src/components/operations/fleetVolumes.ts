@@ -29,7 +29,7 @@ import {
   deadlineText,
   ROUTE_DISABLED_TEXT,
 } from "./coordPollError";
-import { volumeSeverity, type VolumeSeverity } from "./utils";
+import { formatBytes, volumeSeverity, type VolumeSeverity } from "./utils";
 import type {
   DangerBar,
   DeviceStatus,
@@ -131,7 +131,12 @@ export function volumeSkipsGrading(
   v: VolumeReading
 ): SkippedGradeReason | null {
   const bar = v.danger_bar;
-  return bar === "read_only" || bar === "read_only_unknown" ? bar : null;
+  if (bar !== "read_only" && bar !== "read_only_unknown") return null;
+  // A contradictory row -- coord's bar says read-only while the publisher's
+  // own `read_only` says writable -- must never mute a writable disk. It is
+  // graded against the reserve, the conservative reading.
+  if (v.read_only === false) return null;
+  return bar;
 }
 
 /**
@@ -143,7 +148,11 @@ export function volumeSkipsGrading(
 export function scaledFloorBar(v: VolumeReading): number | null {
   if (v.danger_bar !== "scaled_floor") return null;
   const bar = v.danger_bar_bytes;
-  return typeof bar === "number" && Number.isFinite(bar) ? bar : null;
+  // A negative bar cannot be a floor; like a missing one it falls back to the
+  // reserve rather than grading every byte count as healthy.
+  return typeof bar === "number" && Number.isFinite(bar) && bar >= 0
+    ? bar
+    : null;
 }
 
 /**
@@ -623,6 +632,81 @@ export function anyVolumeReported(fetched: VolumesFetch): boolean {
     if (entry.volumes.length > 0) return true;
   }
   return false;
+}
+
+/**
+ * How many reported volumes coord could NOT grade because their runner did
+ * not say whether they are read-only (`read_only_unknown`). Each one is an
+ * UNKNOWN, so the fleet's tightest-volume tile can never read healthy while
+ * any is present.
+ */
+export function countUngradedUnknown(fetched: VolumesFetch): number {
+  if (fetched.state !== "ok") return 0;
+  let n = 0;
+  for (const entry of fetched.byDevice.values()) {
+    for (const v of entry.volumes) {
+      if (volumeSkipsGrading(v) === "read_only_unknown") n++;
+    }
+  }
+  return n;
+}
+
+/** Badge variants the fleet header's stat tiles accept. */
+export type TileVariant =
+  | "outline"
+  | "default"
+  | "success"
+  | "warning"
+  | "destructive";
+
+/**
+ * The "Tightest volume" tile, decided in one pure place.
+ *
+ * - A tightest volume keeps its figure and is coloured by its OWN bar.
+ * - Any `read_only_unknown` volume is an UNKNOWN: with no tightest the tile
+ *   says "N ungraded (unknown)"; beside a tightest it appends that note and a
+ *   would-be green badge is demoted to outline. Red and amber stay -- a real
+ *   breach is not hidden by an unknown elsewhere.
+ * - "none at risk" only when nothing is unknown.
+ */
+export function tightestVolumeTile(
+  fetched: VolumesFetch,
+  { presenting }: { presenting: boolean }
+): { value: string; variant: TileVariant } {
+  const worst = tightestVolume(fetched);
+  const unknown = countUngradedUnknown(fetched);
+  const unknownNote = `${unknown} ungraded (unknown)`;
+  if (worst) {
+    const figure = `${formatBytes(worst.free_bytes)} free`;
+    // The mount names a path someone chose; an outsider gets the figure
+    // without it (D3.3, as `VolumeRows` does).
+    const base = presenting ? figure : `${figure} (${worst.volume})`;
+    const severity = volumeGradedSeverity(worst);
+    let variant: TileVariant =
+      severity === "critical"
+        ? "destructive"
+        : severity === "warn"
+          ? "warning"
+          : severity === "ok"
+            ? "success"
+            : "outline";
+    if (unknown > 0 && variant === "success") variant = "outline";
+    return {
+      value: unknown > 0 ? `${base} · ${unknownNote}` : base,
+      variant,
+    };
+  }
+  if (fetched.state !== "ok") return { value: "not read", variant: "outline" };
+  if (volumesReliabilityWarning(fetched)) {
+    return { value: "partial read", variant: "outline" };
+  }
+  if (unknown > 0) return { value: unknownNote, variant: "outline" };
+  return {
+    // Every reported volume was skipped: read-only, or a small volume
+    // healthy on its own bar.
+    value: anyVolumeReported(fetched) ? "none at risk" : "none reported",
+    variant: "outline",
+  };
 }
 
 // ---------------------------------------------------------------------------
