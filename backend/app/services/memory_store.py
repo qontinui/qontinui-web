@@ -1388,7 +1388,8 @@ def _validity_filters(
     Tenant binding, tombstone/validity filtering (against ``:as_of`` when
     the caller named an instant, otherwise transaction-consistently — see
     :data:`_EFFECTIVE_NOW_SQL`), the scope rule (``agent``/``session``
-    rows require the matching ``scope_ref``), and the optional
+    rows require the matching ``scope_ref`` — case-insensitively for
+    ``agent``, exactly for ``session``), and the optional
     kind/importance/recency/title-prefix filters.
 
     ``title_prefix`` lives HERE, not beside the tsquery in the FTS arm,
@@ -1405,7 +1406,13 @@ def _validity_filters(
         f"r.valid_from <= {_EFFECTIVE_NOW_SQL}",
         f"(r.valid_until IS NULL OR r.valid_until > {_EFFECTIVE_NOW_SQL})",
         "r.scope IN :scopes",
-        "(r.scope NOT IN ('agent', 'session') OR r.scope_ref = :scope_ref)",
+        # ``agent`` matches case-insensitively, exactly like the visibility
+        # predicate (``_visible_conditions``): a device resolves its query ref
+        # to its lower-cased id, and a row an admitted principal stored under
+        # an upper-cased ref is still that device's. ``session`` stays exact.
+        "(r.scope NOT IN ('agent', 'session')"
+        " OR (r.scope = 'agent' AND lower(r.scope_ref) = lower(:scope_ref))"
+        " OR (r.scope = 'session' AND r.scope_ref = :scope_ref))",
     ]
     params: dict[str, Any] = {"scopes": scopes, "scope_ref": scope_ref}
     if kinds:
