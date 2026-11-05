@@ -60,13 +60,16 @@ picks without the setting, for the general and a 1 %-selective question prefix.
 Test 6's result (2026-11-05, Postgres 17.11, 120,000 resolved rows of the scored family
 beside 20,000 of another family, 5,000 of another tenant and 2,000 unresolved, ANALYZEd,
 the index present): without the setting the planner estimated ``rows=1`` for the read's
-conjuncts and chose a Parallel Seq Scan of all 120,000 family rows, then a Sort
-(``external merge``, 25,400 kB on disk), 456 ms for ``since`` NULL and 502 ms with a
-``since``. That is D2's premise: the index alone is not chosen. For the 1 % prefix
-(1,200 matching rows) the Sort plan took 72 ms and the B1 plan, a Parallel Index Scan of
-this index walking the whole family partition with the prefix as a Filter, 71 ms. It is
-a measurement on a synthetic table seeded in ``issued_at`` order, so it decides
-nothing: Phase 3 applies B1 unconditionally.
+conjuncts and chose a Parallel Seq Scan of the family rows, then a Sort (``external
+merge``): 308 ms and 25,400 kB on disk for ``since`` NULL, 334 ms and 12,192 kB for a
+``since`` 40 days back. That is D2's premise: the index alone is not chosen. For the 1 %
+prefix (1,200 matching rows) the Sort plan took 79 ms and the B1 plan, a Parallel Index
+Scan of this index walking the whole family partition with the prefix as a Filter,
+88 ms. Under B1 the generic plan of the prepared read (``plan_cache_mode =
+force_generic_plan``) also walks this index with no Sort, with ``tenant_id`` and
+``object_type`` as its Index Cond and ``($3 IS NULL OR issued_at >= $3)`` left as a
+Filter. It is a measurement on a synthetic table seeded in ``issued_at`` order, so it
+decides nothing: Phase 3 applies B1 unconditionally.
 
 Order against coord
 ------------------------------------------------------------------------------
@@ -98,7 +101,8 @@ reports as success. So ``indisvalid`` is checked AFTER the deploy instead::
 
 ``false`` means: wait until ``pg_stat_progress_create_index`` is empty, because a live
 build also reads ``false``, then run ``DROP INDEX CONCURRENTLY coord.<name>`` and
-re-run the statement below by hand. That repair is production DDL.
+re-run ``upgrade()``'s ``CREATE INDEX CONCURRENTLY`` statement by hand. That repair is
+production DDL.
 
 **A second migrator kills a live build.** It waits on the first's lock, the deadlock
 detector usually fires, and the FIRST dies while the second prints ``already exists,

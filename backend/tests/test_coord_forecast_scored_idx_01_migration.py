@@ -21,17 +21,23 @@ What is asserted
    are present.
 3. After upgrade the index exists, is ``indisvalid``, and is exactly the intended
    definition.
-4. **Capability, forced:** with sequential and bitmap scans priced out, the read plans as
-   an ordered Index Scan of the new index with no Sort, for both ``since`` arms. At the
-   parent revision the same forced plan has a Sort, so this assertion can fail.
+4. **Capability, forced:** with sequential scans, bitmap scans and sorts priced out, the
+   read plans as an ordered Index Scan of the new index with no Sort, for both ``since``
+   arms. At the parent revision the same forced plan still has a Sort, because nothing
+   else delivers the order, so this assertion can fail.
 5. **The read as Phase 3 sends it** (one transaction, ``SET LOCAL statement_timeout =
    '5s'`` and ``SET LOCAL enable_sort = off``, nothing else forced) plans on the new
    index with no Sort, for both ``since`` arms, on a seeded and ANALYZEd table with
-   other families, another tenant and unresolved rows beside the scored family.
+   other families, another tenant and unresolved rows beside the scored family. The
+   same holds for the GENERIC plan of the read prepared with ``$1``..``$5``, under
+   ``plan_cache_mode = force_generic_plan``, because coord sends it as a sqlx prepared
+   statement and Postgres may switch it to a generic plan, where
+   ``($3 IS NULL OR issued_at >= $3)`` cannot be folded.
 6. **A measurement, not an assertion:** the plans and timings of the read WITHOUT
    ``enable_sort = off``, and of a 1 %-selective question prefix with and without it,
    go to the CI log through ``warnings.warn``. D2 of the plan applies the setting
-   unconditionally, so nothing here decides anything.
+   unconditionally, so nothing here decides anything, and a case cancelled by the 5 s
+   ``statement_timeout`` is warned as that case's measurement rather than failing.
 7. Downgrade removes the index and keeps every row; a second upgrade re-applies it.
 
 The read is a literal copy of ``SCORED_ROWS_SQL`` in qontinui-coord
@@ -39,8 +45,11 @@ The read is a literal copy of ``SCORED_ROWS_SQL`` in qontinui-coord
 ``AND f.object_type = 'dev_action'`` that Phase 3 step 3.1 adds (``OBJECT_TYPE``,
 ``mod.rs:45-46``). A copy on purpose: the index serves coord only while the read keeps
 this shape. ``$4`` is ``MAX_SCORED_ROWS + 1`` = 50,001 and ``$5`` is
-``inference::shrinkage::ESTIMATOR``. Parameters are inlined as literals, which is what
-a custom plan sees.
+``inference::shrinkage::ESTIMATOR``. Most cases inline the parameters as literals,
+which is what a custom plan sees; the generic-plan case of assertion 5 binds them as
+``$1``..``$5`` through ``PREPARE``, which is what a generic plan sees. ``since`` is a
+timestamp 40 days before now, the middle of the seeded 83-day window, so that arm
+narrows the rows the read can return.
 
 The database tests share one ephemeral database (seeding it is the expensive part).
 Each one first moves it to the revision it needs, so none depends on another's order.
@@ -53,10 +62,12 @@ from __future__ import annotations
 import re
 import warnings
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 
 from tests._alembic_harness import (
     admin_database_url,
@@ -84,7 +95,12 @@ _CAP_PLUS_ONE = 50_001
 _DEFAULT_PREFIX = "dev_action."
 # About 1 % of the scored family: every 100th row's question is a `restart`.
 _SELECTIVE_PREFIX = "dev_action.restart."
-_SINCE = "2026-06-01T00:00:00+00:00"
+# 40 days before now, mid-way through the seeded 120,000-minute (about 83-day) window
+# that ends at the seed's now(), so the `since` arm excludes about half the family. A
+# concrete timestamp, as coord binds one, so a custom plan can fold `$3 IS NULL`.
+_SINCE = (datetime.now(UTC) - timedelta(days=40)).isoformat()
+# SQLSTATE `query_canceled`, what `statement_timeout` raises.
+_QUERY_CANCELED = "57014"
 
 # qontinui-coord 89909b161 `SCORED_ROWS_SQL`, verbatim but for the one line Phase 3
 # step 3.1 adds (`AND f.object_type = 'dev_action'`).
@@ -156,7 +172,10 @@ def _literal(value: str | None) -> str:
 
 
 def _scored_rows_sql(prefix: str, since: str | None) -> str:
-    """The read with its parameters inlined, highest placeholder first."""
+    """The read with its parameters inlined, highest placeholder first.
+
+    ``since`` is an ISO timestamp, or None for coord's NULL arm.
+    """
     sql = _SCORED_ROWS_SQL
     for placeholder, value in (
         ("$5", _literal(_ESTIMATOR)),
@@ -185,6 +204,39 @@ def _plan(
             for setting in settings:
                 conn.execute(text(f"SET LOCAL {setting}"))
             rows = conn.execute(text(explain + sql)).all()
+            return "\n".join(str(r[0]) for r in rows)
+        finally:
+            tx.rollback()
+
+
+def _generic_plan(engine: Engine, prefix: str, since: str | None) -> str:
+    """EXPLAIN EXECUTE the read PREPAREd with ``$1``..``$5``, forced to a generic plan.
+
+    One transaction, ``SET LOCAL plan_cache_mode = force_generic_plan`` and
+    ``SET LOCAL enable_sort = off``, as Phase 3 will run the read. A prepared statement
+    outlives the transaction, so it is DEALLOCATEd before the connection is returned.
+    """
+    with engine.connect() as conn:
+        tx = conn.begin()
+        try:
+            conn.execute(text("SET LOCAL plan_cache_mode = force_generic_plan"))
+            conn.execute(text("SET LOCAL enable_sort = off"))
+            conn.execute(
+                text(
+                    "PREPARE scored_rows (uuid, text, timestamptz, bigint, text) AS "
+                    + _SCORED_ROWS_SQL
+                )
+            )
+            try:
+                rows = conn.execute(
+                    text(
+                        "EXPLAIN EXECUTE scored_rows("
+                        f"{_literal(_TENANT)}, {_literal(prefix)}, {_literal(since)}, "
+                        f"{_CAP_PLUS_ONE}, {_literal(_ESTIMATOR)})"
+                    )
+                ).all()
+            finally:
+                conn.execute(text("DEALLOCATE scored_rows"))
             return "\n".join(str(r[0]) for r in rows)
         finally:
             tx.rollback()
@@ -282,6 +334,18 @@ def test_the_upgrade_path_is_classifier_safe() -> None:
         "coord writes forecasts continuously, and its classifier rejects a "
         f"non-concurrent or unguarded build: {create}"
     )
+    drops = upgrade_execute_calls(path, function="downgrade")
+    assert len(drops) == 1, "one DROP INDEX, and nothing else on the downgrade path"
+    drop = drops[0]
+    assert drop.sql is not None, (
+        "the downgrade's execute argument is one static literal"
+    )
+    assert drop.in_autocommit_block, "CONCURRENTLY cannot run in a transaction"
+    dropped = re.sub(r"\s+", " ", drop.sql).strip().upper()
+    assert dropped.startswith("DROP INDEX CONCURRENTLY IF EXISTS "), (
+        f"the downgrade must not lock coord's writes or fail on a missing index: "
+        f"{dropped}"
+    )
 
 
 @_DB_REQUIRED
@@ -317,7 +381,10 @@ def test_the_read_can_be_an_unsorted_walk_of_the_index_and_cannot_without_it(
     seeded: tuple[Engine, str],
 ) -> None:
     engine, url = seeded
-    forced = ("enable_seqscan = off", "enable_bitmapscan = off")
+    # `enable_sort = off` too: without it the post-upgrade half could cost-choose
+    # uq_process_forecasts_issue plus a Sort. The parent half still sorts, because no
+    # path there delivers the order.
+    forced = ("enable_seqscan = off", "enable_bitmapscan = off", "enable_sort = off")
 
     _at(url, _PARENT_REVISION_ID)
     for since in (None, _SINCE):
@@ -354,6 +421,14 @@ def test_the_score_read_plans_on_the_family_index(
             f"under Phase 3's enable_sort = off the read must walk {_INDEX_NAME} "
             f"with no Sort (since={since}):\n{plan}"
         )
+    # coord prepares the read, so Postgres may give it a generic plan, where
+    # `($3 IS NULL OR issued_at >= $3)` cannot fold; B1 must hold there too.
+    for since in (None, _SINCE):
+        plan = _generic_plan(engine, _DEFAULT_PREFIX, since)
+        assert _rides_the_index_unsorted(plan), (
+            f"the generic plan of the prepared read must walk {_INDEX_NAME} with no "
+            f"Sort under enable_sort = off (since={since}):\n{plan}"
+        )
 
 
 @_DB_REQUIRED
@@ -376,9 +451,16 @@ def test_the_planners_unforced_choice_is_recorded(
         ),
     )
     for label, prefix, since, settings in cases:
-        plan = _plan(
-            engine, _scored_rows_sql(prefix, since), settings=settings, analyze=True
-        )
+        try:
+            plan = _plan(
+                engine, _scored_rows_sql(prefix, since), settings=settings, analyze=True
+            )
+        except OperationalError as error:
+            # A read cut off at coord's 5 s is itself the measurement: coord would
+            # report it UNKNOWN. Any other database error still fails the test.
+            if getattr(error.orig, "pgcode", None) != _QUERY_CANCELED:
+                raise
+            plan = f"CANCELLED by statement_timeout = '5s': {error.orig}"
         warnings.warn(
             f"coord_forecast_scored_idx_01 measurement [{label}]:\n{plan}",
             stacklevel=1,
