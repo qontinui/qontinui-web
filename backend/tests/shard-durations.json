@@ -104,6 +104,7 @@
   "tests/test_coord_displaced_pr_rows_01_migration.py": 55.1,
   "tests/test_coord_down_envelope_contract.py": 0.2,
   "tests/test_coord_dp_write_auth_daily_01_migration.py": 47.5,
+  "tests/test_coord_forecast_scored_idx_01_migration.py": 15.0,
   "tests/test_coord_identity.py": 0.1,
   "tests/test_coord_iops_idx_01_migration.py": 5.9,
   "tests/test_coord_jwks_failure_diagnosability.py": 0.2,
