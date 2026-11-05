@@ -101,7 +101,8 @@ jobs:
     # unix user, so this job installs into a venv under $RUNNER_TEMP and only
     # restores the pip cache on hosted. Plan
     # 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     # Job cap. This workflow carried NO `timeout-minutes` at any level, so a
     # hung step fell through to GitHub's DEFAULT 360-minute ceiling — that is
     # how run 32207280679 burned 2h28m and 32216356137 burned 5h59m in
@@ -331,7 +332,8 @@ jobs:
   changed-specs:
     name: Changed E2E spec files
     if: github.event_name == 'pull_request'
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     # Detection only: a checkout, one extra fetch and a stdlib script.
     timeout-minutes: 5
     outputs:
@@ -418,7 +420,8 @@ jobs:
 
   test-summary:
     name: Test Summary
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     # Job cap — see `backend-tests` above. This job only downloads artifacts
     # and tallies results: 3-9s across the same 7 green runs. 10 min is ~65x
     # the observed max and exists purely so a wedged download cannot inherit
