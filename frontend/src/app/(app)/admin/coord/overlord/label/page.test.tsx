@@ -11,6 +11,11 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: { fetch: (...args: unknown[]) => fetchMock(...args) },
 }));
 
+let search = "";
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(search),
+}));
+
 import OverlordLabelPage from "./page";
 
 const IID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -23,9 +28,25 @@ function fill() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  search = "";
 });
 
 describe("OverlordLabelPage", () => {
+  it("prefills the intervention id from ?intervention_id=", async () => {
+    search = `intervention_id=${IID}`;
+    render(<OverlordLabelPage />);
+    expect(await screen.findByLabelText("Intervention id")).toHaveValue(IID);
+    expect(
+      screen.getByText("Submit label").closest("button")
+    ).not.toBeDisabled();
+  });
+
+  it("starts empty without the query parameter", async () => {
+    render(<OverlordLabelPage />);
+    expect(await screen.findByLabelText("Intervention id")).toHaveValue("");
+    expect(screen.getByText("Submit label").closest("button")).toBeDisabled();
+  });
+
   it("posts the class label and shows the returned row", async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ id: "row-1", operator_label: "B" }), {
