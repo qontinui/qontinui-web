@@ -6,7 +6,7 @@
  * the three tables here.
  *
  * Every row is its own record, so a change is written as soon as it is made:
- * one create, update or delete per row (`planWrites`), each naming the
+ * one create, update or delete per row (`planRecordWrites`), each naming the
  * version it was built on. A write somebody else has overtaken is a conflict
  * shown side by side, never an overwrite. Controls are absent for a reader
  * who may not edit.
@@ -28,7 +28,7 @@ import type {
   SaveResult,
   UpdateOptions,
 } from "@/components/overview/editing/useResource";
-import { bodyOf, planWrites } from "../../_lib/costs";
+import { bodyOf, planRecordWrites } from "@/components/overview/editing/writes";
 
 interface Audited extends VersionedRecord {
   updated_at: string;
@@ -133,7 +133,7 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
 
   const apply = async (next: Row[], how: "edit" | "import") => {
     const source: WriteSource = how === "import" ? "import" : "ui";
-    const plan = planWrites(rows, next, how, writable, matchKey);
+    const plan = planRecordWrites(rows, next, how, writable, matchKey);
     if (rowProblem) {
       const problems: string[] = [];
       for (const row of [

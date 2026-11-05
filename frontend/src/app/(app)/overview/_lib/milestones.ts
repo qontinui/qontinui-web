@@ -5,7 +5,8 @@
  * Unlike the estimate's tables, every milestone is a record of its own on the
  * authoring contract — its own version, its own `If-Match`, its own change-log
  * row. So the table is not saved as a whole: each change the reader makes
- * (`planMilestoneWrites`) is one create, update or delete, sent at once.
+ * (the kit's `planRecordWrites`) is one create, update or delete, sent at
+ * once.
  *
  * Pure: no React, no network.
  */
@@ -40,7 +41,7 @@ export interface MilestoneRow {
 }
 
 /** The fields a write carries — everything the table edits. */
-const WRITABLE = [
+export const MILESTONE_WRITABLE = [
   "title",
   "kind",
   "phase_id",
@@ -49,7 +50,13 @@ const WRITABLE = [
   "completed_date",
   "description",
 ] as const;
-type Writable = (typeof WRITABLE)[number];
+type Writable = (typeof MILESTONE_WRITABLE)[number];
+
+/** How a pasted milestone finds the one it updates: its title, ignoring case
+ *  and surrounding space. A title shared by several milestones matches none
+ *  of them, so the line adds a new one. */
+export const milestoneKey = (row: { title: string }): string =>
+  row.title.trim().toLowerCase();
 
 export function milestoneToRow(m: Milestone): MilestoneRow {
   return {
@@ -280,78 +287,6 @@ export function milestoneTable(
       parse: (text) => parseMilestonesCsv(text, phases),
     },
   };
-}
-
-export interface MilestoneWrites {
-  creates: MilestoneRow[];
-  /** `row` is the record as it stood; `patch` only what changed. */
-  updates: { row: MilestoneRow; patch: Partial<MilestoneRow> }[];
-  deletes: MilestoneRow[];
-}
-
-function changed(
-  before: MilestoneRow,
-  after: MilestoneRow,
-  fields: readonly Writable[] = WRITABLE
-): Partial<MilestoneRow> {
-  const patch: Partial<Record<Writable, unknown>> = {};
-  for (const field of fields) {
-    if (before[field] !== after[field]) patch[field] = after[field];
-  }
-  return patch as Partial<MilestoneRow>;
-}
-
-/** The fields a create sends. */
-export function createBody(row: MilestoneRow): Record<string, unknown> {
-  return Object.fromEntries(WRITABLE.map((f) => [f, row[f]]));
-}
-
-/**
- * The writes that turn `previous` (what the server holds) into `next`.
- *
- * - An **edit** (`how: "edit"`) is the table as the reader left it: a row
- *   with no id is created, a row whose fields moved is updated with only
- *   those fields, a row that is gone is deleted.
- * - An **import** (a CSV paste) is never a deletion. Each pasted row whose
- *   title matches exactly ONE existing milestone (ignoring case) updates it;
- *   every other row is created. An ambiguous title is a new milestone, not a
- *   guess at which one was meant.
- */
-export function planMilestoneWrites(
-  previous: MilestoneRow[],
-  next: MilestoneRow[],
-  how: "edit" | "import"
-): MilestoneWrites {
-  const plan: MilestoneWrites = { creates: [], updates: [], deletes: [] };
-  if (how === "import") {
-    for (const row of next) {
-      const same = previous.filter(
-        (p) => p.title.trim().toLowerCase() === row.title.trim().toLowerCase()
-      );
-      if (same.length === 1) {
-        const patch = changed(same[0]!, row, row.supplied ?? WRITABLE);
-        if (Object.keys(patch).length > 0)
-          plan.updates.push({ row: same[0]!, patch });
-      } else {
-        plan.creates.push(row);
-      }
-    }
-    return plan;
-  }
-  const byId = new Map(previous.map((p) => [p.id, p]));
-  const kept = new Set<string>();
-  for (const row of next) {
-    const was = row.id ? byId.get(row.id) : undefined;
-    if (!was) {
-      plan.creates.push(row);
-      continue;
-    }
-    kept.add(row.id);
-    const patch = changed(was, row);
-    if (Object.keys(patch).length > 0) plan.updates.push({ row: was, patch });
-  }
-  plan.deletes = previous.filter((p) => !kept.has(p.id));
-  return plan;
 }
 
 /** The phases milestones name that `phases` does not hold, labelled from

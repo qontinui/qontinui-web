@@ -5,7 +5,7 @@
  *
  * Every milestone is its own record on the authoring contract, so a change
  * is written as soon as it is made — one create, update or delete per row
- * (`planMilestoneWrites`), each naming the version it was built on. A CSV
+ * (`planRecordWrites`), each naming the version it was built on. A CSV
  * paste adds and updates (matched by title) and never removes. A write
  * somebody else has overtaken is a conflict shown side by side, never an
  * overwrite. Controls are absent for a reader who may not edit.
@@ -26,13 +26,14 @@ import type {
   UpdateOptions,
 } from "@/components/overview/editing/useResource";
 import type { WriteSource } from "@/components/overview/editing/api";
+import { bodyOf, planRecordWrites } from "@/components/overview/editing/writes";
 import {
-  createBody,
+  MILESTONE_WRITABLE,
+  milestoneKey,
   milestoneRowProblem,
   milestoneTable,
   milestoneToRow,
   otherPhases,
-  planMilestoneWrites,
   type MilestoneRow,
   type PhaseChoice,
 } from "../../_lib/milestones";
@@ -128,7 +129,13 @@ export function MilestonesSection({
 
   const apply = async (next: MilestoneRow[], how: "edit" | "import") => {
     const source: WriteSource = how === "import" ? "import" : "ui";
-    const plan = planMilestoneWrites(rows, next, how);
+    const plan = planRecordWrites(
+      rows,
+      next,
+      how,
+      MILESTONE_WRITABLE,
+      milestoneKey
+    );
     const problems: string[] = [];
     // The one rule the served schema cannot express, refused before sending.
     for (const row of [
@@ -145,7 +152,7 @@ export function MilestonesSection({
     setBusy(true);
     const failures: string[] = [];
     for (const row of plan.creates) {
-      const result = await create(createBody(row), { source });
+      const result = await create(bodyOf(row, MILESTONE_WRITABLE), { source });
       if (!result.ok && "error" in result)
         failures.push(`${row.title}: ${result.error}`);
     }
@@ -227,7 +234,7 @@ export function MilestonesSection({
               if (chosen.kind === "update") {
                 const result = await update(
                   chosen.theirs,
-                  createBody(chosen.mine)
+                  bodyOf(chosen.mine, MILESTONE_WRITABLE)
                 );
                 if (!result.ok && "conflict" in result)
                   setPending({ ...chosen, theirs: result.conflict });

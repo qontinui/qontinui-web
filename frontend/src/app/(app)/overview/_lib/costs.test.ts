@@ -8,11 +8,11 @@ import {
   parseCategoriesCsv,
   parseEntriesCsv,
   parseRecurringCsv,
-  planWrites,
   recurringBody,
   recurringRowProblem,
   type CategoryRow,
 } from "./costs";
+import { planRecordWrites } from "@/components/overview/editing/writes";
 
 const categories = [
   { id: "c-hw", name: "Hardware" },
@@ -105,7 +105,7 @@ describe("parseRecurringCsv", () => {
   });
 });
 
-describe("planWrites", () => {
+describe("planRecordWrites with the cost tables", () => {
   const previous = [category("1", "Hardware"), category("2", "AI tools")];
 
   it("turns an edited table into one write per changed row", () => {
@@ -113,7 +113,7 @@ describe("planWrites", () => {
       category("1", "Hardware", "Servers"),
       category("", "Legal & registration"),
     ];
-    const plan = planWrites(previous, next, "edit", CATEGORY_WRITABLE);
+    const plan = planRecordWrites(previous, next, "edit", CATEGORY_WRITABLE);
     expect(plan.creates.map((r) => r.name)).toEqual(["Legal & registration"]);
     expect(plan.updates).toEqual([
       { row: previous[0], patch: { description: "Servers" } },
@@ -123,7 +123,7 @@ describe("planWrites", () => {
 
   it("a paste updates a match only in the columns it gave, and never deletes", () => {
     const { rows } = parseCategoriesCsv("hardware,Servers and parts\nOther");
-    const plan = planWrites(
+    const plan = planRecordWrites(
       previous,
       rows,
       "import",
@@ -139,7 +139,7 @@ describe("planWrites", () => {
 
   it("without a match key a paste only adds", () => {
     const { rows } = parseEntriesCsv("2026-10-20,x,,,1,EUR", []);
-    const plan = planWrites([], rows, "import", ENTRY_WRITABLE);
+    const plan = planRecordWrites([], rows, "import", ENTRY_WRITABLE);
     expect(plan.creates).toHaveLength(1);
   });
 });
