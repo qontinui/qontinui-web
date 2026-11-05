@@ -128,8 +128,18 @@ function timeToCloseStats(v: FlowView | null): Stat[] {
       label: "gone from a full pass",
       value: countValue(t?.byAbsent),
       tone: "muted",
-      title: "no longer present in a later full pass on the same runner",
+      title:
+        "no longer present in a later full pass on the same runner and build",
       "data-testid": "overlord-flow-ttc-absent",
+    },
+    {
+      key: "absentUnproven",
+      label: "gone across a rebuild",
+      value: countValue(t?.absentUnproven),
+      tone: "muted",
+      title:
+        "stopped, then missing from a later full pass on a different or unknown runner build: a rebuild restarts the runner, so these are not counted as closed",
+      "data-testid": "overlord-flow-ttc-absent-unproven",
     },
   ];
 }
@@ -142,7 +152,7 @@ function nudgeProgressStats(v: FlowView | null): Stat[] {
       label: "progressed",
       value: n ? metricValue(n.progressRate, percentWords) : null,
       title: n
-        ? metricTitle(n.progressRate, "no nudge was sent in this window")
+        ? metricTitle(n.progressRate, "no nudge in this window was measured")
         : UNKNOWN_TITLE,
       "data-testid": "overlord-flow-nudge-progress-rate",
     },
@@ -167,6 +177,16 @@ function nudgeProgressStats(v: FlowView | null): Stat[] {
   ];
 }
 
+/**
+ * `finished / (nudged - finishUnproven)` — the fraction coord's `finish_rate`
+ * is. A coord that sends no `finish_unproven` predates the split and divided
+ * by `nudged`, so that is its denominator.
+ */
+function finishCountsValue(n: FlowView["nudge"] | undefined): string | null {
+  if (!n || n.finished === undefined || n.nudged === undefined) return null;
+  return `${n.finished}/${n.nudged - (n.finishUnproven ?? 0)}`;
+}
+
 function nudgeFinishStats(v: FlowView | null): Stat[] {
   const n = v?.nudge;
   return [
@@ -175,18 +195,33 @@ function nudgeFinishStats(v: FlowView | null): Stat[] {
       label: "finished",
       value: n ? metricValue(n.finishRate, percentWords) : null,
       title: n
-        ? metricTitle(n.finishRate, "no nudge was sent in this window")
+        ? metricTitle(
+            n.finishRate,
+            "no nudge in this window has a known outcome"
+          )
         : UNKNOWN_TITLE,
       "data-testid": "overlord-flow-nudge-finish-rate",
     },
     {
       key: "finished",
-      label: "of nudged",
-      value:
-        n && n.finished !== undefined && n.nudged !== undefined
-          ? `${n.finished}/${n.nudged}`
-          : null,
+      // A coord that sends no `finish_unproven` divided by every nudge, so
+      // the denominator is not "known outcome" there and must not say so.
+      label: n?.finishUnproven === undefined ? "of nudged" : "of known outcome",
+      value: finishCountsValue(n),
+      title:
+        n?.finishUnproven === undefined
+          ? "finished out of every nudged session: this coord does not count sessions gone across a rebuild apart, so they are in the denominator as not finished"
+          : "finished out of the nudged sessions whose outcome is known: the rate's own numerator and denominator, so sessions gone across a rebuild are left out",
       "data-testid": "overlord-flow-nudge-finish-counts",
+    },
+    {
+      key: "unproven",
+      label: "gone across a rebuild",
+      value: countValue(n?.finishUnproven),
+      tone: "muted",
+      title:
+        "nudged, then missing from a later full pass on a different or unknown runner build: unknown whether they finished, so not in the rate",
+      "data-testid": "overlord-flow-nudge-finish-unproven",
     },
   ];
 }

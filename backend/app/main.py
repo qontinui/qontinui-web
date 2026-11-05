@@ -38,6 +38,7 @@ from app.api.v1.endpoints.plan_library import (
 from app.api.v1.endpoints.session_repository import EXPORT_PROVENANCE_HEADERS
 from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
+from app.core.refusal import REFUSAL_ORIGIN_HEADER
 from app.db.init_db import init_db
 from app.db.session import AsyncSessionLocal
 from app.middleware.body_limit import BodyLimit, BodyLimitMiddleware
@@ -307,6 +308,10 @@ CORS_EXPOSE_HEADERS: list[str] = list(
             # public page went down, including on a coord failure where the body
             # is coord's error; unpublished, a browser could never see it.
             "X-Build-Record-Retracted",
+            # Set by `http_exception_handler` on every refusal this backend
+            # raised itself, so a client can tell the web's own 502 from a
+            # coord 502 passed through with the same envelope.
+            REFUSAL_ORIGIN_HEADER,
         ]
     )
 )

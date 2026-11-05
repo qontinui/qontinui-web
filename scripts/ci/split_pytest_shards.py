@@ -6,15 +6,21 @@ shards. Each shard computes the SAME assignment from the SAME collection and
 runs only the files assigned to it, so no shard needs data from any other job
 and there is no collect-then-fan-out stage to serialize behind.
 
-ONE lane invokes it:
+TWO lanes invoke it, both from a step named "Select this shard's test files":
 
-* ``.github/workflows/backend-ci.yml``, step "Select this shard's test files" —
-  the gating backend suite, once per matrix shard.
+* ``.github/workflows/backend-ci.yml`` — the gating backend suite, once per
+  matrix shard.
+* ``.github/workflows/backend-coverage-producer.yml`` — the non-gating per-test
+  coverage producer for coord, once per matrix shard, with the same
+  ``--shards``/``--durations`` so its slices are the gating lane's slices. Its
+  export job combines the shards' coverage data, which is why a partition that
+  is not COMPLETE would silently drop tests from coord's map.
 
-It is deliberately NOT in ``.qontinui/ci.toml``: that manifest's header records
-that ``backend-ci.yml``'s ``test`` job cannot run on the runner-as-CI-node lane
-at all, because that lane provisions no Postgres/Redis. A sharding helper for a
-job that lane cannot run would be a lane that never executes.
+Neither is in ``.qontinui/ci.toml``: that manifest's header records that
+``backend-ci.yml``'s ``test`` job cannot run on the runner-as-CI-node lane at
+all, because that lane provisions no Postgres/Redis, and the producer needs the
+same services. A sharding helper for a job that lane cannot run would be a lane
+that never executes.
 
 Why files and not individual tests
 ----------------------------------

@@ -55,6 +55,9 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   "/api/v1/operations/",
   "/api/v1/admin-dev/",
   "/api/v1/admin/agent-sessions",
+  // The session-census proxy beside it: forwards the header to coord, which
+  // checks the caller's membership.
+  "/api/v1/admin/sessions/census",
   // Helper-task portal proxy — coord-scoped; honoring the override lets a
   // caller who is a coord member of another tenant point the portal at it.
   "/api/v1/helper-tasks",
@@ -789,8 +792,14 @@ export class HttpClient {
     // the operator's coord context re-scopes to the chosen tenant (validated
     // coord-side against their memberships). Scoped to the tenant-aware proxy
     // prefixes (operations / admin-dev / admin agent-sessions / constraints)
-    // so the header never leaks onto unrelated requests.
-    if (!skipAuth && isActiveTenantScopedUrl(url)) {
+    // so the header never leaks onto unrelated requests. A caller that names
+    // the tenant itself keeps it: this runs again on a replay after a token
+    // refresh, by when the selection may have moved.
+    if (
+      !skipAuth &&
+      isActiveTenantScopedUrl(url) &&
+      !headers["X-Qontinui-Active-Tenant"]
+    ) {
       const activeTenant = readActiveTenantId();
       if (activeTenant) {
         headers["X-Qontinui-Active-Tenant"] = activeTenant;

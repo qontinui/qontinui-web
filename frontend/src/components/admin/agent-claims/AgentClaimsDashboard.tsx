@@ -28,6 +28,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { humanizePredicate } from "@/components/operations/gatesPredicate";
+import type { GatePredicate } from "@/components/operations/types";
 import { useSingleFlightPoll } from "@/components/operations/useSingleFlightPoll";
 import {
   CheckCircle,
@@ -181,7 +183,7 @@ function verdictClassName(verdict: string): string {
   }
 }
 
-function formatPredicate(pred: Record<string, unknown>): string {
+export function formatPredicate(pred: Record<string, unknown>): string {
   switch (pred.kind) {
     case "pr_merged":
       return `PR Merged: ${pred.repo} #${pred.pr_number}`;
@@ -195,6 +197,12 @@ function formatPredicate(pred: Record<string, unknown>): string {
       return `CI Green: ${pred.repo} @ ${String(pred.head_sha).slice(0, 7)}`;
     case "ref_exists":
       return `Ref Exists: ${pred.repo}:${pred.ref_name}`;
+    case "time_elapsed":
+      // A since_gate soak's stored `since` is a parked far-future stamp, which
+      // the raw JSON below would put on screen.
+      return pred.since_gate
+        ? humanizePredicate(pred as unknown as GatePredicate)
+        : JSON.stringify(pred);
     default:
       return JSON.stringify(pred);
   }

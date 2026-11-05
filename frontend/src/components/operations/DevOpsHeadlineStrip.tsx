@@ -30,6 +30,7 @@ import {
   machinesHealthyFigure,
   workspacesInUseFigure,
 } from "./devOpsHeadline";
+import { fleetRosterCut } from "./fleetLiveness";
 import type { FleetDeviceRef } from "./fleetResources";
 import type { UseFleetHealthResult } from "./useFleetHealth";
 import type { UseFleetWorktreeSlotsResult } from "./useFleetWorktreeSlots";
@@ -61,6 +62,7 @@ export function DevOpsHeadlineStrip({
           answered: health.data !== null,
           error: health.error,
           asOfMs: health.asOfMs,
+          cut: fleetRosterCut(health.data),
         }),
         source: DEVOPS_SOURCES.fleetHealth,
         "data-testid": "devops-headline-machines",

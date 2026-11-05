@@ -48,6 +48,11 @@ export const OPERATOR_ID = "0f0f0f0f-0000-4000-8000-0000000000ff";
  * the fixture states coord's value instead of echoing the console's constant.
  */
 export const NIL_OPERATOR = "00000000-0000-0000-0000-000000000000";
+/**
+ * An audit row's id, the UUID coord serves (`coord.operator_audit.audit_id`). A
+ * fixture id that is not one hides a leak from the identifier check.
+ */
+const AUDIT_ID = (n: number) => `a0d17000-0000-4000-8000-00000000000${n}`;
 export const PARTNER_REPO = "acme-partner/secret-repo";
 /** A repository the scope below clears: its name may show. */
 export const FIRST_PARTY_REPO = "qontinui/qontinui-web";
@@ -227,6 +232,8 @@ function rolesMachine(
 }
 
 export interface DevOpsFixture {
+  /** The rest of the `/fleet/health` body beside `devices`, spread verbatim. */
+  healthExtras?: Record<string, unknown>;
   /** Reject the worktree-slots poll (the headline's UNKNOWN arm). */
   worktreeSlotsFail?: boolean;
   /**
@@ -254,7 +261,8 @@ export function mockDevOpsRoutes(
     const u = String(url);
     if (
       fixture.fail === "all" ||
-      (fixture.fail === "all-but-fleet-health" && !u.includes("fleet/health")) ||
+      (fixture.fail === "all-but-fleet-health" &&
+        !u.includes("fleet/health")) ||
       failsNow(u)
     ) {
       return Promise.reject(readFailure(u));
@@ -358,7 +366,7 @@ export function mockDevOpsRoutes(
       return Promise.resolve({
         audit: [
           {
-            audit_id: "audit-1",
+            audit_id: AUDIT_ID(1),
             operator_id: OPERATOR_ID,
             action: "fleet.drain.set",
             resource_kind: "coord.devices",
@@ -372,7 +380,7 @@ export function mockDevOpsRoutes(
             occurred_at: NOW_ISO(),
           },
           {
-            audit_id: "audit-2",
+            audit_id: AUDIT_ID(2),
             operator_id: OPERATOR_ID,
             action: "pr_merge.kill_switch",
             resource_kind: "coord.pr_events",
@@ -387,7 +395,7 @@ export function mockDevOpsRoutes(
           // A kill switch as coord writes it (`rollout_routes.rs`): the
           // resource key AND `metadata.scope` are `repo:<owner>/<name>`.
           {
-            audit_id: "audit-3",
+            audit_id: AUDIT_ID(3),
             operator_id: OPERATOR_ID,
             action: "pr_merge.kill_switch.activate",
             resource_kind: "coord.tenant_rollout_overrides",
@@ -403,7 +411,7 @@ export function mockDevOpsRoutes(
           },
           // The same, on a first-party repository: the scope may show.
           {
-            audit_id: "audit-4",
+            audit_id: AUDIT_ID(4),
             operator_id: OPERATOR_ID,
             action: "pr_merge.kill_switch.activate",
             resource_kind: "coord.tenant_rollout_overrides",
@@ -419,7 +427,7 @@ export function mockDevOpsRoutes(
           // machine A's device credential released machine B): the Operator
           // line names machine A by its alias, never by its device id.
           {
-            audit_id: "audit-5",
+            audit_id: AUDIT_ID(5),
             operator_id: DEV_A,
             action: "fleet.drain.clear",
             resource_kind: "coord.devices",
@@ -438,7 +446,7 @@ export function mockDevOpsRoutes(
           // line must be plain words, not the operator's explanation of
           // coord's fallback.
           {
-            audit_id: "audit-6",
+            audit_id: AUDIT_ID(6),
             operator_id: NIL_OPERATOR,
             action: "fleet.drain.set",
             resource_kind: "coord.devices",
@@ -452,6 +460,7 @@ export function mockDevOpsRoutes(
     }
     if (u.includes("fleet/health")) {
       return Promise.resolve({
+        ...fixture.healthExtras,
         devices: [
           {
             device_id: DEV_A,
@@ -773,9 +782,7 @@ export function toggleOf(container: Element): HTMLElement {
 
 /** A captioned section's provenance chips, by the source each one names. */
 export function sectionChips(id: CaptionKey): Map<string, Element> {
-  const section = document.querySelector(
-    `[data-presentation-section="${id}"]`
-  );
+  const section = document.querySelector(`[data-presentation-section="${id}"]`);
   if (!section) throw new Error(`the ${id} section caption did not render`);
   const chips = new Map<string, Element>();
   for (const chip of section.querySelectorAll("[data-provenance]")) {

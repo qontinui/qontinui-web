@@ -9,6 +9,7 @@ function ScrollArea({
   className,
   children,
   horizontal = false,
+  fitWidth = false,
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   /**
@@ -20,6 +21,16 @@ function ScrollArea({
    * clipped off-screen with no way to reach them.
    */
   horizontal?: boolean;
+  /**
+   * Lay the children out at the viewport's width, so text wraps and a wide
+   * table scrolls inside its own `overflow-x-auto` region. Radix wraps children
+   * in a `display: table` div, which grows to its content's minimum width: one
+   * wide table anywhere inside widens everything, and `overflow-x-hidden` then
+   * cuts the excess off with no way to reach it. Use this for a page body, and
+   * not together with `horizontal`, which needs that growth to have something
+   * to scroll.
+   */
+  fitWidth?: boolean;
 }) {
   return (
     <ScrollAreaPrimitive.Root
@@ -31,7 +42,8 @@ function ScrollArea({
         data-slot="scroll-area-viewport"
         className={cn(
           "!overflow-y-auto flex-1 min-h-0 w-full rounded-[inherit] focus-visible:ring-ring/50 transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1",
-          horizontal ? "!overflow-x-auto" : "!overflow-x-hidden"
+          horizontal ? "!overflow-x-auto" : "!overflow-x-hidden",
+          fitWidth && "[&>div]:!block"
         )}
       >
         {children}

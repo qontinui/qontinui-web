@@ -104,8 +104,9 @@ function html(): string {
 
 /**
  * Every attribute in the document whose value carries `needle`, ignoring
- * case. `expectPresentationSafe` reads text and a few text attributes
- * (`title`, `aria-label`, …), never an `href`, so a link's URL needs this.
+ * case. `expectPresentationSafe` reads text, the text attributes (`title`,
+ * `aria-label`, …), and for identities every `href` and `data-*` value; this
+ * reads every attribute, so it also covers `id`, `class` and the rest.
  */
 function attributesCarrying(needle: string): string[] {
   const lower = needle.toLowerCase();

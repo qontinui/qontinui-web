@@ -308,6 +308,95 @@ const ARMS: Arm[] = [
     never: [/If you overturn it: none/],
   },
   {
+    // Coord called its question scan stale: the items show, but the count and
+    // the per-kind counts are never a definite total.
+    arm: "a needs_me block whose question scan coord called stale",
+    body: {
+      needs_me: {
+        ...needsOne({}),
+        by_domain: { unclassified: 1 },
+        questions_coverage: "stale",
+      },
+    },
+    region: NEEDS,
+    says: [
+      "1 shown of 1 (may be off)",
+      "By kind of decision: unclassified 1 (may be off)",
+      // The items still show (a row, its text or its descriptor).
+      /1 shown of 1.*decide/,
+    ],
+    never: [/shown of 1(?! \(may be off\))/, /incomplete/],
+  },
+  {
+    // The share is coord's count over every decision, not the 20 it lists.
+    arm: "a share coord could not count",
+    body: {
+      needs_me: {
+        ...needsOne({}),
+        shape_share: { with_recommendation: null, total: 1 },
+      },
+    },
+    region: NEEDS,
+    says: [
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    never: [/0 of 1 decision/],
+  },
+  {
+    arm: "a share coord counted, over a scan it called stale",
+    body: {
+      needs_me: {
+        ...needsOne({}),
+        shape_share: { with_recommendation: 1, total: 1 },
+        questions_coverage: "stale",
+      },
+    },
+    region: NEEDS,
+    says: ["1 of 1 decision came with a recommendation (may be off)."],
+  },
+  {
+    arm: "a stale needs_me scan that counted none",
+    body: {
+      needs_me: {
+        state: "read",
+        total: 0,
+        omitted: 0,
+        items: [],
+        retirement: "supported",
+        questions_coverage: "stale",
+      },
+    },
+    region: NEEDS,
+    // One reading: coord's zero, qualified, in the header and the sentence.
+    says: [
+      "0 shown of 0 (may be off)",
+      "Coord counted no decisions for you, but says its count may be off",
+    ],
+    never: [/Nothing needs you/, /Nothing needed you/, /not known/],
+  },
+  {
+    // Coord could not read the fork-shape columns: it serves `shape: "unknown"`
+    // and leaves `recommendation` / `if_overturned` out. That is UNKNOWN, and
+    // must not read as an open question with none given.
+    arm: "a question whose recommendation coord could not read",
+    body: {
+      needs_me: needsOne({
+        shape: "unknown",
+        recommendation: undefined,
+        if_overturned: undefined,
+      }),
+    },
+    region: NEEDS,
+    open: "row",
+    // The opened row shows its detail, not its collapsed reason
+    // (`needsYouReason`, pinned in coordHomeStatus.test.ts).
+    says: [
+      "Recommended: unknown (could not be read)",
+      "If you overturn it: unknown (could not be read)",
+    ],
+    never: [/none given/, /not stated/, /open question/, /no recommendation/],
+  },
+  {
     arm: "a question with no source",
     body: { needs_me: needsOne({ source: undefined }) },
     region: NEEDS,

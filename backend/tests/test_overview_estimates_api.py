@@ -328,6 +328,21 @@ async def admin_a(async_db_session: AsyncSession, api_user):
 
 
 @pytest_asyncio.fixture()
+async def degraded_admin_a(async_db_session: AsyncSession, api_user):
+    """Admin of home project A, whose request named a project they are not in."""
+    from app.overview.permissions import OverviewCaller, get_overview_caller
+
+    app = _build_app(
+        db_session=async_db_session, user=api_user, tenant_id=TENANT_A, is_admin=True
+    )
+    app.dependency_overrides[get_overview_caller] = lambda: OverviewCaller(
+        tenant_id=TENANT_A, roles=("admin",), named_project_degraded=True
+    )
+    async with _client(app) as c:
+        yield c
+
+
+@pytest_asyncio.fixture()
 async def member_a(async_db_session: AsyncSession, api_user):
     """A plain member (coord ``operator``) of project A — read-only."""
     app = _build_app(
@@ -1079,6 +1094,81 @@ class TestRollupHonesty:
 # ===========================================================================
 
 
+class TestNamedProjectResolution:
+    """Which named projects count as degraded, through the real resolver."""
+
+    @pytest.mark.parametrize(
+        ("named", "tenant_id", "degraded"),
+        [
+            (str(TENANT_B), TENANT_B, False),
+            ("project-b", TENANT_B, False),
+            (f"  {TENANT_B}  ", TENANT_B, False),
+            (str(TENANT_A), TENANT_A, False),
+            ("cccccccc-0000-4000-8000-000000000003", TENANT_A, True),
+            ("not-a-project", TENANT_A, True),
+            ("   ", TENANT_A, False),
+            (None, TENANT_A, False),
+        ],
+    )
+    async def test_operator_caller(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        named: str | None,
+        tenant_id: UUID,
+        degraded: bool,
+    ) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        from app.overview import permissions
+
+        identity = SimpleNamespace(
+            home_tenant_id=TENANT_A,
+            tenants=[
+                SimpleNamespace(tenant_id=TENANT_A, slug="project-a", roles=("admin",)),
+                SimpleNamespace(
+                    tenant_id=TENANT_B, slug="project-b", roles=("operator",)
+                ),
+            ],
+        )
+        monkeypatch.setattr(
+            permissions, "get_coord_identity", AsyncMock(return_value=identity)
+        )
+        monkeypatch.setattr(permissions, "capture_caller_bearer", lambda _r: None)
+        headers = {} if named is None else {permissions.ACTIVE_TENANT_HEADER: named}
+
+        caller = await permissions._operator_caller(
+            SimpleNamespace(headers=headers)  # type: ignore[arg-type]
+        )
+
+        assert caller.tenant_id == tenant_id
+        assert caller.named_project_degraded is degraded
+
+    async def test_naming_a_home_project_with_no_role_row_is_not_degraded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        from app.overview import permissions
+
+        # Coord lists role rows only, so a staff caller's home can be absent.
+        identity = SimpleNamespace(home_tenant_id=TENANT_A, tenants=[])
+        monkeypatch.setattr(
+            permissions, "get_coord_identity", AsyncMock(return_value=identity)
+        )
+        monkeypatch.setattr(permissions, "capture_caller_bearer", lambda _r: None)
+
+        caller = await permissions._operator_caller(
+            SimpleNamespace(  # type: ignore[arg-type]
+                headers={permissions.ACTIVE_TENANT_HEADER: str(TENANT_A)}
+            )
+        )
+
+        assert caller.tenant_id == TENANT_A
+        assert caller.named_project_degraded is False
+
+
 class TestSettings:
     async def test_unsaved_settings_read_as_the_defaults_not_as_absent(
         self, member_a: httpx.AsyncClient
@@ -1113,6 +1203,32 @@ class TestSettings:
         )
         assert second.status_code == 200
         assert second.json()["version"] == version + 1
+
+    async def test_a_save_naming_a_project_the_caller_is_not_in_is_refused(
+        self, admin_a: httpx.AsyncClient, degraded_admin_a: httpx.AsyncClient
+    ) -> None:
+        # A read degrades to the caller's home project here. A write must not:
+        # it would replace the home project's settings with another's.
+        stored = await admin_a.put(f"{API}/settings", json={"base_currency": "EUR"})
+        assert stored.status_code == 200, stored.text
+        version = stored.json()["version"]
+
+        refused = await degraded_admin_a.put(
+            f"{API}/settings", json={"base_currency": "GBP"}
+        )
+        assert refused.status_code == 403
+        assert refused.json()["detail"]["error"] == "project_not_active"
+
+        read = await degraded_admin_a.get(f"{API}/settings")
+        assert read.status_code == 200
+        assert read.json()["base_currency"] == "EUR"
+        assert read.json()["version"] == version
+
+        # Only this route refuses: a write that names its record still degrades.
+        other_write = await degraded_admin_a.post(
+            f"{API}/estimates", json={"name": "still allowed", "purpose": "budget"}
+        )
+        assert other_write.status_code == 201, other_write.text
 
     async def test_a_stale_version_is_refused_with_the_current_one(
         self, admin_a: httpx.AsyncClient

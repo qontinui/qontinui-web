@@ -26,6 +26,15 @@
  * prints a word or a dash for it — nothing in here defaults a count to 0.
  */
 
+import {
+  isOperatorLabelTruth,
+  isVerifierVerdict,
+  type LabelSampleAnswer,
+  type OperatorLabelResult,
+  type OperatorLabelTruth,
+  type VerifierVerdict,
+} from "@/lib/api/operations/coordVerification";
+
 /** The window the tile reads. coord's default is also 28 days. */
 export const DEFAULT_METRICS_WINDOW = "28d";
 
@@ -137,12 +146,46 @@ export interface MetricsWindow {
   to: string;
 }
 
+/** Rows are the label's truth, columns the verifier's verdict. */
+export type JudgeMatrix = Record<
+  "holds" | "fails" | "cannot_tell",
+  Record<"survived" | "refuted" | "unverifiable", number>
+>;
+
+/**
+ * One label source's agreement with the verifier (`seeded` or `operator`).
+ * `kappa` is Cohen's kappa on the binary sub-table (truth holds/fails ×
+ * verdict survived/refuted), `null` with `reason: "n<20"` below 20 binary
+ * cases and `reason: "undefined"` when the expected agreement is 1.
+ */
+export interface JudgeAgreementSource {
+  n: number;
+  binary_n: number;
+  kappa: number | null;
+  reason: "n<20" | "undefined" | null | string;
+  matrix: JudgeMatrix;
+}
+
+/** coord's `judge_agreement` — per label source, never pooled. */
+export interface JudgeAgreement {
+  seeded: JudgeAgreementSource;
+  operator: JudgeAgreementSource;
+  /** A one-sided false-`survived` signal; never put into kappa. */
+  consequence: { false_survived_count: number };
+}
+
 interface MetricsCommon {
   generated_at: string;
   window: MetricsWindow;
   population_query_id: string;
   sampling: VerificationSampling;
   lane: VerificationLane;
+  /**
+   * Absent on a coord build that predates the judge-case table; `null` with
+   * `judge_agreement_error` when coord could not read it. Neither is zero.
+   */
+  judge_agreement?: JudgeAgreement | null;
+  judge_agreement_error?: string;
 }
 
 export interface PopulatedMetrics extends MetricsCommon {
@@ -508,6 +551,336 @@ export function deriveTrustView(
     calibrationLine: `${ratePct(tc.value, tc)}${iv ? ` ${iv}` : ""} of ${plural(tc.n, "independently checked unit")} held up (${tc.survived} held, ${tc.refuted} refuted)`,
     ...common,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Verifier agreement — one line under calibration, on the tile and the page
+// ---------------------------------------------------------------------------
+
+/**
+ * The verifier-agreement line. Plan
+ * `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
+ * Phase 4: `verifier agreement κ 0.71 (seeded n=24) · operator n=6`.
+ *
+ * - `populated` — a seeded kappa over at least {@link AGREEMENT_MIN_CASES}
+ *   binary cases with no reason attached, with the seeded binary n and the
+ *   operator n (the operator side carries a count only, never a kappa);
+ * - `insufficient` — fewer than {@link AGREEMENT_MIN_CASES} seeded binary
+ *   cases: words only, no count and no kappa, whatever else coord sent;
+ * - `undefined` — enough cases, but kappa has no value (expected agreement 1);
+ * - `unknown` — the metrics could not be read, coord could not look (a
+ *   degraded answer shows no kappa even if it carries one), coord could not
+ *   read the cases, this coord build does not serve them, or coord's fields
+ *   contradict each other. Never a number and never zero.
+ */
+export type AgreementView =
+  | { state: "loading"; text: "" }
+  | {
+      state: "populated" | "insufficient" | "undefined" | "unknown";
+      text: string;
+    };
+
+export const AGREEMENT_INSUFFICIENT_TEXT = "not enough labelled cases yet";
+
+/** Below this many binary cases a kappa is not shown (coord's `n<20`). */
+export const AGREEMENT_MIN_CASES = 20;
+
+/**
+ * Where the line renders. The overview `tile` says a fixed sentence when the
+ * metrics or the labelled cases could not be read; only the drill-down `page`
+ * quotes the reason (the read's own, or coord's `judge_agreement_error`).
+ */
+export type AgreementSurface = "tile" | "page";
+
+function isCount(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0;
+}
+
+function readAgreementSource(
+  v: unknown
+): Pick<JudgeAgreementSource, "n" | "binary_n" | "kappa" | "reason"> | null {
+  if (!isObject(v) || !isCount(v.n) || !isCount(v.binary_n)) return null;
+  const kappa =
+    typeof v.kappa === "number" && Number.isFinite(v.kappa) ? v.kappa : null;
+  if (kappa === null && v.kappa !== null) return null;
+  const reason = typeof v.reason === "string" ? v.reason : null;
+  return { n: v.n, binary_n: v.binary_n, kappa, reason };
+}
+
+function unknownAgreement(why: string): AgreementView {
+  return { state: "unknown", text: `verifier agreement unknown — ${why}` };
+}
+
+/** Kappa to two places; a negative value that rounds to zero prints `0.00`. */
+export function kappaText(kappa: number): string {
+  const fixed = kappa.toFixed(2);
+  return Number(fixed) === 0 ? (0).toFixed(2) : fixed;
+}
+
+export function deriveVerifierAgreement(
+  read:
+    | { status: "loading" }
+    | { status: "error"; reason: string }
+    | { status: "ok"; metrics: VerificationMetrics },
+  surface: AgreementSurface
+): AgreementView {
+  if (read.status === "loading") return { state: "loading", text: "" };
+  if (read.status === "error") {
+    // Covers no answer, a body that would not parse and an unloadable
+    // project list alike, so the words claim none of them.
+    return unknownAgreement(
+      surface === "page"
+        ? `the metrics could not be read (${read.reason})`
+        : "the metrics could not be read"
+    );
+  }
+  const m = read.metrics;
+  // "Nothing here is known": no kappa under it, whatever block came along.
+  if (m.degraded) return unknownAgreement("coord could not look");
+  if (typeof m.judge_agreement_error === "string") {
+    return unknownAgreement(
+      surface === "page"
+        ? `coord could not read the labelled cases (${m.judge_agreement_error})`
+        : "coord could not read the labelled cases"
+    );
+  }
+  if (m.judge_agreement == null) {
+    return unknownAgreement("this coord build does not serve it");
+  }
+  const raw: unknown = m.judge_agreement;
+  const seeded = isObject(raw) ? readAgreementSource(raw.seeded) : null;
+  if (!seeded) {
+    return unknownAgreement(
+      "coord served it in a shape this page does not recognise"
+    );
+  }
+  const operator = isObject(raw) ? readAgreementSource(raw.operator) : null;
+  const operatorPart = operator
+    ? `operator n=${operator.n}`
+    : "operator n unknown";
+  if (seeded.binary_n < AGREEMENT_MIN_CASES) {
+    return {
+      state: "insufficient",
+      text: `verifier agreement: ${AGREEMENT_INSUFFICIENT_TEXT}`,
+    };
+  }
+  if (seeded.kappa !== null && seeded.reason === null) {
+    return {
+      state: "populated",
+      text: `verifier agreement κ ${kappaText(seeded.kappa)} (seeded n=${seeded.binary_n}) · ${operatorPart}`,
+    };
+  }
+  if (seeded.kappa === null && seeded.reason === "undefined") {
+    return {
+      state: "undefined",
+      text: `verifier agreement undefined (n=${seeded.binary_n}) · ${operatorPart}`,
+    };
+  }
+  return unknownAgreement(
+    seeded.kappa !== null
+      ? `coord served a kappa beside a reason (${seeded.reason})`
+      : `coord served no kappa and no reason this page recognises (${seeded.reason ?? "none"})`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The operator's one-click label — coord's weekly sample, and each answer
+// ---------------------------------------------------------------------------
+
+/** One sampled verdict, as the label-sample door names it. */
+export interface LabelSampleRow {
+  verificationId: string;
+  /** What the row is called: the work-unit slug, or "unnamed verdict". */
+  label: string;
+  slug: string | null;
+  verdict: VerifierVerdict;
+  recordedAt: string;
+  /** The operator label this verdict already carries, if any. */
+  operatorLabel: {
+    id: string;
+    truth: OperatorLabelTruth;
+    createdAt: string;
+  } | null;
+}
+
+/**
+ * What the "Did this hold up?" section shows:
+ *
+ * - `rows` — coord's sample for `isoWeek`, each row labelled or not;
+ * - `empty` — coord ANSWERED and sampled nothing this week;
+ * - `unavailable` — no sample could be read (a coord that predates the door,
+ *   a `503 label_sample_unreadable`, no answer, an unreadable body). Never
+ *   rendered as "nothing to label".
+ */
+export type LabelSampleView =
+  | { state: "loading" }
+  | { state: "unavailable"; text: string }
+  | { state: "empty"; isoWeek: string; text: string }
+  | { state: "rows"; isoWeek: string; rows: LabelSampleRow[] };
+
+const NOT_NOTHING = "Not the same as nothing to label.";
+
+/** A sampled verdict with no work-unit slug; its id goes in a `title` only. */
+export const UNNAMED_VERDICT = "unnamed verdict";
+
+function readSampleRow(v: unknown): LabelSampleRow | null {
+  if (
+    !isObject(v) ||
+    typeof v.verification_id !== "string" ||
+    !(v.work_unit_slug === null || typeof v.work_unit_slug === "string") ||
+    !isVerifierVerdict(v.verdict) ||
+    typeof v.recorded_at !== "string"
+  ) {
+    return null;
+  }
+  let operatorLabel: LabelSampleRow["operatorLabel"] = null;
+  if (v.operator_label != null) {
+    const l = v.operator_label;
+    if (
+      !isObject(l) ||
+      typeof l.id !== "string" ||
+      !isOperatorLabelTruth(l.truth) ||
+      typeof l.created_at !== "string"
+    ) {
+      return null;
+    }
+    operatorLabel = { id: l.id, truth: l.truth, createdAt: l.created_at };
+  }
+  return {
+    verificationId: v.verification_id,
+    label: v.work_unit_slug ?? UNNAMED_VERDICT,
+    slug: v.work_unit_slug,
+    verdict: v.verdict,
+    recordedAt: v.recorded_at,
+    operatorLabel,
+  };
+}
+
+/**
+ * The label-sample section, from the door's answer (`null` while reading).
+ * Any row this page cannot read makes the whole sample unavailable rather
+ * than silently shorter.
+ */
+export function deriveLabelSampleView(
+  answer: LabelSampleAnswer | null
+): LabelSampleView {
+  if (answer === null) return { state: "loading" };
+  if (answer.kind === "unavailable") {
+    const why =
+      answer.status === null
+        ? `the door did not answer (${answer.message})`
+        : answer.status === 404
+          ? "this coord build does not serve it (HTTP 404)"
+          : answer.status === 503
+            ? `coord could not read its verdicts (${answer.code ?? "HTTP 503"}: ${answer.message})`
+            : `HTTP ${answer.status}${answer.code ? ` ${answer.code}` : ""}: ${answer.message}`;
+    return {
+      state: "unavailable",
+      text: `Label sample unavailable — ${why}. ${NOT_NOTHING}`,
+    };
+  }
+  const b = answer.body;
+  const unreadable: LabelSampleView = {
+    state: "unavailable",
+    text: `Label sample unavailable — coord answered in a shape this page does not recognise. ${NOT_NOTHING}`,
+  };
+  if (
+    !isObject(b) ||
+    typeof b.iso_week !== "string" ||
+    !Array.isArray(b.verdicts)
+  ) {
+    return unreadable;
+  }
+  const rows: LabelSampleRow[] = [];
+  for (const v of b.verdicts) {
+    const row = readSampleRow(v);
+    if (!row) return unreadable;
+    rows.push(row);
+  }
+  if (rows.length === 0) {
+    return {
+      state: "empty",
+      isoWeek: b.iso_week,
+      text: `coord sampled no verdict to label in ${b.iso_week}.`,
+    };
+  }
+  return { state: "rows", isoWeek: b.iso_week, rows };
+}
+
+/** The three answers, in the order the control shows them. */
+export const OPERATOR_LABEL_CHOICES: ReadonlyArray<{
+  truth: OperatorLabelTruth;
+  label: string;
+}> = [
+  { truth: "holds", label: "Yes" },
+  { truth: "fails", label: "No" },
+  { truth: "cannot_tell", label: "Can't tell" },
+];
+
+/** The control's word for a truth: `Yes`, `No` or `Can't tell`. */
+export function choiceLabel(truth: OperatorLabelTruth): string {
+  return OPERATOR_LABEL_CHOICES.find((c) => c.truth === truth)?.label ?? truth;
+}
+
+const TRUTH_WORDS: Record<OperatorLabelTruth, string> = {
+  holds: "held up",
+  fails: "did not hold up",
+  cannot_tell: "can't tell",
+};
+
+/**
+ * What the control says after a click. `recorded` quotes the row coord wrote
+ * back; `already_labelled` is not an error — the verdict was labelled before.
+ * `refused`, `not_found` and `rejected` are final and known: muted, no retry
+ * (console style R3 — nobody has to act on them). Only `unknown` — stored or
+ * not, nobody can say — is `attention` and offers `retry`.
+ */
+export function operatorLabelOutcome(r: OperatorLabelResult): {
+  text: string;
+  attention: boolean;
+  retry: boolean;
+} {
+  switch (r.kind) {
+    case "recorded":
+      return {
+        text: `Recorded: ${TRUTH_WORDS[r.record.truth]} (verifier said ${r.record.verifier_verdict})`,
+        attention: false,
+        retry: false,
+      };
+    case "already_labelled":
+      return {
+        text: "Already labelled — this verdict carries an operator label",
+        attention: false,
+        retry: false,
+      };
+    case "refused":
+      return {
+        text: `Not recorded — coord refused it${r.code ? ` (${r.code})` : ""}: ${r.message}`,
+        attention: false,
+        retry: false,
+      };
+    case "not_found":
+      return {
+        text:
+          r.code === "verification_not_found"
+            ? "Not recorded — coord has no such verdict in this project"
+            : `Not recorded — the label door is not answering (HTTP 404): ${r.message}`,
+        attention: false,
+        retry: false,
+      };
+    case "rejected":
+      return {
+        text: `Not recorded — HTTP ${r.status}${r.code ? ` ${r.code}` : ""}: ${r.message}`,
+        attention: false,
+        retry: false,
+      };
+    case "unknown":
+      return {
+        text: `Not known to be recorded — ${r.status === null ? r.message : `HTTP ${r.status}: ${r.message}`}`,
+        attention: true,
+        retry: true,
+      };
+  }
 }
 
 // ---------------------------------------------------------------------------

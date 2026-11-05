@@ -358,6 +358,29 @@ export function parseDispatchRoles(body: unknown): DispatchRolesRead {
   };
 }
 
+/**
+ * A lane's `effective` state in fixed words while presenting. Coord's closed set
+ * today; a value this console does not name is its raw token, so it reads as
+ * not recognised rather than being shown with its underscores spaced.
+ */
+export function presentedLaneState(effective: string | null): string {
+  switch (effective) {
+    case null:
+      return "unknown";
+    case "open":
+    case "unknown":
+      return effective;
+    case "closed_by_role":
+      return "closed by role";
+    case "closed_by_drain":
+      return "closed by drain";
+    case "not_registered":
+      return "not registered";
+    default:
+      return "not recognised";
+  }
+}
+
 /** The role column's words. Unassigned names what it BEHAVES as (§D5). */
 export function describeRole(m: RoleMachine): string {
   if (m.unrecognisedRole !== null)

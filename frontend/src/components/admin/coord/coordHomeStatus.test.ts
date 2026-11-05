@@ -38,6 +38,7 @@ import {
   sourceRawLine,
   sourceRowReason,
   sourceTimeWords,
+  needsRecommendationShareSentence,
   unservedDecisionsSentence,
   parseBlockState,
   parseOptions,
@@ -638,6 +639,7 @@ describe("coord needs_me wire at 4907c36ff", () => {
     expect(decisionDomainLabel("operator_gate")).toBe("operator approval gate");
     expect(decisionDomainLabel("unscanned")).toBe("not yet scanned");
     expect(decisionDomainLabel("unclassified")).toBe("unclassified");
+    expect(decisionDomainLabel("other")).toBe("other kinds");
   });
 
   describe("an initiative's typed status and dates", () => {
@@ -807,6 +809,82 @@ describe("round-7 review — blank recommendations, link targets, windows", () =
     const item = view.needsMe.items![0];
     expect(item.recommendation).toBeNull();
     expect(needsYouReason(item)).toBe("open question — no recommendation");
+  });
+
+  it('reads shape "unknown" as an UNKNOWN recommendation, never as none given', () => {
+    // Coord's fork-shape columns were unreadable: it serves `shape: "unknown"`
+    // and OMITS `recommendation` / `if_overturned` (absent, never null).
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [{ id: "q-1", fork: "Pick one", shape: "unknown" }],
+      },
+    })!;
+    const item = view.needsMe.items![0];
+    expect(item.recommendationKnown).toBe(false);
+    expect(item.ifOverturnedKnown).toBe(false);
+    expect(needsYouReason(item)).toBe(
+      "recommendation unknown (could not be read)"
+    );
+    expect(needsYouReason(item)).not.toMatch(/no recommendation|none given/);
+  });
+
+  it("reads an omitted recommendation as UNKNOWN even beside a served shape", () => {
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [{ id: "q-1", fork: "Pick one", shape: "open_question" }],
+      },
+    })!;
+    const item = view.needsMe.items![0];
+    expect(item.recommendationKnown).toBe(false);
+    expect(needsYouReason(item)).toBe(
+      "recommendation unknown (could not be read)"
+    );
+  });
+
+  it("keeps a served null recommendation as none given", () => {
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [
+          {
+            id: "q-1",
+            fork: "Pick one",
+            recommendation: null,
+            if_overturned: null,
+            shape: "open_question",
+          },
+        ],
+      },
+    })!;
+    const item = view.needsMe.items![0];
+    expect(item.recommendationKnown).toBe(true);
+    expect(item.ifOverturnedKnown).toBe(true);
+    expect(needsYouReason(item)).toBe("open question — no recommendation");
+  });
+
+  it('does not let shape "unknown" vouch for a served recommendation key', () => {
+    // `shape` is the column-read verdict: when it says unknown, a stray null
+    // beside it is not a reading of "none".
+    const view = parseProjectState({
+      needs_me: {
+        state: "read",
+        total: 1,
+        items: [
+          {
+            id: "q-1",
+            fork: "Pick one",
+            recommendation: null,
+            shape: "unknown",
+          },
+        ],
+      },
+    })!;
+    expect(view.needsMe.items![0].recommendationKnown).toBe(false);
   });
 
   it.each([
@@ -1801,5 +1879,242 @@ describe("a served key spelled like an Object.prototype member", () => {
       ["pr_fix", 1],
     ]);
     expect(Object.getPrototypeOf(byDomain)).toBe(Object.prototype);
+  });
+});
+
+function needsBody(needs: Record<string, unknown>) {
+  const body = calmBody();
+  body.needs_me = { state: "read", ...needs };
+  return body;
+}
+
+describe("needs_me questions_coverage — a stale scan's counts are never definite", () => {
+  it.each([
+    ["read", "read"],
+    ["stale", "stale"],
+    [undefined, "unknown"],
+    ["maybe", "unknown"],
+  ])("reads questions_coverage %p as %p", (raw, want) => {
+    const view = parseProjectState(
+      needsBody({ total: 0, items: [], questions_coverage: raw })
+    )!;
+    expect(view.needsMe.coverage).toBe(want);
+  });
+
+  it("does not say nothing needs you over a stale zero", () => {
+    const view = parseProjectState(
+      needsBody({
+        total: 0,
+        omitted: 0,
+        items: [],
+        questions_coverage: "stale",
+      })
+    )!;
+    expect(nothingNeedsYou(view.needsMe)).toBe(false);
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.level).not.toBe("green");
+    expect(strip.headline).not.toMatch(/^Nothing needs you/);
+    expect(strip.detail).toContain(
+      "Coord says its count of the decisions that need you may be off."
+    );
+    // ONE reading: coord's zero, qualified — never "nothing", never "not known".
+    expect(strip.headline).toBe("No decisions need you (may be off)");
+    expect(strip.badges.find((b) => b.key === "needs")!.label).toBe(
+      "needs you 0 (may be off)"
+    );
+    expect(unservedDecisionsSentence(0, true)).toBe(
+      "Coord counted no decisions for you, but says its count may be off"
+    );
+    expect(unservedDecisionsSentence(3, true)).toBe(
+      "Coord counted 3 decisions for you but served none of them, and says its count may be off"
+    );
+    // Off in either direction: never worded as "too low" only.
+    for (const words of [
+      strip.headline,
+      strip.detail ?? "",
+      unservedDecisionsSentence(0, true),
+    ]) {
+      expect(words).not.toMatch(/incomplete|not known|at least/i);
+    }
+  });
+
+  it.each([
+    ["the machine roster unread", {}, {}],
+    [
+      "a machine with no health verdict",
+      {
+        machines: {
+          ...CALM_MACHINES.machines,
+          counts: summarizeMachineHealth([{ device_id: "d-0", state: null }]),
+        },
+      },
+      {},
+    ],
+    [
+      "the degradations list served unreadable",
+      CALM_MACHINES,
+      { degradations: { state: "read", headline: "none", open: "garbled" } },
+    ],
+  ])(
+    "names what else is not read beside a stale zero: %s",
+    (_label, machines, over) => {
+      // Every coord block read (correctness included): only the roster or the
+      // degradations list keeps the page from calm.
+      const body = needsBody({
+        total: 0,
+        omitted: 0,
+        items: [],
+        questions_coverage: "stale",
+      });
+      Object.assign(body, over);
+      const strip = deriveHomeStrip(parseProjectState(body)!, machines);
+      expect(strip.headline).toBe(
+        "No decisions need you (may be off); part of this view is not read"
+      );
+    }
+  );
+
+  it("says the qualified zero alone when everything else is read and calm", () => {
+    const strip = deriveHomeStrip(
+      parseProjectState(
+        needsBody({
+          total: 0,
+          omitted: 0,
+          items: [],
+          questions_coverage: "stale",
+        })
+      )!,
+      CALM_MACHINES
+    );
+    expect(strip.headline).toBe("No decisions need you (may be off)");
+  });
+
+  it("marks a stale count as possibly off in the headline", () => {
+    const view = parseProjectState(
+      needsBody({
+        total: 2,
+        omitted: 0,
+        items: [
+          {
+            id: "q-1",
+            fork: "A?",
+            recommendation: null,
+            shape: "open_question",
+          },
+          {
+            id: "q-2",
+            fork: "B?",
+            recommendation: null,
+            shape: "open_question",
+          },
+        ],
+        questions_coverage: "stale",
+      })
+    )!;
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.headline).toMatch(/^2 decisions need you \(may be off\)/);
+  });
+
+  it("leaves a read (or unserved) coverage's zero as the definite answer", () => {
+    for (const coverage of ["read", undefined]) {
+      const view = parseProjectState(
+        needsBody({
+          total: 0,
+          omitted: 0,
+          items: [],
+          questions_coverage: coverage,
+        })
+      )!;
+      expect(nothingNeedsYou(view.needsMe)).toBe(true);
+      expect(deriveHomeStrip(view, CALM_MACHINES).level).toBe("green");
+    }
+  });
+
+  it("reads a null share as unknown, never as zero", () => {
+    const view = parseProjectState(
+      needsBody({
+        total: 0,
+        items: [],
+        questions_coverage: "stale",
+        shape_share: { with_recommendation: null, total: null },
+      })
+    )!;
+    expect(view.needsMe.shapeShare).toEqual({
+      withRecommendation: null,
+      total: null,
+    });
+  });
+});
+
+describe("needsRecommendationShareSentence", () => {
+  const needs = (fields: Record<string, unknown>) =>
+    parseProjectState(needsBody({ total: 5, items: [], ...fields }))!.needsMe;
+  const share = (with_recommendation: unknown, total: unknown = 5) => ({
+    shape_share: { with_recommendation, total },
+  });
+
+  it.each([
+    [
+      "a count over the whole set",
+      share(3),
+      "3 of 5 decisions came with a recommendation.",
+    ],
+    [
+      "none of them, which is a count",
+      share(0),
+      "0 of 5 decisions came with a recommendation.",
+    ],
+    [
+      "a scan coord calls stale qualifies the count",
+      { ...share(3), questions_coverage: "stale" },
+      "3 of 5 decisions came with a recommendation (may be off).",
+    ],
+    [
+      "a null count is unknown, never zero",
+      share(null),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a share over another total is not this count's",
+      share(3, 4),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a negative share is not a count",
+      share(-1),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a fractional share is not a count",
+      share(2.5),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "one decision is singular",
+      { total: 1, ...share(1, 1) },
+      "1 of 1 decision came with a recommendation.",
+    ],
+    [
+      "a share larger than its total is not a count",
+      share(6),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+  ])("%s", (_name, fields, want) => {
+    expect(needsRecommendationShareSentence(needs(fields))).toBe(want);
+  });
+
+  it.each([
+    ["coord served no share", {}],
+    ["nothing is waiting", { total: 0, ...share(0, 0) }],
+    ["no usable count", { total: null, ...share(1, null) }],
+  ])("says nothing when %s", (_name, fields) => {
+    expect(needsRecommendationShareSentence(needs(fields))).toBeNull();
+  });
+
+  it("says nothing for a block that was not read", () => {
+    const view = parseProjectState(
+      needsBody({ state: "could_not_read", total: 5, ...share(3) })
+    )!;
+    expect(needsRecommendationShareSentence(view.needsMe)).toBeNull();
   });
 });
