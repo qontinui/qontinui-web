@@ -42,6 +42,9 @@ import {
 
 const ALL = Object.keys(CONTINUATION_ATTENTION_BY_KIND) as ContinuationKind[];
 
+/** Pins `held` as a member of the closed union: this fails to compile without it. */
+const HELD_KIND: ContinuationKind = "held";
+
 /** Fixed clock so every age-derived reading is deterministic. */
 const NOW = Date.parse("2026-09-09T12:00:00Z");
 const minsAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
@@ -69,6 +72,8 @@ describe("continuation palette", () => {
   });
 
   it("is total over the kind union", () => {
+    expect(ALL).toContain(HELD_KIND);
+    expect(Object.keys(CONTINUATION_KIND_CLASS)).toContain(HELD_KIND);
     for (const kind of ALL) {
       expect(CONTINUATION_KIND_CLASS[kind]).toBeTruthy();
     }
@@ -110,6 +115,11 @@ describe("continuation palette", () => {
 
   it("keeps deferred amber and both deferral escalations red", () => {
     expect(CONTINUATION_KIND_CLASS.deferred).toBe(WAITING_AMBER);
+    // A clearance hold waits on a nameable condition, like a sibling hold.
+    expect(CONTINUATION_KIND_CLASS.held).toBe(WAITING_AMBER);
+    expect(CONTINUATION_ATTENTION_BY_KIND.held).toBe("waiting");
+    expect(CONTINUATION_AUTHOR_GLYPH_KINDS.has("held")).toBe(false);
+    expect(CONTINUATION_UNKNOWN_OUTCOME_KINDS.has("held")).toBe(false);
     expect(CONTINUATION_KIND_CLASS.deferral_stuck).toBe(AUTHOR_RED);
     expect(CONTINUATION_KIND_CLASS.deferral_abandoned).toBe(AUTHOR_RED);
   });
@@ -822,5 +832,170 @@ describe("humanizeDeferralReason", () => {
   it("is null only for a genuinely absent reason", () => {
     expect(humanizeDeferralReason(null)).toBeNull();
     expect(humanizeDeferralReason("   ")).toBeNull();
+  });
+});
+
+describe("deriveContinuationStatus — coord's clearance hold (coord_hold.*)", () => {
+  /**
+   * EVERY code coord's classifier writes (`clearance_hold_reason` and
+   * `registry_veto_hold_reason`, qontinui-coord `gates.rs` @ origin/main
+   * 4cf46dd650), with the humanized text each must read as. One row per code.
+   */
+  const CODES: ReadonlyArray<[string, string]> = [
+    [
+      "coord_hold.device_drained",
+      "held: a device resolved, but its agent lane is closed (drained) or could not be read (×12)",
+    ],
+    [
+      "coord_hold.pin_stale",
+      "held: the pinned device is offline (or not bound to this tenant) and no other eligible device resolved (×12)",
+    ],
+    [
+      "coord_hold.pin_drained",
+      "held: the pinned device is drained and no other eligible device resolved (×12)",
+    ],
+    [
+      "coord_hold.lane_closed",
+      "held: the pinned device's dispatch role closes its agent lane and no other eligible device resolved (×12)",
+    ],
+    [
+      "coord_hold.lane_unknown",
+      "held: the pinned device's agent lane could not be read and no other eligible device resolved (×12)",
+    ],
+    [
+      "coord_hold.device_state_unreadable",
+      "held: coord could not read this tenant's device state (×12)",
+    ],
+    [
+      "coord_hold.no_device_online",
+      "held: no device in this tenant is online (×12)",
+    ],
+    [
+      "coord_hold.no_capable_device:os:linux",
+      "held: no online device advertises os:linux (×12)",
+    ],
+    [
+      "coord_hold.no_capable_device:os:linux|shell:powershell",
+      "held: no online device advertises all of os:linux, shell:powershell (×12)",
+    ],
+    [
+      "coord_hold.no_eligible_device",
+      "held: devices are online, but every one is lane-closed or otherwise excluded (×12)",
+    ],
+    [
+      "coord_hold.registry_veto:block",
+      "held: the agent registry vetoed the spawn (block) (×12)",
+    ],
+    [
+      "coord_hold.registry_veto:warn_proceed",
+      "held: the agent registry vetoed the spawn (warn_proceed) (×12)",
+    ],
+  ];
+
+  /** A cleared, never-dispatched row coord stamped with `reason`. */
+  const held = (reason: string, over: Partial<ContinuationStatusInput> = {}) =>
+    derive({
+      continuation_action: "run_skill",
+      continuation_will_dispatch: true,
+      continuation_deferred_at: minsAgo(3),
+      continuation_deferred_reason: reason,
+      continuation_deferred_count: 12,
+      ...over,
+    });
+
+  for (const [code, text] of CODES) {
+    it(`reads ${code} as held, not armed`, () => {
+      const s = held(code);
+      expect(s.status.kind).toBe("held");
+      expect(s.status.attention).toBe("waiting");
+      expect(s.status.label).toBe("held ×12");
+      expect(s.deferralRendered).toBe(true);
+      expect(s.deferral?.hold).toBe(true);
+      expect(s.status.reason).toContain(text);
+      expect(s.status.reason).not.toContain("will fire when this gate's anchor clears");
+    });
+
+    it(`humanizes ${code}`, () => {
+      expect(humanizeDeferralReason(code, 12)).toBe(text);
+    });
+  }
+
+  it("names a registry veto as a veto, and a device hold as a device hold", () => {
+    expect(held("coord_hold.registry_veto:block").status.reason).toContain(
+      "the agent registry vetoed its spawn"
+    );
+    expect(held("coord_hold.pin_stale").status.reason).toContain(
+      "no eligible device"
+    );
+  });
+
+  it("renders an unknown future coord_hold code honestly, as a hold", () => {
+    const s = held("coord_hold.some_new_code:x");
+    expect(s.status.kind).toBe("held");
+    expect(s.status.reason).toContain("held: some_new_code:x (×12)");
+    expect(humanizeDeferralReason("coord_hold.some_new_code")).toBe(
+      "held: some_new_code"
+    );
+    expect(humanizeDeferralReason("coord_hold.")).toBe("held: (no code)");
+  });
+
+  it("omits the count when coord sent none, and says so in the label", () => {
+    expect(humanizeDeferralReason("coord_hold.no_device_online")).toBe(
+      "held: no device in this tenant is online"
+    );
+    expect(humanizeDeferralReason("coord_hold.no_device_online", null)).toBe(
+      "held: no device in this tenant is online"
+    );
+    const s = held("coord_hold.no_device_online", {
+      continuation_deferred_count: null,
+    });
+    expect(s.status.kind).toBe("held");
+    expect(s.status.label).toBe("held ×?");
+  });
+
+  it("discriminates held from armed on the reason alone", () => {
+    expect(held("coord_hold.pin_stale").status.kind).toBe("held");
+    expect(
+      derive({ continuation_action: "run_skill", continuation_will_dispatch: true })
+        .status.kind
+    ).toBe("armed");
+  });
+
+  it("does not let a hold outrank a terminal or in-flight stamp", () => {
+    expect(
+      held("coord_hold.pin_stale", {
+        continuation_expired_at: minsAgo(1),
+        continuation_expired_reason: "hold_ttl_elapsed",
+      }).status.kind
+    ).toBe("expired");
+    expect(
+      held("coord_hold.pin_stale", { continuation_cancelled_at: minsAgo(1) })
+        .status.kind
+    ).toBe("cancelled");
+    expect(
+      held("coord_hold.pin_stale", { continuation_dispatched_at: minsAgo(1) })
+        .status.kind
+    ).not.toBe("held");
+  });
+
+  it("leaves a dispatched row with a runner deferral exactly as before", () => {
+    const s = derive({
+      continuation_dispatched_at: minsAgo(30),
+      continuation_deferred_at: minsAgo(10),
+      continuation_deferred_reason: "thread_pressure:critical:540_over_400",
+      continuation_deferred_count: 3,
+    });
+    expect(s.status.kind).toBe("deferred");
+    expect(s.status.label).toBe("deferred ×3");
+    expect(s.deferral?.hold).toBe(false);
+    expect(s.deferral?.reason).toBe(
+      "the machine was out of OS threads (critical) — 540 observed against a limit of 400"
+    );
+    // The count is never appended to a runner reason.
+    expect(
+      humanizeDeferralReason("thread_pressure:critical:540_over_400", 3)
+    ).toBe(
+      "the machine was out of OS threads (critical) — 540 observed against a limit of 400"
+    );
   });
 });

@@ -524,7 +524,9 @@ function matchesContinuationFilter(
         ? CONTINUATION_UNKNOWN_OUTCOME_KINDS.has(status.status.kind)
         : false;
     case "deferred":
-      return status?.deferral != null;
+      // A runner's push-back only: coord's own clearance hold shares the
+      // deferral columns but is its own `held` kind (filterable by kind).
+      return status?.deferral != null && !status.deferral.hold;
     case "none":
       return status === null;
     default:
@@ -625,7 +627,7 @@ export function GatesTable({
       if (status.status.attention === "author") attention += 1;
       if (CONTINUATION_UNKNOWN_OUTCOME_KINDS.has(status.status.kind))
         unknown += 1;
-      if (status.deferral) deferred += 1;
+      if (status.deferral && !status.deferral.hold) deferred += 1;
     }
     if (attention === 0 && unknown === 0 && deferred === 0) return [];
     return [
