@@ -2,7 +2,7 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useDragSource } from "@qontinui/ui-bridge";
+import { useDragSource } from "@qontinui/ui-bridge/react";
 import { ChevronUp, ChevronDown, Trash2, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

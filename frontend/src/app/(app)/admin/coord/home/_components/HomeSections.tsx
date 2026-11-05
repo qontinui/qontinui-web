@@ -64,6 +64,7 @@ import {
   usePresentationMode,
   usePresentationScopeState,
   useRedactor,
+  useRowKey,
   type SectionSource,
 } from "@/components/presentation";
 import { FAILURE_SENTENCE_WITHHELD } from "@/components/operations/presentedFailure";
@@ -98,7 +99,6 @@ import {
   useLinkOpens,
   usePlaneLabel,
   usePlaneWords,
-  useRowKey,
   useSubjectText,
 } from "./HomeLens";
 import {
@@ -133,7 +133,11 @@ import {
   degradationsGapTitle,
   durationText,
   needsYouReason,
+  NEEDS_UNREADABLE_WORDS,
   needsDisplayCount,
+  needsCountMayBeOff,
+  NEEDS_COUNT_MAY_BE_OFF_WORDS,
+  needsRecommendationShareSentence,
   nothingNeedsYou,
   lastGoodReadPhrase,
   namedUnitAgePhrase,
@@ -433,28 +437,32 @@ function NeedsYouRow({
               <span className="text-muted-foreground">Recommended: </span>
               {/* The detail states the recommendation plainly; the row's
                   collapsed reason (needsYouReason) carries the label. */}
-              {item.recommendation === null ? (
-                "none given"
-              ) : (
+              {item.recommendation !== null ? (
                 <RedactedText
                   text={item.recommendation}
                   repo={null}
                   descriptor={needsDescriptor(item, "Recommendation")}
                 />
+              ) : item.recommendationKnown ? (
+                "none given"
+              ) : (
+                NEEDS_UNREADABLE_WORDS
               )}
             </p>
             <p className="m-0">
               <span className="text-muted-foreground">
                 If you overturn it:{" "}
               </span>
-              {item.ifOverturned === null ? (
-                "not stated"
-              ) : (
+              {item.ifOverturned !== null ? (
                 <RedactedText
                   text={item.ifOverturned}
                   repo={null}
                   descriptor={needsDescriptor(item, "Consequence")}
                 />
+              ) : item.ifOverturnedKnown ? (
+                "not stated"
+              ) : (
+                NEEDS_UNREADABLE_WORDS
               )}
             </p>
             {item.options === null ? (
@@ -656,8 +664,13 @@ export function NeedsYouSection({
   const served = needs.items?.length ?? 0;
   // One displayable count, shared with the strip: never "1 shown of 0".
   const count = needsDisplayCount(needs);
+  // Coord called its scan stale: the count shows, never as a definite total.
+  const mayBeOff = needsCountMayBeOff(needs);
+  const recommendationShare = needsRecommendationShareSentence(needs);
   const header = read
     ? `${served} shown of ${count ?? "an unknown number"}${
+        mayBeOff && count !== null ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""
+      }${
         needs.omitted !== null && needs.omitted > 0
           ? ` · ${needs.omitted} not shown`
           : ""
@@ -710,6 +723,15 @@ export function NeedsYouSection({
                 ([domain, n]) => `${decisionDomainLabel(domain)} ${n}`
               )
           ).join(" · ")}
+          {mayBeOff && ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}`}
+        </p>
+      )}
+      {recommendationShare !== null && (
+        <p
+          className="m-0 text-xs text-muted-foreground"
+          data-testid="coord-home.needs-you.recommendation-share"
+        >
+          {recommendationShare}
         </p>
       )}
       {read && needs.retirement === "unsupported" && (
@@ -744,7 +766,7 @@ export function NeedsYouSection({
             className="m-0 text-sm text-muted-foreground"
             data-testid="coord-home.needs-you.unserved"
           >
-            {unservedDecisionsSentence(count)}
+            {unservedDecisionsSentence(count, mayBeOff)}
             {opens("/admin/coord/questions") ? (
               <>
                 ; open{" "}

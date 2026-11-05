@@ -6,8 +6,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { summarizeFleetLiveness } from "./fleetLiveness";
-import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
+import { fleetRosterCut, summarizeFleetLiveness } from "./fleetLiveness";
+import type {
+  FleetHealthDevice,
+  FleetHealthPayload,
+} from "@/lib/api/operations/coordFleet";
 
 const device = (id: string, state?: string): FleetHealthDevice => ({
   device_id: id,
@@ -17,13 +20,19 @@ const device = (id: string, state?: string): FleetHealthDevice => ({
 
 const summarize = (
   devices: FleetHealthDevice[],
-  over: { loading?: boolean; error?: string | null; answered?: boolean } = {}
+  over: {
+    loading?: boolean;
+    error?: string | null;
+    answered?: boolean;
+    body?: Partial<FleetHealthPayload>;
+  } = {}
 ) =>
   summarizeFleetLiveness({
     devices,
     loading: over.loading ?? false,
     error: over.error ?? null,
     answered: over.answered ?? true,
+    cut: fleetRosterCut({ devices, ...over.body }),
   });
 
 describe("summarizeFleetLiveness", () => {
@@ -129,5 +138,92 @@ describe("summarizeFleetLiveness", () => {
     const loading = summarize([], { loading: true, answered: false });
     expect(loading.headline).toBe("Reading fleet health");
     expect(loading.headline).not.toBe(summarize([]).headline);
+  });
+
+  describe("when coord's row cap cut the roster", () => {
+    const healthy = [device("a", "healthy"), device("b", "healthy")];
+    const tailOnly = {
+      truncated: true,
+      total: 4647,
+      degradable_dropped: 0,
+    };
+
+    it("reads a whole roster exactly as before", () => {
+      const s = summarize(healthy, {
+        body: { truncated: false, total: 2, degradable_dropped: 0 },
+      });
+      expect(s.level).toBe("green");
+      expect(s.headline).toBe("All 2 machines healthy");
+      expect(s.detail).toBe("Coord reaches every device it knows about.");
+      expect(s.rosterNote).toBeNull();
+    });
+
+    it("stays green on a cut of abandoned rows, and counts only what it listed", () => {
+      const s = summarize(healthy, { body: tailOnly });
+      expect(s.level).toBe("green");
+      expect(s.headline).toBe("All 2 listed machines healthy");
+      expect(s.detail).toContain("every device it listed");
+      expect(s.detail).toContain("lists 2 rows of 4647");
+      expect(s.detail).not.toContain("knows about");
+      expect(s.total).toBe(2);
+      expect(s.rosterNote).toBe("4647 roster rows");
+    });
+
+    it("is never green when coord withheld a machine that could be degrading", () => {
+      const s = summarize(healthy, {
+        body: { truncated: true, total: 10_002, degradable_dropped: 2 },
+      });
+      expect(s.level).toBe("amber");
+      expect(s.headline).toBe("2 listed machines healthy, any others unknown");
+      expect(s.detail).toContain("2 machines that could be degrading");
+      expect(s.rosterNote).toBe("10002 roster rows, some health unknown");
+    });
+
+    it("is never green on a list at the limit from a coord that says nothing", () => {
+      const s = summarize(
+        Array.from({ length: 1000 }, (_, i) => device(`d${i}`, "healthy"))
+      );
+      expect(s.level).toBe("amber");
+      expect(s.detail).toContain("1000");
+      expect(s.rosterNote).toBe("list may be cut");
+    });
+
+    it("keeps red and says what the count leaves out", () => {
+      const s = summarize([device("a", "abandoned"), device("b", "healthy")], {
+        body: tailOnly,
+      });
+      expect(s.level).toBe("red");
+      expect(s.headline).toBe("1 of 2 listed machines unreachable");
+      expect(s.detail).toContain("lists 2 rows of 4647");
+      expect(s.rosterNote).toBe("4647 roster rows");
+    });
+
+    it("reads the shape coord really serves: a capped list of mostly dead rows", () => {
+      const rows = Array.from({ length: 1000 }, (_, i) =>
+        device(`d${i}`, i < 50 ? "healthy" : i < 67 ? "degraded" : "abandoned")
+      );
+      const s = summarize(rows, { body: tailOnly });
+      expect(s.level).toBe("red");
+      expect(s.headline).toBe("933 of 1000 listed machines unreachable");
+      expect(s.detail).toContain("lists 1000 rows of 4647");
+      expect(s.detail).toContain("none of them could be degrading");
+    });
+
+    it("says the list was cut when coord gives no figure for it", () => {
+      const s = summarize(healthy, { body: { truncated: true } });
+      expect(s.level).toBe("amber");
+      expect(s.rosterNote).toBe("list cut, some health unknown");
+    });
+
+    it("says it about the last read when a later read failed", () => {
+      const s = summarize(healthy, { error: "502", body: tailOnly });
+      expect(s.level).toBe("amber");
+      expect(s.headline).toBe("Fleet health unavailable");
+      expect(s.detail).toContain("lists 2 rows of 4647");
+    });
+
+    it("reads a body not read yet as whole, so nothing is claimed about it", () => {
+      expect(fleetRosterCut(null)).toEqual({ kind: "whole" });
+    });
   });
 });

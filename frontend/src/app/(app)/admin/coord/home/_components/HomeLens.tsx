@@ -12,7 +12,7 @@
  * same button, now registered with its effect declared.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { RefreshButton } from "@/components/console";
 import {
@@ -33,7 +33,6 @@ import {
 import { FAILURE_REASON_WITHHELD } from "@/components/operations/presentedFailure";
 import {
   PROJECT_STATE_KEPT_SOURCE,
-  RowKeyAliases,
   degradationRepo,
   isMachineSubject,
   keptReadingText,
@@ -241,23 +240,6 @@ export function useLinkOpens(): (href: string) => boolean {
     (href: string) =>
       lensLinkTarget(href, presenting && source !== "absent") !== null,
     [presenting, source]
-  );
-}
-
-/**
- * A list row's key in this mode: the page's own key for the operator; while
- * presenting, its alias (`RowKeyAliases`), so `data-row-key` carries no id
- * and the open row is the record that was opened, as it is for the operator.
- * The registry lives as long as the region is mounted, so a row keeps its
- * alias across polls.
- */
-export function useRowKey(): (list: string, operatorKey: string) => string {
-  const { presenting } = usePresentationMode();
-  const [aliases] = useState(() => new RowKeyAliases());
-  return useCallback(
-    (list: string, operatorKey: string) =>
-      presenting ? aliases.key(list, operatorKey) : operatorKey,
-    [presenting, aliases]
   );
 }
 

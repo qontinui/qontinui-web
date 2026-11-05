@@ -3,6 +3,10 @@ import { fileURLToPath } from "url";
 import { FlatCompat } from "@eslint/eslintrc";
 
 import qontinuiWeb from "./eslint-rules/index.mjs";
+import {
+  UI_BRIDGE_CONTEXT_BOUND_EXPORTS,
+  UI_BRIDGE_ROOT_IMPORT_MESSAGE,
+} from "./eslint-rules/ui-bridge-root-imports.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -93,6 +97,34 @@ const eslintConfig = [
     // lives in the rule, so there is one definition of it.
     rules: {
       "@qontinui-web/no-dev-stack-fallback": "error",
+    },
+  },
+  {
+    // @qontinui/ui-bridge ships its root entry and its `/react` entry as
+    // SEPARATE bundles (tsup `splitting: false`), and each carries its own copy
+    // of `UIBridgeContext`. The app's provider is mounted from `/react`
+    // (src/lib/ui-bridge/provider.tsx), so a context hook imported from the
+    // package ROOT reads a different, never-provided context: it sees no
+    // bridge and its registration is silently inert. Five components did
+    // exactly that until this rule (finding fa4018f4). Import the context
+    // hooks from "@qontinui/ui-bridge/react".
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@qontinui/ui-bridge",
+              // Every context-bound export of the `/react` entry, partitioned
+              // against the installed package by
+              // eslint-rules/ui-bridge-root-imports.test.mjs so a ui-bridge
+              // bump cannot add an unlisted context hook.
+              importNames: UI_BRIDGE_CONTEXT_BOUND_EXPORTS,
+              message: UI_BRIDGE_ROOT_IMPORT_MESSAGE,
+            },
+          ],
+        },
+      ],
     },
   },
   {

@@ -59,7 +59,7 @@ let lastUIComponent: {
   }>;
 } | null = null;
 
-vi.mock("@qontinui/ui-bridge", () => ({
+vi.mock("@qontinui/ui-bridge/react", () => ({
   useUIComponent: (options: typeof lastUIComponent) => {
     lastUIComponent = options;
   },

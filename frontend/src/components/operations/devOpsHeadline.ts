@@ -28,6 +28,10 @@
  *   hostname into a sentence, so the strip needs no aliasing at all.
  */
 
+import {
+  rosterCutHidesHealth,
+  type RosterCut,
+} from "@/components/admin/coord/machineHealth";
 import type { HeadlineValue } from "@/components/presentation";
 import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
 import {
@@ -106,6 +110,8 @@ export interface FleetHealthReadInput {
   error: string | null;
   /** When the current `devices` were true (coord's `as_of`, else receipt). */
   asOfMs: number | null;
+  /** What coord's row cap withheld from `devices` (`fleetRosterCut`). */
+  cut: RosterCut;
 }
 
 export function machinesHealthyFigure(
@@ -124,13 +130,32 @@ export function machinesHealthyFigure(
       reason: "Machine health has not been read yet.",
     };
   }
+  if (rosterCutHidesHealth(input.cut)) {
+    // A count over a list that may be missing a degrading machine is not a
+    // count of the fleet, however it is worded.
+    return {
+      state: "unknown",
+      reason:
+        input.cut.kind === "may_be_cut"
+          ? "The coordination service's list of machines reached its limit and may be cut off, so how many are healthy is not known right now."
+          : "The coordination service's list of machines was cut off and may leave out one that is degrading, so how many are healthy is not known right now.",
+    };
+  }
+  // Past this point the only cut left is the tail coord says cannot degrade.
+  const tail = input.cut.kind === "cut_tail_only" ? input.cut : null;
+  const tailNote =
+    tail === null
+      ? ""
+      : ` It lists ${tail.listed} of ${tail.total} rows, and says none of the others could be degrading.`;
   const total = input.devices.length;
   if (total === 0) {
     return {
       state: "known",
       value: "0",
       detail:
-        "The coordination service lists no machines for this account yet.",
+        tail === null
+          ? "The coordination service lists no machines for this account yet."
+          : `The coordination service lists 0 of ${tail.total} rows, and says none of the others could be degrading.`,
       asOf: input.asOfMs,
     };
   }
@@ -153,11 +178,13 @@ export function machinesHealthyFigure(
   if (unreported > 0) rest.push(`${unreported} with no reported state`);
   return {
     state: "known",
-    value: `${healthy} of ${total}`,
+    value: `${healthy} of ${total}${tail === null ? "" : " listed"}`,
     detail:
-      rest.length === 0
-        ? `Every machine the coordination service knows about reports healthy.`
-        : `Healthy by the coordination service's own check; ${joinParts(rest)}.`,
+      tail !== null
+        ? `Healthy by the coordination service's own check${rest.length > 0 ? `; ${joinParts(rest)}` : ""}.${tailNote}`
+        : rest.length === 0
+          ? `Every machine the coordination service knows about reports healthy.`
+          : `Healthy by the coordination service's own check; ${joinParts(rest)}.`,
     asOf: input.asOfMs,
   };
 }

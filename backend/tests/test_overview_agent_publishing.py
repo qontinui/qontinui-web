@@ -1629,12 +1629,12 @@ class TestDeviceWritesBeyondPages:
             assert response.json()["detail"]["error"] == "not_permitted"
 
 
-class TestCostLedgerRefusesDeviceWrites:
-    """``person_edits`` (the cost ledger: categories, recurring costs and cost
-    entries): a device reads it as its user would, and is refused every
-    create, update and delete — from the verified token alone, before the
-    project is resolved — even when its user administers the project. A
-    person's own write is unchanged."""
+class TestCostLedgerDeviceWrites:
+    """The cost ledger (categories, recurring costs and cost entries) is
+    ``editing_roles`` content (operator decision 2026-11-01: agents enter the
+    project's costs): a device reads and writes it exactly as its owning user
+    would, every write is change-logged against the device, and a device whose
+    user may not edit is refused. A person's own write is unchanged."""
 
     _RESOURCES = ("cost_categories", "recurring_costs", "cost_entries")
     #: A harmless edit per resource (a category has no ``notes``).
@@ -1690,7 +1690,7 @@ class TestCostLedgerRefusesDeviceWrites:
                 made[path] = response.json()["item"]
         return made
 
-    async def test_a_device_reads_the_ledger(
+    async def test_a_device_reads_the_ledger_and_is_offered_its_edit(
         self, async_db_session, coord: FakeCoord, verified_devices, owner
     ) -> None:
         made = await self._seed(async_db_session, owner)
@@ -1699,63 +1699,87 @@ class TestCostLedgerRefusesDeviceWrites:
                 listed = await device.get(f"{API}/{path}")
                 assert listed.status_code == 200, listed.text
                 assert [i["id"] for i in listed.json()["items"]] == [record["id"]]
-                assert listed.json()["can_edit"] is False
+                assert listed.json()["can_edit"] is True
                 one = await device.get(f"{API}/{path}/{record['id']}")
                 assert one.status_code == 200, one.text
-                assert one.json()["can_edit"] is False
+                assert one.json()["can_edit"] is True
             summary = await device.get(f"{API}/costs/summary")
             assert summary.status_code == 200, summary.text
-            history = await device.get(
-                f"{API}/change-log", params={"resource": "cost_entries"}
-            )
-            assert history.status_code == 200, history.text
             catalog = (await device.get(f"{API}/resources")).json()
         by_name = {r["name"]: r for r in catalog["resources"]}
         for name in self._RESOURCES:
-            assert by_name[name]["can_edit"] is False, name
-        # The refusal is the ledger's alone: the same admin device still
-        # edits the project's other content.
-        assert by_name["milestones"]["can_edit"] is True
+            assert by_name[name]["can_edit"] is True, name
 
-    async def test_an_admin_device_writes_nothing_to_the_ledger(
+    async def test_an_admin_device_creates_updates_and_deletes_the_ledger(
+        self, async_db_session, coord: FakeCoord, verified_devices, owner
+    ) -> None:
+        async with _client(_app(async_db_session)) as device:
+            category = await device.post(
+                f"{API}/cost-categories", json={"name": "Hardware"}
+            )
+            assert category.status_code == 201, category.text
+            made = {"cost-categories": category.json()["item"]}
+            bodies = self._bodies(made["cost-categories"]["id"])
+            for path in ("recurring-costs", "cost-entries"):
+                created = await device.post(f"{API}/{path}", json=bodies[path])
+                assert created.status_code == 201, created.text
+                made[path] = created.json()["item"]
+            for path, record in made.items():
+                edited = await device.patch(
+                    f"{API}/{path}/{record['id']}",
+                    json=self._EDITS[path],
+                    headers={"If-Match": '"1"'},
+                )
+                assert edited.status_code == 200, edited.text
+                # The device acts as its owning user.
+                item = edited.json()["item"]
+                assert item["created_by"] == item["updated_by"] == owner.email
+            # Children before the category they reference.
+            for path in ("cost-entries", "recurring-costs", "cost-categories"):
+                gone = await device.delete(
+                    f"{API}/{path}/{made[path]['id']}", headers={"If-Match": '"2"'}
+                )
+                assert gone.status_code == 204, gone.text
+            served = (
+                await device.get(
+                    f"{API}/change-log", params={"resource": "cost_entries"}
+                )
+            ).json()["entries"]
+        # Every write is attributed to the device it came through.
+        for name in self._RESOURCES:
+            rows = await _rows(async_db_session, name)
+            assert [r.action for r in rows] == ["create", "update", "delete"], name
+            assert all(r.via_device == DEVICE for r in rows), name
+        assert [e["action"] for e in served] == ["delete", "update", "create"]
+        assert {e["via_device"] for e in served} == {str(DEVICE)}
+
+    async def test_a_viewer_device_writes_nothing_to_the_ledger(
         self, async_db_session, coord: FakeCoord, verified_devices, owner
     ) -> None:
         made = await self._seed(async_db_session, owner)
         logged = {
             name: len(await _rows(async_db_session, name)) for name in self._RESOURCES
         }
-        coord.requests.clear()
         bodies = self._bodies(made["cost-categories"]["id"])
         attempts: list[httpx.Response] = []
-        async with _client(_app(async_db_session)) as device:
+        async with _client(_app(async_db_session), token=VIEWER_TOKEN) as viewer:
             for path, record in made.items():
                 item = f"{API}/{path}/{record['id']}"
                 attempts += [
-                    await device.post(f"{API}/{path}", json=bodies[path]),
-                    await device.patch(
+                    await viewer.post(f"{API}/{path}", json=bodies[path]),
+                    await viewer.patch(
                         item, json=self._EDITS[path], headers={"If-Match": '"1"'}
                     ),
-                    await device.delete(item, headers={"If-Match": '"1"'}),
+                    await viewer.delete(item, headers={"If-Match": '"1"'}),
                 ]
+                listed = await viewer.get(f"{API}/{path}")
+                assert listed.json()["can_edit"] is False
         assert len(attempts) == 9
         for response in attempts:
             assert response.status_code == 403, response.text
-            assert _code(response) == "device_not_supported_for_person_edits"
-        # Nothing was written, and the refusal needed nothing from coord.
+            assert response.json()["detail"]["error"] == "not_permitted"
         for name in self._RESOURCES:
             assert len(await _rows(async_db_session, name)) == logged[name], name
-        assert coord.requests == []
-
-    async def test_the_refusal_does_not_depend_on_coord_being_up(
-        self, async_db_session, coord: FakeCoord, verified_devices
-    ) -> None:
-        coord.memberships[ADMIN_TOKEN] = (503, "bindings_unavailable")
-        async with _client(_app(async_db_session)) as device:
-            response = await device.post(
-                f"{API}/cost-categories", json={"name": "Cloud"}
-            )
-        assert response.status_code == 403, response.text
-        assert _code(response) == "device_not_supported_for_person_edits"
 
     async def test_a_person_still_writes_the_ledger(
         self, async_db_session, coord: FakeCoord, verified_devices, owner
@@ -1776,7 +1800,8 @@ class TestCostLedgerRefusesDeviceWrites:
                 )
                 assert gone.status_code == 204, gone.text
         for name in self._RESOURCES:
-            actions = [r.action for r in await _rows(async_db_session, name)]
-            assert actions == ["create", "update", "delete"], name
+            rows = await _rows(async_db_session, name)
+            assert [r.action for r in rows] == ["create", "update", "delete"], name
+            assert all(r.via_device is None for r in rows), name
         assert coord.calls_to("/coord/devices/me/memberships") == []
         assert verified_devices.calls == []  # type: ignore[attr-defined]

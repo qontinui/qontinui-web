@@ -14,6 +14,8 @@
  *   every recurring period that has fallen due. This page adds nothing up
  *   beyond a table row's total; a bill whose amount is not entered is
  *   counted, never shown as zero.
+ * - `GET`/`PUT /settings`, in `BaseCurrency`: the project's base currency, the
+ *   one setting this page may change.
  *
  * Edit controls come from the served permission for THIS project
  * (`useCanEdit`) and are absent — not disabled — for a reader who may not
@@ -69,6 +71,7 @@ import {
   type RecurringCost,
 } from "../_lib/costs-api";
 import { formatDay } from "../_lib/timeline";
+import { BaseCurrency } from "./_components/BaseCurrency";
 import { BillsToEnter } from "./_components/BillsToEnter";
 import { CostHeadline } from "./_components/CostHeadline";
 import { MonthTable } from "./_components/MonthTable";
@@ -307,6 +310,12 @@ export default function CostsPage() {
         {summary.state === "ready" && (
           <CostHeadline summary={summary.summary} />
         )}
+        <BaseCurrency
+          key={projectId ?? ""}
+          projectId={projectId}
+          hold={hold}
+          onChanged={refresh}
+        />
       </div>
 
       <Section

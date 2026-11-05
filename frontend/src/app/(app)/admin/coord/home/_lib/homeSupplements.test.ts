@@ -696,8 +696,9 @@ describe("machine health", () => {
       ])(
         "truncated: false beside %s stays malformed, not a cut",
         (_label, extra) => {
-          // Not a cut (no evidence of one) and not whole (the flag is not
-          // trusted beside a malformed sibling): the row-count fallback.
+          // Not a cut (no evidence of one), and the flag is not trusted
+          // beside a malformed sibling, so the row-count fallback decides:
+          // whole under the row limit, may-be-cut at it.
           expect(
             readRosterCut({ devices: healthy(3), truncated: false, ...extra })
           ).toEqual({ kind: "whole" });

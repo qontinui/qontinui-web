@@ -85,4 +85,52 @@ describe("OverlordLabelPage", () => {
     const alert = await screen.findByTestId("overlord-label-error");
     expect(alert.textContent).toContain("intervention_not_found");
   });
+
+  it("shows coord's refusal of web's credential, not a bare code", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: {
+            error: "coord_upstream_error",
+            message:
+              "coord refused web's service credential (coord answered 403 token_carries_no_tenant); your own session is fine",
+            coord_status: 403,
+            coord_detail: { error: "token_carries_no_tenant" },
+          },
+        }),
+        { status: 502 }
+      )
+    );
+    render(<OverlordLabelPage />);
+    fill();
+    fireEvent.click(screen.getByText("Submit label"));
+
+    const alert = await screen.findByTestId("overlord-label-error");
+    expect(alert.textContent).toContain("token_carries_no_tenant");
+    expect(alert.textContent).toContain("your own session is fine");
+  });
+
+  it("shows the same sentence from the production-flattened envelope", async () => {
+    // http_exception_handler spreads a dict detail to the top level.
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: "coord_upstream_error",
+          message:
+            "coord refused web's service credential (coord answered 401 unauthorized); your own session is fine",
+          coord_status: 401,
+          coord_detail: { error: "unauthorized" },
+          path: "/api/v1/admin/coord/overlord/labels",
+        }),
+        { status: 502 }
+      )
+    );
+    render(<OverlordLabelPage />);
+    fill();
+    fireEvent.click(screen.getByText("Submit label"));
+
+    const alert = await screen.findByTestId("overlord-label-error");
+    expect(alert.textContent).toContain("coord answered 401 unauthorized");
+    expect(alert.textContent).toContain("your own session is fine");
+  });
 });
