@@ -165,6 +165,26 @@ describe("GateActions", () => {
     expect(screen.queryByText("Cancel continuation…")).toBeNull();
   });
 
+  it("DOES offer cancel on a drain-expired continuation coord reports HELD", async () => {
+    // The never-actioned drain stamps `never_dispatched_at_clearance`, but
+    // coord's all-gates-cleared fanout still dispatches the row once the
+    // open anchor siblings in `dispatch_held_by` leave `open` — so the
+    // follow-up is still coming and cancel is the one way to stop it.
+    render(
+      <GateActions
+        gate={gate({
+          continuation_spawn: { initial_prompt: "go" },
+          continuation_expired_at: new Date(Date.now() - 60_000).toISOString(),
+          continuation_expired_reason: "never_dispatched_at_clearance",
+          dispatch_held_by: ["a0b810b1-36f5-48cd-a53a-879e8b0f68ed"],
+        })}
+        onActed={() => {}}
+      />,
+    );
+    await openMenu();
+    expect(await screen.findByText("Cancel continuation…")).toBeInTheDocument();
+  });
+
   it("force-clear confirm is disabled until a reason is entered", async () => {
     render(<GateActions gate={gate()} onActed={() => {}} />);
     await openMenu();
