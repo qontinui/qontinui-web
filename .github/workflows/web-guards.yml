@@ -493,7 +493,7 @@ jobs:
             "dev-credentials-drift (drift-check)|OUT_DRIFT_CHECK"
             "pre-commit-hook-tests|OUT_PRE_COMMIT_HOOK_TESTS"
             "powershell-parse|OUT_POWERSHELL_PARSE"
-            "powershell-parse (ensure pwsh)|OUT_ENSURE_PWSH"
+            "powershell-parse (ensure pwsh; skipped on hosted, which ships pwsh)|OUT_ENSURE_PWSH"
           )
           failed=0
           {

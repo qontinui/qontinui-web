@@ -47,8 +47,12 @@ rules:
   # part. A third, .github/actions/self-hosted-host-provisioned/action.yml,
   # appends /usr/lib/postgresql/<major>/bin to $GITHUB_PATH, the major coming
   # from the calling workflow's literal `with:` (or its job env PG_MAJOR), never
-  # from PR text. (Ignore entries match the file name, so `action.yml` covers
-  # all three.)
+  # from PR text. A fourth, .github/actions/ensure-pwsh/action.yml (vendored
+  # from qontinui-claude-config), appends a pwsh bin directory it created under
+  # RUNNER_TEMP or RUNNER_TOOL_CACHE to $GITHUB_PATH and, only when pwsh needs
+  # it, the literal DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 to $GITHUB_ENV; no
+  # part comes from PR text. (Ignore entries match the file name, so
+  # `action.yml` covers all four.)
   github-env:
     ignore:
       - action.yml

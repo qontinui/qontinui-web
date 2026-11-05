@@ -251,9 +251,8 @@ jobs:
       # workspace is fresh per run and the clones cannot be stale. It is kept
       # deliberately: it costs nothing on a clean runner and is what makes the
       # step correct again the moment this job is re-pinned to the self-hosted
-      # pool ([self-hosted, public-pool] -- `qontinui` is refused on this public
-      # repo by the public-repo runner-exposure lint), which DOES reuse
-      # $GITHUB_WORKSPACE/.. between runs.
+      # light lane (WEB_CI_LIGHT_LANE), which DOES reuse $GITHUB_WORKSPACE/..
+      # between runs.
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
         run: |
           cd "$GITHUB_WORKSPACE/.."
@@ -550,11 +549,8 @@ jobs:
           echo "POETRY_CACHE_DIR=$RUNNER_TEMP/poetry-cache" >> "$GITHUB_ENV"
           echo "POETRY_VIRTUALENVS_PATH=$RUNNER_TEMP/poetry-venvs" >> "$GITHUB_ENV"
           echo "POETRY_CONFIG_DIR=$RUNNER_TEMP/poetry-config" >> "$GITHUB_ENV"
-          # pip's cache moves only on the self-hosted pool: hosted keeps
-          # ~/.cache/pip, which setup-python's `cache: pip` saves and restores.
-          if [ "$RUNNER_ENVIRONMENT" = self-hosted ]; then
-            echo "PIP_CACHE_DIR=$RUNNER_TEMP/pip-cache" >> "$GITHUB_ENV"
-          fi
+          # pip's cache stays where setup-python's `cache: pip` saves it: the
+          # db lane gives every job a fresh HOME, so nothing is shared here.
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
