@@ -6971,6 +6971,26 @@ async def get_fleet_resource_samples(
       runner could not decide", and ``readiness_state`` is coord's freshness
       verdict so no browser subtracts its own clock from ``sampled_at``. A
       ``stale`` or ``absent`` row renders UNKNOWN, never the last verdict.
+    * The **commit-attribution** fields (plan
+      ``2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out``
+      D1-D4), both OPTIONAL and on host-lane ``latest`` rows.
+      ``top_consumers`` (alembic ``topcons_01``) is
+      ``{entries: [{pid, name, private_bytes, started_at}], scanned,
+      unreadable, attributed_private_bytes}``: at most 5 entries by
+      per-process private bytes (the commit charge) descending, plus the
+      completeness counts without which a top-5 that misses the real
+      consumer reads the same as one that names it. ``name`` is the image
+      name only — command lines carry secrets and are never published.
+      ``commit_floor_eta_secs`` is coord's least-squares time until free
+      commit reaches the row's served ``floor.bytes``, fitted over the RAW
+      trailing 300 s of samples (never over ``history``); it is observed
+      and alerted on and never ranks or filters dispatch. Passed through
+      untouched, and once more **NULL must stay NULL**: ``top_consumers:
+      null`` is a publisher that predates the field or a read that failed,
+      ``commit_floor_eta_secs: null`` is too few points, too little
+      coverage, or a slope that is not falling, and a key **absent** is a
+      coord that predates them. All render UNKNOWN — never "no consumers",
+      and never "safe".
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord

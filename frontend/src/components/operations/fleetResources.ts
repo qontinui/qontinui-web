@@ -471,6 +471,54 @@ export interface ResourceSampleRow {
    * `saturation` — see the module header.
    */
   headroom?: Headroom | null;
+  /**
+   * The host lane's top commit consumers (plan
+   * `2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out`
+   * D1/D2, alembic `topcons_01`). Host-lane `latest` rows only.
+   *
+   * `null` = the publisher predates the field or its read failed; absent = a
+   * coord that predates it. **Both are UNKNOWN, never "no consumers"** — a
+   * blank here would read as "nothing is holding commit".
+   */
+  top_consumers?: TopConsumers | null;
+  /**
+   * SERVER-computed seconds until free commit reaches this row's served
+   * `floor.bytes`, from a least-squares fit over coord's RAW trailing 300 s
+   * of samples (plan D3). Observed and alerted on; it never ranks or filters
+   * dispatch, so it is never folded into `headroom`.
+   *
+   * `null` = too few points, too little coverage, or a slope that is not
+   * falling; absent = a coord that predates it. Both render UNKNOWN — never
+   * as "safe", which is what a blank reads as.
+   */
+  commit_floor_eta_secs?: number | null;
+}
+
+/** One process on a host lane's top-commit-consumer list (plan D1). */
+export interface TopConsumerEntry {
+  pid: number;
+  /** Image name only. Command lines carry secrets and are never published. */
+  name: string;
+  /** Per-process commit charge (Windows `PrivateUsage`; Linux `RssAnon + VmSwap`). */
+  private_bytes: number;
+  /** Lets a reader tell a reused pid apart. */
+  started_at: string | null;
+}
+
+/**
+ * The host lane's top-commit-consumer reading, with the completeness counts
+ * that keep a top-5 which MISSED the real consumer from reading the same as
+ * one that named it.
+ */
+export interface TopConsumers {
+  /** At most 5, by `private_bytes` descending. */
+  entries: TopConsumerEntry[];
+  /** Processes enumerated. */
+  scanned: number;
+  /** Processes whose memory counters could not be read (`OpenProcess` refused). */
+  unreadable: number;
+  /** Sum of private bytes over every READABLE process. */
+  attributed_private_bytes: number;
 }
 
 export interface HistoryPoint {
@@ -1650,4 +1698,124 @@ export function cpuTempReading(
     return { kind: "not_measurable_host" };
   }
   return { kind: "unknown" };
+}
+
+// ---------------------------------------------------------------------------
+// Host commit attribution + time-to-floor (plan
+// `2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out`
+// D4). On 2026-11-05 a host climbed to 99.7% commit while this strip read
+// `ok` two minutes out and nothing could name the process. Both readings are
+// coord's; this module only decides how to SAY them, and an absent or null
+// reading is UNKNOWN, never a blank cell.
+// ---------------------------------------------------------------------------
+
+/**
+ * The ETA is SHOWN below this many seconds (plan D4: "under 10 minutes").
+ *
+ * A display rule, not a threshold: no guard acts on the ETA (plan D3 keeps it
+ * out of `headroom` and out of dispatch), so this decides only when the line
+ * is worth the operator's attention.
+ */
+export const COMMIT_ETA_SHOW_BELOW_SECS = 600;
+
+export type CommitEtaReading =
+  /** coord sent no such key — a coord that predates the estimator. */
+  | { kind: "unknown"; reason: "absent" }
+  /** coord sent null (too few points, thin coverage, or not falling) or junk. */
+  | { kind: "unknown"; reason: "null" }
+  /** A finite ETA at or beyond the display threshold — not shown. */
+  | { kind: "far"; secs: number }
+  /** A finite ETA inside the display threshold. */
+  | { kind: "near"; secs: number; text: string };
+
+/** "~1m 20s", "~45s" — seconds rounded, never a fabricated precision. */
+export function formatEtaSecs(secs: number): string {
+  const total = Math.max(0, Math.round(secs));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return m > 0 ? `~${m}m ${s}s` : `~${s}s`;
+}
+
+export function commitEtaReading(
+  row: Pick<ResourceSampleRow, "commit_floor_eta_secs">
+): CommitEtaReading {
+  if (
+    !("commit_floor_eta_secs" in row) ||
+    row.commit_floor_eta_secs === undefined
+  ) {
+    return { kind: "unknown", reason: "absent" };
+  }
+  const eta = row.commit_floor_eta_secs;
+  if (typeof eta !== "number" || !Number.isFinite(eta) || eta < 0) {
+    return { kind: "unknown", reason: "null" };
+  }
+  if (eta >= COMMIT_ETA_SHOW_BELOW_SECS) return { kind: "far", secs: eta };
+  return { kind: "near", secs: eta, text: `floor in ${formatEtaSecs(eta)}` };
+}
+
+export type TopConsumerReading =
+  | { kind: "unknown"; reason: "absent" | "null" | "malformed" }
+  /** A reading with no readable process in it — still says how many were not. */
+  | { kind: "none_readable"; scanned: number; unreadable: number }
+  | {
+      kind: "value";
+      name: string;
+      privateBytes: number;
+      scanned: number;
+      unreadable: number;
+    };
+
+function nonNegativeCount(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+}
+
+/**
+ * The host lane's TOP commit consumer, read defensively.
+ *
+ * coord sanitizes the payload, but a coord ahead of this build may reshape
+ * it, so anything this build cannot read is `unknown` ("malformed") rather
+ * than a guessed value — the same discipline as `rowHeadroom`.
+ */
+export function topConsumerReading(
+  row: Pick<ResourceSampleRow, "top_consumers">
+): TopConsumerReading {
+  if (!("top_consumers" in row) || row.top_consumers === undefined) {
+    return { kind: "unknown", reason: "absent" };
+  }
+  const tc = row.top_consumers;
+  if (tc === null) return { kind: "unknown", reason: "null" };
+  if (typeof tc !== "object" || !Array.isArray(tc.entries)) {
+    return { kind: "unknown", reason: "malformed" };
+  }
+  const scanned = nonNegativeCount(tc.scanned);
+  const unreadable = nonNegativeCount(tc.unreadable);
+  if (scanned == null || unreadable == null) {
+    return { kind: "unknown", reason: "malformed" };
+  }
+  // Largest first, whatever order arrived: the server promises descending,
+  // and re-checking it costs nothing.
+  let top: TopConsumerEntry | null = null;
+  for (const e of tc.entries) {
+    if (
+      !e ||
+      typeof e.name !== "string" ||
+      nonNegativeCount(e.private_bytes) == null
+    ) {
+      return { kind: "unknown", reason: "malformed" };
+    }
+    if (!top || e.private_bytes > top.private_bytes) top = e;
+  }
+  if (!top) return { kind: "none_readable", scanned, unreadable };
+  return {
+    kind: "value",
+    name: top.name,
+    privateBytes: top.private_bytes,
+    scanned,
+    unreadable,
+  };
+}
+
+/** Whether the top-consumer line is shown: only when the lane is at a floor. */
+export function showsTopConsumer(headroom: Headroom): boolean {
+  return headroom === "warn" || headroom === "breach";
 }
