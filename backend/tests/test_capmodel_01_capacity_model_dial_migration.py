@@ -125,6 +125,9 @@ def test_upgrade_adds_every_column_to_both_tables_and_downgrade_drops_them(
     # column would overwrite its text, pass, and survive the downgrade.
     assert len(up) == 2 + width
     assert len(down) == 2
+    # And counted by SQL text, not only by call: a second statement smuggled
+    # into one COMMENT literal keeps the call count but adds a COMMENT.
+    assert joined_up.count("COMMENT ON COLUMN") == width
     # Each direction names exactly the five columns per table: no stray
     # column is added that the downgrade would leave behind, and nothing is
     # dropped that this revision did not add.
