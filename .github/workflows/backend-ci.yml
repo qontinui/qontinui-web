@@ -1572,7 +1572,10 @@ jobs:
     # DB LANE, not light: the light pool's `runner` user has no docker; the
     # webdb slots each run a rootless dockerd for their own user. Plan
     # 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # Own override first: WEB_CI_DB_LANE_BACKEND_CI_BUILD_TEST=hosted sends only this job back to
+    # hosted. On #2091's run it started in the PR's fan-out burst and hit its 15-min cap (job 127450115878)
+    # while the shards on the same pool stayed in budget.
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI_BUILD_TEST || vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
     defaults:
       run:
         working-directory: ./backend
