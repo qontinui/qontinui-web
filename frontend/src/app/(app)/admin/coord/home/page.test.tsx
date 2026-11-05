@@ -1684,4 +1684,99 @@ describe("/admin/coord/home — answered on first load, nothing expanded", () =>
     );
     expect(block).not.toHaveTextContent(/Coord named no unit/);
   });
+
+  it("q7: a named list shorter than its count, with none omitted, says the rest is unknown", async () => {
+    // doorBody names 1 unit with omitted 0; the group counts 3.
+    const body = doorBody();
+    const onTrack = body.on_track as { groups: Array<Record<string, unknown>> };
+    onTrack.groups[0] = {
+      ...onTrack.groups[0],
+      classes: { ...CLASSES, stalled: 3 },
+    };
+    await renderWith(body);
+    const block = screen.getByTestId("coord-home.on-track.no-recorded-change");
+    expect(block).toHaveTextContent("An old plan");
+    expect(
+      within(block).getByTestId(
+        "coord-home.on-track.no-recorded-change.shortfall"
+      )
+    ).toHaveTextContent(
+      "Coord counts 3 but named 1, so the other 2 units are unknown."
+    );
+  });
+
+  it("q7: no shortfall note when the named list matches its count", async () => {
+    await renderWith(doorBody());
+    expect(
+      screen.queryByTestId("coord-home.on-track.no-recorded-change.shortfall")
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [2, 0, "Coord counts 2 but named 1, so the other unit is unknown."],
+    [
+      5,
+      1,
+      "Coord counts 5 but named 1 and says it left 1 out, so the other 3 units are unknown.",
+    ],
+  ])(
+    "q7: count %i with %i omitted beyond the one named reads as unknown",
+    async (count, omitted, sentence) => {
+      const body = doorBody();
+      const onTrack = body.on_track as {
+        groups: Array<Record<string, unknown>>;
+      };
+      const g = onTrack.groups[0] as {
+        named: { stalled: Record<string, unknown> };
+      };
+      onTrack.groups[0] = {
+        ...g,
+        classes: { ...CLASSES, stalled: count },
+        named: { ...g.named, stalled: { ...g.named.stalled, omitted } },
+      };
+      await renderWith(body);
+      expect(
+        screen.getByTestId("coord-home.on-track.no-recorded-change.shortfall")
+      ).toHaveTextContent(sentence);
+    }
+  );
+
+  it("q7: no shortfall note when the group count is unknown", async () => {
+    const body = doorBody();
+    const onTrack = body.on_track as { groups: Array<Record<string, unknown>> };
+    onTrack.groups[0] = {
+      ...onTrack.groups[0],
+      classes: { ...CLASSES, stalled: null },
+    };
+    await renderWith(body);
+    expect(
+      screen.getByTestId("coord-home.on-track.no-recorded-change")
+    ).toHaveTextContent("An old plan");
+    expect(
+      screen.queryByTestId("coord-home.on-track.no-recorded-change.shortfall")
+    ).not.toBeInTheDocument();
+  });
+
+  it("q7: nothing named, some omitted, and a larger count says the rest is unknown", async () => {
+    const body = doorBody();
+    const onTrack = body.on_track as { groups: Array<Record<string, unknown>> };
+    onTrack.groups[0] = {
+      ...onTrack.groups[0],
+      classes: { ...CLASSES, stalled: 5 },
+      named: {
+        stalled: { units: [], omitted: 2 },
+        waiting_on_gate: { units: [], omitted: 0 },
+      },
+    };
+    await renderWith(body);
+    const block = screen.getByTestId("coord-home.on-track.no-recorded-change");
+    expect(block).toHaveTextContent("2 not named here.");
+    expect(
+      within(block).getByTestId(
+        "coord-home.on-track.no-recorded-change.shortfall"
+      )
+    ).toHaveTextContent(
+      "Coord counts 5 but named 0 and says it left 2 out, so the other 3 units are unknown."
+    );
+  });
 });
