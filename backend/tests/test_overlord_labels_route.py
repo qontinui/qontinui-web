@@ -42,6 +42,14 @@ def _resp(status: int, body: Any) -> MagicMock:
     return r
 
 
+def _resp_text(status: int, text: str) -> MagicMock:
+    r = MagicMock(spec=httpx.Response)
+    r.status_code = status
+    r.json.side_effect = ValueError("not json")
+    r.text = text
+    return r
+
+
 # Coord's real response shapes, from qontinui-coord@4db717a8
 # crates/coord/src/overlord_interventions.rs. The Phase 2b coord half
 # (qontinui-coord#3417, on coord main from 644421592) keeps them and only adds
@@ -436,6 +444,12 @@ def test_coord_5xx_is_a_502() -> None:
         posts=[_resp(500, {"error": "boom"})],
     )
     assert resp.status_code == 502
+    assert resp.json()["detail"] == {
+        "error": "coord_upstream_error",
+        "message": "coord failed (coord answered 500 boom)",
+        "coord_status": 500,
+        "coord_detail": {"error": "boom"},
+    }
 
 
 @pytest.mark.parametrize("coord_status", [401, 403])
@@ -452,6 +466,10 @@ def test_coord_refusing_web_credential_is_a_502_not_passed_through(
     assert resp.status_code == 502
     assert resp.json()["detail"] == {
         "error": "coord_upstream_error",
+        "message": (
+            f"coord refused web's service credential (coord answered "
+            f"{coord_status} unauthorized); your own session is fine"
+        ),
         "coord_status": coord_status,
         "coord_detail": {"error": "unauthorized"},
     }
@@ -466,10 +484,24 @@ def test_coord_refusing_web_credential_on_the_list_read_is_a_502(
     assert resp.status_code == 502
     assert resp.json()["detail"] == {
         "error": "coord_upstream_error",
+        "message": (
+            f"coord refused web's service credential (coord answered "
+            f"{coord_status} token_carries_no_tenant); your own session is fine"
+        ),
         "coord_status": coord_status,
         "coord_detail": body,
     }
     inst.post.assert_not_called()
+
+
+def test_a_non_json_coord_refusal_still_names_its_status() -> None:
+    resp, _ = _drive(
+        _OK_BODY, gets=[_page((_IID, _NEWEST))], posts=[_resp_text(403, "nope")]
+    )
+    assert resp.status_code == 502
+    detail = resp.json()["detail"]
+    assert detail["coord_detail"] == "nope"
+    assert "coord answered 403)" in detail["message"]
 
 
 def test_other_coord_4xx_still_passes_through() -> None:

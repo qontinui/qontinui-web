@@ -10,7 +10,8 @@
  *  - "Load more" follows `next_cursor` under the SAME query and appends;
  *  - a degraded proxy answer reads as UNKNOWN, never as "no dossiers";
  *  - a `?slug=` / `?preset=no-plan` deep link seeds the FIRST read (one read,
- *    not a default read thrown away), and the slug chip clears it;
+ *    not a default read thrown away), opens the dossier it names, and the
+ *    slug chip clears it;
  *  - the first-seen and updated date ranges reach coord.
  */
 
@@ -112,6 +113,13 @@ describe("CoordDossiersPage", () => {
 
     expect(urls()).toHaveLength(1);
     expect(lastQuery().get("slug")).toBe("worktree-sibling-build-dependency");
+    // The named dossier opens by itself, with a permalink back to this view.
+    const permalink = await screen.findByTestId(
+      `coord-dossier-permalink-${ID_A}`
+    );
+    expect(permalink.getAttribute("href")).toBe(
+      "/admin/coord/dossiers?slug=worktree-sibling-build-dependency"
+    );
 
     await userEvent.click(screen.getByTestId("coord-dossiers-slug-filter"));
     await waitFor(() => expect(lastQuery().get("slug")).toBeNull());
@@ -187,6 +195,30 @@ describe("CoordDossiersPage", () => {
     expect(screen.getByTestId("coord-dossiers-count").textContent).toBe(
       "all 2 shown"
     );
+    // With no ?slug= deep link nothing opens by itself.
+    expect(screen.queryByTestId(`coord-dossier-permalink-${ID_A}`)).toBeNull();
+  });
+
+  it("a row's permalink narrows the list to that dossier in place", async () => {
+    httpGet.mockResolvedValue(page([dossier()]));
+    render(<CoordDossiersPage />);
+    const [row] = await screen.findAllByTestId("coord-dossier-row");
+    await userEvent.click(
+      within(row!).getByRole("button", { expanded: false })
+    );
+    await userEvent.click(
+      await screen.findByTestId(`coord-dossier-permalink-${ID_A}`)
+    );
+
+    await waitFor(() =>
+      expect(lastQuery().get("slug")).toBe("worktree-sibling-build-dependency")
+    );
+    expect(window.location.search).toBe(
+      "?slug=worktree-sibling-build-dependency"
+    );
+    expect(
+      screen.getByTestId("coord-dossiers-slug-filter")
+    ).toBeInTheDocument();
   });
 
   it("sends only the limit and the default sort on first read", async () => {

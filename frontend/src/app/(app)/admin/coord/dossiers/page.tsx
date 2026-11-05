@@ -86,6 +86,7 @@ import {
 import {
   DOSSIERS_NO_PLAN_HREF,
   DOSSIERS_PATH,
+  dossierHref,
   parseDossiersDeepLink,
 } from "./_lib/dossierDeepLink";
 
@@ -356,6 +357,13 @@ export default function CoordDossiersPage() {
       setUnavailable(null);
       const head = rowsOf(body);
       setRows(head);
+      // A `?slug=` deep link (e.g. the findings page's "Open the dossier")
+      // names ONE dossier — open it rather than land on a collapsed row.
+      const named =
+        slug === null
+          ? undefined
+          : head.find((r) => (r.slug ?? "").trim() === slug);
+      if (named !== undefined) setExpanded(named.finding_id);
       setFacets(body.facets ?? null);
       setLastPage(lastPageOf(body, head.length));
       const minted = cursorOf(body);
@@ -372,7 +380,7 @@ export default function CoordDossiersPage() {
     } finally {
       if (current()) setLoading(false);
     }
-  }, [buildQuery]);
+  }, [buildQuery, slug]);
 
   useEffect(() => {
     // The deep link seeds the filters first; `loading` starts true, so the
@@ -442,6 +450,17 @@ export default function CoordDossiersPage() {
     setRemediation(["none"]);
     setSort("recurrence_count");
     setOrder("desc");
+  }, []);
+
+  /**
+   * The row permalink's plain click. The page reads the URL only on mount, so
+   * a client-side navigation to `?slug=` could change the address bar without
+   * re-seeding the filters — apply the slug here instead, the way the chip and
+   * the preset keep URL and filters in step.
+   */
+  const showAlone = useCallback((value: string) => {
+    replaceUrl(dossierHref(value));
+    setSlug(value);
   }, []);
 
   const onSort = useCallback(
@@ -747,7 +766,9 @@ export default function CoordDossiersPage() {
             </p>
           )
         }
-        renderRow={(d, ctx) => <DossierRow dossier={d} ctx={ctx} />}
+        renderRow={(d, ctx) => (
+          <DossierRow dossier={d} ctx={ctx} onShowAlone={showAlone} />
+        )}
       />
 
       {nextCursor !== null && (
@@ -807,9 +828,11 @@ export default function CoordDossiersPage() {
 function DossierRow({
   dossier,
   ctx,
+  onShowAlone,
 }: {
   dossier: CoordDossierRow;
   ctx: { expanded: boolean; onToggle: () => void };
+  onShowAlone: (slug: string) => void;
 }) {
   const status = deriveDossierStatus(dossier);
   const slug = (dossier.slug ?? "").trim();
@@ -915,6 +938,32 @@ function DossierRow({
             >
               Open the dossier head
             </Link>
+            {slug ? (
+              <>
+                {" · "}
+                <Link
+                  className="underline"
+                  href={dossierHref(slug)}
+                  title="A link that opens /admin/coord/dossiers on this dossier alone"
+                  onClick={(e) => {
+                    // A modified click (new tab, copy) keeps the real link.
+                    if (
+                      e.button !== 0 ||
+                      e.metaKey ||
+                      e.ctrlKey ||
+                      e.shiftKey ||
+                      e.altKey
+                    )
+                      return;
+                    e.preventDefault();
+                    onShowAlone(slug);
+                  }}
+                  data-testid={`coord-dossier-permalink-${id}`}
+                >
+                  Link to this dossier
+                </Link>
+              </>
+            ) : null}
             {slug ? (
               <span className="text-muted-foreground">
                 {" "}
