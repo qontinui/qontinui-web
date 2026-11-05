@@ -234,8 +234,11 @@ export type MergeStatusToken =
   | "ci-failed"
   /** CI is red, but `main` has moved past the PR's CI base, so the red may be
    *  main's fault rather than the PR's. Emitted from the predicate code
-   *  `ci-not-green-stale-base`, ABOVE plain `ci-failed`. The remedy is coord's
-   *  own BEHIND freshen (update the branch; CI re-runs) — not author work.
+   *  `ci-not-green-stale-base`, ABOVE plain `ci-failed`. Not author work:
+   *  coord's own stale-base freshen MAY update the branch and re-run CI, but
+   *  whether it will is not served yet (it refuses a distance-only stale base
+   *  outright), so consumers read it as an UNKNOWN wait, not a promise. Plan
+   *  `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`.
    *  Plan `2026-09-05-a-red-pr-is-classified-before-coord-looks-at-behind-so-a-stale-base-is-never-refreshed`. */
   | "ci-failed-stale-base"
   /** Added by qontinui-coord#2723 (not yet emitted by coord main — mapped here

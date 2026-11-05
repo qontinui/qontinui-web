@@ -222,16 +222,25 @@ export async function restorePromptDocumentVersion(
  * `POST /coord/prompt-documents/{kind}/{name}/withdraw` —
  * `withdraw_prompt_document`: mark a created decision record withdrawn, as a
  * new version. The withdrawer is stamped by coord, never sent.
+ *
+ * `expectedVersion` is the `current_version` the caller re-read before
+ * posting; coord answers `409 withdraw_stale` when the record has moved since,
+ * and writes nothing. Omitted, the withdraw is unconditional.
  */
 export async function withdrawPromptDocument(
   kind: PromptDocumentKind | string,
   name: string,
-  reason: string
+  reason: string,
+  expectedVersion?: number
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/withdraw`;
   const res = await httpClient.fetch(url, {
     method: "POST",
-    body: JSON.stringify({ reason }),
+    body: JSON.stringify(
+      expectedVersion === undefined
+        ? { reason }
+        : { reason, expected_version: expectedVersion }
+    ),
     idempotent: false,
   });
   return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
