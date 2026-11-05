@@ -176,7 +176,7 @@ function fateText<Row>(fate: ImportFate<Row>): string {
       return "No change";
     case "refused":
       // Never previewed — a refused line is in the issue list instead.
-      return "Left out";
+      throw new Error("A refused line has no fate column; it is an issue.");
     default: {
       const unhandled: never = fate;
       throw new Error(`Unhandled import fate: ${String(unhandled)}`);
@@ -248,9 +248,9 @@ export function commitDescription<Row extends object>(
   leftOut: number
 ): string {
   if (outcome.kind === "replace")
-    return `Replaces the ${table.plural} in this page's working copy with the ${rowCount} rows read; nothing reaches the server until the page's Save.`;
+    return `Replaces the ${table.plural} in this page's working copy with the ${rowCount} ${rowCount === 1 ? "row" : "rows"} read; nothing reaches the server until the page's Save.`;
   const { add, update, unchanged } = fateCounts(outcome.fates);
-  return `Writes now, one record per row: adds ${add}, updates ${update}, leaves ${unchanged} as recorded, leaves out ${leftOut} refused lines; never removes a ${table.singular}.`;
+  return `Writes now, one record per row: adds ${add}, updates ${update}, leaves ${unchanged} as recorded, leaves out ${leftOut} ${leftOut === 1 ? "line" : "lines"} it cannot use; never removes a ${table.singular}.`;
 }
 
 /** The `commit` action's description while nothing has been read. */
@@ -351,7 +351,9 @@ export function CsvPasteDialog<Row extends object>({
       add: counts?.add ?? null,
       update: counts?.update ?? null,
       unchanged: counts?.unchanged ?? null,
-      refused: preview ? errors.length : null,
+      // Every line that will not be committed: unreadable, schema-refused,
+      // or a refused fate — the status line's count, not a fate count.
+      left_out: preview ? errors.length : null,
     }),
     actions: [
       {

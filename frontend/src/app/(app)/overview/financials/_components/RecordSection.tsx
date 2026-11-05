@@ -31,7 +31,9 @@ import type {
 } from "@/components/overview/editing/useResource";
 import {
   bodyOf,
+  type ImportRules,
   classifyImport,
+  planImportWrites,
   planRecordWrites,
   type Writes,
 } from "@/components/overview/editing/writes";
@@ -69,6 +71,9 @@ export interface RecordSectionProps<
   matchKey?: (row: Row) => string;
   /** A rule the served schema cannot express, refused before sending. */
   rowProblem?: (row: Row) => string | null;
+  /** The identity as the server compares it, when looser than the table's
+   *  exact identity values (a name unique ignoring case). */
+  sameIdentity?: (row: Row) => string;
   /** A row (a create) or a patch (an update) as the API takes it, or the
    *  sentence saying why it cannot be sent. */
   toBody: (
@@ -106,6 +111,7 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
   writable,
   matchKey,
   rowProblem,
+  sameIdentity,
   toBody,
   label,
   describe,
@@ -162,16 +168,11 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
       // Re-classified against every record as it stands now. The preview
       // already left out every refused line, so a refusal here can only be a
       // race with another writer — and refuses the whole batch.
-      for (const fate of classifyImport(
-        allRows,
-        next,
-        writable,
-        matchKey,
-        rules
-      ))
+      const fates = classifyImport(allRows, next, writable, matchKey, rules);
+      for (const fate of fates)
         if (fate.kind === "refused")
           problems.push(`${label(fate.row)}: ${fate.reason}`);
-      plan = planRecordWrites(allRows, next, how, writable, matchKey, rules);
+      plan = planImportWrites(fates);
     } else {
       // An edit's deletes are the previous rows missing from `next`, and
       // `next` is the SHOWN table — so it is planned against the shown rows
@@ -235,10 +236,26 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
   };
 
   // What a paste would do, classified from the same inputs `apply` hands
-  // `planRecordWrites` — every record, and the table's own rules — so the
+  // `planImportWrites` — every record, and the table's own rules — so the
   // paste button says what the writes will be and a line the commit would
   // refuse is refused at its line.
-  const rules = { rowProblem, table };
+  //
+  // A line is held to `rowProblem` and to what `toBody` would refuse to send,
+  // so the preview never offers a write the commit then reports as failed.
+  // Only a create is held to `toBody`: an update's row here is the record it
+  // would leave (it has an id), and an update's own body is its patch.
+  const importProblem = (row: Row): string | null => {
+    const problem = rowProblem?.(row);
+    if (problem) return problem;
+    if (row.id) return null;
+    const body = toBody(bodyOf(row, writable) as Partial<Row>, "create");
+    return typeof body === "string" ? body : null;
+  };
+  const rules: ImportRules<Row> = {
+    rowProblem: importProblem,
+    table,
+    identityOf: sameIdentity,
+  };
   const pasteOutcome = (pasted: Row[]): PasteOutcome<Row> => ({
     kind: "merge",
     fates: classifyImport(allRows, pasted, writable, matchKey, rules),

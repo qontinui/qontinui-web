@@ -445,7 +445,7 @@ describe("the UI Bridge declaration", () => {
       add: null,
       update: null,
       unchanged: null,
-      refused: null,
+      left_out: null,
     });
     await expect(commitAction().handler()).rejects.toThrow(
       "Nothing has been read"
@@ -472,7 +472,7 @@ describe("the UI Bridge declaration", () => {
       add: null,
       update: null,
       unchanged: null,
-      refused: 3,
+      left_out: 3,
     });
     await act(async () => {
       await expect(commitAction().handler()).resolves.toEqual({
@@ -504,7 +504,7 @@ describe("the UI Bridge declaration", () => {
     expect(commitAction().label).toBe(button.textContent);
     expect(commitAction().effect).toBe("write");
     expect(commitAction().description).toBe(
-      "Writes now, one record per row: adds 2, updates 1, leaves 1 as recorded, leaves out 1 refused lines; never removes a role."
+      "Writes now, one record per row: adds 2, updates 1, leaves 1 as recorded, leaves out 1 line it cannot use; never removes a role."
     );
     expect(state()).toEqual({
       open: true,
@@ -514,7 +514,7 @@ describe("the UI Bridge declaration", () => {
       add: 2,
       update: 1,
       unchanged: 1,
-      refused: 1,
+      left_out: 1,
     });
     await act(async () => {
       await commitAction().handler();
@@ -536,7 +536,7 @@ describe("the UI Bridge declaration", () => {
     expect(commitAction().label).toBe("Nothing to change");
     expect(state()?.enabled).toBe(false);
     expect(commitAction().description).toBe(
-      "Writes now, one record per row: adds 0, updates 0, leaves 1 as recorded, leaves out 0 refused lines; never removes a role."
+      "Writes now, one record per row: adds 0, updates 0, leaves 1 as recorded, leaves out 0 lines it cannot use; never removes a role."
     );
     await expect(commitAction().handler()).rejects.toThrow("Nothing to change");
     expect(onCommit).not.toHaveBeenCalled();

@@ -380,6 +380,71 @@ describe("pasting categories", () => {
   });
 });
 
+describe("pasting two lines for one category", () => {
+  const paste = "overview.costs.categories.table.paste";
+  const categories = () => mocks.resources["cost-categories"]!;
+
+  it("updates the category once and refuses the second line", async () => {
+    // Both lines match "Hardware": counting each as an update would say
+    // two categories change and send a second, overtaken write.
+    const commit = await pasteInto(
+      "overview.costs.categories",
+      "Hardware,Servers and racks\nhardware,Racks only"
+    );
+    expect(commit.textContent).toBe("Update this category");
+    expect(byId(`${paste}.issues`)?.textContent).toBe(
+      "line 2: An earlier line already gives this category."
+    );
+    await act(async () => {
+      fireEvent.click(commit);
+    });
+    expect(categories().update).toHaveBeenCalledTimes(1);
+    expect(categories().update).toHaveBeenCalledWith(
+      CATEGORIES[0],
+      { description: "Servers and racks" },
+      { source: "import" }
+    );
+  });
+
+  it("adds one new category for two lines differing only in case", async () => {
+    // The server keeps names unique ignoring case, so it would take only
+    // the first.
+    const commit = await pasteInto(
+      "overview.costs.categories",
+      "Travel,Trains\ntravel,Planes"
+    );
+    expect(commit.textContent).toBe("Add this category");
+    expect(byId(`${paste}.issues`)?.textContent).toBe(
+      "line 2: An earlier line already gives this category."
+    );
+    await act(async () => {
+      fireEvent.click(commit);
+    });
+    expect(categories().create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("pasting a recurring cost before the summary has loaded", () => {
+  it("refuses a line with no currency at its line, not after commit", async () => {
+    // The project's own currency is unknown until the summary loads, so a
+    // create with a blank currency cannot be sent yet.
+    mocks.fetchCostSummary.mockReturnValue(new Promise(() => {}));
+    const commit = await pasteInto(
+      "overview.costs.recurring",
+      "ZZ hosting,,,Monthly,Varies,,,2026-01-01"
+    );
+    expect(
+      byId("overview.costs.recurring.table.paste.issues")?.textContent
+    ).toBe(
+      "line 1: Give it a currency — the project's own is not known yet. Reload and try again."
+    );
+    expect(commit.textContent).toBe("Nothing to change");
+    expect(commit.disabled).toBe(true);
+    fireEvent.click(commit);
+    expect(mocks.resources["recurring-costs"]!.create).not.toHaveBeenCalled();
+  });
+});
+
 describe("the entries table's own rules", () => {
   const entries = () => mocks.resources["cost-entries"]!;
   const paste = "overview.costs.entries.table.paste";

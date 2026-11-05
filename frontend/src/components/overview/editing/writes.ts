@@ -62,10 +62,14 @@ export type ImportFate<Row> =
  *   (`{ ...match, ...patch }`), so a stored value can complete it.
  * - `table` — its `identity`: a would-be create may not repeat the identity
  *   of an existing row, nor of an earlier line of the same paste that adds.
+ * - `identityOf` — the identity as the SERVER compares it, when that is
+ *   looser than `table.identity`'s exact values (a name unique ignoring
+ *   case); defaults to `identityKey(table, row)`.
  */
 export interface ImportRules<Row extends object> {
   rowProblem?: (row: Row) => string | null;
   table?: Pick<TableDeclaration<Row>, "identity" | "fields" | "singular">;
+  identityOf?: (row: Row) => string;
 }
 
 function changed<Row>(
@@ -93,6 +97,10 @@ function changed<Row>(
  * not a guess at which one was meant. Without `matchKey`, every row is an
  * add.
  *
+ * A second line whose key matches a record an earlier line already updates
+ * or leaves unchanged is `refused`: two writes to one record would count it
+ * twice and overtake the first with the second.
+ *
  * With `rules`, a row the commit would refuse is `refused` instead
  * (`ImportRules`). Identities are kept in a key set — every existing row's,
  * plus each add's as it is classified — so a clash is one lookup.
@@ -105,10 +113,12 @@ export function classifyImport<Row extends Planned>(
   rules: ImportRules<Row> = {}
 ): ImportFate<Row>[] {
   const { rowProblem, table } = rules;
-  const taken = new Set<string>(
-    table ? previous.map((p) => identityKey(table, p)) : []
-  );
+  const identity = table
+    ? (rules.identityOf ?? ((row: Row) => identityKey(table, row)))
+    : undefined;
+  const taken = new Set<string>(identity ? previous.map(identity) : []);
   const added = new Set<string>();
+  const matched = new Set<string>();
   const byKey = new Map<string, Row[]>();
   if (matchKey) {
     for (const p of previous) {
@@ -123,8 +133,8 @@ export function classifyImport<Row extends Planned>(
     if (!same || same.length !== 1) {
       const problem = rowProblem?.(row);
       if (problem) return { kind: "refused", row, reason: problem };
-      if (table) {
-        const key = identityKey(table, row);
+      if (table && identity) {
+        const key = identity(row);
         if (taken.has(key))
           return {
             kind: "refused",
@@ -138,6 +148,13 @@ export function classifyImport<Row extends Planned>(
       return { kind: "add", row };
     }
     const match = same[0]!;
+    if (matched.has(match.id))
+      return {
+        kind: "refused",
+        row,
+        reason: `An earlier line already gives this ${table?.singular ?? "record"}.`,
+      };
+    matched.add(match.id);
     const patch = changed(match, row, row.supplied ?? writable);
     if (Object.keys(patch).length === 0)
       return { kind: "unchanged", row, match };
@@ -148,6 +165,36 @@ export function classifyImport<Row extends Planned>(
 }
 
 /**
+ * The writes of an import, from its fates — so a caller that classified
+ * once (to refuse the batch, or to preview it) writes exactly what it
+ * classified. An add is a create, an update an update; an unchanged or
+ * refused row is no write.
+ */
+export function planImportWrites<Row extends Planned>(
+  fates: readonly ImportFate<Row>[]
+): Writes<Row> {
+  const plan: Writes<Row> = { creates: [], updates: [], deletes: [] };
+  for (const fate of fates) {
+    switch (fate.kind) {
+      case "add":
+        plan.creates.push(fate.row);
+        break;
+      case "update":
+        plan.updates.push({ row: fate.match, patch: fate.patch });
+        break;
+      case "unchanged":
+      case "refused":
+        break;
+      default: {
+        const unhandled: never = fate;
+        throw new Error(`Unhandled import fate: ${String(unhandled)}`);
+      }
+    }
+  }
+  return plan;
+}
+
+/**
  * The writes that turn `previous` (what the server holds) into `next`.
  *
  * - An **edit** is the table as the reader left it: a row with no id is
@@ -155,9 +202,9 @@ export function classifyImport<Row extends Planned>(
  *   row that is gone is deleted.
  * - An **import** (a CSV paste) never deletes: each pasted row's writes are
  *   its `classifyImport` fate — an add is a create, an update is an update,
- *   an unchanged row is no write at all. With `rules`, a refused row is no
- *   write either; a caller that must refuse the whole batch instead checks
- *   the fates first.
+ *   an unchanged row is no write at all, and a refused row is no write
+ *   either. A caller that must refuse the whole batch classifies once and
+ *   hands the fates to `planImportWrites` instead.
  */
 export function planRecordWrites<Row extends Planned>(
   previous: Row[],
@@ -167,33 +214,11 @@ export function planRecordWrites<Row extends Planned>(
   matchKey?: (row: Row) => string,
   rules?: ImportRules<Row>
 ): Writes<Row> {
+  if (how === "import")
+    return planImportWrites(
+      classifyImport(previous, next, writable, matchKey, rules)
+    );
   const plan: Writes<Row> = { creates: [], updates: [], deletes: [] };
-  if (how === "import") {
-    for (const fate of classifyImport(
-      previous,
-      next,
-      writable,
-      matchKey,
-      rules
-    )) {
-      switch (fate.kind) {
-        case "add":
-          plan.creates.push(fate.row);
-          break;
-        case "update":
-          plan.updates.push({ row: fate.match, patch: fate.patch });
-          break;
-        case "unchanged":
-        case "refused":
-          break;
-        default: {
-          const unhandled: never = fate;
-          throw new Error(`Unhandled import fate: ${String(unhandled)}`);
-        }
-      }
-    }
-    return plan;
-  }
   const byId = new Map(previous.map((p) => [p.id, p]));
   const kept = new Set<string>();
   for (const row of next) {

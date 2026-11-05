@@ -30,7 +30,9 @@ import type { WriteSource } from "@/components/overview/editing/api";
 import {
   bodyOf,
   classifyImport,
+  planImportWrites,
   planRecordWrites,
+  type Writes,
 } from "@/components/overview/editing/writes";
 import {
   MILESTONE_WRITABLE,
@@ -138,29 +140,25 @@ export function MilestonesSection({
 
   const apply = async (next: MilestoneRow[], how: "edit" | "import") => {
     const source: WriteSource = how === "import" ? "import" : "ui";
-    const plan = planRecordWrites(
-      rows,
-      next,
-      how,
-      MILESTONE_WRITABLE,
-      milestoneKey,
-      rules
-    );
     const problems: string[] = [];
+    let plan: Writes<MilestoneRow>;
     if (how === "import") {
       // Re-classified against the milestones as they stand now. The preview
       // already left out every refused line, so a refusal here can only be a
       // race with another writer — and refuses the whole batch.
-      for (const fate of classifyImport(
+      const fates = classifyImport(
         rows,
         next,
         MILESTONE_WRITABLE,
         milestoneKey,
         rules
-      ))
+      );
+      for (const fate of fates)
         if (fate.kind === "refused")
           problems.push(`${fate.row.title}: ${fate.reason}`);
+      plan = planImportWrites(fates);
     } else {
+      plan = planRecordWrites(rows, next, how, MILESTONE_WRITABLE);
       // The one rule the served schema cannot express, refused before sending.
       for (const row of [
         ...plan.creates,
@@ -206,7 +204,7 @@ export function MilestonesSection({
   };
 
   // What a paste would do, classified from the same inputs `apply` hands
-  // `planRecordWrites` — so the paste button says what the writes will be.
+  // `planImportWrites` — so the paste button says what the writes will be.
   const pasteOutcome = (
     pasted: MilestoneRow[]
   ): PasteOutcome<MilestoneRow> => ({

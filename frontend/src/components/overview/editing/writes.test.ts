@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { bodyOf, classifyImport, planRecordWrites } from "./writes";
+import {
+  bodyOf,
+  classifyImport,
+  planImportWrites,
+  planRecordWrites,
+} from "./writes";
 
 /** A plain record: nothing here comes from an app page. */
 interface Item {
@@ -112,6 +117,29 @@ describe("classifyImport", () => {
     ]);
   });
 
+  it("refuses a second line that matches a record an earlier line updates", () => {
+    // Two writes to one record would count it twice, and the second would
+    // go out with the version the first already moved past.
+    const first = item({ name: "Alpha", size: 2, note: "kept" });
+    const second = item({ name: "alpha", size: 3, note: "kept" });
+    expect(classifyImport([a], [first, second], WRITABLE, byName)).toEqual([
+      { kind: "update", row: first, match: a, patch: { size: 2 } },
+      {
+        kind: "refused",
+        row: second,
+        reason: "An earlier line already gives this record.",
+      },
+    ]);
+  });
+
+  it("refuses a second line after one that left the record unchanged", () => {
+    const first = item({ name: "Alpha", note: "kept" });
+    const second = item({ name: "Alpha", size: 4, note: "kept" });
+    expect(
+      classifyImport([a], [first, second], WRITABLE, byName).map((f) => f.kind)
+    ).toEqual(["unchanged", "refused"]);
+  });
+
   it("returns one fate per pasted row, in order", () => {
     const rows = [item({ name: "x" }), item({ name: "Alpha", note: "kept" })];
     expect(
@@ -185,6 +213,36 @@ describe("classifyImport with the table's rules", () => {
     ]);
   });
 
+  it("compares identities as the server does when told how", () => {
+    // A name unique ignoring case: "omega" repeats "Omega" though the exact
+    // values differ, and "ALPHA" repeats a stored "Alpha".
+    const named = {
+      ...table,
+      identity: ["name"] as "name"[],
+    };
+    const first = item({ name: "Omega" });
+    const again = item({ name: "omega" });
+    const stored = item({ name: "ALPHA", size: 7, note: "x" });
+    expect(
+      classifyImport([a], [first, again, stored], WRITABLE, undefined, {
+        table: named,
+        identityOf: byName,
+      })
+    ).toEqual([
+      { kind: "add", row: first },
+      {
+        kind: "refused",
+        row: again,
+        reason: "An earlier line already gives this box.",
+      },
+      {
+        kind: "refused",
+        row: stored,
+        reason: "There is already a box with this name.",
+      },
+    ]);
+  });
+
   it("does not hold an update to the identity check", () => {
     const row = item({ name: "Alpha", size: 1, note: "changed" });
     expect(
@@ -206,6 +264,25 @@ describe("classifyImport with the table's rules", () => {
       }
     );
     expect(plan).toEqual({ creates: [good], updates: [], deletes: [] });
+  });
+});
+
+describe("planImportWrites", () => {
+  it("writes exactly the fates it is given", () => {
+    const a = item({ id: "a", name: "Alpha" });
+    const add = item({ name: "New" });
+    const upd = item({ name: "Alpha", size: 5 });
+    const plan = planImportWrites([
+      { kind: "add", row: add },
+      { kind: "update", row: upd, match: a, patch: { size: 5 } },
+      { kind: "unchanged", row: a, match: a },
+      { kind: "refused", row: add, reason: "no" },
+    ]);
+    expect(plan).toEqual({
+      creates: [add],
+      updates: [{ row: a, patch: { size: 5 } }],
+      deletes: [],
+    });
   });
 });
 

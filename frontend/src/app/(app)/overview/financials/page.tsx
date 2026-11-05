@@ -477,6 +477,8 @@ export default function CostsPage() {
             toRow={categoryToRow}
             writable={CATEGORY_WRITABLE}
             matchKey={categoryKey}
+            // The server keeps category names unique ignoring case.
+            sameIdentity={categoryKey}
             toBody={(fields) => ({ ...fields })}
             label={(row) => row.name || "A category"}
             describe={describeCategory}
