@@ -11,9 +11,14 @@
  * admin and coord derives who labelled, so nothing identity-shaped is sent.
  * A refusal is shown as the backend sent it — status and typed body — not
  * reworded.
+ *
+ * `?intervention_id=<id>` prefills the id, so the session-flow page's
+ * "Label this judgment" link lands on a form ready to label that judgment.
+ * Reading the query needs a Suspense boundary (Next 15 `useSearchParams`).
  */
 
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { httpClient } from "@/services/service-factory";
 import { operationsErrorMessage, readJson } from "@/lib/api/operations/base";
@@ -21,7 +26,18 @@ import { operationsErrorMessage, readJson } from "@/lib/api/operations/base";
 type LabelKind = "class" | "false_finish";
 
 export default function OverlordLabelPage() {
-  const [interventionId, setInterventionId] = useState("");
+  return (
+    <Suspense fallback={null}>
+      <OverlordLabelForm />
+    </Suspense>
+  );
+}
+
+function OverlordLabelForm() {
+  const searchParams = useSearchParams();
+  const [interventionId, setInterventionId] = useState(
+    () => searchParams?.get("intervention_id") ?? ""
+  );
   const [labelKind, setLabelKind] = useState<LabelKind>("class");
   const [operatorLabel, setOperatorLabel] = useState("A");
   const [submitting, setSubmitting] = useState(false);
