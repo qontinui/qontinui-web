@@ -432,9 +432,9 @@ export function groupBreakdownSentence(
 export function unnamedUnitsSentence(count: number | null): string | null {
   if (count === 0) return null;
   if (count === null) {
-    return "Coord names units here only when they have no recorded change or wait on a condition; how many of this repository's other units exist is unknown.";
+    return "Coord names units only when they have no recorded change (listed under the repositories) or wait on a condition (listed here); how many of this repository's other units exist is unknown.";
   }
-  return `Coord names units here only when they have no recorded change or wait on a condition, so ${count === 1 ? "the 1 other unit is" : `the ${count} other units are`} not listed here`;
+  return `Coord names units only when they have no recorded change (listed under the repositories) or wait on a condition (listed here), so ${count === 1 ? "the 1 other unit is" : `the ${count} other units are`} not listed here`;
 }
 
 /** Work attributed to an initiative item (or a bucket), as coord counts it. */
@@ -1280,16 +1280,107 @@ export function degradationRawLine(d: DegradationView): string {
     .join(" · ");
 }
 
+/**
+ * Who is acting on a degradation, from coord's `auto_remediation` and
+ * `declared` (`project_state.rs` `DegradationRow`): an agent response is
+ * bound, it waits on an operator, it is caused by a setting, nothing is
+ * bound, or the binding was not served (`unknown` — never read as "none").
+ */
+export type RemediationClass =
+  | "declared"
+  | "bound"
+  | "operator"
+  | "setting"
+  | "none"
+  | "unknown";
+
+export function remediationClass(d: DegradationView): RemediationClass {
+  if (d.declared) return "declared";
+  const rem = d.autoRemediation;
+  if (!rem || rem.bound === null) return "unknown";
+  if (rem.bound) return "bound";
+  if (rem.response?.startsWith("operator:")) return "operator";
+  if (rem.response === "setting") return "setting";
+  return "none";
+}
+
+const REMEDIATION_PHRASE: Readonly<Record<RemediationClass, string>> = {
+  declared: "declared by an operator — not a fault",
+  bound: "an agent response is bound to it",
+  operator: "no automatic response — it waits on an operator",
+  setting: "caused by a setting, not a fault",
+  none: "no automatic response is bound",
+  unknown: "remediation binding unknown",
+};
+
 /** Plain words for a degradation's remediation binding. */
 export function remediationPhrase(d: DegradationView): string {
-  if (d.declared) return "declared by an operator — not a fault";
-  const rem = d.autoRemediation;
-  if (!rem || rem.bound === null) return "remediation binding unknown";
-  if (rem.bound) return "an agent response is bound to it";
-  if (rem.response?.startsWith("operator:"))
-    return "no automatic response — it waits on an operator";
-  if (rem.response === "setting") return "caused by a setting, not a fault";
-  return "no automatic response is bound";
+  return REMEDIATION_PHRASE[remediationClass(d)];
+}
+
+/**
+ * The collapsed row's remediation words: short enough for R2's reason slot,
+ * and the same fact {@link remediationPhrase} states in the detail.
+ */
+const REMEDIATION_SHORT: Readonly<Record<RemediationClass, string>> = {
+  declared: "declared",
+  bound: "agent response bound",
+  operator: "waits on an operator",
+  setting: "caused by a setting",
+  none: "no automatic response",
+  unknown: "remediation unknown",
+};
+
+export function remediationShort(d: DegradationView): string {
+  return REMEDIATION_SHORT[remediationClass(d)];
+}
+
+/** Tally order: who acts, most automatic first; unknown last. */
+const TALLY_ORDER: readonly Exclude<RemediationClass, "declared">[] = [
+  "bound",
+  "operator",
+  "setting",
+  "none",
+  "unknown",
+];
+
+const TALLY_WORDS: Readonly<
+  Record<Exclude<RemediationClass, "declared">, string>
+> = {
+  bound: "with an agent response bound",
+  operator: "waiting on an operator",
+  setting: "caused by a setting",
+  none: "with no automatic response",
+  unknown: "whose remediation coord did not say",
+};
+
+/**
+ * One visible sentence answering "is it being auto-remediated or waiting on
+ * someone?" over the open (non-declared) rows shown, so the answer is on the
+ * page without opening a row (R7: the signal does not collapse). `null` when
+ * no open row is shown. `partial` (a stale block) says the rows shown are not
+ * known to be all of them.
+ */
+export function remediationTallySentence(
+  open: readonly DegradationView[],
+  partial: boolean
+): string | null {
+  const rows = open.filter((d) => !d.declared);
+  if (rows.length === 0) return null;
+  const counts = new Map<Exclude<RemediationClass, "declared">, number>();
+  for (const d of rows) {
+    const c = remediationClass(d);
+    if (c === "declared") continue;
+    counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  const parts = TALLY_ORDER.flatMap((c) => {
+    const n = counts.get(c) ?? 0;
+    return n > 0 ? [`${n} ${TALLY_WORDS[c]}`] : [];
+  });
+  const lead = partial
+    ? `Of the ${rows.length} open shown`
+    : `Of ${rows.length} open`;
+  return `${lead}: ${parts.join(", ")}.`;
 }
 
 /**

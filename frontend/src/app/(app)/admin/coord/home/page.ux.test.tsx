@@ -225,7 +225,12 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       expect(
         within(row).queryByTestId("coord-home.on-track.group.unnamed")
       ).not.toBeInTheDocument();
-      expect(row).toHaveTextContent("Example unit");
+      // The unit is named under the repository list, visible without opening
+      // a row (q7), and not repeated in the row's detail.
+      expect(
+        screen.getByTestId("coord-home.on-track.no-recorded-change")
+      ).toHaveTextContent(/example-repo.*Example unit/);
+      expect(row).not.toHaveTextContent("Example unit");
     });
   });
 
