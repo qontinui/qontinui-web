@@ -233,7 +233,7 @@ jobs:
         if: runner.environment == 'self-hosted'
         uses: ./.github/actions/self-hosted-host-provisioned
         with:
-          tools: git curl jq
+          tools: git curl jq cc
           pg-major: 16
 
       # Read the pinned qontinui-schemas SHA from style-gate.lock. The SHA is
@@ -314,9 +314,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             qontinui-schemas/target
-          key: ${{ runner.os }}-vision-audit-${{ steps.lock.outputs.schemas_sha }}
+          key: ${{ runner.os }}-${{ runner.environment }}-vision-audit-${{ steps.lock.outputs.schemas_sha }}
           restore-keys: |
-            ${{ runner.os }}-vision-audit-
+            ${{ runner.os }}-${{ runner.environment }}-vision-audit-
 
       # Verified build invocation (rust-vision-core crate, [[bin]] name
       # `vision-audit`, path src/bin/vision_audit.rs at the pinned SHA). Run from

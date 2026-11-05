@@ -35,6 +35,8 @@ rules:
       - frontend-ci.yml # ./.github/actions/fleet-nouns-vocab, spawn-contract (x2 each)
       - frontend-coverage-producer.yml # ./.github/actions/fleet-nouns-vocab, spawn-contract
       - e2e-tests.yml # ./.github/workflows/e2e-playwright-stack.yml (x2)
+      - web-guards.yml # ./.github/actions/ensure-pwsh
+      - powershell-parse.yml # ./.github/actions/ensure-pwsh
 
   # github-env flags any write to $GITHUB_ENV. The two sites are the composite
   # actions .github/actions/fleet-nouns-vocab/action.yml and

@@ -398,10 +398,12 @@ jobs:
       # Scope: workflow_dispatch; pull_request -> [main] ONLY. No push lane.
       # The member's body, unchanged (zero-files-found is a failure, the
       # per-extension coverage line, the node_modules|.git exclusion).
-      # pwsh is not on the self-hosted pool's PATH. NOT continue-on-error: a
-      # host that cannot get pwsh reds the job by name, rather than letting the
-      # member below read as skipped.
+      # pwsh is not on the self-hosted pool's PATH. Its outcome is a row in the
+      # aggregate below, so a host that cannot get pwsh fails web-guards by name
+      # inside the verdict table instead of as an unexplained red.
       - name: "powershell-parse: Ensure pwsh"
+        id: ensure-pwsh
+        continue-on-error: true
         if: >-
           ${{ !cancelled() && steps.checkout.outcome == 'success' && runner.environment == 'self-hosted' && (
             github.event_name == 'workflow_dispatch' ||
@@ -473,6 +475,7 @@ jobs:
           OUT_DRIFT_CHECK: ${{ steps.drift-check.outcome }}
           OUT_PRE_COMMIT_HOOK_TESTS: ${{ steps.pre-commit-hook-tests.outcome }}
           OUT_POWERSHELL_PARSE: ${{ steps.powershell-parse.outcome }}
+          OUT_ENSURE_PWSH: ${{ steps.ensure-pwsh.outcome }}
         run: |
           set -uo pipefail
           # member workflow | env var holding its step outcome
@@ -490,6 +493,7 @@ jobs:
             "dev-credentials-drift (drift-check)|OUT_DRIFT_CHECK"
             "pre-commit-hook-tests|OUT_PRE_COMMIT_HOOK_TESTS"
             "powershell-parse|OUT_POWERSHELL_PARSE"
+            "powershell-parse (ensure pwsh)|OUT_ENSURE_PWSH"
           )
           failed=0
           {

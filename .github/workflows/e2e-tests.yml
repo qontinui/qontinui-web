@@ -154,6 +154,11 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/venv"
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          # pip's cache under $RUNNER_TEMP on the self-hosted pool only; hosted
+          # keeps ~/.cache/pip, which the actions/cache step below restores.
+          if [ "$RUNNER_ENVIRONMENT" = self-hosted ]; then
+            echo "PIP_CACHE_DIR=$RUNNER_TEMP/pip-cache" >> "$GITHUB_ENV"
+          fi
 
       # Hosted only: on the self-hosted pool ~/.cache/pip is one directory
       # shared by every runner, and restoring an archive over it races them.
