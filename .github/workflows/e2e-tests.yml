@@ -311,7 +311,7 @@ jobs:
   changed-specs:
     name: Changed E2E spec files
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     # Detection only: a checkout, one extra fetch and a stdlib script.
     timeout-minutes: 5
     outputs:
@@ -398,7 +398,7 @@ jobs:
 
   test-summary:
     name: Test Summary
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     # Job cap — see `backend-tests` above. This job only downloads artifacts
     # and tallies results: 3-9s across the same 7 green runs. 10 min is ~65x
     # the observed max and exists purely so a wedged download cannot inherit
@@ -408,8 +408,17 @@ jobs:
     if: always()
 
     steps:
+      # This job has no checkout, so on a persistent self-hosted runner nothing
+      # else ever cleans its workspace. Clear what an earlier run left there,
+      # and download into runner.temp, which the runner empties after every job.
+      - name: Clean the workspace
+        shell: bash
+        run: find "$GITHUB_WORKSPACE" -mindepth 1 -delete
+
       - name: Download all artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/artifacts
 
       - name: Generate test summary
         run: |

@@ -12183,11 +12183,20 @@ export interface paths {
          *     Only valid for kind ``decision_record``; coord is the authority on that and
          *     its 4xx passes through, as do unknown-document and non-admin refusals.
          *
-         *     Body: ``{reason}``. Only ``reason`` is forwarded. The withdrawer is NOT
-         *     stamped here and never taken from the browser: coord derives it from its own
-         *     authenticated ``OperatorContext``, for the same reason the version-restore
-         *     proxy above declines to stamp ``updated_by``. Whether a reason is required
-         *     (and what counts as blank) is coord's rule, not a second copy of it here.
+         *     Body: ``{reason, expected_version?}``. Only those two are forwarded. The
+         *     withdrawer is NOT stamped here and never taken from the browser: coord
+         *     derives it from its own authenticated ``OperatorContext``, for the same
+         *     reason the version-restore proxy above declines to stamp ``updated_by``.
+         *     Whether a reason is required (and what counts as blank) is coord's rule, not
+         *     a second copy of it here.
+         *
+         *     ``expected_version`` is the ``current_version`` the feed re-read before
+         *     posting. Coord compares it under its row lock and answers ``409
+         *     withdraw_stale`` (passed through) when the record moved in between, so the
+         *     re-read→POST window is closed rather than narrowed — on a coord that
+         *     carries that check. An older coord ignores the unknown key, and the window
+         *     is then only narrowed, as before. Its type is coord's to validate, like
+         *     ``reason``'s.
          */
         post: operations["api_v1_operations_coord_prompt_documents_kind_name_withdraw_post"];
         delete?: never;
