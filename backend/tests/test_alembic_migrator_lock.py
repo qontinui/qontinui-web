@@ -193,7 +193,8 @@ def _concurrent_build_under_a_waiter(engine: Engine, wait: str) -> dict[str, obj
                 )
             ).scalar()
     finally:
-        _terminate_other_backends(engine)
+        with contextlib.suppress(Exception):  # never mask the test's own failure
+            _terminate_other_backends(engine)
         for conn in (waiter, writer, holder):
             with contextlib.suppress(Exception):
                 conn.close()
@@ -256,7 +257,8 @@ def _terminate_other_backends(engine: Engine) -> None:
         admin.execute(
             text(
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = current_database() AND pid <> pg_backend_pid()"
+                "WHERE datname = current_database() AND pid <> pg_backend_pid() "
+                "AND backend_type = 'client backend'"
             )
         )
 
