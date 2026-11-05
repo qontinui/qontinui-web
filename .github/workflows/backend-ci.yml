@@ -537,10 +537,9 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
-      # Poetry, its config, its cache, its virtualenvs and pip's cache live under
-      # $RUNNER_TEMP: on the
-      # self-hosted light lane every runner shares one unix user's HOME, so the
-      # default ~/.local and ~/.cache/pypoetry would be written by concurrent jobs.
+      # Poetry, its config, its cache and its virtualenvs live under
+      # $RUNNER_TEMP, the same block as `lint` (whose light lane shares one HOME);
+      # on this job's db lane it is merely harmless. pip's cache stays put.
       - name: Install Poetry
         run: |
           export POETRY_HOME="$RUNNER_TEMP/poetry"
@@ -1415,8 +1414,8 @@ jobs:
           echo "POETRY_CACHE_DIR=$RUNNER_TEMP/poetry-cache" >> "$GITHUB_ENV"
           echo "POETRY_VIRTUALENVS_PATH=$RUNNER_TEMP/poetry-venvs" >> "$GITHUB_ENV"
           echo "POETRY_CONFIG_DIR=$RUNNER_TEMP/poetry-config" >> "$GITHUB_ENV"
-          # pip's cache moves only on the self-hosted pool: hosted keeps
-          # ~/.cache/pip, which setup-python's `cache: pip` saves and restores.
+          # pip's cache moves only on the self-hosted pool; hosted keeps the
+          # default ~/.cache/pip (this job configures no setup-python cache).
           if [ "$RUNNER_ENVIRONMENT" = self-hosted ]; then
             echo "PIP_CACHE_DIR=$RUNNER_TEMP/pip-cache" >> "$GITHUB_ENV"
           fi
