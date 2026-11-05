@@ -266,6 +266,18 @@ function writeControlsIn(root: Element): Element[] {
   });
 }
 
+/**
+ * One repository group's entry in the no-recorded-change list under the
+ * repository list — visible on first load, with no row opened (q7).
+ */
+function noChangeGroup(text: string): HTMLElement {
+  const group = screen
+    .getAllByTestId("coord-home.on-track.no-recorded-change.group")
+    .find((g) => (g.firstElementChild?.textContent ?? "").includes(text));
+  if (!group) throw new Error(`no no-recorded-change group for ${text}`);
+  return group;
+}
+
 describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
   beforeEach(resetEnvironment);
 
@@ -310,13 +322,10 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
       });
       expect(leakedIdentifiers(), "identifiers in the DOM").toEqual([]);
     });
-    // Behind the first-party repository's disclosure: its own unit is
-    // named; the shared one and the one a cut-short foreign list may hide
-    // are not.
-    const own = expandRow(
-      screen.getByTestId("coord-home.on-track"),
-      FIRST_PARTY_REPO
-    );
+    // Under the first-party repository, with no disclosure opened: its own
+    // unit is named; the shared one and the one a cut-short foreign list may
+    // hide are not.
+    const own = noChangeGroup(FIRST_PARTY_REPO);
     expect(own).toHaveTextContent(FIRST_PARTY_UNIT_TITLE);
     expect(document.body.textContent).not.toContain(SHARED_UNIT_TITLE);
     expect(document.body.textContent).not.toContain(HIDDEN_UNIT_TITLE);
@@ -635,7 +644,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     const machine = rows.find((r) => /runner/.test(r.textContent ?? ""))!;
     expect(machine).toHaveTextContent(/Degradation · runner · degrading · /);
     expect(within(machine).getByTestId("row-reason")).toHaveTextContent(
-      /^Machine A$/
+      /^Machine A · agent response bound$/
     );
     // The drained machine is another letter, on its declared row.
     expect(
@@ -724,21 +733,27 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     // Its detail names it; the foreign group's says "this repository".
     const own = expandRow(region, FIRST_PARTY_REPO);
     expect(own).toHaveTextContent(`Work units that name ${FIRST_PARTY_REPO}.`);
-    expect(own).toHaveTextContent(FIRST_PARTY_UNIT_TITLE);
+    // Its no-recorded-change units are named under the list, visible without
+    // the disclosure (q7); its waiting ones stay in the detail.
+    const ownNoChange = noChangeGroup(FIRST_PARTY_REPO);
+    expect(ownNoChange).toHaveTextContent(FIRST_PARTY_UNIT_TITLE);
     // A shared unit, and one a cut-short foreign list may hide: withheld, and
     // not linked.
-    expect(own).not.toHaveTextContent(SHARED_UNIT_TITLE);
-    expect(own).not.toHaveTextContent(HIDDEN_UNIT_TITLE);
+    for (const el of [own, ownNoChange]) {
+      expect(el).not.toHaveTextContent(SHARED_UNIT_TITLE);
+      expect(el).not.toHaveTextContent(HIDDEN_UNIT_TITLE);
+    }
     expect(own).toHaveTextContent(/Work unit · area unknown · waiting · /);
     expect(within(own).queryByRole("link")).toBeNull();
     // A withheld unit is never handed to a link at all — its URL carries the
     // slug its descriptor withholds — while the unit the scope clears is
     // (plain text today: its page is not presentation-ready yet).
-    const unitNames = (redacted: "true" | "false") => [
-      ...own.querySelectorAll(
-        `[data-testid^="coord-home.on-track.named."] [data-redacted="${redacted}"]`
-      ),
-    ];
+    const unitNames = (redacted: "true" | "false") =>
+      [own, ownNoChange].flatMap((el) => [
+        ...el.querySelectorAll(
+          `[data-testid^="coord-home.on-track.named."] [data-redacted="${redacted}"]`
+        ),
+      ]);
     expect(unitNames("true").length).toBeGreaterThanOrEqual(2);
     for (const name of unitNames("true")) {
       expect(name.closest("a, [data-lens-link]")).toBeNull();
@@ -828,10 +843,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
 
   it("on track: a unit also named by a group of an unknown kind is withheld, though the scope clears the repository that names it", async () => {
     const view = await renderPresenting(unitAlsoInUnknownGroupBody());
-    const own = expandRow(
-      screen.getByTestId("coord-home.on-track"),
-      FIRST_PARTY_REPO
-    );
+    const own = noChangeGroup(FIRST_PARTY_REPO);
     expect(own).toHaveTextContent(/Work unit · area unknown · no recorded/);
     expect(
       own.querySelector(
@@ -1311,5 +1323,31 @@ describe("/admin/coord/home for the operator — the console is unchanged", () =
     expect(
       document.querySelector(`[data-row-key*="${QUESTION_ID}"]`)
     ).not.toBeNull();
+  });
+});
+
+describe("/admin/coord/home?present=1 — remediation on the collapsed view (q4)", () => {
+  it("says who is acting on each open row, and the tally, in words — never coord's response token", async () => {
+    const view = await renderPresenting(fullBody());
+    const region = screen.getByTestId("coord-home.degrading");
+    expect(
+      region.querySelector('[data-console-row][aria-expanded="true"]')
+    ).toBeNull();
+    const tally = screen.getByTestId("coord-home.degrading.remediation");
+    expect(tally).toHaveTextContent(/^Of (the )?\d+ open( shown)?: /);
+    expect(tally).toHaveTextContent(/with an agent response bound/);
+    for (const reason of within(region).getAllByTestId("row-reason")) {
+      expect(reason.textContent ?? "").not.toMatch(/agent:|operator:/);
+    }
+    expect(document.body.textContent ?? "").not.toMatch(/agent:runner_restart/);
+    expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+  });
+
+  it("names the no-recorded-change units under the list with no disclosure opened (q7)", async () => {
+    const view = await renderPresenting(fullBody());
+    expect(
+      screen.getByTestId("coord-home.on-track.no-recorded-change")
+    ).toHaveTextContent(FIRST_PARTY_UNIT_TITLE);
+    expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
   });
 });
