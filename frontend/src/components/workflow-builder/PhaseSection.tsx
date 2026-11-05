@@ -19,7 +19,7 @@ import {
 import type { UnifiedStep, WorkflowPhase } from "@/types/unified-workflow";
 import { useWorkflowBuilder } from "./WorkflowBuilderContext";
 import { PhaseSectionConcrete } from "@qontinui/workflow-ui/components";
-import { useDropZone } from "@qontinui/ui-bridge";
+import { useDropZone } from "@qontinui/ui-bridge/react";
 
 // =============================================================================
 // Props

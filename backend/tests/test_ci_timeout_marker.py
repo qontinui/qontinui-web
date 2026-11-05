@@ -75,12 +75,13 @@ MARKER_WORKFLOWS = [
 TRIPWIRE_STEP_NAME = "Warn if the job is approaching its budget"
 
 # The tripwire is carried by both jobs that run this backend suite: the
-# non-gating producer it was written for (the whole suite, 90-minute budget) and
-# `backend-ci`'s `test` job, the GATING lane, which since the 2026-09-12 shard
-# split runs ONE SHARD's file list on a 45-minute per-shard budget. The budgets
-# deliberately differ now, which is why every assertion below reads each
-# carrier's own `timeout-minutes` rather than a shared constant. Asserted
-# against a glob, exactly like MARKER_WORKFLOWS.
+# non-gating producer it was written for and `backend-ci`'s `test` job, the
+# GATING lane. Both are now six-way shard matrices running the same split -- the
+# gate since 2026-09-12 on a 45-minute per-shard budget, the producer since
+# 2026-10-31 on a 60-minute one (its whole-suite 90 no longer fit). The budgets
+# deliberately differ, which is why every assertion below reads each carrier's
+# own `timeout-minutes` rather than a shared constant. Asserted against a glob,
+# exactly like MARKER_WORKFLOWS.
 TRIPWIRE_WORKFLOWS = [
     "backend-ci.yml",
     "backend-coverage-producer.yml",
@@ -1069,11 +1070,17 @@ def test_tripwire_is_quiet_on_a_fast_job(tmp_path):
 
 
 @requires_bash
-@pytest.mark.parametrize("minutes", [60, 75])
-def test_tripwire_warns_at_and_past_the_soft_budget(tmp_path, minutes):
-    """Boundary included: the soft budget is inclusive (`-ge`)."""
+@pytest.mark.parametrize("past_soft", [0, 15])
+def test_tripwire_warns_at_and_past_the_soft_budget(tmp_path, past_soft):
+    """Boundary included: the soft budget is inclusive (`-ge`).
+
+    Offsets from the carrier's OWN soft budget rather than literal minutes: the
+    producer's budget moved from 60 to 45 with its shard split, and literals
+    left behind would have kept passing while no longer touching the boundary.
+    """
     body, env = _tripwire_body()
     env["PATH"] = "/usr/bin:/bin"
+    minutes = int(env["SOFT_BUDGET_MINUTES"]) + past_soft
     env["JOB_START_EPOCH"] = str(int(time.time()) - minutes * 60)
     out = _exec(body, env, tmp_path)
     assert _tripwire_warn_title("backend-coverage-producer.yml") in out

@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 const getMock = vi.fn();
 const patchMock = vi.fn();
@@ -112,5 +112,83 @@ describe("ClauseManagerDialog category default tier", () => {
     expect(
       screen.getByText(/each rule uses only its own setting/i)
     ).toBeInTheDocument();
+  });
+});
+
+describe("ClauseManagerDialog raw (verbatim-body) clauses", () => {
+  const rawBody =
+    "## clause: finish-to-zero\n\nYour assignment includes its follow-ups.";
+
+  beforeEach(() => {
+    getMock.mockReset();
+    getMock.mockResolvedValue([
+      {
+        clause_id: "finish-to-zero",
+        category: "planning-and-scope",
+        status: "active",
+        tier: null,
+        trigger: "",
+        action: "",
+        bounds: "",
+        escalate_if: "",
+        anti_triggers: [],
+        depends_on: [],
+        links: [],
+        position: 0,
+        source: null,
+        body: rawBody,
+      },
+    ]);
+    patchMock.mockReset();
+  });
+
+  it("marks the row verbatim and summarises it from the body", async () => {
+    renderDialog(doc(null));
+
+    const row = await screen.findByTestId("clause-row-finish-to-zero");
+    expect(row).toHaveTextContent("verbatim");
+    expect(row).toHaveTextContent("Your assignment includes its follow-ups.");
+  });
+
+  it("opens a read-only view instead of the labelled editor", async () => {
+    renderDialog(doc(null));
+
+    await screen.findByTestId("clause-row-finish-to-zero");
+    fireEvent.click(screen.getByRole("button", { name: "View clause" }));
+
+    expect(await screen.findByTestId("clause-raw-body")).toHaveTextContent(
+      "Your assignment includes its follow-ups."
+    );
+    expect(screen.queryByTestId("clause-editor")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("clause-save")).not.toBeInTheDocument();
+    expect(patchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the labelled editor for a clause from a coord that sends no body", async () => {
+    getMock.mockResolvedValue([
+      {
+        clause_id: "labelled-rule",
+        category: "planning-and-scope",
+        status: "active",
+        tier: "ask-first",
+        trigger: "when asked",
+        action: "do the thing",
+        bounds: "",
+        escalate_if: "",
+        anti_triggers: [],
+        depends_on: [],
+        links: [],
+        position: 0,
+        source: null,
+      },
+    ]);
+    renderDialog(doc(null));
+
+    const row = await screen.findByTestId("clause-row-labelled-rule");
+    expect(row).toHaveTextContent("ask-first");
+    expect(row).not.toHaveTextContent("verbatim");
+    fireEvent.click(screen.getByRole("button", { name: "Edit clause" }));
+    expect(await screen.findByTestId("clause-editor")).toBeInTheDocument();
+    expect(screen.queryByTestId("clause-raw-view")).not.toBeInTheDocument();
   });
 });

@@ -37,6 +37,8 @@ export interface FlowTimeToClose {
   median_secs: number | null;
   p90_secs: number | null;
   closed_by: Partial<Record<FlowClosedBy, number>>;
+  /** Went missing across a runner build change: not in `count`. */
+  absent_unproven: number;
   sessions: FlowClosedSession[];
 }
 
@@ -46,9 +48,26 @@ export interface FlowNudge {
   finished: number;
   /** `null` when `nudged == 0`. */
   progress_rate: number | null;
+  /** `finished / (nudged - finish_unproven)`; `null` when that is `0 / 0`. */
   finish_rate: number | null;
+  /** Went missing across a runner build change: not in `finish_rate`. */
+  finish_unproven: number;
   /** Nudges whose following rows all carried `progress_since_nudge = null`. */
   unmeasured_progress: number;
+}
+
+/** The newest `/next-move` judgment recorded for a session. */
+export interface FlowLastIntervention {
+  intervention_id: string;
+  stop_class: string;
+  verb: string;
+  mode: string;
+  /** `null` = the row predates the `executed` flag: unknown, not false. */
+  executed: boolean | null;
+  /** `null` = no outcome observed yet. */
+  outcome: string | null;
+  /** When the judged stop was observed; dates the judgment, not a later edit. */
+  observed_at: string;
 }
 
 /** A session whose verdict and reasons held across consecutive full passes. */
@@ -63,6 +82,11 @@ export interface FlowUnchangedSession {
   consecutive_full_passes: number;
   first_seen_at: string;
   last_seen_at: string;
+  /**
+   * `null` = none recorded, or no Claude session id to join on. Absent = a
+   * coord that predates the join, which says nothing either way.
+   */
+  last_intervention?: FlowLastIntervention | null;
 }
 
 export interface FlowUnknownShare {

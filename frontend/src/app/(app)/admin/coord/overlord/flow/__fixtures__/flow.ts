@@ -44,6 +44,7 @@ export const FULL_FLOW = {
     median_secs: 5400,
     p90_secs: 20000,
     closed_by: { triage: 3, absent: 1 },
+    absent_unproven: 2,
     sessions: [
       {
         key: SESSION_ID,
@@ -58,8 +59,9 @@ export const FULL_FLOW = {
     nudged: 10,
     progressed: 4,
     finished: 2,
+    finish_unproven: 2,
     progress_rate: 0.4,
-    finish_rate: 0.2,
+    finish_rate: 0.25,
     unmeasured_progress: 3,
   },
   unchanged: [
@@ -73,6 +75,15 @@ export const FULL_FLOW = {
       consecutive_full_passes: 3,
       first_seen_at: "2026-10-23T08:00:00Z",
       last_seen_at: "2026-10-23T20:00:00Z",
+      last_intervention: {
+        intervention_id: "0190aaaa-0000-7000-8000-000000000001",
+        stop_class: "A",
+        verb: "nudge",
+        mode: "live",
+        executed: true,
+        outcome: "did_work",
+        observed_at: "2026-10-23T19:00:00Z",
+      },
     },
     {
       key: "terminal:term-9",
@@ -141,6 +152,7 @@ export const NULL_FLOW = {
     median_secs: null,
     p90_secs: null,
     closed_by: {},
+    absent_unproven: 0,
     sessions: [],
   },
   nudge: {
@@ -149,6 +161,7 @@ export const NULL_FLOW = {
     finished: 0,
     progress_rate: null,
     finish_rate: null,
+    finish_unproven: 0,
     unmeasured_progress: 0,
   },
   unchanged: [],

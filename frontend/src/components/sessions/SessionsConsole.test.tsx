@@ -717,3 +717,243 @@ describe("the two transcript stores", () => {
     expect(stores).toHaveTextContent(/7 days/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The Account column, the account facet, and search by name / id / trailer —
+// plan `2026-10-19-session-lookup-by-name-shows-claude-account-in-web` Phase 3
+// ---------------------------------------------------------------------------
+
+const SID = "86e2b721-8270-49fe-bb15-6c8b33b000c8";
+
+function withAgent(
+  base: ConsolidatedSessionRow,
+  id: string,
+  agent: Partial<NonNullable<ConsolidatedSessionRow["agent_session"]>>
+): ConsolidatedSessionRow {
+  return {
+    ...base,
+    id,
+    agent_session: {
+      ...(base.agent_session ?? { id }),
+      device_id: base.device_id ?? null,
+      ...agent,
+    },
+  };
+}
+
+async function accountCellFor(id: string) {
+  return within(await rowFor(id)).getByTestId("sessions-console-row-account");
+}
+
+describe("the Account column — never blank, three UNKNOWNs kept apart", () => {
+  it("renders the stamped account label", async () => {
+    const row = withAgent(LINKED, "acc-1", {
+      account: "qontinui",
+      config_dir: "C:/claude/.claude-qontinui",
+    });
+    mount(envelope([row]));
+    const cell = await accountCellFor("acc-1");
+    expect(cell).toHaveTextContent("qontinui");
+    expect(cell).toHaveAttribute("data-account-state", "known");
+  });
+
+  it("renders `default` with its config dir", async () => {
+    const row = withAgent(LINKED, "acc-2", {
+      account: "default",
+      config_dir: "/home/spinak/.claude",
+    });
+    mount(envelope([row]));
+    expect(await accountCellFor("acc-2")).toHaveTextContent(
+      "default (/home/spinak/.claude)"
+    );
+  });
+
+  it("agent half read, account null → UNKNOWN — not yet reported by <device>", async () => {
+    const row = withAgent(LINKED, "acc-3", { account: null });
+    mount(envelope([row]));
+    const cell = await accountCellFor("acc-3");
+    // dev-a is `alpha` through the console's own machine label.
+    expect(cell).toHaveTextContent("UNKNOWN — account not yet reported by alpha");
+    expect(cell).toHaveAttribute("data-account-state", "unknown");
+  });
+
+  it("row_class null → UNKNOWN — agent half unread (<detail>)", async () => {
+    const row: ConsolidatedSessionRow = {
+      ...LINKED,
+      id: "acc-4",
+      row_class: null,
+      agent_session: null,
+    };
+    mount(
+      envelope([row], {
+        agent_half: { read: "failed", detail: "502: coord is not reachable" },
+      })
+    );
+    expect(await accountCellFor("acc-4")).toHaveTextContent(
+      "UNKNOWN — agent half unread (502: coord is not reachable)"
+    );
+  });
+
+  it("the field ABSENT from coord's row → UNKNOWN — coord does not report the account yet", async () => {
+    // LINKED's agent half carries no `account` key: the deployed coord's shape.
+    mount(envelope([LINKED]));
+    const cell = await accountCellFor(LINKED.id);
+    expect(cell).toHaveTextContent("UNKNOWN — coord does not report the account yet");
+    expect(cell.textContent).not.toMatch(/not yet reported by|none/i);
+  });
+
+  it("a lifecycle_only row is a not-applicable dash, never 'none'", async () => {
+    mount(envelope([LIFECYCLE_ONLY]));
+    const cell = await accountCellFor(LIFECYCLE_ONLY.id);
+    expect(cell).toHaveTextContent("–");
+    expect(cell).toHaveAttribute("data-account-state", "not-applicable");
+    expect(within(cell).getByTestId("sessions-console-unknown")).toHaveAttribute(
+      "title",
+      expect.stringContaining("not applicable")
+    );
+  });
+
+  it("carries the full sentence in a title, so a narrow column hides nothing", async () => {
+    const row = withAgent(LINKED, "acc-5", { account: null });
+    mount(envelope([row]));
+    expect(await accountCellFor("acc-5")).toHaveAttribute(
+      "title",
+      expect.stringContaining("not yet reported by alpha")
+    );
+  });
+
+  it("no row's account cell is ever empty", async () => {
+    mount(envelope([LINKED, LIFECYCLE_ONLY, AGENT_ONLY]));
+    await screen.findAllByTestId("sessions-console-row");
+    const cells = screen.getAllByTestId("sessions-console-row-account");
+    expect(cells).toHaveLength(3);
+    for (const cell of cells) expect(cell.textContent?.trim()).not.toBe("");
+  });
+});
+
+describe("the account facet", () => {
+  it("narrows to one account, with one UNKNOWN chip and no chip for shells", async () => {
+    const q = withAgent(LINKED, "f-1", { account: "qontinui" });
+    const g = withAgent(LINKED, "f-2", { account: "gmail" });
+    mount(envelope([q, g, LINKED, LIFECYCLE_ONLY]));
+    await screen.findAllByTestId("sessions-console-row");
+    const unknownChip = screen.getByTestId("sessions-console-account-unknown");
+    expect(unknownChip).toHaveTextContent("UNKNOWN");
+    expect(unknownChip).toHaveTextContent("1");
+
+    await userEvent.click(screen.getByTestId("sessions-console-account-qontinui"));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(1)
+    );
+    expect(screen.getByTestId("sessions-console-row")).toHaveAttribute(
+      "data-row-key",
+      "f-1"
+    );
+  });
+
+  it("a list emptied by the account facet says a FILTER emptied it", async () => {
+    mount(envelope([withAgent(LINKED, "f-3", { account: "qontinui" }), LIFECYCLE_ONLY]));
+    await screen.findAllByTestId("sessions-console-row");
+    await userEvent.click(screen.getByTestId("sessions-console-account-qontinui"));
+    await userEvent.click(screen.getByTestId("sessions-console-kind-terminal_shell"));
+    expect(await screen.findByTestId("sessions-console-empty")).toHaveTextContent(
+      /No sessions match this filter/i
+    );
+  });
+});
+
+describe("search by name, session id, or a pasted trailer line", () => {
+  it("a pasted `Session-Id:` line goes on the wire as the bare id", async () => {
+    const fetcher = mount(envelope([]));
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    await userEvent.click(screen.getByTestId("sessions-console-query"));
+    await userEvent.paste(`Session-Id: ${SID}`);
+    await waitFor(() =>
+      expect(fetcher.mock.calls.some((c) => c[0]?.q === SID)).toBe(true)
+    );
+    expect(fetcher.mock.calls.some((c) => /Session-Id/i.test(c[0]?.q ?? ""))).toBe(
+      false
+    );
+    expect(screen.getByTestId("sessions-console-query-trailer")).toHaveTextContent(
+      `Searching the Session-Id value ${SID}`
+    );
+  });
+
+  it("a pasted `Session-Name:` line goes on the wire as the name", async () => {
+    const fetcher = mount(envelope([]));
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    await userEvent.click(screen.getByTestId("sessions-console-query"));
+    await userEvent.paste("Session-Name: spaceship-latency");
+    await waitFor(() =>
+      expect(fetcher.mock.calls.some((c) => c[0]?.q === "spaceship-latency")).toBe(
+        true
+      )
+    );
+  });
+
+  it("a plain name goes on the wire unchanged, with no trailer note", async () => {
+    const fetcher = mount(envelope([]));
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    await userEvent.click(screen.getByTestId("sessions-console-query"));
+    await userEvent.paste("spaceship-latency");
+    await waitFor(() =>
+      expect(fetcher.mock.calls.some((c) => c[0]?.q === "spaceship-latency")).toBe(
+        true
+      )
+    );
+    expect(screen.queryByTestId("sessions-console-query-trailer")).toBeNull();
+  });
+
+  it("a name matching several sessions renders EVERY match, each with its own account", async () => {
+    // Names are not unique (a reused `merge-train-steward`, a resumed session
+    // under another account) — collapsing to one would hide the others.
+    const first = withAgent(LINKED, "m-1", {
+      tag_name: "spaceship-latency",
+      account: "qontinui",
+      config_dir: "C:/claude/.claude-qontinui",
+    });
+    const second = withAgent(AGENT_ONLY, "m-2", {
+      id: "m-2",
+      tag_name: "spaceship-latency",
+      account: "default",
+      config_dir: "/home/spinak/.claude",
+    });
+    mount(envelope([first, second]));
+    const rows = await screen.findAllByTestId("sessions-console-row");
+    expect(rows.map((r) => r.getAttribute("data-row-key")).sort()).toEqual([
+      "m-1",
+      "m-2",
+    ]);
+    expect(await accountCellFor("m-1")).toHaveTextContent("qontinui");
+    expect(await accountCellFor("m-2")).toHaveTextContent(
+      "default (/home/spinak/.claude)"
+    );
+  });
+});
+
+describe("matches hidden by a server filter are counted, never silent", () => {
+  it("an emptied tab says how many matches the filter hid", async () => {
+    mount(envelope([], { withheld_by_filter: 2 }), { initialStatus: "stale" });
+    const empty = await screen.findByTestId("sessions-console-empty");
+    expect(empty).toHaveTextContent(/No sessions match this filter/i);
+    expect(
+      screen.getByTestId("sessions-console-empty-withheld")
+    ).toHaveTextContent("2 matches hidden by this filter");
+  });
+
+  it("a non-empty tab says it too, above the list", async () => {
+    mount(envelope([LINKED], { withheld_by_filter: 1 }), {
+      initialStatus: "live",
+    });
+    await screen.findAllByTestId("sessions-console-row");
+    expect(screen.getByTestId("sessions-console-withheld")).toHaveTextContent(
+      "1 match hidden by this filter"
+    );
+  });
+
+  it("says nothing when nothing was hidden, or the backend did not report it", async () => {
+    mount(envelope([LINKED], { withheld_by_filter: 0 }));
+    await screen.findAllByTestId("sessions-console-row");
+    expect(screen.queryByTestId("sessions-console-withheld")).toBeNull();
+  });
+});

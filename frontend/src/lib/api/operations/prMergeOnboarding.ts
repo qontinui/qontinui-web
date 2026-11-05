@@ -410,6 +410,12 @@ export interface RepoBindingResult {
   notified: boolean;
   idempotent: boolean;
   enrollment_spawned: boolean;
+  /**
+   * The onboarding doctor's `tenant_pin` row for the tenant that governs after
+   * the call: whether the committed `.qontinui/config.yml` pins that tenant.
+   * Absent from a coord that predates it, which says nothing about the file.
+   */
+  tenant_pin?: DoctorCheck;
 }
 
 /**
@@ -533,7 +539,8 @@ export interface DoctorCheck {
   label: string;
   status: DoctorStatus;
   detail: string;
-  remediation: string | null;
+  /** Coord omits the key when a row has nothing to suggest. */
+  remediation?: string | null;
 }
 
 export interface DoctorSummary {

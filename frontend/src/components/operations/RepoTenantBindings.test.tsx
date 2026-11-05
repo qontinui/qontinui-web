@@ -88,6 +88,7 @@ import {
   bindTargetOptions,
   coordRefusalOf,
   refusalDetail,
+  pinNeedsAction,
   resultSummary,
   tenantLabelFrom,
   validateBindForm,
@@ -295,6 +296,36 @@ describe("<RepoTenantBindings> read states", () => {
     expect(detail.textContent).toContain("operator:alice");
     expect(detail.textContent).toContain("operator decision 2026-10-17");
     expect(detail.textContent).toContain(BOUND_HERE.decision_ref);
+  });
+
+  it("a repo bound here links to its onboarding doctor; a repo bound away does not", async () => {
+    routeFetch([
+      () =>
+        json({
+          bindings: [BOUND_HERE, BOUND_AWAY],
+          measured_at: "2026-10-24T08:00:00Z",
+        }),
+    ]);
+    render(<RepoTenantBindings />);
+
+    const here = await screen.findByTestId(
+      `repo-binding-row-${BOUND_HERE.repo}`
+    );
+    fireEvent.click(within(here).getByRole("button", { expanded: false }));
+    const link = await screen.findByTestId(
+      `repo-binding-doctor-${BOUND_HERE.repo}`
+    );
+    // The same `?repo=` the connected-orgs rows link to, encoded the same way.
+    expect(link.getAttribute("href")).toBe(
+      `/admin/coord/onboarding-status?repo=${encodeURIComponent(BOUND_HERE.repo)}`
+    );
+
+    const away = screen.getByTestId(`repo-binding-row-${BOUND_AWAY.repo}`);
+    fireEvent.click(within(away).getByRole("button", { expanded: false }));
+    await screen.findByTestId(`repo-binding-detail-${BOUND_AWAY.repo}`);
+    expect(
+      screen.queryByTestId(`repo-binding-doctor-${BOUND_AWAY.repo}`)
+    ).toBeNull();
   });
 
   it("an org with no tenant account is said to be bound to no tenant", async () => {
@@ -589,6 +620,40 @@ describe("unbind action", () => {
       ).textContent
     ).toBe("A reason is required.");
     expect(callsOf("DELETE")).toHaveLength(0);
+  });
+
+  it("a landed unbind whose pin needs action is drawn as a warning", async () => {
+    routeFetch(
+      [
+        () => json({ bindings: [BOUND_HERE], measured_at: "2026-10-24T08:00:00Z" }),
+        () => json({ bindings: [], measured_at: "2026-10-24T08:02:00Z" }),
+      ],
+      () =>
+        json({
+          ...MOVE_RESULT,
+          repo: BOUND_HERE.repo,
+          binding_written: false,
+          tenant_pin: {
+            id: "tenant_pin",
+            label: "pin",
+            status: "warn",
+            detail: "pins tenant A",
+            remediation: "change it to tenant B",
+          },
+        })
+    );
+    render(<RepoTenantBindings />);
+    await openRow(BOUND_HERE.repo);
+    fireEvent.change(
+      screen.getByTestId(`repo-binding-unbind-reason-${BOUND_HERE.repo}`),
+      { target: { value: "returning it to the org" } }
+    );
+    fireEvent.click(
+      screen.getByTestId(`repo-binding-unbind-${BOUND_HERE.repo}`)
+    );
+    const notice = await screen.findByTestId("repo-binding-unbind-outcome");
+    expect(notice.dataset.pinWarns).toBe("true");
+    expect(notice.textContent).toContain("change it to tenant B");
   });
 
   it("sends DELETE {repo, reason} and reports success after the re-read", async () => {
@@ -1018,6 +1083,90 @@ describe("a 2xx write is a success, whatever its body", () => {
     expect(resultSummary("Bound", repeated, "x/y", label)).toBe(
       "Meryts/bauhaus-b2b-shop: already in that state — nothing changed."
     );
+  });
+
+  it("resultSummary says what the committed pin means for the new tenant", () => {
+    const withPin = (
+      status: string,
+      detail: unknown,
+      remediation?: unknown,
+      extra: Record<string, unknown> = {}
+    ) =>
+      ({
+        ...MOVE_RESULT,
+        ...extra,
+        tenant_pin: { id: "tenant_pin", label: "pin", status, detail, remediation },
+      }) as Parameters<typeof resultSummary>[1];
+    const base = resultSummary("Bound", MOVE_RESULT, "x/y");
+
+    // A pin naming another tenant: coord's words, which end in no punctuation,
+    // and what to do about them, kept apart.
+    expect(
+      resultSummary(
+        "Bound",
+        withPin("warn", "pins tenant A", "change it to tenant B"),
+        "x/y"
+      )
+    ).toBe(`${base} Tenant pin: pins tenant A — change it to tenant B`);
+    // Skip is "no pin" or UNKNOWN; only the row's text can tell them apart.
+    expect(resultSummary("Bound", withPin("skip", "UNKNOWN, not no pin."), "x/y")).toBe(
+      `${base} Tenant pin: UNKNOWN, not no pin.`
+    );
+    // The retry that lost the first answer still hears it.
+    expect(
+      resultSummary("Bound", withPin("warn", "pins A.", null, { idempotent: true }), "x/y")
+    ).toBe(
+      "Meryts/bauhaus-b2b-shop: already in that state — nothing changed. Tenant pin: pins A."
+    );
+    // A pass, a row with nothing to say, and a coord that sends none add nothing.
+    expect(resultSummary("Bound", withPin("pass", "pins B."), "x/y")).toBe(base);
+    expect(resultSummary("Bound", withPin("warn", 7), "x/y")).toBe(base);
+    expect(
+      resultSummary(
+        "Bound",
+        { ...MOVE_RESULT, tenant_pin: "junk" } as never,
+        "x/y"
+      )
+    ).toBe(base);
+
+    // Only a row asking for action is drawn as a warning.
+    expect(pinNeedsAction(withPin("warn", "pins A"))).toBe(true);
+    expect(pinNeedsAction(withPin("pass", "pins B"))).toBe(false);
+    expect(pinNeedsAction(withPin("skip", "UNKNOWN"))).toBe(false);
+    expect(pinNeedsAction(MOVE_RESULT)).toBe(false);
+    expect(pinNeedsAction(null)).toBe(false);
+    expect(pinNeedsAction({ ...MOVE_RESULT, tenant_pin: "junk" } as never)).toBe(
+      false
+    );
+  });
+
+  it("a landed bind whose pin needs action is drawn as a warning, still a success", async () => {
+    routeFetch(
+      [
+        () => json({ bindings: [], measured_at: "2026-10-24T08:00:00Z" }),
+        () =>
+          json({ bindings: [BOUND_AWAY], measured_at: "2026-10-24T08:01:00Z" }),
+      ],
+      () =>
+        json({
+          ...MOVE_RESULT,
+          tenant_pin: {
+            id: "tenant_pin",
+            label: "pin",
+            status: "warn",
+            detail: "pins tenant A",
+            remediation: "change it to tenant B",
+          },
+        })
+    );
+    render(<RepoTenantBindings />);
+    await screen.findByTestId("repo-bindings-bound-here-empty");
+    fillValidBind();
+    fireEvent.click(screen.getByTestId("repo-binding-bind-submit"));
+    const outcome = await screen.findByTestId("repo-binding-bind-outcome");
+    expect(outcome.dataset.outcome).toBe("ok");
+    expect(outcome.dataset.pinWarns).toBe("true");
+    expect(outcome.textContent).toContain("change it to tenant B");
   });
 
   it("an unparseable 2xx bind body lands in the success state and re-reads", async () => {

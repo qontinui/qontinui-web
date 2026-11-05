@@ -166,12 +166,17 @@ export function resolveEndpoint(
  * then `NEXT_PUBLIC_API_URL` — the same precedence as the `next.config.mjs`
  * `/api/:path*` rewrite. Throws {@link EndpointUnresolvedError} when neither
  * is set outside development.
+ *
+ * A blank or `ws(s)://` value counts as unset, as it does in
+ * `config/backend-rewrite.mjs`, so given the same environment the rewrite and
+ * these routes pick the same backend. Callers `fetch` the answer.
  */
 export function resolveServerBackendUrl(): string {
-  return resolveEndpoint(
-    "backend",
-    process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL
-  );
+  const usable = [
+    process.env.BACKEND_URL,
+    process.env.NEXT_PUBLIC_API_URL,
+  ].find((v) => v?.trim() && !/^wss?:\/\//i.test(v.trim()));
+  return resolveEndpoint("backend", usable);
 }
 
 /** Outcome of {@link tryResolveEndpoint}. */

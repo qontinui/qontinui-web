@@ -68,7 +68,7 @@ vi.mock("@/hooks/usePageSpecs", () => ({ usePageSpecs: () => {} }));
 vi.mock("@/lib/ui-bridge/use-discovered-specs", () => ({
   useDiscoveredSpec: () => null,
 }));
-vi.mock("@qontinui/ui-bridge", () => ({ useDropZone: () => {} }));
+vi.mock("@qontinui/ui-bridge/react", () => ({ useDropZone: () => {} }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/components/execute/WorkflowLibraryPanel", () => ({
   WorkflowLibraryPanel: ({

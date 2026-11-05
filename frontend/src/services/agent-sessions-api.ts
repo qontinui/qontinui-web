@@ -20,12 +20,55 @@ import type { SessionToolActivity } from "@/components/sessions/types";
 /** Base URL for the admin agent-sessions surface. */
 export const AGENT_SESSIONS_API = `${ApiConfig.API_BASE_URL}/api/v1/admin/agent-sessions`;
 
+/** The web backend's proxy for coord's `GET /coord/sessions/census`. */
+export const SESSION_CENSUS_API = `${ApiConfig.API_BASE_URL}/api/v1/admin/sessions/census`;
+
 // ---------------------------------------------------------------------------
 // Wire shapes — mirror coord PR #894 exactly.
 // ---------------------------------------------------------------------------
 
 /** Derived session status (`status` list filter vocabulary). */
 export type AgentSessionStatus = "live" | "stale" | "closed";
+
+/**
+ * The durable account stamp on `coord.agent_sessions` — which Claude account
+ * (config dir) a session ran on, and the names it was known by. Plan
+ * `2026-10-19-session-lookup-by-name-shows-claude-account-in-web` Phases 1-2:
+ * once the coord stamp lands, a runner reporter posts these for every session
+ * id its box can still resolve (live or ended), and coord serves them on every
+ * `GET /coord/agent-sessions` list row and every `:id` resolver card. Until
+ * then the deployed coord omits the keys entirely — the ABSENT arm below.
+ *
+ * Every field is OPTIONAL **and** nullable, and the two say different things —
+ * a consumer must NOT collapse them:
+ *
+ * | wire | means |
+ * |---|---|
+ * | key ABSENT | coord does not serve the stamp at all (a build predating Phase 1, or its missing-column fallback). UNKNOWN, for a reason about COORD. |
+ * | `null` | coord serves the stamp and no runner has reported this session yet. UNKNOWN, for a reason about the REPORTING DEVICE. |
+ *
+ * `components/sessions/sessionAccount.ts` is the one place that reading is
+ * encoded.
+ */
+export interface SessionAccountStamp {
+  /**
+   * The census account label: the config-dir basename minus `.claude-`, and
+   * `default` for the bare `~/.claude` home. NOT a roster id — the roster
+   * shortcut (`accounts.json`) is not coord data and is never shown.
+   */
+  account?: string | null;
+  /** The account's config dir on the reporting device, verbatim. */
+  config_dir?: string | null;
+  /** RFC 3339. When the account was observed — the newest turn's time for a
+   *  session migrated between accounts. */
+  account_observed_at?: string | null;
+  /** The Claude Code registry name (`<config_dir>/sessions/<pid>.json`),
+   *  reported only from a live row whose name is not derived. */
+  registry_name?: string | null;
+  /** The fleet tag name (`~/.qontinui/session-names/<id>`) — the source of a
+   *  commit's `Session-Name:` trailer. Can differ from `registry_name`. */
+  tag_name?: string | null;
+}
 
 /**
  * One row from `GET /api/v1/admin/agent-sessions`. The identity-registry
@@ -45,7 +88,8 @@ export type AgentSessionStatus = "live" | "stale" | "closed";
  * them here is honest only because every field is optional AND nullable and
  * every consumer treats absent, null and unknown identically.
  */
-export interface AgentSessionRow extends SessionToolActivity {
+export interface AgentSessionRow
+  extends SessionToolActivity, SessionAccountStamp {
   id: string;
   user_id: string | null;
   device_id: string | null;
@@ -124,9 +168,10 @@ export interface SessionWorkingOn {
 
 /**
  * Full identity card from the resolver. `derived_name` is never null here;
- * `machine` / `working_on.session` may be.
+ * `machine` / `working_on.session` may be. The account stamp fields are
+ * {@link SessionAccountStamp}'s — absent and `null` mean different things.
  */
-export interface SessionCard {
+export interface SessionCard extends SessionAccountStamp {
   id: string;
   name: string | null;
   label: string | null;
@@ -169,9 +214,12 @@ export class AgentSessionsApiError extends Error {
 async function parseError(res: Response): Promise<AgentSessionsApiError> {
   let message = `Request failed (${res.status})`;
   try {
-    const body = (await res.json()) as { detail?: unknown };
+    // A refusal_error body carries its sentence under `message`, not `detail`.
+    const body = (await res.json()) as { detail?: unknown; message?: unknown };
     if (typeof body.detail === "string" && body.detail) {
       message = body.detail;
+    } else if (typeof body.message === "string" && body.message) {
+      message = body.message;
     }
   } catch {
     // Non-JSON body — keep the status-based default message.
@@ -226,4 +274,91 @@ export function resolveAgentSession(
   key: string
 ): Promise<ResolveSessionResponse> {
   return request<ResolveSessionResponse>(`/${encodeURIComponent(key)}`);
+}
+
+// ---------------------------------------------------------------------------
+// The session census — is the process running RIGHT NOW?
+// ---------------------------------------------------------------------------
+
+/** coord's census liveness word. */
+export type CensusLiveness = "alive" | "dead" | "unknown";
+
+/**
+ * One row of coord's census read (`session_census.rs` `CensusRow`). Only the
+ * fields the detail card reads are declared; the rest pass through untyped.
+ */
+export interface SessionCensusRow {
+  session_id: string;
+  /** coord ids that name the same session — a census row is asked for by
+   *  either the Claude Code session uuid or a `coord.sessions` id. */
+  aliases?: string[];
+  device_id?: string | null;
+  hostname?: string | null;
+  account?: string | null;
+  liveness: CensusLiveness | string;
+  /** Why `liveness` is `unknown` (or `dead`) — coord's own words. */
+  liveness_reason?: string | null;
+  last_acted_at?: string | null;
+  observed_at?: string | null;
+  census_age_secs?: number | null;
+}
+
+/** coord answered the census read. */
+export interface SessionCensusServed {
+  served: true;
+  /** `false` ⇒ the census tables are unreadable: every row is unknown and an
+   *  empty list is UNKNOWN, not "no sessions". */
+  census_present: boolean;
+  sessions: SessionCensusRow[];
+  count: number;
+  /** More rows matched than `limit` — a miss proves nothing. */
+  truncated?: boolean;
+}
+
+/**
+ * coord answered 404 — the deployed build does not serve the census route
+ * (qontinui-coord#2738 is not deployed). There is deliberately NO `sessions`
+ * key: an empty census would read as "not live".
+ */
+export interface SessionCensusNotServed {
+  served: false;
+  unknown_reason: string;
+  detail?: string;
+}
+
+export type SessionCensusResponse =
+  | SessionCensusServed
+  | SessionCensusNotServed;
+
+export interface SessionCensusParams {
+  session_id?: string;
+  session_name?: string;
+  pr?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Read coord's session census through the web proxy. A coord that does not
+ * serve the route resolves to {@link SessionCensusNotServed} (the proxy turns
+ * coord's 404 into that envelope); every other failure throws
+ * {@link AgentSessionsApiError}, which is a read that did not land.
+ */
+export async function getSessionCensus(
+  params: SessionCensusParams = {}
+): Promise<SessionCensusResponse> {
+  const search = new URLSearchParams();
+  if (params.session_id) search.set("session_id", params.session_id);
+  if (params.session_name) search.set("session_name", params.session_name);
+  if (params.pr) search.set("pr", params.pr);
+  if (params.limit != null) search.set("limit", String(params.limit));
+  const qs = search.toString();
+  const res = await httpClient.fetch(
+    qs ? `${SESSION_CENSUS_API}?${qs}` : SESSION_CENSUS_API,
+    { cache: "no-store", signal: params.signal }
+  );
+  if (!res.ok) {
+    throw await parseError(res);
+  }
+  return (await res.json()) as SessionCensusResponse;
 }

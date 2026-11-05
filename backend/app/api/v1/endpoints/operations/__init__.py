@@ -421,24 +421,33 @@ def _effective_tenant_roles(
     return identity.roles
 
 
+def _selected_member_tenant_id(
+    identity: CoordIdentity, active_tenant: str | None
+) -> UUID | None:
+    """The tenant ``active_tenant`` names, when the operator is a member of it
+    (matched against ``identity.tenants`` by id, or slug defensively)."""
+    selection = (active_tenant or "").strip()
+    if selection:
+        for t in identity.tenants:
+            if str(t.tenant_id) == selection or t.slug == selection:
+                return t.tenant_id
+    return None
+
+
 def _effective_tenant_id(
     identity: CoordIdentity, active_tenant: str | None
 ) -> UUID | None:
     """The operator's EFFECTIVE tenant id: the active-switcher selection when
-    the operator is a member of it (matched against ``identity.tenants`` by
-    id, or slug defensively), else the home tenant.
+    the operator is a member of it, else the home tenant.
 
     The WS bridges use this: a browser ``WebSocket`` cannot send the
     ``X-Qontinui-Active-Tenant`` header, so the selection rides a query
     param and is membership-validated here — mirroring coord's
     ``auth::apply_active_tenant_override`` (non-member selection degrades
     to home, never widens)."""
-    selection = (active_tenant or "").strip()
-    if selection:
-        for t in identity.tenants:
-            if str(t.tenant_id) == selection or t.slug == selection:
-                return t.tenant_id
-    return identity.home_tenant_id
+    return _selected_member_tenant_id(identity, active_tenant) or (
+        identity.home_tenant_id
+    )
 
 
 async def require_coord_tenant_admin_target(
@@ -1735,8 +1744,11 @@ async def post_github_clone_credential(
     repo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.
 
     Passes coord's status + JSON body through verbatim (like the onboarding
-    claim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when
-    the repo's owner isn't a GitHub account connected to the caller's workspace.
+    claim proxy) so the runner sees a clean ``403`` when the caller's tenant does
+    not govern the repo: ``repo_bound_to_another_tenant`` when it owns the repo's
+    org but a per-repo binding hands the repo to another tenant, otherwise
+    ``repo_owner_not_connected``. A failed governing read is
+    ``500 governing_tenant_unknown``.
     """
     url = f"{settings.COORD_URL}/coord/onboarding/installations/clone-credential"
     headers = _tenant_headers(tenant_id)
@@ -1859,7 +1871,9 @@ class RepoNameCheckResponse(BaseModel):
     """Success body for ``POST /operations/github/check-name`` (forwarded
     verbatim from coord's ``GET /coord/repos/availability``)."""
 
-    status: Literal["available", "taken", "invalid", "owner_unbound"]
+    status: Literal[
+        "available", "taken", "invalid", "owner_unbound", "repo_bound_to_another_tenant"
+    ]
     reason: str | None = None
     normalized_name: str
 
@@ -1915,7 +1929,10 @@ async def post_github_check_name(
 
     Proxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards
     the JSON verbatim: ``{status: "available"|"taken"|"invalid"|
-    "owner_unbound", reason?, normalized_name}``. POST (despite the read
+    "owner_unbound"|"repo_bound_to_another_tenant", reason?, normalized_name}``.
+    ``repo_bound_to_another_tenant`` answers the tenant that owns the org when a
+    per-repo binding hands this name to another tenant. A failed governing read
+    is ``500 governing_tenant_unknown``. POST (despite the read
     semantics) so the runner's provisioning flow talks one verb to this
     surface; the upstream coord call is the GET.
     """
@@ -1937,7 +1954,8 @@ async def post_github_create_repo(
     Proxies coord ``POST /coord/repos``. Success is coord's ``201
     {full_name, clone_url, html_url, default_branch}``; coord's error
     statuses + bodies pass through VERBATIM — ``409 name_taken``,
-    ``403 owner_unbound``, ``409 user_authorization_required`` (whose body
+    ``403 owner_unbound``, ``403 repo_bound_to_another_tenant``,
+    ``500 governing_tenant_unknown``, ``409 user_authorization_required`` (whose body
     carries the ``authorize_url`` the runner must surface), and
     ``503 app_unconfigured``.
 
@@ -1968,8 +1986,9 @@ async def post_github_push_credential(
 
     Proxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` →
     ``{token, expires_at}``. The write-scoped sibling of the contents:read
-    clone-credential proxy above; coord enforces that the repo's owner is
-    bound to the caller's tenant.
+    clone-credential proxy above; coord enforces that the caller's tenant
+    governs the repo: a per-repo binding, else the owner's binding. A failed
+    governing read is ``500 governing_tenant_unknown``.
     """
     return await _proxy_coord_verbatim(
         "POST",
@@ -9535,9 +9554,20 @@ _AGENT_SESSIONS_JOIN_LIMIT = 500
 #: `label` / `derived_name` / `search_text`). The two are therefore not the
 #: same search, and the difference is disclosed rather than smoothed over: a
 #: `q` that matches an agent session's activity text will not match its
-#: lifecycle twin's `intent.purpose` unless the words happen to coincide.
+#: lifecycle twin's `intent.purpose` unless the words happen to coincide —
+#: which is why :func:`list_coord_sessions` ALSO keeps every lifecycle row
+#: whose bridge names an agent row coord's search returned.
+#:
+#: ``claude_code_session_id`` is here so a pasted commit ``Session-Id:``
+#: trailer (the Claude Code session uuid, which the console strips to the bare
+#: id client-side) finds the lifecycle half directly — plan
+#: `2026-10-19-session-lookup-by-name-shows-claude-account-in-web` Phase 3.
+#: Without it the uuid matches only ``coord.sessions.id``, which is a
+#: DIFFERENT id space, so the lifecycle twin of the session the operator named
+#: would be filtered out of its own search.
 _SESSION_QUERY_FIELDS = (
     "id",
+    "claude_code_session_id",
     "repo",
     "branch",
     "session_kind",
@@ -9601,8 +9631,12 @@ def _bridge_owners(lifecycle: list[dict[str, Any]]) -> dict[str, str]:
 def _consolidate_sessions(
     lifecycle: list[dict[str, Any]],
     agents: list[dict[str, Any]] | None,
-) -> list[dict[str, Any]]:
+    *,
+    filtered_out_bridges: frozenset[str] = frozenset(),
+) -> tuple[list[dict[str, Any]], int]:
     """Join the lifecycle half to the agent half and emit D1's row classes.
+
+    Returns ``(rows, withheld_by_filter)``.
 
     ``agents is None`` means the agent read did NOT land. Every row then
     carries ``row_class: null`` — UNKNOWN — including the rows whose bridge
@@ -9610,9 +9644,26 @@ def _consolidate_sessions(
     payload there is also no ``agent_only`` half, so a list that silently
     dropped those rows while confidently classifying the rest would be
     describing a fleet it did not read. One failed read, one honest answer.
+
+    ``filtered_out_bridges`` are the bridge values of lifecycle rows coord DID
+    serve but the presentation filters (``device`` / ``status``) removed. An
+    agent row bridged by one of them is the agent half of a session the
+    caller's filter excluded, so it is dropped with its lifecycle twin rather
+    than emitted as ``agent_only`` — which would assert "no ``coord.sessions``
+    row bridges this", the opposite of what coord served.
+
+    Dropped, but never SILENTLY: such a row is a session coord's own (agent
+    half) filter matched while its lifecycle half did not — the two halves
+    disagree on status or device — so it is counted in ``withheld_by_filter``
+    and the console says "N matches hidden by this filter" rather than
+    letting the session vanish from every narrowed tab with nothing to show
+    for it.
     """
     if agents is None:
-        return [{**row, "row_class": None, "agent_session": None} for row in lifecycle]
+        return (
+            [{**row, "row_class": None, "agent_session": None} for row in lifecycle],
+            0,
+        )
 
     agents_by_id: dict[str, dict[str, Any]] = {}
     for agent in agents:
@@ -9625,6 +9676,7 @@ def _consolidate_sessions(
     owners = _bridge_owners(lifecycle)
     consumed: set[str] = set()
     out: list[dict[str, Any]] = []
+    withheld = 0
 
     for row in lifecycle:
         bridge = row.get("claude_code_session_id")
@@ -9661,6 +9713,12 @@ def _consolidate_sessions(
             # (the owner was filtered out of this response). Emitting it as
             # `agent_only` would assert an absence we did not observe.
             continue
+        if str(agent_id) in filtered_out_bridges:
+            # Its lifecycle twin was served and then removed by the caller's
+            # `device` / `status` filter. Same reasoning — not `agent_only` —
+            # but COUNTED, because coord's agent-side filter did match it.
+            withheld += 1
+            continue
         out.append(
             {
                 # The lifecycle keys — `state`, `session_kind`, `intent`,
@@ -9676,7 +9734,7 @@ def _consolidate_sessions(
             }
         )
 
-    return out
+    return out, withheld
 
 
 @router.get("/sessions")
@@ -9718,7 +9776,11 @@ async def list_coord_sessions(
         description="Free-text filter. `shape=consolidated` only. The agent "
         "half is searched coord-side (full-text over label / derived_name / "
         "activity); the lifecycle half is matched here over the fields coord's "
-        "`/sessions` route exposes, which carries no search parameter.",
+        "`/sessions` route exposes (which carries no search parameter), "
+        "including `claude_code_session_id` so a pasted `Session-Id:` uuid "
+        "matches it. A lifecycle row whose bridge names an agent row coord's "
+        "search returned is kept too, so matching either half finds the "
+        "session.",
     ),
     status: Literal["live", "stale", "closed"] | None = Query(
         default=None,
@@ -9747,7 +9809,7 @@ async def list_coord_sessions(
 
     Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
 
-    With ``shape=consolidated`` the envelope gains three fields and every
+    With ``shape=consolidated`` the envelope gains four fields and every
     row gains two (plan `2026-08-26-sessions-console-consolidation` D1)::
 
         { "count": <int>, "scope": "all", "shape": "consolidated",
@@ -9756,7 +9818,14 @@ async def list_coord_sessions(
                           "agent_session": {...}|null }, ... ],
           "row_class_counts": {"linked": n, "lifecycle_only": n,
                                "agent_only": n, "unknown": n},
+          "withheld_by_filter": n,
           "agent_half": {"read": "ok"} | {"read": "failed", "detail": "..."} }
+
+    ``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter
+    hid although their agent half matched it — the two halves disagree (e.g.
+    lifecycle ``active``, agent ``stale``). They are not rows of any class, so
+    they sit beside ``row_class_counts`` rather than in it (its values still
+    sum to ``count``).
 
     ``row_class: null`` is UNKNOWN and is load-bearing — see the block
     comment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.
@@ -9857,6 +9926,11 @@ async def list_coord_sessions(
         )
 
     # ---- presentation filters (NOT the security boundary — trap 7) ------
+    served_bridges = {
+        str(row["claude_code_session_id"])
+        for row in lifecycle
+        if row.get("claude_code_session_id")
+    }
     if device is not None:
         lifecycle = [
             row for row in lifecycle if str(row.get("device_id") or "") == str(device)
@@ -9867,11 +9941,33 @@ async def list_coord_sessions(
     if q:
         needle = q.strip().lower()
         if needle:
+            # Matching EITHER half finds the session. coord searched the agent
+            # half (its names, and once the session-identity stamp lands, the
+            # account-reporter's registry/tag names and the session uuid), and
+            # those words are not on the lifecycle row — so a lifecycle row is
+            # kept when its bridge names an agent row coord's search returned.
+            # Dropping it instead would leave that agent row with no owner and
+            # emit it as `agent_only`: a fabricated "no coord.sessions row".
+            matched_agent_ids = {
+                str(agent["id"]) for agent in agents or [] if agent.get("id")
+            }
             lifecycle = [
-                row for row in lifecycle if _session_matches_query(row, needle)
+                row
+                for row in lifecycle
+                if _session_matches_query(row, needle)
+                or str(row.get("claude_code_session_id") or "") in matched_agent_ids
             ]
+    kept_bridges = {
+        str(row["claude_code_session_id"])
+        for row in lifecycle
+        if row.get("claude_code_session_id")
+    }
 
-    rows = _consolidate_sessions(lifecycle, agents)
+    rows, withheld_by_filter = _consolidate_sessions(
+        lifecycle,
+        agents,
+        filtered_out_bridges=frozenset(served_bridges - kept_bridges),
+    )
     counts = {"linked": 0, "lifecycle_only": 0, "agent_only": 0, "unknown": 0}
     for row in rows:
         counts[row.get("row_class") or "unknown"] += 1
@@ -9881,6 +9977,7 @@ async def list_coord_sessions(
         "shape": _SESSIONS_SHAPE_CONSOLIDATED,
         "sessions": rows,
         "row_class_counts": counts,
+        "withheld_by_filter": withheld_by_filter,
         "agent_half": agent_half,
     }
 
@@ -12651,16 +12748,28 @@ async def withdraw_prompt_document(
     Only valid for kind ``decision_record``; coord is the authority on that and
     its 4xx passes through, as do unknown-document and non-admin refusals.
 
-    Body: ``{reason}``. Only ``reason`` is forwarded. The withdrawer is NOT
-    stamped here and never taken from the browser: coord derives it from its own
-    authenticated ``OperatorContext``, for the same reason the version-restore
-    proxy above declines to stamp ``updated_by``. Whether a reason is required
-    (and what counts as blank) is coord's rule, not a second copy of it here.
+    Body: ``{reason, expected_version?}``. Only those two are forwarded. The
+    withdrawer is NOT stamped here and never taken from the browser: coord
+    derives it from its own authenticated ``OperatorContext``, for the same
+    reason the version-restore proxy above declines to stamp ``updated_by``.
+    Whether a reason is required (and what counts as blank) is coord's rule, not
+    a second copy of it here.
+
+    ``expected_version`` is the ``current_version`` the feed re-read before
+    posting. Coord compares it under its row lock and answers ``409
+    withdraw_stale`` (passed through) when the record moved in between, so the
+    re-read→POST window is closed rather than narrowed — on a coord that
+    carries that check. An older coord ignores the unknown key, and the window
+    is then only narrowed, as before. Its type is coord's to validate, like
+    ``reason``'s.
     """
     payload: dict[str, Any] = {}
     reason = (body or {}).get("reason")
     if reason is not None:
         payload["reason"] = reason
+    expected_version = (body or {}).get("expected_version")
+    if expected_version is not None:
+        payload["expected_version"] = expected_version
     # Re-encoded for the same reason as the restore proxy: FastAPI hands the
     # path segments back URL-decoded.
     return await _proxy_coord_post(
@@ -14586,6 +14695,125 @@ async def get_coord_verification_metrics(
                 glossary_terms=[GlossaryTerm.coord],
             ) from exc
         raise
+
+
+# ---------------------------------------------------------------------------
+# Operator verdict labels — two doors behind the drill-down's one-click
+# "Did this hold up? Yes · No · Can't tell":
+#
+#   `GET  /operations/coord/verification/label-sample`
+#        → coord `GET  /coord/verification/label-sample`
+#   `POST /operations/coord/verification/labels`
+#        → coord `POST /coord/verification/labels`
+#
+# Plan
+# `2026-10-11-reverify-verdicts-are-source-bound-tree-checked-and-judge-agreement-is-measured`,
+# Phase 4 (web half). What coord does behind both doors is the label-door
+# contract of that plan's Phases 3–4, stated here as the contract this proxy is
+# written against — not as a description of a deployed coord:
+#
+# - the SAMPLE door answers a fixed, server-chosen weekly sample of up to three
+#   verdicts of both polarities, each with any operator label it already
+#   carries, and answers an unreadable store with `503 label_sample_unreadable`
+#   rather than an empty list;
+# - the LABEL door derives `labelled_by` and the tenant from the authenticated
+#   identity, accepts an `operator` label only from an operator principal
+#   (`403 operator_principal_required`), copies the verifier's verdict from the
+#   referenced row, and answers `201` with the row, `409 duplicate_label`
+#   (naming the existing row's `id`), `404 verification_not_found` or `422`.
+#
+# What this proxy itself guarantees:
+#
+# - **The operator's own principal is what labels.** The operator's Cognito
+#   bearer is forwarded (`_tenant_headers`), exactly as the metrics proxy
+#   does. Nothing in either request names a tenant or a labeller.
+# - **The label body is pinned to the operator source.** `label_source` must
+#   be `"operator"` and the model forbids every other field, so this door
+#   cannot write a `seeded` or `consequence` case: only `{label_source,
+#   verification_id, truth}` reaches coord.
+# - **coord's answer passes through with its status** (`_proxy_coord_verbatim`)
+#   — including a `404` from a coord that predates a door, which the page
+#   renders as "unavailable", never as "nothing to label". The one rewrite is
+#   the metrics proxy's: a coord `401` (coord refused the operator's
+#   credential) is re-raised as a named `502` rather than a `401` that would
+#   send the frontend into its session-refresh branch.
+# ---------------------------------------------------------------------------
+
+_COORD_VERIFICATION_LABELS_PATH = "/coord/verification/labels"
+_COORD_VERIFICATION_LABEL_SAMPLE_PATH = "/coord/verification/label-sample"
+
+
+def _reraise_coord_credential_refusal(resp: JSONResponse, path: str) -> None:
+    """A coord ``401`` on a label door becomes the named ``502`` (see above)."""
+    if resp.status_code != 401:
+        return
+    raise refusal_error(
+        502,
+        RefusalCode.credential_rejected,
+        NextActionKind.report_defect,
+        (
+            f"coord refused the operator's credential on {path} (HTTP 401): "
+            f"{bytes(resp.body).decode(errors='replace')}"
+        ),
+        discriminator="coord_verification_label_credential_refused",
+        glossary_terms=[GlossaryTerm.coord],
+    )
+
+
+@router.get("/coord/verification/label-sample")
+async def get_coord_verification_label_sample(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Return this week's verdicts for the operator to label.
+
+    coord's body is forwarded verbatim with its status: ``{iso_week,
+    population_cutoff, verdicts: [...]}``, or its typed refusal.
+    """
+    resp = await _proxy_coord_verbatim(
+        "GET", _COORD_VERIFICATION_LABEL_SAMPLE_PATH, tenant_id=tenant_id
+    )
+    _reraise_coord_credential_refusal(resp, _COORD_VERIFICATION_LABEL_SAMPLE_PATH)
+    return resp
+
+
+class OperatorVerificationLabelRequest(BaseModel):
+    """Body for ``POST /operations/coord/verification/labels``.
+
+    ``truth`` is the operator's answer to "Did this hold up?": ``holds``
+    (Yes), ``fails`` (No) or ``cannot_tell`` (Can't tell). ``verification_id``
+    names the verdict row (``coord.work_unit_verifications.id``) being judged.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    label_source: Literal["operator"]
+    verification_id: UUID
+    truth: Literal["holds", "fails", "cannot_tell"]
+
+
+@router.post("/coord/verification/labels", status_code=201)
+async def post_coord_verification_label(
+    body: OperatorVerificationLabelRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> JSONResponse:
+    """Record the operator's label on one verification verdict.
+
+    Forwards ``{label_source: "operator", verification_id, truth}`` with the
+    operator's bearer; coord's status and body come back verbatim (see the
+    section comment), except a coord ``401``.
+    """
+    resp = await _proxy_coord_verbatim(
+        "POST",
+        _COORD_VERIFICATION_LABELS_PATH,
+        tenant_id=tenant_id,
+        json_body={
+            "label_source": body.label_source,
+            "verification_id": str(body.verification_id),
+            "truth": body.truth,
+        },
+    )
+    _reraise_coord_credential_refusal(resp, _COORD_VERIFICATION_LABELS_PATH)
+    return resp
 
 
 @router.put("/coord/policies/system/{system_rule_id}/override")

@@ -26,7 +26,6 @@ import {
   PROJECT_STATE_KEPT_SOURCE,
   PROJECT_STATE_SOURCE,
   REPOSITORY_DESCRIPTOR,
-  RowKeyAliases,
   TENANT_DESCRIPTOR,
   UNLABELLED_SOURCE,
   UNNAMED_DECISION_KIND,
@@ -65,7 +64,9 @@ function item(over: Partial<NeedsMeItem> = {}): NeedsMeItem {
     fork: "Ship it?",
     options: [],
     recommendation: null,
+    recommendationKnown: true,
     ifOverturned: null,
+    ifOverturnedKnown: true,
     shape: null,
     answerAt: null,
     blocking: null,
@@ -250,6 +251,10 @@ describe("descriptors — built from fixed fields, never from the text", () => {
     const question = item({ recommendation: "Hold" });
     expect(needsStatusWord(question)).toBe("decide");
     expect(needsStatusWord(item())).toBe("open question");
+    // A recommendation coord could not read is UNKNOWN, not an open question.
+    expect(needsStatusWord(item({ recommendationKnown: false }))).toBe(
+      "unknown"
+    );
     const gate = item({ source: "operator_gate", recommendation: "x" });
     expect(needsStatusWord(gate)).toBe("approval");
     expect(needsDescriptor(question)).toEqual({
@@ -405,6 +410,15 @@ describe("presentedDecisionDomains — the table's words, or fixed words", () =>
       "fixing a pull request 2",
       "operator approval gate 1",
       "not yet scanned 4",
+    ]);
+  });
+
+  it("names coord's reserved overflow bucket, `other`, in the table's words", () => {
+    // Coord folds the parsed domains past its key cap into `other`, one of its
+    // reserved buckets — a key coord fills itself, not an agent's text.
+    expect(presentedDecisionDomains({ pr_fix: 1, other: 6 })).toEqual([
+      "fixing a pull request 1",
+      "other kinds 6",
     ]);
   });
 
@@ -727,38 +741,5 @@ describe("values shown verbatim only in a shape that names no one", () => {
       "2026-12-01 09:00"
     );
     expect(presentedInitiativeDate(null)).toBeNull();
-  });
-});
-
-describe("RowKeyAliases — a presented row key is an alias of the operator's", () => {
-  it("carries none of the operator key, only the list's name", () => {
-    const aliases = new RowKeyAliases();
-    const key = aliases.key("needs", "agent_question:9f3b2a71-q:0");
-    expect(key).toBe("needs:row-1");
-    expect(key).not.toMatch(/agent_question|9f3b2a71/);
-  });
-
-  it("gives the same operator key the same alias on every poll", () => {
-    const aliases = new RowKeyAliases();
-    const first = aliases.key("needs", "operator_gate:g-1:1");
-    aliases.key("needs", "agent_question:q-2:2");
-    expect(aliases.key("needs", "operator_gate:g-1:1")).toBe(first);
-  });
-
-  it("gives a row whose operator key changed a new alias — so it collapses as the operator's does", () => {
-    // A poll removed the row above: the operator key's index moved, so the
-    // operator's open key matches nothing, and the alias must not either.
-    const aliases = new RowKeyAliases();
-    const open = aliases.key("needs", "operator_gate:g-1:1");
-    const moved = aliases.key("needs", "operator_gate:g-1:0");
-    const below = aliases.key("needs", "agent_question:q-3:1");
-    expect(new Set([open, moved, below]).size).toBe(3);
-  });
-
-  it("keeps two lists' rows apart even when their operator keys agree", () => {
-    const aliases = new RowKeyAliases();
-    expect(aliases.key("degrading", "x:1:0")).not.toBe(
-      aliases.key("cleared", "x:1:0")
-    );
   });
 });

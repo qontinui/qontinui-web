@@ -41,7 +41,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { useUIComponent } from "@qontinui/ui-bridge";
+import { useUIComponent } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

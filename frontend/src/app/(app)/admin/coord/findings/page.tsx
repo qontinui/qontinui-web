@@ -64,6 +64,7 @@
  * a failed page is not a failed list.
  */
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,6 +96,7 @@ import {
   fetchCoordFindings,
   type FindingsQuery,
 } from "@/lib/api/operations/coordFindings";
+import { dossierHref } from "../dossiers/_lib/dossierDeepLink";
 import {
   type CoordFindingRow,
   type FindingsResponse,
@@ -931,7 +933,14 @@ function FindingRow({
               className="text-xs"
               data-testid={`coord-finding-dossier-${finding.finding_id}`}
             >
-              {triageSentence(finding)}
+              {triageSentence(finding)}{" "}
+              <Link
+                className="underline"
+                href={dossierHref(slug)}
+                data-testid={`coord-finding-dossier-link-${finding.finding_id}`}
+              >
+                Open the dossier
+              </Link>
             </p>
           ) : null
         }
