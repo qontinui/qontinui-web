@@ -478,14 +478,17 @@ describe("deriveContinuationStatus — deferral pressure", () => {
       continuation_dispatched_at: new Date(NOW - 3_000).toISOString(),
       continuation_deferred_at: minsAgo(4_000),
       continuation_deferred_reason: "at_cap:4",
-      continuation_deferred_count: 3,
+      // The dispatch stamp reset the count to 0; time and reason survive.
+      continuation_deferred_count: 0,
     });
     expect(s.status.kind).toBe("dispatched");
     expect(s.status.attention).toBe("none");
     expect(s.status.reason).toContain("re-dispatched");
     expect(s.status.reason).toContain("from an earlier dispatch");
-    // The deferrals are not lost — they become history the panel still reports.
-    expect(s.deferral?.count).toBe(3);
+    // The runner deferral's time and reason carry over as history the panel
+    // still reports; the count was reset to 0 by the dispatch stamp.
+    expect(s.deferral?.count).toBe(0);
+    expect(s.deferral?.countKnown).toBe(true);
     expect(s.deferralRendered).toBe(false);
   });
 
@@ -496,7 +499,7 @@ describe("deriveContinuationStatus — deferral pressure", () => {
       ).toISOString(),
       continuation_deferred_at: minsAgo(4_000),
       continuation_deferred_reason: "at_cap:4",
-      continuation_deferred_count: 3,
+      continuation_deferred_count: 0,
     });
     expect(s.status.kind).toBe("dispatch_stalled");
     expect(s.status.attention).toBe("author");
