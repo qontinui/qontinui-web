@@ -83,6 +83,20 @@ import {
   remediationFacetCount,
   remediationHref,
 } from "./_lib/dossierStatus";
+import {
+  DOSSIERS_NO_PLAN_HREF,
+  DOSSIERS_PATH,
+  parseDossiersDeepLink,
+} from "./_lib/dossierDeepLink";
+
+/**
+ * Point the address bar at `href` without navigating, so a reload or a copied
+ * URL shows the view on screen rather than the deep link the page opened on.
+ */
+function replaceUrl(href: string): void {
+  if (typeof window === "undefined") return;
+  window.history.replaceState(window.history.state, "", href);
+}
 
 /** Page size asked of coord. Coord owns the clamp (1..=100); this is a request. */
 const PAGE_SIZE = 50;
@@ -183,9 +197,32 @@ export default function CoordDossiersPage() {
   const [recurrenceMax, setRecurrenceMax] = useState("");
   const [lastSeenSince, setLastSeenSince] = useState("");
   const [lastSeenUntil, setLastSeenUntil] = useState("");
+  const [firstSeenSince, setFirstSeenSince] = useState("");
+  const [firstSeenUntil, setFirstSeenUntil] = useState("");
+  const [updatedSince, setUpdatedSince] = useState("");
+  const [updatedUntil, setUpdatedUntil] = useState("");
+  /** Exact slug — set only by a `?slug=` deep link, cleared by its chip. */
+  const [slug, setSlug] = useState<string | null>(null);
   const [openFilter, setOpenFilter] = useState<OpenFilter>("any");
   const [sort, setSort] = useState<DossierSort>("last_seen");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
+  /**
+   * False until the URL has seeded the filters. The first read waits for it,
+   * so a deep link costs one read, not a default read thrown away.
+   */
+  const [urlRead, setUrlRead] = useState(false);
+
+  useEffect(() => {
+    const link = parseDossiersDeepLink(
+      typeof window === "undefined" ? "" : window.location.search
+    );
+    if (link.slug !== null) setSlug(link.slug);
+    if (link.readiness !== null) setReadiness(link.readiness);
+    if (link.remediation !== null) setRemediation(link.remediation);
+    if (link.sort !== null) setSort(link.sort);
+    if (link.order !== null) setOrder(link.order);
+    setUrlRead(true);
+  }, []);
 
   const [rows, setRows] = useState<CoordDossierRow[]>([]);
   const [facets, setFacets] = useState<DossiersResponse["facets"]>(null);
@@ -208,12 +245,30 @@ export default function CoordDossiersPage() {
   // into the search box is one read, not one per keystroke (each read resets
   // the walk and blanks the list).
   const debouncedText = useDebounced(
-    [q, recurrenceMin, recurrenceMax, lastSeenSince, lastSeenUntil].join(
-      "\u0000"
-    ),
+    [
+      q,
+      recurrenceMin,
+      recurrenceMax,
+      lastSeenSince,
+      lastSeenUntil,
+      firstSeenSince,
+      firstSeenUntil,
+      updatedSince,
+      updatedUntil,
+    ].join("\u0000"),
     DEBOUNCE_MS
   );
-  const [dq, dRecMin, dRecMax, dSince, dUntil] = debouncedText.split("\u0000");
+  const [
+    dq,
+    dRecMin,
+    dRecMax,
+    dSince,
+    dUntil,
+    dFirstSince,
+    dFirstUntil,
+    dUpdSince,
+    dUpdUntil,
+  ] = debouncedText.split("\u0000");
   const recMin = intOrNull(dRecMin ?? "");
   const recMax = intOrNull(dRecMax ?? "");
   // A recurrence bound that is not a whole number is NOT sent — say so on the
@@ -226,6 +281,10 @@ export default function CoordDossiersPage() {
   const qTrim = (dq ?? "").trim();
   const sinceTrim = (dSince ?? "").trim();
   const untilTrim = (dUntil ?? "").trim();
+  const firstSinceTrim = (dFirstSince ?? "").trim();
+  const firstUntilTrim = (dFirstUntil ?? "").trim();
+  const updSinceTrim = (dUpdSince ?? "").trim();
+  const updUntilTrim = (dUpdUntil ?? "").trim();
   const readinessKey = readiness.join(",");
   const remediationKey = remediation.join(",");
 
@@ -234,11 +293,16 @@ export default function CoordDossiersPage() {
       limit: PAGE_SIZE,
       readiness: readinessKey === "" ? [] : readinessKey.split(","),
       remediationState: remediationKey === "" ? [] : remediationKey.split(","),
+      slug: slug ?? undefined,
       q: qTrim || undefined,
       recurrenceMin: recMin,
       recurrenceMax: recMax,
       lastSeenSince: sinceTrim || undefined,
       lastSeenUntil: untilTrim || undefined,
+      firstSeenSince: firstSinceTrim || undefined,
+      firstSeenUntil: firstUntilTrim || undefined,
+      updatedSince: updSinceTrim || undefined,
+      updatedUntil: updUntilTrim || undefined,
       hasOpenRemediation: hasOpen,
       sort,
       order,
@@ -247,11 +311,16 @@ export default function CoordDossiersPage() {
     [
       readinessKey,
       remediationKey,
+      slug,
       qTrim,
       recMin,
       recMax,
       sinceTrim,
       untilTrim,
+      firstSinceTrim,
+      firstUntilTrim,
+      updSinceTrim,
+      updUntilTrim,
       hasOpen,
       sort,
       order,
@@ -306,6 +375,9 @@ export default function CoordDossiersPage() {
   }, [buildQuery]);
 
   useEffect(() => {
+    // The deep link seeds the filters first; `loading` starts true, so the
+    // list shows its skeleton until then rather than an empty answer.
+    if (!urlRead) return;
     queryGenRef.current += 1;
     // A cursor is only meaningful for the query that minted it, so any filter
     // or sort change resets the walk, and nothing the old query derived may
@@ -323,7 +395,7 @@ export default function CoordDossiersPage() {
     setUnavailable(null);
     setExpanded(null);
     void fetchList();
-  }, [fetchList]);
+  }, [fetchList, urlRead]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor) return;
@@ -364,6 +436,8 @@ export default function CoordDossiersPage() {
   }, [buildQuery, nextCursor, rows]);
 
   const applyNoPlanPreset = useCallback(() => {
+    setSlug(null);
+    replaceUrl(DOSSIERS_NO_PLAN_HREF);
     setReadiness(["ready_for_pvi"]);
     setRemediation(["none"]);
     setSort("recurrence_count");
@@ -427,6 +501,24 @@ export default function CoordDossiersPage() {
           title="Re-read the dossier list from the first page"
           data-testid="coord-dossiers-refresh"
         />
+        {slug !== null ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setSlug(null);
+              replaceUrl(DOSSIERS_PATH);
+            }}
+            title="Showing one dossier by exact slug — click to show every dossier"
+            aria-label={`Clear the slug filter ${slug}`}
+            data-testid="coord-dossiers-slug-filter"
+          >
+            slug: <code className="ml-1">{slug}</code>
+            <span aria-hidden className="ml-2">
+              ×
+            </span>
+          </Button>
+        ) : null}
       </div>
 
       <FilterChips
@@ -524,6 +616,42 @@ export default function CoordDossiersPage() {
           aria-label="Last seen on or before"
           title="Last seen on or before"
           data-testid="coord-dossiers-last-seen-until"
+        />
+        <Input
+          type="date"
+          className="h-8 w-[150px] text-xs"
+          value={firstSeenSince}
+          onChange={(e) => setFirstSeenSince(e.target.value)}
+          aria-label="First seen on or after"
+          title="First seen on or after"
+          data-testid="coord-dossiers-first-seen-since"
+        />
+        <Input
+          type="date"
+          className="h-8 w-[150px] text-xs"
+          value={firstSeenUntil}
+          onChange={(e) => setFirstSeenUntil(e.target.value)}
+          aria-label="First seen on or before"
+          title="First seen on or before"
+          data-testid="coord-dossiers-first-seen-until"
+        />
+        <Input
+          type="date"
+          className="h-8 w-[150px] text-xs"
+          value={updatedSince}
+          onChange={(e) => setUpdatedSince(e.target.value)}
+          aria-label="Updated on or after"
+          title="Head folded (updated) on or after"
+          data-testid="coord-dossiers-updated-since"
+        />
+        <Input
+          type="date"
+          className="h-8 w-[150px] text-xs"
+          value={updatedUntil}
+          onChange={(e) => setUpdatedUntil(e.target.value)}
+          aria-label="Updated on or before"
+          title="Head folded (updated) on or before"
+          data-testid="coord-dossiers-updated-until"
         />
         <Select
           value={openFilter}

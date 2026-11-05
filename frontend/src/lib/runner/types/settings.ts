@@ -42,7 +42,7 @@ export interface AiSettings {
 }
 
 /**
- * GET /settings/ai: the stored AiSettings plus three read-only derived keys at
+ * GET /settings/ai: the stored AiSettings plus four read-only derived keys at
  * the TOP LEVEL. Every derived key is optional — an older runner omits them,
  * and an absent key is UNKNOWN. AiSettings stays the PUT body type.
  */
@@ -51,6 +51,11 @@ export type AiSettingsView = AiSettings & {
   account_selection_source?: "fleet" | "local" | "pinned";
   /** Raw fleet value; null = the fleet has no opinion, absent = UNKNOWN. */
   fleet_account_selection_mode?: string | null;
+  /** Whether coord has ANSWERED the fleet account-selection domain in this
+   * runner process. `false` = a null fleet mode means "not yet asked", not
+   * "no fleet opinion", so an unpinned `local` source is provisional; absent =
+   * an older runner (qontinui-runner#2357). */
+  fleet_account_selection_answered?: boolean;
 };
 
 export interface AgenticSettings {
