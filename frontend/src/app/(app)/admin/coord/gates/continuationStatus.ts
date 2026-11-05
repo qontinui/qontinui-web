@@ -334,6 +334,9 @@ function gib(bytes: string | undefined): string {
  */
 export const CLEARANCE_HOLD_PREFIX = "coord_hold.";
 
+/** coord's cap on a hold reason (`CLEARANCE_HOLD_REASON_MAX`, `gates.rs`). */
+const CLEARANCE_HOLD_REASON_MAX = 200;
+
 /** Is this `continuation_deferred_reason` one of coord's clearance holds? */
 export function isClearanceHold(reason: string | null | undefined): boolean {
   return Boolean(reason?.trim().startsWith(CLEARANCE_HOLD_PREFIX));
@@ -459,7 +462,13 @@ export function humanizeDeferralReason(
       typeof count === "number" && Number.isFinite(count) && count > 0
         ? ` (×${count})`
         : "";
-    return `held: ${humanizeHoldCode(reason.slice(CLEARANCE_HOLD_PREFIX.length))}${times}`;
+    // coord cuts a hold reason at CLEARANCE_HOLD_REASON_MAX (200) characters,
+    // so one AT the cap may have lost the tail of its capability list.
+    const cut =
+      [...reason].length >= CLEARANCE_HOLD_REASON_MAX
+        ? ` (coord caps a hold reason at ${CLEARANCE_HOLD_REASON_MAX} characters, so this may be cut short)`
+        : "";
+    return `held: ${humanizeHoldCode(reason.slice(CLEARANCE_HOLD_PREFIX.length))}${cut}${times}`;
   }
 
   const thread = /^thread_pressure:([^:]+):(\d+)_over_(\d+)$/.exec(reason);
@@ -647,6 +656,74 @@ function readDeferral(g: ContinuationStatusInput): ContinuationDeferral | null {
     stuck: countKnown && count >= DEFERRAL_STUCK_COUNT,
     hold: isClearanceHold(g.continuation_deferred_reason),
   };
+}
+
+/** `N time(s)`, or the honest phrase when coord sent no usable count. */
+function timesPhrase(d: ContinuationDeferral): string {
+  return d.countKnown
+    ? `${d.count} time${d.count === 1 ? "" : "s"}`
+    : "an unrecorded number of times";
+}
+
+/**
+ * The muted history chip for a deferral the row has MOVED PAST (the caller
+ * shows it only when `deferralRendered` is false). A coord clearance hold is
+ * worded as a hold: no runner saw the row, so "pushed back" would be false.
+ * The obvious case is an expired held row — coord's hold TTL expiry keeps
+ * the `coord_hold.` reason on it.
+ */
+export function deferralHistoryChip(d: ContinuationDeferral): {
+  text: string;
+  title: string;
+} {
+  const n = d.countKnown ? String(d.count) : "?";
+  const plural = d.countKnown && d.count === 1 ? "" : "s";
+  if (d.hold) {
+    return {
+      text: `after ${n} hold${plural}`,
+      title: `coord held this continuation at clearance ${timesPhrase(d)}${
+        d.reason ? `; last: ${d.reason}` : ""
+      }`,
+    };
+  }
+  return {
+    text: `after ${n} deferral${plural}`,
+    title: d.reason
+      ? `Dispatch was pushed back before this state; last reason: ${d.reason}`
+      : "Dispatch was pushed back before reaching this state",
+  };
+}
+
+/**
+ * The deferral sentence for the row's problem panel, or `null` when there is
+ * nothing to add. `lastRelative` is the caller's rendering of `deferral.at`.
+ *
+ * A `held` row gets `null`: its badge reason already names the hold, its
+ * reason and its count. Any other row whose deferral is a hold (an expired
+ * held row) is worded as coord's hold — never as a runner's hourly stamp,
+ * which is what makes a runner deferral count a floor on hours of refusal and
+ * is false for a hold.
+ */
+export function deferralProblemNote(
+  s: ContinuationStatus,
+  lastRelative: string | null
+): string | null {
+  const d = s.deferral;
+  if (!d) return null;
+  const when = lastRelative ? ` (last ${lastRelative})` : "";
+  if (d.hold) {
+    if (s.status.kind === "held") return null;
+    return `coord held this continuation at clearance ${timesPhrase(d)} before this state, with no device it could dispatch to or a registry veto${
+      d.reason ? `; last: ${d.reason}` : ""
+    }${when}. Each count is a clearance or hold re-drive pass coord made, not a measure of time.`;
+  }
+  return `Dispatch pushed back ${timesPhrase(d)}${
+    d.reason ? `; last time ${d.reason}` : ""
+  }${when}.${
+    d.countKnown
+      ? " The runner stamps at most one deferral an hour per gate, so that count is a floor on how many hours it has been refused."
+      : " coord recorded a deferral but no count, so how many times is unknown."
+  }`;
 }
 
 /** `deferred ×58`, or `deferred ×?` when the count column gave us nothing. */
