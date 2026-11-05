@@ -14,6 +14,12 @@ import type { CostCategory, CostEntry, RecurringCost } from "../_lib/costs-api";
  * commit will write — an add, an update, or nothing — and the commit writes
  * exactly that. Each of these tables writes one record per row and never
  * removes on a paste, so no button here may say "Replace".
+ *
+ * The dialog's UI Bridge declaration is read two ways. Every render records
+ * each `useUIComponent` registration by id (the hook itself still runs, and
+ * is a no-op without a provider). One case renders under the real
+ * `UIBridgeProvider` and reads the real registry back, which is the only
+ * reading that can see a registration frozen at its first render.
  */
 
 const audited = {
@@ -102,6 +108,26 @@ const mocks = vi.hoisted(() => {
     deleteCostCategory: vi.fn(),
     deleteRecurringCost: vi.fn(),
     fetchChangeLog: vi.fn(),
+    /** The latest `useUIComponent` options, by component id. */
+    registrations: new Map<
+      string,
+      {
+        state?: () => Record<string, unknown>;
+        actions?: Array<{ id: string; effect?: string; description?: string }>;
+      }
+    >(),
+  };
+});
+
+vi.mock("@qontinui/ui-bridge/react", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@qontinui/ui-bridge/react")>();
+  return {
+    ...actual,
+    useUIComponent: (options: Parameters<typeof actual.useUIComponent>[0]) => {
+      mocks.registrations.set(options.id, options);
+      return actual.useUIComponent(options);
+    },
   };
 });
 
@@ -155,6 +181,10 @@ vi.mock("./_components/MonthTable", () => ({ MonthTable: () => null }));
 vi.mock("./_components/StillToArrive", () => ({ StillToArrive: () => null }));
 vi.mock("./_components/BaseCurrency", () => ({ BaseCurrency: () => null }));
 
+import {
+  UIBridgeProvider,
+  useUIBridgeOptional,
+} from "@qontinui/ui-bridge/react";
 import CostsPage from "./page";
 
 const byId = (id: string) =>
@@ -162,6 +192,7 @@ const byId = (id: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.registrations.clear();
   mocks.lists["cost-categories"] = { state: "ready", items: CATEGORIES };
   mocks.lists["recurring-costs"] = { state: "ready", items: RECURRING };
   mocks.lists["cost-entries"] = { state: "ready", items: ENTRIES };
@@ -189,9 +220,27 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-/** Render the page; with `filter`, the entries show that category alone. */
-async function shown(filter?: string) {
-  const view = render(<CostsPage />);
+type Registry = NonNullable<ReturnType<typeof useUIBridgeOptional>>["registry"];
+
+/** Hands the test the real provider's registry. */
+function RegistryProbe({ holder }: { holder: { registry: Registry | null } }) {
+  holder.registry = useUIBridgeOptional()?.registry ?? null;
+  return null;
+}
+
+/** Render the page; with `filter`, the entries show that category alone;
+ *  with `holder`, under the real UI Bridge provider. */
+async function shown(filter?: string, holder?: { registry: Registry | null }) {
+  const view = render(
+    holder ? (
+      <UIBridgeProvider>
+        <RegistryProbe holder={holder} />
+        <CostsPage />
+      </UIBridgeProvider>
+    ) : (
+      <CostsPage />
+    )
+  );
   await screen.findAllByRole("button", { name: "Paste from a spreadsheet" });
   if (filter)
     fireEvent.change(byId("overview.costs.entries.filter")!, {
@@ -201,8 +250,13 @@ async function shown(filter?: string) {
 }
 
 /** Paste `text` into a table's dialog and read it; the commit button. */
-async function pasteInto(table: string, text: string, filter?: string) {
-  await shown(filter);
+async function pasteInto(
+  table: string,
+  text: string,
+  filter?: string,
+  holder?: { registry: Registry | null }
+) {
+  await shown(filter, holder);
   const paste = `${table}.table.paste`;
   fireEvent.click(byId(`${paste}.open`)!);
   fireEvent.change(byId(`${paste}.input`)!, { target: { value: text } });
@@ -237,6 +291,48 @@ describe("pasting costs", () => {
     );
     expect(entries.update).not.toHaveBeenCalled();
     expect(mocks.deleteCostEntry).not.toHaveBeenCalled();
+  });
+});
+
+describe("the paste's UI Bridge declaration", () => {
+  const paste = "overview.costs.entries.table.paste";
+
+  it("declares the commit as a write that adds the one cost read", async () => {
+    await pasteInto(
+      "overview.costs.entries",
+      "2026-11-05,ZZ label check,,,1,EUR"
+    );
+    const registration = mocks.registrations.get(paste);
+    const commit = registration?.actions?.find((a) => a.id === "commit");
+    expect(commit?.effect).toBe("write");
+    expect(commit?.description).toContain("adds 1");
+    expect(commit?.description).toContain("never removes a cost");
+    expect(registration?.state?.()).toMatchObject({
+      read: true,
+      commit: "Add this cost",
+      enabled: true,
+      add: 1,
+      update: 0,
+    });
+  });
+
+  it("re-publishes the description to the real registry once read", async () => {
+    const holder: { registry: Registry | null } = { registry: null };
+    await pasteInto(
+      "overview.costs.entries",
+      "2026-11-05,ZZ label check,,,1,EUR",
+      undefined,
+      holder
+    );
+    expect(holder.registry).not.toBeNull();
+    const registered = holder.registry!.getComponent(paste);
+    const commit = registered?.actions.find((a) => a.id === "commit");
+    expect(commit?.effect).toBe("write");
+    expect(commit?.description).toContain("adds 1");
+    expect(registered?.getState?.()).toMatchObject({
+      read: true,
+      commit: "Add this cost",
+    });
   });
 });
 

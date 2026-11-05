@@ -25,9 +25,15 @@
  *    refuse (a `refused` fate) is listed with the other unusable lines and
  *    never committed, so a paste is not lost to a batch the commit would
  *    have refused whole.
+ *
+ * The dialog also declares itself to the UI Bridge (`useUIComponent`, id
+ * `uiBridgeId`): its `state` and one `commit` action whose label is the
+ * button's text and whose description says, from the same outcome, what the
+ * commit writes — so an agent reads the effect the reader is shown.
  */
 
 import { useEffect, useId, useState } from "react";
+import { useUIComponent } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -230,6 +236,27 @@ export function alreadyRecordedText(unchanged: number): string {
   } already recorded exactly like that and will be left alone.`;
 }
 
+/**
+ * What the `commit` action declares it does, from the same outcome the
+ * button's text is read from. `rowCount` is the rows that will be committed;
+ * `leftOut` is every line that will not be (the status line's count).
+ */
+export function commitDescription<Row extends object>(
+  table: Pick<TableDeclaration<Row>, "singular" | "plural">,
+  rowCount: number,
+  outcome: PasteOutcome<Row>,
+  leftOut: number
+): string {
+  if (outcome.kind === "replace")
+    return `Replaces the ${table.plural} in this page's working copy with the ${rowCount} rows read; nothing reaches the server until the page's Save.`;
+  const { add, update, unchanged } = fateCounts(outcome.fates);
+  return `Writes now, one record per row: adds ${add}, updates ${update}, leaves ${unchanged} as recorded, leaves out ${leftOut} refused lines; never removes a ${table.singular}.`;
+}
+
+/** The `commit` action's description while nothing has been read. */
+export const NOTHING_READ_DESCRIPTION =
+  "Commits the rows read from the pasted text. Nothing has been read yet, so it rejects until the text is pasted and read.";
+
 export function CsvPasteDialog<Row extends object>({
   table,
   rowSchema,
@@ -299,12 +326,65 @@ export function CsvPasteDialog<Row extends object>({
   const errors = issues.filter((i) => i.severity === "error");
   const label =
     preview && outcome ? commitLabel(table, usedRows.length, outcome) : null;
-  const unchanged = fates ? fateCounts(fates).unchanged : 0;
+  const counts = fates ? fateCounts(fates) : null;
+  const unchanged = counts?.unchanged ?? 0;
   const close = () => {
     setOpen(false);
     setText("");
     setPreview(null);
   };
+  /** Exactly what pressing the commit button does. */
+  const commit = () => {
+    onCommit(usedRows);
+    close();
+  };
+
+  useUIComponent({
+    id: uiBridgeId,
+    name: table.csv.label,
+    description: table.csv.help,
+    state: () => ({
+      open,
+      read: preview !== null,
+      commit: label?.text ?? null,
+      enabled: label !== null && label.enabled && !busy,
+      add: counts?.add ?? null,
+      update: counts?.update ?? null,
+      unchanged: counts?.unchanged ?? null,
+      refused: preview ? errors.length : null,
+    }),
+    actions: [
+      {
+        id: "commit",
+        label: label?.text ?? "Nothing read yet",
+        description:
+          preview && outcome
+            ? commitDescription(table, usedRows.length, outcome, errors.length)
+            : NOTHING_READ_DESCRIPTION,
+        // Declared, not re-derived: a replace changes only the working copy,
+        // which the page's Save writes; a merge adds and updates but never
+        // removes, and each of its writes is versioned and in the change log.
+        // Either way the commit writes and nothing it does is irreversible.
+        effect: "write",
+        handler: async () => {
+          if (!preview || !label)
+            throw new Error(
+              "Nothing has been read: paste a table and read it first."
+            );
+          if (!label.enabled)
+            throw new Error(
+              "Nothing to change: every row read is already recorded exactly like that, or none could be used."
+            );
+          if (busy)
+            throw new Error(
+              "A save is in flight; commit the paste once it has finished."
+            );
+          commit();
+          return { committed: usedRows.length };
+        },
+      },
+    ],
+  });
 
   return (
     <>
@@ -443,8 +523,7 @@ export function CsvPasteDialog<Row extends object>({
                 disabled={!label.enabled || busy}
                 onClick={() => {
                   if (!label.enabled) return;
-                  onCommit(usedRows);
-                  close();
+                  commit();
                 }}
                 data-ui-bridge-id={`${uiBridgeId}.commit`}
               >
