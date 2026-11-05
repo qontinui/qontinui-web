@@ -13,6 +13,7 @@ import { CollapsiblePanel } from "@/components/console";
 import {
   CAPPED_READ_NOTE,
   NO_DATA,
+  countWords,
   durationWords,
   metricTitle,
   metricValue,
@@ -73,7 +74,7 @@ function CountCell({
             : undefined
       }
     >
-      {n === undefined ? UNKNOWN : `${n}${cut ? "+" : ""}`}
+      {n === undefined ? UNKNOWN : countWords(n, cut === true)}
     </td>
   );
 }
@@ -275,8 +276,8 @@ export function VersionComparisonPanel({
             real one, or none. An unchanged 0 is per version too: it does not
             prove every runner ran enough passes. &ldquo;no data&rdquo; means
             coord had nothing to measure for that version, a dash means the
-            number did not arrive, and a + means a list coord cut, so the count
-            is a floor.
+            number did not arrive or is a cut list with no rows, and a ≥ means a
+            list coord cut, so the count is a floor.
           </p>
         </div>
       )}

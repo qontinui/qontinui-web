@@ -447,6 +447,17 @@ function flag(v: unknown): boolean | undefined {
   return typeof v === "boolean" ? v : undefined;
 }
 
+/**
+ * A list's length as a count, or as a floor when coord cut the list or did
+ * not say it kept all of it (`cut`). A floor is spelled `≥N` (style guide:
+ * "a total over a source that did not answer is a floor"), and a floor of 0
+ * says nothing, so it renders `–` rather than a number.
+ */
+export function countWords(n: number, cut: boolean): string {
+  if (!cut) return String(n);
+  return n === 0 ? "–" : `≥${n}`;
+}
+
 /** A timestamp that can be ordered and worded, else `null`. */
 export function time(v: unknown): string | null {
   const s = str(v);
@@ -875,7 +886,7 @@ function flowBadges(view: FlowView | null): HealthBadge[] {
     },
     {
       key: "unchanged",
-      label: `unchanged ${view?.unchanged ? `${view.unchanged.length}${view.unchangedTruncated !== false ? "+" : ""}` : "–"}`,
+      label: `unchanged ${view?.unchanged ? countWords(view.unchanged.length, view.unchangedTruncated !== false) : "–"}`,
       tone:
         view?.unchanged && view.unchanged.length > 0 ? "waiting" : "default",
       title:

@@ -8,12 +8,12 @@ import {
   SESSION_ID,
   VERSION_OLD,
 } from "../__fixtures__/flow";
-import type { FlowUnchangedSession } from "@/lib/api/operations/overlordFlow";
 import {
   NO_DATA,
   closedCountMismatch,
   closedSessionHref,
   closedSessionLabel,
+  countWords,
   deriveFlowHealth,
   durationWords,
   failureSentence,
@@ -803,7 +803,7 @@ describe("deriveFlowHealth", () => {
       windowId: "7d",
     });
     expect(h.headline).toMatch(/^At least 2 sessions/);
-    expect(h.badges.map((b) => b.label)).toContain("unchanged 2+");
+    expect(h.badges.map((b) => b.label)).toContain("unchanged ≥2");
   });
 
   it("says at least, and marks the badge, when the unchanged list was cut", () => {
@@ -821,7 +821,7 @@ describe("deriveFlowHealth", () => {
     expect(h.headline).toBe(
       "At least 2 sessions have not moved across consecutive full passes"
     );
-    expect(h.badges.map((b) => b.label)).toContain("unchanged 2+");
+    expect(h.badges.map((b) => b.label)).toContain("unchanged ≥2");
   });
 
   it("counts census apart from full, and credits absence only to census", () => {
@@ -979,6 +979,18 @@ describe("insetSegment", () => {
     expect(insetSegment(10, 1.5, false)).toEqual({ y: 10.5, height: 1 });
     expect(insetSegment(10, 0.6, false)).toEqual({ y: 10, height: 0.6 });
     expect(insetSegment(10, 0, false)).toEqual({ y: 10, height: 0 });
+  });
+});
+
+describe("countWords", () => {
+  it("says a whole list's length plainly", () => {
+    expect(countWords(3, false)).toBe("3");
+    expect(countWords(0, false)).toBe("0");
+  });
+
+  it("spells a cut list as a floor, and a floor of 0 as no number", () => {
+    expect(countWords(3, true)).toBe("≥3");
+    expect(countWords(0, true)).toBe("–");
   });
 });
 
