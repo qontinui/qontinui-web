@@ -44,6 +44,8 @@ describe("previewPaste", () => {
       [4, "error", "this row has no role code in its first column"],
       [5, "error", "People (FTE) must be less than 100,000."],
     ]);
+    // The line each kept row came from: DL's two cells, then BE's.
+    expect(preview.lines).toEqual([2, 2, 3]);
   });
 });
 
@@ -205,6 +207,24 @@ describe("commitLabel", () => {
   });
 });
 
+describe("commitLabel with refused rows", () => {
+  const refused = (): ImportFate<Row> => ({
+    kind: "refused",
+    row: row("bad"),
+    reason: "No.",
+  });
+  it("counts a refused row for nothing", () => {
+    expect(commitLabel(TABLE, 2, merge(add(), refused()))).toEqual({
+      text: "Add this category",
+      enabled: true,
+    });
+    expect(commitLabel(TABLE, 0, merge(refused()))).toEqual({
+      text: "Nothing to change",
+      enabled: false,
+    });
+  });
+});
+
 describe("alreadyRecordedText", () => {
   it("counts the rows left alone, in agreement with their number", () => {
     expect(alreadyRecordedText(0)).toBe("");
@@ -225,6 +245,8 @@ describe("CsvPasteDialog with a merge outcome", () => {
       if (r.code === "DL")
         return { kind: "update", row: r, match: r, patch: { name: r.name } };
       if (r.code === "BE") return { kind: "unchanged", row: r, match: r };
+      if (r.code === "XX")
+        return { kind: "refused", row: r, reason: "XX is not a role here." };
       return { kind: "add", row: r };
     }),
   });
@@ -272,6 +294,33 @@ describe("CsvPasteDialog with a merge outcome", () => {
     expect(commit.textContent).not.toMatch(/Replace/);
     fireEvent.click(commit);
     expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists a refused line at its line, counts it, and leaves it out", () => {
+    const onCommit = openMerge("code,name\nDL,Lead\nXX,Nope\nOP,Platform");
+    const issues = document.querySelector(
+      '[data-ui-bridge-id="t.paste.issues"]'
+    );
+    expect(issues?.textContent).toBe("line 3: XX is not a role here.");
+    expect(screen.getByRole("status").textContent).toBe(
+      "Read 2 roles. 1 line could not be used and is listed below; it is left out."
+    );
+    const fates = [0, 1, 2].map(
+      (i) =>
+        document.querySelector(
+          `[data-ui-bridge-id="t.paste.preview.row.${i}.fate"]`
+        )?.textContent
+    );
+    expect(fates).toEqual(["Updates", "Adds", undefined]);
+    // Neither counted in the label nor committed.
+    const commit = screen.getByRole("button", {
+      name: "Add 1 role and update 1",
+    });
+    fireEvent.click(commit);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(
+      (onCommit.mock.calls[0]![0] as ParsedRoleRow[]).map((r) => r.code)
+    ).toEqual(["DL", "OP"]);
   });
 
   it('offers a disabled "Nothing to change" that never commits', () => {

@@ -33,6 +33,7 @@ import {
   bodyOf,
   classifyImport,
   planRecordWrites,
+  type Writes,
 } from "@/components/overview/editing/writes";
 
 interface Audited extends VersionedRecord {
@@ -51,7 +52,16 @@ export interface RecordSectionProps<
   /** Registry name, for the permission, schema and change log. */
   resource: string;
   table: TableDeclaration<Row>;
+  /** Every record of the table — not only the ones shown. */
   records: Rec[];
+  /**
+   * Which records the table shows (a page filter); all of them without it.
+   * A paste and a typed add are still checked against every record, and an
+   * edit is planned against the shown rows only, so it never deletes a
+   * hidden one. Keep it stable (`useCallback`): a new function re-derives
+   * the shown rows, which closes an open edit.
+   */
+  show?: (record: Rec) => boolean;
   toRow: (record: Rec) => Row;
   /** The fields a write may carry. */
   writable: readonly string[];
@@ -91,6 +101,7 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
   resource,
   table,
   records,
+  show,
   toRow,
   writable,
   matchKey,
@@ -108,7 +119,14 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
   uiBridgeId,
 }: RecordSectionProps<Rec, Row>) {
   const descriptor = useResourceDescriptor(resource);
-  const rows = useMemo(() => records.map(toRow), [records, toRow]);
+  // `rows` is a filter over `allRows`, so both hold the same objects — the
+  // typed-add check can tell the row under edit by reference.
+  const allRows = useMemo(() => records.map(toRow), [records, toRow]);
+  const rows = useMemo(() => {
+    if (!show) return allRows;
+    return allRows.filter((_row, index) => show(records[index] as Rec));
+    // `records` moves only with `allRows`, which derives from it.
+  }, [records, allRows, show]);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   // Every overtaken write of one save, shown one at a time so none is lost.
@@ -138,20 +156,39 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
 
   const apply = async (next: Row[], how: "edit" | "import") => {
     const source: WriteSource = how === "import" ? "import" : "ui";
-    const plan = planRecordWrites(rows, next, how, writable, matchKey);
-    if (rowProblem) {
-      const problems: string[] = [];
-      for (const row of [
-        ...plan.creates,
-        ...plan.updates.map((u) => ({ ...u.row, ...u.patch })),
-      ]) {
-        const problem = rowProblem(row);
-        if (problem) problems.push(`${label(row)}: ${problem}`);
-      }
-      if (problems.length > 0) {
-        setErrors(problems);
-        return;
-      }
+    const problems: string[] = [];
+    let plan: Writes<Row>;
+    if (how === "import") {
+      // Re-classified against every record as it stands now. The preview
+      // already left out every refused line, so a refusal here can only be a
+      // race with another writer — and refuses the whole batch.
+      for (const fate of classifyImport(
+        allRows,
+        next,
+        writable,
+        matchKey,
+        rules
+      ))
+        if (fate.kind === "refused")
+          problems.push(`${label(fate.row)}: ${fate.reason}`);
+      plan = planRecordWrites(allRows, next, how, writable, matchKey, rules);
+    } else {
+      // An edit's deletes are the previous rows missing from `next`, and
+      // `next` is the SHOWN table — so it is planned against the shown rows
+      // alone, or every hidden record would be deleted.
+      plan = planRecordWrites(rows, next, how, writable, matchKey);
+      if (rowProblem)
+        for (const row of [
+          ...plan.creates,
+          ...plan.updates.map((u) => ({ ...u.row, ...u.patch })),
+        ]) {
+          const problem = rowProblem(row);
+          if (problem) problems.push(`${label(row)}: ${problem}`);
+        }
+    }
+    if (problems.length > 0) {
+      setErrors(problems);
+      return;
     }
     setBusy(true);
     const failures: string[] = [];
@@ -198,12 +235,16 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
   };
 
   // What a paste would do, classified from the same inputs `apply` hands
-  // `planRecordWrites` — so the paste button says what the writes will be.
+  // `planRecordWrites` — every record, and the table's own rules — so the
+  // paste button says what the writes will be and a line the commit would
+  // refuse is refused at its line.
+  const rules = { rowProblem, table };
   const pasteOutcome = (pasted: Row[]): PasteOutcome<Row> => ({
     kind: "merge",
-    fates: classifyImport(rows, pasted, writable, matchKey),
+    fates: classifyImport(allRows, pasted, writable, matchKey, rules),
   });
 
+  // The table's own last change, over every record — not the filtered view's.
   const latest = records.reduce<Rec | null>(
     (newest, r) => (!newest || r.updated_at > newest.updated_at ? r : newest),
     null
@@ -214,6 +255,7 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
       <RecordTable
         table={table}
         rows={rows}
+        identityRows={allRows}
         canEdit={canEdit}
         busy={busy}
         rowSchema={descriptor?.schemas.create}

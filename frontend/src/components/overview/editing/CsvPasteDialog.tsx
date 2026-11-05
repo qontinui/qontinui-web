@@ -21,7 +21,10 @@
  *      once; nothing is removed.
  *
  *    The commit button says exactly which (`commitLabel`), and for a merge
- *    the preview says it line by line.
+ *    the preview says it line by line. A line the caller's own rules would
+ *    refuse (a `refused` fate) is listed with the other unusable lines and
+ *    never committed, so a paste is not lost to a batch the commit would
+ *    have refused whole.
  */
 
 import { useEffect, useId, useState } from "react";
@@ -73,6 +76,9 @@ export function IssueList({
 export interface PastePreview<Row> {
   /** The rows that will be used. */
   rows: Row[];
+  /** The pasted line each of `rows` came from, parallel to it (0 when the
+   *  mapping did not say). */
+  lines: number[];
   /** Everything that will not, and every warning, ordered by line. */
   issues: CsvIssue[];
 }
@@ -88,22 +94,25 @@ export function previewPaste<Row extends object>(
 ): PastePreview<Row> {
   const parsed = table.csv.parse(text);
   const rows: Row[] = [];
+  const lines: number[] = [];
   const issues: CsvIssue[] = [...parsed.issues];
   parsed.rows.forEach((row, index) => {
+    const line = parsed.lines[index] ?? 0;
     const problems = rowProblems(table, row, rowSchema);
     if (problems.length === 0) {
       rows.push(row);
+      lines.push(line);
       return;
     }
     issues.push({
-      line: parsed.lines[index] ?? 0,
+      line,
       text: "",
       message: problems.join(" "),
       severity: "error",
     });
   });
   issues.sort((a, b) => a.line - b.line);
-  return { rows, issues };
+  return { rows, issues, lines };
 }
 
 /**
@@ -112,7 +121,8 @@ export function previewPaste<Row extends object>(
  * - `replace` — the rows read replace the table (the estimate editor's
  *   working copy).
  * - `merge` — each row read is written as its fate says; `fates` runs
- *   parallel to the rows read.
+ *   parallel to the rows read. A `refused` row is listed at its line with
+ *   its reason and left out of the commit.
  */
 export type PasteOutcome<Row> =
   | { kind: "replace" }
@@ -125,7 +135,7 @@ export function replacesWorkingCopy(): { kind: "replace" } {
 
 /** How many of a merge's rows each fate takes. */
 function fateCounts<Row>(fates: readonly ImportFate<Row>[]) {
-  const counts = { add: 0, update: 0, unchanged: 0 };
+  const counts = { add: 0, update: 0, unchanged: 0, refused: 0 };
   for (const fate of fates) {
     switch (fate.kind) {
       case "add":
@@ -136,6 +146,9 @@ function fateCounts<Row>(fates: readonly ImportFate<Row>[]) {
         break;
       case "unchanged":
         counts.unchanged += 1;
+        break;
+      case "refused":
+        counts.refused += 1;
         break;
       default: {
         const unhandled: never = fate;
@@ -155,6 +168,9 @@ function fateText<Row>(fate: ImportFate<Row>): string {
       return "Updates";
     case "unchanged":
       return "No change";
+    case "refused":
+      // Never previewed — a refused line is in the issue list instead.
+      return "Left out";
     default: {
       const unhandled: never = fate;
       throw new Error(`Unhandled import fate: ${String(unhandled)}`);
@@ -164,7 +180,8 @@ function fateText<Row>(fate: ImportFate<Row>): string {
 
 /**
  * The commit button's text, and whether it may be pressed — derived from the
- * outcome, so the button cannot say anything the commit does not do.
+ * outcome, so the button cannot say anything the commit does not do. A
+ * refused row is never committed, so it counts for nothing here.
  */
 export function commitLabel<Row extends object>(
   table: Pick<TableDeclaration<Row>, "singular" | "plural">,
@@ -225,8 +242,8 @@ export function CsvPasteDialog<Row extends object>({
   table: TableDeclaration<Row>;
   /** The row shape the server validates, from the resource catalog. */
   rowSchema: JsonSchema | undefined;
-  /** The rows read, handed to the caller; what it does with them is what
-   *  `pasteOutcome` says. */
+  /** The usable rows read — never one `pasteOutcome` refused — handed to
+   *  the caller; what it does with them is what `pasteOutcome` says. */
   onCommit: (rows: Row[]) => void;
   /**
    * What committing these rows does, from the caller's own write plan — the
@@ -253,13 +270,35 @@ export function CsvPasteDialog<Row extends object>({
   const [preview, setPreview] = useState<PastePreview<Row> | null>(null);
   const inputId = useId();
 
-  const errors = preview?.issues.filter((i) => i.severity === "error") ?? [];
   const outcome = preview ? pasteOutcome(preview.rows) : null;
-  const fates = outcome?.kind === "merge" ? outcome.fates : null;
+  const allFates = outcome?.kind === "merge" ? outcome.fates : null;
+  // A line the commit would refuse joins the issue list at its line and is
+  // left out of the preview, the label and the commit alike.
+  const refusedIssues: CsvIssue[] = [];
+  const used: number[] = [];
+  preview?.rows.forEach((_row, index) => {
+    const fate = allFates?.[index];
+    if (fate?.kind === "refused")
+      refusedIssues.push({
+        line: preview.lines[index] ?? 0,
+        text: "",
+        message: fate.reason,
+        severity: "error",
+      });
+    else used.push(index);
+  });
+  const issues = preview
+    ? [...preview.issues, ...refusedIssues].sort((a, b) => a.line - b.line)
+    : [];
+  const usedRows = preview
+    ? used.map((index) => preview.rows[index] as Row)
+    : [];
+  const fates = allFates
+    ? used.map((index) => allFates[index] as ImportFate<Row>)
+    : null;
+  const errors = issues.filter((i) => i.severity === "error");
   const label =
-    preview && outcome
-      ? commitLabel(table, preview.rows.length, outcome)
-      : null;
+    preview && outcome ? commitLabel(table, usedRows.length, outcome) : null;
   const unchanged = fates ? fateCounts(fates).unchanged : 0;
   const close = () => {
     setOpen(false);
@@ -319,10 +358,10 @@ export function CsvPasteDialog<Row extends object>({
                 className="text-sm text-muted-foreground"
                 data-ui-bridge-id={`${uiBridgeId}.summary`}
               >
-                {preview.rows.length === 0
+                {usedRows.length === 0
                   ? "Nothing could be read from that."
-                  : `Read ${preview.rows.length} ${
-                      preview.rows.length === 1 ? table.singular : table.plural
+                  : `Read ${usedRows.length} ${
+                      usedRows.length === 1 ? table.singular : table.plural
                     }.`}
                 {unchanged > 0 && ` ${alreadyRecordedText(unchanged)}`}
                 {errors.length > 0 &&
@@ -335,12 +374,9 @@ export function CsvPasteDialog<Row extends object>({
             )}
           </div>
           {preview && (
-            <IssueList
-              issues={preview.issues}
-              uiBridgeId={`${uiBridgeId}.issues`}
-            />
+            <IssueList issues={issues} uiBridgeId={`${uiBridgeId}.issues`} />
           )}
-          {preview && preview.rows.length > 0 && (
+          {preview && usedRows.length > 0 && (
             <div className="max-h-72 overflow-auto rounded-md border border-border">
               <table
                 className="w-full border-collapse text-sm"
@@ -368,7 +404,7 @@ export function CsvPasteDialog<Row extends object>({
                   </tr>
                 </thead>
                 <tbody>
-                  {preview.rows.map((row, index) => (
+                  {usedRows.map((row, index) => (
                     <tr key={index} className="border-b border-border/60">
                       {fates && (
                         <td
@@ -407,7 +443,7 @@ export function CsvPasteDialog<Row extends object>({
                 disabled={!label.enabled || busy}
                 onClick={() => {
                   if (!label.enabled) return;
-                  onCommit(preview.rows);
+                  onCommit(usedRows);
                   close();
                 }}
                 data-ui-bridge-id={`${uiBridgeId}.commit`}

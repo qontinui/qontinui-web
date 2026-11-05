@@ -30,6 +30,7 @@ import { CsvPasteDialog, type PasteOutcome } from "./CsvPasteDialog";
 import { FieldEditor } from "./FieldEditor";
 import {
   cellText,
+  identityClash,
   identityKey,
   rowToText,
   sortValue,
@@ -53,6 +54,7 @@ const SMALL_BUTTON =
 export function RecordTable<Row extends object>({
   table,
   rows,
+  identityRows,
   onChange,
   pasteOutcome,
   canEdit,
@@ -64,6 +66,12 @@ export function RecordTable<Row extends object>({
 }: {
   table: TableDeclaration<Row>;
   rows: Row[];
+  /**
+   * Every row a typed add or edit must not repeat the identity of, when that
+   * is more than `rows` — a filtered table passes every record here, holding
+   * the same objects as `rows`. Defaults to `rows`.
+   */
+  identityRows?: readonly Row[];
   onChange: (rows: Row[], how: ChangeHow) => void;
   /** What committing a paste does, from the caller's own write plan —
    *  forwarded to the paste dialog, whose button says it. */
@@ -131,21 +139,15 @@ export function RecordTable<Row extends object>({
       return;
     }
     const key = identityKey(table, read.row);
-    const clash = rows.some(
-      (other, index) =>
-        index !== editing.at && identityKey(table, other) === key
+    // The row under edit is left out by reference, so a filtered table whose
+    // `identityRows` holds hidden rows too still compares against all of them.
+    const under = editing.at === "new" ? null : rows[editing.at];
+    const clash = (identityRows ?? rows).some(
+      (other) => other !== under && identityKey(table, other) === key
     );
     if (clash) {
-      const first = table.identity[0] as string;
-      const label = table.fields.find((f) => f.field === first)?.label ?? first;
-      setEditing({
-        ...editing,
-        errors: {
-          [first]: `There is already a ${table.singular} with this ${
-            table.identity.length > 1 ? "combination" : label.toLowerCase()
-          }.`,
-        },
-      });
+      const { field, message } = identityClash(table);
+      setEditing({ ...editing, errors: { [field]: message } });
       return;
     }
     const next =

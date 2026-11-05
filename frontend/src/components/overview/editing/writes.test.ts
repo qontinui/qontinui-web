@@ -120,6 +120,95 @@ describe("classifyImport", () => {
   });
 });
 
+describe("classifyImport with the table's rules", () => {
+  const a = item({ id: "a", name: "Alpha", size: 1, note: "kept" });
+  // A rule a stored record can complete: a big box needs a note.
+  const rowProblem = (row: Item) =>
+    row.size > 5 && !row.note ? "A big box needs a note." : null;
+  const table = {
+    identity: ["name", "size"] as ("name" | "size")[],
+    fields: [{ field: "name" as const, label: "Name", kind: "text" as const }],
+    singular: "box",
+  };
+
+  it("refuses a create that breaks the row rule", () => {
+    const row = item({ name: "Omega", size: 9, note: "" });
+    expect(
+      classifyImport([a], [row], WRITABLE, byName, { rowProblem })
+    ).toEqual([{ kind: "refused", row, reason: "A big box needs a note." }]);
+  });
+
+  it("does not refuse an update whose stored record completes it", () => {
+    // The line gives no note; the record it updates already has one.
+    const row = item({ name: "Alpha", size: 9, supplied: ["name", "size"] });
+    expect(
+      classifyImport([a], [row], WRITABLE, byName, { rowProblem })
+    ).toEqual([{ kind: "update", row, match: a, patch: { size: 9 } }]);
+  });
+
+  it("refuses an update the record it would leave breaks", () => {
+    const bare = item({ id: "b", name: "Bare", size: 1, note: "" });
+    const row = item({ name: "Bare", size: 9, supplied: ["name", "size"] });
+    expect(
+      classifyImport([bare], [row], WRITABLE, byName, { rowProblem })
+    ).toEqual([{ kind: "refused", row, reason: "A big box needs a note." }]);
+  });
+
+  it("refuses a create repeating an existing row's identity", () => {
+    // No match key: every line is a would-be create.
+    const row = item({ name: "Alpha", size: 1, note: "other" });
+    expect(classifyImport([a], [row], WRITABLE, undefined, { table })).toEqual([
+      {
+        kind: "refused",
+        row,
+        reason: "There is already a box with this combination.",
+      },
+    ]);
+  });
+
+  it("refuses a create repeating an earlier pasted add", () => {
+    const first = item({ name: "Omega", size: 2 });
+    const again = item({ name: "Omega", size: 2, note: "twice" });
+    const other = item({ name: "Omega", size: 3 });
+    expect(
+      classifyImport([a], [first, again, other], WRITABLE, undefined, {
+        table,
+      })
+    ).toEqual([
+      { kind: "add", row: first },
+      {
+        kind: "refused",
+        row: again,
+        reason: "An earlier line already gives this box.",
+      },
+      { kind: "add", row: other },
+    ]);
+  });
+
+  it("does not hold an update to the identity check", () => {
+    const row = item({ name: "Alpha", size: 1, note: "changed" });
+    expect(
+      classifyImport([a], [row], WRITABLE, byName, { rowProblem, table })
+    ).toEqual([{ kind: "update", row, match: a, patch: { note: "changed" } }]);
+  });
+
+  it("writes nothing for a refused line in an import plan", () => {
+    const bad = item({ name: "Omega", size: 9 });
+    const good = item({ name: "Gamma" });
+    const plan = planRecordWrites(
+      [a],
+      [bad, good],
+      "import",
+      WRITABLE,
+      byName,
+      {
+        rowProblem,
+      }
+    );
+    expect(plan).toEqual({ creates: [good], updates: [], deletes: [] });
+  });
+});
+
 describe("bodyOf", () => {
   it("sends exactly the writable fields", () => {
     expect(bodyOf(item({ id: "x", supplied: ["name"] }), WRITABLE)).toEqual({

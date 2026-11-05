@@ -132,6 +132,10 @@ export function MilestonesSection({
     }
   };
 
+  // The table's own rules a paste is held to: the one rule the served
+  // schema cannot express, and the table's identity.
+  const rules = { rowProblem: milestoneRowProblem, table };
+
   const apply = async (next: MilestoneRow[], how: "edit" | "import") => {
     const source: WriteSource = how === "import" ? "import" : "ui";
     const plan = planRecordWrites(
@@ -139,16 +143,32 @@ export function MilestonesSection({
       next,
       how,
       MILESTONE_WRITABLE,
-      milestoneKey
+      milestoneKey,
+      rules
     );
     const problems: string[] = [];
-    // The one rule the served schema cannot express, refused before sending.
-    for (const row of [
-      ...plan.creates,
-      ...plan.updates.map((u) => ({ ...u.row, ...u.patch })),
-    ]) {
-      const problem = milestoneRowProblem(row);
-      if (problem) problems.push(`${row.title}: ${problem}`);
+    if (how === "import") {
+      // Re-classified against the milestones as they stand now. The preview
+      // already left out every refused line, so a refusal here can only be a
+      // race with another writer — and refuses the whole batch.
+      for (const fate of classifyImport(
+        rows,
+        next,
+        MILESTONE_WRITABLE,
+        milestoneKey,
+        rules
+      ))
+        if (fate.kind === "refused")
+          problems.push(`${fate.row.title}: ${fate.reason}`);
+    } else {
+      // The one rule the served schema cannot express, refused before sending.
+      for (const row of [
+        ...plan.creates,
+        ...plan.updates.map((u) => ({ ...u.row, ...u.patch })),
+      ]) {
+        const problem = milestoneRowProblem(row);
+        if (problem) problems.push(`${row.title}: ${problem}`);
+      }
     }
     if (problems.length > 0) {
       setErrors(problems);
@@ -191,7 +211,13 @@ export function MilestonesSection({
     pasted: MilestoneRow[]
   ): PasteOutcome<MilestoneRow> => ({
     kind: "merge",
-    fates: classifyImport(rows, pasted, MILESTONE_WRITABLE, milestoneKey),
+    fates: classifyImport(
+      rows,
+      pasted,
+      MILESTONE_WRITABLE,
+      milestoneKey,
+      rules
+    ),
   });
 
   const latest = milestones.reduce<Milestone | null>(

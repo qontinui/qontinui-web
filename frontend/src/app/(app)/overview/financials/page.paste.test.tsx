@@ -59,7 +59,27 @@ const ENTRIES: CostEntry[] = [
     recurring_cost_id: null,
     period_start: null,
   },
+  {
+    ...audited,
+    id: "e2",
+    incurred_on: "2026-10-02",
+    description: "Trademark filing (EUIPO)",
+    vendor: "EUIPO",
+    category_id: "c2",
+    amount_micros: 850_000_000,
+    currency: "EUR",
+    quantity: 1,
+    expects_delivery: false,
+    received_on: null,
+    order_ref: "",
+    notes: "",
+    recurring_cost_id: null,
+    period_start: null,
+  },
 ];
+
+/** The recorded Hardware cost, as a pasted line. */
+const RYZEN_LINE = "2026-10-20,AMD Ryzen 9 9950X,Mindfactory,Hardware,649,EUR";
 
 const RECURRING: RecurringCost[] = [];
 
@@ -169,11 +189,21 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-/** Paste `text` into a table's dialog and read it; the commit button. */
-async function pasteInto(table: string, text: string) {
-  render(<CostsPage />);
-  const paste = `${table}.table.paste`;
+/** Render the page; with `filter`, the entries show that category alone. */
+async function shown(filter?: string) {
+  const view = render(<CostsPage />);
   await screen.findAllByRole("button", { name: "Paste from a spreadsheet" });
+  if (filter)
+    fireEvent.change(byId("overview.costs.entries.filter")!, {
+      target: { value: filter },
+    });
+  return view;
+}
+
+/** Paste `text` into a table's dialog and read it; the commit button. */
+async function pasteInto(table: string, text: string, filter?: string) {
+  await shown(filter);
+  const paste = `${table}.table.paste`;
   fireEvent.click(byId(`${paste}.open`)!);
   fireEvent.change(byId(`${paste}.input`)!, { target: { value: text } });
   fireEvent.click(byId(`${paste}.read`)!);
@@ -251,5 +281,90 @@ describe("pasting categories", () => {
     const categories = mocks.resources["cost-categories"]!;
     expect(categories.update).not.toHaveBeenCalled();
     expect(categories.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("the entries table's own rules", () => {
+  const entries = () => mocks.resources["cost-entries"]!;
+  const paste = "overview.costs.entries.table.paste";
+  const editor = "overview.costs.entries.table.editor";
+
+  it("refuses a pasted line repeating a recorded cost, at its line", async () => {
+    const commit = await pasteInto("overview.costs.entries", RYZEN_LINE);
+    expect(byId(`${paste}.issues`)?.textContent).toBe(
+      "line 1: There is already a cost with this combination."
+    );
+    expect(commit.textContent).toBe("Nothing to change");
+    expect(commit.disabled).toBe(true);
+    fireEvent.click(commit);
+    expect(entries().create).not.toHaveBeenCalled();
+  });
+
+  it("refuses it while the category filter hides the recorded cost", async () => {
+    const commit = await pasteInto(
+      "overview.costs.entries",
+      `${RYZEN_LINE}\n2026-11-05,ZZ new cost,,,1,EUR`,
+      "c2"
+    );
+    // The recorded Ryzen is not in the table the reader sees.
+    expect(byId("overview.costs.entries.table.row.1")).toBeNull();
+    expect(byId(`${paste}.issues`)?.textContent).toBe(
+      "line 1: There is already a cost with this combination."
+    );
+    expect(commit.textContent).toBe("Add this cost");
+    await act(async () => {
+      fireEvent.click(commit);
+    });
+    expect(entries().create).toHaveBeenCalledTimes(1);
+    expect(entries().create).toHaveBeenCalledWith(
+      expect.objectContaining({ description: "ZZ new cost" }),
+      { source: "import" }
+    );
+  });
+
+  it("refuses a typed add that repeats a hidden cost", async () => {
+    await shown("c2");
+    fireEvent.click(byId("overview.costs.entries.table.add")!);
+    const type = (id: string, value: string) =>
+      fireEvent.change(byId(`${editor}.${id}`)!, { target: { value } });
+    type("incurred_on", "2026-10-20");
+    type("description", "AMD Ryzen 9 9950X");
+    type("vendor", "Mindfactory");
+    type("amount_micros.amount", "649");
+    type("amount_micros.currency", "EUR");
+    await act(async () => {
+      fireEvent.click(byId(`${editor}.done`)!);
+    });
+    expect(byId(editor)?.textContent).toMatch(
+      "There is already a cost with this combination."
+    );
+    expect(entries().create).not.toHaveBeenCalled();
+  });
+
+  it("deletes no hidden cost when an entry is edited with the filter on", async () => {
+    await shown("c2");
+    fireEvent.click(byId("overview.costs.entries.table.row.0.edit")!);
+    fireEvent.change(byId(`${editor}.notes`)!, {
+      target: { value: "Class 9 and 42" },
+    });
+    await act(async () => {
+      fireEvent.click(byId(`${editor}.done`)!);
+    });
+    expect(entries().update).toHaveBeenCalledTimes(1);
+    expect(entries().update).toHaveBeenCalledWith(
+      ENTRIES[1],
+      { notes: "Class 9 and 42" },
+      { source: "ui" }
+    );
+    expect(entries().create).not.toHaveBeenCalled();
+    expect(mocks.deleteCostEntry).not.toHaveBeenCalled();
+  });
+
+  it("keeps an open entries edit through a page re-render with the filter on", async () => {
+    const view = await shown("c2");
+    fireEvent.click(byId("overview.costs.entries.table.row.0.edit")!);
+    expect(byId(editor)).not.toBeNull();
+    view.rerender(<CostsPage />);
+    expect(byId(editor)).not.toBeNull();
   });
 });

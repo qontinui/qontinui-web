@@ -211,12 +211,13 @@ export default function CostsPage() {
 
   const entriesTable = useMemo(() => entryTable(choices), [choices]);
   const recurringDecl = useMemo(() => recurringTable(choices), [choices]);
-  const shownEntries = useMemo(
-    () =>
-      filter === ALL
-        ? entryItems
-        : entryItems.filter((e) => (e.category_id ?? "none") === filter),
-    [entryItems, filter]
+  // Which entries the table shows. The table is still handed every entry, so
+  // a paste or a typed add is checked against the hidden ones too and an edit
+  // deletes none of them. Stable on purpose: a new `show` re-derives the shown
+  // rows, and the table closes an open edit when its rows change.
+  const showEntry = useCallback(
+    (e: CostEntry) => filter === ALL || (e.category_id ?? "none") === filter,
+    [filter]
   );
 
   const createCategory = categories.create;
@@ -395,7 +396,8 @@ export default function CostsPage() {
           <RecordSection<CostEntry, EntryRow>
             resource={COST_ENTRIES}
             table={entriesTable}
-            records={shownEntries}
+            records={entryItems}
+            show={showEntry}
             toRow={entryToRow}
             writable={ENTRY_WRITABLE}
             rowProblem={entryRowProblem}

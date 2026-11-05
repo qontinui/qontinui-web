@@ -532,6 +532,34 @@ describe("milestones", () => {
     expect(commit.textContent).not.toMatch(/Replace/);
   });
 
+  it("lists a pasted done line with no date at its line and commits the rest", async () => {
+    mocks.createResource.mockResolvedValue({
+      ...MILESTONE,
+      id: "m2",
+      title: "First value",
+    });
+    const commit = await pasted(
+      "Shipped,2026-05-01,done\nFirst value,2026-05-02"
+    );
+    expect(
+      byId("overview.timeline.milestones.table.paste.issues")?.textContent
+    ).toBe("line 1: A done milestone needs the date it was done.");
+    expect(commit.textContent).toBe("Add this milestone");
+    await act(async () => {
+      fireEvent.click(commit);
+    });
+    expect(mocks.createResource).toHaveBeenCalledTimes(1);
+    expect(mocks.createResource).toHaveBeenCalledWith(
+      "milestones",
+      expect.objectContaining({ title: "First value" }),
+      expect.any(String),
+      "import"
+    );
+    expect(mocks.updateResource).not.toHaveBeenCalled();
+    // Nothing was refused whole: the good line went, and no error is left.
+    expect(byId("overview.timeline.milestones.errors")).toBeNull();
+  });
+
   it("refuses a done milestone with no date without sending it", async () => {
     await shown();
     fireEvent.click(byId("overview.timeline.milestones.table.row.0.edit")!);
