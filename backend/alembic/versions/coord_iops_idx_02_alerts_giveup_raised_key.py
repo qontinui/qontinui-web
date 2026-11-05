@@ -76,7 +76,14 @@ WHERE kind = 'gate_continuation_abandoned' OR detail ? 'giveup_raised'``.
 The predicate is the probe's own disjunction, spelled the way coord spells it,
 so PostgreSQL can prove that the probe implies it. That proof is syntactic: if
 coord changes the disjunction, the index silently stops serving the probe.
-coord pins its side with a unit test that names this index. With the index,
+coord pins its side in the paired qontinui-coord change (plan
+2026-11-04-coord-postgres-read-iops-near-its-cap-again), whose test
+``giveup_probe_disjunction_matches_the_partial_index_predicate`` names this
+index; until that lands, this revision's test is the only pin. The resolver
+(``GIVEUP_RESOLVE_PREDICATE_SQL``: the same disjunction AND ``resolved_at IS
+NULL``) also implies the predicate and MAY use this index; on PG16 it drives
+from gates and probes ``uq_alerts_active_key`` instead. The test pins that it
+never scans the alerts heap. With the index,
 each give-up gate costs one descent of a ~2.5k-entry btree. There is no heap
 scan of ``coord.alerts`` at all.
 
@@ -144,7 +151,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_iops_idx_02"
-down_revision: str | Sequence[str] | None = "ci_job_res_02"
+down_revision: str | Sequence[str] | None = "pr_events_mergeability_head_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
