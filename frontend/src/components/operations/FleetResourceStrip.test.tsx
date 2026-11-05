@@ -11,7 +11,14 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { FleetResourceStrip } from "./FleetResourceStrip";
 import { renderInPresentationMode } from "@/test/presentation";
@@ -581,7 +588,9 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     const legend =
       screen.getByTestId("fleet-resource-floors").textContent ?? "";
     expect(legend).not.toMatch(/stopped electing/i);
-    expect(legend).toMatch(/a red row\s+means a guard on that lane is refusing work/);
+    expect(legend).toMatch(
+      /a red row\s+means a guard on that lane is refusing work/
+    );
   });
 
   it("presenting: no operator legend, and its one unknown said in plain words", () => {
@@ -1198,5 +1207,113 @@ describe("CPU temperature column — display only, never a fabricated zero", () 
       .getAllByTestId("fleet-resource-cpu-temp")
       .map((c) => c.textContent);
     expect(cells).toEqual(["55 C", "not measured on this host type"]);
+  });
+});
+
+// Plan 2026-11-03-devops-headroom-grades-read-only-and-esp-volumes-against-the-disk-floor
+// Phase 2 (D8): the admission tooltip names the volumes coord did not grade
+// against the disk floor, so an `unknown` from a full ISO carries its reason.
+describe("admission tooltip — ungraded_volumes", () => {
+  async function hoverAdmission(): Promise<void> {
+    const admission = screen.getByTestId("fleet-resource-admission");
+    // The Badge's wrapper is the TooltipTrigger.
+    await userEvent.hover(admission.firstElementChild as HTMLElement);
+  }
+
+  it("prints each ungraded volume with its reason in words", async () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "unknown",
+          ungraded_volumes: [
+            { volume: "/mnt/winiso", reason: "read_only_unknown" },
+            { volume: "/boot/efi", reason: "scaled_floor" },
+          ],
+        }),
+      ],
+      history: [],
+    });
+    await hoverAdmission();
+    const list = await waitFor(() =>
+      screen.getAllByTestId("fleet-resource-admission-ungraded")
+    );
+    // The two facts sit under two headings: the ESP IS graded (against its
+    // own size); the ISO is not graded.
+    const scaled = list[0].querySelector('[data-ungraded-group="scaled"]');
+    const notGraded = list[0].querySelector('[data-ungraded-group="ungraded"]');
+    expect(scaled?.textContent ?? "").toMatch(
+      /Graded against a floor scaled to the volume's size/
+    );
+    expect(scaled?.textContent ?? "").toMatch(/\/boot\/efi/);
+    expect(scaled?.textContent ?? "").not.toMatch(/winiso|Not graded/);
+    expect(notGraded?.textContent ?? "").toMatch(
+      /Not graded \(read-only \/ unknown\)/
+    );
+    expect(notGraded?.textContent ?? "").toMatch(/\/mnt\/winiso/);
+    expect(notGraded?.textContent ?? "").toMatch(
+      /did not say whether it is read-only/
+    );
+    expect(notGraded?.textContent ?? "").not.toMatch(/efi/);
+  });
+
+  it("says an unrecognized reason is unrecognized, not healthy", async () => {
+    renderStrip({
+      latest: [
+        sample({
+          ungraded_volumes: [{ volume: "/q", reason: "lunar_floor" }],
+        }),
+      ],
+      history: [],
+    });
+    await hoverAdmission();
+    const list = await waitFor(() =>
+      screen.getAllByTestId("fleet-resource-admission-ungraded")
+    );
+    expect(list[0].textContent).toMatch(/"lunar_floor".*does not recognize/);
+  });
+
+  it("an older coord (no ungraded_volumes) adds nothing to the tooltip", async () => {
+    renderStrip({ latest: [sample({ headroom: "unknown" })], history: [] });
+    await hoverAdmission();
+    await waitFor(() =>
+      // Proves the tooltip actually opened, so the absence below can fail.
+      expect(
+        screen.getAllByText(/admission state as unknown/).length
+      ).toBeGreaterThan(0)
+    );
+    expect(
+      screen.queryByTestId("fleet-resource-admission-ungraded")
+    ).toBeNull();
+  });
+
+  it("presenting: the mount is withheld, the reason is kept", async () => {
+    renderInPresentationMode(
+      <FleetResourceStrip
+        devices={[{ device_id: DEV, hostname: "msi" }]}
+        resources={{
+          data: {
+            latest: [
+              sample({
+                ungraded_volumes: [
+                  { volume: "/mnt/winiso", reason: "read_only" },
+                ],
+              }),
+            ],
+            history: [],
+          },
+          loading: false,
+          error: null,
+          fetchedAtMs: Date.now(),
+          refresh: vi.fn(),
+        }}
+      />
+    );
+    await hoverAdmission();
+    const list = await waitFor(() =>
+      screen.getAllByTestId("fleet-resource-admission-ungraded")
+    );
+    expect(list[0].textContent).not.toMatch(/winiso/);
+    expect(list[0].textContent).toMatch(/Volume 1/);
+    expect(list[0].textContent).toMatch(/mounted read-only/);
   });
 });

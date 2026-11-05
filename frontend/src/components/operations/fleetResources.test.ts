@@ -45,6 +45,7 @@ import {
   summarizeFleetAdmission,
   EXPIRED_AFTER_SECS,
   STALE_AFTER_SECS,
+  ungradedVolumes,
 } from "./fleetResources";
 import type {
   EffectiveFloor,
@@ -1036,5 +1037,44 @@ describe("cpuTempReading — temperature is measured or it is not, never zero", 
       kind: "value",
       text: "64 C",
     });
+  });
+});
+
+// Plan 2026-11-03-devops-headroom-grades-read-only-and-esp-volumes-against-the-disk-floor
+// Phase 2 (D8): the reason a lane reads `unknown` (or a scaled-band `warn`).
+describe("ungradedVolumes", () => {
+  it("reads well-formed entries in order", () => {
+    expect(
+      ungradedVolumes({
+        ungraded_volumes: [
+          { volume: "/mnt/winiso", reason: "read_only_unknown" },
+          { volume: "/boot/efi", reason: "scaled_floor" },
+        ],
+      })
+    ).toEqual([
+      { volume: "/mnt/winiso", reason: "read_only_unknown" },
+      { volume: "/boot/efi", reason: "scaled_floor" },
+    ]);
+  });
+
+  it("an older coord (field absent) and a null row both read []", () => {
+    expect(ungradedVolumes({})).toEqual([]);
+    expect(ungradedVolumes(null)).toEqual([]);
+    expect(ungradedVolumes({ ungraded_volumes: null })).toEqual([]);
+    expect(ungradedVolumes({ ungraded_volumes: "read_only" })).toEqual([]);
+  });
+
+  it("drops malformed entries but keeps an unrecognized reason word", () => {
+    expect(
+      ungradedVolumes({
+        ungraded_volumes: [
+          null,
+          { volume: "", reason: "read_only" },
+          { volume: "/x", reason: 3 },
+          { volume: "/y" },
+          { volume: "/z", reason: "lunar_floor" },
+        ],
+      })
+    ).toEqual([{ volume: "/z", reason: "lunar_floor" }]);
   });
 });

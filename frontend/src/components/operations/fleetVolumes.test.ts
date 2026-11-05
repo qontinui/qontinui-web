@@ -8,6 +8,13 @@ import {
   resolveDeviceVolumes,
   resolveMachineVolumes,
   tightestVolume,
+  anyVolumeReported,
+  isUngradedReason,
+  scaledFloorBar,
+  countUngradedUnknown,
+  tightestVolumeTile,
+  volumeGradedSeverity,
+  volumeSkipsGrading,
   toVolumeReading,
   volumesReliabilityWarning,
   VOLUMES_NOT_YET_READ,
@@ -554,6 +561,252 @@ describe("tightestVolume", () => {
   });
 });
 
+// Plan 2026-11-03-devops-headroom-grades-read-only-and-esp-volumes-against-the-disk-floor
+// Phase 2: the tile must not take a volume coord does not grade against the
+// reserve, and must behave exactly as before against an older coord.
+describe("danger_bar: volumes coord does not grade against the reserve", () => {
+  const NAWA = "44444444-4444-4444-4444-444444444444";
+
+  it("carries danger_bar, danger_bar_bytes and read_only off the wire", () => {
+    expect(
+      toVolumeReading({
+        volume: "/mnt/winiso",
+        total_bytes: 8_150_000_000,
+        free_bytes: 0,
+        observed_at: null,
+        danger_bar: "read_only",
+        danger_bar_bytes: null,
+        read_only: true,
+      })
+    ).toEqual({
+      volume: "/mnt/winiso",
+      total_bytes: 8_150_000_000,
+      free_bytes: 0,
+      observed_at: null,
+      danger_bar: "read_only",
+      danger_bar_bytes: null,
+      read_only: true,
+    });
+  });
+
+  it("keeps read_only: null as UNKNOWN, never false", () => {
+    const r = toVolumeReading({ volume: "/", read_only: null });
+    expect(r?.read_only).toBeNull();
+    expect(r?.read_only).not.toBe(false);
+  });
+
+  it("an older coord's row gains no grading keys at all", () => {
+    expect(
+      toVolumeReading({
+        volume: "D:",
+        total_bytes: 1,
+        free_bytes: 1,
+        observed_at: null,
+      })
+    ).toEqual({
+      volume: "D:",
+      total_bytes: 1,
+      free_bytes: 1,
+      observed_at: null,
+    });
+  });
+
+  it("drops an unrecognized danger_bar token (treated as graded, as before)", () => {
+    const r = toVolumeReading({ volume: "D:", danger_bar: "lunar_floor" });
+    expect(r).not.toBeNull();
+    expect(r!.danger_bar).toBeUndefined();
+    expect(volumeSkipsGrading(r!)).toBeNull();
+    expect(scaledFloorBar(r!)).toBeNull();
+  });
+
+  it("only read_only and read_only_unknown skip grading", () => {
+    const base = {
+      volume: "v",
+      total_bytes: 1,
+      free_bytes: 1,
+      observed_at: null,
+    };
+    expect(volumeSkipsGrading(base)).toBeNull();
+    expect(volumeSkipsGrading({ ...base, danger_bar: "reserve" })).toBeNull();
+    expect(
+      volumeSkipsGrading({ ...base, danger_bar: "scaled_floor" })
+    ).toBeNull();
+    for (const bar of ["read_only", "read_only_unknown"] as const) {
+      expect(volumeSkipsGrading({ ...base, danger_bar: bar })).toBe(bar);
+      expect(volumeGradedSeverity({ ...base, danger_bar: bar })).toBeNull();
+    }
+    for (const bar of ["scaled_floor", "read_only", "read_only_unknown"]) {
+      expect(isUngradedReason(bar)).toBe(true);
+    }
+    expect(isUngradedReason("reserve")).toBe(false);
+    expect(isUngradedReason("lunar_floor")).toBe(false);
+  });
+
+  it("grades a scaled_floor volume against its own bar, not the reserve", () => {
+    const GIB = 1024 ** 3;
+    // Arm 5: a small writable volume that really filled.
+    const arm5 = {
+      volume: "/var",
+      total_bytes: 20 * GIB,
+      free_bytes: 0,
+      observed_at: null,
+      danger_bar: "scaled_floor" as const,
+      danger_bar_bytes: 2 * GIB,
+    };
+    expect(volumeGradedSeverity(arm5)).toBe("critical");
+    expect(volumeGradedSeverity({ ...arm5, free_bytes: 2 * GIB })).toBe(
+      "critical"
+    );
+    // The ESP: 1.01 GB free against a 102 MB bar is healthy, though the
+    // client reserve (25 GiB) alone would call it critical.
+    const esp = {
+      volume: "/boot/efi",
+      total_bytes: 1_020_000_000,
+      free_bytes: 1_011_924_992,
+      observed_at: null,
+      danger_bar: "scaled_floor" as const,
+      danger_bar_bytes: 102_000_000,
+    };
+    expect(volumeGradedSeverity(esp)).toBe("ok");
+    // No usable bar size: falls back to the reserve, as an absent token does.
+    expect(volumeGradedSeverity({ ...esp, danger_bar_bytes: null })).toBe(
+      "critical"
+    );
+    expect(scaledFloorBar({ ...esp, danger_bar_bytes: null })).toBeNull();
+    // Absent token: reserve bands, as before.
+    const { danger_bar: _b, danger_bar_bytes: _n, ...plain } = esp;
+    expect(volumeGradedSeverity(plain)).toBe("critical");
+  });
+
+  it("tightestVolume skips read-only, unknown and a healthy scaled-floor volume", () => {
+    const fetched = indexDeviceVolumes([
+      {
+        device_id: NAWA,
+        volumes: [
+          {
+            volume: "/",
+            total_bytes: 1_000_000_000_000,
+            free_bytes: 454_556_381_184,
+            observed_at: null,
+            danger_bar: "reserve",
+          },
+          {
+            volume: "/mnt/winiso",
+            total_bytes: 8_150_000_000,
+            free_bytes: 0,
+            observed_at: null,
+            danger_bar: "read_only_unknown",
+          },
+          {
+            volume: "/boot/efi",
+            total_bytes: 1_020_000_000,
+            free_bytes: 1_011_924_992,
+            observed_at: null,
+            danger_bar: "scaled_floor",
+            danger_bar_bytes: 102_000_000,
+          },
+          {
+            volume: "/media/iso",
+            total_bytes: 4_000_000_000,
+            free_bytes: 0,
+            observed_at: null,
+            danger_bar: "read_only",
+          },
+        ],
+      },
+    ]);
+    expect(tightestVolume(fetched)?.volume).toBe("/");
+  });
+
+  it("an arm-5 volume (small, writable, full) can be the tightest", () => {
+    const GIB = 1024 ** 3;
+    const fetched = indexDeviceVolumes([
+      {
+        device_id: NAWA,
+        volumes: [
+          {
+            volume: "/",
+            total_bytes: 1000 * GIB,
+            free_bytes: 5 * GIB,
+            observed_at: null,
+            danger_bar: "reserve",
+          },
+          {
+            volume: "/var",
+            total_bytes: 20 * GIB,
+            free_bytes: 0,
+            observed_at: null,
+            danger_bar: "scaled_floor",
+            danger_bar_bytes: 2 * GIB,
+          },
+        ],
+      },
+    ]);
+    const worst = tightestVolume(fetched);
+    expect(worst?.volume).toBe("/var");
+    expect(volumeGradedSeverity(worst!)).toBe("critical");
+  });
+
+  it("a scaled-floor volume with no served bar size ranks as before", () => {
+    const fetched = indexDeviceVolumes([
+      {
+        device_id: NAWA,
+        volumes: [
+          { volume: "/", total_bytes: 100, free_bytes: 50, observed_at: null },
+          {
+            volume: "/boot/efi",
+            total_bytes: 10,
+            free_bytes: 9,
+            observed_at: null,
+            danger_bar: "scaled_floor",
+            danger_bar_bytes: null,
+          },
+        ],
+      },
+    ]);
+    expect(tightestVolume(fetched)?.volume).toBe("/boot/efi");
+  });
+
+  it("an older coord (no danger_bar) still takes the full ISO, as today", () => {
+    const fetched = indexDeviceVolumes([
+      {
+        device_id: NAWA,
+        volumes: [
+          { volume: "/", total_bytes: 100, free_bytes: 50, observed_at: null },
+          {
+            volume: "/mnt/winiso",
+            total_bytes: 8,
+            free_bytes: 0,
+            observed_at: null,
+          },
+        ],
+      },
+    ]);
+    expect(tightestVolume(fetched)?.volume).toBe("/mnt/winiso");
+  });
+
+  it("all volumes ungraded: no tightest, but the fleet DID report", () => {
+    const fetched = indexDeviceVolumes([
+      {
+        device_id: NAWA,
+        volumes: [
+          {
+            volume: "/mnt/winiso",
+            total_bytes: 8,
+            free_bytes: 0,
+            observed_at: null,
+            danger_bar: "read_only",
+          },
+        ],
+      },
+    ]);
+    expect(tightestVolume(fetched)).toBeNull();
+    expect(anyVolumeReported(fetched)).toBe(true);
+    expect(anyVolumeReported(indexDeviceVolumes([]))).toBe(false);
+    expect(anyVolumeReported(VOLUMES_NOT_YET_READ)).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Per-device sibling (Phase 2 — `fetchDeviceVolumes`'s first consumer)
 // ---------------------------------------------------------------------------
@@ -707,5 +960,118 @@ describe("resolveDeviceVolumes", () => {
     expect(
       resolveDeviceVolumes(DEVICE_VOLUMES_NOT_YET_READ, DEVICE).state
     ).toBe("unknown");
+  });
+});
+
+// Independent review of e7b5093f: a `read_only_unknown` volume is an UNKNOWN,
+// so the tile never reads healthy beside one; a contradictory row never mutes
+// a writable disk; a negative scaled bar is not a floor.
+describe("tightestVolumeTile and the review's edge cases", () => {
+  const GIB = 1024 ** 3;
+  const DEV = "55555555-5555-5555-5555-555555555555";
+  const iso = (volume: string) => ({
+    volume,
+    total_bytes: 8 * GIB,
+    free_bytes: 0,
+    observed_at: null,
+    danger_bar: "read_only_unknown" as const,
+    read_only: null,
+  });
+  const reserve = (free: number) => ({
+    volume: "/",
+    total_bytes: 1000 * GIB,
+    free_bytes: free,
+    observed_at: null,
+    danger_bar: "reserve" as const,
+  });
+  const esp = {
+    volume: "/boot/efi",
+    total_bytes: 1_020_000_000,
+    free_bytes: 1_011_924_992,
+    observed_at: null,
+    danger_bar: "scaled_floor" as const,
+    danger_bar_bytes: 102_000_000,
+  };
+  const fleet = (volumes: import("./types").VolumeReading[]) =>
+    indexDeviceVolumes([{ device_id: DEV, volumes }]);
+  const P = { presenting: false };
+
+  it("only unknown volumes: 'N ungraded (unknown)', outline, never 'none at risk'", () => {
+    const f = fleet([iso("/mnt/a"), esp, iso("/mnt/b")]);
+    expect(countUngradedUnknown(f)).toBe(2);
+    expect(tightestVolumeTile(f, P)).toEqual({
+      value: "2 ungraded (unknown)",
+      variant: "outline",
+    });
+  });
+
+  it("a healthy reserve tightest beside an unknown keeps its figure, demoted to outline with a note", () => {
+    const tile = tightestVolumeTile(
+      fleet([reserve(500 * GIB), iso("/mnt/a")]),
+      P
+    );
+    expect(tile.variant).toBe("outline");
+    expect(tile.value).toMatch(/free \(\/\) · 1 ungraded \(unknown\)$/);
+  });
+
+  it("a red tightest stays red beside an unknown (a breach is not hidden)", () => {
+    const tile = tightestVolumeTile(
+      fleet([reserve(1 * GIB), iso("/mnt/a")]),
+      P
+    );
+    expect(tile.variant).toBe("destructive");
+    expect(tile.value).toMatch(/1 ungraded \(unknown\)/);
+  });
+
+  it("no unknown: a healthy tightest is success, an ESP-only fleet is 'none at risk'", () => {
+    expect(
+      tightestVolumeTile(fleet([reserve(500 * GIB), esp]), P).variant
+    ).toBe("success");
+    expect(tightestVolumeTile(fleet([esp]), P)).toEqual({
+      value: "none at risk",
+      variant: "outline",
+    });
+    expect(tightestVolumeTile(indexDeviceVolumes([]), P).value).toBe(
+      "none reported"
+    );
+    expect(tightestVolumeTile(VOLUMES_NOT_YET_READ, P).value).toBe("not read");
+  });
+
+  it("presenting withholds the mount, keeps the figure and the note", () => {
+    const tile = tightestVolumeTile(
+      fleet([reserve(500 * GIB), iso("/mnt/a")]),
+      {
+        presenting: true,
+      }
+    );
+    expect(tile.value).not.toMatch(/\(\/\)/);
+    expect(tile.value).toMatch(/free · 1 ungraded \(unknown\)/);
+  });
+
+  it.each(["read_only", "read_only_unknown"] as const)(
+    "danger_bar %s with read_only === false grades against the reserve",
+    (bar) => {
+      const contradictory = {
+        ...reserve(0),
+        volume: "/data",
+        danger_bar: bar,
+        read_only: false,
+      };
+      expect(volumeSkipsGrading(contradictory)).toBeNull();
+      expect(volumeGradedSeverity(contradictory)).toBe("critical");
+      const f = fleet([reserve(500 * GIB), contradictory]);
+      expect(tightestVolume(f)?.volume).toBe("/data");
+      expect(countUngradedUnknown(f)).toBe(0);
+    }
+  );
+
+  it("a negative or non-finite scaled bar falls back to the reserve", () => {
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const v = { ...esp, danger_bar_bytes: bad };
+      expect(scaledFloorBar(v)).toBeNull();
+      // 1.01 GB free is critical against the client reserve.
+      expect(volumeGradedSeverity(v)).toBe("critical");
+    }
+    expect(scaledFloorBar({ ...esp, danger_bar_bytes: 0 })).toBe(0);
   });
 });
