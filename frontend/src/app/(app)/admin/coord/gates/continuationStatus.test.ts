@@ -467,10 +467,10 @@ describe("deriveContinuationStatus — deferral pressure", () => {
   // --- whose dispatch is the deferral about? --------------------------------
   //
   // coord's `stamp_continuation_dispatched` re-stamps
-  // `continuation_dispatched_at`, NULLs the two expiry columns and touches
-  // NONE of the three deferral columns; no writer anywhere in coord resets
-  // them. So a re-dispatched gate carries the previous cycle's deferral
-  // stamps, by design.
+  // `continuation_dispatched_at`, NULLs the two expiry columns and resets
+  // the deferral count, but keeps a RUNNER deferral's time and reason (it
+  // NULLs them only for a coord_hold. hold). So a re-dispatched gate can
+  // carry the previous cycle's runner deferral stamps, by design.
 
   it("does not call a freshly re-dispatched row abandoned on old deferral stamps", () => {
     const s = derive({
@@ -967,7 +967,7 @@ describe("deriveContinuationStatus — coord's clearance hold (coord_hold.*)", (
     expect(
       held("coord_hold.pin_stale", {
         continuation_expired_at: minsAgo(1),
-        continuation_expired_reason: "hold_ttl_elapsed",
+        continuation_expired_reason: "held_no_eligible_device_ttl",
       }).status.kind
     ).toBe("expired");
     expect(
@@ -1013,7 +1013,7 @@ describe("the deferral history chip and problem note — a hold is not a push-ba
   const expiredHeldRow: Partial<ContinuationStatusInput> = {
     ...heldRow,
     continuation_expired_at: minsAgo(1),
-    continuation_expired_reason: "hold_ttl_elapsed",
+    continuation_expired_reason: "held_no_eligible_device_ttl",
   };
 
   it("adds no deferral note to a held row — the badge already says it", () => {
@@ -1029,13 +1029,29 @@ describe("the deferral history chip and problem note — a hold is not a push-ba
     const chip = deferralHistoryChip(s.deferral!);
     expect(chip.text).toBe("after 12 holds");
     expect(chip.title).toBe(
-      "coord held this continuation at clearance 12 times; last: held: no online device advertises os:linux (×12)"
+      "coord stamped a hold on this continuation 12 times (at clearance and on each re-drive pass); last: held: no online device advertises os:linux (×12)"
     );
     const note = deferralProblemNote(s, "3m ago")!;
-    expect(note).toContain("coord held this continuation at clearance 12 times");
+    expect(note).toContain(
+      "coord stamped a hold on this continuation 12 times (at clearance and on each re-drive pass)"
+    );
     expect(note).toContain("(last 3m ago)");
     for (const text of [chip.text, chip.title, note]) {
       expect(text).not.toMatch(/pushed back|runner/i);
+    }
+  });
+
+  it("reads every hold terminus coord writes as expired, worded as a hold", () => {
+    // TerminusReason::as_str, qontinui-coord continuation_hold_redrive.rs.
+    for (const why of [
+      "held_no_eligible_device_ttl",
+      "held_registry_veto",
+      "held_unit_terminal",
+    ]) {
+      const s = derive({ ...heldRow, continuation_expired_at: minsAgo(1), continuation_expired_reason: why });
+      expect(s.status.kind).toBe("expired");
+      expect(s.status.reason).toContain(why);
+      expect(deferralHistoryChip(s.deferral!).text).toBe("after 12 holds");
     }
   });
 

@@ -681,7 +681,7 @@ export function deferralHistoryChip(d: ContinuationDeferral): {
   if (d.hold) {
     return {
       text: `after ${n} hold${plural}`,
-      title: `coord held this continuation at clearance ${timesPhrase(d)}${
+      title: `coord stamped a hold on this continuation ${timesPhrase(d)} (at clearance and on each re-drive pass)${
         d.reason ? `; last: ${d.reason}` : ""
       }`,
     };
@@ -713,9 +713,9 @@ export function deferralProblemNote(
   const when = lastRelative ? ` (last ${lastRelative})` : "";
   if (d.hold) {
     if (s.status.kind === "held") return null;
-    return `coord held this continuation at clearance ${timesPhrase(d)} before this state, with no device it could dispatch to or a registry veto${
+    return `coord stamped a hold on this continuation ${timesPhrase(d)} (at clearance and on each re-drive pass) before this state, finding no device it could dispatch to or a registry veto${
       d.reason ? `; last: ${d.reason}` : ""
-    }${when}. Each count is a clearance or hold re-drive pass coord made, not a measure of time.`;
+    }${when}. The count is coord's own hold stamps, not a measure of time.`;
   }
   return `Dispatch pushed back ${timesPhrase(d)}${
     d.reason ? `; last time ${d.reason}` : ""
@@ -747,10 +747,11 @@ function deferralLabel(d: ContinuationDeferral): string {
  * ## Whose dispatch is the deferral about?
  *
  * coord's `stamp_continuation_dispatched` (`gates.rs`) re-stamps
- * `continuation_dispatched_at` and NULLs the two expiry columns, and touches
- * NONE of the three deferral columns — and nothing else in coord resets them
- * either (no `continuation_deferred_at = NULL` / `_count = 0` writer exists).
- * Its own doc says the stamp goes "precisely to gates whose anchor can still be
+ * `continuation_dispatched_at`, NULLs the two expiry columns and resets
+ * `continuation_deferred_count` to 0. It NULLs `continuation_deferred_at` /
+ * `_reason` only when the reason is a `coord_hold.` hold, and leaves a RUNNER
+ * deferral's time and reason in place. So a re-dispatched row can still carry
+ * a previous cycle's runner deferral stamps (with a count of 0). Its own doc says the stamp goes "precisely to gates whose anchor can still be
  * re-cleared", so a re-dispatch carrying a previous cycle's deferral stamps is a
  * DESIGNED path. Such a deferral says nothing about the dispatch now in flight,
  * so this returns `null` and the caller judges on the dispatch age instead —
