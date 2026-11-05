@@ -180,7 +180,7 @@ describe("AccountSelectionPanel", () => {
     );
     render(<AccountSelectionPanel />);
     expect(screen.getByTestId("account-selection-blurb").textContent).toMatch(
-      /New sessions always start on the first account; only handoffs alternate/
+      /New sessions start on the first account; only handoffs alternate/
     );
   });
 
