@@ -38,18 +38,23 @@ describe("coordDossiers", () => {
       limit: 50,
       readiness: ["ready_for_pvi", "none"],
       remediationState: ["none"],
+      slug: "worktree-sibling-build-dependency",
       q: "sibling build",
       recurrenceMin: 0,
       recurrenceMax: 40,
       lastSeenSince: "2026-10-01",
       lastSeenUntil: "2026-10-24",
+      firstSeenSince: "2026-06-01",
+      firstSeenUntil: "2026-07-01",
+      updatedSince: "2026-10-20",
+      updatedUntil: "2026-10-25",
       hasOpenRemediation: false,
       sort: "recurrence_count",
       order: "asc",
       cursor: "c/1",
     });
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "/api/v1/operations/coord/dossiers?limit=50&readiness=ready_for_pvi&readiness=none&remediation_state=none&q=sibling+build&recurrence_min=0&recurrence_max=40&last_seen_since=2026-10-01&last_seen_until=2026-10-24&has_open_remediation=false&sort=recurrence_count&order=asc&cursor=c%2F1"
+      "/api/v1/operations/coord/dossiers?limit=50&readiness=ready_for_pvi&readiness=none&remediation_state=none&slug=worktree-sibling-build-dependency&q=sibling+build&recurrence_min=0&recurrence_max=40&last_seen_since=2026-10-01&last_seen_until=2026-10-24&first_seen_since=2026-06-01&first_seen_until=2026-07-01&updated_since=2026-10-20&updated_until=2026-10-25&has_open_remediation=false&sort=recurrence_count&order=asc&cursor=c%2F1"
     );
   });
 

@@ -480,9 +480,9 @@ describe("buildPipelineRows — join + unified status", () => {
 // ---------------------------------------------------------------------------
 // Block-reason UX truth table (plan 2026-07-15-merge-train-block-reason-ux):
 // "needs attention" must mean EXACTLY "agent/author action required". A
-// still-running non-required check is not an author problem; BEHIND is
-// coord's problem (auto-rebase); a named or aggregate failure IS the
-// author's problem.
+// still-running non-required check is not an author problem; a bare BEHIND
+// is an UNKNOWN wait (coord's freshen MAY act, under a dwell cap); a named
+// or aggregate failure IS the author's problem.
 // ---------------------------------------------------------------------------
 describe("statusFromGitHub — attention truth table", () => {
   function rowFor(overrides: Partial<PrRow>) {

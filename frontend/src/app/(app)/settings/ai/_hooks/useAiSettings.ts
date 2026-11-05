@@ -34,7 +34,16 @@ export interface DerivedAccountSelection {
   source?: "fleet" | "local" | "pinned";
   /** undefined = key absent (UNKNOWN); null = no fleet opinion. */
   fleet?: string | null;
+  /**
+   * The runner reports that coord has NOT yet answered the fleet domain, so
+   * its null fleet value means "not yet asked": `fleet` is left UNKNOWN and an
+   * unpinned `source` too (the local mode applies until the first answer).
+   */
+  fleetUnread?: boolean;
 }
+
+/** How often the read-out is re-read while the fleet domain is unread. */
+export const FLEET_UNREAD_REFRESH_MS = 5000;
 
 function readDerived(view: AiSettingsView): DerivedAccountSelection {
   const d: DerivedAccountSelection = {};
@@ -48,6 +57,16 @@ function readDerived(view: AiSettingsView): DerivedAccountSelection {
     d.source = view.account_selection_source;
   if ("fleet_account_selection_mode" in view)
     d.fleet = view.fleet_account_selection_mode ?? null;
+  // Only an explicit `false` is "not yet asked" (an absent key is an older
+  // runner, which keeps its own claim). A non-null fleet value can only have
+  // come from coord, so it IS an answer whatever the flag says. A pinned
+  // source stays: no fleet answer can change it. Same rule as the runner's
+  // own Settings page and env capture (`reported_selection_source`).
+  if (view.fleet_account_selection_answered === false && d.fleet === null) {
+    d.fleetUnread = true;
+    delete d.fleet;
+    if (d.source !== "pinned") delete d.source;
+  }
   return d;
 }
 
@@ -157,6 +176,43 @@ export function useAiSettings() {
       loadSettings();
     }
   }, [isOffline, loadSettings]);
+
+  // While coord has not answered the fleet domain, re-read the derived
+  // read-out (never the form) until the runner reports an answer, so the page
+  // picks up the fleet's value or its "no opinion" without a reload. One read
+  // at a time: the next is scheduled only once this one settles, so a runner
+  // slower than the interval still lands its answer instead of having it
+  // superseded by the next tick. A poll never bumps a counter, so it cannot
+  // strand a save's follow-up read; it yields to any load or save refresh
+  // that started while it was in flight.
+  const fleetUnread = derived.fleetUnread === true;
+  useEffect(() => {
+    if (!fleetUnread || isOffline) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      const loadSeq = requestSeq.current;
+      const refreshAtStart = refreshSeq.current;
+      try {
+        const refreshed = await runnerApi.getAiSettings();
+        if (
+          !cancelled &&
+          loadSeq === requestSeq.current &&
+          refreshAtStart === refreshSeq.current
+        ) {
+          setDerived(readDerived(refreshed));
+        }
+      } catch {
+        /* keep the previous derived values; the next tick retries */
+      }
+      if (!cancelled) timer = setTimeout(tick, FLEET_UNREAD_REFRESH_MS);
+    };
+    timer = setTimeout(tick, FLEET_UNREAD_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [fleetUnread, isOffline, runnerApi]);
 
   // The account-selection edits the form holds that the runner has not seen.
   const rosterDirty =
