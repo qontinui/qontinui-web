@@ -572,7 +572,7 @@ describe("/admin/coord/overlord/flow", () => {
       await waitFor(() =>
         expect(
           screen.getByTestId("overlord-flow-closed-summary")
-        ).toHaveTextContent("4+ in")
+        ).toHaveTextContent("≥4 in")
       );
       await openPanel("overlord-flow-closed", /closed sessions/i);
       expect(screen.getByTestId("overlord-flow-closed-cut")).toHaveTextContent(
@@ -689,7 +689,20 @@ describe("/admin/coord/overlord/flow", () => {
       });
       render(<CoordOverlordFlowPage />);
       const [row] = await screen.findAllByTestId("overlord-flow-versions-row");
-      expect(row).toHaveTextContent("1+");
+      expect(row).toHaveTextContent("≥1");
+    });
+
+    it("shows a cut version count with no rows as a dash, not ≥0", async () => {
+      fetchFlow.mockResolvedValue({
+        ...FULL_FLOW,
+        groups: [
+          { ...FULL_FLOW.groups[1], unchanged: [], unchanged_truncated: true },
+        ],
+      });
+      render(<CoordOverlordFlowPage />);
+      const [row] = await screen.findAllByTestId("overlord-flow-versions-row");
+      expect(row).not.toHaveTextContent("≥0");
+      expect(row).not.toHaveTextContent("0+");
     });
 
     it("does not read a version too short to show one as zero unchanged", async () => {
@@ -720,7 +733,7 @@ describe("/admin/coord/overlord/flow", () => {
       await waitFor(() =>
         expect(
           screen.getByTestId("overlord-flow-closed-summary")
-        ).toHaveTextContent("4+ in")
+        ).toHaveTextContent("≥4 in")
       );
     });
 

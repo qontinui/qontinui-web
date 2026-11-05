@@ -43,5 +43,5 @@ regexes = [
   # coord's closed-session rows carry their session id in a field named
   # `key`, so generic-api-key reads `key: "<uuid>"` as a credential. They are
   # public identifiers, not secrets. Matches only those two literals.
-  '''[78][ab]1c2d3e-4b5a-4978-8a9b-0c1d2e3f4a5[12]''',
+  '''(7a1c2d3e-4b5a-4978-8a9b-0c1d2e3f4a51|8b1c2d3e-4b5a-4978-8a9b-0c1d2e3f4a52)''',
 ]

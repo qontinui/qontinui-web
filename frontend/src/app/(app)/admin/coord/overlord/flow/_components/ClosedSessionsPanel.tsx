@@ -12,6 +12,7 @@ import {
   CAPPED_READ_NOTE,
   closedCountMismatch,
   closedRowKey,
+  countWords,
   type ClosedSessions,
 } from "../_lib/overlordFlowStatus";
 import { ClosedSessionRow } from "./ClosedSessionRow";
@@ -57,7 +58,7 @@ export function ClosedSessionsPanel({
             ? "reading…"
             : closed === null
               ? "not read — unknown"
-              : `${closed.sessions.length}${closed.truncated !== false ? "+" : ""} in ${windowWords}`}
+              : `${countWords(closed.sessions.length, closed.truncated !== false)} in ${windowWords}`}
         </span>
       }
       defaultOpen={false}
