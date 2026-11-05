@@ -69,8 +69,11 @@ on:
 # beside it. What keeps two TASKS from overlapping is the database:
 # backend/alembic/env.py takes a session-level advisory lock
 # (app/db/migration_lock.py) and a second migrator POLLS for it, up to
-# $QONTINUI_MIGRATION_LOCK_WAIT_SECS (default 3600 s), then finds the head
-# already stamped and applies nothing. A blocking wait would deadlock a live
+# $QONTINUI_MIGRATION_LOCK_WAIT_SECS (default 3600 s), and plans its upgrade
+# only after the holder has stamped. That wait outlasts this workflow's waiter
+# deadline, so a run whose task is waiting usually reports outcome UNKNOWN, not
+# its real one. Waiters are not served FIFO; an older image that wins after a
+# newer one stamped fails loudly and applies nothing. A blocking wait would deadlock a live
 # CREATE INDEX CONCURRENTLY (plan
 # 2026-11-04-two-web-migrators-can-run-at-once-and-kill-a-concurrent-index-build).
 # Cancel-in-progress is OFF and no step stops a task: stopping a migrator
@@ -638,7 +641,7 @@ jobs:
         env:
           TASK_ARN: ${{ steps.runtask.outputs.task_arn }}
         run: |
-          echo "::warning::run cancelled while migrator task ${TASK_ARN} may still be running; it was NOT stopped and may still succeed. A later migrator waits for its database lock. Check it: aws ecs describe-tasks --cluster <cluster> --tasks ${TASK_ARN}"
+          echo "::warning::run cancelled while migrator task ${TASK_ARN} may still be running; it was NOT stopped and may still succeed. A later migrator waits for its database lock. Check it: aws ecs describe-tasks --cluster \"\${STAGING_ECS_CLUSTER}\" --tasks ${TASK_ARN} (cluster is the STAGING_ECS_CLUSTER secret)"
 
       # ── Report the migration apply to coord (best-effort) ─────────────────
       # NEVER `if: always()`. POST /coord/schema/applications has no outcome
