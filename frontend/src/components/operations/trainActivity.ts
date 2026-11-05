@@ -2021,9 +2021,9 @@ function detailFor(code: PauseReasonCode, prs: PrRow[]): string {
     case "ci-failed-stale-base":
       return (
         `${n} PR${plural} with red CI on a stale base — main has moved past ` +
-        `the CI base, so the red may be main's. coord freshens ` +
-        `${n === 1 ? "it" : "them"} (updates the branch and re-runs CI); ` +
-        `not the author's move.`
+        `the CI base, so the red may be main's; not the author's move. ` +
+        `coord's freshen MAY update the branch and re-run CI, but whether it ` +
+        `will act on ${n === 1 ? "it" : "them"} is not served yet — UNKNOWN.`
       );
     case "ci-pending": {
       const contexts = [
