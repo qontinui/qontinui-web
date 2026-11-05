@@ -222,40 +222,16 @@ jobs:
     # p50 1.35 / p90 1.47 / max 1.52 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 5
     name: Lint & Format Check
-    # ubuntu-latest, NOT [self-hosted, public-pool]. (The `qontinui` label is
-    # not an option at all: this repo is PUBLIC, and qontinui-claude-config's
-    # scripts/lint-public-repo-runner-exposure.py refuses `qontinui` on a
-    # public repo -- a public job's only self-hosted target is `public-pool`,
-    # run as a separate unix user from private-repo jobs.)
-    #
-    # This job was pinned to the self-hosted pool because those runners had
-    # Python 3.12 pre-installed plus a persistent pip cache, which avoided the
-    # ubuntu-latest cold-boot tax (~90s of action downloads + apt + pip warmup).
-    # That optimisation stopped being free on 2026-08-24: the pool's image moved
-    # to Debian 13, actions/setup-python@v5 found no 3.12 in the runner tool
-    # cache, and the download it fell back to does not exist for that platform:
-    #
-    #   ##[error]The version '3.12' with architecture 'x64' was not found for
-    #   Debian 13.
-    #
-    # The job then failed in ~13s having never reached ruff or mypy, on EVERY
-    # branch (verified across two unrelated PRs and confirmed against the last
-    # green run on this same pool at 16:37 UTC that day). A required check that
-    # cannot pass is worse than a slow one: it blocks the merge train for the
-    # whole repo.
-    #
-    # ubuntu-latest is not a guess — the `test` job below already runs there
-    # with the IDENTICAL actions/setup-python@v5 + PYTHON_VERSION + pip cache,
-    # and was green on the run where this job broke. So this restores a
-    # configuration already proven in this file rather than inventing one.
-    #
-    # Re-pinning to [self-hosted, public-pool] (never `qontinui`, which the
-    # public-repo runner-exposure lint refuses here) is fine once the pool
-    # image ships a 3.12 that setup-python can resolve (or once the runner
-    # tool cache is seeded with one). Re-verify against a real run before doing so; the
-    # comment that used to live here asserted "pre-installed" as a standing
-    # fact, and that assertion is exactly what went stale.
-    runs-on: ubuntu-latest
+    # LIGHT LANE (WEB_CI_LANE_BACKEND_CI || WEB_CI_LIGHT_LANE, fork-guarded to
+    # hosted). History: this job left an earlier self-hosted pool on 2026-08-24
+    # because setup-python found no 3.12 there on Debian 13. The nawa org pool
+    # resolves 3.12 from its tool cache (the light-lane jobs #2087 moved use
+    # it green), and the `public-pool`/`qontinui` trust split that comment
+    # described was withdrawn by decision_record/self-hosted-runners-on-public-repos
+    # (2026-10-04 amendment). Poetry installs under $RUNNER_TEMP, never the
+    # shared runner HOME. Plan
+    # 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
 
     defaults:
       run:
@@ -314,10 +290,16 @@ jobs:
       # docstring, the hook comment in .pre-commit-config.yaml, and
       # ruff-version-parity.yml's header — plus this comment.
 
+      # Poetry, its cache and its virtualenvs live under $RUNNER_TEMP: on the
+      # self-hosted light lane every runner shares one unix user's HOME, so the
+      # default ~/.local and ~/.cache/pypoetry would be written by concurrent jobs.
       - name: Install Poetry
         run: |
+          export POETRY_HOME="$RUNNER_TEMP/poetry"
           curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$POETRY_HOME/bin" >> "$GITHUB_PATH"
+          echo "POETRY_CACHE_DIR=$RUNNER_TEMP/poetry-cache" >> "$GITHUB_ENV"
+          echo "POETRY_VIRTUALENVS_PATH=$RUNNER_TEMP/poetry-venvs" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
@@ -528,6 +510,8 @@ jobs:
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
         run: |
           cd "$GITHUB_WORKSPACE/.."
+          # The self-hosted workspace parent persists between jobs.
+          rm -rf qontinui-schemas qontinui qontinui-cloud-control
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
           git clone --depth 1 https://github.com/jspinak/qontinui.git
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
@@ -545,10 +529,16 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
+      # Poetry, its cache and its virtualenvs live under $RUNNER_TEMP: on the
+      # self-hosted light lane every runner shares one unix user's HOME, so the
+      # default ~/.local and ~/.cache/pypoetry would be written by concurrent jobs.
       - name: Install Poetry
         run: |
+          export POETRY_HOME="$RUNNER_TEMP/poetry"
           curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$POETRY_HOME/bin" >> "$GITHUB_PATH"
+          echo "POETRY_CACHE_DIR=$RUNNER_TEMP/poetry-cache" >> "$GITHUB_ENV"
+          echo "POETRY_VIRTUALENVS_PATH=$RUNNER_TEMP/poetry-venvs" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
@@ -1329,7 +1319,7 @@ jobs:
     # p50 2.42 / p90 4.03 / max 7.20 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 15
     name: Security Scanning
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     permissions:
       contents: read
       security-events: write
@@ -1366,6 +1356,7 @@ jobs:
           sarif_file: 'trivy-results.sarif'
 
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
@@ -1378,6 +1369,8 @@ jobs:
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
         run: |
           cd "$GITHUB_WORKSPACE/.."
+          # The self-hosted workspace parent persists between jobs.
+          rm -rf qontinui-schemas qontinui qontinui-cloud-control
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
           git clone --depth 1 https://github.com/jspinak/qontinui.git
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
@@ -1387,10 +1380,16 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      # Poetry, its cache and its virtualenvs live under $RUNNER_TEMP: on the
+      # self-hosted light lane every runner shares one unix user's HOME, so the
+      # default ~/.local and ~/.cache/pypoetry would be written by concurrent jobs.
       - name: Install Poetry
         run: |
+          export POETRY_HOME="$RUNNER_TEMP/poetry"
           curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$POETRY_HOME/bin" >> "$GITHUB_PATH"
+          echo "POETRY_CACHE_DIR=$RUNNER_TEMP/poetry-cache" >> "$GITHUB_ENV"
+          echo "POETRY_VIRTUALENVS_PATH=$RUNNER_TEMP/poetry-venvs" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
@@ -1538,7 +1537,10 @@ jobs:
     # p50 2.14 / p90 3.05 / max 5.90 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 15
     name: Test Docker Build
-    runs-on: ubuntu-latest
+    # DB LANE, not light: the light pool's `runner` user has no docker; the
+    # webdb slots each run a rootless dockerd for their own user. Plan
+    # 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
     defaults:
       run:
         working-directory: ./backend
@@ -1553,6 +1555,7 @@ jobs:
       # layers + image cache. Free the host's preinstalled SDKs before
       # docker build runs.
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false

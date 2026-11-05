@@ -340,7 +340,11 @@ jobs:
     #
     # See frontend/docs/composed-cloud-build.md.
     name: Composed cloud build (with @qontinui/cloud-control)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    env:
+      # As in `lint` above: vitest would otherwise start nproc - 1 workers
+      # (127 on a nawa runner). Pin the hosted value on both lanes.
+      VITEST_MAX_WORKERS: 3
 
     steps:
       - name: Checkout qontinui-web

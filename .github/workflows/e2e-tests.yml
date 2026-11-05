@@ -97,7 +97,11 @@ permissions:
 jobs:
   backend-tests:
     name: Backend E2E Tests
-    runs-on: ubuntu-latest
+    # LIGHT LANE (fork-guarded to hosted). The light pool's runners share one
+    # unix user, so this job installs into a venv under $RUNNER_TEMP and only
+    # restores the pip cache on hosted. Plan
+    # 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     # Job cap. This workflow carried NO `timeout-minutes` at any level, so a
     # hung step fell through to GitHub's DEFAULT 360-minute ceiling — that is
     # how run 32207280679 burned 2h28m and 32216356137 burned 5h59m in
@@ -122,9 +126,11 @@ jobs:
       # fails with ENOENT. qontinui-cloud-control is needed for the test
       # harness's side-effect import (see backend/tests/conftest.py); it is
       # now AGPL/public under qontinui/, cloned the same way as the others.
+      # All three are public, so they are cloned without a token: a token in
+      # the clone URL is written to each clone's .git/config, which on a
+      # self-hosted runner outlives the job. That runner's workspace parent also
+      # persists, so each target is removed before it is cloned.
       - name: Clone backend Python sibling deps
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           for spec in \
@@ -133,9 +139,8 @@ jobs:
             "qontinui/qontinui-cloud-control" \
           ; do
             repo_name="${spec#*/}"
-            git clone --depth 1 \
-              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
-              "../${repo_name}"
+            rm -rf "../${repo_name}"
+            git clone --depth 1 "https://github.com/${spec}.git" "../${repo_name}"
           done
 
       - name: Set up Python ${{ matrix.python-version }}
@@ -143,7 +148,17 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # A job venv: pip must not write into the setup-python interpreter, which
+      # on the self-hosted pool lives in a tool cache every runner shares.
+      - name: Create a job venv
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+
+      # Hosted only: on the self-hosted pool ~/.cache/pip is one directory
+      # shared by every runner, and restoring an archive over it races them.
       - name: Cache pip dependencies
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/pip
