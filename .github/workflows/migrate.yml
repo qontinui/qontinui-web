@@ -63,11 +63,19 @@ on:
         required: false
         default: ""
 
-# Migrator runs as a one-shot ECS task; concurrent runs are safe (alembic
-# acquires its own advisory lock on the DB) but pointless. Cancel-in-progress
-# is OFF: cancelling a migration mid-flight risks half-applied DDL that
-# alembic's advisory lock can't roll back. Pending runs queue and the latest
-# wins naturally (alembic stamps head, intermediate runs no-op).
+# Migrator runs as a one-shot ECS task. This group serializes WORKFLOW RUNS
+# only: the waiter below never stops its task, so a run that times out or is
+# cancelled leaves its task running, and the next run can start a second task
+# beside it. What keeps two TASKS from overlapping is the database:
+# backend/alembic/env.py takes a session-level advisory lock
+# (app/db/migration_lock.py) and a second migrator POLLS for it, up to
+# $QONTINUI_MIGRATION_LOCK_WAIT_SECS (default 3600 s), then finds the head
+# already stamped and applies nothing. A blocking wait would deadlock a live
+# CREATE INDEX CONCURRENTLY (plan
+# 2026-11-04-two-web-migrators-can-run-at-once-and-kill-a-concurrent-index-build).
+# Cancel-in-progress is OFF and no step stops a task: stopping a migrator
+# mid-flight risks half-applied DDL, which no lock can roll back. Pending runs
+# queue and the latest wins naturally (alembic stamps head, later runs no-op).
 concurrency:
   group: migrate
   cancel-in-progress: false
@@ -616,9 +624,21 @@ jobs:
               echo "::error::Migrator exited with code ${EXIT_CODE} (reason: ${STOP_REASON})"
               exit 1 ;;
             *)
-              echo "::error::migrator task still ${LAST_STATUS} after ${WAITED}s; outcome UNKNOWN — the task keeps running and may still succeed; do NOT treat this as a failed apply"
+              echo "::error::migrator task ${TASK_ARN} still ${LAST_STATUS} after ${WAITED}s; outcome UNKNOWN — the task keeps running and may still succeed; do NOT treat this as a failed apply"
               exit 1 ;;
           esac
+
+      # ── A cancelled or timed-out run leaves its task running ──────────────
+      # The waiter above never stops the task (see the concurrency comment), so
+      # a run cancelled by hand or by `timeout-minutes` must still say WHICH task
+      # it stopped watching. The next migrator waits on the database lock rather
+      # than racing it.
+      - name: Name the migrator task this run stopped watching
+        if: cancelled() && steps.runtask.outputs.task_arn != ''
+        env:
+          TASK_ARN: ${{ steps.runtask.outputs.task_arn }}
+        run: |
+          echo "::warning::run cancelled while migrator task ${TASK_ARN} may still be running; it was NOT stopped and may still succeed. A later migrator waits for its database lock. Check it: aws ecs describe-tasks --cluster <cluster> --tasks ${TASK_ARN}"
 
       # ── Report the migration apply to coord (best-effort) ─────────────────
       # NEVER `if: always()`. POST /coord/schema/applications has no outcome
