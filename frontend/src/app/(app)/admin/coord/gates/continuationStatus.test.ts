@@ -34,6 +34,8 @@ import {
   DEFERRAL_SILENT_MS,
   DEFERRAL_STUCK_COUNT,
   DISPATCH_STALE_MS,
+  deferralHistoryChip,
+  deferralProblemNote,
   deriveContinuationStatus,
   humanizeDeferralReason,
   type ContinuationKind,
@@ -997,5 +999,68 @@ describe("deriveContinuationStatus — coord's clearance hold (coord_hold.*)", (
     ).toBe(
       "the machine was out of OS threads (critical) — 540 observed against a limit of 400"
     );
+  });
+});
+
+describe("the deferral history chip and problem note — a hold is not a push-back", () => {
+  const HOLD = "coord_hold.no_capable_device:os:linux";
+  const heldRow: Partial<ContinuationStatusInput> = {
+    continuation_deferred_at: minsAgo(3),
+    continuation_deferred_reason: HOLD,
+    continuation_deferred_count: 12,
+  };
+  // coord's hold-TTL expiry keeps the coord_hold. reason on the row.
+  const expiredHeldRow: Partial<ContinuationStatusInput> = {
+    ...heldRow,
+    continuation_expired_at: minsAgo(1),
+    continuation_expired_reason: "hold_ttl_elapsed",
+  };
+
+  it("adds no deferral note to a held row — the badge already says it", () => {
+    const s = derive(heldRow);
+    expect(s.status.kind).toBe("held");
+    expect(deferralProblemNote(s, "3m ago")).toBeNull();
+  });
+
+  it("words an expired held row's history as coord's hold, never a runner's", () => {
+    const s = derive(expiredHeldRow);
+    expect(s.status.kind).toBe("expired");
+    expect(s.deferralRendered).toBe(false);
+    const chip = deferralHistoryChip(s.deferral!);
+    expect(chip.text).toBe("after 12 holds");
+    expect(chip.title).toBe(
+      "coord held this continuation at clearance 12 times; last: held: no online device advertises os:linux (×12)"
+    );
+    const note = deferralProblemNote(s, "3m ago")!;
+    expect(note).toContain("coord held this continuation at clearance 12 times");
+    expect(note).toContain("(last 3m ago)");
+    for (const text of [chip.text, chip.title, note]) {
+      expect(text).not.toMatch(/pushed back|runner/i);
+    }
+  });
+
+  it("keeps a runner deferral's chip and note exactly as before", () => {
+    const s = derive({
+      continuation_dispatched_at: minsAgo(60),
+      continuation_deferred_at: minsAgo(120),
+      continuation_deferred_reason: "at_cap:4",
+      continuation_deferred_count: 1,
+      continuation_consumed_at: minsAgo(30),
+      continuation_consumed_outcome: "work_completed",
+    });
+    expect(deferralHistoryChip(s.deferral!)).toEqual({
+      text: "after 1 deferral",
+      title: `Dispatch was pushed back before this state; last reason: ${s.deferral!.reason}`,
+    });
+    expect(deferralProblemNote(s, null)).toBe(
+      `Dispatch pushed back 1 time; last time ${s.deferral!.reason}. The runner stamps at most one deferral an hour per gate, so that count is a floor on how many hours it has been refused.`
+    );
+  });
+
+  it("notes a hold reason at coord's 200-character cap may be cut short", () => {
+    const capped = `coord_hold.no_capable_device:${"x".repeat(200)}`.slice(0, 200);
+    expect(capped).toHaveLength(200);
+    expect(humanizeDeferralReason(capped)).toContain("may be cut short");
+    expect(humanizeDeferralReason(HOLD)).not.toContain("cut short");
   });
 });
