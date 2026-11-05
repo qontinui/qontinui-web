@@ -220,7 +220,10 @@ jobs:
   lint:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
     # p50 1.35 / p90 1.47 / max 1.52 min; cap = max(5, 2x max). Replaces the 360-min default.
-    timeout-minutes: 5
+    # Raised to 10 for the light lane: there Poetry and the deps install uncached into
+    # $RUNNER_TEMP every job, and on qontinui-web#2091's run (job 127450116582,
+    # nawa-org-14) the Poetry install alone ran 4.6 min before the 5-min cap cancelled it.
+    timeout-minutes: 10
     name: Lint & Format Check
     # LIGHT LANE (WEB_CI_LANE_BACKEND_CI || WEB_CI_LIGHT_LANE, fork-guarded to
     # hosted). History: this job left an earlier self-hosted pool on 2026-08-24

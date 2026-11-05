@@ -783,9 +783,9 @@ jobs:
             --issuer "http://127.0.0.1:8770" \
             --audience spec-ci-local \
             --email "$EMAIL" \
-            --out-dir /tmp/e2e-idp)
+            --out-dir "$RUNNER_TEMP"/e2e-idp)
           echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          (cd /tmp/e2e-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
+          (cd "$RUNNER_TEMP"/e2e-idp && python -m http.server 8770 --bind 127.0.0.1 > "$RUNNER_TEMP"/idp.log 2>&1 &)
           for i in $(seq 1 15); do
             if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
               echo "local JWKS up after ${i}s"

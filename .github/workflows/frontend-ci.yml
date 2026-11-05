@@ -290,7 +290,7 @@ jobs:
           set -uo pipefail
           rm -rf frontend/node_modules/@qontinui/cloud-control
           rm -f frontend/public/composed-build.json
-          cp frontend/cloud-control.pin /tmp/pin.bak
+          cp frontend/cloud-control.pin "$RUNNER_TEMP"/pin.bak
           # A well-formed sha that resolves to nothing: the fetch must fail,
           # and the script must exit non-zero WITHOUT writing a marker.
           echo '0000000000000000000000000000000000000000' > frontend/cloud-control.pin
@@ -304,7 +304,7 @@ jobs:
           else
             rc=$?
           fi
-          cp /tmp/pin.bak frontend/cloud-control.pin
+          cp "$RUNNER_TEMP"/pin.bak frontend/cloud-control.pin
           if [ "$rc" -eq 0 ]; then
             echo 'script exited 0 with an unresolvable pin' >&2
             exit 1
