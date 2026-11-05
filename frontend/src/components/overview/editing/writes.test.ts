@@ -253,15 +253,8 @@ describe("classifyImport with the table's rules", () => {
   it("writes nothing for a refused line in an import plan", () => {
     const bad = item({ name: "Omega", size: 9 });
     const good = item({ name: "Gamma" });
-    const plan = planRecordWrites(
-      [a],
-      [bad, good],
-      "import",
-      WRITABLE,
-      byName,
-      {
-        rowProblem,
-      }
+    const plan = planImportWrites(
+      classifyImport([a], [bad, good], WRITABLE, byName, { rowProblem })
     );
     expect(plan).toEqual({ creates: [good], updates: [], deletes: [] });
   });

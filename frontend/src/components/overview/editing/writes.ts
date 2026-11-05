@@ -202,22 +202,19 @@ export function planImportWrites<Row extends Planned>(
  *   row that is gone is deleted.
  * - An **import** (a CSV paste) never deletes: each pasted row's writes are
  *   its `classifyImport` fate — an add is a create, an update is an update,
- *   an unchanged row is no write at all, and a refused row is no write
- *   either. A caller that must refuse the whole batch classifies once and
- *   hands the fates to `planImportWrites` instead.
+ *   an unchanged row is no write at all. It applies no `ImportRules`: a
+ *   caller holding the table's rules classifies once with them and hands
+ *   the fates to `planImportWrites`, so it can refuse the whole batch.
  */
 export function planRecordWrites<Row extends Planned>(
   previous: Row[],
   next: Row[],
   how: "edit" | "import",
   writable: readonly string[],
-  matchKey?: (row: Row) => string,
-  rules?: ImportRules<Row>
+  matchKey?: (row: Row) => string
 ): Writes<Row> {
   if (how === "import")
-    return planImportWrites(
-      classifyImport(previous, next, writable, matchKey, rules)
-    );
+    return planImportWrites(classifyImport(previous, next, writable, matchKey));
   const plan: Writes<Row> = { creates: [], updates: [], deletes: [] };
   const byId = new Map(previous.map((p) => [p.id, p]));
   const kept = new Set<string>();
