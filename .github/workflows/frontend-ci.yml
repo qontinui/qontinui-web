@@ -290,7 +290,7 @@ jobs:
           set -uo pipefail
           rm -rf frontend/node_modules/@qontinui/cloud-control
           rm -f frontend/public/composed-build.json
-          cp frontend/cloud-control.pin /tmp/pin.bak
+          cp frontend/cloud-control.pin "$RUNNER_TEMP"/pin.bak
           # A well-formed sha that resolves to nothing: the fetch must fail,
           # and the script must exit non-zero WITHOUT writing a marker.
           echo '0000000000000000000000000000000000000000' > frontend/cloud-control.pin
@@ -304,7 +304,7 @@ jobs:
           else
             rc=$?
           fi
-          cp /tmp/pin.bak frontend/cloud-control.pin
+          cp "$RUNNER_TEMP"/pin.bak frontend/cloud-control.pin
           if [ "$rc" -eq 0 ]; then
             echo 'script exited 0 with an unresolvable pin' >&2
             exit 1
@@ -340,7 +340,11 @@ jobs:
     #
     # See frontend/docs/composed-cloud-build.md.
     name: Composed cloud build (with @qontinui/cloud-control)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    env:
+      # As in `lint` above: vitest would otherwise start nproc - 1 workers
+      # (127 on a nawa runner). Pin the hosted value on both lanes.
+      VITEST_MAX_WORKERS: 3
 
     steps:
       - name: Checkout qontinui-web
