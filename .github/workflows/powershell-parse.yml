@@ -54,10 +54,10 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [main]
-    # Path filter: a PR that touches no PowerShell cannot change this verdict,
-    # and this job needs pwsh, which the self-hosted pool does not carry, so it
-    # stays on the shared org hosted queue. It is not a required check, so a
-    # skipped run blocks nothing. (2026-11-04: 60 runs in 48h while that queue
+    # Path filter: a PR that touches no PowerShell cannot change this verdict.
+    # (It used to stay hosted because the self-hosted pool carries no pwsh;
+    # ./.github/actions/ensure-pwsh now provisions it in-job.) It is not a
+    # required check, so a skipped run blocks nothing. (2026-11-04: 60 runs in 48h while that queue
     # held 69 qontinui-web runs.)
     paths:
       - '**.ps1'
@@ -96,11 +96,17 @@ concurrency:
 
 jobs:
   powershell-parse:
-    runs-on: ubuntu-latest
+    # LIGHT LANE (WEB_CI_LANE_POWERSHELL_PARSE || WEB_CI_LIGHT_LANE, fork-guarded
+    # to hosted); pwsh is provisioned in-job on the self-hosted pool. Plan
+    # 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_POWERSHELL_PARSE || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+      - name: Ensure pwsh
+        if: runner.environment == 'self-hosted'
+        uses: ./.github/actions/ensure-pwsh
       - name: Parse every .ps1 and .psm1 with the real PowerShell parser
         shell: pwsh
         run: |
