@@ -677,6 +677,91 @@ describe("deriveContinuationStatus — armed vs inert", () => {
   });
 });
 
+describe("deriveContinuationStatus — held by an anchor sibling", () => {
+  const H1 = "123b4fbe-0000-4000-8000-000000000001";
+  const H2 = "f4f4f447-0000-4000-8000-000000000002";
+
+  it("reads a cleared continuation coord says is held as held_by_sibling, naming the holders", () => {
+    // Finding 94841f88: gate abda9e07 cleared, held by two open siblings,
+    // and every surface said it would fire "when the anchor clears".
+    const s = derive({
+      continuation_action: "run_skill",
+      continuation_will_dispatch: true,
+      dispatch_held_by: [H1, H2],
+    });
+    expect(s.status.kind).toBe("held_by_sibling");
+    expect(s.status.attention).toBe("waiting");
+    expect(s.status.reason).toContain(H1);
+    expect(s.status.reason).toContain(H2);
+    expect(s.status.reason).toContain("2 open same-class gate(s)");
+    expect(s.status.reason).not.toContain("when this gate's anchor clears");
+  });
+
+  it("outranks a never-actioned drain expiry, which the fanout still dispatches", () => {
+    const s = derive({
+      continuation_expired_at: minsAgo(5),
+      continuation_expired_reason: "never_dispatched_at_clearance",
+      dispatch_held_by: [H1],
+    });
+    expect(s.status.kind).toBe("held_by_sibling");
+    expect(s.status.reason).toContain("still dispatchable");
+    expect(s.status.reason).not.toContain("never dispatch");
+  });
+
+  it("keeps a held notify_only row honest about dispatching nothing", () => {
+    const s = derive({
+      continuation_action: "notify_only",
+      continuation_will_dispatch: false,
+      dispatch_held_by: [H1],
+    });
+    expect(s.status.kind).toBe("held_by_sibling");
+    expect(s.status.reason).toContain("dispatches nothing");
+  });
+
+  it("ignores a holder list served beside a terminal stamp coord would not promote", () => {
+    // coord promotes only never-dispatched rows and the drain's expiry; a list
+    // beside any other terminal stamp is a race or a foreign build, and the
+    // stamp reading stands.
+    expect(
+      derive({
+        continuation_expired_at: minsAgo(5),
+        continuation_expired_reason: "ttl_7d_elapsed",
+        dispatch_held_by: [H1],
+      }).status.kind
+    ).toBe("expired");
+    expect(
+      derive({
+        continuation_cancelled_at: minsAgo(5),
+        dispatch_held_by: [H1],
+      }).status.kind
+    ).toBe("cancelled");
+    expect(
+      derive({
+        continuation_consumed_outcome: "work_completed",
+        dispatch_held_by: [H1],
+      }).status.kind
+    ).not.toBe("held_by_sibling");
+    expect(
+      derive({
+        continuation_dispatched_at: minsAgo(1),
+        dispatch_held_by: [H1],
+      }).status.kind
+    ).toBe("dispatched");
+  });
+
+  it("falls through to the stamp reading when nothing holds it, or coord predates D1.2", () => {
+    expect(derive({ dispatch_held_by: [] }).status.kind).toBe("armed");
+    expect(derive({ dispatch_held_by: null }).status.kind).toBe("armed");
+    expect(derive({ dispatch_held_by: [""] }).status.kind).toBe("armed");
+    expect(
+      derive({
+        continuation_expired_at: minsAgo(5),
+        continuation_expired_reason: "ttl_7d_elapsed",
+      }).status.kind
+    ).toBe("expired");
+  });
+});
+
 describe("humanizeDeferralReason", () => {
   it("expands the thread-pressure grammar", () => {
     expect(humanizeDeferralReason("thread_pressure:critical:540_over_400")).toBe(
