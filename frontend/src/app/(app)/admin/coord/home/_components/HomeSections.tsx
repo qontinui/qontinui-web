@@ -1574,6 +1574,24 @@ function countDisagrees(g: RepoGroup): boolean {
   );
 }
 
+/**
+ * When coord's group count exceeds the units it named plus the ones it says it
+ * omitted, how many are unaccounted for and the figures behind it; null when
+ * they agree or the count or omitted figure is unknown. (Nothing named and
+ * nothing omitted is `countDisagrees`'s case, which renders instead.)
+ */
+function namedShortfall(
+  g: RepoGroup
+): { count: number; named: number; omitted: number; missing: number } | null {
+  const l = g.named.stalled;
+  const n = g.classes.stalled;
+  if (l === null || n === null || l.omitted === null) return null;
+  const missing = n - l.units.length - l.omitted;
+  return missing > 0
+    ? { count: n, named: l.units.length, omitted: l.omitted, missing }
+    : null;
+}
+
 /** One group's named no-recorded-change units, under the group's name. */
 function GroupNamedNoChange({
   g,
@@ -1588,6 +1606,7 @@ function GroupNamedNoChange({
 }) {
   const { identity } = useGroupNaming(g, aliases);
   const title = `No recorded change in ${days} days`;
+  const shortfall = namedShortfall(g);
   return (
     <div
       className="space-y-1"
@@ -1606,12 +1625,31 @@ function GroupNamedNoChange({
           but named none, so which units they are is unknown.
         </p>
       ) : (
-        <NamedUnits
-          title={title}
-          list={g.named.stalled}
-          kind="no_recorded_change"
-          reposOf={reposOf}
-        />
+        <>
+          <NamedUnits
+            title={title}
+            list={g.named.stalled}
+            kind="no_recorded_change"
+            reposOf={reposOf}
+          />
+          {shortfall !== null && (
+            // Coord's count exceeds what it named plus what it says it left
+            // out: the remainder is unknown, never "all of them are listed".
+            <p
+              className="m-0 text-xs text-muted-foreground"
+              data-testid="coord-home.on-track.no-recorded-change.shortfall"
+            >
+              Coord counts {shortfall.count} but named {shortfall.named}
+              {shortfall.omitted > 0
+                ? ` and says it left ${shortfall.omitted} out`
+                : ""}
+              , so{" "}
+              {shortfall.missing === 1
+                ? "the other unit is unknown."
+                : `the other ${shortfall.missing} units are unknown.`}
+            </p>
+          )}
+        </>
       )}
     </div>
   );
