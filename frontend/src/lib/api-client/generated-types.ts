@@ -13393,7 +13393,7 @@ export interface paths {
          *       ``stale`` or ``absent`` row renders UNKNOWN, never the last verdict.
          *     * The **commit-attribution** fields (plan
          *       ``2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out``
-         *       D1-D4), both OPTIONAL and on host-lane ``latest`` rows.
+         *       D1-D4), all OPTIONAL and on host-lane ``latest`` rows.
          *       ``top_consumers`` (alembic ``topcons_01``) is
          *       ``{entries: [{pid, name, private_bytes, started_at}], scanned,
          *       unreadable, attributed_private_bytes}``: at most 5 entries by
@@ -13403,14 +13403,21 @@ export interface paths {
          *       name only — command lines carry secrets and are never published.
          *       ``commit_floor_eta_secs`` is coord's least-squares time until free
          *       commit reaches the row's served ``floor.bytes``, fitted over the RAW
-         *       trailing 300 s of samples (never over ``history``); it is observed
-         *       and alerted on and never ranks or filters dispatch. Passed through
+         *       trailing 300 s of samples and confirmed over the trailing 600 s
+         *       window (never over ``history``): both must be covered and falling,
+         *       and the LATER of the two projections is served. It is null for a
+         *       stale lane, and observed and alerted on but never ranks or filters
+         *       dispatch. ``commit_floor_eta_state`` says what that number (or its
+         *       null) means: ``falling`` (the ETA is set), ``not_falling``,
+         *       ``at_or_below_floor``, or the UNKNOWN readings ``sparse`` (too few
+         *       points, coverage or span), ``stale`` (the newest sample is older
+         *       than the stale window) and ``degraded`` (coord could not read the
+         *       raw window); ``null`` is a lane with no commit floor. Passed through
          *       untouched, and once more **NULL must stay NULL**: ``top_consumers:
          *       null`` is a publisher that predates the field or a read that failed,
-         *       ``commit_floor_eta_secs: null`` is too few points, too little
-         *       coverage, or a slope that is not falling, and a key **absent** is a
-         *       coord that predates them. All render UNKNOWN — never "no consumers",
-         *       and never "safe".
+         *       and a key **absent** is a coord that predates it. Every UNKNOWN
+         *       reading renders UNKNOWN — never "no consumers", and never "safe";
+         *       only ``not_falling`` may render as nothing.
          *
          *     ``schema_pending: true`` means the sibling alembic migration
          *     (qontinui-web#949) has not reached coord's database yet — coord

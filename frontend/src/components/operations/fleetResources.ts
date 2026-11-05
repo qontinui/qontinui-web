@@ -483,16 +483,42 @@ export interface ResourceSampleRow {
   top_consumers?: TopConsumers | null;
   /**
    * SERVER-computed seconds until free commit reaches this row's served
-   * `floor.bytes`, from a least-squares fit over coord's RAW trailing 300 s
-   * of samples (plan D3). Observed and alerted on; it never ranks or filters
-   * dispatch, so it is never folded into `headroom`.
+   * `floor.bytes` (plan D3). coord fits a least-squares slope over its RAW
+   * trailing 300 s of samples AND confirms it over the trailing 600 s window:
+   * both must be covered and falling, and the LATER of the two projections is
+   * served. Observed and alerted on; it never ranks or filters dispatch, so it
+   * is never folded into `headroom`.
    *
-   * `null` = too few points, too little coverage, or a slope that is not
-   * falling; absent = a coord that predates it. Both render UNKNOWN — never
-   * as "safe", which is what a blank reads as.
+   * Set only when `commit_floor_eta_state` is `falling`; `null` otherwise —
+   * including for a stale lane, whose newest sample would anchor an ETA in the
+   * past. What a `null` MEANS is `commit_floor_eta_state`'s job, never this
+   * field's: a blank reads as "safe".
    */
   commit_floor_eta_secs?: number | null;
+  /**
+   * What `commit_floor_eta_secs` (or its `null`) means, so "not falling" and
+   * "could not tell" are never the same `null`. `null` (both fields) is coord's
+   * reading for a lane with no commit floor to project onto; absent = a coord
+   * that predates the state. `sparse` / `stale` / `degraded`, `null` and
+   * absent all render UNKNOWN; see `commitEtaReading`.
+   */
+  commit_floor_eta_state?: CommitFloorEtaState | null;
 }
+
+/** coord's `commit_floor_eta_state` vocabulary (plan D3). */
+export type CommitFloorEtaState =
+  /** Falling in both windows, above the floor: the ETA is set. */
+  | "falling"
+  /** Covered, and free commit is not falling. */
+  | "not_falling"
+  /** Covered, and already at or below the floor — nothing left to project. */
+  | "at_or_below_floor"
+  /** Too few points, too little coverage or span: UNKNOWN. */
+  | "sparse"
+  /** The newest sample is older than the tenant's stale window: UNKNOWN. */
+  | "stale"
+  /** coord could not read the raw window: UNKNOWN. */
+  | "degraded";
 
 /** One process on a host lane's top-commit-consumer list (plan D1). */
 export interface TopConsumerEntry {
@@ -1718,11 +1744,29 @@ export function cpuTempReading(
  */
 export const COMMIT_ETA_SHOW_BELOW_SECS = 600;
 
+/** Why a time-to-floor reads UNKNOWN — each says a different thing in the tooltip. */
+export type CommitEtaUnknownReason =
+  /** No state key: a coord that predates the state, and no ETA to show. */
+  | "absent"
+  /** `commit_floor_eta_state: null` — no commit floor to project onto. */
+  | "null_state"
+  /** Too few points, too little coverage or span. */
+  | "sparse"
+  /** The lane's newest sample is older than the stale window. */
+  | "stale"
+  /** coord could not read the raw window. */
+  | "degraded"
+  /** A state this build does not know — a coord newer than this page. */
+  | "unrecognized"
+  /** `falling` with no usable number: a contradiction, never a guess. */
+  | "falling_without_eta";
+
 export type CommitEtaReading =
-  /** coord sent no such key — a coord that predates the estimator. */
-  | { kind: "unknown"; reason: "absent" }
-  /** coord sent null (too few points, thin coverage, or not falling) or junk. */
-  | { kind: "unknown"; reason: "null" }
+  | { kind: "unknown"; reason: CommitEtaUnknownReason }
+  /** coord says free commit is not falling — nothing to warn about, not shown. */
+  | { kind: "not_falling" }
+  /** coord says free commit is already at or below the floor. */
+  | { kind: "at_floor" }
   /** A finite ETA at or beyond the display threshold — not shown. */
   | { kind: "far"; secs: number }
   /** A finite ETA inside the display threshold. */
@@ -1736,21 +1780,78 @@ export function formatEtaSecs(secs: number): string {
   return m > 0 ? `~${m}m ${s}s` : `~${s}s`;
 }
 
-export function commitEtaReading(
-  row: Pick<ResourceSampleRow, "commit_floor_eta_secs">
-): CommitEtaReading {
-  if (
-    !("commit_floor_eta_secs" in row) ||
-    row.commit_floor_eta_secs === undefined
-  ) {
-    return { kind: "unknown", reason: "absent" };
-  }
-  const eta = row.commit_floor_eta_secs;
-  if (typeof eta !== "number" || !Number.isFinite(eta) || eta < 0) {
-    return { kind: "unknown", reason: "null" };
-  }
+function usableEta(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+}
+
+function etaFromSecs(eta: number): CommitEtaReading {
   if (eta >= COMMIT_ETA_SHOW_BELOW_SECS) return { kind: "far", secs: eta };
   return { kind: "near", secs: eta, text: `floor in ${formatEtaSecs(eta)}` };
+}
+
+/**
+ * How to SAY coord's time-to-floor. The state decides; the number only
+ * matters under `falling`.
+ *
+ * An ABSENT state is a coord that predates it: its `null` ETA cannot be told
+ * apart from "not falling", so it is UNKNOWN — but a finite ETA it did serve is
+ * coord's falling projection (that build set one only when falling), and is
+ * shown as one.
+ */
+export function commitEtaReading(
+  row: Pick<
+    ResourceSampleRow,
+    "commit_floor_eta_secs" | "commit_floor_eta_state"
+  >
+): CommitEtaReading {
+  const eta = usableEta(row.commit_floor_eta_secs);
+  if (
+    !("commit_floor_eta_state" in row) ||
+    row.commit_floor_eta_state === undefined
+  ) {
+    return eta == null
+      ? { kind: "unknown", reason: "absent" }
+      : etaFromSecs(eta);
+  }
+  const state: unknown = row.commit_floor_eta_state;
+  switch (state) {
+    case null:
+      return { kind: "unknown", reason: "null_state" };
+    case "falling":
+      return eta == null
+        ? { kind: "unknown", reason: "falling_without_eta" }
+        : etaFromSecs(eta);
+    case "not_falling":
+      return { kind: "not_falling" };
+    case "at_or_below_floor":
+      return { kind: "at_floor" };
+    case "sparse":
+    case "stale":
+    case "degraded":
+      return { kind: "unknown", reason: state };
+    default:
+      return { kind: "unknown", reason: "unrecognized" };
+  }
+}
+
+/** The tooltip for an UNKNOWN time-to-floor: the reason, in plain words. */
+export function commitEtaUnknownText(reason: CommitEtaUnknownReason): string {
+  switch (reason) {
+    case "absent":
+      return "coord did not report a time-to-floor state — a coord that predates it.";
+    case "null_state":
+      return "coord served no time-to-floor state for this lane — it has no commit floor to project onto.";
+    case "sparse":
+      return "coord could not fit a trend: too few recent samples, too little coverage, or too short a span.";
+    case "stale":
+      return "this lane's newest sample is older than the stale window, so an ETA would describe the past.";
+    case "degraded":
+      return "coord could not read this lane's recent samples, so it could not fit a trend.";
+    case "unrecognized":
+      return "coord reported a time-to-floor state this build cannot read — a coord newer than this page.";
+    case "falling_without_eta":
+      return "coord says free commit is falling but served no usable time-to-floor.";
+  }
 }
 
 export type TopConsumerReading =

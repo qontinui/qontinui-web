@@ -12,8 +12,10 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { FleetResourceStrip } from "./FleetResourceStrip";
+import { commitEtaReading } from "./fleetResources";
 import { renderInPresentationMode } from "@/test/presentation";
 import type {
   ResourceSampleRow,
@@ -1240,6 +1242,7 @@ describe("host commit attribution + time-to-floor — UNKNOWN, never blank", () 
         sample({
           headroom: "breach",
           commit_floor_eta_secs: 80,
+          commit_floor_eta_state: "falling",
           top_consumers: {
             entries: [
               {
@@ -1322,6 +1325,7 @@ describe("host commit attribution + time-to-floor — UNKNOWN, never blank", () 
               sample({
                 headroom: "warn",
                 commit_floor_eta_secs: 45,
+                commit_floor_eta_state: "falling",
                 top_consumers: {
                   entries: [
                     {
@@ -1355,5 +1359,152 @@ describe("host commit attribution + time-to-floor — UNKNOWN, never blank", () 
     expect(screen.getByTestId("fleet-resource-commit-eta").textContent).toBe(
       "floor in ~45s"
     );
+  });
+});
+
+describe("time-to-floor — coord's commit_floor_eta_state decides the line", () => {
+  // Pre-PR review: a null ETA used to read "floor ETA: unknown" on every
+  // healthy host. coord now says what the null means.
+  const etaLine = () => screen.queryByTestId("fleet-resource-commit-eta");
+
+  it("ok headroom, null ETA and not_falling: no unknown line", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: "not_falling",
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()).toBeNull();
+    expect(screen.queryByText(/floor ETA: unknown/)).toBeNull();
+  });
+
+  it("at_or_below_floor: says 'at floor', not unknown", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "breach",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: "at_or_below_floor",
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("at floor");
+  });
+
+  it("sparse: the unknown line, with the reason in its tooltip", async () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: "sparse",
+        }),
+      ],
+      history: [],
+    });
+    const line = etaLine();
+    expect(line?.textContent).toBe("floor ETA: unknown");
+    // The reason rides the tooltip, which mounts on hover.
+    await userEvent.hover(line!);
+    const tips = await screen.findAllByText(/too few recent samples/);
+    expect(tips.length).toBeGreaterThan(0);
+  });
+
+  it.each(["stale", "degraded"] as const)("%s: the unknown line", (state) => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: state,
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("floor ETA: unknown");
+  });
+
+  it("an absent state (an older coord) with a null ETA: unknown", () => {
+    renderStrip({
+      latest: [sample({ headroom: "ok", commit_floor_eta_secs: null })],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("floor ETA: unknown");
+  });
+
+  it("a null state: unknown", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: null,
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("floor ETA: unknown");
+  });
+});
+
+describe("commitEtaReading", () => {
+  it("maps every state", () => {
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: 120,
+        commit_floor_eta_state: "falling",
+      })
+    ).toEqual({ kind: "near", secs: 120, text: "floor in ~2m 0s" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: 900,
+        commit_floor_eta_state: "falling",
+      })
+    ).toEqual({ kind: "far", secs: 900 });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: "falling",
+      })
+    ).toEqual({ kind: "unknown", reason: "falling_without_eta" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: "not_falling",
+      })
+    ).toEqual({ kind: "not_falling" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: "at_or_below_floor",
+      })
+    ).toEqual({ kind: "at_floor" });
+    for (const state of ["sparse", "stale", "degraded"] as const) {
+      expect(
+        commitEtaReading({
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: state,
+        })
+      ).toEqual({ kind: "unknown", reason: state });
+    }
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: null,
+      })
+    ).toEqual({ kind: "unknown", reason: "null_state" });
+    expect(commitEtaReading({})).toEqual({ kind: "unknown", reason: "absent" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        // A coord newer than this build.
+        commit_floor_eta_state: "accelerating" as never,
+      })
+    ).toEqual({ kind: "unknown", reason: "unrecognized" });
   });
 });

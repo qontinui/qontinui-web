@@ -100,6 +100,7 @@ import {
   buildMachineGroups,
   classifySaturation,
   commitEtaReading,
+  commitEtaUnknownText,
   coupledWslHeadroomBytes,
   describeFloor,
   describePressureFloor,
@@ -917,12 +918,18 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
  *   shown only while the lane is `warn` or `breach`, with "N unreadable" beside
  *   it whenever coord could not read every process: a top-5 that MISSED the
  *   real consumer otherwise reads the same as one that named it.
- * - **floor ETA** — shown when under `COMMIT_ETA_SHOW_BELOW_SECS`. On
- *   2026-11-05 this host read `ok` with 18 GB free two minutes before 0.7 GB
- *   was free; the ETA is what says "and falling by 9 GB a minute".
+ * - **floor ETA** — coord's `commit_floor_eta_state` decides it. `falling`
+ *   shows the ETA when under `COMMIT_ETA_SHOW_BELOW_SECS`; `at_or_below_floor`
+ *   says "at floor"; `not_falling` shows nothing, the same as an ETA too far
+ *   out to matter. On 2026-11-05 this host read `ok` with 18 GB free two
+ *   minutes before 0.7 GB was free; the ETA is what says "and falling by 9 GB
+ *   a minute".
  *
- * A null or absent reading renders the word `unknown`, never a blank: a blank
- * consumer line reads as "nothing holds commit" and a blank ETA as "safe".
+ * A reading coord could not make (`sparse`, `stale`, `degraded`) or did not
+ * send (a null or absent state) renders the word `unknown` with the reason in
+ * its tooltip, never a blank: a blank consumer line reads as "nothing holds
+ * commit" and a blank ETA as "safe". Only coord's own `not_falling` earns the
+ * blank.
  */
 function HostCommitAttribution({
   sample,
@@ -991,6 +998,13 @@ function HostCommitAttribution({
         >
           {eta.text}
         </span>
+      ) : eta.kind === "at_floor" ? (
+        <span
+          className={TONE_NUMBER.warn}
+          data-testid="fleet-resource-commit-eta"
+        >
+          at floor
+        </span>
       ) : eta.kind === "unknown" ? (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -1002,10 +1016,7 @@ function HostCommitAttribution({
             </span>
           </TooltipTrigger>
           <TooltipContent className="max-w-[22rem] text-[11px]">
-            {eta.reason === "absent"
-              ? "coord did not report a time-to-floor — a coord that predates the estimator."
-              : "coord could not estimate a time-to-floor: too few recent samples, too little coverage, or free commit is not falling."}{" "}
-            Unknown is NOT &quot;safe&quot;.
+            {commitEtaUnknownText(eta.reason)} Unknown is NOT &quot;safe&quot;.
           </TooltipContent>
         </Tooltip>
       ) : null}
