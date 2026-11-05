@@ -27,6 +27,8 @@ What each test would catch (mutation-checked when written):
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import threading
 import time
 from collections.abc import Iterator
@@ -140,6 +142,7 @@ def _concurrent_build_under_a_waiter(engine: Engine, wait: str) -> dict[str, obj
     result: dict[str, object] = {}
     try:
         acquire_migration_lock(holder, wait_secs=0)
+        holder_pid = int(holder.execute(text("SELECT pg_backend_pid()")).scalar_one())
         writer.execute(text("INSERT INTO lock_probe VALUES (0)"))  # open, uncommitted
 
         def build() -> None:
@@ -166,12 +169,16 @@ def _concurrent_build_under_a_waiter(engine: Engine, wait: str) -> dict[str, obj
             except DBAPIError as exc:
                 result["waiter"] = type(exc.orig).__name__
 
-        build_thread = threading.Thread(target=build)
+        build_thread = threading.Thread(target=build, daemon=True)
         build_thread.start()
         _wait_until_build_waits(engine)
-        waiter_thread = threading.Thread(target=wait_for_lock)
-        waiter_thread.start()
-        time.sleep(1.0)  # the waiter is now polling, or blocked in its statement
+        waiter_thread = threading.Thread(target=wait_for_lock, daemon=True)
+        with _poller_seen() as polled:
+            waiter_thread.start()
+            if wait == "blocking":
+                _wait_until_blocked_on_the_key(engine, exclude_pid=holder_pid)
+            else:
+                assert polled.wait(60), "the waiter never logged a refused attempt"
         writer.commit()
         build_thread.join(60)
         assert not build_thread.is_alive(), "the concurrent build never finished"
@@ -186,9 +193,72 @@ def _concurrent_build_under_a_waiter(engine: Engine, wait: str) -> dict[str, obj
                 )
             ).scalar()
     finally:
+        _terminate_other_backends(engine)
         for conn in (waiter, writer, holder):
-            conn.close()
+            with contextlib.suppress(Exception):
+                conn.close()
     return result
+
+
+class _PollerSeen(logging.Handler):
+    """Sets ``event`` when a polling migrator logs its first failed attempt.
+
+    Observed state, not a sleep: a slow cold import cannot make the waiter
+    arrive after the moment it is meant to race. ``pg_stat_activity`` cannot
+    show it — a poller's last statement is its ``COMMIT``, not the lock call —
+    so this watches the waiter's own "Waiting up to" line, which
+    ``acquire_migration_lock`` logs after a refused attempt and nowhere else.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.event = threading.Event()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if "Waiting up to" in record.getMessage():
+            self.event.set()
+
+
+@contextlib.contextmanager
+def _poller_seen() -> Iterator[threading.Event]:
+    lock_logger = logging.getLogger("alembic.env.migration_lock")
+    handler = _PollerSeen()
+    lock_logger.addHandler(handler)
+    try:
+        yield handler.event
+    finally:
+        lock_logger.removeHandler(handler)
+
+
+def _wait_until_blocked_on_the_key(engine: Engine, *, exclude_pid: int) -> None:
+    """Block until another session in THIS database waits on an advisory lock."""
+    deadline = time.monotonic() + 60
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as probe:
+        while time.monotonic() < deadline:
+            waiting = probe.execute(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity "
+                    "WHERE datname = current_database() AND pid <> pg_backend_pid() "
+                    "AND pid <> :holder AND wait_event_type = 'Lock' "
+                    "AND wait_event = 'advisory'"
+                ),
+                {"holder": exclude_pid},
+            ).scalar()
+            if waiting:
+                return
+            time.sleep(0.05)
+    raise AssertionError("no migrator was ever seen blocked on the lock")
+
+
+def _terminate_other_backends(engine: Engine) -> None:
+    """Free threads stuck in a statement so a failed test cannot hang teardown."""
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as admin:
+        admin.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = current_database() AND pid <> pg_backend_pid()"
+            )
+        )
 
 
 def _wait_until_build_waits(engine: Engine) -> None:
@@ -198,7 +268,8 @@ def _wait_until_build_waits(engine: Engine) -> None:
             waiting = probe.execute(
                 text(
                     "SELECT count(*) FROM pg_stat_activity "
-                    "WHERE query ILIKE 'CREATE INDEX CONCURRENTLY%' AND wait_event_type = 'Lock'"
+                    "WHERE datname = current_database() "
+                    "AND query ILIKE 'CREATE INDEX CONCURRENTLY%' AND wait_event_type = 'Lock'"
                 )
             ).scalar()
             if waiting:
@@ -307,11 +378,11 @@ def test_waiting_migrator_finds_the_holders_stamp_and_applies_nothing(
     def second_migrator() -> None:
         outcome["proc"] = run_alembic(backend_root(), url, "upgrade", ROOT_REVISION)
 
-    thread = threading.Thread(target=second_migrator)
+    thread = threading.Thread(target=second_migrator, daemon=True)
     try:
-        thread.start()
-        time.sleep(2.0)  # the second migrator is polling by now
-        assert thread.is_alive(), "the second migrator did not wait for the lock"
+        with _poller_seen() as polled:
+            thread.start()
+            assert polled.wait(120), "the second migrator never waited for the lock"
         holder.execute(
             text("CREATE TABLE alembic_version (version_num varchar(32) PRIMARY KEY)")
         )

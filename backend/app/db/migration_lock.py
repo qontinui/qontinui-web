@@ -3,8 +3,14 @@
 ``alembic/env.py`` calls [`acquire_migration_lock`] on the migration connection
 before alembic opens its transaction or reads the current revision, and
 [`release_migration_lock`] after alembic's transaction has ended. A second
-migrator therefore plans its upgrade only after the first has stamped, and
-finds the head already applied.
+migrator therefore plans its upgrade only after the first has stamped: running
+the same image it finds the head applied and does nothing; running a newer one
+it applies only what the first did not.
+
+Not FIFO: two migrators both waiting are served in whichever order their polls
+win. If an OLDER image wins after a newer one has stamped, it fails loudly
+("Can't locate revision"), which is correct for a script that predates the
+database, and applies nothing.
 
 Why two can run at all
 ==============================================================================
