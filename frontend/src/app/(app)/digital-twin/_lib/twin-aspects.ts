@@ -52,6 +52,7 @@ import {
   readingAge,
 } from "./status-presentation";
 import {
+  fidelityReadAt,
   readFidelity,
   reportComputedAt,
   reportSubspaces,
@@ -496,9 +497,11 @@ function undatedReason(
 function honestyFigure(
   rows: readonly ResolvedSubspace[],
   report: ReportRead,
-  now: number
+  renderNow: number
 ): FidelityFigure {
   const source = FIDELITY_SOURCE.selfCheck;
+  // The report's ages are taken at its read, as the header takes them.
+  const now = fidelityReadAt(report, renderNow);
   const read = readFidelity(report, now);
   const failedAt = report.errorUpdatedAt > 0 ? report.errorUpdatedAt : null;
   if (read.kind === "loading")
