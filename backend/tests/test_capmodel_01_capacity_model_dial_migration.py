@@ -119,6 +119,12 @@ def test_upgrade_adds_every_column_to_both_tables_and_downgrade_drops_them(
     joined_up = "\n".join(up)
     joined_down = "\n".join(down)
     width = 2 * len(module._COLUMNS)
+    # The statement count itself: two ALTERs plus one COMMENT per column per
+    # table on the way up, and the two ALTERs alone on the way down. Nothing
+    # above counts COMMENTs, so without this a stray COMMENT ON an existing
+    # column would overwrite its text, pass, and survive the downgrade.
+    assert len(up) == 2 + width
+    assert len(down) == 2
     # Each direction names exactly the five columns per table: no stray
     # column is added that the downgrade would leave behind, and nothing is
     # dropped that this revision did not add.

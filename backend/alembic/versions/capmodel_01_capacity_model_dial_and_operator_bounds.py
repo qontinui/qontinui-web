@@ -49,19 +49,21 @@ columns are that store, named 1:1 after the struct's fields so the reader maps
 them without a rename. NULL = no operator bound. They are tunable ranges, so
 coord validates them at the door, the same split ``sess_guard_01`` argues for
 its session floors: ``>= 0``, ``min <= max``, and an upper bound the paired
-Phase 3 coord PR defines (``MAX_SESSION_TARGET_CEILING``, 256).
+Phase 3 coord PR defines (``MAX_SESSION_TARGET_CEILING``).
 
 **The type contract.** The bounds are ``INTEGER``, not an unsigned type:
 ``OperatorBounds`` holds ``u32``, which rust-postgres decodes only from an
 ``OID``, so coord reads ``Option<i32>`` (and ``Option<bool>`` for offload) and
-validates ``>= 0`` at its write door, which is what lets a consumer convert a
-stored value to ``u32`` without a failure arm. That is the signed column with
-a door check that the ``fleet_res_tel_03`` and ``sess_guard_01`` controls
-already use. A NULL column is a bound the operator did not set: a reader must not
-substitute a value the operator never wrote (in particular, NULL
-``offload_enabled`` is not ``false``). How a partly-NULL row maps into the
-all-or-nothing ``Known<OperatorBounds>`` is the consuming phase's decision; this
-revision stores the bounds and asserts nothing about that mapping.
+validates ``>= 0`` at its write door. That door check is NOT a database
+invariant: there is deliberately no CHECK, so a row written around the door is
+never checked. A consumer therefore converts with ``u32::try_from`` and reads
+a failure as UNKNOWN, never with a cast (``-1 as u32`` is 4294967295, an
+unbounded session target). That is the signed column with a door check that
+the ``fleet_res_tel_03`` and ``sess_guard_01`` controls already use. A NULL
+column is a bound the operator did not set: a reader must not substitute a
+value the operator never wrote (in particular, NULL ``offload_enabled`` is not
+``false``). How a partly-NULL row maps into the all-or-nothing
+``Known<OperatorBounds>`` is the consuming phase's decision.
 
 Every column lands on the parent AND the versions table in this one revision,
 per the rule ``fleet_res_tel_02`` wrote into the versions table's COMMENT: a
