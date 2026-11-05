@@ -1,7 +1,7 @@
 """coord.worktree_volume.read_only — whether an observed volume is mounted read-only
 
 Revision ID: coord_wt_volume_read_only_01
-Revises: ci_job_res_02
+Revises: pr_events_mergeability_head_idx_01
 Create Date: 2026-11-04
 
 Phase 2 (qontinui-web migration half) of plan
@@ -55,7 +55,7 @@ Head choice
 ===========
 
 ``down_revision`` is the single head of ``origin/main`` at authoring time
-(``scripts/ci/count_alembic_heads.py``: ``HEAD_COUNT=1``, ``HEAD=ci_job_res_02``).
+(``scripts/ci/count_alembic_heads.py``: ``HEAD_COUNT=1``, ``HEAD=pr_events_mergeability_head_idx_01``).
 If another alembic revision lands first, re-point ``down_revision`` and the
 ``Revises:`` header together; the companion test reads the parent from this
 file. No ``alembic merge``. Hand-authored; ``--autogenerate`` is never run
@@ -89,7 +89,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_wt_volume_read_only_01"
-down_revision: str | Sequence[str] | None = "ci_job_res_02"
+down_revision: str | Sequence[str] | None = "pr_events_mergeability_head_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
