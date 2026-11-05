@@ -32,9 +32,11 @@ What is asserted
 6. **Sensitivity.** The same scan with a different marker literal does NOT get
    the index. Without this, #4 would still pass against an index whose
    predicate had been widened or dropped.
-7. **No other reader moves onto it.** The active-key lookup every alert upsert
-   runs (``alert_key = $1 AND resolved_at IS NULL``) still rides
-   ``uq_alerts_active_key``.
+7. **No unintended reader moves onto it.** The active-key lookup every alert
+   upsert runs (``alert_key = $1 AND resolved_at IS NULL``) still rides
+   ``uq_alerts_active_key``. The give-up resolver (``GIVEUP_RESOLVE_PREDICATE_SQL``)
+   implies the predicate too, so it MAY move onto it (stated, not accidental);
+   either way it reaches ``alerts`` through an index, never a heap scan.
 8. **Downgrade removes exactly this index**, and every row survives.
 
 ``enable_seqscan = off`` for the plan assertions: the fixture is small, so a
@@ -64,7 +66,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_iops_idx_02"
-_PARENT_REVISION_ID = "ci_job_res_02"
+_PARENT_REVISION_ID = "pr_events_mergeability_head_idx_01"
 
 _IDX = "idx_alerts_giveup_raised_key"
 _EXPECTED_INDEXDEF = (
@@ -108,6 +110,21 @@ _GIVEUP_SCAN_SQL = (
     f"AND {_GIVEUP_UNALERTED_SQL} "
     "ORDER BY continuation_consumed_at ASC "
     "LIMIT :lim"
+)
+
+# coord ``resolve_taken_up_giveups`` shadow count over
+# ``GIVEUP_RESOLVE_PREDICATE_SQL``, transcribed the same way.
+_GIVEUP_RESOLVE_COUNT_SQL = (
+    "SELECT count(*) FROM coord.alerts a "
+    "WHERE (a.kind = 'gate_continuation_abandoned' "
+    "OR a.detail ? 'giveup_raised') "
+    "AND a.resolved_at IS NULL "
+    "AND EXISTS ( "
+    "SELECT 1 FROM coord.gates g "
+    "JOIN coord.work_units wu ON wu.id = g.work_unit_id "
+    "WHERE a.alert_key = 'gate:' || g.gate_id::text "
+    "AND wu.status IN ('shipped', 'superseded', 'obsolete') "
+    ")"
 )
 
 # The lookup every coord alert upsert's ON CONFLICT arbiter and the alert
@@ -401,6 +418,16 @@ def test_coord_iops_idx_02_index_serves_the_giveup_scan() -> None:
         assert _IDX not in active_plan, (
             "the open-row-by-key lookup every alert upsert makes must stay on "
             f"uq_alerts_active_key; got:\n{active_plan}"
+        )
+
+        # Claim 7b. The give-up resolver implies the predicate, so it MAY ride
+        # this index; it may equally drive from gates and probe
+        # uq_alerts_active_key (what PG16 picks on this fixture). Either is
+        # fine - what it must never do is scan the alerts heap.
+        resolve_plan = _plan(engine, _GIVEUP_RESOLVE_COUNT_SQL, {})
+        assert "Seq Scan on alerts" not in resolve_plan, resolve_plan
+        assert (_IDX in resolve_plan) or ("uq_alerts_active_key" in resolve_plan), (
+            f"the resolver must reach alerts through an index; got:\n{resolve_plan}"
         )
 
         # Claim 8. Downgrade removes exactly this index; rows survive.
