@@ -1,0 +1,274 @@
+# VENDORED from qontinui-claude-config@910fa7078 .github/actions/ensure-pwsh/action.yml
+# (with scripts/install-pwsh-linux.sh beside it at this repo's scripts/). Only the
+# ::error title is changed. Re-vendor rather than edit. Plan
+# 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
+name: Ensure pwsh
+description: >-
+  Make PowerShell 7 (`pwsh`) runnable for the rest of this job on a Linux
+  self-hosted runner. Use the host's pwsh when it has one. Otherwise provision a
+  pinned, hash-verified release into the runner tool cache, with no root. If
+  neither works, refuse the HOST by name (exit 2).
+
+# WHY THIS EXISTS. ccfg's Linux runners are hand-registered hosts with no image.
+# `pwsh` existed on a host only if an operator had installed it. On 2026-10-21
+# `powershell-parse` was dealt to nomad-ccfg-1, which has no pwsh, and failed
+# with `pwsh: command not found` on a docs-only PR (qontinui-claude-config#1973,
+# job 119183923752). A re-run on another host went green, so the red came from
+# the host, not the diff. Plan
+# 2026-10-21-ccfg-pwsh-jobs-assume-every-pool-host-has-pwsh, Phase 1. Every
+# Linux self-hosted job that consumes pwsh must run this action before its first
+# pwsh step. scripts/lint-pwsh-provisioned.py enforces that.
+#
+# ORDER OF RESOLUTION. A candidate is USABLE only when, within 60 s, it exits
+# 0 and prints a 7.x version (`^7.N.N`) on STDOUT. Its stderr is kept apart, so
+# a warning cannot hide the version. It is quoted when the candidate fails. A
+# pwsh that exits 0 and prints nothing is not usable; bash runs a zero-byte file
+# that way. An unusable candidate is reported and skipped, never refused. The
+# host is refused only when every arm has failed.
+#   1. `pwsh` on PATH: used as-is and its version printed. The parse grammar is
+#      stable across 7.x, and using the host copy avoids a ~70 MB download per
+#      runner instance.
+#   2. A pwsh at a fixed location: the runner user's REAL home
+#      ~/.local/bin/pwsh (where install-pwsh-linux.sh and
+#      setup-self-hosted-runner.ps1 put it), /opt/microsoft/powershell/7/pwsh,
+#      or /usr/bin/pwsh. Candidates are compared by `readlink -f`, so one binary
+#      is probed once. Only that binary is symlinked into a job-private
+#      directory under RUNNER_TEMP, and that directory is added to $GITHUB_PATH,
+#      so nothing else in the directory joins the job's PATH. The real home is
+#      read from passwd because lint-frontmatter.yml re-homes HOME under
+#      RUNNER_TEMP before this step runs. QONTINUI_POWERSHELL_PATHS replaces
+#      this list when set, with the same meaning as in
+#      scripts/lib/resolve-powershell.sh.
+#   3. Otherwise scripts/install-pwsh-linux.sh --version $PWSH_VERSION installs
+#      the pinned release into the runner tool cache. Everything one version
+#      writes is under $RUNNER_TOOL_CACHE/pwsh/$PWSH_VERSION and its own lock,
+#      $RUNNER_TOOL_CACHE/pwsh-$PWSH_VERSION.lock, so two pins (a PR and main
+#      either side of a bump) never share a file.
+#      NOTHING IS DELETED OR REWRITTEN IN PLACE. A job on another runner
+#      instance that shares this tool cache may be executing the current
+#      install. So each install goes into a FRESH directory, dist.<stamp>, with
+#      a fresh wrapper. Only then, under the lock, is the wrapper bin/pwsh
+#      replaced by an atomic rename. A reader sees the old complete install or
+#      the new complete one, never a partial one. An install the wrapper stops
+#      naming is stamped .retired-at at that moment (under the lock), and is
+#      pruned once that stamp is over a day old -- the retirement time, not the
+#      install time, because a job may have started it a second before the
+#      swap. GitHub caps a job at 6 h, so no job can still be running it then.
+#      A dist* the wrapper does not name and that carries no stamp (a failed or
+#      killed install, or the pre-stamp layout's dist/) is stamped on first
+#      sight and pruned a day later by the same rule.
+#      Under the lock, the install the wrapper names is reused when its marker
+#      records $PWSH_VERSION and it is usable. It gets a second attempt before
+#      it is judged broken, so one slow start under load does not cost a
+#      download (an attempt is up to two probes -- plain, then invariant -- so
+#      at most four, each bounded by 60 s). The installer's own idempotence
+#      check runs pwsh without the invariant flag, so on a host with no ICU it
+#      would download again for every job.
+#   The bin directory that wins goes to the front of PATH for later steps, so
+#   it shadows a broken host pwsh that arm 1 skipped.
+#
+# ICU. .NET on Linux needs libicu, or DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1.
+# The authoring box could not probe nomad's ICU (plan Phase 0), so ICU is
+# treated as unknown on every host. A candidate that does not start is retried
+# with the flag set to 1, unless the flag is already set. If the retry works,
+# the action appends the flag to $GITHUB_ENV for the job's later steps and says
+# so in the log. A parse does not depend on culture. The installer runs with
+# the flag set because its last step executes the wrapper.
+#
+# Any failure prints `::error title=self-hosted runner missing pwsh::<runner>: <reason>`
+# and exits 2. It names the HOST, so the red does not read as the PR's fault.
+# The runner invokes this as `bash --noprofile --norc -eo pipefail`. The body
+# turns `-e` off, and every fallible command is checked by hand, so no failure
+# can exit before its `::error` line is printed.
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure pwsh is runnable (host copy, or pinned tool-cache install)
+      shell: bash
+      env:
+        PWSH_VERSION: "7.6.6"
+        ENSURE_PWSH_RUNNER: ${{ runner.name }}
+        ENSURE_PWSH_INSTALLER: ${{ github.action_path }}/../../../scripts/install-pwsh-linux.sh
+      run: |
+        set +e -uo pipefail
+        runner="${ENSURE_PWSH_RUNNER:-${RUNNER_NAME:-unknown-runner}}"
+        refuse() {
+          echo "::error title=self-hosted runner missing pwsh::${runner}: $*"
+          exit 2
+        }
+        to=""; command -v timeout >/dev/null 2>&1 && to="timeout 60"
+
+        # Runs $1 once (with the invariant flag when $2 is "invariant"). Sets
+        # probe_out (the 7.x version line from stdout, or stdout's last line)
+        # and probe_err (stderr's tail). Succeeds only when it exited 0 AND
+        # printed a 7.x version on stdout.
+        probe() {
+          local errf rc out
+          errf="$(mktemp)" || errf=/dev/null
+          if [ "${2:-}" = invariant ]; then
+            # shellcheck disable=SC2086,SC2016  # $to splits on purpose; $PSVersionTable is PowerShell's
+            out="$(DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 $to "$1" -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()' 2>"$errf" </dev/null 9>&-)"
+          else
+            # shellcheck disable=SC2086,SC2016  # $to splits on purpose; $PSVersionTable is PowerShell's
+            out="$($to "$1" -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()' 2>"$errf" </dev/null 9>&-)"
+          fi
+          rc=$?
+          probe_rc="$rc"; [ "$rc" -ne 124 ] || probe_rc="124, timed out after 60 s"
+          out="$(printf '%s\n' "$out" | tr -d '\r')"
+          probe_out="$(printf '%s\n' "$out" | grep -E '^7\.[0-9]+\.[0-9]+' | tail -1)"
+          [ -n "$probe_out" ] || probe_out="$(printf '%s\n' "$out" | tail -1)"
+          probe_err=""
+          [ "$errf" = /dev/null ] || { probe_err="$(tr -d '\r' < "$errf" | tail -c 300 | tr '\n' ' ')"; rm -f "$errf"; }
+          [ "$rc" -eq 0 ] && printf '%s' "$probe_out" | grep -Eq '^7\.[0-9]+\.[0-9]+'
+        }
+
+        # Is $1 usable? Sets $version, and $invariant=1 when it starts only in
+        # globalization-invariant mode; on failure sets $why. Never exits.
+        usable() {
+          local bin="$1"
+          invariant=0
+          if probe "$bin"; then version="$probe_out"; return 0; fi
+          why="$bin did not print a 7.x version on stdout (exit $probe_rc, stdout: '${probe_out:-<none>}', stderr: '${probe_err:-<none>}')"
+          [ -z "${DOTNET_SYSTEM_GLOBALIZATION_INVARIANT:-}" ] || return 1
+          if probe "$bin" invariant; then version="$probe_out"; invariant=1; return 0; fi
+          why="$why; with DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1: exit $probe_rc, stdout '${probe_out:-<none>}', stderr '${probe_err:-<none>}'"
+          return 1
+        }
+
+        # The chosen candidate's environment for the job's later steps.
+        finish() {
+          if [ "$invariant" = 1 ]; then
+            echo "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1" >> "$GITHUB_ENV" || refuse "cannot write GITHUB_ENV"
+            echo "pwsh: ICU absent on this host (pwsh would not start without it), so globalization-invariant mode is ON for this job (DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1)"
+          fi
+          echo "$1"
+          exit 0
+        }
+
+        canon() { readlink -f "$1" 2>/dev/null || printf '%s' "$1"; }
+
+        version=""; invariant=0; why=""; skipped=""
+
+        # 1. On PATH.
+        path_bin="$(command -v pwsh 2>/dev/null || true)"
+        seen=" "
+        if [ -n "$path_bin" ]; then
+          seen=" $(canon "$path_bin") "
+          usable "$path_bin" && finish "pwsh: host $path_bin $version"
+          echo "pwsh: skipping the host pwsh on PATH: $why"
+          skipped="$skipped [$why]"
+        fi
+
+        # 2. At a fixed location. QONTINUI_POWERSHELL_PATHS (colon-separated)
+        # REPLACES this list when set, as it does in
+        # scripts/lib/resolve-powershell.sh; set it empty to test arm 3 on a
+        # host that has pwsh.
+        real_home="$(getent passwd "$(id -un 2>/dev/null)" 2>/dev/null | cut -d: -f6 || true)"
+        fixed="${QONTINUI_POWERSHELL_PATHS-${real_home:+$real_home/.local/bin/pwsh:}/opt/microsoft/powershell/7/pwsh:/usr/bin/pwsh}"
+        IFS=: read -r -a candidates <<< "$fixed" || true
+        for bin in "${candidates[@]}"; do
+          [ -n "$bin" ] && [ -x "$bin" ] || continue
+          real="$(canon "$bin")"
+          case "$seen" in *" $real "*) continue ;; esac
+          seen="$seen$real "
+          if usable "$bin"; then
+            link_dir="${RUNNER_TEMP:-}"
+            if [ -n "$link_dir" ]; then
+              link_dir="$link_dir/ensure-pwsh-bin"
+              mkdir -p "$link_dir" || refuse "cannot create $link_dir to link $bin onto the job's PATH"
+            else
+              link_dir="$(mktemp -d)" || refuse "cannot create a directory to link $bin onto the job's PATH"
+            fi
+            ln -sfn "$bin" "$link_dir/pwsh" || refuse "cannot link $bin into $link_dir"
+            echo "$link_dir" >> "$GITHUB_PATH" || refuse "cannot write GITHUB_PATH"
+            finish "pwsh: host $bin $version (not on PATH; linked as $link_dir/pwsh, which is on the job's PATH)"
+          fi
+          echo "pwsh: skipping $why"
+          skipped="$skipped [$why]"
+        done
+
+        # 3. Provision the pinned release into the tool cache.
+        fail() { refuse "$*${skipped:+ (host candidates skipped:$skipped)}"; }
+        cache="${RUNNER_TOOL_CACHE:-}"
+        [ -n "$cache" ] || fail "no usable pwsh on this host and RUNNER_TOOL_CACHE is unset, so there is nowhere to provision one"
+        missing=""
+        for tool in curl iconv tar gzip sha256sum od awk flock readlink; do
+          command -v "$tool" >/dev/null 2>&1 || missing="${missing:+$missing }$tool"
+        done
+        [ -z "$missing" ] || fail "no usable pwsh on this host, and it cannot be provisioned: missing ${missing} (scripts/install-pwsh-linux.sh needs curl, iconv, tar+gzip, sha256sum, od and awk; this action needs flock and readlink)"
+        [ -r "$ENSURE_PWSH_INSTALLER" ] || fail "no usable pwsh on this host, and the installer is not in the checkout ($ENSURE_PWSH_INSTALLER); run actions/checkout before this action"
+
+        vdir="$cache/pwsh/$PWSH_VERSION"
+        wrapper="$vdir/bin/pwsh"
+        lock="$cache/pwsh-$PWSH_VERSION.lock"
+        mkdir -p "$vdir/bin" || fail "cannot create $vdir/bin in the tool cache"
+
+        # The install directory the wrapper names (empty when none).
+        named_prefix() {
+          [ -f "$wrapper" ] || return 0
+          sed -n 's/^exec "\(.*\)\/pwsh" .*/\1/p' "$wrapper" | head -1
+        }
+        # The install the wrapper names, when it is a complete one of ours for
+        # this version.
+        current_prefix() {
+          local prefix
+          prefix="$(named_prefix)"
+          [ -n "$prefix" ] && [ -x "$prefix/pwsh" ] \
+            && [ "$(sed -n 's/^version=//p' "$prefix/.installed-by-install-pwsh-linux" 2>/dev/null | head -1)" = "$PWSH_VERSION" ] \
+            && printf '%s' "$prefix"
+        }
+
+        if ! { exec 9>"$lock"; } 2>/dev/null; then
+          fail "could not open the lock file $lock, so pwsh was not provisioned"
+        fi
+        flock -w 900 9 || fail "timed out after 900 s waiting for $lock (another job is installing)"
+        how=""
+        if prefix="$(current_prefix)"; then
+          if usable "$wrapper" || usable "$wrapper"; then
+            how="reused the existing install"
+          else
+            echo "pwsh: the cached $PWSH_VERSION install at $prefix failed two attempts ($why); installing a fresh copy beside it"
+          fi
+        fi
+        if [ -z "$how" ]; then
+          stamp="$(date -u +%Y%m%dT%H%M%SZ).$$"
+          new_prefix="$vdir/dist.$stamp"
+          new_wrapper="$vdir/bin/.pwsh.$stamp"
+          QONTINUI_PWSH_PREFIX="$new_prefix" QONTINUI_PWSH_WRAPPER="$new_wrapper" DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+            bash "$ENSURE_PWSH_INSTALLER" --version "$PWSH_VERSION" </dev/null 9>&-
+          rc=$?
+          # Nothing ever named $new_prefix, so a failed one is removed at once.
+          [ "$rc" -eq 0 ] || { rm -f "$new_wrapper"; rm -rf "$new_prefix"; fail "scripts/install-pwsh-linux.sh --version $PWSH_VERSION failed (exit $rc) -- see its lines above (download, hash verification, or extraction)"; }
+          usable "$new_wrapper" || { rm -f "$new_wrapper"; rm -rf "$new_prefix"; fail "pwsh $PWSH_VERSION was installed into $new_prefix but $why"; }
+          old_named="$(named_prefix)"
+          mv -f "$new_wrapper" "$wrapper" || { rm -f "$new_wrapper"; rm -rf "$new_prefix"; fail "cannot move the new wrapper into place at $wrapper"; }
+          # Retired NOW: a job may have started it just before the swap.
+          if [ -n "$old_named" ] && [ -d "$old_named" ]; then touch "$old_named/.retired-at" 2>/dev/null || true; fi
+          how="installed"
+          prefix="$new_prefix"
+        fi
+        # Prune, under the lock: an install the wrapper does not name is removed
+        # only a day after its .retired-at stamp; one with no stamp gets one now.
+        # Compared CANONICALLY: runners sharing this cache may spell its path
+        # differently (a symlink, a trailing slash) from the one that wrote
+        # the wrapper.
+        named="$(named_prefix)"; [ -z "$named" ] || named="$(canon "$named")"
+        for old in "$vdir"/dist "$vdir"/dist.*; do
+          [ -d "$old" ] || continue
+          [ "$(canon "$old")" != "$named" ] || continue
+          if [ ! -f "$old/.retired-at" ]; then
+            touch "$old/.retired-at" 2>/dev/null || true
+          elif [ -n "$(find "$old/.retired-at" -mmin +1440 2>/dev/null)" ]; then
+            rm -rf "$old" || true
+          fi
+        done
+        # An unswapped wrapper (a job killed before its mv) is never executed.
+        find "$vdir/bin" -maxdepth 1 -name '.pwsh.*' -mmin +1440 -exec rm -f {} + 2>/dev/null || true
+        final="$(named_prefix)"
+        flock -u 9 || true
+
+        [ -n "$final" ] || fail "the wrapper $wrapper names no install"
+        [ -x "$final/pwsh" ] || fail "the install the wrapper $wrapper names is gone ($final/pwsh is not executable)"
+        echo "$vdir/bin" >> "$GITHUB_PATH" || fail "cannot write GITHUB_PATH"
+        finish "pwsh: provisioned $PWSH_VERSION into tool cache ($how at $prefix; runs as $version)"
