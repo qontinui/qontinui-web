@@ -1,22 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGREEMENT_INSUFFICIENT_TEXT,
   NO_VERIFICATIONS_TEXT,
+  choiceLabel,
   couldNotLookReason,
   interval,
+  kappaText,
   ratePct,
+  deriveLabelSampleView,
   deriveTrustView,
   deriveVerificationHealth,
+  deriveVerifierAgreement,
   laneView,
+  operatorLabelOutcome,
   parseVerificationMetrics,
   refutedUnitFromFinding,
   refutedUnitsInWindow,
   unknownsLine,
+  type VerificationMetrics,
 } from "./verificationMetrics";
 import {
   NOW,
   REFUTATION_FINDING,
   degraded,
   freshLane,
+  judgeAgreement,
+  labelSample,
   noVerifications,
   populated,
 } from "./verificationMetrics.fixture";
@@ -254,5 +263,322 @@ describe("review round 1", () => {
     expect(units.map((u) => u.findingId)).toEqual([
       REFUTATION_FINDING.finding_id,
     ]);
+  });
+});
+
+describe("deriveVerifierAgreement", () => {
+  const ok = (metrics: VerificationMetrics) =>
+    deriveVerifierAgreement({ status: "ok", metrics }, "page");
+
+  it("populated: the seeded kappa with its binary n, and the operator n", () => {
+    expect(ok(populated({ judge_agreement: judgeAgreement() }))).toEqual({
+      state: "populated",
+      text: "verifier agreement κ 0.71 (seeded n=24) · operator n=6",
+    });
+  });
+
+  it("n<20: words only — no kappa and no count of any kind", () => {
+    const v = ok(
+      populated({
+        judge_agreement: judgeAgreement({
+          n: 4,
+          binary_n: 3,
+          kappa: null,
+          reason: "n<20",
+        }),
+      })
+    );
+    expect(v).toEqual({
+      state: "insufficient",
+      text: `verifier agreement: ${AGREEMENT_INSUFFICIENT_TEXT}`,
+    });
+    expect(v.text).not.toMatch(/\d/);
+  });
+
+  it("a kappa that rounds to zero from below prints 0.00, never -0.00", () => {
+    expect(kappaText(-0.001)).toBe("0.00");
+    expect(kappaText(-0)).toBe("0.00");
+    expect(kappaText(-0.25)).toBe("-0.25");
+    expect(
+      ok(populated({ judge_agreement: judgeAgreement({ kappa: -0.004 }) })).text
+    ).toBe("verifier agreement κ 0.00 (seeded n=24) · operator n=6");
+  });
+
+  it("undefined: says so, with the binary n", () => {
+    const v = ok(
+      populated({
+        judge_agreement: judgeAgreement({
+          binary_n: 24,
+          kappa: null,
+          reason: "undefined",
+        }),
+      })
+    );
+    expect(v).toEqual({
+      state: "undefined",
+      text: "verifier agreement undefined (n=24) · operator n=6",
+    });
+  });
+
+  it("an older coord build that serves no judge_agreement is unknown, never zero", () => {
+    const v = ok(populated());
+    expect(v.state).toBe("unknown");
+    expect(v.text).toMatch(/^verifier agreement unknown/);
+    expect(v.text).not.toMatch(/\d/);
+  });
+
+  it("coord's judge_agreement_error is unknown; only the page quotes it", () => {
+    const metrics = populated({
+      judge_agreement: null,
+      judge_agreement_error:
+        "relation coord.verification_judge_cases does not exist",
+    });
+    const v = ok(metrics);
+    expect(v.state).toBe("unknown");
+    expect(v.text).toContain("verification_judge_cases does not exist");
+    expect(v.text).not.toContain("κ");
+    expect(deriveVerifierAgreement({ status: "ok", metrics }, "tile")).toEqual({
+      state: "unknown",
+      text: "verifier agreement unknown — coord could not read the labelled cases",
+    });
+  });
+
+  it("a failed read, a degraded body and a malformed block are unknown", () => {
+    // `error` covers no answer, an unparseable body and an unloadable project
+    // list: neutral words, and only the page quotes the reason.
+    const failed = { status: "error", reason: "HTTP 502" } as const;
+    expect(deriveVerifierAgreement(failed, "page")).toEqual({
+      state: "unknown",
+      text: "verifier agreement unknown — the metrics could not be read (HTTP 502)",
+    });
+    expect(deriveVerifierAgreement(failed, "tile")).toEqual({
+      state: "unknown",
+      text: "verifier agreement unknown — the metrics could not be read",
+    });
+    expect(ok(degraded()).text).toBe(
+      "verifier agreement unknown — coord could not look"
+    );
+    const malformed = {
+      seeded: { n: "x" },
+    } as unknown as VerificationMetrics["judge_agreement"];
+    expect(ok(populated({ judge_agreement: malformed })).state).toBe("unknown");
+    expect(deriveVerifierAgreement({ status: "loading" }, "page").state).toBe(
+      "loading"
+    );
+  });
+
+  it("a degraded answer shows no kappa even when it carries a block", () => {
+    const v = ok({ ...degraded(), judge_agreement: judgeAgreement() });
+    expect(v).toEqual({
+      state: "unknown",
+      text: "verifier agreement unknown — coord could not look",
+    });
+  });
+
+  it("a kappa is shown only over at least 20 binary cases with no reason", () => {
+    // A kappa coord sent beside binary_n < 20 is still "not enough".
+    expect(
+      ok(
+        populated({
+          judge_agreement: judgeAgreement({ binary_n: 19, kappa: 0.9 }),
+        })
+      )
+    ).toEqual({
+      state: "insufficient",
+      text: "verifier agreement: not enough labelled cases yet",
+    });
+    // Exactly 20 is enough.
+    expect(
+      ok(populated({ judge_agreement: judgeAgreement({ binary_n: 20 }) })).state
+    ).toBe("populated");
+    // A kappa beside a reason contradicts itself: unknown, no number shown.
+    const contradicted = ok(
+      populated({
+        judge_agreement: judgeAgreement({ kappa: 0.5, reason: "undefined" }),
+      })
+    );
+    expect(contradicted).toEqual({
+      state: "unknown",
+      text: "verifier agreement unknown — coord served a kappa beside a reason (undefined)",
+    });
+    // No kappa, and a reason that does not fit 20+ cases.
+    expect(
+      ok(
+        populated({
+          judge_agreement: judgeAgreement({ kappa: null, reason: "n<20" }),
+        })
+      )
+    ).toEqual({
+      state: "unknown",
+      text: "verifier agreement unknown — coord served no kappa and no reason this page recognises (n<20)",
+    });
+    expect(
+      ok(
+        populated({
+          judge_agreement: judgeAgreement({ kappa: null, reason: null }),
+        })
+      ).text
+    ).toBe(
+      "verifier agreement unknown — coord served no kappa and no reason this page recognises (none)"
+    );
+  });
+
+  it("an unreadable operator block does not hide the seeded figure", () => {
+    const ja = {
+      ...judgeAgreement(),
+      operator: null,
+    } as unknown as VerificationMetrics["judge_agreement"];
+    expect(ok(populated({ judge_agreement: ja })).text).toBe(
+      "verifier agreement κ 0.71 (seeded n=24) · operator n unknown"
+    );
+  });
+});
+
+describe("deriveLabelSampleView", () => {
+  it("reads coord's sample: slug, verdict, recorded_at and any label", () => {
+    const v = deriveLabelSampleView({ kind: "answered", body: labelSample() });
+    if (v.state !== "rows") throw new Error(v.state);
+    expect(v.isoWeek).toBe("2026-W44");
+    expect(v.rows.map((r) => r.verdict)).toEqual([
+      "survived",
+      "refuted",
+      "unverifiable",
+    ]);
+    expect(v.rows[0]).toMatchObject({
+      verificationId: "9e000000-0000-4000-8000-000000000001",
+      slug: "2026-10-01-widget-import",
+      operatorLabel: null,
+    });
+    expect(v.rows[1]?.operatorLabel?.truth).toBe("fails");
+    expect(v.rows[2]?.slug).toBeNull();
+    expect(v.rows[2]?.label).toBe("unnamed verdict");
+    expect(v.rows[0]?.label).toBe("2026-10-01-widget-import");
+    expect(choiceLabel("fails")).toBe("No");
+  });
+
+  it("an answered empty sample is empty, with the week", () => {
+    const v = deriveLabelSampleView({
+      kind: "answered",
+      body: { ...labelSample(), verdicts: [] },
+    });
+    expect(v).toEqual({
+      state: "empty",
+      isoWeek: "2026-W44",
+      text: "coord sampled no verdict to label in 2026-W44.",
+    });
+  });
+
+  it("a 404, a 503 and no answer are unavailable — never nothing to label", () => {
+    const cases = [
+      { status: 404, code: null, message: "Not Found" },
+      {
+        status: 503,
+        code: "label_sample_unreadable",
+        message: "store down",
+      },
+      { status: null, code: null, message: "network" },
+      { status: 500, code: null, message: "boom" },
+    ];
+    for (const c of cases) {
+      const v = deriveLabelSampleView({ kind: "unavailable", ...c });
+      expect(v.state).toBe("unavailable");
+      if (v.state !== "unavailable") continue;
+      expect(v.text).toMatch(/^Label sample unavailable — /);
+      expect(v.text).toContain("Not the same as nothing to label.");
+    }
+    const v503 = deriveLabelSampleView({ kind: "unavailable", ...cases[1]! });
+    expect(v503.state === "unavailable" && v503.text).toContain(
+      "label_sample_unreadable: store down"
+    );
+  });
+
+  it("a body it cannot read is unavailable, not a shorter sample", () => {
+    const bad = labelSample();
+    bad.verdicts[1]!.verdict = "maybe";
+    for (const body of [
+      bad,
+      null,
+      { iso_week: "2026-W44" },
+      { verdicts: [] },
+    ]) {
+      expect(deriveLabelSampleView({ kind: "answered", body }).state).toBe(
+        "unavailable"
+      );
+    }
+    expect(deriveLabelSampleView(null)).toEqual({ state: "loading" });
+  });
+});
+
+describe("operatorLabelOutcome", () => {
+  it("names each answer distinctly", () => {
+    expect(
+      operatorLabelOutcome({
+        kind: "recorded",
+        record: {
+          id: "r",
+          label_source: "operator",
+          verification_id: "9e000000-0000-4000-8000-000000000002",
+          seed_class: null,
+          truth: "fails",
+          verifier_verdict: "refuted",
+          labelled_by: "operator:x",
+          created_at: "2026-11-01T00:00:00Z",
+        },
+      })
+    ).toEqual({
+      text: "Recorded: did not hold up (verifier said refuted)",
+      attention: false,
+      retry: false,
+    });
+    expect(
+      operatorLabelOutcome({ kind: "already_labelled", existingId: "r" })
+    ).toEqual({
+      text: "Already labelled — this verdict carries an operator label",
+      attention: false,
+      retry: false,
+    });
+    expect(
+      operatorLabelOutcome({
+        kind: "refused",
+        code: "operator_principal_required",
+        message: "m",
+      })
+    ).toEqual({
+      text: "Not recorded — coord refused it (operator_principal_required): m",
+      attention: false,
+      retry: false,
+    });
+    expect(
+      operatorLabelOutcome({
+        kind: "not_found",
+        code: "verification_not_found",
+        message: "m",
+      }).text
+    ).toBe("Not recorded — coord has no such verdict in this project");
+    expect(
+      operatorLabelOutcome({ kind: "not_found", code: null, message: "" })
+    ).toMatchObject({ attention: false, retry: false });
+    expect(
+      operatorLabelOutcome({ kind: "not_found", code: null, message: "" }).text
+    ).toMatch(/label door is not answering/);
+    expect(
+      operatorLabelOutcome({
+        kind: "rejected",
+        status: 422,
+        code: "invalid_truth",
+        message: "m",
+      })
+    ).toEqual({
+      text: "Not recorded — HTTP 422 invalid_truth: m",
+      attention: false,
+      retry: false,
+    });
+    expect(
+      operatorLabelOutcome({ kind: "unknown", status: 504, message: "slow" })
+    ).toEqual({
+      text: "Not known to be recorded — HTTP 504: slow",
+      attention: true,
+      retry: true,
+    });
   });
 });

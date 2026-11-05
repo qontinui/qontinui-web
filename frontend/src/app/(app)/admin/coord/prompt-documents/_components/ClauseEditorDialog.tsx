@@ -26,6 +26,7 @@ import {
   CLAUSE_TIERS,
   TIER_DESCRIPTIONS,
   TIER_INHERIT,
+  isRawClause,
   type Clause,
   type ClauseCreate,
   type ClauseStatus,
@@ -315,6 +316,17 @@ export function ClauseEditorDialog({
     }
   };
 
+  if (clause && isRawClause(clause)) {
+    return (
+      <RawClauseView
+        open={open}
+        onOpenChange={onOpenChange}
+        clause={clause}
+        category={category}
+      />
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -512,6 +524,57 @@ export function ClauseEditorDialog({
               {isEdit ? "Save changes" : "Create clause"}
             </Button>
           </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Read-only view of a RAW clause (`body` set). The labelled form would open
+ * empty, and a save would `PATCH` labelled fields coord's compiler ignores
+ * while `body` is set — a silent no-op on the served document. A raw clause
+ * is changed by editing the policy document's body instead.
+ */
+function RawClauseView({
+  open,
+  onOpenChange,
+  clause,
+  category,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  clause: Clause;
+  category: string;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-h-[90vh] max-w-2xl overflow-y-auto"
+        data-testid="clause-raw-view"
+      >
+        <DialogHeader>
+          <DialogTitle>
+            Clause <code>{clause.clause_id}</code>
+          </DialogTitle>
+          <DialogDescription>
+            This rule in the <code>{category}</code> policy is written as prose,
+            so it is stored exactly as written rather than split into trigger,
+            action and bounds fields. To change it, edit the policy
+            document&apos;s text — edits made field by field here would not
+            reach what agents are served.
+          </DialogDescription>
+        </DialogHeader>
+        <pre
+          className="whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/40 p-3 text-xs"
+          data-testid="clause-raw-body"
+        >
+          {clause.body}
+        </pre>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

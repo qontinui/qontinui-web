@@ -617,9 +617,23 @@ export interface NeedsMeItem {
   fork: string | null;
   /** The offered answers; `null` when coord served options this page cannot read. */
   options: string[] | null;
+  /** The recommendation; `null` is "none given" ONLY when {@link recommendationKnown}. */
   recommendation: string | null;
+  /**
+   * Whether coord could read the item's recommendation. `false` when coord
+   * served `shape: "unknown"` (its fork-shape columns could not be read, so a
+   * recommendation may have been recorded) or left the `recommendation` key
+   * out: the recommendation is UNKNOWN, never "none given".
+   */
+  recommendationKnown: boolean;
+  /** The consequence of overturning; `null` is "not stated" ONLY when {@link ifOverturnedKnown}. */
   ifOverturned: string | null;
-  /** `fork_with_recommendation` | `open_question`, derived coord-side. */
+  /** Whether coord could read `if_overturned` — as {@link recommendationKnown}. */
+  ifOverturnedKnown: boolean;
+  /**
+   * `fork_with_recommendation` | `open_question` | `unknown`, derived
+   * coord-side; `unknown` means the fork-shape columns could not be read.
+   */
   shape: string | null;
   /** The console page where the existing write door answers it. */
   answerAt: string | null;
@@ -639,6 +653,14 @@ export interface NeedsMeView {
   } | null;
   /** Admitted decisions per decision domain; null = not served. */
   byDomain: Readonly<Record<string, number>> | null;
+  /**
+   * Coord's own verdict on its question scan (`questions_coverage`). `stale`:
+   * the scan was capped, rows were answered or withdrawn or inserted while it
+   * paged, or a column was unreadable — so `total`, `by_domain` and
+   * `shape_share` may be off, and are never a definite figure. `unknown`: not
+   * served (an older coord), which changes nothing on the page.
+   */
+  coverage: "read" | "stale" | "unknown";
   /**
    * Whether coord can retire a question whose premise died. `unsupported`
    * means the list may hold questions whose condition already resolved;
@@ -697,6 +719,12 @@ function parseByDomain(raw: unknown): Record<string, number> | null {
   return Object.fromEntries(counts);
 }
 
+/** coord's `shape` for an item whose fork-shape columns could not be read. */
+export const SHAPE_UNKNOWN = "unknown";
+
+/** What a needs-you item says of a recommendation (or consequence) coord could not read. */
+export const NEEDS_UNREADABLE_WORDS = "unknown (could not be read)";
+
 function parseNeedsMe(raw: unknown): NeedsMeView {
   const o = obj(raw) ?? {};
   const state = parseBlockState(o.state);
@@ -712,6 +740,11 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
           const id =
             str(r.id) ?? (typeof r.id === "number" ? String(r.id) : null);
           const blocking = obj(r.blocking);
+          const shape = str(r.shape);
+          // `shape: "unknown"` is coord saying the fork-shape columns could not
+          // be read; an omitted key says the same. Either way the value is
+          // UNKNOWN, and must not read as a served null ("none given").
+          const forkShapeRead = shape !== SHAPE_UNKNOWN;
           return [
             {
               source: str(r.source),
@@ -723,8 +756,12 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
               // coord counts a recommendation only when non-blank after trim
               // (its `shape`); a whitespace-only one is no recommendation.
               recommendation: nonBlank(str(r.recommendation)),
+              recommendationKnown:
+                forkShapeRead && Object.hasOwn(r, "recommendation"),
               ifOverturned: str(r.if_overturned),
-              shape: str(r.shape),
+              ifOverturnedKnown:
+                forkShapeRead && Object.hasOwn(r, "if_overturned"),
+              shape,
               answerAt: str(r.answer_at),
               blocking: blocking
                 ? {
@@ -745,6 +782,10 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
         }
       : null,
     byDomain: read ? parseByDomain(o.by_domain) : null,
+    coverage:
+      o.questions_coverage === "read" || o.questions_coverage === "stale"
+        ? o.questions_coverage
+        : "unknown",
     retirement:
       o.retirement === "supported" || o.retirement === "unsupported"
         ? o.retirement
@@ -762,6 +803,8 @@ function parseNeedsMe(raw: unknown): NeedsMeView {
 export function nothingNeedsYou(needs: NeedsMeView): boolean {
   return (
     needs.state === "read" &&
+    // A zero from a scan coord calls stale may have missed a decision.
+    !needsCountMayBeOff(needs) &&
     needs.total === 0 &&
     (needs.items?.length ?? 0) === 0
   );
@@ -780,12 +823,70 @@ export function needsDisplayCount(needs: NeedsMeView): number | null {
 }
 
 /**
+ * Whether coord said its needs_me counts may be off (`questions_coverage:
+ * "stale"`): the count shows, but never as a definite total. Off in EITHER
+ * direction — coord's stale causes include a scan that hit its cap, a pending
+ * set that moved while it paged, and an unreadable `effect_kind` that may
+ * count a gate twice — so the words never say "incomplete" (too low only).
+ */
+export function needsCountMayBeOff(needs: NeedsMeView): boolean {
+  return needs.state === "read" && needs.coverage === "stale";
+}
+
+/** The words a possibly-off needs_me count carries after it. */
+export const NEEDS_COUNT_MAY_BE_OFF_WORDS = "(may be off)";
+
+/**
+ * How many of the decisions waiting came with a recommendation: coord's count
+ * over ALL of them, which the 20 rows it lists cannot say (`shape_share`;
+ * `audience_profile/human-operator`, *Escalation shape*).
+ * A `null` count is UNKNOWN (the column is absent, or the scan stopped short),
+ * never zero. `null` when there is nothing to say it about: no read block, no
+ * usable total, or a block from a coord that serves no share at all.
+ */
+export function needsRecommendationShareSentence(
+  needs: NeedsMeView
+): string | null {
+  const share = needs.shapeShare;
+  const count = needsDisplayCount(needs);
+  if (share === null || count === null || count === 0) return null;
+  const known = share.withRecommendation;
+  // A share over some other total, or one that is not a count of it, is not
+  // this count's.
+  if (
+    known === null ||
+    share.total !== count ||
+    !Number.isInteger(known) ||
+    known < 0 ||
+    known > count
+  ) {
+    return "How many of these decisions came with a recommendation is not known.";
+  }
+  return `${known} of ${count} ${
+    count === 1 ? "decision" : "decisions"
+  } came with a recommendation${
+    needsCountMayBeOff(needs) ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""
+  }.`;
+}
+
+/**
  * The sentence for a read needs_me block that counted decisions but served
  * none of them. `count` is {@link needsDisplayCount}; `null` is an unknown
  * number, never a zero. One decision is singular ("1 decision … did not
- * serve it"), never "1 decisions".
+ * serve it"), never "1 decisions". `mayBeOff` ({@link needsCountMayBeOff}):
+ * the count is still coord's figure, qualified — never "Nothing needs you",
+ * and never a second, contradicting "not known".
  */
-export function unservedDecisionsSentence(count: number | null): string {
+export function unservedDecisionsSentence(
+  count: number | null,
+  mayBeOff = false
+): string {
+  if (mayBeOff && count === 0) {
+    return "Coord counted no decisions for you, but says its count may be off";
+  }
+  if (mayBeOff) {
+    return `${unservedDecisionsSentence(count)}, and says its count may be off`;
+  }
   return count === 1
     ? "Coord counted 1 decision for you but did not serve it"
     : `Coord counted ${count ?? "an unknown number of"} decisions for you but served none of them`;
@@ -813,6 +914,10 @@ function nonBlank(v: string | null): string | null {
 /** A needs-you row's `reason`: the recommendation, or the literal label. */
 export function needsYouReason(item: NeedsMeItem): string {
   if (item.recommendation !== null) return item.recommendation;
+  // Unread is not absent: the item may carry a recommendation coord could not
+  // read, so "no recommendation" would state a definite value it does not know.
+  if (!item.recommendationKnown)
+    return `recommendation ${NEEDS_UNREADABLE_WORDS}`;
   // A gate is an approval, not a question: coord serves it with no
   // recommendation, and calling it an "open question" would misname it.
   return item.source === "operator_gate"
@@ -1043,6 +1148,7 @@ const DECISION_DOMAIN_LABEL: Readonly<Record<string, string>> = {
   unclassified: "unclassified",
   operator_gate: "operator approval gate",
   unscanned: "not yet scanned",
+  other: "other kinds",
 };
 
 export function decisionDomainLabel(domain: string): string {
@@ -1937,7 +2043,9 @@ export function deriveHomeStrip(
     : queues !== null && queues.count > 0;
   // Only coord's own block answers "nothing needs you": the queue counts
   // give a figure, never that answer.
-  const nothingNeedsYou = needsRead && needsTotal !== null;
+  // A stale scan's count shows, but it is never the answer "nothing".
+  const needsMayBeOff = needsCountMayBeOff(view.needsMe);
+  const nothingNeedsYou = needsRead && needsTotal !== null && !needsMayBeOff;
   const open = openDegradations(view.degradations);
   const degRowsServed =
     view.degradations.state === "read" || view.degradations.state === "stale";
@@ -2008,6 +2116,7 @@ export function deriveHomeStrip(
     unknownSources === null ||
     unknownSources > 0 ||
     (needsRead && needsTotal === null) ||
+    needsMayBeOff ||
     (degRowsServed && open === null) ||
     !machinesCalm ||
     stale
@@ -2032,9 +2141,25 @@ export function deriveHomeStrip(
       // absent, or smaller than what was listed, is not a count to print.
       needsTotal === null
         ? "Decisions need you — how many is unknown"
-        : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you`;
+        : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you${needsMayBeOff ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""}`;
   } else if (somethingDegrading) {
     headline = "Something is degrading";
+  } else if (needsMayBeOff && needsTotal === 0 && !stale) {
+    // Coord's qualified zero: its figure, said with the qualification —
+    // never "Nothing needs you", and never "not read" (the block was read).
+    headline = `No decisions need you ${NEEDS_COUNT_MAY_BE_OFF_WORDS}`;
+    // It answers only the needs half: whatever else keeps the page from calm
+    // — an unread block or source, a machine roster not read calm, a
+    // degradations list served unreadable — is named, as the "Nothing needs
+    // you" headlines are gated on it.
+    if (
+      unread.length > 0 ||
+      unknownSources !== 0 ||
+      !machinesCalm ||
+      (degRowsServed && open === null)
+    ) {
+      headline += "; part of this view is not read";
+    }
   } else if (stale) {
     // The failed poll is the cause; name it whatever else is unread (coord
     // always serves at least `correctness` unread today, so gating this on
@@ -2100,6 +2225,10 @@ export function deriveHomeStrip(
   if (needsRead && needsTotal === null) {
     detailParts.push(
       "Coord gave no usable count of the decisions that need you."
+    );
+  } else if (needsMayBeOff) {
+    detailParts.push(
+      "Coord says its count of the decisions that need you may be off."
     );
   }
   if (queues !== null) {
@@ -2189,7 +2318,7 @@ export function deriveHomeStrip(
         label:
           queues !== null
             ? `needs you ${queuesFigure(queues)} (from queues)`
-            : `needs you ${countText(needsTotal)}`,
+            : `needs you ${countText(needsTotal)}${needsMayBeOff && needsTotal !== null ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""}`,
         tone: needsSomething
           ? "attention"
           : needsRead || queues !== null

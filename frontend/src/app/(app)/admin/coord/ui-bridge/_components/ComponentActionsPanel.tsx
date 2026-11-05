@@ -36,6 +36,7 @@ import {
   Provenance,
   RedactedText,
   usePresentationMode,
+  useRowKey,
 } from "@/components/presentation";
 import {
   actionSplitText,
@@ -174,8 +175,8 @@ function ActionLine({
           className="text-xs text-muted-foreground"
           data-testid="coord-ui-bridge-action-unreadable"
         >
-          (the runner sent an entry here that is not an action, so it counts
-          as undeclared)
+          (the runner sent an entry here that is not an action, so it counts as
+          undeclared)
         </span>
       )}
       {!presenting && action.description && (
@@ -199,6 +200,7 @@ export function ComponentActionsPanel({
   noRunner,
 }: ComponentActionsPanelProps) {
   const { presenting } = usePresentationMode();
+  const rowKey = useRowKey();
   const [filter, setFilter] = useState<ComponentFilter>("all");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const reading = components.state === "ok" ? components.value : null;
@@ -369,7 +371,10 @@ export function ComponentActionsPanel({
           </div>
           <RecordList
             items={visible}
-            itemKey={(c) => c.key}
+            // Written to each row's `data-row-key`: while presenting, an
+            // alias of the component's own key (it is its id), stable across a
+            // refresh, so the open row stays on its component.
+            itemKey={(c) => rowKey("components", c.key)}
             expandedKey={expandedKey}
             onExpandedKeyChange={setExpandedKey}
             empty={

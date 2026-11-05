@@ -851,6 +851,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/sessions/census": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Census
+         * @description Proxy coord's ``GET /coord/sessions/census``.
+         *
+         *     Returns coord's ``CensusResponse`` verbatim plus ``served: true``. When
+         *     coord answers its typed **404** ``{"error": "no_such_route"}`` (the
+         *     deployed build does not serve the census yet) this returns 200 with the
+         *     UNKNOWN envelope::
+         *
+         *         {"served": false, "unknown_reason": "census_not_served",
+         *          "detail": "<coord's 404 body>"}
+         *
+         *     Every other failure — any other 404 included — keeps
+         *     :func:`_proxy_coord_get`'s mapping (502/504 for transport, coord's own
+         *     status otherwise) — those are reads that did not
+         *     land, which the card renders as UNKNOWN with the status attached. Tenant
+         *     scoping is coord's, on the forwarded bearer, exactly as for the
+         *     neighbouring routes.
+         */
+        get: operations["api_v1_admin_sessions_census_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/stats": {
         parameters: {
             query?: never;
@@ -8718,6 +8753,12 @@ export interface paths {
          *     safe (the depth cap terminates the recursion; duplicate edges
          *     collapse). 404 when the root does not exist in the caller's tenant
          *     (cross-tenant ids are never disclosed).
+         *
+         *     A scope :func:`withheld_scopes` withholds from this principal
+         *     (``session``, for a device JWT) is invisible to the walk: such a root
+         *     answers the same 404 as an unknown one, and the walk never steps onto
+         *     such a node — so neither the node nor any edge into it, nor anything
+         *     reached only through it, is returned.
          */
         post: operations["api_v1_memory_graph_post"];
         delete?: never;
@@ -8789,6 +8830,11 @@ export interface paths {
          *     not match the job (wrong kind, wrong vector count, wrong dimension,
          *     unaccepted model tag), which leaves the job ``claimed`` so the runner
          *     can still post a correct result before its lease expires.
+         *
+         *     A job with a target in a scope :func:`withheld_scopes` withholds from
+         *     this principal is the same 404 as an unknown job, on the failure path
+         *     too: such a principal may not write onto that row, nor learn the job
+         *     exists.
          */
         post: operations["api_v1_memory_jobs_job_id_result_post"];
         delete?: never;
@@ -8875,6 +8921,10 @@ export interface paths {
          *
          *     The request body is ``extra="forbid"``: an unrecognized key is a 422
          *     naming the field rather than a silently wider query.
+         *
+         *     ``scopes`` naming a scope :func:`withheld_scopes` withholds from this
+         *     principal (``session``, for a device JWT) is a 403: the caller asked for
+         *     a partition this door cannot prove is theirs.
          */
         post: operations["api_v1_memory_query_post"];
         delete?: never;
@@ -8905,6 +8955,11 @@ export interface paths {
          *     ``created_at``, so the old ``memory_id`` UUID tiebreak paginated a
          *     batch in random order) and stable under concurrent writes (new rows
          *     only ever prepend).
+         *
+         *     Rows in a scope :func:`withheld_scopes` withholds from this principal
+         *     (``session``, for a device JWT) are LEFT OUT — filtered in SQL, so a
+         *     page is still ``limit`` rows of what the caller may see and the cursor
+         *     stays exact — and so is a visible row's link whose target is one.
          */
         get: operations["api_v1_memory_records_get"];
         put?: never;
@@ -8917,6 +8972,12 @@ export interface paths {
          *     ``(tenant_id, content_hash)`` against live rows only. Each record
          *     carries its own caller-computed ``embedding`` (+ ``embedding_model``)
          *     or neither, in which case that row is stored unvectorized.
+         *
+         *     A record naming a scope :func:`withheld_scopes` withholds from this
+         *     principal (``session``, for a device JWT) refuses the WHOLE batch with
+         *     403 before anything is written. A record whose CONTENT is already held
+         *     by a live row in such a scope refuses the batch with 409 and no id — see
+         *     :func:`_withheld_duplicate_conflict`.
          */
         post: operations["api_v1_memory_records_post"];
         delete?: never;
@@ -8944,8 +9005,9 @@ export interface paths {
          *     :class:`MemoryRecordByIdResponse` for the precedence. A tombstoned
          *     row's ``title`` and ``content`` are withheld (``null``).
          *
-         *     404 when the id does not exist OR belongs to another tenant — the two
-         *     are deliberately indistinguishable. Read-only: does not bump
+         *     404 when the id does not exist OR belongs to another tenant OR sits in
+         *     a scope :func:`withheld_scopes` withholds from this principal — the
+         *     three are deliberately indistinguishable. Read-only: does not bump
          *     ``access_count``.
          */
         get: operations["api_v1_memory_records_memory_id_get"];
@@ -8955,7 +9017,9 @@ export interface paths {
          * Delete Record
          * @description Tombstone a record (``is_tombstone = true, valid_until = now()``).
          *
-         *     404 for records that don't exist in the caller's tenant.
+         *     404 for records that don't exist in the caller's tenant, or that sit in
+         *     a scope :func:`withheld_scopes` withholds from this principal — the
+         *     same detail either way, and the withheld row is left untouched.
          */
         delete: operations["api_v1_memory_records_memory_id_delete"];
         options?: never;
@@ -8991,7 +9055,8 @@ export interface paths {
          *     passes.
          *
          *     404 for records that don't exist in the caller's tenant (cross-tenant
-         *     ids are never disclosed).
+         *     ids are never disclosed), or that sit in a scope :func:`withheld_scopes`
+         *     withholds from this principal — the same detail, and nothing written.
          */
         put: operations["api_v1_memory_records_memory_id_hold_put"];
         post?: never;
@@ -9008,7 +9073,8 @@ export interface paths {
          *
          *     Idempotent: releasing an unheld record is a no-op that reports
          *     ``held=False``. 404 only when the record does not exist in the
-         *     caller's tenant.
+         *     caller's tenant, or sits in a scope :func:`withheld_scopes` withholds
+         *     from this principal (the same detail; nothing written).
          */
         delete: operations["api_v1_memory_records_memory_id_hold_delete"];
         options?: never;
@@ -9037,6 +9103,13 @@ export interface paths {
          *     ``anchors`` ARE inherited when omitted (unlike ``embedding``) — see
          *     the comment on the insert below for why the two go opposite ways.
          *     This is the "superseded, or corrected" arm of the plan's Phase 6.
+         *
+         *     A predecessor in a scope :func:`withheld_scopes` withholds from this
+         *     principal is the same 404 as an unknown id — checked BEFORE the payload,
+         *     because an omitted ``scope``/``scope_ref`` INHERITS the predecessor's, so
+         *     checking only the payload would let a device supersede a peer's session
+         *     row by id and write the successor into that partition. A payload that
+         *     names a withheld scope itself is a 403.
          */
         post: operations["api_v1_memory_records_memory_id_supersede_post"];
         delete?: never;
@@ -9060,6 +9133,15 @@ export interface paths {
          *     "what is in here" — the read an agent needs BEFORE guessing at query
          *     vocabulary. ``corpus_complete`` distinguishes a genuinely small
          *     corpus from a facet read that degraded.
+         *
+         *     ``facets`` describes the corpus THIS principal can retrieve: rows in a
+         *     scope :func:`withheld_scopes` withholds (``session``, for a device JWT)
+         *     are excluded from its counts and its title sample. The quota fields
+         *     (``row_count``, ``bytes``, ``lifecycle_held``) and ``embedding_coverage``
+         *     are tenant posture, not content, and still count every row — an
+         *     accepted residual (coord finding ``fd4ffbaa``): a device can see
+         *     ``row_count`` move while its facets do not, which discloses the session
+         *     partition's size and write cadence, though none of its content.
          */
         get: operations["api_v1_memory_stats_get"];
         put?: never;
@@ -12101,11 +12183,20 @@ export interface paths {
          *     Only valid for kind ``decision_record``; coord is the authority on that and
          *     its 4xx passes through, as do unknown-document and non-admin refusals.
          *
-         *     Body: ``{reason}``. Only ``reason`` is forwarded. The withdrawer is NOT
-         *     stamped here and never taken from the browser: coord derives it from its own
-         *     authenticated ``OperatorContext``, for the same reason the version-restore
-         *     proxy above declines to stamp ``updated_by``. Whether a reason is required
-         *     (and what counts as blank) is coord's rule, not a second copy of it here.
+         *     Body: ``{reason, expected_version?}``. Only those two are forwarded. The
+         *     withdrawer is NOT stamped here and never taken from the browser: coord
+         *     derives it from its own authenticated ``OperatorContext``, for the same
+         *     reason the version-restore proxy above declines to stamp ``updated_by``.
+         *     Whether a reason is required (and what counts as blank) is coord's rule, not
+         *     a second copy of it here.
+         *
+         *     ``expected_version`` is the ``current_version`` the feed re-read before
+         *     posting. Coord compares it under its row lock and answers ``409
+         *     withdraw_stale`` (passed through) when the record moved in between, so the
+         *     re-read→POST window is closed rather than narrowed — on a coord that
+         *     carries that check. An older coord ignores the unknown key, and the window
+         *     is then only narrowed, as before. Its type is coord's to validate, like
+         *     ``reason``'s.
          */
         post: operations["api_v1_operations_coord_prompt_documents_kind_name_withdraw_post"];
         delete?: never;
@@ -12349,6 +12440,53 @@ export interface paths {
          *     Rate-limited per caller — see ``_TENANT_MEMBER_ADD_RATE_LIMIT``.
          */
         post: operations["api_v1_operations_coord_tenant_members_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/verification/label-sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coord Verification Label Sample
+         * @description Return this week's verdicts for the operator to label.
+         *
+         *     coord's body is forwarded verbatim with its status: ``{iso_week,
+         *     population_cutoff, verdicts: [...]}``, or its typed refusal.
+         */
+        get: operations["api_v1_operations_coord_verification_label_sample_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/coord/verification/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Coord Verification Label
+         * @description Record the operator's label on one verification verdict.
+         *
+         *     Forwards ``{label_source: "operator", verification_id, truth}`` with the
+         *     operator's bearer; coord's status and body come back verbatim (see the
+         *     section comment), except a coord ``401``.
+         */
+        post: operations["api_v1_operations_coord_verification_labels_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13865,7 +14003,10 @@ export interface paths {
          *
          *     Proxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards
          *     the JSON verbatim: ``{status: "available"|"taken"|"invalid"|
-         *     "owner_unbound", reason?, normalized_name}``. POST (despite the read
+         *     "owner_unbound"|"repo_bound_to_another_tenant", reason?, normalized_name}``.
+         *     ``repo_bound_to_another_tenant`` answers the tenant that owns the org when a
+         *     per-repo binding hands this name to another tenant. A failed governing read
+         *     is ``500 governing_tenant_unknown``. POST (despite the read
          *     semantics) so the runner's provisioning flow talks one verb to this
          *     surface; the upstream coord call is the GET.
          */
@@ -13891,8 +14032,11 @@ export interface paths {
          *     repo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.
          *
          *     Passes coord's status + JSON body through verbatim (like the onboarding
-         *     claim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when
-         *     the repo's owner isn't a GitHub account connected to the caller's workspace.
+         *     claim proxy) so the runner sees a clean ``403`` when the caller's tenant does
+         *     not govern the repo: ``repo_bound_to_another_tenant`` when it owns the repo's
+         *     org but a per-repo binding hands the repo to another tenant, otherwise
+         *     ``repo_owner_not_connected``. A failed governing read is
+         *     ``500 governing_tenant_unknown``.
          */
         post: operations["api_v1_operations_github_clone_credential_post"];
         delete?: never;
@@ -13917,7 +14061,8 @@ export interface paths {
          *     Proxies coord ``POST /coord/repos``. Success is coord's ``201
          *     {full_name, clone_url, html_url, default_branch}``; coord's error
          *     statuses + bodies pass through VERBATIM — ``409 name_taken``,
-         *     ``403 owner_unbound``, ``409 user_authorization_required`` (whose body
+         *     ``403 owner_unbound``, ``403 repo_bound_to_another_tenant``,
+         *     ``500 governing_tenant_unknown``, ``409 user_authorization_required`` (whose body
          *     carries the ``authorize_url`` the runner must surface), and
          *     ``503 app_unconfigured``.
          *
@@ -13994,8 +14139,9 @@ export interface paths {
          *
          *     Proxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` →
          *     ``{token, expires_at}``. The write-scoped sibling of the contents:read
-         *     clone-credential proxy above; coord enforces that the repo's owner is
-         *     bound to the caller's tenant.
+         *     clone-credential proxy above; coord enforces that the caller's tenant
+         *     governs the repo: a per-repo binding, else the owner's binding. A failed
+         *     governing read is ``500 governing_tenant_unknown``.
          */
         post: operations["api_v1_operations_github_push_credential_post"];
         delete?: never;
@@ -16367,7 +16513,7 @@ export interface paths {
          *
          *     Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
          *
-         *     With ``shape=consolidated`` the envelope gains three fields and every
+         *     With ``shape=consolidated`` the envelope gains four fields and every
          *     row gains two (plan `2026-08-26-sessions-console-consolidation` D1)::
          *
          *         { "count": <int>, "scope": "all", "shape": "consolidated",
@@ -16376,7 +16522,14 @@ export interface paths {
          *                           "agent_session": {...}|null }, ... ],
          *           "row_class_counts": {"linked": n, "lifecycle_only": n,
          *                                "agent_only": n, "unknown": n},
+         *           "withheld_by_filter": n,
          *           "agent_half": {"read": "ok"} | {"read": "failed", "detail": "..."} }
+         *
+         *     ``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter
+         *     hid although their agent half matched it — the two halves disagree (e.g.
+         *     lifecycle ``active``, agent ``stale``). They are not rows of any class, so
+         *     they sit beside ``row_class_counts`` rather than in it (its values still
+         *     sum to ``count``).
          *
          *     ``row_class: null`` is UNKNOWN and is load-bearing — see the block
          *     comment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.
@@ -43324,6 +43477,31 @@ export interface components {
          */
         OperatorLabel: "A" | "B" | "E";
         /**
+         * OperatorVerificationLabelRequest
+         * @description Body for ``POST /operations/coord/verification/labels``.
+         *
+         *     ``truth`` is the operator's answer to "Did this hold up?": ``holds``
+         *     (Yes), ``fails`` (No) or ``cannot_tell`` (Can't tell). ``verification_id``
+         *     names the verdict row (``coord.work_unit_verifications.id``) being judged.
+         */
+        OperatorVerificationLabelRequest: {
+            /**
+             * Label Source
+             * @constant
+             */
+            label_source: "operator";
+            /**
+             * Truth
+             * @enum {string}
+             */
+            truth: "holds" | "fails" | "cannot_tell";
+            /**
+             * Verification Id
+             * Format: uuid
+             */
+            verification_id: string;
+        };
+        /**
          * OrganizationCreate
          * @description Schema for creating a new organization.
          */
@@ -47895,7 +48073,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "available" | "taken" | "invalid" | "owner_unbound";
+            status: "available" | "taken" | "invalid" | "owner_unbound" | "repo_bound_to_another_tenant";
         };
         /**
          * RepoPushCredentialResponse
@@ -58642,6 +58820,44 @@ export interface operations {
             path: {
                 event_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_admin_sessions_census_get: {
+        parameters: {
+            query?: {
+                /** @description A Claude Code session uuid or a coord session id (coord matches both: a census row's `aliases` carry the coord ids). */
+                session_id?: string | null;
+                /** @description Prefix match over the census window name and coord's names. */
+                session_name?: string | null;
+                /** @description `owner/repo#n` — the PR whose author session to find. */
+                pr?: string | null;
+                /** @description Max rows coord returns (1..500). */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -76375,6 +76591,59 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_coord_verification_label_sample_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_v1_operations_coord_verification_labels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorVerificationLabelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_v1_operations_coord_verification_metrics_get: {
         parameters: {
             query?: {
@@ -80375,7 +80644,7 @@ export interface operations {
                 shape?: string | null;
                 /** @description Restrict to sessions on this coord device. `shape=consolidated` only. Spelled `device` (not `device_id`) because `/environments/sessions?device=` already builds exactly this deep link and the Phase 3 redirect preserves it verbatim. */
                 device?: string | null;
-                /** @description Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes, which carries no search parameter. */
+                /** @description Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes (which carries no search parameter), including `claude_code_session_id` so a pasted `Session-Id:` uuid matches it. A lifecycle row whose bridge names an agent row coord's search returned is kept too, so matching either half finds the session. */
                 q?: string | null;
                 /** @description Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers coord's `sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`. */
                 status?: ("live" | "stale" | "closed") | null;

@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Network, RefreshCw } from "lucide-react";
-import { useUIComponent } from "@qontinui/ui-bridge";
+import { useUIComponent } from "@qontinui/ui-bridge/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";

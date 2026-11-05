@@ -38,6 +38,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import {
+  TEXT_ATTRIBUTES,
   expectPresentationSafe,
   renderInPresentationMode,
   type PresentationView,
@@ -132,6 +133,17 @@ const FORBIDDEN = [
   "operator@example.com",
   DRAIN_REASON,
   "10.0.0.5",
+];
+
+/**
+ * What an outsider must not READ — in text, a text-bearing attribute (the
+ * helper's own `TEXT_ATTRIBUTES`) or an input's or textarea's value. Unlike
+ * {@link FORBIDDEN} these are not identities but the operator's vocabulary, so
+ * a `data-*` hook may still carry them: a path row's `data-path`, a gate's
+ * `data-gate` and a toggle's UI Bridge id are its registry name, which is what
+ * this file (and an automated walk) addresses a row by.
+ */
+const VOCABULARY = [
   // Registry names, variables, settings keys and files: the operator's vocabulary.
   "pr_fix_dispatch",
   "merge_shepherd",
@@ -143,6 +155,38 @@ const FORBIDDEN = [
   // A member's own preference is never a path's state in front of an audience.
   "Your preference",
 ];
+
+/**
+ * What the audience reads under `root`, lower-cased, as the helper's own text
+ * check reads it: text, the text-bearing attributes, and an input's or
+ * textarea's value.
+ */
+function readText(root: Element = document.body): string {
+  const elements = [root, ...root.querySelectorAll("*")];
+  return [
+    root.textContent ?? "",
+    ...elements.flatMap((el) =>
+      TEXT_ATTRIBUTES.map((a) => el.getAttribute(a) ?? "")
+    ),
+    ...elements.map((el) =>
+      el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+        ? el.value
+        : ""
+    ),
+  ]
+    .join("\n")
+    .toLowerCase();
+}
+
+/** The page is presentation-safe, and none of {@link VOCABULARY} is read on it. */
+function expectSafe(view: PresentationView) {
+  expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+  const read = readText();
+  expect(
+    VOCABULARY.filter((v) => read.includes(v.toLowerCase())),
+    "operator vocabulary read on the presented page"
+  ).toEqual([]);
+}
 
 /** A request row that carries every free-text field the row and its detail show. */
 const SUPERSEDED = rowFx({
@@ -239,7 +283,7 @@ async function checkBehindEveryDisclosure(view: PresentationView) {
     expect(screen.getAllByTestId("coord-spawns-gate").length).toBeGreaterThan(
       0
     );
-    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+    expectSafe(view);
   }
   // The per-request list is the investigation view's, an operator page the
   // lens withholds: no request row, and so no request detail, is presented.
@@ -369,7 +413,7 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(
       screen.getByTestId("coord-spawns-count-all").getAttribute("data-count")
     ).toBe("2");
-    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+    expectSafe(view);
     await checkBehindEveryDisclosure(view);
     // No device id reaches the presented DOM, in text or in any attribute
     // (the per-device list it was carried on, as a share key, is gone).
@@ -692,7 +736,7 @@ describe("/admin/coord/spawns?present=1", () => {
       expect(dom).not.toContain(id);
       expect(dom).not.toContain(id.slice(0, 8));
     }
-    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+    expectSafe(view);
   });
 
   it("names what the matrix leaves out, and lists a row it cannot classify without its name", async () => {
@@ -763,7 +807,7 @@ describe("/admin/coord/spawns?present=1", () => {
     expect(screen.getByTestId("coord-spawns-unknown-banner").textContent).toBe(
       "The record of spawn requests could not be read, so which spawns were requested is unknown."
     );
-    expectPresentationSafe(view, { captions: CAPTIONS, forbidden: FORBIDDEN });
+    expectSafe(view);
   });
 
   it("carries every section's caption and the provenance of its reads", async () => {
@@ -878,5 +922,32 @@ describe("/admin/coord/spawns for the operator — the same fixtures", () => {
     expect(document.body.textContent).toContain("merge_shepherd");
     const sessions = screen.getAllByTestId("coord-spawns-machine-sessions");
     expect(sessions[0]!.getAttribute("title")).toContain("10.0.0.5");
+  });
+});
+
+describe("the vocabulary check reads what the audience reads", () => {
+  it("reads an input's and a textarea's value, as the helper's text check does", () => {
+    const { container, unmount } = render(
+      <div>
+        <input readOnly value="merge_shepherd" />
+        <textarea readOnly value="COORD_X" />
+      </div>
+    );
+    const read = readText(container);
+    expect(read).toContain("merge_shepherd");
+    expect(read).toContain("coord_x");
+    unmount();
+  });
+
+  it("reads only what is under the root it is given", () => {
+    const outside = render(
+      <input readOnly title="auto_fix" value="rulebook" />
+    );
+    const inside = render(<p title="claude_cli">inside</p>);
+    const read = readText(inside.container);
+    expect(read).toContain("claude_cli");
+    expect(read).not.toMatch(/auto_fix|rulebook/);
+    inside.unmount();
+    outside.unmount();
   });
 });

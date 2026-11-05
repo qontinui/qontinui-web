@@ -58,6 +58,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { AlertTriangle, ScrollText } from "lucide-react";
 import {
+  absoluteTime,
   CollapsiblePanel,
   NAVIGATION_ONLY_PROPS,
   RecordDetail,
@@ -71,6 +72,7 @@ import {
   RedactedText,
   SectionCaption,
   usePresentationMode,
+  useRowKey,
 } from "@/components/presentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -85,8 +87,10 @@ import {
   auditResourceRepo,
   auditScope,
   indexDevices,
+  isAuditCount,
+  isAuditTimestamp,
   presentedAuditActionLabel,
-  VERBATIM_BLAST_KEYS,
+  presentedClearanceWriter,
 } from "./auditPresentation";
 import { DEVOPS_SOURCES } from "./devOpsHeadline";
 import { FAILURE_REASON_WITHHELD } from "./presentedFailure";
@@ -287,12 +291,15 @@ function PresentedNilOperator() {
 /** What a withheld blast-radius value reads as. */
 const BLAST_VALUE_WITHHELD = "withheld in presentation mode";
 
+function BlastValueWithheld() {
+  return <span className="text-muted-foreground">{BLAST_VALUE_WITHHELD}</span>;
+}
+
 /**
  * One promoted blast-radius value as an outsider sees it: a count instead of
  * tenant ids, an alias instead of a device id, repositories only when
- * provably first-party, and an operator never. A value is shown as it is only
- * when its key is one `VERBATIM_BLAST_KEYS` vouches for; anything else is
- * redacted or withheld, never shown on trust.
+ * provably first-party, and an operator never. A value is shown only under an
+ * arm of its own here; anything else is withheld, never shown on trust.
  */
 function PresentedBlastValue({
   row,
@@ -358,16 +365,31 @@ function PresentedBlastValue({
     }
     case "target_operator_id":
       return <>an operator — {BLAST_VALUE_WITHHELD}</>;
-    default:
-      // Drained / released, an expiry, a clearance writer, a policy name, a
-      // level, a version, a commit prefix: coord's fixed vocabulary, times
-      // and numbers. A key not vouched for could hold anything (D3.3: a
-      // blocklist fails open), so it is withheld.
-      return VERBATIM_BLAST_KEYS.has(item.key) ? (
+    case "drained":
+      // Only ever "drained" or "released" (`operatorAudit.ts`).
+      return <>{item.value}</>;
+    case "until":
+      // Unparsed, it is whatever the writer stamped; a time reads as a time.
+      return isAuditTimestamp(item.value) ? (
+        <>{absoluteTime(item.value)}</>
+      ) : (
+        <BlastValueWithheld />
+      );
+    case "version":
+      return isAuditCount(item.value) ? (
         <>{item.value}</>
       ) : (
-        <span className="text-muted-foreground">{BLAST_VALUE_WITHHELD}</span>
+        <BlastValueWithheld />
       );
+    case "via": {
+      const writer = presentedClearanceWriter(item.value);
+      return writer !== null ? <>{writer}</> : <BlastValueWithheld />;
+    }
+    default:
+      // A commit prefix, a policy's internal name, a policy's level (opaque to
+      // coord itself on a domain that declares none), and any key added without
+      // an arm: any of them could hold anything (D3.3: a blocklist fails open).
+      return <BlastValueWithheld />;
   }
 }
 
@@ -391,10 +413,12 @@ function PresentedAuditRow({
   const presentedAction = presentedAuditActionLabel(row.action);
   const machine = auditResourceMachine(row, byId);
   const actor = auditActorMachine(row, byId);
+  // No `audit_id` on any attribute here: it is an internal id, a UUID (D3.3).
+  // So the test ids name no row, and the list keys it (`useRowKey`), which
+  // makes `data-row-key` an alias.
   return (
     <RecordRow
-      rowKey={row.audit_id}
-      data-testid={`audit-row-${row.audit_id}`}
+      data-testid="audit-row-presented"
       identity={
         <span data-audit-action-mapped={actionLabel.mapped ? "true" : "false"}>
           {presentedAction}
@@ -438,7 +462,7 @@ function PresentedAuditRow({
       onToggle={onToggle}
     >
       <RecordDetail
-        data-testid={`audit-detail-${row.audit_id}`}
+        data-testid="audit-detail-presented"
         why={
           <div className="space-y-1">
             <p className="text-xs">
@@ -478,7 +502,7 @@ function PresentedAuditRow({
           </div>
         }
         problems={
-          <div data-testid={`audit-blast-${row.audit_id}`}>
+          <div data-testid="audit-blast-presented">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Blast radius
             </p>
@@ -522,6 +546,7 @@ export function OperatorAuditPanel({
   devices?: readonly FleetDeviceRef[];
 } = {}) {
   const { presenting } = usePresentationMode();
+  const rowKey = useRowKey();
   const byId = useMemo(() => indexDevices(devices), [devices]);
   const [filterId, setFilterId] = useState(DEFAULT_AUDIT_FILTER_ID);
   const [read, setRead] = useState<AuditRead>({ state: "loading" });
@@ -847,9 +872,17 @@ export function OperatorAuditPanel({
                       failed (D3.3). */}
                   {presenting ? `${FAILURE_REASON_WITHHELD}.` : read.reason}{" "}
                   This says nothing about whether anyone changed anything; it is
-                  a statement about the request. Coord gates this route on the{" "}
-                  <code className="font-mono">admin</code> role, so a 403 here
-                  means the account lacks it, not that the feed is empty.
+                  a statement about the request.
+                  {/* Route, role and status: what the operator acts on. */}
+                  {!presenting && (
+                    <>
+                      {" "}
+                      Coord gates this route on the{" "}
+                      <code className="font-mono">admin</code> role, so a 403
+                      here means the account lacks it, not that the feed is
+                      empty.
+                    </>
+                  )}
                 </p>
               </div>
             </div>
@@ -857,7 +890,12 @@ export function OperatorAuditPanel({
             <RecordList
               items={visibleRows}
               loaded={read.state === "ok"}
-              itemKey={(row, i) => row.audit_id || `audit-${i}`}
+              // Written to each row's `data-row-key`: while presenting, an alias
+              // of the audit id (D3.3), stable across a refresh, so the open
+              // row stays on its record.
+              itemKey={(row, i) =>
+                rowKey("audit", row.audit_id || `audit-${i}`)
+              }
               expandedKey={openKey}
               onExpandedKeyChange={setOpenKey}
               empty={
@@ -898,7 +936,9 @@ export function OperatorAuditPanel({
                     {resourceKeyFilter ? (
                       <>
                         for resource key{" "}
-                        <span className="font-mono">{resourceKeyFilter}</span>{" "}
+                        <span className="font-mono">
+                          {resourceKeyFilter}
+                        </span>{" "}
                       </>
                     ) : null}
                     rows for this tenant at all &mdash; coord applies the filter

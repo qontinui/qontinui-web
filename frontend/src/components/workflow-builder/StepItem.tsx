@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useDragSource } from "@qontinui/ui-bridge";
+import { useDragSource } from "@qontinui/ui-bridge/react";
 import type {
   UnifiedStep,
   WorkflowPhase,

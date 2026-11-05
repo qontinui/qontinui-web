@@ -154,7 +154,7 @@ export function OverviewShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <ScrollArea className="flex-1 min-h-0">
+      <ScrollArea className="flex-1 min-h-0" fitWidth>
         {/* What the viewer may edit, for THIS project — every overview page
             gates its edit controls on it (never on `isCoordAdmin`). */}
         <OverviewPermissionsProvider

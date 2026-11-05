@@ -11,7 +11,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.core.error_codes import ErrorCode, get_default_error_code
-from app.core.refusal import RefusalHTTPException
+from app.core.refusal import (
+    REFUSAL_ORIGIN_HEADER,
+    REFUSAL_ORIGIN_WEB,
+    RefusalHTTPException,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -144,7 +148,8 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Handle HTTP exceptions with standardized format"""
     # A refusal raised through `app.core.refusal.refusal_error`: the same
     # top level a string detail has always produced, plus its typed envelope
-    # nested under `refusal`.
+    # nested under `refusal`, and the origin header that says THIS backend
+    # raised it (a proxied upstream envelope never carries it).
     if isinstance(exc, RefusalHTTPException):
         return JSONResponse(
             status_code=exc.status_code,
@@ -153,7 +158,10 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
                 "timestamp": time.time(),
                 "path": str(request.url),
             },
-            headers=exc.headers,
+            headers={
+                **(exc.headers or {}),
+                REFUSAL_ORIGIN_HEADER: REFUSAL_ORIGIN_WEB,
+            },
         )
     # If detail is a dict with error code, use it; otherwise infer from status
     # Note: exc.detail is typed as str | None but can be dict at runtime
