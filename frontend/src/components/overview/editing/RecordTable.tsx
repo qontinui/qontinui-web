@@ -12,17 +12,21 @@
  * - **CSV paste** through `CsvPasteDialog`: preview, per-line problems, then
  *   commit.
  *
- * It edits a WORKING COPY: `onChange` hands the new rows to the caller, whose
- * own Save writes them through the contract (`If-Match`, a conflict dialog,
- * the change log). `how` says whether the change was typed or imported, so
- * that write can name its source. Without `canEdit` the controls are ABSENT,
- * never disabled-and-teasing.
+ * `onChange` hands each change to the caller, which either keeps it in a
+ * working copy that its own Save writes (the estimate editor) or writes it at
+ * once, one record per row (the per-record tables) — either way through the
+ * contract (`If-Match`, a conflict dialog, the change log). A typed change
+ * hands over the whole table as the reader left it; an import hands over the
+ * pasted rows alone, and `pasteOutcome` says, from the caller's own write
+ * plan, what committing them does. `how` says whether the change was typed or
+ * imported, so that write can name its source. Without `canEdit` the controls
+ * are ABSENT, never disabled-and-teasing.
  */
 
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { JsonSchema } from "./api";
-import { CsvPasteDialog } from "./CsvPasteDialog";
+import { CsvPasteDialog, type PasteOutcome } from "./CsvPasteDialog";
 import { FieldEditor } from "./FieldEditor";
 import {
   cellText,
@@ -50,6 +54,7 @@ export function RecordTable<Row extends object>({
   table,
   rows,
   onChange,
+  pasteOutcome,
   canEdit,
   busy = false,
   rowSchema,
@@ -60,6 +65,9 @@ export function RecordTable<Row extends object>({
   table: TableDeclaration<Row>;
   rows: Row[];
   onChange: (rows: Row[], how: ChangeHow) => void;
+  /** What committing a paste does, from the caller's own write plan —
+   *  forwarded to the paste dialog, whose button says it. */
+  pasteOutcome: (rows: Row[]) => PasteOutcome<Row>;
   canEdit: boolean;
   busy?: boolean;
   /** The row shape the server validates, from the resource catalog. */
@@ -220,6 +228,7 @@ export function RecordTable<Row extends object>({
               setSort(null);
               onChange(pasted, "import");
             }}
+            pasteOutcome={pasteOutcome}
             onTextChange={onPasteTextChange}
             uiBridgeId={`${uiBridgeId}.paste`}
           />

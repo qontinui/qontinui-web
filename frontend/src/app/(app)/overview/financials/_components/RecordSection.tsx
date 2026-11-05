@@ -15,6 +15,7 @@
 import { useMemo, useState } from "react";
 import { ChangeLogPanel } from "@/components/overview/editing/ChangeLogPanel";
 import { ConflictDialog } from "@/components/overview/editing/ConflictDialog";
+import type { PasteOutcome } from "@/components/overview/editing/CsvPasteDialog";
 import { RecordTable } from "@/components/overview/editing/RecordTable";
 import {
   VersionConflictError,
@@ -28,7 +29,11 @@ import type {
   SaveResult,
   UpdateOptions,
 } from "@/components/overview/editing/useResource";
-import { bodyOf, planRecordWrites } from "@/components/overview/editing/writes";
+import {
+  bodyOf,
+  classifyImport,
+  planRecordWrites,
+} from "@/components/overview/editing/writes";
 
 interface Audited extends VersionedRecord {
   updated_at: string;
@@ -192,6 +197,13 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
     if (wrote) onWritten();
   };
 
+  // What a paste would do, classified from the same inputs `apply` hands
+  // `planRecordWrites` — so the paste button says what the writes will be.
+  const pasteOutcome = (pasted: Row[]): PasteOutcome<Row> => ({
+    kind: "merge",
+    fates: classifyImport(rows, pasted, writable, matchKey),
+  });
+
   const latest = records.reduce<Rec | null>(
     (newest, r) => (!newest || r.updated_at > newest.updated_at ? r : newest),
     null
@@ -206,6 +218,7 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
         busy={busy}
         rowSchema={descriptor?.schemas.create}
         onChange={(next, how) => void apply(next, how)}
+        pasteOutcome={pasteOutcome}
         uiBridgeId={`${uiBridgeId}.table`}
       />
       {errors.length > 0 && (

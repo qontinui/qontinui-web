@@ -14,6 +14,7 @@
 import { useMemo, useState } from "react";
 import { ChangeLogPanel } from "@/components/overview/editing/ChangeLogPanel";
 import { ConflictDialog } from "@/components/overview/editing/ConflictDialog";
+import type { PasteOutcome } from "@/components/overview/editing/CsvPasteDialog";
 import { RecordTable } from "@/components/overview/editing/RecordTable";
 import {
   VersionConflictError,
@@ -26,7 +27,11 @@ import type {
   UpdateOptions,
 } from "@/components/overview/editing/useResource";
 import type { WriteSource } from "@/components/overview/editing/api";
-import { bodyOf, planRecordWrites } from "@/components/overview/editing/writes";
+import {
+  bodyOf,
+  classifyImport,
+  planRecordWrites,
+} from "@/components/overview/editing/writes";
 import {
   MILESTONE_WRITABLE,
   milestoneKey,
@@ -180,6 +185,15 @@ export function MilestonesSection({
     setErrors(failures);
   };
 
+  // What a paste would do, classified from the same inputs `apply` hands
+  // `planRecordWrites` — so the paste button says what the writes will be.
+  const pasteOutcome = (
+    pasted: MilestoneRow[]
+  ): PasteOutcome<MilestoneRow> => ({
+    kind: "merge",
+    fates: classifyImport(rows, pasted, MILESTONE_WRITABLE, milestoneKey),
+  });
+
   const latest = milestones.reduce<Milestone | null>(
     (newest, m) => (!newest || m.updated_at > newest.updated_at ? m : newest),
     null
@@ -194,6 +208,7 @@ export function MilestonesSection({
         busy={busy}
         rowSchema={descriptor?.schemas.create}
         onChange={(next, how) => void apply(next, how)}
+        pasteOutcome={pasteOutcome}
         uiBridgeId="overview.timeline.milestones.table"
       />
       {errors.length > 0 && (

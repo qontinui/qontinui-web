@@ -46,6 +46,7 @@ import {
   useOverviewCatalog,
   useResourceDescriptor,
 } from "@/components/overview/editing/permissions";
+import { replacesWorkingCopy } from "@/components/overview/editing/CsvPasteDialog";
 import { RecordTable } from "@/components/overview/editing/RecordTable";
 import {
   ESTIMATE_ALLOCATIONS,
@@ -863,6 +864,7 @@ function EstimateEditor({
           table={ESTIMATE_ROLES}
           rows={draft.roles}
           onChange={(roles, how) => editDraft((d) => ({ ...d, roles }), how)}
+          pasteOutcome={replacesWorkingCopy}
           canEdit
           busy={busy}
           rowSchema={rowSchema(ESTIMATE_ROLES.schemaDef)}
@@ -880,6 +882,7 @@ function EstimateEditor({
           onChange={(allocations, how) =>
             editDraft((d) => ({ ...d, allocations }), how)
           }
+          pasteOutcome={replacesWorkingCopy}
           canEdit
           busy={busy}
           rowSchema={rowSchema(ESTIMATE_ALLOCATIONS.schemaDef)}
@@ -902,6 +905,7 @@ function EstimateEditor({
           onChange={(efforts, how) =>
             editDraft((d) => ({ ...d, efforts }), how)
           }
+          pasteOutcome={replacesWorkingCopy}
           canEdit
           busy={busy}
           rowSchema={rowSchema(ESTIMATE_EFFORTS.schemaDef)}

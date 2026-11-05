@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ParsedRoleRow } from "@/app/(app)/overview/_lib/csv";
 import { ROLE_SCHEMA } from "./__fixtures__/estimate-schema";
+import { replacesWorkingCopy, type PasteOutcome } from "./CsvPasteDialog";
 import { RecordTable } from "./RecordTable";
 import { ESTIMATE_ROLES } from "./registry";
 
@@ -37,6 +38,7 @@ function show(canEdit = true) {
       table={ESTIMATE_ROLES}
       rows={rows}
       onChange={onChange}
+      pasteOutcome={replacesWorkingCopy}
       canEdit={canEdit}
       rowSchema={ROLE_SCHEMA}
       uiBridgeId="t.roles"
@@ -171,6 +173,48 @@ describe("RecordTable", () => {
     );
   });
 
+  it("forwards the caller's paste outcome to the dialog's button", () => {
+    const onChange = vi.fn();
+    const pasteOutcome = vi.fn(
+      (pasted: ParsedRoleRow[]): PasteOutcome<ParsedRoleRow> => ({
+        kind: "merge",
+        fates: pasted.map((row) => ({ kind: "add", row })),
+      })
+    );
+    render(
+      <RecordTable
+        table={ESTIMATE_ROLES}
+        rows={rows}
+        onChange={onChange}
+        pasteOutcome={pasteOutcome}
+        canEdit
+        rowSchema={ROLE_SCHEMA}
+        uiBridgeId="t.roles"
+      />
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Paste from a spreadsheet" })
+    );
+    fireEvent.change(screen.getByLabelText("The pasted table"), {
+      target: { value: "code,name\nOP,Platform" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Read it" }));
+    expect(pasteOutcome).toHaveBeenCalledWith([
+      expect.objectContaining({ code: "OP", name: "Platform" }),
+    ]);
+    expect(
+      document.querySelector(
+        '[data-ui-bridge-id="t.roles.paste.preview.row.0.fate"]'
+      )?.textContent
+    ).toBe("Adds");
+    expect(screen.queryByRole("button", { name: /Replace/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add this role" }));
+    expect(onChange).toHaveBeenCalledWith(
+      [expect.objectContaining({ code: "OP" })],
+      "import"
+    );
+  });
+
   it("drops an open edit when the rows are replaced underneath it", () => {
     const onChange = vi.fn();
     const { rerender } = render(
@@ -178,6 +222,7 @@ describe("RecordTable", () => {
         table={ESTIMATE_ROLES}
         rows={rows}
         onChange={onChange}
+        pasteOutcome={replacesWorkingCopy}
         canEdit
         rowSchema={ROLE_SCHEMA}
         uiBridgeId="t.roles"
@@ -191,6 +236,7 @@ describe("RecordTable", () => {
         table={ESTIMATE_ROLES}
         rows={[rows[0]!]}
         onChange={onChange}
+        pasteOutcome={replacesWorkingCopy}
         canEdit
         rowSchema={ROLE_SCHEMA}
         uiBridgeId="t.roles"
