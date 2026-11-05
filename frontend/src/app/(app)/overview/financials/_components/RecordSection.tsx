@@ -71,8 +71,8 @@ export interface RecordSectionProps<
   matchKey?: (row: Row) => string;
   /** A rule the served schema cannot express, refused before sending. */
   rowProblem?: (row: Row) => string | null;
-  /** The identity as the server compares it, when looser than the table's
-   *  exact identity values (a name unique ignoring case). */
+  /** An identity at least as loose as the server's, when that is looser
+   *  than the table's exact identity values (a name unique ignoring case). */
   sameIdentity?: (row: Row) => string;
   /** A row (a create) or a patch (an update) as the API takes it, or the
    *  sentence saying why it cannot be sent. */

@@ -243,6 +243,22 @@ describe("classifyImport with the table's rules", () => {
     ]);
   });
 
+  it("lets a later line update a record an earlier refused line matched", () => {
+    const bare = item({ id: "b", name: "Bare", size: 1, note: "" });
+    const bad = item({ name: "Bare", size: 9, supplied: ["name", "size"] });
+    const good = item({
+      name: "Bare",
+      size: 9,
+      note: "big",
+      supplied: ["name", "size", "note"],
+    });
+    expect(
+      classifyImport([bare], [bad, good], WRITABLE, byName, { rowProblem }).map(
+        (f) => (f.kind === "refused" ? f.reason : f.kind)
+      )
+    ).toEqual(["A big box needs a note.", "update"]);
+  });
+
   it("does not hold an update to the identity check", () => {
     const row = item({ name: "Alpha", size: 1, note: "changed" });
     expect(

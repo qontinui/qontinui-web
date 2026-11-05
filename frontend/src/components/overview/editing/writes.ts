@@ -62,8 +62,8 @@ export type ImportFate<Row> =
  *   (`{ ...match, ...patch }`), so a stored value can complete it.
  * - `table` — its `identity`: a would-be create may not repeat the identity
  *   of an existing row, nor of an earlier line of the same paste that adds.
- * - `identityOf` — the identity as the SERVER compares it, when that is
- *   looser than `table.identity`'s exact values (a name unique ignoring
+ * - `identityOf` — an identity at least as loose as the SERVER's, when that
+ *   is looser than `table.identity`'s exact values (a name unique ignoring
  *   case); defaults to `identityKey(table, row)`.
  */
 export interface ImportRules<Row extends object> {
@@ -97,8 +97,8 @@ function changed<Row>(
  * not a guess at which one was meant. Without `matchKey`, every row is an
  * add.
  *
- * A second line whose key matches a record an earlier line already updates
- * or leaves unchanged is `refused`: two writes to one record would count it
+ * A second line whose key matches a record an earlier ACCEPTED line already
+ * updates or leaves unchanged is `refused`: two writes to one record would count it
  * twice and overtake the first with the second.
  *
  * With `rules`, a row the commit would refuse is `refused` instead
@@ -154,12 +154,15 @@ export function classifyImport<Row extends Planned>(
         row,
         reason: `An earlier line already gives this ${table?.singular ?? "record"}.`,
       };
-    matched.add(match.id);
     const patch = changed(match, row, row.supplied ?? writable);
-    if (Object.keys(patch).length === 0)
+    if (Object.keys(patch).length === 0) {
+      matched.add(match.id);
       return { kind: "unchanged", row, match };
+    }
     const problem = rowProblem?.({ ...match, ...patch });
+    // A refused line gives the record nothing, so it holds no claim on it.
     if (problem) return { kind: "refused", row, reason: problem };
+    matched.add(match.id);
     return { kind: "update", row, match, patch };
   });
 }
