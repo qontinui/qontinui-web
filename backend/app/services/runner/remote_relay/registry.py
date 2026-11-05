@@ -79,6 +79,24 @@ def claim_key(grant_jti: str) -> str:
     return f"remote_attach:claim:{grant_jti}"
 
 
+def create_close_claim_key(grant_jti: str) -> str:
+    """Redis key of the claim an in-flight close under a CREATE grant holds.
+
+    Separate from :func:`claim_key` because a create leaves that key set until
+    the grant expires (:meth:`RelayRegistry._release_registry`). A close comes
+    AFTER the create by definition, so claiming that key would refuse every
+    close of a terminal the grant really did create.
+    """
+    return f"remote_attach:create_close_claim:{grant_jti}"
+
+
+def _attachment_claim_key(att: _Attachment) -> str:
+    """The claim key THIS attachment holds: see :func:`create_close_claim_key`."""
+    if att.kind == KIND_CREATE and att.end_only:
+        return create_close_claim_key(att.grant_jti)
+    return claim_key(att.grant_jti)
+
+
 def grant_key(grant_jti: str) -> str:
     """Redis key of the per-grant attachment record."""
     return f"remote_attach:grant:{grant_jti}"
@@ -116,7 +134,10 @@ class RelayRegistry:
         redis = await self.core._get_redis()
         ok = await _maybe_await(
             redis.set(
-                claim_key(att.grant_jti), att.source_device_id, nx=True, exat=att.exp
+                _attachment_claim_key(att),
+                att.source_device_id,
+                nx=True,
+                exat=att.exp,
             )
         )
         return bool(ok)
@@ -177,13 +198,16 @@ class RelayRegistry:
         identical frame into a second PTY, repeatably, once per restart.
 
         Attach keeps the delete: re-presenting an attach grant is the documented
-        reattach path, not a replay.
+        reattach path, not a replay. So does a close under a create grant, whose
+        claim is its OWN key (:func:`create_close_claim_key`): it bounds one
+        close in flight, the spawn claim above stays where it is, and a close
+        whose outcome came back unknown may be retried.
         """
         redis = await self.core._get_redis()
-        if att.kind == KIND_CREATE:
+        if att.kind == KIND_CREATE and not att.end_only:
             await redis.delete(grant_key(att.grant_jti))
         else:
-            await redis.delete(claim_key(att.grant_jti), grant_key(att.grant_jti))
+            await redis.delete(_attachment_claim_key(att), grant_key(att.grant_jti))
         if att.terminal_id is not None:
             await _eval(
                 redis,
