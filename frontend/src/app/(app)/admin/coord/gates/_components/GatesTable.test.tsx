@@ -775,7 +775,7 @@ describe("GatesTable — continuation column", () => {
           {
             ...held,
             continuation_expired_at: ago(60_000),
-            continuation_expired_reason: "hold_ttl_elapsed",
+            continuation_expired_reason: "held_no_eligible_device_ttl",
           },
         ]}
         onActed={() => {}}
@@ -785,13 +785,18 @@ describe("GatesTable — continuation column", () => {
     const chip = screen.getByTestId("gates-continuation-deferral-chip");
     expect(chip.textContent).toBe("after 12 holds");
     expect(chip.getAttribute("title")).toContain(
-      "coord held this continuation at clearance 12 times",
+      "coord stamped a hold on this continuation 12 times",
     );
     expect(chip.getAttribute("title")).not.toMatch(/pushed back|runner/i);
     await user.click(screen.getAllByTestId("gates-table-row")[0]);
     const note =
       screen.getByTestId("gates-continuation-deferral-note").textContent ?? "";
-    expect(note).toContain("coord held this continuation at clearance 12 times");
+    expect(note).toContain(
+      "coord stamped a hold on this continuation 12 times",
+    );
+    expect(
+      screen.getByTestId("gates-continuation-timeline").textContent,
+    ).toContain("last held");
     expect(note).not.toMatch(/pushed back|runner/i);
   });
 

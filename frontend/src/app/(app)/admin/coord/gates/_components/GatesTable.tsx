@@ -104,6 +104,7 @@ import {
   deferralProblemNote,
   deriveContinuationStatus,
   heldBySiblingHolders,
+  isClearanceHold,
   type ContinuationKind,
   type ContinuationStatus,
 } from "../continuationStatus";
@@ -455,7 +456,13 @@ function ContinuationProblem({ status }: { status: ContinuationStatus | null }) 
 function ContinuationTimeline({ gate }: { gate: GateOverviewRow }) {
   const stamps: [string, string | null][] = [
     ["dispatched", gate.continuation_dispatched_at],
-    ["last deferred", gate.continuation_deferred_at],
+    // coord's clearance hold shares the deferral columns; name it as a hold.
+    [
+      isClearanceHold(gate.continuation_deferred_reason)
+        ? "last held"
+        : "last deferred",
+      gate.continuation_deferred_at,
+    ],
     ["consumed", gate.continuation_consumed_at],
     ["cancelled", gate.continuation_cancelled_at],
     ["expired", gate.continuation_expired_at],
