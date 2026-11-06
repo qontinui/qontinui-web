@@ -155,11 +155,17 @@ jobs:
               # actually uses TLS (it has a tls entry); the per-job dir it lands
               # in is deleted by this job's last step.
               key = hashlib.sha256(ctx.encode()).hexdigest()
-              for kind in ("meta", "tls"):
-                  src = os.path.join(home, "contexts", kind, key)
-                  if os.path.isdir(src):
-                      shutil.copytree(src, os.path.join(out, "contexts", kind, key))
-              cfg["currentContext"] = ctx
+              meta = os.path.join(home, "contexts", "meta", key)
+              if os.path.isdir(meta):
+                  for kind in ("meta", "tls"):
+                      src = os.path.join(home, "contexts", kind, key)
+                      if os.path.isdir(src):
+                          shutil.copytree(src, os.path.join(out, "contexts", kind, key))
+                  cfg["currentContext"] = ctx
+              else:
+                  # A currentContext with no meta entry would make every docker
+                  # call fail on a missing context; fall back to the default.
+                  print(f"::warning::docker currentContext {ctx!r} has no meta entry; using the default context")
           with open(os.path.join(out, "config.json"), "w") as fh:
               json.dump(cfg, fh)
           PY

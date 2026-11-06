@@ -167,8 +167,10 @@ jobs:
   schema-order:
     name: Wait for the schema this image needs
     # Main only: the wait shares one cancel-in-progress group, so a branch
-    # dispatch must not be able to cancel main's wait (and a branch run can
-    # never deploy: `production` is main-only).
+    # dispatch must not be able to cancel main's wait. This `if` is ALSO what
+    # keeps a non-rollback run off main from deploying: the `production`
+    # environment's deployment_branch_policy is protected_branches=true (read
+    # 2026-11-06), which admits any protected branch, not only main.
     if: ${{ inputs.rollback != 'true' && github.ref == 'refs/heads/main' }}
     # WAIT_CAP_MIN in the script MUST equal this: the script ends itself 3 min
     # before it, so a timeout here is never the verdict.
@@ -420,7 +422,11 @@ jobs:
     # skipped. `!cancelled()` because a skipped need would otherwise skip this
     # job too; any other wait result (failure, or cancelled because a newer
     # wait superseded it) keeps this image out. A non-rollback run off main
-    # skips the wait and therefore skips this job too.
+    # skips the wait and therefore skips this job too; that, not the
+    # environment, is what holds it to main (`production` admits every
+    # protected branch). A ROLLBACK dispatched from another protected branch
+    # still reaches this job: the wait is skipped in rollback mode, and its
+    # artifact is the explicit input, not that branch's code.
     if: ${{ !cancelled() && (needs.schema-order.result == 'success' || (needs.schema-order.result == 'skipped' && inputs.rollback == 'true')) }}
     # One web deploy at a time. Cancel-in-progress is OFF: cancelling a deploy
     # mid-flight (after image push, before ECS stabilize) risks a
@@ -451,9 +457,9 @@ jobs:
     # instead; anything else (the default, unset) keeps `ubuntu-latest`.
     # Evaluated INLINE, deliberately: a separate lane-picking job would itself
     # sit in the hosted queue. The `refs/heads/main` term keeps a non-main
-    # workflow_dispatch off the trusted host entirely (it would be refused
-    # there by the pool's job-started hook anyway, and by the `production`
-    # environment's branch policy on either lane). The label is NOT the
+    # workflow_dispatch off the trusted host entirely (the pool's job-started
+    # hook would refuse it there anyway; note the `production` environment
+    # admits every PROTECTED branch, not only main). The label is NOT the
     # boundary — the pool's root-owned job-started hook is (repo + event +
     # main + this workflow). Fallback is manual: runs-on is fixed when the job
     # queues, so with the pool offline the job waits on its label; unset the
@@ -503,11 +509,17 @@ jobs:
               # actually uses TLS (it has a tls entry); the per-job dir it lands
               # in is deleted by this job's last step.
               key = hashlib.sha256(ctx.encode()).hexdigest()
-              for kind in ("meta", "tls"):
-                  src = os.path.join(home, "contexts", kind, key)
-                  if os.path.isdir(src):
-                      shutil.copytree(src, os.path.join(out, "contexts", kind, key))
-              cfg["currentContext"] = ctx
+              meta = os.path.join(home, "contexts", "meta", key)
+              if os.path.isdir(meta):
+                  for kind in ("meta", "tls"):
+                      src = os.path.join(home, "contexts", kind, key)
+                      if os.path.isdir(src):
+                          shutil.copytree(src, os.path.join(out, "contexts", kind, key))
+                  cfg["currentContext"] = ctx
+              else:
+                  # A currentContext with no meta entry would make every docker
+                  # call fail on a missing context; fall back to the default.
+                  print(f"::warning::docker currentContext {ctx!r} has no meta entry; using the default context")
           with open(os.path.join(out, "config.json"), "w") as fh:
               json.dump(cfg, fh)
           PY
@@ -582,9 +594,16 @@ jobs:
           FULL_SHA = re.compile(r"[0-9a-f]{40}")
 
 
+          RECOVERY = ("Recovery: if production's image cannot be mapped to a commit, re-point it at one that "
+                      "can be — dispatch this workflow with rollback=true and source_image_or_commit set to "
+                      "sha256:<digest> (an image this workflow built, so it carries a full-sha tag) or to a full "
+                      "40-hex commit sha whose image is in ECR — then re-run this deploy. If GitHub or AWS was "
+                      "only briefly unreadable, re-running is enough.")
+
+
           def fail(msg):
               print(f"::error::serving-commit guard FAILED CLOSED: {msg} Nothing was rolled out; the prior "
-                    "revision keeps serving. Re-run once the cause is fixed.")
+                    f"revision keeps serving. {RECOVERY}")
               sys.exit(1)
 
 
@@ -602,12 +621,20 @@ jobs:
                   "Accept": "application/vnd.github+json",
                   "X-GitHub-Api-Version": "2022-11-28",
               })
-              with urllib.request.urlopen(req, timeout=20) as resp:
-                  return json.load(resp)["status"]
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      return json.load(resp)["status"]
+              except urllib.error.HTTPError as e:
+                  raise RuntimeError(f"compare {base[:9]}...{head[:9]} answered HTTP {e.code} {e.reason}") from e
 
 
-          def serving_commit():
-              """The full commit sha of the web-backend image ECS is serving right now."""
+          def serving_commits():
+              """The full commit sha(s) of the web-backend image ECS is serving right now.
+
+              A tag-pinned image names exactly one; a digest-pinned one names every
+              full-sha tag that digest carries (one image can be built at several
+              commits that changed nothing it contains).
+              """
               svc = aws("ecs", "describe-services", "--cluster", cluster, "--services", service)
               services = svc.get("services") or []
               if len(services) != 1 or not services[0].get("taskDefinition"):
@@ -627,37 +654,45 @@ jobs:
                   details = aws("ecr", "describe-images", "--repository-name", ecr_repo,
                                 "--image-ids", f"imageDigest={digest}").get("imageDetails") or []
                   tags = sorted({t for d in details for t in d.get("imageTags") or [] if FULL_SHA.fullmatch(t)})
-                  if len(tags) != 1:
-                      raise RuntimeError(f"serving digest {digest} carries {len(tags)} full-sha tags ({tags}), expected 1")
-                  return tags[0], td_arn, image
+                  if not tags:
+                      raise RuntimeError(f"serving digest {digest} carries no full-sha tag")
+                  return tags, td_arn, image
               tag = image.rsplit("/", 1)[-1].rpartition(":")[2]
               if not FULL_SHA.fullmatch(tag):
                   raise RuntimeError(f"serving image {image} is not tagged with a full commit sha")
-              return tag, td_arn, image
+              return [tag], td_arn, image
 
 
           try:
-              serving, td_arn, image = serving_commit()
+              serving, td_arn, image = serving_commits()
           except (RuntimeError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as e:
               fail(f"could not read which commit ECS is serving ({e}).")
-          print(f"ECS {cluster}/{service} serves {serving[:9]} ({td_arn}, {image}); this run is {sha[:9]}.")
-          if serving == sha:
+          shown = ", ".join(c[:9] for c in serving)
+          print(f"ECS {cluster}/{service} serves {shown} ({td_arn}, {image}); this run is {sha[:9]}.")
+          if sha in serving:
               print("Same commit: deploying (an idempotent redeploy).")
               sys.exit(0)
-          try:
-              status = compare_status(sha, serving)
-          except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
-              fail(f"could not check ancestry between {sha[:9]} and the serving {serving[:9]} ({e}).")
-          if status == "ahead":
-              print(f"::notice::superseded: production already serves {serving[:9]}, which contains {sha[:9]}. "
+          # Every serving tag is judged: one that already CONTAINS this sha means the
+          # rollout would move production backwards; all older/diverged means deploy;
+          # any status we cannot read or do not expect means we cannot know -> closed.
+          statuses = {}
+          for c in serving:
+              try:
+                  statuses[c] = compare_status(sha, c)
+              except (RuntimeError, urllib.error.URLError, OSError, ValueError, KeyError) as e:
+                  fail(f"could not check ancestry between {sha[:9]} and the serving {c[:9]} ({e}).")
+          odd = {c: st for c, st in statuses.items() if st not in ("ahead", "behind", "diverged")}
+          if odd:
+              fail(f"unexpected compare status {', '.join(f'{c[:9]}={st}' for c, st in odd.items())} against {sha[:9]}.")
+          newer = [c for c, st in statuses.items() if st == "ahead"]
+          if newer:
+              print(f"::notice::superseded: production already serves {newer[0][:9]}, which contains {sha[:9]}. "
                     "Rolling this older image out would move production backwards; skipping (nothing changed).")
               with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
                   fh.write("skip=true\n")
-          elif status in ("behind", "diverged"):
-              print(f"Serving {serving[:9]} is {status} relative to {sha[:9]} "
-                    f"({'older' if status == 'behind' else 'not a descendant, e.g. after a rollback'}): deploying.")
           else:
-              fail(f"unexpected compare status '{status}' between {sha[:9]} and {serving[:9]}.")
+              print(f"Serving {shown} is older than or diverged from {sha[:9]} "
+                    f"({', '.join(f'{c[:9]}={st}' for c, st in statuses.items())}): deploying.")
           PY
 
       - name: Resolve ECR registry
@@ -687,12 +722,33 @@ jobs:
             echo "::error::rollback=true but source_image_or_commit is empty"
             exit 1
           fi
+          # Whatever is rolled out must stay mappable to a commit: the next
+          # deploy's "Skip if production already serves a newer commit" guard
+          # reads the serving image's full-sha tag (directly, or through its
+          # digest) and fails CLOSED when there is none, which would lock every
+          # later deploy. So a digest, or any tag that is not a full 40-hex
+          # sha (e.g. `staging`), is pinned BY DIGEST and must carry a full-sha
+          # tag; otherwise the rollback is refused here, before anything moves.
+          pin_by_digest() {  # $1 = an ECR --image-ids selector
+            local json digest
+            json=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+              --image-ids "$1" --region "$AWS_REGION" --output json) \
+              || { echo "::error::rollback artifact $ART not found in ECR ($ECR_REPOSITORY)"; exit 1; }
+            digest=$(printf '%s' "$json" | python3 -c '
+          import json, re, sys
+          d = (json.load(sys.stdin).get("imageDetails") or [{}])[0]
+          tags = [t for t in d.get("imageTags") or [] if re.fullmatch("[0-9a-f]{40}", t)]
+          print(d.get("imageDigest", "") if tags else "")')
+            if [ -z "$digest" ]; then
+              echo "::error::rollback artifact $ART carries no full-sha tag, so after the rollback no deploy could tell which commit production serves. Roll back to an image this workflow built (a sha256:<digest> or full commit sha from a deploy run) instead."
+              exit 1
+            fi
+            echo "image=$REGISTRY/$ECR_REPOSITORY@$digest" >> "$GITHUB_OUTPUT"
+            echo "Pinned rollback artifact $ART to digest $digest (it carries a full-sha tag)."
+          }
           case "$ART" in
             sha256:*)
-              aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
-                --image-ids imageDigest="$ART" --region "$AWS_REGION" >/dev/null \
-                || { echo "::error::rollback artifact $ART not found in ECR ($ECR_REPOSITORY)"; exit 1; }
-              echo "image=$REGISTRY/$ECR_REPOSITORY@$ART" >> "$GITHUB_OUTPUT"
+              pin_by_digest "imageDigest=$ART"
               ;;
             taskdef:*)
               # The dispatcher never sends this form today (rollback_target is
@@ -702,10 +758,14 @@ jobs:
               exit 1
               ;;
             *)
-              aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
-                --image-ids imageTag="$ART" --region "$AWS_REGION" >/dev/null \
-                || { echo "::error::rollback artifact tag $ART not found in ECR ($ECR_REPOSITORY)"; exit 1; }
-              echo "image=$REGISTRY/$ECR_REPOSITORY:$ART" >> "$GITHUB_OUTPUT"
+              if printf '%s' "$ART" | grep -Eq '^[0-9a-f]{40}$'; then
+                aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+                  --image-ids imageTag="$ART" --region "$AWS_REGION" >/dev/null \
+                  || { echo "::error::rollback artifact tag $ART not found in ECR ($ECR_REPOSITORY)"; exit 1; }
+                echo "image=$REGISTRY/$ECR_REPOSITORY:$ART" >> "$GITHUB_OUTPUT"
+              else
+                pin_by_digest "imageTag=$ART"
+              fi
               ;;
           esac
           echo "Rolling back to: $ART"
