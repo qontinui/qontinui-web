@@ -38,4 +38,10 @@ regexes = [
   # CHECK grammars are tested against. Matches only that literal. Same
   # range-scan rationale as above.
   '''kq3zt7mvx9wbn2plr8yhj4cswg6u''',
+  # Fabricated session-key UUIDs in the overlord flow page fixture
+  # (frontend/src/app/(app)/admin/coord/overlord/flow/__fixtures__/flow.ts):
+  # coord's closed-session rows carry their session id in a field named
+  # `key`, so generic-api-key reads `key: "<uuid>"` as a credential. They are
+  # public identifiers, not secrets. Matches only those two literals.
+  '''(7a1c2d3e-4b5a-4978-8a9b-0c1d2e3f4a51|8b1c2d3e-4b5a-4978-8a9b-0c1d2e3f4a52)''',
 ]
