@@ -1,7 +1,7 @@
 """coord.outbound_budget_windows — a per-window history of coord's outbound budget
 
 Revision ID: outbound_budget_windows_01
-Revises: capmodel_01
+Revises: topcons_01
 Create Date: 2026-11-06
 
 Phase 3, row 1.5 of plan
@@ -84,7 +84,7 @@ created.
 
 ``down_revision`` is the repo's single alembic head on ``origin/main`` at
 authoring time (``scripts/ci/count_alembic_heads.py``: ``HEAD_COUNT=1``,
-``HEAD=capmodel_01``, 2026-11-06).
+``HEAD=topcons_01``, 2026-11-06).
 """
 
 from collections.abc import Sequence
@@ -92,7 +92,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "outbound_budget_windows_01"
-down_revision: str | Sequence[str] | None = "capmodel_01"
+down_revision: str | Sequence[str] | None = "topcons_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
