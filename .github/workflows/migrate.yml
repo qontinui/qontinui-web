@@ -94,7 +94,16 @@ jobs:
     # the wait deadline must move TOGETHER.
     timeout-minutes: 25
     name: Build, push, run migrator
-    runs-on: ubuntu-latest
+    # Release lane — same switch and same reasoning as deploy-web.yml's
+    # runs-on (plan
+    # 2026-11-06-devops-the-production-web-deploy-waits-fifo-behind-branch-ci-on-the-github-hosted-queue
+    # Phase 2): WEB_RELEASE_LANE=self-hosted runs this job on the trusted
+    # `qontinui-web-trusted` pool instead of the shared hosted queue, so the
+    # schema is not held behind branch CI either, and deploy-web.yml's
+    # schema-order wait is not left waiting on a queued migration. Default
+    # (unset) stays `ubuntu-latest`. Inline on purpose: a lane-picking job
+    # would itself queue on hosted. Fallback is manual (unset and re-run).
+    runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted"]' || '"ubuntu-latest"') }}
     environment: production
     permissions:
       contents: read
@@ -116,6 +125,25 @@ jobs:
           # `commit_lineage`. Shallow (default depth-1) would leave it null.
           fetch-depth: 0
           persist-credentials: false
+
+      # Same preflight as deploy-web.yml: a self-hosted release host has none
+      # of ubuntu-latest's preinstalls, so name each tool the steps below use
+      # (gh drives the page/resolve-issue steps) before anything runs.
+      - name: Verify release-lane toolchain
+        run: |
+          set -uo pipefail
+          missing=""
+          for t in aws docker git gh curl python3; do
+            command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
+          done
+          docker buildx version >/dev/null 2>&1 || missing="$missing docker-buildx"
+          python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null \
+            || missing="$missing python3>=3.11"
+          if [ -n "$missing" ]; then
+            echo "::error::release host ${RUNNER_NAME:-?} lacks:${missing}. Provision them on the qontinui-web-trusted pool, or unset WEB_RELEASE_LANE to run on ubuntu-latest."
+            exit 1
+          fi
+          echo "toolchain OK on ${RUNNER_NAME:-?}: $(aws --version 2>&1 | cut -d' ' -f1), $(docker buildx version | cut -d' ' -f1-2), $(python3 --version)"
 
       # ── Φ_Schema authored-DAG snapshot ────────────────────────────────────
       # Phase 3 of the coord migration/drift/provenance plan, and now the SOLE
@@ -288,9 +316,14 @@ jobs:
       # The migrator Dockerfile uses qontinui-root as build context (one
       # level up from any sibling repo's checkout). Sibling-checkout pattern
       # mirrors backend-deploy-production.yml and the runner CI.
+      # The `rm -rf` matters on a persistent self-hosted runner: the parent of
+      # the workspace survives between jobs (actions/checkout cleans only the
+      # workspace itself), so the second run's clone would fail on an existing
+      # directory — or, worse, build from a stale one.
       - name: Check out qontinui-stack + qontinui-schemas siblings
         working-directory: ${{ github.workspace }}/..
         run: |
+          rm -rf qontinui-stack qontinui-schemas
           git clone --depth 1 https://github.com/qontinui/qontinui-stack.git
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
         shell: bash
