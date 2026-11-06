@@ -140,11 +140,14 @@ _INSERT_RAW = text(
 )
 
 _RESET = "2026-11-06T14:00:00+00:00"
+# Every row this test writes carries this dependency, and every count is
+# scoped to it, so no assertion reads rows the test did not write.
+_DEP = "github-obw01-test"
 
 
 def _reading(**overrides: object) -> dict[str, object]:
     params: dict[str, object] = {
-        "dep": "github",
+        "dep": _DEP,
         "res": "core:134903706",
         "reset_at": _RESET,
         "limit_total": 5000,
@@ -157,7 +160,7 @@ def _reading(**overrides: object) -> dict[str, object]:
 
 def _raw(**overrides: object) -> dict[str, object]:
     params: dict[str, object] = {
-        "dep": "github",
+        "dep": _DEP,
         "res": "core:134903706",
         "reset_at": _RESET,
         "limit_total": 5000,
@@ -243,9 +246,16 @@ def _assert_absent(engine: Engine) -> None:
 
 
 def _count(engine: Engine) -> int:
+    """Rows this test wrote (scoped to its own ``_DEP``)."""
     with engine.connect() as conn:
         return int(
-            conn.execute(text(f"SELECT count(*) FROM coord.{_TABLE}")).scalar_one()
+            conn.execute(
+                text(
+                    "SELECT count(*) FROM coord.outbound_budget_windows "
+                    "WHERE dependency = :dep"
+                ),
+                {"dep": _DEP},
+            ).scalar_one()
         )
 
 
@@ -326,9 +336,13 @@ def test_outbound_budget_windows_01_creates_the_rollup_and_enforces_its_contract
                     "SELECT min_remaining, last_remaining, sample_count, "
                     "first_observed_at = CAST(:first AS timestamptz), "
                     "last_observed_at = CAST(:last AS timestamptz) "
-                    "FROM coord.outbound_budget_windows"
+                    "FROM coord.outbound_budget_windows "
+                    "WHERE dependency = :dep AND resource = 'core:134903706' "
+                    "AND reset_at = CAST(:reset AS timestamptz)"
                 ),
                 {
+                    "dep": _DEP,
+                    "reset": _RESET,
                     "first": "2026-11-06T13:05:00+00:00",
                     "last": "2026-11-06T13:40:00+00:00",
                 },
