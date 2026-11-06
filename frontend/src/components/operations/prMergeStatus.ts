@@ -231,6 +231,11 @@ export function readBehindFreshen(pr: {
   });
   switch (state) {
     case "eligible":
+      // Coord served that it WILL act, not that it has started.
+      return reading(
+        `${shortLead} — coord will update`,
+        `${lead} — coord will update the branch (${attemptClause(freshen)})`
+      );
     case "in_progress":
       return reading(
         `${shortLead} — coord updating`,
@@ -299,7 +304,7 @@ export function freshenGroupClause(
       : "Whether coord will update them is UNKNOWN.";
   }
   const parts: string[] = [];
-  if (updating > 0) parts.push(`coord is updating ${updating}`);
+  if (updating > 0) parts.push(`coord is updating or will update ${updating}`);
   if (refused > 0) parts.push(`coord will not update ${refused}`);
   if (unknown > 0) parts.push(`UNKNOWN for ${unknown}`);
   return `${parts.join("; ")}.`;

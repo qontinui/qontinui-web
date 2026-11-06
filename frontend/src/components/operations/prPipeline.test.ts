@@ -2974,14 +2974,17 @@ describe.each(PROMISE_ROWS)("D2 table on %s", (_token, base, lead) => {
       []
     )[0].status;
 
-  it.each(["eligible", "in_progress"] as const)(
-    "%s → coord is updating, waiting, never 'no action needed'",
-    (state) => {
+  it.each([
+    ["eligible", "coord will update the branch"],
+    ["in_progress", "coord is updating the branch"],
+  ] as const)(
+    "%s → %s, waiting, never 'no action needed'",
+    (state, phrase) => {
       const status = statusOf({ state });
       expect(status.kind).toBe("behind-freshening");
       expect(status.attention).toBe("waiting");
       expect(status.reason).toBe(
-        `${lead} — coord is updating the branch (attempt 2/6, last 2026-11-02 17:13 UTC)`
+        `${lead} — ${phrase} (attempt 2/6, last 2026-11-02 17:13 UTC)`
       );
       expect(status.reason).not.toMatch(PROMISE);
       expect(STATUS_BADGE_CLASS[status.kind]).toBe(WAITING_AMBER);
@@ -3098,7 +3101,7 @@ describe("D2 — what the attempt clause says when coord could not read it", () 
       freshen: freshen({ attempts: null, last_attempt_at: null }),
     });
     expect(reason).toBe(
-      "behind main — coord is updating the branch (attempt count unreadable)"
+      "behind main — coord will update the branch (attempt count unreadable)"
     );
   });
 
@@ -3109,7 +3112,7 @@ describe("D2 — what the attempt clause says when coord could not read it", () 
       freshen: freshen({ last_attempt_at: "not a date" }),
     });
     expect(reason).toBe(
-      "behind main — coord is updating the branch (attempt 2/6)"
+      "behind main — coord will update the branch (attempt 2/6)"
     );
   });
 
