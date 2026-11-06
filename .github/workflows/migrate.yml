@@ -91,7 +91,10 @@ jobs:
     # + task start (~1) + reporting. A timeout CANCELS the job, and `failure()` is
     # false for a cancelled job, so a cap below that path would skip the
     # migration-failure page. 25 covers the worst path with headroom — the cap and
-    # the wait deadline must move TOGETHER.
+    # the wait deadline must move TOGETHER. And a THIRD place moves with them:
+    # deploy-web.yml's `schema-order` job allows a started migrate job exactly
+    # this cap + 2 min (MIGRATE_CAP_MIN in its script) before it fails the
+    # deploy, so raising this without raising that fails healthy deploys.
     timeout-minutes: 25
     name: Build, push, run migrator
     # Release lane — same switch and same reasoning as deploy-web.yml's
@@ -125,6 +128,17 @@ jobs:
           # `commit_lineage`. Shallow (default depth-1) would leave it null.
           fetch-depth: 0
           persist-credentials: false
+
+      # Same as deploy-web.yml: keep this job's ECR login out of the runner
+      # user's ~/.docker on a persistent host (per-job temp dir, wiped by the
+      # runner), with per-user CLI plugins (buildx) linked across.
+      - name: Isolate docker credentials to this job
+        run: |
+          mkdir -p "$RUNNER_TEMP/docker"
+          if [ -d "$HOME/.docker/cli-plugins" ]; then
+            ln -sfn "$HOME/.docker/cli-plugins" "$RUNNER_TEMP/docker/cli-plugins"
+          fi
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
 
       # Same preflight as deploy-web.yml: a self-hosted release host has none
       # of ubuntu-latest's preinstalls, so name each tool the steps below use
@@ -796,3 +810,17 @@ jobs:
               || echo "::warning::could not create the migration-failure issue (best-effort)"
           fi
           exit 0
+
+      # Persistent self-hosted host: drop the tags this job loaded so migrator
+      # images do not pile up. Build cache is left to the runner reaper.
+      # Best-effort; on ubuntu-latest the VM is discarded anyway.
+      - name: Remove this job's local images
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ECR_URI: ${{ steps.ecr.outputs.uri }}
+        run: |
+          [ -n "${ECR_REGISTRY}" ] || exit 0
+          docker image rm "${ECR_URI}" "${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >/dev/null 2>&1 || true
+          echo "Removed this job's image tags (build cache left for the runner reaper)."
