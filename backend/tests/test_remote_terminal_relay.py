@@ -7566,6 +7566,57 @@ async def test_create_close_claim_contention_is_consumed(
     await relay.release_source(first_ws)
 
 
+async def test_create_close_record_never_touches_a_concurrent_creates_record(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """A create and a close under the same jti in flight at once (two sockets)
+    each write their OWN record, and the close settling deletes only its own.
+    Sharing ``remote_attach:grant:{jti}`` let the close overwrite the create's
+    record and then delete it out from under the create still awaiting its
+    reply."""
+    claims = _create_claims()
+    jti = claims["jti"]
+    create_ws = _FakeWS()
+    create_manager = _manager()
+    await _create(relay, create_ws, create_manager, claims)
+    create_record_key = rtr.grant_key(jti)
+    create_record = dict(redis.hashes[create_record_key])
+    assert create_record["kind"] == "create"
+    assert create_record["request_id"] == "req-create-1"
+
+    close_ws = _FakeWS()
+    close_manager = _manager()
+    await _close_orphan(relay, close_ws, close_manager, claims)
+    assert close_ws.of_type("error") == [], close_ws.sent
+    close_record_key = rtr.create_close_grant_key(jti)
+    assert close_record_key != create_record_key
+    assert redis.hashes[close_record_key]["request_id"] == "req-close-1"
+    # The close's write left the create's record exactly as the create wrote it.
+    assert redis.hashes[create_record_key] == create_record
+
+    close_session = relay._sessions[id(close_ws)]
+    (end,) = _forwarded_ends(close_manager)
+    assert await relay.route_target_frame(
+        close_session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_ended",
+            "request_id": end["request_id"],
+            "terminal_id": "t-orphan",
+            "outcome": "ended",
+        },
+    )
+    assert close_ws.of_type("remote_terminal_ended")[0]["outcome"] == "ended"
+
+    # The close released only its own keys: the create's record survives, and
+    # the create is still pending on its socket.
+    assert close_record_key not in redis.hashes
+    assert redis.hashes[create_record_key] == create_record
+    assert len(relay._sessions[id(create_ws)].pending_create) == 1
+    await relay.release_source(close_ws)
+    await relay.release_source(create_ws)
+
+
 async def test_create_then_failed_attach_closes_and_keeps_the_spawn_single_use(
     relay: RemoteTerminalRelay, redis: _FakeRedis
 ) -> None:
@@ -7637,10 +7688,21 @@ async def test_a_create_grant_buys_no_other_frame_around_its_close(
         {"type": "remote_terminal_flow", "paused": True},
         {"type": "remote_terminal_detach"},
     )
+    # Each variant's refusal code is asserted, so the test cannot pass on an
+    # unrelated refusal:
+    # - ``grant_jti`` naming the close's jti: the attachment IS registered on
+    #   this socket (end_only, close in flight), so the refusal is the
+    #   end-pending gate that every session-scoped door hits before any other
+    #   check — ``end_already_pending``, never ``attach_not_registered``.
+    # - ``create_grant`` alone: these frames take their capability from
+    #   ``grant_jti`` only and never read ``create_grant``, so the token buys
+    #   nothing and the frame names no attachment. ``attach_not_registered`` is
+    #   the honest code here — it IS the capability refusal for a token these
+    #   doors do not accept.
     for msg in others:
-        for capability in (
-            {"grant_jti": claims["jti"]},
-            {"create_grant": _CREATE_TOKEN},
+        for capability, expected_code in (
+            ({"grant_jti": claims["jti"]}, "end_already_pending"),
+            ({"create_grant": _CREATE_TOKEN}, "attach_not_registered"),
         ):
             ws.sent.clear()
             with _verify(claims):
@@ -7657,7 +7719,14 @@ async def test_a_create_grant_buys_no_other_frame_around_its_close(
                 )
             errors = ws.of_type("error")
             assert len(errors) == 1, (msg["type"], capability, ws.sent)
+            assert errors[0]["code"] == expected_code, (
+                msg["type"],
+                capability,
+                errors[0],
+            )
             manager.send_terminal.assert_not_called()
+    # The close is still in flight and untouched by any of the refusals.
+    assert len(relay._sessions[id(ws)].pending_end) == 1
     await relay.release_source(ws)
 
 
