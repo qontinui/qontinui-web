@@ -135,25 +135,32 @@ jobs:
       - name: Isolate docker credentials to this job
         run: |
           mkdir -p "$RUNNER_TEMP/docker"
-          # The user's contexts are endpoint metadata (no credentials); copied,
-          # not linked, so nothing this job writes reaches the user's ~/.docker.
-          if [ -d "$HOME/.docker/contexts" ]; then
-            cp -R "$HOME/.docker/contexts" "$RUNNER_TEMP/docker/contexts"
-          fi
-          python3 - "$RUNNER_TEMP/docker/config.json" <<'PY'
-          import json, os, sys
+          python3 - "$RUNNER_TEMP/docker" <<'PY'
+          import hashlib, json, os, shutil, sys
 
-          # Plugins (buildx) still resolve from the user's dir, read-only; the
-          # user's currentContext (e.g. a rootless endpoint) is kept.
-          cfg = {"cliPluginsExtraDirs": [os.path.expanduser("~/.docker/cli-plugins")]}
+          out = sys.argv[1]
+          home = os.path.expanduser("~/.docker")
+          # Plugins (buildx) still resolve from the user's dir, read-only.
+          cfg = {"cliPluginsExtraDirs": [os.path.join(home, "cli-plugins")]}
           try:
-              with open(os.path.expanduser("~/.docker/config.json")) as fh:
+              with open(os.path.join(home, "config.json")) as fh:
                   ctx = json.load(fh).get("currentContext")
-              if ctx:
-                  cfg["currentContext"] = ctx
           except (OSError, ValueError):
-              pass
-          with open(sys.argv[1], "w") as fh:
+              ctx = None
+          if ctx and ctx != "default":
+              # The user's currentContext (e.g. a rootless endpoint) resolves
+              # under DOCKER_CONFIG/contexts, so copy THAT context only — its
+              # meta/<sha256(name)> entry, never the whole store. Its tls/ entry
+              # holds client KEYS, so it is copied only when the context
+              # actually uses TLS (it has a tls entry); the per-job dir it lands
+              # in is deleted by this job's last step.
+              key = hashlib.sha256(ctx.encode()).hexdigest()
+              for kind in ("meta", "tls"):
+                  src = os.path.join(home, "contexts", kind, key)
+                  if os.path.isdir(src):
+                      shutil.copytree(src, os.path.join(out, "contexts", kind, key))
+              cfg["currentContext"] = ctx
+          with open(os.path.join(out, "config.json"), "w") as fh:
               json.dump(cfg, fh)
           PY
           echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
