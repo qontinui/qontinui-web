@@ -130,14 +130,32 @@ jobs:
           persist-credentials: false
 
       # Same as deploy-web.yml: keep this job's ECR login out of the runner
-      # user's ~/.docker on a persistent host (per-job temp dir, wiped by the
-      # runner), with per-user CLI plugins (buildx) linked across.
+      # user's ~/.docker on a persistent host (per-job temp dir, deleted by the
+      # last step), with per-user CLI plugins (buildx) still found.
       - name: Isolate docker credentials to this job
         run: |
           mkdir -p "$RUNNER_TEMP/docker"
-          if [ -d "$HOME/.docker/cli-plugins" ]; then
-            ln -sfn "$HOME/.docker/cli-plugins" "$RUNNER_TEMP/docker/cli-plugins"
+          # The user's contexts are endpoint metadata (no credentials); copied,
+          # not linked, so nothing this job writes reaches the user's ~/.docker.
+          if [ -d "$HOME/.docker/contexts" ]; then
+            cp -R "$HOME/.docker/contexts" "$RUNNER_TEMP/docker/contexts"
           fi
+          python3 - "$RUNNER_TEMP/docker/config.json" <<'PY'
+          import json, os, sys
+
+          # Plugins (buildx) still resolve from the user's dir, read-only; the
+          # user's currentContext (e.g. a rootless endpoint) is kept.
+          cfg = {"cliPluginsExtraDirs": [os.path.expanduser("~/.docker/cli-plugins")]}
+          try:
+              with open(os.path.expanduser("~/.docker/config.json")) as fh:
+                  ctx = json.load(fh).get("currentContext")
+              if ctx:
+                  cfg["currentContext"] = ctx
+          except (OSError, ValueError):
+              pass
+          with open(sys.argv[1], "w") as fh:
+              json.dump(cfg, fh)
+          PY
           echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
 
       # Same preflight as deploy-web.yml: a self-hosted release host has none
@@ -812,15 +830,19 @@ jobs:
           exit 0
 
       # Persistent self-hosted host: drop the tags this job loaded so migrator
-      # images do not pile up. Build cache is left to the runner reaper.
+      # images do not pile up, log out of ECR, and delete the per-job
+      # DOCKER_CONFIG. Build cache is left to the runner reaper.
       # Best-effort; on ubuntu-latest the VM is discarded anyway.
-      - name: Remove this job's local images
+      - name: Remove this job's local images and docker credentials
         if: ${{ always() }}
         continue-on-error: true
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
           ECR_URI: ${{ steps.ecr.outputs.uri }}
         run: |
-          [ -n "${ECR_REGISTRY}" ] || exit 0
-          docker image rm "${ECR_URI}" "${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >/dev/null 2>&1 || true
-          echo "Removed this job's image tags (build cache left for the runner reaper)."
+          if [ -n "${ECR_REGISTRY}" ]; then
+            docker image rm "${ECR_URI}" "${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >/dev/null 2>&1 || true
+            docker logout "${ECR_REGISTRY}" >/dev/null 2>&1 || true
+          fi
+          rm -rf "${RUNNER_TEMP}/docker"
+          echo "Removed this job's image tags and its docker config (build cache left for the runner reaper)."

@@ -171,8 +171,14 @@ jobs:
     # before it, so a timeout here is never the verdict.
     timeout-minutes: 120
     runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted"]' || '"ubuntu-latest"') }}
-    # No concurrency group: a superseded wait is harmless (it holds no lock
-    # and no credential), and cancelling it would only hide its verdict.
+    # A newer wait SUPERSEDES an older one: it cancels the older wait, whose
+    # deploy then skips (its need is not `success`). Without this, N queued
+    # pushes hold N waits — on the release lane, every trusted-pool slot,
+    # starving the very migrate job they wait for — and their deploys can
+    # land out of order. The newer image contains the older commits anyway.
+    concurrency:
+      group: deploy-web-schema-order
+      cancel-in-progress: true
     permissions:
       # commits?path= (the anchor) and compare (ancestry).
       contents: read
@@ -196,6 +202,8 @@ jobs:
           MIGRATE_BUDGET = MIGRATE_CAP_MIN * 60 + 120  # its worst case + report margin
           QUEUED_INTERVAL = 30
           STARTED_INTERVAL = 15
+          RATE_FLOOR = 50              # back off when fewer API calls than this remain
+          CREATED_SLACK = 24 * 3600    # a run created this long before M's commit date may still hold it
           # Mirrors migrate.yml `on.push.paths`.
           MIGRATE_PATHS = ("backend/alembic", "backend/pyproject.toml", "backend/poetry.lock")
           IN_FLIGHT = ("queued", "pending", "waiting", "requested", "in_progress")
@@ -213,11 +221,24 @@ jobs:
           # A migrate job that starts by queue_end still gets its whole worst case.
           queue_end = wait_end - MIGRATE_BUDGET
           NET_ERRORS = (urllib.error.URLError, http.client.HTTPException, OSError, ValueError, KeyError)
+          backoff_until = 0.0  # set from the rate-limit headers; the poll loop honours it
 
 
           def fail(msg):
               print(f"::error::{msg} This image is NOT rolled out (the prior revision keeps serving).")
               sys.exit(1)
+
+
+          def _note_limits(headers):
+              """Back off on Retry-After, or until the reset when the remaining budget is low."""
+              global backoff_until
+              now = time.time()
+              retry = headers.get("Retry-After")
+              if retry and retry.isdigit():
+                  backoff_until = max(backoff_until, now + int(retry))
+              remaining, reset = headers.get("X-RateLimit-Remaining"), headers.get("X-RateLimit-Reset")
+              if remaining and remaining.isdigit() and int(remaining) < RATE_FLOOR and reset and reset.isdigit():
+                  backoff_until = max(backoff_until, float(reset))
 
 
           def get(route, **params):
@@ -229,8 +250,13 @@ jobs:
                   "Accept": "application/vnd.github+json",
                   "X-GitHub-Api-Version": "2022-11-28",
               })
-              with urllib.request.urlopen(req, timeout=20) as resp:
-                  return json.load(resp)
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      _note_limits(resp.headers)
+                      return json.load(resp)
+              except urllib.error.HTTPError as e:
+                  _note_limits(e.headers or {})
+                  raise
 
 
           def iso(ts):
@@ -250,21 +276,28 @@ jobs:
               return _contains[key]
 
 
-          def schema_anchor():
-              """M: the newest commit at or before `sha` touching a migrate.yml trigger path."""
+          def schema_anchors():
+              """Per migrate.yml trigger path, the newest commit at or before `sha` touching it."""
               cands = {}
               for p in MIGRATE_PATHS:
                   got = get(f"/repos/{repo}/commits", sha=sha, path=p, per_page=1)
                   if got:
                       cands[got[0]["sha"]] = iso(got[0]["commit"]["committer"]["date"])
-              if not cands:
-                  return None, None
-              # Every candidate is an ancestor of `sha`; keep the one containing the rest.
-              newest = next(iter(cands))
-              for c in cands:
-                  if contains(c, newest):
-                      newest = c
-              return newest, cands[newest]
+              return cands
+
+
+          def covers(run, anchors):
+              """A run covers the image's schema when its commit contains EVERY anchor.
+
+              A compare that cannot be read makes only THIS run not covering (warned),
+              so one 404 cannot blind the whole assessment.
+              """
+              try:
+                  return all(contains(run["head_sha"], a) for a in anchors)
+              except urllib.error.HTTPError as e:
+                  print(f"::warning::compare for migrate run {run.get('html_url')} failed (HTTP {e.code}); "
+                        "treating it as not covering")
+                  return False
 
 
           def job_started_at(run):
@@ -276,107 +309,124 @@ jobs:
               return min(started) if started else None
 
 
-          def assess(m, m_date):
-              """One read of migrate.yml's main runs against anchor m.
+          def assess(anchors, oldest_anchor_date):
+              """One read of migrate.yml's main runs against the anchors.
 
-              -> ("ok", run) | ("failed", run) | ("started", start_epoch, run) | ("queued", run_or_None)
+              -> ("ok", run) | ("failed", run) | ("started", start_epoch, run, failed_pred)
+                 | ("queued", run_or_None, failed_pred)
               """
               runs = get(f"/repos/{repo}/actions/workflows/migrate.yml/runs",
-                         branch="main", per_page=30).get("workflow_runs") or []
+                         branch="main", per_page=100).get("workflow_runs") or []
               runs.sort(key=lambda r: r.get("created_at") or "", reverse=True)
-              # A run created before m was committed cannot contain it (1 h of clock slack).
-              covering = [r for r in runs
-                          if iso(r.get("created_at") or "1970-01-01T00:00:00Z") >= m_date - 3600
-                          and contains(r["head_sha"], m)]
-              for r in covering:
-                  if r.get("status") == "completed" and r.get("conclusion") == "success":
+              # A run created long before the anchors were committed cannot contain them.
+              runs = [r for r in runs
+                      if iso(r.get("created_at") or "1970-01-01T00:00:00Z") >= oldest_anchor_date - CREATED_SLACK]
+              # Successes first, newest first, stopping at the first that covers: the
+              # common case costs one compare per anchor, not one per listed run.
+              for r in runs:
+                  if r.get("status") == "completed" and r.get("conclusion") == "success" and covers(r, anchors):
                       return ("ok", r)
-              flying = [r for r in covering if r.get("status") in IN_FLIGHT]
+              flying = [r for r in runs if r.get("status") in IN_FLIGHT and covers(r, anchors)]
+              failed_pred = next((r for r in runs
+                                  if r.get("status") == "completed" and r.get("conclusion") not in ("success", "cancelled")
+                                  and covers(r, anchors)), None)
               if flying:
                   starts = [s for s in (job_started_at(r) for r in flying) if s is not None]
                   if starts:
-                      return ("started", max(starts), flying[0])
-                  return ("queued", flying[0])
-              done = [r for r in covering if r.get("status") == "completed" and r.get("conclusion") != "cancelled"]
-              if done:
-                  return ("failed", done[0])
-              # Nothing covers m yet: no run created yet (a push's own run can lag the
-              # push), or only cancelled ones whose successor is not listed yet.
-              return ("queued", None)
+                      return ("started", max(starts), flying[0], failed_pred)
+                  return ("queued", flying[0], failed_pred)
+              if failed_pred is not None:
+                  return ("failed", failed_pred)
+              # Nothing covers the anchors yet: no run created yet (a push's own run can
+              # lag the push), or only cancelled ones whose successor is not listed yet.
+              return ("queued", None, None)
 
 
           try:
-              m, m_date = schema_anchor()
+              anchors = schema_anchors()
           except NET_ERRORS as e:
-              fail(f"could not resolve which migration this image contains: the GitHub API was unreadable ({e}).")
-          if m is None:
+              fail(f"could not resolve which migrations this image contains: the GitHub API was unreadable ({e}).")
+          if not anchors:
               print(f"No commit at or before {sha[:9]} touches a migrate.yml path; no schema wait.")
               sys.exit(0)
-          print(f"This image's schema anchor: {m[:9]} (newest commit at or before {sha[:9]} touching "
-                f"{', '.join(MIGRATE_PATHS)}). Waiting for a successful main migrate.yml run at it or after it.")
+          oldest_anchor_date = min(anchors.values())
+          names = ", ".join(a[:9] for a in anchors)
+          print(f"This image's schema anchors: {names} (per path, the newest commit at or before {sha[:9]} touching "
+                f"{', '.join(MIGRATE_PATHS)}). Waiting for a successful main migrate.yml run containing all of them.")
 
           t0 = time.time()
           queued_since = t0
-          last = "no migrate.yml run on main covers it yet"
+          last = "no migrate.yml run on main covers them yet"
           started = None
+          failed_pred = None
           while True:
               interval = QUEUED_INTERVAL
               try:
-                  verdict = assess(m, m_date)
+                  verdict = assess(anchors, oldest_anchor_date)
                   kind = verdict[0]
                   if kind == "ok":
                       r = verdict[1]
                       print(f"Schema applied: {r['html_url']} ({r['event']} at {r['head_sha'][:9]}) concluded success, "
-                            f"covering {m[:9]}, after {int(time.time() - t0)}s of waiting. Rolling out.")
+                            f"covering {names}, after {int(time.time() - t0)}s of waiting. Rolling out.")
                       sys.exit(0)
                   if kind == "failed":
                       r = verdict[1]
-                      fail(f"the newest migrate.yml run covering {m[:9]} is {r['html_url']} ({r['event']} at "
+                      fail(f"the newest migrate.yml run covering {names} is {r['html_url']} ({r['event']} at "
                            f"{r['head_sha'][:9]}), and it concluded '{r.get('conclusion')}' with no newer success "
                            f"and none in flight: the schema this image needs is NOT confirmed applied. Fix forward, "
                            f"get migrate.yml green on main, then re-run this workflow.")
                   if kind == "started":
-                      started, r = verdict[1], verdict[2]
+                      started, r, failed_pred = verdict[1], verdict[2], verdict[3]
                       interval = STARTED_INTERVAL
                       last = f"migrate run {r['html_url']} is '{r.get('status')}'; its job started {int(time.time() - started)}s ago"
                   else:
                       started = None
-                      r = verdict[1]
+                      r, failed_pred = verdict[1], verdict[2]
                       if r is not None and r.get("created_at"):
                           queued_since = min(queued_since, iso(r["created_at"]))
                       last = (f"migrate run {r['html_url']} is '{r.get('status')}' and its job has not started "
                               "(a queue or concurrency wait, NOT a migration failure)" if r is not None
-                              else "no migrate.yml run on main covers it yet")
+                              else "no migrate.yml run on main covers them yet")
               except NET_ERRORS as e:
                   last = f"the GitHub API was unreadable ({e})"
               now = time.time()
+              pred = (f" The run before it, {failed_pred['html_url']} ({failed_pred['event']} at "
+                      f"{failed_pred['head_sha'][:9]}), concluded '{failed_pred.get('conclusion')}'."
+                      if failed_pred is not None else "")
               if started is not None:
                   deadline = min(started + MIGRATE_BUDGET, wait_end)
                   if now >= deadline:
                       fail(f"migrate job started {int(now - started)}s ago and has not succeeded within its own "
-                           f"worst case ({MIGRATE_BUDGET}s): {last}. Re-run this workflow once migrate.yml has "
-                           f"succeeded at or after {m[:9]}.")
+                           f"worst case ({MIGRATE_BUDGET}s): {last}.{pred} Re-run this workflow once migrate.yml has "
+                           f"succeeded at or after {names}.")
               else:
                   deadline = queue_end
                   if now >= deadline:
-                      fail(f"migrate still queued after {int((now - queued_since) / 60)} min: {last}. "
-                           f"Re-run this workflow once migrate.yml has succeeded at or after {m[:9]}, or route "
+                      fail(f"migrate still queued after {int((now - queued_since) / 60)} min: {last}.{pred} "
+                           f"Re-run this workflow once migrate.yml has succeeded at or after {names}, or route "
                            f"both workflows to the release lane (WEB_RELEASE_LANE=self-hosted).")
-              print(f"  {int(now - t0)}s: {last}; waiting (deadline in {int(deadline - now)}s)")
-              time.sleep(max(1, min(interval, deadline - now)))
+              pause = max(1.0, min(max(interval, backoff_until - now), deadline - now))
+              note = " (rate-limit backoff)" if backoff_until > now + interval else ""
+              print(f"  {int(now - t0)}s: {last}; waiting{note} (deadline in {int(deadline - now)}s)")
+              time.sleep(pause)
           PY
 
   deploy:
     needs: schema-order
     # After the schema wait passed, or — rollback mode only — when it was
     # skipped. `!cancelled()` because a skipped need would otherwise skip this
-    # job too; any other wait result (failure) keeps the image out.
+    # job too; any other wait result (failure, or cancelled because a newer
+    # wait superseded it) keeps this image out.
     if: ${{ !cancelled() && (needs.schema-order.result == 'success' || (needs.schema-order.result == 'skipped' && inputs.rollback == 'true')) }}
-    # One web deploy at a time; the latest commit's image is the one that
-    # should win. Cancel-in-progress is OFF: cancelling a deploy mid-flight
-    # (after image push, before ECS stabilize) risks a half-registered task-def
-    # or a service stuck draining with no replacement. Pending runs queue; the
-    # latest commit's image wins naturally when it reaches the deploy step.
+    # One web deploy at a time. Cancel-in-progress is OFF: cancelling a deploy
+    # mid-flight (after image push, before ECS stabilize) risks a
+    # half-registered task-def or a service stuck draining with no
+    # replacement. The lock alone does NOT order deploys: GitHub keeps one
+    # pending job per group (a newer one replaces it), and an older run whose
+    # wait finished late can still reach the lock after a newer one rolled
+    # out. So the newest image wins by two explicit guards instead: the
+    # `schema-order` concurrency group above, and the "Skip if a newer deploy
+    # supersedes this one" step below.
     concurrency:
       group: deploy-web
       cancel-in-progress: false
@@ -415,23 +465,100 @@ jobs:
       # OIDC: lets configure-aws-credentials exchange this job's GitHub token
       # for the scoped qontinui-web-deploy role (no stored AWS key).
       id-token: write
+      # The supersede check reads this workflow's runs on main.
+      actions: read
 
     steps:
+      # Out-of-order guard. Runs once this job holds the deploy-web lock, so it
+      # sees the world as it is just before the rollout. When main has moved
+      # past this sha AND a newer deploy-web run for main is in flight or has
+      # succeeded, this image is older than one that is shipping or shipped:
+      # every later step is skipped (job green, nothing rolled out), and the
+      # newer run carries these commits. Rollback mode never skips: it
+      # redeploys an older artifact on purpose. Unreadable API: warn and
+      # deploy (the pre-guard behaviour), never a silent skip.
+      - name: Skip if a newer deploy supersedes this one
+        id: supersede
+        if: ${{ inputs.rollback != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+
+          api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+          repo, sha = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+
+
+          def get(route):
+              req = urllib.request.Request(f"{api}{route}", headers={
+                  "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              })
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  return json.load(resp)
+
+
+          try:
+              head = get(f"/repos/{repo}/commits/main")["sha"]
+              if head == sha:
+                  print(f"{sha[:9]} is main's head; deploying.")
+                  raise SystemExit(0)
+              moved = get(f"/repos/{repo}/compare/{sha}...{head}").get("status") == "ahead"
+              ours = get(f"/repos/{repo}/actions/runs/{run_id}")["created_at"]
+              runs = get(f"/repos/{repo}/actions/workflows/deploy-web.yml/runs?branch=main&per_page=50").get("workflow_runs") or []
+          except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
+              print(f"::warning::supersede check UNKNOWN (GitHub API unreadable: {e}); deploying {sha[:9]} as before this guard existed")
+              raise SystemExit(0)
+          newer = [r for r in runs
+                   if r["id"] != run_id and (r.get("created_at") or "") > ours
+                   and (r.get("status") != "completed" or r.get("conclusion") == "success")]
+          if moved and newer:
+              r = newer[-1]
+              print(f"::notice::superseded: main is at {head[:9]}, past {sha[:9]}, and newer deploy run {r['html_url']} ({r['head_sha'][:9]}, {r.get('status')}/{r.get('conclusion')}) carries these commits. Skipping this rollout.")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+                  fh.write("skip=true\n")
+          else:
+              print(f"Not superseded (main moved past {sha[:9]}: {moved}; newer live deploy runs: {len(newer)}); deploying.")
+          PY
+
       - name: Check out qontinui-web
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
       # On a persistent self-hosted host `docker login` would leave this job's
       # ECR token in the runner user's ~/.docker/config.json for every later
-      # job. Point DOCKER_CONFIG at the per-job temp dir the runner wipes, and
-      # link per-user CLI plugins (buildx) across so they still resolve.
+      # job. Point DOCKER_CONFIG at a per-job temp dir (deleted again by the
+      # last step) whose config.json still finds per-user CLI plugins (buildx).
       - name: Isolate docker credentials to this job
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         run: |
           mkdir -p "$RUNNER_TEMP/docker"
-          if [ -d "$HOME/.docker/cli-plugins" ]; then
-            ln -sfn "$HOME/.docker/cli-plugins" "$RUNNER_TEMP/docker/cli-plugins"
+          # The user's contexts are endpoint metadata (no credentials); copied,
+          # not linked, so nothing this job writes reaches the user's ~/.docker.
+          if [ -d "$HOME/.docker/contexts" ]; then
+            cp -R "$HOME/.docker/contexts" "$RUNNER_TEMP/docker/contexts"
           fi
+          python3 - "$RUNNER_TEMP/docker/config.json" <<'PY'
+          import json, os, sys
+
+          # Plugins (buildx) still resolve from the user's dir, read-only; the
+          # user's currentContext (e.g. a rootless endpoint) is kept.
+          cfg = {"cliPluginsExtraDirs": [os.path.expanduser("~/.docker/cli-plugins")]}
+          try:
+              with open(os.path.expanduser("~/.docker/config.json")) as fh:
+                  ctx = json.load(fh).get("currentContext")
+              if ctx:
+                  cfg["currentContext"] = ctx
+          except (OSError, ValueError):
+              pass
+          with open(sys.argv[1], "w") as fh:
+              json.dump(cfg, fh)
+          PY
           echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
 
       # The job can run on a self-hosted release host (see runs-on), which has
@@ -440,6 +567,7 @@ jobs:
       # tool's name instead of mid-rollout with `command not found`. Python
       # must be >= 3.11: the declare step imports `tomllib`.
       - name: Verify release-lane toolchain
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         run: |
           set -uo pipefail
           missing=""
@@ -464,6 +592,7 @@ jobs:
       # the 1-hour default. It is kept so that a future raise of that timeout
       # cannot expire the credential mid-rollback.
       - name: Configure AWS credentials
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
           role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-deploy
@@ -472,6 +601,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Resolve ECR registry
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         id: ecr
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -486,7 +616,7 @@ jobs:
       # workflow stamps on every build.
       - name: Resolve rollback artifact
         id: rollback_artifact
-        if: ${{ inputs.rollback == 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (inputs.rollback == 'true') }}
         env:
           INPUT_SOURCE_IMAGE_OR_COMMIT: ${{ inputs.source_image_or_commit }}
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
@@ -526,7 +656,7 @@ jobs:
       # real upstream commit — the layer re-clones iff schemas moved.
       - name: Resolve qontinui-schemas main SHA
         id: schemas
-        if: ${{ inputs.rollback != 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (inputs.rollback != 'true') }}
         run: |
           SHA=$(git ls-remote https://github.com/qontinui/qontinui-schemas.git refs/heads/main | cut -f1)
           if [ -z "$SHA" ]; then echo "::error::could not resolve qontinui-schemas main SHA"; exit 1; fi
@@ -541,7 +671,7 @@ jobs:
       # First non-comment, non-blank line, matching the frontend script's read.
       - name: Resolve qontinui-cloud-control pin
         id: cloudcontrol
-        if: ${{ inputs.rollback != 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (inputs.rollback != 'true') }}
         run: |
           PIN_FILE=frontend/cloud-control.pin
           if [ ! -f "$PIN_FILE" ]; then
@@ -555,6 +685,7 @@ jobs:
           echo "qontinui-cloud-control pin = $SHA"
 
       - name: Login to ECR
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
@@ -566,7 +697,7 @@ jobs:
       # commit SHA (the task-def will pin this) and :staging (a convenience
       # pointer so :staging never lags the live service again).
       - name: Build backend image
-        if: ${{ inputs.rollback != 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (inputs.rollback != 'true') }}
         env:
           SCHEMAS_SHA: ${{ steps.schemas.outputs.sha }}
           CLOUD_CONTROL_SHA: ${{ steps.cloudcontrol.outputs.sha }}
@@ -584,7 +715,7 @@ jobs:
             backend
 
       - name: Push backend image
-        if: ${{ inputs.rollback != 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (inputs.rollback != 'true') }}
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
@@ -598,6 +729,7 @@ jobs:
       # class this captures. Must run before update-service so it reflects the
       # PRIOR image, not the one we are about to deploy.
       - name: Capture prior (last-known-good) task-def
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         id: prior
         run: |
           PRIOR_TD=$(aws ecs describe-services \
@@ -639,6 +771,7 @@ jobs:
       #      coord outage would block every web deploy.
       # The identity assertion after the rollout is what actually gates.
       - name: Declare deploy effect signature
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         id: declare
         continue-on-error: true
         env:
@@ -760,6 +893,7 @@ jobs:
       # image (not :staging) so each deploy is a distinct, traceable revision
       # and circuit-breaker rollback has a clean prior target.
       - name: Register task-def revision + update service
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         id: deploy
         env:
           INPUT_ROLLBACK: ${{ inputs.rollback }}
@@ -821,6 +955,7 @@ jobs:
           echo "Service update requested -> $NEW_TD"
 
       - name: Wait for service to stabilize
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         run: |
           aws ecs wait services-stable \
             --cluster "${ECS_CLUSTER}" \
@@ -1108,6 +1243,7 @@ jobs:
       # absorb the post-deploy settle time; transient 5xx/000 on any probe are
       # retried, a settled wrong status is a hard (rollback-triggering) failure.
       - name: Post-deploy behavioral smoke
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         id: smoke
         run: |
           set -uo pipefail
@@ -1273,7 +1409,7 @@ jobs:
       # rows) and fail-open: `continue-on-error` + `success()` so it only runs
       # on a healthy, fully-rolled deploy and a Cognito blip can never red it.
       - name: Backfill GitHub identities
-        if: success()
+        if: ${{ steps.supersede.outputs.skip != 'true' && (success()) }}
         continue-on-error: true
         env:
           NEW_TD: ${{ steps.deploy.outputs.new_td }}
@@ -1336,7 +1472,7 @@ jobs:
       # to absorb ALB draining; a transient 5xx/000 is retried too. Rollback
       # mode redeploys a prior image without building, so it is skipped there.
       - name: Assert served build sha
-        if: ${{ success() && inputs.rollback != 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (success() && inputs.rollback != 'true') }}
         run: |
           set -uo pipefail
           URL="${API_BASE}/meta/served-routes"
@@ -1440,15 +1576,19 @@ jobs:
           exit 0
 
       # Persistent self-hosted host: drop the tags this job loaded so images do
-      # not pile up run after run. Build cache is left to the runner reaper.
+      # not pile up run after run, log out of ECR, and delete the per-job
+      # DOCKER_CONFIG. Build cache is left to the runner reaper.
       # Best-effort; on ubuntu-latest the VM is discarded anyway.
-      - name: Remove this job's local images
+      - name: Remove this job's local images and docker credentials
         if: ${{ always() }}
         continue-on-error: true
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          [ -n "${ECR_REGISTRY}" ] || exit 0
-          docker image rm "${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
+          if [ -n "${ECR_REGISTRY}" ]; then
+            docker image rm "${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
             "${ECR_REGISTRY}/${ECR_REPOSITORY}:staging" >/dev/null 2>&1 || true
-          echo "Removed this job's image tags (build cache left for the runner reaper)."
+            docker logout "${ECR_REGISTRY}" >/dev/null 2>&1 || true
+          fi
+          rm -rf "${RUNNER_TEMP}/docker"
+          echo "Removed this job's image tags and its docker config (build cache left for the runner reaper)."
