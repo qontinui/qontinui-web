@@ -395,3 +395,105 @@ class TestUndrainWrite:
 
         assert resp.status_code == 200
         assert resp.json()["changed"] is False
+
+
+# ---------------------------------------------------------------------------
+# Lanes — coord's ``DrainRequest`` / ``UndrainRequest`` carry an optional
+# ``lanes`` (absent = both; an empty list is a 400). Before this hop declared
+# it, the closed models 422'd the field, so the console could only ever hold
+# or release BOTH lanes (finding f802311d-aef5-40e8-a5f8-4bd3a554b37e).
+# ---------------------------------------------------------------------------
+
+
+def _post_capturing(client: TestClient, route: str, payload: dict):
+    with _patch_httpx() as MockClient:
+        mock_instance = MagicMock()
+        mock_instance.post = AsyncMock(
+            return_value=_mock_response(200, {"device_id": DEVICE_ID, "changed": True})
+        )
+        _configure_mock_client(MockClient, mock_instance)
+        resp = client.post(route, json=payload)
+    return resp, mock_instance
+
+
+class TestDrainLanes:
+    def test_forwards_named_lanes_untouched(self, auth_client: TestClient):
+        resp, mock_instance = _post_capturing(
+            auth_client,
+            DRAIN_ROUTE,
+            {
+                "device_id": DEVICE_ID,
+                "until": _future(),
+                "reason": "hold spawns",
+                "lanes": ["agent"],
+            },
+        )
+        assert resp.status_code == 200
+        sent = mock_instance.post.call_args.kwargs["json"]
+        assert set(sent) == {"device_id", "until", "reason", "lanes"}
+        assert sent["lanes"] == ["agent"]
+
+    def test_omits_lanes_when_the_caller_omits_them(self, auth_client: TestClient):
+        # Absent is coord's "both" — this hop must not substitute a list of its
+        # own, which would freeze today's lane set into every old caller.
+        resp, mock_instance = _post_capturing(
+            auth_client,
+            DRAIN_ROUTE,
+            {"device_id": DEVICE_ID, "until": _future(), "reason": "rebuild"},
+        )
+        assert resp.status_code == 200
+        assert "lanes" not in mock_instance.post.call_args.kwargs["json"]
+
+    def test_dedupes_into_coords_lane_order(self, auth_client: TestClient):
+        resp, mock_instance = _post_capturing(
+            auth_client,
+            DRAIN_ROUTE,
+            {
+                "device_id": DEVICE_ID,
+                "until": _future(),
+                "reason": "rebuild",
+                "lanes": ["ci", "agent", "ci"],
+            },
+        )
+        assert resp.status_code == 200
+        assert mock_instance.post.call_args.kwargs["json"]["lanes"] == ["agent", "ci"]
+
+    @pytest.mark.parametrize("lanes", [[], ["gpu"], "agent"])
+    def test_refuses_an_empty_or_unknown_lane_list_locally(
+        self, auth_client: TestClient, lanes
+    ):
+        resp, mock_instance = _post_capturing(
+            auth_client,
+            DRAIN_ROUTE,
+            {
+                "device_id": DEVICE_ID,
+                "until": _future(),
+                "reason": "rebuild",
+                "lanes": lanes,
+            },
+        )
+        assert resp.status_code == 422
+        mock_instance.post.assert_not_called()
+
+
+class TestUndrainLanes:
+    def test_forwards_named_lanes_untouched(self, auth_client: TestClient):
+        resp, mock_instance = _post_capturing(
+            auth_client,
+            UNDRAIN_ROUTE,
+            {"device_id": DEVICE_ID, "reason": "ci may resume", "lanes": ["ci"]},
+        )
+        assert resp.status_code == 200
+        assert mock_instance.post.call_args[0][0].endswith("/coord/fleet/undrain")
+        sent = mock_instance.post.call_args.kwargs["json"]
+        assert set(sent) == {"device_id", "reason", "lanes"}
+        assert sent["lanes"] == ["ci"]
+
+    def test_refuses_an_empty_lane_list_locally(self, auth_client: TestClient):
+        resp, mock_instance = _post_capturing(
+            auth_client,
+            UNDRAIN_ROUTE,
+            {"device_id": DEVICE_ID, "reason": "done", "lanes": []},
+        )
+        assert resp.status_code == 422
+        mock_instance.post.assert_not_called()

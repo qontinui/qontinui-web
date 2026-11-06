@@ -533,17 +533,31 @@ export async function fetchFleetDrain(
   return readJson<unknown>(res, `GET ${url}`);
 }
 
+/**
+ * A drain lane (coord `fleet_drain::DrainLane`): `agent` = agent-session
+ * spawns and gate continuations, `ci` = CI-node, build and merge-capacity
+ * dispatch.
+ */
+export type FleetDrainLane = "agent" | "ci";
+
 /** `POST /fleet/drain` body — coord's `DrainRequest` (`deny_unknown_fields`). */
 export interface FleetDrainRequest {
   device_id: string;
   until: string;
   reason: string;
+  /**
+   * Lanes to hold. OMIT for both — coord reads an absent field as both and
+   * refuses an empty list with a 400, so never send `[]`.
+   */
+  lanes?: FleetDrainLane[];
 }
 
-/** `POST /fleet/undrain` body — coord's undrain request. */
+/** `POST /fleet/undrain` body — coord's `UndrainRequest`. */
 export interface FleetUndrainRequest {
   device_id: string;
   reason: string;
+  /** Lanes to release. OMIT to release every lane; never send `[]`. */
+  lanes?: FleetDrainLane[];
 }
 
 /**

@@ -78,6 +78,37 @@ const CASES: Array<{
     says: /out of service[\s\S]*drained until/i,
   },
   {
+    // Held on ONE lane (finding f802311d): still in service for the other, so
+    // the outsider is not told the whole machine is out.
+    name: "drained on the agent lane only",
+    target: IDENTIFIED,
+    drain: resolveDeviceDrain(
+      parseFleetDrain({
+        drained: {
+          [DEVICE]: {
+            until: "2026-09-01T18:00:00Z",
+            reason: "rebuild for Acme Corp",
+            drained_by: "operator@example.com",
+            drained_at: "2026-09-01T11:00:00Z",
+            lanes: ["agent"],
+            by_lane: {
+              agent: {
+                until: "2026-09-01T18:00:00Z",
+                reason: "rebuild for Acme Corp",
+                drained_by: "operator@example.com",
+                drained_at: "2026-09-01T11:00:00Z",
+              },
+            },
+          },
+        },
+      }),
+      DEVICE,
+      NOW
+    ),
+    key: "drained",
+    says: /partly out of service[\s\S]*agent-session spawns[\s\S]*CI-node jobs[\s\S]*still reach it/i,
+  },
+  {
     name: "expired",
     target: IDENTIFIED,
     drain: drainState("2026-09-01T11:30:00Z"),

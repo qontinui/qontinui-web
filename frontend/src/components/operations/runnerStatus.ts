@@ -42,7 +42,11 @@ import {
   type RowStatus,
   type StatusPalette,
 } from "@/components/console/statusRow";
-import type { DeviceDrainState } from "./fleetDrain";
+import {
+  DRAIN_LANE_LABEL,
+  heldLanes,
+  type DeviceDrainState,
+} from "./fleetDrain";
 
 /** Coord's staleness bound (contract C1: stale = age > 180 s). */
 export const READINESS_STALE_SECS = 180;
@@ -426,10 +430,20 @@ export function countLabel(value: number | null): string {
 }
 
 /** The drain half of the strip, as one badge label. */
-export function drainBadgeLabel(drain: DeviceDrainState): string {
+export function drainBadgeLabel(
+  drain: DeviceDrainState,
+  now: number = Date.now()
+): string {
   switch (drain.state) {
-    case "drained":
-      return "drained";
+    case "drained": {
+      // A drain held on ONE lane leaves the machine taking the other's work,
+      // so the badge names the lane rather than reading as a full drain.
+      // Lanes held NOW (a lane whose own record lapsed is dropped), so the
+      // badge agrees with the lever rendered beneath it.
+      const held = heldLanes(drain.entry, now);
+      const only = held?.length === 1 ? held[0]?.lane : undefined;
+      return only ? `drained: ${DRAIN_LANE_LABEL[only]} only` : "drained";
+    }
     case "expired":
       return "drain expired";
     case "not_drained":

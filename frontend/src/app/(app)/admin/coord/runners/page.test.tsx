@@ -173,6 +173,7 @@ let controlResponse: ReturnType<typeof res> | Promise<ReturnType<typeof res>> = 
   device_id: DEVICE,
   action: "finish_and_close",
 });
+let drainResponse: ReturnType<typeof res> = res(200, { drained: {} });
 let worktreeCapResponse: ReturnType<typeof res> = res(200, {
   state: "known",
   count: 0,
@@ -195,6 +196,7 @@ beforeEach(() => {
     device_id: DEVICE,
     action: "finish_and_close",
   });
+  drainResponse = res(200, { drained: {} });
   worktreeCapResponse = res(200, {
     state: "known",
     count: 0,
@@ -212,7 +214,7 @@ beforeEach(() => {
       });
     if (url.includes("/control")) return controlResponse;
     if (url.includes("/fleet/worktree-cap")) return worktreeCapResponse;
-    if (url.includes("/fleet/drain")) return res(200, { drained: {} });
+    if (url.includes("/fleet/drain")) return drainResponse;
     if (url.includes("/fleet/resource-samples")) return samplesResponse;
     if (url.includes("/sessions/fleet")) return sessionsResponse;
     return res(404, "not stubbed");
@@ -550,5 +552,54 @@ describe("/admin/coord/runners", () => {
     );
     expect(block).toHaveTextContent("Worktree cap unknown");
     expect(block).not.toHaveTextContent("No operator cap");
+  });
+
+  // Lanes (finding f802311d-aef5-40e8-a5f8-4bd3a554b37e): a runner held on the
+  // agent lane only is still taking CI, and the page must not read as a full
+  // drain. The lever's own lane rules are pinned in DeviceDrainControl.test.tsx.
+  it("names the held lane when the runner is drained on one lane only", async () => {
+    const until = new Date(Date.now() + 3 * 3_600_000).toISOString();
+    drainResponse = res(200, {
+      state: "known",
+      count: 1,
+      drained: [
+        {
+          device_id: DEVICE,
+          until,
+          reason: "hold spawns",
+          drained_by: "op@example.com",
+          drained_at: new Date().toISOString(),
+          lanes: ["agent"],
+          by_lane: {
+            agent: {
+              until,
+              reason: "hold spawns",
+              drained_by: "op@example.com",
+              drained_at: new Date().toISOString(),
+            },
+          },
+        },
+      ],
+      detail: null,
+    });
+    render(<CoordRunnersPage />);
+    await rows();
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-runners-drain-badge")).toHaveTextContent(
+        "drained: Agent sessions only"
+      )
+    );
+    const lanes = await screen.findByTestId("device-drain-lanes-held");
+    expect(lanes.querySelector('[data-lane="agent"]')).toHaveAttribute(
+      "data-held",
+      "true"
+    );
+    expect(lanes.querySelector('[data-lane="ci"]')).toHaveAttribute(
+      "data-held",
+      "false"
+    );
+    // The other lane can still be held without releasing this one.
+    expect(screen.getByTestId("device-drain-undrain")).toBeInTheDocument();
+    expect(screen.getByTestId("device-drain-open")).toBeInTheDocument();
   });
 });
