@@ -41,14 +41,15 @@ live row. In one ``READ ONLY`` transaction, the revision counts:
    data the drop would lose, so the revision refuses and names the count.
    Rows whose tenant is still missing are exactly what step 9 removed: a
    restore would only make them orphans again, invisible to every
-   tenant-scoped read, so they carry no recoverable value. A row whose key was re-created since is superseded by the
-   newer row, and a row whose device was deleted would have cascaded.
+   tenant-scoped read, so they carry no recoverable value. A row whose key
+   was re-created since is superseded by the newer row, and a row whose device
+   was deleted would have cascaded.
 
 Both counts are taken first in a READ ONLY transaction and then again inside
 the transaction that drops the table, so a tenant re-created in between is
 still seen. A refusal writes nothing and names what it found; decide the rows
-by hand, then re-run. An absent table (a fresh database, or one where step 9 found no orphan)
-is a no-op.
+by hand, then re-run. An absent table (a fresh database, or one where step 9
+found no orphan) is a no-op.
 
 Downgrade
 =========
@@ -184,8 +185,8 @@ def upgrade() -> None:
         try:
             op.execute("SET LOCAL lock_timeout = '3s'")
             op.execute("SET LOCAL statement_timeout = '30s'")
-            # Re-checked under the drop's own transaction: nothing can become
-            # restorable between this read and the DROP's commit unnoticed.
+            # Re-checked under the drop's own transaction, which narrows the
+            # window for a row becoming restorable unseen to the DROP itself.
             _refuse_unless_retirable(
                 bind.execute(_LIVE_ORPHANS).mappings().one(),
                 bind.execute(_BACKUP_COUNTS).mappings().one(),
