@@ -180,6 +180,7 @@ export const DEFERRAL_SILENT_MS = 3 * 60 * 60 * 1_000;
 export type ContinuationKind =
   | "armed"
   | "inert"
+  | "held_by_sibling"
   | "dispatched"
   | "dispatch_stalled"
   | "deferred"
@@ -203,6 +204,7 @@ export type ContinuationKind =
  * |---|---|---|
  * | `armed` | `none` | A continuation is attached and will fire when the anchor clears. The normal, healthy resting state of an open gate. |
  * | `inert` | `none` | Attached, but coord's own `continuation_will_dispatch` says clearing dispatches nothing (a `notify_only` payload). Correct behaviour, not a lost dispatch — so calm, and visibly different from `armed` so nobody reads a safety net that is not there. |
+ * | `held_by_sibling` | `waiting` | The gate CLEARED, but coord's all-gates-cleared fanout is holding the continuation until the open same-class gates on its anchor leave `open` — coord names them in `dispatch_held_by`. Waiting on nameable gates, not lost; reading it as `armed` ("will fire when the anchor clears") would describe a clearance that already happened. A held `notify_only` row is the same kind (coord reads it `held_by_sibling` too); its reason says nothing will dispatch even then. |
  * | `dispatched` | `none` | coord emitted it and a runner has not yet acked. In flight; nobody is blocked. |
  * | `dispatch_stalled` | `author` | Emitted, unconsumed past {@link DISPATCH_STALE_MS}, and NO deferral explains it. Nothing retries it into existence; a human decides. |
  * | `deferred` | `waiting` | A runner saw it and pushed back with a stated reason (thread pressure, a cap, a duplicate anchor). The row stays pending and re-deliverable — this is exactly amber's promise. |
@@ -230,6 +232,7 @@ export const CONTINUATION_ATTENTION_BY_KIND: Record<
 > = {
   armed: "none",
   inert: "none",
+  held_by_sibling: "waiting",
   dispatched: "none",
   dispatch_stalled: "author",
   deferred: "waiting",
@@ -257,6 +260,7 @@ const NOT_IN_PLAY =
 export const CONTINUATION_KIND_CLASS: Record<ContinuationKind, string> = {
   armed: INERT,
   inert: NOT_IN_PLAY,
+  held_by_sibling: WAITING_AMBER,
   dispatched: IN_MOTION_BLUE,
   dispatch_stalled: AUTHOR_RED,
   deferred: WAITING_AMBER,
@@ -441,6 +445,16 @@ export interface ContinuationStatusInput {
   continuation_deferred_count?: number | null;
   continuation_expired_at?: string | null;
   continuation_expired_reason?: string | null;
+  /**
+   * coord's DERIVED holder list (`GateResponse.dispatch_held_by`, plan
+   * `2026-10-03-a-continuation-follow-up-pr-is-orphaned-and-a-cleared-gate-is-held-by-an-anchor-sibling`
+   * D1.2): the open same-class gates on this gate's anchor that the
+   * all-gates-cleared fanout is waiting on. coord fills it only for a cleared,
+   * undispatched, uncancelled, unconsumed continuation (a drain expiry
+   * `never_dispatched_at_clearance` included, which the fanout still
+   * dispatches); `[]` everywhere else. Absent on a coord predating D1.2.
+   */
+  dispatch_held_by?: readonly string[] | null;
 }
 
 export interface ContinuationStatus {
@@ -656,6 +670,37 @@ function status(
   };
 }
 
+/** The drain's expiry reason that coord's fanout still dispatches. */
+const DRAIN_EXPIRY_REASON = "never_dispatched_at_clearance";
+
+/**
+ * The holders of a continuation coord says is cleared-but-HELD, or `[]`.
+ *
+ * Mirrors the entry condition of coord's `held_by_sibling_reading` (gates.rs)
+ * as well as its list: coord promotes only a row whose stamp reading is
+ * never-dispatched or the drain's `never_dispatched_at_clearance` expiry, so a
+ * holder list served beside any other terminal stamp (a race between coord's
+ * row read and its holder query, or a coord of another build) is ignored here
+ * rather than painting an expired or consumed row amber. A non-empty answer
+ * also means the continuation is still LIVE even when it carries the drain's
+ * expiry stamp — callers that treat `continuation_expired_at` as "dead" must
+ * consult this first.
+ */
+export function heldBySiblingHolders(
+  g: ContinuationStatusInput
+): readonly string[] {
+  const holders = (g.dispatch_held_by ?? []).filter((id) => id.trim() !== "");
+  if (holders.length === 0) return [];
+  const stampsSayLive =
+    !g.continuation_dispatched_at &&
+    !g.continuation_cancelled_at &&
+    !g.continuation_consumed_at &&
+    !g.continuation_consumed_outcome?.trim() &&
+    (!g.continuation_expired_at ||
+      g.continuation_expired_reason?.trim() === DRAIN_EXPIRY_REASON);
+  return stampsSayLive ? holders : [];
+}
+
 /**
  * The gate's continuation status, or `null` when the gate has no continuation
  * at all — no attached spawn and not one lifecycle stamp. `null` means "this
@@ -664,6 +709,12 @@ function status(
  *
  * Precedence is **terminal-first, then explained-before-unexplained**:
  *
+ * 0. `held_by_sibling` — coord says the gate cleared and names the open
+ *    same-class siblings its fanout is waiting on. coord derives that list
+ *    only for a cleared, undispatched, uncancelled, unconsumed row, and the
+ *    one expiry it admits (the drain's `never_dispatched_at_clearance`) is
+ *    still dispatched by the fanout — so a non-empty list outranks the
+ *    `expired` stamp, exactly as coord's own `held_by_sibling_reading` does.
  * 1. `expired`, then `cancelled` — coord or somebody ended it; nothing after
  *    that stamp can be the current state. Expiry outranks cancellation because
  *    coord accepts a cancel on an already-expired row, and the expiry is the
@@ -712,6 +763,30 @@ export function deriveContinuationStatus(
     rawOutcome,
     deferralRendered,
   });
+
+  // 0 — cleared but HELD by open same-class siblings on its anchor. coord's
+  // `held_by_sibling_reading` (gates.rs) is the authority; this mirrors it so
+  // the console never says "will fire when this gate's anchor clears" about a
+  // gate that has already cleared (finding 94841f88), nor "it will never
+  // dispatch" about a drain-expired row the fanout still dispatches.
+  const holders = heldBySiblingHolders(g);
+  if (holders.length > 0) {
+    const drained = Boolean(g.continuation_expired_at);
+    const lead = drained
+      ? "this gate cleared and the never-actioned drain stamped the continuation expired, but it is still dispatchable and is"
+      : "this gate cleared, but its continuation is";
+    const inertNote =
+      g.continuation_will_dispatch === false
+        ? "; coord reports that its action dispatches nothing even then"
+        : "";
+    return wrap(
+      status(
+        "held_by_sibling",
+        "held by sibling",
+        `${lead} held by ${holders.length} open same-class gate(s) on its anchor [${holders.join(", ")}] — coord's all-gates-cleared fanout dispatches it only once they leave open${inertNote}`
+      )
+    );
+  }
 
   // 1 — terminal, EXPIRY FIRST.
   //
