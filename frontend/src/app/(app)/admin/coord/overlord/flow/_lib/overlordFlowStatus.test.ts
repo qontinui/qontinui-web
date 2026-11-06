@@ -13,6 +13,7 @@ import {
   failureSentence,
   flowQuery,
   histogramPoints,
+  labelHref,
   lastInterventionWords,
   metricTitle,
   metricValue,
@@ -693,5 +694,43 @@ describe("sessionHref", () => {
     const [proven, unproven] = readFlowBody(FULL_FLOW)!.unchanged!;
     expect(sessionHref(proven!)).toBe(`/sessions/${proven!.claude_session_id}`);
     expect(sessionHref(unproven!)).toBeNull();
+  });
+});
+
+describe("labelHref", () => {
+  const base: FlowUnchangedSession = {
+    key: "s",
+    claude_session_id: "s",
+    terminal_id: "t",
+    session_name: null,
+    verdict: "STOPPED",
+    reason_codes: [],
+    consecutive_full_passes: 3,
+    first_seen_at: "2026-10-23T08:00:00Z",
+    last_seen_at: "2026-10-23T20:00:00Z",
+  };
+  const judged = {
+    intervention_id: "id with/slash",
+    stop_class: "B",
+    verb: "leave",
+    mode: "shadow",
+    executed: null,
+    outcome: null,
+    observed_at: "2026-10-23T19:00:00Z",
+  };
+
+  it("links a recorded judgment to the label form with its id encoded", () => {
+    expect(labelHref({ ...base, last_intervention: judged })).toBe(
+      "/admin/coord/overlord/label?intervention_id=id%20with%2Fslash"
+    );
+  });
+
+  it("offers no link when there is no judgment to label", () => {
+    expect(labelHref({ ...base, last_intervention: null })).toBeNull();
+    expect(labelHref({ ...base, last_intervention: undefined })).toBeNull();
+    expect(labelHref(base)).toBeNull();
+    expect(
+      labelHref({ ...base, claude_session_id: null, last_intervention: judged })
+    ).toBeNull();
   });
 });
