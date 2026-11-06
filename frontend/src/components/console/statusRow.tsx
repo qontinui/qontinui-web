@@ -129,7 +129,7 @@ export const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
   // promise (plan
   // `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`).
   "needs-rebase": UNKNOWN_AMBER,
-  // Coord SERVED that it is updating the branch, so here the self-clearing
+  // Coord SERVED that it is updating or will update the branch, so here the self-clearing
   // amber is earned; and that it will not, so red.
   "behind-freshening": WAITING_AMBER,
   "behind-freshen-refused": AUTHOR_RED,

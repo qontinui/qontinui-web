@@ -64,8 +64,8 @@ export type UnifiedStatusKind =
   // dwell cap with no observed GitHub activity nothing has demonstrably
   // brought the branch current, so we re-escalate to red.
   | "needs-rebase-stale"
-  // BEHIND (or red on a stale base), and coord SERVED that it is updating the
-  // branch: `freshen.state` is `eligible` or `in_progress`. The one reading
+  // BEHIND (or red on a stale base), and coord SERVED that it is updating or will
+  // update the branch: `freshen.state` is `eligible` or `in_progress`. The one reading
   // where a wait on coord is observed rather than assumed. Dwell-capped all the
   // same, because a served intention is not a moved branch.
   | "behind-freshening"
@@ -162,7 +162,7 @@ export type DwellEvidence = "measured" | "unknown";
  * | blocked          | overlaps another PR; coord serializes| no — waits   |
  * | needs-rebase     | BEHIND / red on a stale base; whether| no — waits   |
  * |                  | coord's freshen acts is UNKNOWN      | (dwell-capped)|
- * | behind-freshening| coord served that it is updating it  | no — waits   |
+ * | behind-freshening| coord served it is updating or will  | no — waits   |
  * |                  |                                      | (dwell-capped)|
  * | behind-freshen-refused| coord served that it will not   | YES          |
  * | conflict-deferred| true conflict, but far from merging  | no — waits   |
@@ -1828,7 +1828,7 @@ export type BehindCounts = Record<BehindBucket, number>;
 const BEHIND_BUCKET_LABEL: ReadonlyArray<
   readonly [BehindBucket, string, string]
 > = [
-  ["eligible", "eligible", "coord updating the branch (eligible)"],
+  ["eligible", "eligible", "coord will update the branch"],
   ["in_progress", "in progress", "coord is updating the branch"],
   ["exhausted", "exhausted", "coord stopped after its attempt ceiling"],
   ["ineligible", "ineligible", "coord does not freshen this kind"],
