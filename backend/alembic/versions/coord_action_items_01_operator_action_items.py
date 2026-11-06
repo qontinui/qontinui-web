@@ -1,7 +1,7 @@
 """coord.operator_action_items — a to-do the operator owes, with a lifecycle and a push projection
 
 Revision ID: coord_action_items_01
-Revises: capmodel_01
+Revises: topcons_01
 Create Date: 2026-10-13
 
 Phase 1 of plan ``2026-10-12-operator-action-items-pushed-to-the-phone``
@@ -96,7 +96,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_action_items_01"
-down_revision: str | Sequence[str] | None = "capmodel_01"
+down_revision: str | Sequence[str] | None = "topcons_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
