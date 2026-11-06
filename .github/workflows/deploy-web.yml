@@ -585,7 +585,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import json, os, re, subprocess, sys, urllib.error, urllib.request
+          import http.client, json, os, re, subprocess, sys, urllib.error, urllib.request
 
           api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
           repo, sha = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
@@ -626,6 +626,8 @@ jobs:
                       return json.load(resp)["status"]
               except urllib.error.HTTPError as e:
                   raise RuntimeError(f"compare {base[:9]}...{head[:9]} answered HTTP {e.code} {e.reason}") from e
+              except http.client.HTTPException as e:  # e.g. IncompleteRead: not an OSError
+                  raise RuntimeError(f"compare {base[:9]}...{head[:9]} broke mid-response ({type(e).__name__}: {e})") from e
 
 
           def serving_commits():
@@ -672,24 +674,29 @@ jobs:
           if sha in serving:
               print("Same commit: deploying (an idempotent redeploy).")
               sys.exit(0)
-          # Every serving tag is judged: one that already CONTAINS this sha means the
-          # rollout would move production backwards; all older/diverged means deploy;
-          # any status we cannot read or do not expect means we cannot know -> closed.
-          statuses = {}
+          # Every serving tag is judged, and every status is collected before deciding:
+          # one tag that already CONTAINS this sha settles it (the rollout would move
+          # production backwards), whatever the others say. Only without such a tag does
+          # an unreadable or unexpected status mean we cannot know -> fail closed.
+          statuses, errors = {}, {}
           for c in serving:
               try:
                   statuses[c] = compare_status(sha, c)
-              except (RuntimeError, urllib.error.URLError, OSError, ValueError, KeyError) as e:
-                  fail(f"could not check ancestry between {sha[:9]} and the serving {c[:9]} ({e}).")
-          odd = {c: st for c, st in statuses.items() if st not in ("ahead", "behind", "diverged")}
-          if odd:
-              fail(f"unexpected compare status {', '.join(f'{c[:9]}={st}' for c, st in odd.items())} against {sha[:9]}.")
+              except (RuntimeError, urllib.error.URLError, http.client.HTTPException, OSError, ValueError, KeyError) as e:
+                  errors[c] = str(e)
           newer = [c for c, st in statuses.items() if st == "ahead"]
+          odd = {c: st for c, st in statuses.items() if st not in ("ahead", "behind", "diverged")}
           if newer:
+              unknown = f" ({len(errors) + len(odd)} other tag(s) could not be judged; one newer tag is enough)" if errors or odd else ""
               print(f"::notice::superseded: production already serves {newer[0][:9]}, which contains {sha[:9]}. "
-                    "Rolling this older image out would move production backwards; skipping (nothing changed).")
+                    f"Rolling this older image out would move production backwards; skipping (nothing changed).{unknown}")
               with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
                   fh.write("skip=true\n")
+          elif errors:
+              fail("could not check ancestry between " + sha[:9] + " and the serving "
+                   + "; ".join(f"{c[:9]} ({e})" for c, e in errors.items()) + ".")
+          elif odd:
+              fail(f"unexpected compare status {', '.join(f'{c[:9]}={st}' for c, st in odd.items())} against {sha[:9]}.")
           else:
               print(f"Serving {shown} is older than or diverged from {sha[:9]} "
                     f"({', '.join(f'{c[:9]}={st}' for c, st in statuses.items())}): deploying.")
@@ -729,6 +736,10 @@ jobs:
           # later deploy. So a digest, or any tag that is not a full 40-hex
           # sha (e.g. `staging`), is pinned BY DIGEST and must carry a full-sha
           # tag; otherwise the rollback is refused here, before anything moves.
+          # `artifact` is what was RESOLVED (sha256:<digest>, or the full sha),
+          # in the two forms coord's declare parses (deploy_effects.rs
+          # parse_target: `sha256:` = image digest, else a commit); the declare
+          # step reports that, not the raw input.
           pin_by_digest() {  # $1 = an ECR --image-ids selector
             local json digest
             json=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
@@ -744,6 +755,7 @@ jobs:
               exit 1
             fi
             echo "image=$REGISTRY/$ECR_REPOSITORY@$digest" >> "$GITHUB_OUTPUT"
+            echo "artifact=$digest" >> "$GITHUB_OUTPUT"
             echo "Pinned rollback artifact $ART to digest $digest (it carries a full-sha tag)."
           }
           case "$ART" in
@@ -758,11 +770,12 @@ jobs:
               exit 1
               ;;
             *)
-              if printf '%s' "$ART" | grep -Eq '^[0-9a-f]{40}$'; then
+              if [[ $ART =~ ^[0-9a-f]{40}$ ]]; then
                 aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
                   --image-ids imageTag="$ART" --region "$AWS_REGION" >/dev/null \
                   || { echo "::error::rollback artifact tag $ART not found in ECR ($ECR_REPOSITORY)"; exit 1; }
                 echo "image=$REGISTRY/$ECR_REPOSITORY:$ART" >> "$GITHUB_OUTPUT"
+                echo "artifact=$ART" >> "$GITHUB_OUTPUT"
               else
                 pin_by_digest "imageTag=$ART"
               fi
@@ -897,7 +910,7 @@ jobs:
         env:
           INPUT_ROLLBACK: ${{ inputs.rollback }}
           INPUT_CORRELATION_ID: ${{ inputs.correlation_id }}
-          INPUT_SOURCE_IMAGE_OR_COMMIT: ${{ inputs.source_image_or_commit }}
+          ROLLBACK_ARTIFACT: ${{ steps.rollback_artifact.outputs.artifact }}
           INPUT_TARGET_ENV: ${{ inputs.target_environment || 'production' }}
         run: |
           set -uo pipefail
@@ -912,7 +925,9 @@ jobs:
           TARGET_ENV="production"
           CORR="${INPUT_CORRELATION_ID}"
           if [ "$ROLLBACK" = "true" ]; then
-            DECLARE_SHA="${INPUT_SOURCE_IMAGE_OR_COMMIT}"
+            # The artifact "Resolve rollback artifact" actually pinned (a
+            # `staging` input is declared as the digest it resolved to).
+            DECLARE_SHA="${ROLLBACK_ARTIFACT}"
             SOURCE="orchestrator"
             TARGET_ENV="${INPUT_TARGET_ENV}"
           fi
