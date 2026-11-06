@@ -2817,7 +2817,10 @@ describe("BEHIND × every PrMergeStatus — attention, palette, no promise", () 
   ) => buildPipelineRows([pr(overrides)], [], economics)[0].status;
 
   it.each(TOKENS)("BEHIND + %s", (token) => {
-    const status = statusOf({ merge_state_status: "BEHIND", merge_status: token });
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: token,
+    });
     expect(ATTENTION_BY_KIND[status.kind]).toBe(status.attention);
     const cls = STATUS_BADGE_CLASS[status.kind];
     if (status.attention === "author") expect(cls).toBe(AUTHOR_RED);
@@ -2922,7 +2925,9 @@ describe("BEHIND × every PrMergeStatus — attention, palette, no promise", () 
       blocking_summary:
         "git fetch https://x-access-token:ghs_abcdefghijklmnopqrstuvwxyz0123456789@github.com/o/r failed",
     });
-    expect(status.reason).not.toContain("ghs_abcdefghijklmnopqrstuvwxyz0123456789");
+    expect(status.reason).not.toContain(
+      "ghs_abcdefghijklmnopqrstuvwxyz0123456789"
+    );
   });
 });
 
@@ -2974,19 +2979,16 @@ describe.each(PROMISE_ROWS)("D2 table on %s", (_token, base, lead) => {
   it.each([
     ["eligible", "coord will update the branch"],
     ["in_progress", "coord is updating the branch"],
-  ] as const)(
-    "%s → %s, waiting, never 'no action needed'",
-    (state, phrase) => {
-      const status = statusOf({ state });
-      expect(status.kind).toBe("behind-freshening");
-      expect(status.attention).toBe("waiting");
-      expect(status.reason).toBe(
-        `${lead} — ${phrase} (attempt 2/6, last 2026-11-02 17:13 UTC)`
-      );
-      expect(status.reason).not.toMatch(PROMISE);
-      expect(STATUS_BADGE_CLASS[status.kind]).toBe(WAITING_AMBER);
-    }
-  );
+  ] as const)("%s → %s, waiting, never 'no action needed'", (state, phrase) => {
+    const status = statusOf({ state });
+    expect(status.kind).toBe("behind-freshening");
+    expect(status.attention).toBe("waiting");
+    expect(status.reason).toBe(
+      `${lead} — ${phrase} (attempt 2/6, last 2026-11-02 17:13 UTC)`
+    );
+    expect(status.reason).not.toMatch(PROMISE);
+    expect(STATUS_BADGE_CLASS[status.kind]).toBe(WAITING_AMBER);
+  });
 
   it("exhausted → author, and the ceiling comes from the payload", () => {
     const status = statusOf({
@@ -3356,4 +3358,3 @@ describe("D4 review follow-ups", () => {
     ).toContain("eligible 1: coord will update");
   });
 });
-
