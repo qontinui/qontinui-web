@@ -152,6 +152,9 @@ jobs:
     # root-owned job-started hook is (repo + event + main + this workflow).
     # Fallback is manual: runs-on is fixed when the job queues, so with the
     # pool offline the job waits on its label; unset the variable and re-run.
+    # The pool MUST run >= 2 jobs at once: migrate.yml takes the same label,
+    # and this job holds its slot through the schema-order wait below, so a
+    # one-slot pool would starve the migration it is waiting for.
     runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted"]' || '"ubuntu-latest"') }}
     environment: production
     permissions:
@@ -369,7 +372,7 @@ jobs:
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
           python3 - <<'PY'
-          import json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+          import http.client, json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 
           DEADLINE = 900
           INTERVAL = 15
@@ -447,7 +450,7 @@ jobs:
           if hits == []:
               try:
                   run = our_run()
-              except (urllib.error.URLError, OSError, ValueError) as e:
+              except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as e:
                   print(f"::warning::migrate run cross-check unreadable ({e}); the diff shows no migrate path, proceeding")
                   run = None
               if run is None:
@@ -479,9 +482,12 @@ jobs:
                           last = f"migrate run {url} was cancelled and no later successful main run contains {sha[:9]} yet"
                       elif status == "completed":
                           fail(f"migrate run {url} concluded '{concl}': the schema for {sha[:9]} is NOT confirmed applied, so this image is NOT rolled out (the prior revision keeps serving). Fix forward and re-run migrate.yml, then re-run this job.")
+                      elif status in ("queued", "pending", "waiting", "requested"):
+                          last = (f"migrate run {url} is still '{status}' (never started: a queue or concurrency wait, "
+                                  "NOT a migration failure)")
                       else:
                           last = f"migrate run {url} is still '{status}'"
-              except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
+              except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError, KeyError) as e:
                   last = f"the GitHub API was unreadable ({e})"
               elapsed = time.monotonic() - start
               if elapsed >= DEADLINE:
