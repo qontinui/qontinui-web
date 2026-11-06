@@ -102,6 +102,24 @@ def grant_key(grant_jti: str) -> str:
     return f"remote_attach:grant:{grant_jti}"
 
 
+def create_close_grant_key(grant_jti: str) -> str:
+    """Redis key of the record an in-flight close under a CREATE grant writes.
+
+    Separate from :func:`grant_key` for the same reason
+    :func:`create_close_claim_key` is separate from :func:`claim_key`: a close
+    and a create may be in flight on the same jti, and sharing one record key
+    let each overwrite the other's record and the first to settle delete it.
+    """
+    return f"remote_attach:create_close_grant:{grant_jti}"
+
+
+def _attachment_grant_key(att: _Attachment) -> str:
+    """The record key THIS attachment owns: see :func:`create_close_grant_key`."""
+    if att.kind == KIND_CREATE and att.end_only:
+        return create_close_grant_key(att.grant_jti)
+    return grant_key(att.grant_jti)
+
+
 def terminal_key(target_device_id: str, terminal_id: str) -> str:
     """Redis key of the per-terminal return-route record."""
     return f"remote_attach:{target_device_id}:{terminal_id}"
@@ -154,8 +172,8 @@ class RelayRegistry:
             "requested_terminal_id": att.requested_terminal_id or "",
             "terminal_id": "",
         }
-        await _hset(redis, grant_key(att.grant_jti), mapping=record)
-        await redis.expireat(grant_key(att.grant_jti), att.exp)
+        await _hset(redis, _attachment_grant_key(att), mapping=record)
+        await redis.expireat(_attachment_grant_key(att), att.exp)
 
     async def _bind_terminal(self, att: _Attachment, terminal_id: str) -> bool:
         """Claim the ``(target, terminal)`` route for this grant; False when busy.
@@ -181,7 +199,7 @@ class RelayRegistry:
         att.terminal_id = terminal_id
         att.attached = True
         await _hset(
-            redis, grant_key(att.grant_jti), mapping={"terminal_id": terminal_id}
+            redis, _attachment_grant_key(att), mapping={"terminal_id": terminal_id}
         )
         return True
 
@@ -201,13 +219,15 @@ class RelayRegistry:
         reattach path, not a replay. So does a close under a create grant, whose
         claim is its OWN key (:func:`create_close_claim_key`): it bounds one
         close in flight, the spawn claim above stays where it is, and a close
-        whose outcome came back unknown may be retried.
+        whose outcome came back unknown may be retried. Its record is its own
+        key too (:func:`create_close_grant_key`), so the delete never reaches a
+        create's record on the same jti.
         """
         redis = await self.core._get_redis()
         if att.kind == KIND_CREATE and not att.end_only:
             await redis.delete(grant_key(att.grant_jti))
         else:
-            await redis.delete(_attachment_claim_key(att), grant_key(att.grant_jti))
+            await redis.delete(_attachment_claim_key(att), _attachment_grant_key(att))
         if att.terminal_id is not None:
             await _eval(
                 redis,
