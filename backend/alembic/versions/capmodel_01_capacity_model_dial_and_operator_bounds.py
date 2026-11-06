@@ -154,7 +154,7 @@ def upgrade() -> None:
             'capacity_model_mode is enforce (plan '
             '2026-11-05-one-free-resource-model-places-sessions-builds-and-ci '
             'D9). NULL and the empty array both mean none is. The vocabulary '
-            'is a closed list in coord''s fleet_policy.rs, validated at '
+            'is a closed list in coord (its CapacityConsumer type), validated at '
             'coord''s write door rather than by a CHECK, because each '
             'consuming phase adds a name; a reader ignores, and logs, a name '
             'it does not know.'

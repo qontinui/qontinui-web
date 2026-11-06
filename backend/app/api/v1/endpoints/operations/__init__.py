@@ -11048,7 +11048,9 @@ async def get_next_step_settings_fleet(
 # 2. Coord's GET answers with the asked-for domain's ``effective_level`` /
 #    ``master_enabled`` / ``resolved_scope`` — and ALSO with
 #    ``controls`` / ``controls_available`` / ``current_version`` / ``drain`` /
-#    ``drain_effective`` blocks read from the UNRELATED ``fleet_resources``
+#    ``drain_effective`` blocks, and the capacity-model dial resolved beside
+#    them (``capacity_controls_available`` / ``capacity_model_available`` /
+#    ``capacity_model``), all read from the UNRELATED ``fleet_resources``
 #    controls row (coord's ``read_controls`` deliberately reads that row
 #    "regardless of which domain the caller asked about"). Rendering those as
 #    the asked-for domain's own values is a real misreport, so this proxy
@@ -11070,6 +11072,11 @@ _FLEET_POLICY_CONTROL_KEYS = (
     "current_version",
     "drain",
     "drain_effective",
+    # The capacity-model dial (plan
+    # 2026-11-05-one-free-resource-model-places-sessions-builds-and-ci D9).
+    "capacity_controls_available",
+    "capacity_model_available",
+    "capacity_model",
 )
 
 
