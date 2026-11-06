@@ -40,12 +40,14 @@ live row. In one ``READ ONLY`` transaction, the revision counts:
    ``(device_id, repo)`` is free in ``coord.primary_trees``. Such a row is valid
    data the drop would lose, so the revision refuses and names the count.
    Rows whose tenant is still missing are exactly what step 9 removed: a
-   restore would re-create orphans the key now refuses, so they carry no
-   recoverable value. A row whose key was re-created since is superseded by the
+   restore would only make them orphans again, invisible to every
+   tenant-scoped read, so they carry no recoverable value. A row whose key was re-created since is superseded by the
    newer row, and a row whose device was deleted would have cascaded.
 
-A refusal writes nothing and names what it found; decide the rows by hand, then
-re-run. An absent table (a fresh database, or one where step 9 found no orphan)
+Both counts are taken first in a READ ONLY transaction and then again inside
+the transaction that drops the table, so a tenant re-created in between is
+still seen. A refusal writes nothing and names what it found; decide the rows
+by hand, then re-run. An absent table (a fresh database, or one where step 9 found no orphan)
 is a no-op.
 
 Downgrade
@@ -61,6 +63,7 @@ The drop runs in an ``autocommit_block`` as its own transaction under
 import contextlib
 import logging
 from collections.abc import Sequence
+from typing import NoReturn
 
 import sqlalchemy as sa
 
@@ -122,7 +125,7 @@ _BACKUP_COUNTS = sa.text(
 )
 
 
-def _refuse(message: str) -> None:
+def _refuse(message: str) -> NoReturn:
     raise RuntimeError(f"coordconv_01r: {message}")
 
 
@@ -142,6 +145,24 @@ def _read_only(*queries: sa.TextClause) -> list[sa.RowMapping]:
     return rows
 
 
+def _refuse_unless_retirable(live: sa.RowMapping, counts: sa.RowMapping) -> None:
+    if int(live["orphans"]):
+        _refuse(
+            f"refusing: {live['orphans']} coord.primary_trees row(s) name a "
+            "tenant missing from coord.tenants, which the validated tenant key "
+            f"should make impossible. {ORPHAN_BACKUP} is the only record of "
+            "coordconv_01 step 9, so it is kept. Nothing was written."
+        )
+    if int(counts["restorable"]):
+        _refuse(
+            f"refusing: {counts['restorable']} backed-up row(s) in "
+            f"{ORPHAN_BACKUP} are no longer orphans (tenant and device exist, "
+            "(device_id, repo) free in coord.primary_trees); dropping the "
+            "backup would lose them. Restore or discard them by hand, then "
+            "re-run. Nothing was written."
+        )
+
+
 def upgrade() -> None:
     with op.get_context().autocommit_block():
         (backup,) = _read_only(_BACKUP_EXISTS)
@@ -157,24 +178,18 @@ def upgrade() -> None:
             counts["keys"],
             counts["restorable"],
         )
-        if int(live["orphans"]):
-            _refuse(
-                f"refusing: {live['orphans']} coord.primary_trees row(s) name a "
-                "tenant missing from coord.tenants, which the validated tenant key "
-                f"should make impossible. {ORPHAN_BACKUP} is the only record of "
-                "coordconv_01 step 9, so it is kept. Nothing was written."
-            )
-        if int(counts["restorable"]):
-            _refuse(
-                f"refusing: {counts['restorable']} backed-up row(s) in "
-                f"{ORPHAN_BACKUP} are no longer orphans (tenant and device exist, "
-                "(device_id, repo) free in coord.primary_trees); dropping the "
-                "backup would lose them. Restore or discard them by hand, then "
-                "re-run. Nothing was written."
-            )
+        _refuse_unless_retirable(live, counts)
+        bind = op.get_bind()
         op.execute("BEGIN")
         try:
             op.execute("SET LOCAL lock_timeout = '3s'")
+            op.execute("SET LOCAL statement_timeout = '30s'")
+            # Re-checked under the drop's own transaction: nothing can become
+            # restorable between this read and the DROP's commit unnoticed.
+            _refuse_unless_retirable(
+                bind.execute(_LIVE_ORPHANS).mappings().one(),
+                bind.execute(_BACKUP_COUNTS).mappings().one(),
+            )
             op.execute("DROP TABLE IF EXISTS web.coordconv_01_primary_trees_orphans")
         except BaseException:
             with contextlib.suppress(Exception):

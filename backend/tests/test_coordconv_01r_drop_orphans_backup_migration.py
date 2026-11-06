@@ -179,3 +179,28 @@ def test_a_live_orphan_refuses_and_keeps_the_backup(parent: str) -> None:
         stderr = _upgrade(url, expect_success=False)
         assert "tenant missing from coord.tenants" in stderr, stderr
         assert _backup_present(engine)
+        assert scalar_at(engine, f"SELECT count(*) FROM {_BACKUP}") == 1
+        assert (
+            scalar_at(engine, "SELECT version_num FROM alembic_version")
+            == _PARENT_REVISION_ID
+        )
+
+
+def test_only_the_newest_copy_of_a_key_decides(parent: str) -> None:
+    """Two copies of one ``(device_id, repo)``: the newer one is what a restore reads."""
+    with clone_of(parent, "coordconv_01r_newest") as (engine, url):
+        with engine.begin() as conn:
+            tenant = insert_tenant(conn)
+            device = insert_device(conn, tenant)
+            conn.execute(text(_CREATE_BACKUP))
+            # Older copy names a live tenant; the newer copy names a dead one.
+            _back_up(conn, device, "twice", tenant)
+            conn.execute(
+                text(
+                    "UPDATE web.coordconv_01_primary_trees_orphans "
+                    "SET backed_up_at = backed_up_at - interval '1 day'"
+                )
+            )
+            _back_up(conn, device, "twice", uuid.uuid4())
+        _upgrade(url)
+        assert not _backup_present(engine)
