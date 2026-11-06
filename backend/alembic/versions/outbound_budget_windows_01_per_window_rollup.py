@@ -42,7 +42,7 @@ exactly as it is.
   (``outbound_budget_windows_dependency_resource_reset_uq``) and is the
   observer's ``ON CONFLICT`` target. ``resource`` is the same key coord's
   observer writes to ``coord.outbound_budget_observations.resource``
-  (``format!("{resource}:{installation_id}")`` in
+  (``<resource>:<installation_id>``, built in
   ``outbound_budget_observer::derive_budget_row``, e.g. ``core:134903706``), so
   a tenant-scoped reader filters both tables by the same parse.
 * ``reset_at`` is NOT NULL: a reading with no known window is not written here
