@@ -368,6 +368,7 @@
   "tests/test_ops_split_transform.py": 1.3,
   "tests/test_ops_tasks_01_coord_ops_tasks_migration.py": 0.0,
   "tests/test_organization_service.py": 0.3,
+  "tests/test_outbound_budget_windows_01_migration.py": 45.0,
   "tests/test_overlord_01_interventions_migration.py": 14.3,
   "tests/test_overlord_02_four_class_vocabulary_migration.py": 16.6,
   "tests/test_overlord_03_passes_migration.py": 16.2,

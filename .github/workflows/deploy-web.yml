@@ -91,14 +91,10 @@ on:
         required: false
         default: ""
 
-# One web deploy at a time; the latest commit's image is the one that
-# should win. Cancel-in-progress is OFF: cancelling a deploy mid-flight
-# (after image push, before ECS stabilize) risks a half-registered task-def
-# or a service stuck draining with no replacement. Pending runs queue; the
-# latest commit's image wins naturally when it reaches the deploy step.
-concurrency:
-  group: deploy-web
-  cancel-in-progress: false
+# Concurrency lives on the `deploy` JOB, not here: the `schema-order` wait
+# job below can hold for up to two hours, and a workflow-level lock would make
+# a coord rollback dispatch queue behind it (or be dropped as a superseded
+# pending run).
 
 env:
   AWS_REGION: us-east-1
@@ -125,7 +121,325 @@ env:
   REPO_SLUG: qontinui/qontinui-web
 
 jobs:
+  # ── Schema order: the schema this IMAGE needs is applied BEFORE it ships ──
+  # migrate.yml (alembic upgrade head on RDS) and this workflow are separate
+  # workflows on separate queues, so nothing ordered them: on 2026-11-06 this
+  # deploy started while the same commit's migrate run was still queued.
+  # migrate.yml's header states the designed order — its migrations are
+  # forward-only and backward-compatible with the LIVE app, so schema-first is
+  # always safe and image-first is not (the new image serves and 5xxes on every
+  # route that touches a new column; the app has no alembic-head check at boot
+  # to refuse instead).
+  #
+  # ANCHOR: the wait is tied to the schema the image CONTAINS, not to whether
+  # this push touched migrations. M = the newest commit at or before this sha
+  # touching a migrate.yml trigger path (commits API, path= + sha=). The job
+  # proceeds only once a migrate.yml run on main, from ANY event, concluded
+  # `success` at M or at a commit containing M (compare API). So an app-only
+  # push after a failed migration, the nightly deploy and a plain dispatch
+  # are all held to the same rule; only a rollback skips it (it redeploys an
+  # image OLDER than the live schema, which the forward-only rule makes safe).
+  #
+  # Verdicts, re-read every poll:
+  #   success covering M        -> pass
+  #   a covering run in flight  -> wait (two clocks, below)
+  #   newest covering run failed, nothing newer in flight -> FAIL now
+  #   nothing covers M yet      -> wait on the queue clock (a push's own
+  #                                migrate run can be created after this job
+  #                                starts)
+  # Clocks: while the covering migrate job is QUEUED, wait bounded only by
+  # this job's cap — on the hosted lane that queue is the starvation this plan
+  # exists for, so it must not count as a migration failure. Once its job has
+  # STARTED (jobs-API `started_at` = runner pickup; the run's `run_started_at`
+  # is only creation), allow migrate.yml's own worst case: its job cap (25
+  # min, MIGRATE_CAP_MIN) + 2 min. Every failure names which clock expired.
+  #
+  # Observable: a migrate.yml run's conclusion. That job is green iff its
+  # migrator task exited 0 (every step after the migrator is
+  # continue-on-error), so `success` means "the chain at that commit is
+  # applied to RDS". coord.migration_applications is weaker (a fail-open
+  # writer), and this job holds no DB access to read alembic_version.
+  #
+  # A SEPARATE job, deliberately: it holds no AWS role and no `production`
+  # environment, and it does not hold the deploy concurrency lock while it
+  # waits. Same lane switch as `deploy`, so on the release lane it does not sit
+  # in the hosted queue — and it occupies a trusted-pool slot while it waits.
+  schema-order:
+    name: Wait for the schema this image needs
+    # Main only: the wait shares one cancel-in-progress group, so a branch
+    # dispatch must not be able to cancel main's wait. This `if` is ALSO what
+    # keeps a non-rollback run off main from deploying: the `production`
+    # environment's deployment_branch_policy is protected_branches=true (read
+    # 2026-11-06), which admits any protected branch, not only main.
+    if: ${{ inputs.rollback != 'true' && github.ref == 'refs/heads/main' }}
+    # WAIT_CAP_MIN in the script MUST equal this: the script ends itself 3 min
+    # before it, so a timeout here is never the verdict.
+    timeout-minutes: 120
+    runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted"]' || '"ubuntu-latest"') }}
+    # A newer wait SUPERSEDES an older one: it cancels the older wait, whose
+    # deploy then skips (its need is not `success`). Without this, N queued
+    # pushes hold N waits — on the release lane, every trusted-pool slot,
+    # starving the very migrate job they wait for — and their deploys can
+    # land out of order. The newer image contains the older commits anyway.
+    concurrency:
+      group: deploy-web-schema-order
+      cancel-in-progress: true
+    permissions:
+      # commits?path= (the anchor) and compare (ancestry).
+      contents: read
+      # migrate.yml's workflow runs and their jobs.
+      actions: read
+    steps:
+      - name: Record job start
+        run: echo "JOB_STARTED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Wait for a successful migrate.yml run covering this image's schema
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import http.client, json, os, sys, time, urllib.error, urllib.parse, urllib.request
+          from datetime import datetime
+
+          WAIT_CAP_MIN = 120           # MUST equal this job's timeout-minutes
+          SELF_MARGIN = 3 * 60         # fail ourselves this long before the job cap
+          MIGRATE_CAP_MIN = 25         # MUST equal migrate.yml's job timeout-minutes
+          MIGRATE_BUDGET = MIGRATE_CAP_MIN * 60 + 120  # its worst case + report margin
+          QUEUED_INTERVAL = 30
+          STARTED_INTERVAL = 15
+          RATE_FLOOR = 50              # back off when fewer API calls than this remain
+          CREATED_SLACK = 24 * 3600    # a run created this long before M's commit date may still hold it
+          # Mirrors migrate.yml `on.push.paths`.
+          MIGRATE_PATHS = ("backend/alembic", "backend/pyproject.toml", "backend/poetry.lock")
+          IN_FLIGHT = ("queued", "pending", "waiting", "requested", "in_progress")
+
+          api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+          repo = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["GITHUB_SHA"]
+          token = os.environ["GH_TOKEN"]
+          try:
+              job_start = int(os.environ["JOB_STARTED_EPOCH"])
+          except (KeyError, ValueError):
+              print("::warning::JOB_STARTED_EPOCH unset; sizing the wait from now")
+              job_start = int(time.time())
+          wait_end = job_start + WAIT_CAP_MIN * 60 - SELF_MARGIN
+          # A migrate job that starts by queue_end still gets its whole worst case.
+          queue_end = wait_end - MIGRATE_BUDGET
+          NET_ERRORS = (urllib.error.URLError, http.client.HTTPException, OSError, ValueError, KeyError)
+          backoff_until = 0.0  # set from the rate-limit headers; the poll loop honours it
+
+
+          def fail(msg):
+              print(f"::error::{msg} This image is NOT rolled out (the prior revision keeps serving).")
+              sys.exit(1)
+
+
+          def _note_limits(headers):
+              """Back off on Retry-After, or until the reset when the remaining budget is low."""
+              global backoff_until
+              now = time.time()
+              retry = headers.get("Retry-After")
+              if retry and retry.isdigit():
+                  backoff_until = max(backoff_until, now + int(retry))
+              remaining, reset = headers.get("X-RateLimit-Remaining"), headers.get("X-RateLimit-Reset")
+              if remaining and remaining.isdigit() and int(remaining) < RATE_FLOOR and reset and reset.isdigit():
+                  backoff_until = max(backoff_until, float(reset))
+
+
+          def get(route, **params):
+              url = f"{api}{route}"
+              if params:
+                  url += "?" + urllib.parse.urlencode(params)
+              req = urllib.request.Request(url, headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              })
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      _note_limits(resp.headers)
+                      return json.load(resp)
+              except urllib.error.HTTPError as e:
+                  _note_limits(e.headers or {})
+                  raise
+
+
+          def iso(ts):
+              return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+
+
+          _contains = {}
+
+
+          def contains(head, base):
+              """True when commit `head` is `base` or descends from it (ancestry is immutable: cached)."""
+              if head == base:
+                  return True
+              key = (head, base)
+              if key not in _contains:
+                  _contains[key] = get(f"/repos/{repo}/compare/{base}...{head}").get("status") in ("ahead", "identical")
+              return _contains[key]
+
+
+          def schema_anchors():
+              """Per migrate.yml trigger path, the newest commit at or before `sha` touching it."""
+              cands = {}
+              for p in MIGRATE_PATHS:
+                  got = get(f"/repos/{repo}/commits", sha=sha, path=p, per_page=1)
+                  if got:
+                      cands[got[0]["sha"]] = iso(got[0]["commit"]["committer"]["date"])
+              return cands
+
+
+          def covers(run, anchors):
+              """A run covers the image's schema when its commit contains EVERY anchor.
+
+              A compare that cannot be read makes only THIS run not covering (warned),
+              so one 404 cannot blind the whole assessment.
+              """
+              try:
+                  return all(contains(run["head_sha"], a) for a in anchors)
+              except urllib.error.HTTPError as e:
+                  print(f"::warning::compare for migrate run {run.get('html_url')} failed (HTTP {e.code}); "
+                        "treating it as not covering")
+                  return False
+
+
+          def job_started_at(run):
+              """Earliest runner pickup of the run's latest-attempt jobs; None while all are queued."""
+              jobs = get(f"/repos/{repo}/actions/runs/{run['id']}/jobs",
+                         filter="latest", per_page=50).get("jobs") or []
+              started = [iso(j["started_at"]) for j in jobs
+                         if j.get("status") in ("in_progress", "completed") and j.get("started_at")]
+              return min(started) if started else None
+
+
+          def assess(anchors, oldest_anchor_date):
+              """One read of migrate.yml's main runs against the anchors.
+
+              -> ("ok", run) | ("failed", run) | ("started", start_epoch, run, failed_pred)
+                 | ("queued", run_or_None, failed_pred)
+              """
+              runs = get(f"/repos/{repo}/actions/workflows/migrate.yml/runs",
+                         branch="main", per_page=100).get("workflow_runs") or []
+              runs.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+              # A run created long before the anchors were committed cannot contain them.
+              runs = [r for r in runs
+                      if iso(r.get("created_at") or "1970-01-01T00:00:00Z") >= oldest_anchor_date - CREATED_SLACK]
+              # Successes first, newest first, stopping at the first that covers: the
+              # common case costs one compare per anchor, not one per listed run.
+              for r in runs:
+                  if r.get("status") == "completed" and r.get("conclusion") == "success" and covers(r, anchors):
+                      return ("ok", r)
+              flying = [r for r in runs if r.get("status") in IN_FLIGHT and covers(r, anchors)]
+              failed_pred = next((r for r in runs
+                                  if r.get("status") == "completed" and r.get("conclusion") not in ("success", "cancelled")
+                                  and covers(r, anchors)), None)
+              if flying:
+                  starts = [s for s in (job_started_at(r) for r in flying) if s is not None]
+                  if starts:
+                      return ("started", max(starts), flying[0], failed_pred)
+                  return ("queued", flying[0], failed_pred)
+              if failed_pred is not None:
+                  return ("failed", failed_pred)
+              # Nothing covers the anchors yet: no run created yet (a push's own run can
+              # lag the push), or only cancelled ones whose successor is not listed yet.
+              return ("queued", None, None)
+
+
+          try:
+              anchors = schema_anchors()
+          except NET_ERRORS as e:
+              fail(f"could not resolve which migrations this image contains: the GitHub API was unreadable ({e}).")
+          if not anchors:
+              print(f"No commit at or before {sha[:9]} touches a migrate.yml path; no schema wait.")
+              sys.exit(0)
+          oldest_anchor_date = min(anchors.values())
+          names = ", ".join(a[:9] for a in anchors)
+          print(f"This image's schema anchors: {names} (per path, the newest commit at or before {sha[:9]} touching "
+                f"{', '.join(MIGRATE_PATHS)}). Waiting for a successful main migrate.yml run containing all of them.")
+
+          t0 = time.time()
+          queued_since = t0
+          last = "no migrate.yml run on main covers them yet"
+          started = None
+          failed_pred = None
+          while True:
+              interval = QUEUED_INTERVAL
+              try:
+                  verdict = assess(anchors, oldest_anchor_date)
+                  kind = verdict[0]
+                  if kind == "ok":
+                      r = verdict[1]
+                      print(f"Schema applied: {r['html_url']} ({r['event']} at {r['head_sha'][:9]}) concluded success, "
+                            f"covering {names}, after {int(time.time() - t0)}s of waiting. Rolling out.")
+                      sys.exit(0)
+                  if kind == "failed":
+                      r = verdict[1]
+                      fail(f"the newest migrate.yml run covering {names} is {r['html_url']} ({r['event']} at "
+                           f"{r['head_sha'][:9]}), and it concluded '{r.get('conclusion')}' with no newer success "
+                           f"and none in flight: the schema this image needs is NOT confirmed applied. Fix forward, "
+                           f"get migrate.yml green on main, then re-run this workflow.")
+                  if kind == "started":
+                      started, r, failed_pred = verdict[1], verdict[2], verdict[3]
+                      interval = STARTED_INTERVAL
+                      last = f"migrate run {r['html_url']} is '{r.get('status')}'; its job started {int(time.time() - started)}s ago"
+                  else:
+                      started = None
+                      r, failed_pred = verdict[1], verdict[2]
+                      if r is not None and r.get("created_at"):
+                          queued_since = min(queued_since, iso(r["created_at"]))
+                      last = (f"migrate run {r['html_url']} is '{r.get('status')}' and its job has not started "
+                              "(a queue or concurrency wait, NOT a migration failure)" if r is not None
+                              else "no migrate.yml run on main covers them yet")
+              except NET_ERRORS as e:
+                  last = f"the GitHub API was unreadable ({e})"
+              now = time.time()
+              pred = (f" The run before it, {failed_pred['html_url']} ({failed_pred['event']} at "
+                      f"{failed_pred['head_sha'][:9]}), concluded '{failed_pred.get('conclusion')}'."
+                      if failed_pred is not None else "")
+              if started is not None:
+                  deadline = min(started + MIGRATE_BUDGET, wait_end)
+                  if now >= deadline:
+                      fail(f"migrate job started {int(now - started)}s ago and has not succeeded within its own "
+                           f"worst case ({MIGRATE_BUDGET}s): {last}.{pred} Re-run this workflow once migrate.yml has "
+                           f"succeeded at or after {names}.")
+              else:
+                  deadline = queue_end
+                  if now >= deadline:
+                      fail(f"migrate still queued after {int((now - queued_since) / 60)} min: {last}.{pred} "
+                           f"Re-run this workflow once migrate.yml has succeeded at or after {names}, or route "
+                           f"both workflows to the release lane (WEB_RELEASE_LANE=self-hosted).")
+              pause = max(1.0, min(max(interval, backoff_until - now), deadline - now))
+              note = " (rate-limit backoff)" if backoff_until > now + interval else ""
+              print(f"  {int(now - t0)}s: {last}; waiting{note} (deadline in {int(deadline - now)}s)")
+              time.sleep(pause)
+          PY
+
   deploy:
+    needs: schema-order
+    # After the schema wait passed, or — rollback mode only — when it was
+    # skipped. `!cancelled()` because a skipped need would otherwise skip this
+    # job too; any other wait result (failure, or cancelled because a newer
+    # wait superseded it) keeps this image out. A non-rollback run off main
+    # skips the wait and therefore skips this job too; that, not the
+    # environment, is what holds it to main (`production` admits every
+    # protected branch). A ROLLBACK dispatched from another protected branch
+    # still reaches this job: the wait is skipped in rollback mode, and its
+    # artifact is the explicit input, not that branch's code.
+    if: ${{ !cancelled() && (needs.schema-order.result == 'success' || (needs.schema-order.result == 'skipped' && inputs.rollback == 'true')) }}
+    # One web deploy at a time. Cancel-in-progress is OFF: cancelling a deploy
+    # mid-flight (after image push, before ECS stabilize) risks a
+    # half-registered task-def or a service stuck draining with no
+    # replacement. The lock alone does NOT order deploys: GitHub keeps one
+    # pending job per group (a newer one replaces it), and an older run whose
+    # wait finished late can still reach the lock after a newer one rolled
+    # out. So the newest image wins by two explicit guards instead: the
+    # `schema-order` concurrency group above, and the "Skip if production
+    # already serves a newer commit" step below.
+    concurrency:
+      group: deploy-web
+      cancel-in-progress: false
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2). A deliberate number, not the green-run
     # formula: green runs are p50 6.5 / p90 6.9 / max 7.2 min (n=150), but the
     # one real failure in 300 runs took 22.4 min (stabilize waiter + serving-revision
@@ -134,7 +448,27 @@ jobs:
     # cancel-in-progress: false, an unbounded hang would also block every queued deploy.
     timeout-minutes: 45
     name: Build, push, deploy web backend
-    runs-on: ubuntu-latest
+    # Release lane (plan
+    # 2026-11-06-devops-the-production-web-deploy-waits-fifo-behind-branch-ci-on-the-github-hosted-queue
+    # Phase 2). On GitHub Free every repo in the org shares one hosted queue
+    # with no priority, so a production deploy waited FIFO behind branch CI
+    # (3 h 40 min on 2026-11-06). WEB_RELEASE_LANE=self-hosted puts this job
+    # (and `schema-order` above) on the trusted `qontinui-web-trusted` pool
+    # instead; anything else (the default, unset) keeps `ubuntu-latest`.
+    # Evaluated INLINE, deliberately: a separate lane-picking job would itself
+    # sit in the hosted queue. The `refs/heads/main` term keeps a non-main
+    # workflow_dispatch off the trusted host entirely (the pool's job-started
+    # hook would refuse it there anyway; note the `production` environment
+    # admits every PROTECTED branch, not only main). The label is NOT the
+    # boundary — the pool's root-owned job-started hook is (repo + event +
+    # main + this workflow). Fallback is manual: runs-on is fixed when the job
+    # queues, so with the pool offline the job waits on its label; unset the
+    # variable and re-run.
+    # Pool size: `schema-order` holds a slot while migrate.yml needs one, so
+    # the pool MUST run >= 2 jobs at once or the wait starves the migration it
+    # waits for. 3 avoids one more serialisation: a prior run's `deploy` still
+    # rolling out alongside the next push's wait + migrate.
+    runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted"]' || '"ubuntu-latest"') }}
     environment: production
     permissions:
       contents: read
@@ -147,6 +481,70 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+
+      # On a persistent self-hosted host `docker login` would leave this job's
+      # ECR token in the runner user's ~/.docker/config.json for every later
+      # job. Point DOCKER_CONFIG at a per-job temp dir (deleted again by the
+      # last step) whose config.json still finds per-user CLI plugins (buildx).
+      - name: Isolate docker credentials to this job
+        run: |
+          mkdir -p "$RUNNER_TEMP/docker"
+          python3 - "$RUNNER_TEMP/docker" <<'PY'
+          import hashlib, json, os, shutil, sys
+
+          out = sys.argv[1]
+          home = os.path.expanduser("~/.docker")
+          # Plugins (buildx) still resolve from the user's dir, read-only.
+          cfg = {"cliPluginsExtraDirs": [os.path.join(home, "cli-plugins")]}
+          try:
+              with open(os.path.join(home, "config.json")) as fh:
+                  ctx = json.load(fh).get("currentContext")
+          except (OSError, ValueError):
+              ctx = None
+          if ctx and ctx != "default":
+              # The user's currentContext (e.g. a rootless endpoint) resolves
+              # under DOCKER_CONFIG/contexts, so copy THAT context only — its
+              # meta/<sha256(name)> entry, never the whole store. Its tls/ entry
+              # holds client KEYS, so it is copied only when the context
+              # actually uses TLS (it has a tls entry); the per-job dir it lands
+              # in is deleted by this job's last step.
+              key = hashlib.sha256(ctx.encode()).hexdigest()
+              meta = os.path.join(home, "contexts", "meta", key)
+              if os.path.isdir(meta):
+                  for kind in ("meta", "tls"):
+                      src = os.path.join(home, "contexts", kind, key)
+                      if os.path.isdir(src):
+                          shutil.copytree(src, os.path.join(out, "contexts", kind, key))
+                  cfg["currentContext"] = ctx
+              else:
+                  # A currentContext with no meta entry would make every docker
+                  # call fail on a missing context; fall back to the default.
+                  print(f"::warning::docker currentContext {ctx!r} has no meta entry; using the default context")
+          with open(os.path.join(out, "config.json"), "w") as fh:
+              json.dump(cfg, fh)
+          PY
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
+
+      # The job can run on a self-hosted release host (see runs-on), which has
+      # none of ubuntu-latest's preinstalls by default. Name every tool the
+      # steps below shell out to, so a host that lacks one fails HERE with the
+      # tool's name instead of mid-rollout with `command not found`. Python
+      # must be >= 3.11: the declare step imports `tomllib`.
+      - name: Verify release-lane toolchain
+        run: |
+          set -uo pipefail
+          missing=""
+          for t in aws docker git curl jq python3 awk; do
+            command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
+          done
+          docker buildx version >/dev/null 2>&1 || missing="$missing docker-buildx"
+          python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null \
+            || missing="$missing python3>=3.11"
+          if [ -n "$missing" ]; then
+            echo "::error::release host ${RUNNER_NAME:-?} lacks:${missing}. Provision them on the qontinui-web-trusted pool, or unset WEB_RELEASE_LANE to run on ubuntu-latest."
+            exit 1
+          fi
+          echo "toolchain OK on ${RUNNER_NAME:-?}: $(aws --version 2>&1 | cut -d' ' -f1), $(docker buildx version | cut -d' ' -f1-2), $(python3 --version)"
 
       # Assumes the scoped qontinui-web-deploy role via GitHub OIDC (trusts
       # this repo's `production` environment claim). The role is least-privilege
@@ -164,7 +562,148 @@ jobs:
           role-duration-seconds: 7200
           aws-region: ${{ env.AWS_REGION }}
 
+      # ── Out-of-order guard: never move production BACKWARDS ─────────────
+      # Reads the commit ECS is SERVING (describe-services -> task-def -> the
+      # web-backend image tag; every build tags the full GITHUB_SHA, and a
+      # digest-pinned rollback is mapped back to that tag via ECR) and skips
+      # this rollout only when that serving commit already CONTAINS this sha
+      # and is not this sha: rolling out would undo a newer release. Every
+      # later production-mutating step is gated on `skip`, so a skipped run is
+      # green and changes nothing.
+      #   same commit                  -> deploy (an idempotent redeploy)
+      #   serving older / diverged     -> deploy (diverged: e.g. after a rollback)
+      #   serving tag or ancestry unreadable -> FAIL CLOSED (exit 1, before any
+      #                                   push or rollover; the prior revision
+      #                                   keeps serving)
+      # It reads production rather than GitHub's run list, because "what is
+      # live" is the fact that decides whether this image is a step backwards.
+      # Rollback mode skips the guard: it redeploys an older artifact on purpose.
+      - name: Skip if production already serves a newer commit
+        id: supersede
+        if: ${{ inputs.rollback != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import http.client, json, os, re, subprocess, sys, urllib.error, urllib.request
+
+          api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+          repo, sha = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
+          region, cluster, service = os.environ["AWS_REGION"], os.environ["ECS_CLUSTER"], os.environ["ECS_SERVICE"]
+          ecr_repo = os.environ["ECR_REPOSITORY"]
+          FULL_SHA = re.compile(r"[0-9a-f]{40}")
+
+
+          RECOVERY = ("Recovery: if production's image cannot be mapped to a commit, re-point it at one that "
+                      "can be — dispatch this workflow with rollback=true and source_image_or_commit set to "
+                      "sha256:<digest> (an image this workflow built, so it carries a full-sha tag) or to a full "
+                      "40-hex commit sha whose image is in ECR — then re-run this deploy. If GitHub or AWS was "
+                      "only briefly unreadable, re-running is enough.")
+
+
+          def fail(msg):
+              print(f"::error::serving-commit guard FAILED CLOSED: {msg} Nothing was rolled out; the prior "
+                    f"revision keeps serving. {RECOVERY}")
+              sys.exit(1)
+
+
+          def aws(*args):
+              p = subprocess.run(["aws", *args, "--region", region, "--output", "json"],
+                                 capture_output=True, text=True, timeout=60)
+              if p.returncode != 0:
+                  raise RuntimeError(f"aws {' '.join(args[:2])}: {p.stderr.strip()[:300]}")
+              return json.loads(p.stdout)
+
+
+          def compare_status(base, head):
+              req = urllib.request.Request(f"{api}/repos/{repo}/compare/{base}...{head}", headers={
+                  "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              })
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      return json.load(resp)["status"]
+              except urllib.error.HTTPError as e:
+                  raise RuntimeError(f"compare {base[:9]}...{head[:9]} answered HTTP {e.code} {e.reason}") from e
+              except http.client.HTTPException as e:  # e.g. IncompleteRead: not an OSError
+                  raise RuntimeError(f"compare {base[:9]}...{head[:9]} broke mid-response ({type(e).__name__}: {e})") from e
+
+
+          def serving_commits():
+              """The full commit sha(s) of the web-backend image ECS is serving right now.
+
+              A tag-pinned image names exactly one; a digest-pinned one names every
+              full-sha tag that digest carries (one image can be built at several
+              commits that changed nothing it contains).
+              """
+              svc = aws("ecs", "describe-services", "--cluster", cluster, "--services", service)
+              services = svc.get("services") or []
+              if len(services) != 1 or not services[0].get("taskDefinition"):
+                  raise RuntimeError(f"describe-services returned no task definition for {service} "
+                                     f"(failures: {svc.get('failures')})")
+              td_arn = services[0]["taskDefinition"]
+              td = aws("ecs", "describe-task-definition", "--task-definition", td_arn)["taskDefinition"]
+              images = sorted({c["image"] for c in td.get("containerDefinitions") or []
+                               if "qontinui-web-backend" in c.get("image", "")})
+              if len(images) != 1:
+                  raise RuntimeError(f"{td_arn} names {len(images)} web-backend images ({images}), expected exactly 1")
+              image = images[0]
+              if "@" in image:
+                  # A digest-pinned rollback: map the digest back to this workflow's
+                  # full-sha tag, the one every build stamps.
+                  digest = image.split("@", 1)[1]
+                  details = aws("ecr", "describe-images", "--repository-name", ecr_repo,
+                                "--image-ids", f"imageDigest={digest}").get("imageDetails") or []
+                  tags = sorted({t for d in details for t in d.get("imageTags") or [] if FULL_SHA.fullmatch(t)})
+                  if not tags:
+                      raise RuntimeError(f"serving digest {digest} carries no full-sha tag")
+                  return tags, td_arn, image
+              tag = image.rsplit("/", 1)[-1].rpartition(":")[2]
+              if not FULL_SHA.fullmatch(tag):
+                  raise RuntimeError(f"serving image {image} is not tagged with a full commit sha")
+              return [tag], td_arn, image
+
+
+          try:
+              serving, td_arn, image = serving_commits()
+          except (RuntimeError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as e:
+              fail(f"could not read which commit ECS is serving ({e}).")
+          shown = ", ".join(c[:9] for c in serving)
+          print(f"ECS {cluster}/{service} serves {shown} ({td_arn}, {image}); this run is {sha[:9]}.")
+          if sha in serving:
+              print("Same commit: deploying (an idempotent redeploy).")
+              sys.exit(0)
+          # Every serving tag is judged, and every status is collected before deciding:
+          # one tag that already CONTAINS this sha settles it (the rollout would move
+          # production backwards), whatever the others say. Only without such a tag does
+          # an unreadable or unexpected status mean we cannot know -> fail closed.
+          statuses, errors = {}, {}
+          for c in serving:
+              try:
+                  statuses[c] = compare_status(sha, c)
+              except (RuntimeError, urllib.error.URLError, http.client.HTTPException, OSError, ValueError, KeyError) as e:
+                  errors[c] = str(e)
+          newer = [c for c, st in statuses.items() if st == "ahead"]
+          odd = {c: st for c, st in statuses.items() if st not in ("ahead", "behind", "diverged")}
+          if newer:
+              unknown = f" ({len(errors) + len(odd)} other tag(s) could not be judged; one newer tag is enough)" if errors or odd else ""
+              print(f"::notice::superseded: production already serves {newer[0][:9]}, which contains {sha[:9]}. "
+                    f"Rolling this older image out would move production backwards; skipping (nothing changed).{unknown}")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+                  fh.write("skip=true\n")
+          elif errors:
+              fail("could not check ancestry between " + sha[:9] + " and the serving "
+                   + "; ".join(f"{c[:9]} ({e})" for c, e in errors.items()) + ".")
+          elif odd:
+              fail(f"unexpected compare status {', '.join(f'{c[:9]}={st}' for c, st in odd.items())} against {sha[:9]}.")
+          else:
+              print(f"Serving {shown} is older than or diverged from {sha[:9]} "
+                    f"({', '.join(f'{c[:9]}={st}' for c, st in statuses.items())}): deploying.")
+          PY
+
       - name: Resolve ECR registry
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         id: ecr
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -179,7 +718,7 @@ jobs:
       # workflow stamps on every build.
       - name: Resolve rollback artifact
         id: rollback_artifact
-        if: ${{ inputs.rollback == 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (inputs.rollback == 'true') }}
         env:
           INPUT_SOURCE_IMAGE_OR_COMMIT: ${{ inputs.source_image_or_commit }}
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
@@ -190,12 +729,38 @@ jobs:
             echo "::error::rollback=true but source_image_or_commit is empty"
             exit 1
           fi
+          # Whatever is rolled out must stay mappable to a commit: the next
+          # deploy's "Skip if production already serves a newer commit" guard
+          # reads the serving image's full-sha tag (directly, or through its
+          # digest) and fails CLOSED when there is none, which would lock every
+          # later deploy. So a digest, or any tag that is not a full 40-hex
+          # sha (e.g. `staging`), is pinned BY DIGEST and must carry a full-sha
+          # tag; otherwise the rollback is refused here, before anything moves.
+          # `artifact` is what was RESOLVED (sha256:<digest>, or the full sha),
+          # in the two forms coord's declare parses (deploy_effects.rs
+          # parse_target: `sha256:` = image digest, else a commit); the declare
+          # step reports that, not the raw input.
+          pin_by_digest() {  # $1 = an ECR --image-ids selector
+            local json digest
+            json=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+              --image-ids "$1" --region "$AWS_REGION" --output json) \
+              || { echo "::error::rollback artifact $ART not found in ECR ($ECR_REPOSITORY)"; exit 1; }
+            digest=$(printf '%s' "$json" | python3 -c '
+          import json, re, sys
+          d = (json.load(sys.stdin).get("imageDetails") or [{}])[0]
+          tags = [t for t in d.get("imageTags") or [] if re.fullmatch("[0-9a-f]{40}", t)]
+          print(d.get("imageDigest", "") if tags else "")')
+            if [ -z "$digest" ]; then
+              echo "::error::rollback artifact $ART carries no full-sha tag, so after the rollback no deploy could tell which commit production serves. Roll back to an image this workflow built (a sha256:<digest> or full commit sha from a deploy run) instead."
+              exit 1
+            fi
+            echo "image=$REGISTRY/$ECR_REPOSITORY@$digest" >> "$GITHUB_OUTPUT"
+            echo "artifact=$digest" >> "$GITHUB_OUTPUT"
+            echo "Pinned rollback artifact $ART to digest $digest (it carries a full-sha tag)."
+          }
           case "$ART" in
             sha256:*)
-              aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
-                --image-ids imageDigest="$ART" --region "$AWS_REGION" >/dev/null \
-                || { echo "::error::rollback artifact $ART not found in ECR ($ECR_REPOSITORY)"; exit 1; }
-              echo "image=$REGISTRY/$ECR_REPOSITORY@$ART" >> "$GITHUB_OUTPUT"
+              pin_by_digest "imageDigest=$ART"
               ;;
             taskdef:*)
               # The dispatcher never sends this form today (rollback_target is
@@ -205,10 +770,15 @@ jobs:
               exit 1
               ;;
             *)
-              aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
-                --image-ids imageTag="$ART" --region "$AWS_REGION" >/dev/null \
-                || { echo "::error::rollback artifact tag $ART not found in ECR ($ECR_REPOSITORY)"; exit 1; }
-              echo "image=$REGISTRY/$ECR_REPOSITORY:$ART" >> "$GITHUB_OUTPUT"
+              if [[ $ART =~ ^[0-9a-f]{40}$ ]]; then
+                aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+                  --image-ids imageTag="$ART" --region "$AWS_REGION" >/dev/null \
+                  || { echo "::error::rollback artifact tag $ART not found in ECR ($ECR_REPOSITORY)"; exit 1; }
+                echo "image=$REGISTRY/$ECR_REPOSITORY:$ART" >> "$GITHUB_OUTPUT"
+                echo "artifact=$ART" >> "$GITHUB_OUTPUT"
+              else
+                pin_by_digest "imageTag=$ART"
+              fi
               ;;
           esac
           echo "Rolling back to: $ART"
@@ -219,7 +789,7 @@ jobs:
       # real upstream commit — the layer re-clones iff schemas moved.
       - name: Resolve qontinui-schemas main SHA
         id: schemas
-        if: ${{ inputs.rollback != 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (inputs.rollback != 'true') }}
         run: |
           SHA=$(git ls-remote https://github.com/qontinui/qontinui-schemas.git refs/heads/main | cut -f1)
           if [ -z "$SHA" ]; then echo "::error::could not resolve qontinui-schemas main SHA"; exit 1; fi
@@ -234,7 +804,7 @@ jobs:
       # First non-comment, non-blank line, matching the frontend script's read.
       - name: Resolve qontinui-cloud-control pin
         id: cloudcontrol
-        if: ${{ inputs.rollback != 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (inputs.rollback != 'true') }}
         run: |
           PIN_FILE=frontend/cloud-control.pin
           if [ ! -f "$PIN_FILE" ]; then
@@ -248,6 +818,7 @@ jobs:
           echo "qontinui-cloud-control pin = $SHA"
 
       - name: Login to ECR
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
@@ -259,7 +830,7 @@ jobs:
       # commit SHA (the task-def will pin this) and :staging (a convenience
       # pointer so :staging never lags the live service again).
       - name: Build backend image
-        if: ${{ inputs.rollback != 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (inputs.rollback != 'true') }}
         env:
           SCHEMAS_SHA: ${{ steps.schemas.outputs.sha }}
           CLOUD_CONTROL_SHA: ${{ steps.cloudcontrol.outputs.sha }}
@@ -277,7 +848,7 @@ jobs:
             backend
 
       - name: Push backend image
-        if: ${{ inputs.rollback != 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (inputs.rollback != 'true') }}
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
@@ -291,6 +862,7 @@ jobs:
       # class this captures. Must run before update-service so it reflects the
       # PRIOR image, not the one we are about to deploy.
       - name: Capture prior (last-known-good) task-def
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         id: prior
         run: |
           PRIOR_TD=$(aws ecs describe-services \
@@ -332,12 +904,13 @@ jobs:
       #      coord outage would block every web deploy.
       # The identity assertion after the rollout is what actually gates.
       - name: Declare deploy effect signature
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         id: declare
         continue-on-error: true
         env:
           INPUT_ROLLBACK: ${{ inputs.rollback }}
           INPUT_CORRELATION_ID: ${{ inputs.correlation_id }}
-          INPUT_SOURCE_IMAGE_OR_COMMIT: ${{ inputs.source_image_or_commit }}
+          ROLLBACK_ARTIFACT: ${{ steps.rollback_artifact.outputs.artifact }}
           INPUT_TARGET_ENV: ${{ inputs.target_environment || 'production' }}
         run: |
           set -uo pipefail
@@ -352,7 +925,9 @@ jobs:
           TARGET_ENV="production"
           CORR="${INPUT_CORRELATION_ID}"
           if [ "$ROLLBACK" = "true" ]; then
-            DECLARE_SHA="${INPUT_SOURCE_IMAGE_OR_COMMIT}"
+            # The artifact "Resolve rollback artifact" actually pinned (a
+            # `staging` input is declared as the digest it resolved to).
+            DECLARE_SHA="${ROLLBACK_ARTIFACT}"
             SOURCE="orchestrator"
             TARGET_ENV="${INPUT_TARGET_ENV}"
           fi
@@ -453,6 +1028,7 @@ jobs:
       # image (not :staging) so each deploy is a distinct, traceable revision
       # and circuit-breaker rollback has a clean prior target.
       - name: Register task-def revision + update service
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         id: deploy
         env:
           INPUT_ROLLBACK: ${{ inputs.rollback }}
@@ -514,6 +1090,7 @@ jobs:
           echo "Service update requested -> $NEW_TD"
 
       - name: Wait for service to stabilize
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         run: |
           aws ecs wait services-stable \
             --cluster "${ECS_CLUSTER}" \
@@ -801,6 +1378,7 @@ jobs:
       # absorb the post-deploy settle time; transient 5xx/000 on any probe are
       # retried, a settled wrong status is a hard (rollback-triggering) failure.
       - name: Post-deploy behavioral smoke
+        if: ${{ steps.supersede.outputs.skip != 'true' }}
         id: smoke
         run: |
           set -uo pipefail
@@ -966,7 +1544,7 @@ jobs:
       # rows) and fail-open: `continue-on-error` + `success()` so it only runs
       # on a healthy, fully-rolled deploy and a Cognito blip can never red it.
       - name: Backfill GitHub identities
-        if: success()
+        if: ${{ steps.supersede.outputs.skip != 'true' && (success()) }}
         continue-on-error: true
         env:
           NEW_TD: ${{ steps.deploy.outputs.new_td }}
@@ -1029,7 +1607,7 @@ jobs:
       # to absorb ALB draining; a transient 5xx/000 is retried too. Rollback
       # mode redeploys a prior image without building, so it is skipped there.
       - name: Assert served build sha
-        if: ${{ success() && inputs.rollback != 'true' }}
+        if: ${{ steps.supersede.outputs.skip != 'true' && (success() && inputs.rollback != 'true') }}
         run: |
           set -uo pipefail
           URL="${API_BASE}/meta/served-routes"
@@ -1131,3 +1709,21 @@ jobs:
             echo "::warning::coord observed the release as NOT the declared artifact (release=$REL_OUT): ${REL_DET//$'\n'/ } — this is coord's INDEPENDENT second signal; the authoritative gate is the 'Assert serving revision identity' step above."
           fi
           exit 0
+
+      # Persistent self-hosted host: drop the tags this job loaded so images do
+      # not pile up run after run, log out of ECR, and delete the per-job
+      # DOCKER_CONFIG. Build cache is left to the runner reaper.
+      # Best-effort; on ubuntu-latest the VM is discarded anyway.
+      - name: Remove this job's local images and docker credentials
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          if [ -n "${ECR_REGISTRY}" ]; then
+            docker image rm "${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
+            "${ECR_REGISTRY}/${ECR_REPOSITORY}:staging" >/dev/null 2>&1 || true
+            docker logout "${ECR_REGISTRY}" >/dev/null 2>&1 || true
+          fi
+          rm -rf "${RUNNER_TEMP}/docker"
+          echo "Removed this job's image tags and its docker config (build cache left for the runner reaper)."
