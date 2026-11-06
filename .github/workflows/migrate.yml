@@ -91,10 +91,22 @@ jobs:
     # + task start (~1) + reporting. A timeout CANCELS the job, and `failure()` is
     # false for a cancelled job, so a cap below that path would skip the
     # migration-failure page. 25 covers the worst path with headroom — the cap and
-    # the wait deadline must move TOGETHER.
+    # the wait deadline must move TOGETHER. And a THIRD place moves with them:
+    # deploy-web.yml's `schema-order` job allows a started migrate job exactly
+    # this cap + 2 min (MIGRATE_CAP_MIN in its script) before it fails the
+    # deploy, so raising this without raising that fails healthy deploys.
     timeout-minutes: 25
     name: Build, push, run migrator
-    runs-on: ubuntu-latest
+    # Release lane — same switch and same reasoning as deploy-web.yml's
+    # runs-on (plan
+    # 2026-11-06-devops-the-production-web-deploy-waits-fifo-behind-branch-ci-on-the-github-hosted-queue
+    # Phase 2): WEB_RELEASE_LANE=self-hosted runs this job on the trusted
+    # `qontinui-web-trusted` pool instead of the shared hosted queue, so the
+    # schema is not held behind branch CI either, and deploy-web.yml's
+    # schema-order wait is not left waiting on a queued migration. Default
+    # (unset) stays `ubuntu-latest`. Inline on purpose: a lane-picking job
+    # would itself queue on hosted. Fallback is manual (unset and re-run).
+    runs-on: ${{ fromJSON((vars.WEB_RELEASE_LANE == 'self-hosted' && github.ref == 'refs/heads/main') && '["self-hosted","qontinui-web-trusted"]' || '"ubuntu-latest"') }}
     environment: production
     permissions:
       contents: read
@@ -116,6 +128,67 @@ jobs:
           # `commit_lineage`. Shallow (default depth-1) would leave it null.
           fetch-depth: 0
           persist-credentials: false
+
+      # Same as deploy-web.yml: keep this job's ECR login out of the runner
+      # user's ~/.docker on a persistent host (per-job temp dir, deleted by the
+      # last step), with per-user CLI plugins (buildx) still found.
+      - name: Isolate docker credentials to this job
+        run: |
+          mkdir -p "$RUNNER_TEMP/docker"
+          python3 - "$RUNNER_TEMP/docker" <<'PY'
+          import hashlib, json, os, shutil, sys
+
+          out = sys.argv[1]
+          home = os.path.expanduser("~/.docker")
+          # Plugins (buildx) still resolve from the user's dir, read-only.
+          cfg = {"cliPluginsExtraDirs": [os.path.join(home, "cli-plugins")]}
+          try:
+              with open(os.path.join(home, "config.json")) as fh:
+                  ctx = json.load(fh).get("currentContext")
+          except (OSError, ValueError):
+              ctx = None
+          if ctx and ctx != "default":
+              # The user's currentContext (e.g. a rootless endpoint) resolves
+              # under DOCKER_CONFIG/contexts, so copy THAT context only — its
+              # meta/<sha256(name)> entry, never the whole store. Its tls/ entry
+              # holds client KEYS, so it is copied only when the context
+              # actually uses TLS (it has a tls entry); the per-job dir it lands
+              # in is deleted by this job's last step.
+              key = hashlib.sha256(ctx.encode()).hexdigest()
+              meta = os.path.join(home, "contexts", "meta", key)
+              if os.path.isdir(meta):
+                  for kind in ("meta", "tls"):
+                      src = os.path.join(home, "contexts", kind, key)
+                      if os.path.isdir(src):
+                          shutil.copytree(src, os.path.join(out, "contexts", kind, key))
+                  cfg["currentContext"] = ctx
+              else:
+                  # A currentContext with no meta entry would make every docker
+                  # call fail on a missing context; fall back to the default.
+                  print(f"::warning::docker currentContext {ctx!r} has no meta entry; using the default context")
+          with open(os.path.join(out, "config.json"), "w") as fh:
+              json.dump(cfg, fh)
+          PY
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
+
+      # Same preflight as deploy-web.yml: a self-hosted release host has none
+      # of ubuntu-latest's preinstalls, so name each tool the steps below use
+      # (gh drives the page/resolve-issue steps) before anything runs.
+      - name: Verify release-lane toolchain
+        run: |
+          set -uo pipefail
+          missing=""
+          for t in aws docker git gh curl python3; do
+            command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
+          done
+          docker buildx version >/dev/null 2>&1 || missing="$missing docker-buildx"
+          python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null \
+            || missing="$missing python3>=3.11"
+          if [ -n "$missing" ]; then
+            echo "::error::release host ${RUNNER_NAME:-?} lacks:${missing}. Provision them on the qontinui-web-trusted pool, or unset WEB_RELEASE_LANE to run on ubuntu-latest."
+            exit 1
+          fi
+          echo "toolchain OK on ${RUNNER_NAME:-?}: $(aws --version 2>&1 | cut -d' ' -f1), $(docker buildx version | cut -d' ' -f1-2), $(python3 --version)"
 
       # ── Φ_Schema authored-DAG snapshot ────────────────────────────────────
       # Phase 3 of the coord migration/drift/provenance plan, and now the SOLE
@@ -288,9 +361,14 @@ jobs:
       # The migrator Dockerfile uses qontinui-root as build context (one
       # level up from any sibling repo's checkout). Sibling-checkout pattern
       # mirrors backend-deploy-production.yml and the runner CI.
+      # The `rm -rf` matters on a persistent self-hosted runner: the parent of
+      # the workspace survives between jobs (actions/checkout cleans only the
+      # workspace itself), so the second run's clone would fail on an existing
+      # directory — or, worse, build from a stale one.
       - name: Check out qontinui-stack + qontinui-schemas siblings
         working-directory: ${{ github.workspace }}/..
         run: |
+          rm -rf qontinui-stack qontinui-schemas
           git clone --depth 1 https://github.com/qontinui/qontinui-stack.git
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
         shell: bash
@@ -763,3 +841,21 @@ jobs:
               || echo "::warning::could not create the migration-failure issue (best-effort)"
           fi
           exit 0
+
+      # Persistent self-hosted host: drop the tags this job loaded so migrator
+      # images do not pile up, log out of ECR, and delete the per-job
+      # DOCKER_CONFIG. Build cache is left to the runner reaper.
+      # Best-effort; on ubuntu-latest the VM is discarded anyway.
+      - name: Remove this job's local images and docker credentials
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ECR_URI: ${{ steps.ecr.outputs.uri }}
+        run: |
+          if [ -n "${ECR_REGISTRY}" ]; then
+            docker image rm "${ECR_URI}" "${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >/dev/null 2>&1 || true
+            docker logout "${ECR_REGISTRY}" >/dev/null 2>&1 || true
+          fi
+          rm -rf "${RUNNER_TEMP}/docker"
+          echo "Removed this job's image tags and its docker config (build cache left for the runner reaper)."
