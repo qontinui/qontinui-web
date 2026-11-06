@@ -3356,7 +3356,7 @@ describe("D4 review follow-ups", () => {
         unknown: 0,
         held: 0,
       })
-    ).toContain("eligible 1: coord updating");
+    ).toContain("eligible 1: coord will update");
   });
 });
 
