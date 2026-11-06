@@ -156,7 +156,10 @@ export type OcclusionTextDisclosure =
 export function readOcclusionTextDisclosure(
   payload: unknown
 ): OcclusionTextDisclosure {
-  const said = isRecord(payload) ? payload.occlusionText : undefined;
+  if (!isRecord(payload)) {
+    return { kind: "unknown", reason: "the sweep sent no report" };
+  }
+  const said = payload.occlusionText;
   if (said === "withheld") return { kind: "withheld" };
   if (said === "included") return { kind: "included" };
   return {

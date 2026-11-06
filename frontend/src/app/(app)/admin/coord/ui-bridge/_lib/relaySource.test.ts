@@ -179,7 +179,7 @@ describe("sourceIssueText", () => {
     expect(
       sourceIssueText({ kind: "not-carried" }, RUNNER_ROUTES.visibility, BUILD)
     ).toBe(
-      "This runner's relay does not carry the visibility sweep, so it answered HTTP 403. It is running build be39991d2fe9-1761210000000, which predates this route's relay entry (qontinui-runner d4c64ad06); a runner rebuilt from that commit or later serves it."
+      "This runner's relay does not carry the visibility sweep, so it answered HTTP 403. It is running build be39991d2fe9-1761210000000, which predates this route's relay entry (qontinui-runner d4c64ad06); a runner built from a commit that contains it serves it."
     );
   });
 

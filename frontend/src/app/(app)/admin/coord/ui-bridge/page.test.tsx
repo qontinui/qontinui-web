@@ -470,7 +470,7 @@ describe("a runner whose build predates only the sweep's relay entry", () => {
     const row = await screen.findByTestId("coord-ui-bridge-occlusion-unknown");
     await waitFor(() => expect(row).toHaveTextContent(PRE_SWEEP_BUILD_ID));
     expect(row).toHaveTextContent(
-      `This runner's relay does not carry the visibility sweep, so it answered HTTP 403. It is running build ${PRE_SWEEP_BUILD_ID}, which predates this route's relay entry (qontinui-runner d4c64ad06); a runner rebuilt from that commit or later serves it.`
+      `This runner's relay does not carry the visibility sweep, so it answered HTTP 403. It is running build ${PRE_SWEEP_BUILD_ID}, which predates this route's relay entry (qontinui-runner d4c64ad06); a runner built from a commit that contains it serves it.`
     );
     // …and not the old claim that the build predates the page's entries.
     expect(row).not.toHaveTextContent("predates the relay entries");

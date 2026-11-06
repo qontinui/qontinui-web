@@ -174,7 +174,13 @@ describe("readOcclusionTextDisclosure — only the runner's two words are answer
       reason:
         "this runner's reply does not say (an older runner build does not)",
     });
-    expect(readOcclusionTextDisclosure(undefined).kind).toBe("unknown");
+  });
+
+  it("reads a payload that is no report at all as UNKNOWN, saying so rather than blaming the build", () => {
+    expect(readOcclusionTextDisclosure(undefined)).toEqual({
+      kind: "unknown",
+      reason: "the sweep sent no report",
+    });
   });
 
   it.each([["Withheld"], [true], [null], [0], ["maybe"]])(

@@ -250,7 +250,7 @@ export function sourceIssueText(
     case "not-carried":
       switch (route.carriage) {
         case "dashboard":
-          return `This runner's relay does not carry ${subject}, so it answered HTTP 403. It is running ${buildLabel(build)}, which predates this route's relay entry (qontinui-runner ${route.since}); a runner rebuilt from that commit or later serves it.`;
+          return `This runner's relay does not carry ${subject}, so it answered HTTP 403. It is running ${buildLabel(build)}, which predates this route's relay entry (qontinui-runner ${route.since}); a runner built from a commit that contains it serves it.`;
         case "never":
           return `No runner's relay carries ${subject} yet, so this runner (${buildLabel(build)}) answered HTTP 403.`;
         case "always":
