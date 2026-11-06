@@ -12,8 +12,10 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { FleetResourceStrip } from "./FleetResourceStrip";
+import { commitEtaReading } from "./fleetResources";
 import { renderInPresentationMode } from "@/test/presentation";
 import type {
   ResourceSampleRow,
@@ -581,7 +583,9 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     const legend =
       screen.getByTestId("fleet-resource-floors").textContent ?? "";
     expect(legend).not.toMatch(/stopped electing/i);
-    expect(legend).toMatch(/a red row\s+means a guard on that lane is refusing work/);
+    expect(legend).toMatch(
+      /a red row\s+means a guard on that lane is refusing work/
+    );
   });
 
   it("presenting: no operator legend, and its one unknown said in plain words", () => {
@@ -1198,5 +1202,309 @@ describe("CPU temperature column — display only, never a fabricated zero", () 
       .getAllByTestId("fleet-resource-cpu-temp")
       .map((c) => c.textContent);
     expect(cells).toEqual(["55 C", "not measured on this host type"]);
+  });
+});
+
+describe("host commit attribution + time-to-floor — UNKNOWN, never blank", () => {
+  // Plan 2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out D4.
+  it("renders null top_consumers and null ETA as unknown on a warned host lane", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "warn",
+          top_consumers: null,
+          commit_floor_eta_secs: null,
+        }),
+      ],
+      history: [],
+    });
+    const consumer = screen.getByTestId("fleet-resource-top-consumer");
+    expect(consumer.textContent).toMatch(/unknown/);
+    expect(consumer.textContent).not.toMatch(/GB/);
+    expect(screen.getByTestId("fleet-resource-commit-eta").textContent).toBe(
+      "floor ETA: unknown"
+    );
+  });
+
+  it("renders absent fields (an older coord) as unknown too", () => {
+    renderStrip({ latest: [sample({ headroom: "breach" })], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-top-consumer").textContent
+    ).toMatch(/top consumer: unknown/);
+    expect(screen.getByTestId("fleet-resource-commit-eta").textContent).toBe(
+      "floor ETA: unknown"
+    );
+  });
+
+  it("names the top consumer, its GB, the unreadable count and the ETA when populated", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "breach",
+          commit_floor_eta_secs: 80,
+          commit_floor_eta_state: "falling",
+          top_consumers: {
+            entries: [
+              {
+                pid: 7,
+                name: "code.exe",
+                private_bytes: 3 * GIB,
+                started_at: null,
+              },
+              {
+                pid: 1234,
+                name: "node.exe",
+                private_bytes: 57 * GIB,
+                started_at: "2026-11-05T14:16:02Z",
+              },
+            ],
+            scanned: 812,
+            unreadable: 37,
+            attributed_private_bytes: 92 * GIB,
+          },
+        }),
+      ],
+      history: [],
+    });
+    const consumer = screen.getByTestId("fleet-resource-top-consumer");
+    expect(consumer.textContent).toMatch(/node\.exe/);
+    expect(consumer.textContent).toMatch(/57\.0 GB/);
+    expect(consumer.textContent).not.toMatch(/code\.exe/);
+    expect(
+      screen.getByTestId("fleet-resource-top-consumer-unreadable").textContent
+    ).toMatch(/37 unreadable/);
+    expect(screen.getByTestId("fleet-resource-commit-eta").textContent).toBe(
+      "floor in ~1m 20s"
+    );
+  });
+
+  it("hides the consumer while the lane is ok, and an ETA at or past 10 minutes", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: 600,
+          top_consumers: {
+            entries: [],
+            scanned: 10,
+            unreadable: 0,
+            attributed_private_bytes: 0,
+          },
+        }),
+      ],
+      history: [],
+    });
+    expect(screen.queryByTestId("fleet-resource-top-consumer")).toBeNull();
+    expect(screen.queryByTestId("fleet-resource-commit-eta")).toBeNull();
+  });
+
+  it("never renders on a non-host lane", () => {
+    renderStrip({
+      latest: [
+        sample({
+          lane: "wsl",
+          headroom: "breach",
+          swap_total_bytes: 8 * GIB,
+          swap_used_bytes: 6 * GIB,
+          pressure: { ratio: 0.75, basis: "swap" },
+        }),
+      ],
+      history: [],
+    });
+    expect(screen.queryByTestId("fleet-resource-top-consumer")).toBeNull();
+    expect(screen.queryByTestId("fleet-resource-commit-eta")).toBeNull();
+  });
+
+  it("presenting: states a position, not the image name", () => {
+    renderInPresentationMode(
+      <FleetResourceStrip
+        devices={[{ device_id: DEV, hostname: "msi" }]}
+        resources={{
+          data: {
+            latest: [
+              sample({
+                headroom: "warn",
+                commit_floor_eta_secs: 45,
+                commit_floor_eta_state: "falling",
+                top_consumers: {
+                  entries: [
+                    {
+                      pid: 1,
+                      name: "acme-client.exe",
+                      private_bytes: 20 * GIB,
+                      started_at: null,
+                    },
+                  ],
+                  scanned: 5,
+                  unreadable: 0,
+                  attributed_private_bytes: 20 * GIB,
+                },
+              }),
+            ],
+            history: [],
+          },
+          loading: false,
+          error: null,
+          fetchedAtMs: Date.now(),
+          refresh: vi.fn(),
+        }}
+      />
+    );
+    const consumer = screen.getByTestId("fleet-resource-top-consumer");
+    expect(consumer.textContent).toMatch(/process 1/);
+    expect(consumer.textContent).not.toMatch(/acme/);
+    expect(
+      screen.queryByTestId("fleet-resource-top-consumer-unreadable")
+    ).toBeNull();
+    expect(screen.getByTestId("fleet-resource-commit-eta").textContent).toBe(
+      "floor in ~45s"
+    );
+  });
+});
+
+describe("time-to-floor — coord's commit_floor_eta_state decides the line", () => {
+  // Pre-PR review: a null ETA used to read "floor ETA: unknown" on every
+  // healthy host. coord now says what the null means.
+  const etaLine = () => screen.queryByTestId("fleet-resource-commit-eta");
+
+  it("ok headroom, null ETA and not_falling: no unknown line", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: "not_falling",
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()).toBeNull();
+    expect(screen.queryByText(/floor ETA: unknown/)).toBeNull();
+  });
+
+  it("at_or_below_floor: says 'at floor', not unknown", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "breach",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: "at_or_below_floor",
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("at floor");
+  });
+
+  it("sparse: the unknown line, with the reason in its tooltip", async () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: "sparse",
+        }),
+      ],
+      history: [],
+    });
+    const line = etaLine();
+    expect(line?.textContent).toBe("floor ETA: unknown");
+    // The reason rides the tooltip, which mounts on hover.
+    await userEvent.hover(line!);
+    const tips = await screen.findAllByText(/too few recent samples/);
+    expect(tips.length).toBeGreaterThan(0);
+  });
+
+  it.each(["stale", "degraded"] as const)("%s: the unknown line", (state) => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: state,
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("floor ETA: unknown");
+  });
+
+  it("an absent state (an older coord) with a null ETA: unknown", () => {
+    renderStrip({
+      latest: [sample({ headroom: "ok", commit_floor_eta_secs: null })],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("floor ETA: unknown");
+  });
+
+  it("a null state: unknown", () => {
+    renderStrip({
+      latest: [
+        sample({
+          headroom: "ok",
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: null,
+        }),
+      ],
+      history: [],
+    });
+    expect(etaLine()?.textContent).toBe("floor ETA: unknown");
+  });
+});
+
+describe("commitEtaReading", () => {
+  it("maps every state", () => {
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: 120,
+        commit_floor_eta_state: "falling",
+      })
+    ).toEqual({ kind: "near", secs: 120, text: "floor in ~2m 0s" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: 900,
+        commit_floor_eta_state: "falling",
+      })
+    ).toEqual({ kind: "far", secs: 900 });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: "falling",
+      })
+    ).toEqual({ kind: "unknown", reason: "falling_without_eta" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: "not_falling",
+      })
+    ).toEqual({ kind: "not_falling" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: "at_or_below_floor",
+      })
+    ).toEqual({ kind: "at_floor" });
+    for (const state of ["sparse", "stale", "degraded"] as const) {
+      expect(
+        commitEtaReading({
+          commit_floor_eta_secs: null,
+          commit_floor_eta_state: state,
+        })
+      ).toEqual({ kind: "unknown", reason: state });
+    }
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        commit_floor_eta_state: null,
+      })
+    ).toEqual({ kind: "unknown", reason: "null_state" });
+    expect(commitEtaReading({})).toEqual({ kind: "unknown", reason: "absent" });
+    expect(
+      commitEtaReading({
+        commit_floor_eta_secs: null,
+        // A coord newer than this build.
+        commit_floor_eta_state: "accelerating" as never,
+      })
+    ).toEqual({ kind: "unknown", reason: "unrecognized" });
   });
 });
