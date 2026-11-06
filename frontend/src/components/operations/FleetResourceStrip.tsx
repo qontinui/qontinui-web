@@ -99,6 +99,8 @@ import { presentedFailureReason } from "./presentedFailure";
 import {
   buildMachineGroups,
   classifySaturation,
+  commitEtaReading,
+  commitEtaUnknownText,
   coupledWslHeadroomBytes,
   describeFloor,
   describePressureFloor,
@@ -127,8 +129,10 @@ import {
   safeRatio,
   SATURATION_REPORT_MEANING,
   saturationSourceLabel,
+  showsTopConsumer,
   STALE_AFTER_SECS,
   threadHeadroom,
+  topConsumerReading,
 } from "./fleetResources";
 import type {
   FleetDeviceRef,
@@ -822,6 +826,11 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
           )}
         </TooltipContent>
       </Tooltip>
+      {row.lane === "host" && row.freshness !== "unknown" && row.sample && (
+        <Aged freshness={row.freshness}>
+          <HostCommitAttribution sample={row.sample} headroom={headroom} />
+        </Aged>
+      )}
       {/* A floor reported inside a sample too old to trust is a config value
           that may since have changed, so an `unknown` row withholds it for
           the same reason it withholds the measurements — and a `stale` row
@@ -893,6 +902,124 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
           </Aged>
         </>
       )}
+    </span>
+  );
+}
+
+/**
+ * The host lane's commit attribution and time-to-floor (plan
+ * `2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out`
+ * D4).
+ *
+ * Two lines, both coord's readings and neither a verdict — the Admission badge
+ * above them stays the only thing that colours the row:
+ *
+ * - **top consumer** — `name` and private bytes of the largest commit holder,
+ *   shown only while the lane is `warn` or `breach`, with "N unreadable" beside
+ *   it whenever coord could not read every process: a top-5 that MISSED the
+ *   real consumer otherwise reads the same as one that named it.
+ * - **floor ETA** — coord's `commit_floor_eta_state` decides it. `falling`
+ *   shows the ETA when under `COMMIT_ETA_SHOW_BELOW_SECS`; `at_or_below_floor`
+ *   says "at floor"; `not_falling` shows nothing, the same as an ETA too far
+ *   out to matter. On 2026-11-05 this host read `ok` with 18 GB free two
+ *   minutes before 0.7 GB was free; the ETA is what says "and falling by 9 GB
+ *   a minute".
+ *
+ * A reading coord could not make (`sparse`, `stale`, `degraded`) or did not
+ * send (a null or absent state) renders the word `unknown` with the reason in
+ * its tooltip, never a blank: a blank consumer line reads as "nothing holds
+ * commit" and a blank ETA as "safe". Only coord's own `not_falling` earns the
+ * blank.
+ */
+function HostCommitAttribution({
+  sample,
+  headroom,
+}: {
+  sample: ResourceSampleRow;
+  headroom: Headroom;
+}) {
+  const { presenting } = usePresentationMode();
+  const eta = commitEtaReading(sample);
+  const consumer = topConsumerReading(sample);
+  const showConsumer = showsTopConsumer(headroom);
+
+  return (
+    <span className="inline-flex flex-col text-[10px] leading-tight">
+      {showConsumer && (
+        <span data-testid="fleet-resource-top-consumer">
+          {consumer.kind === "value" ? (
+            <>
+              <span className="text-muted-foreground">top: </span>
+              {/* An image name is chosen by whoever built the binary and can
+                  name a client, so presentation mode states the position
+                  (style guide §3.11, "Positions, not names"). */}
+              <span className="font-mono">
+                {presenting ? "process 1" : consumer.name}
+              </span>{" "}
+              <span className="tabular-nums">
+                {formatBytes(consumer.privateBytes)}
+              </span>
+            </>
+          ) : consumer.kind === "none_readable" ? (
+            <span className="text-muted-foreground">
+              top: no readable process
+            </span>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-muted-foreground underline decoration-dotted">
+                  top consumer: unknown
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[22rem] text-[11px]">
+                {consumer.reason === "absent"
+                  ? 'coord did not report top commit consumers — a coord that predates the field. Unknown is NOT "no consumers".'
+                  : consumer.reason === "null"
+                    ? 'coord has no top-consumer reading for this host — its runner predates the publisher, or the read failed. Unknown is NOT "no consumers".'
+                    : "coord reported top consumers in a shape this build cannot read — a coord newer than this page."}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {consumer.kind !== "unknown" && consumer.unreadable > 0 && (
+            <span
+              className="text-muted-foreground"
+              data-testid="fleet-resource-top-consumer-unreadable"
+            >
+              {" · "}
+              {consumer.unreadable} unreadable
+            </span>
+          )}
+        </span>
+      )}
+      {eta.kind === "near" ? (
+        <span
+          className={`tabular-nums ${TONE_NUMBER.warn}`}
+          data-testid="fleet-resource-commit-eta"
+        >
+          {eta.text}
+        </span>
+      ) : eta.kind === "at_floor" ? (
+        <span
+          className={TONE_NUMBER.warn}
+          data-testid="fleet-resource-commit-eta"
+        >
+          at floor
+        </span>
+      ) : eta.kind === "unknown" ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="text-muted-foreground underline decoration-dotted"
+              data-testid="fleet-resource-commit-eta"
+            >
+              floor ETA: unknown
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[22rem] text-[11px]">
+            {commitEtaUnknownText(eta.reason)} Unknown is NOT &quot;safe&quot;.
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
     </span>
   );
 }
@@ -1104,8 +1231,8 @@ function FloorsLegend({
         data-testid="fleet-resource-floors-missing"
       >
         {missingFloors} lane{missingFloors === 1 ? " has" : "s have"} a limit
-        that was not reported, so room for more work there reads unknown —
-        which is not healthy.
+        that was not reported, so room for more work there reads unknown — which
+        is not healthy.
       </p>
     ) : null;
   }
@@ -1184,9 +1311,9 @@ function FloorsLegend({
         and a recoverable delay never becomes a failed build. Both are shown;
         neither is inferred. The row&apos;s colour is coord&apos;s{" "}
         <em>admission verdict</em> against these floors — not a band over the
-        pressure ratio. This page keeps no threshold of its own: a red row
-        means a guard on that lane is refusing work. Memory and disk are kept
-        apart because memory frees on its own and disk does not.
+        pressure ratio. This page keeps no threshold of its own: a red row means
+        a guard on that lane is refusing work. Memory and disk are kept apart
+        because memory frees on its own and disk does not.
       </p>
       {missingFloors > 0 && (
         <p
