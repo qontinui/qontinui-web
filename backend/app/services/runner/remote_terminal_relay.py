@@ -121,7 +121,10 @@ terminal (``remote_create_close_attached``,
 grant, and ``remote_terminal_ended`` carries ``session_id: null``. Its claim is
 ``remote_attach:create_close_claim:{grant_jti}``, not the create's own claim key,
 which by design stays set until the grant expires; the close claim is released
-when the round trip settles, so a close answered UNKNOWN may be retried.
+when the round trip settles, so a close answered UNKNOWN may be retried. Its
+record is likewise ``remote_attach:create_close_grant:{grant_jti}``, never the
+create's ``remote_attach:grant:{grant_jti}``, so a close settling cannot delete
+the record of a create in flight on the same jti.
 
 Forward direction is replica-local
 ----------------------------------
@@ -189,6 +192,7 @@ from app.services.runner.remote_relay.registry import (
     RELEASE_TERMINAL_SCRIPT,
     RelayRegistry,
     claim_key,
+    create_close_grant_key,
     grant_key,
     terminal_key,
 )
@@ -244,6 +248,7 @@ __all__ = [
     "_prefix_is_disjoint_from_relay_codes",
     "claim_key",
     "coord_jwks_client",
+    "create_close_grant_key",
     "create_target_device_id",
     "get_relay",
     "grant_key",
