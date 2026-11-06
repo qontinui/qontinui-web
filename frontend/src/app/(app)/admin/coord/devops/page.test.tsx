@@ -662,7 +662,19 @@ describe("/admin/coord/devops", () => {
       .filter(([, v]) => typeof v === "number")
       .map(([k]) => k)
       .sort();
-    expect(numeric).toEqual(["EXPIRED_AFTER_SECS", "STALE_AFTER_SECS"]);
+    //
+    // `COMMIT_ETA_SHOW_BELOW_SECS` is a DISPLAY bound, not an admission
+    // threshold: it decides only when coord's `commit_floor_eta_secs` is worth
+    // a line on the host row (plan
+    // 2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out
+    // D4, "under 10 minutes"). No guard acts on the ETA — coord keeps it out
+    // of `headroom` and out of dispatch — so there is no coord number for
+    // this one to disagree with.
+    expect(numeric).toEqual([
+      "COMMIT_ETA_SHOW_BELOW_SECS",
+      "EXPIRED_AFTER_SECS",
+      "STALE_AFTER_SECS",
+    ]);
   });
 
   it("issues exactly two reads: fleet health, and one resource-samples poll", async () => {
