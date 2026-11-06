@@ -56,7 +56,7 @@ from tests._alembic_harness import (
 # equal the revision's own `down_revision` — the first test below enforces
 # it. If the alembic head moves before landing, re-point BOTH together.
 _REVISION_ID = "topcons_01"
-_PARENT_REVISION_ID = "pr_events_mergeability_head_idx_01"
+_PARENT_REVISION_ID = "capmodel_01"
 _LOCK_BOUND = "SET LOCAL lock_timeout = '3s'"
 _REVISION_FILENAME = "topcons_01_top_consumers_on_resource_sample.py"
 _PLAN_STEM = (

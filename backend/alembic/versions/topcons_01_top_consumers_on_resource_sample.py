@@ -1,7 +1,7 @@
 """coord.device_resource_samples.top_consumers jsonb column
 
 Revision ID: topcons_01
-Revises: pr_events_mergeability_head_idx_01
+Revises: capmodel_01
 Create Date: 2026-11-05
 
 Phase 4 of plan
@@ -106,7 +106,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "topcons_01"
-down_revision: str | Sequence[str] | None = "pr_events_mergeability_head_idx_01"
+down_revision: str | Sequence[str] | None = "capmodel_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
