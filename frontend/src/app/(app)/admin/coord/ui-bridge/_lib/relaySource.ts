@@ -12,8 +12,9 @@
  * - **not carried** — the runner refused the route over the relay (its 403,
  *   `RUNNER_NEEDS_LOCAL`). What that means depends on the route's
  *   {@link RelayCarriage}, and the text names the runner BUILD it came from,
- *   read from the runner's own `/health`, so an operator can tell "rebuild this
- *   runner" from "no build serves this yet";
+ *   read from the runner's own `/health` — and, for a `dashboard` route, the
+ *   runner commit that added its relay entry (`since`) — so an operator can
+ *   tell "rebuild this runner" from "no build serves this yet";
  * - **withheld** — the runner answered with its egress refusal: the project's
  *   switch for that flow is off, so the answer was never sent;
  * - **failed** — anything else: the relay, the network, or the runner's own
@@ -45,8 +46,8 @@
  * A **withheld** read's sentence is the runner's egress refusal message, a
  * compile-time constant per flow (qontinui-runner `egress.rs`
  * `refusal_message`, e.g. "Terminal streaming is off for this project"), and
- * a **not carried** one names only the route and the runner's build; neither
- * quotes.
+ * a **not carried** one names only the route, the runner's build and the
+ * route's own `since` commit; neither quotes.
  */
 
 import { RUNNER_NEEDS_LOCAL } from "@/lib/runner/api-client";
@@ -249,7 +250,7 @@ export function sourceIssueText(
     case "not-carried":
       switch (route.carriage) {
         case "dashboard":
-          return `This runner's relay does not carry ${subject}, so it answered HTTP 403. It is running ${buildLabel(build)}, which predates the relay entries this page reads; a runner rebuilt from a newer build serves them.`;
+          return `This runner's relay does not carry ${subject}, so it answered HTTP 403. It is running ${buildLabel(build)}, which predates this route's relay entry (qontinui-runner ${route.since}); a runner rebuilt from that commit or later serves it.`;
         case "never":
           return `No runner's relay carries ${subject} yet, so this runner (${buildLabel(build)}) answered HTTP 403.`;
         case "always":

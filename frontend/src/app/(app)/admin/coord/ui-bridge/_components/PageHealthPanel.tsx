@@ -8,18 +8,15 @@
  * health carries no occlusion verdict, so a healthy page never stands in for
  * "nothing is covered".
  *
- * The occlusion row is UNKNOWN on every runner today. Its only source is the
- * visibility sweep, no relay carries the sweep yet, and so the page does not
- * ask for it: the row says the sweep is not available over the relay, in plain
- * words and with its provenance (coord finding
- * `99796499-8e46-4d69-94ba-a2ac9fe3ea22`; plan
- * `2026-10-23-console-presentation-spaces` Phase 6, amendment 2026-10-24).
- * Page health's body is not consulted for it, so nothing page health returns
- * can make the row clear. Once a relay carries the sweep the row stays honest:
- * a "clear" that observed no occlusion data is UNKNOWN (served policy
- * `ux-priorities`
- * `the-runner-serves-the-occlusion-sweep-and-it-is-currently-vacuous`), and a
- * runner whose relay refuses the sweep says so with its build.
+ * The occlusion row comes from the visibility sweep, which runs with page
+ * health; page health's body is not consulted for it, so nothing page health
+ * returns can make the row clear. The row stays honest: a "clear" that
+ * observed no occlusion data is UNKNOWN (served policy `ux-priorities`
+ * `the-runner-serves-the-occlusion-sweep-and-it-is-currently-vacuous`), a
+ * runner whose relay refuses the sweep says so with its build and the commit
+ * that relays it, and a project whose egress is off says the sweep was
+ * withheld. Over the relay the sweep names no covered element, and the line
+ * beside the row says so (`occlusionText`, qontinui-runner `d4c64ad06`).
  *
  * The run button is navigation-only: it changes no setting, session, file or
  * app state. To answer, the runner re-reads its window's elements, which
@@ -42,7 +39,9 @@ import {
   OCCLUSION_LABEL,
   OCCLUSION_PALETTE,
   occlusionSummary,
+  occlusionTextDisclosureText,
   type OcclusionReading,
+  type OcclusionTextDisclosure,
 } from "../_lib/occlusionStatus";
 import {
   PAGE_HEALTH_ATTENTION_BY_KIND,
@@ -243,6 +242,39 @@ function OcclusionRow({ reading }: { reading: OcclusionReading }) {
   );
 }
 
+/**
+ * Whether the sweep's entries name what they cover, stated beside the row. The
+ * two answers the runner can give are calm facts about the report; a
+ * disclosure it did not make is UNKNOWN, and so is its time — no time came
+ * with a claim nobody made.
+ */
+function OcclusionTextLine({
+  disclosure,
+  asOf,
+}: {
+  disclosure: OcclusionTextDisclosure;
+  asOf: number | null;
+}) {
+  const text = occlusionTextDisclosureText(disclosure);
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2"
+      data-testid="coord-ui-bridge-occlusion-text"
+      data-occlusion-text={disclosure.kind}
+    >
+      {disclosure.kind === "unknown" ? (
+        <SourceUnknown text={text} className="text-xs" />
+      ) : (
+        <span className="text-xs text-muted-foreground">{text}</span>
+      )}
+      <Provenance
+        source={OCCLUSION_SOURCE}
+        asOf={disclosure.kind === "unknown" ? null : asOf}
+      />
+    </div>
+  );
+}
+
 export function PageHealthPanel({
   pageHealth,
   occlusion,
@@ -430,6 +462,10 @@ export function PageHealthPanel({
                 )}
                 <OcclusionRow reading={occlusion.value} />
                 <Provenance source={OCCLUSION_SOURCE} asOf={occlusion.asOf} />
+                <OcclusionTextLine
+                  disclosure={occlusion.value.textDisclosure}
+                  asOf={occlusion.asOf}
+                />
               </>
             ) : null}
           </section>

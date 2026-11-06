@@ -1,7 +1,7 @@
 /**
  * One classification for every failed runner read, and the labelled UNKNOWN
- * it renders — above all, that a 403 from a runner whose build predates the
- * dashboard's relay entries NAMES that build.
+ * it renders — above all, that a 403 from a runner whose build predates a
+ * route's relay entry NAMES that build and the commit the route needs.
  */
 
 import { describe, expect, it } from "vitest";
@@ -169,22 +169,27 @@ describe("sourceIssueText", () => {
     );
     expect(text).toContain("HTTP 403");
     expect(text).toContain("build be39991d2fe9-1761210000000");
-    expect(text).toContain("predates the relay entries this page reads");
+    expect(text).toContain(
+      "predates this route's relay entry (qontinui-runner f11a5f869)"
+    );
     expect(text).not.toMatch(/^UNKNOWN/);
   });
 
+  it("names the sweep's own relay commit for a build that predates only the sweep", () => {
+    expect(
+      sourceIssueText({ kind: "not-carried" }, RUNNER_ROUTES.visibility, BUILD)
+    ).toBe(
+      "This runner's relay does not carry the visibility sweep, so it answered HTTP 403. It is running build be39991d2fe9-1761210000000, which predates this route's relay entry (qontinui-runner d4c64ad06); a runner rebuilt from that commit or later serves it."
+    );
+  });
+
   it("says no build carries a route that none does — not 'rebuild this one'", () => {
-    // The runner's own app list is the route the dashboard still asks for
-    // that no relay carries; the sweep is not asked for (`isRelayed`).
+    // The runner's own app list is the one route the dashboard asks for
+    // that no relay carries.
     expect(
       sourceIssueText({ kind: "not-carried" }, RUNNER_ROUTES.apps, BUILD)
     ).toBe(
       "No runner's relay carries this runner's own app list yet, so this runner (build be39991d2fe9-1761210000000) answered HTTP 403."
-    );
-    expect(
-      sourceIssueText({ kind: "not-carried" }, RUNNER_ROUTES.visibility, BUILD)
-    ).toBe(
-      "No runner's relay carries the visibility sweep yet, so this runner (build be39991d2fe9-1761210000000) answered HTTP 403."
     );
   });
 
