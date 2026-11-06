@@ -40,9 +40,11 @@ exactly as it is.
   coord's batched retention prune deletes by.
 * ``(dependency, resource, reset_at)`` is UNIQUE
   (``outbound_budget_windows_dependency_resource_reset_uq``) and is the
-  observer's ``ON CONFLICT`` target. ``resource`` is spelled exactly as in the
-  snapshot table (``<bucket>:<installation_id>``, e.g. ``core:134903706``), so a
-  tenant-scoped reader filters both tables by the same parse.
+  observer's ``ON CONFLICT`` target. ``resource`` is the same key coord's
+  observer writes to ``coord.outbound_budget_observations.resource``
+  (``format!("{resource}:{installation_id}")`` in
+  ``outbound_budget_observer::derive_budget_row``, e.g. ``core:134903706``), so
+  a tenant-scoped reader filters both tables by the same parse.
 * ``reset_at`` is NOT NULL: a reading with no known window is not written here
   (its window cannot be named).
 * ``min_remaining`` / ``last_remaining`` are NOT NULL: a reading with no
@@ -54,18 +56,22 @@ exactly as it is.
 
 ## Retention
 
-coord sweeps it on ``last_observed_at`` (default 90 days,
-``table_retention.rs``), so ``last_observed_at`` is indexed alone for that
-sweep. The same index serves the read door's "windows observed since T" scan.
+The paired qontinui-coord change (not merged when this revision was
+authored) registers a ``table_retention.rs`` sweep on ``last_observed_at``,
+default 90 days, so ``last_observed_at`` is indexed alone for it. The same
+index serves the read door's "observed since T" scan. Until that change
+deploys nothing writes the table, so nothing needs sweeping.
 
 ## Two-repo ordering: this schema half lands FIRST
 
 alembic in qontinui-web is the SOLE author of ``coord.*`` schema (served policy
-``production-and-cost`` ``alembic-sole-authorship``). The coord writer is
-table-tolerant: it checks ``to_regclass('coord.outbound_budget_windows')``
-and skips the history write, with one warning, while the table is absent. The
-read door reports ``reached_zero: null`` (UNKNOWN) with the reason, never a
-"never dry" verdict.
+``production-and-cost`` ``alembic-sole-authorship``). The paired coord
+change is built to be table-tolerant: its writer checks
+``to_regclass('coord.outbound_budget_windows')`` and skips the history write,
+with one warning, while the table is absent, and its read door
+(``coord_query_outbound_budget`` ``history_hours``) reports
+``reached_zero: null`` (UNKNOWN) with the reason, never a "never dry"
+verdict.
 
 ## Safety
 
@@ -132,7 +138,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON TABLE coord.outbound_budget_windows IS
-            'Per-window rollup of coord''s outbound budget readings: one row per (dependency, resource, reset_at), folded by the leader-gated outbound_budget_observer on every 30 s cycle. coord.outbound_budget_observations keeps only the latest reading per bucket; this is the history that answers whether remaining reached 0 in a window. Kept 90 days on last_observed_at by a coord sweep. Plan 2026-10-31-merge-train-checkpoint-3-misses-with-no-owning-plan.'
+            'Per-window rollup of coord''s outbound budget readings: one row per (dependency, resource, reset_at), written by coord''s outbound_budget_observer, which folds each reading of a window into its row. coord.outbound_budget_observations keeps only the latest reading per bucket; this is the history that answers whether remaining reached 0 in a window. Plan 2026-10-31-merge-train-checkpoint-3-misses-with-no-owning-plan.'
         """
     )
     op.execute(
@@ -156,7 +162,7 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.outbound_budget_windows.resource IS
-            'Bucket key as in coord.outbound_budget_observations.resource: <bucket>:<installation_id>, e.g. core:134903706.'
+            'Bucket key, the same string coord writes to coord.outbound_budget_observations.resource: <resource>:<installation_id>, e.g. core:134903706.'
         """
     )
 
