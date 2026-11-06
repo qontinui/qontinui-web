@@ -132,10 +132,13 @@ jobs:
     # retries) and the rollback path adds another stabilize wait. 45 covers both;
     # a tighter cap would cut off the 'release is not live' verdict. With
     # cancel-in-progress: false, an unbounded hang would also block every queued deploy.
-    # +15 for the schema-order wait below (900 s deadline): the cap and that
-    # deadline must move TOGETHER, or a slow migration turns the wait's
-    # legible "migration not applied" verdict into a bare job timeout.
-    timeout-minutes: 60
+    # Raised 45 -> 120 for the schema-order wait below. Budget: up to 65 min
+    # for this commit's migrate job to leave the queue, then 900 s once it has
+    # started, then a 40 min POST_WAIT_RESERVE for the rollout/rollback path
+    # the old 45-min cap covered. JOB_CAP_MIN in that step's script MUST equal
+    # this number: the wait derives its own deadlines from it so it fails
+    # with a legible verdict before this cap kills the job.
+    timeout-minutes: 120
     name: Build, push, deploy web backend
     # Release lane (plan
     # 2026-11-06-devops-the-production-web-deploy-waits-fifo-behind-branch-ci-on-the-github-hosted-queue
@@ -167,6 +170,11 @@ jobs:
       actions: read
 
     steps:
+      # The schema-order wait sizes its deadlines against this job's
+      # timeout-minutes, so it needs the job's own start time.
+      - name: Record job start
+        run: echo "JOB_STARTED_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Check out qontinui-web
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -197,9 +205,9 @@ jobs:
       # this repo's `production` environment claim). The role is least-privilege
       # for exactly what this job calls: ECR push to qontinui-web-backend, the
       # qontinui-staging-web task-def/service/one-off task, the web log group,
-      # and the two eu-central-1 spec-ci SSM params. 7200s is load-bearing:
-      # the job's timeout-minutes (60, including the schema-order wait) reaches
-      # the 1-hour default, so a shorter credential could expire mid-rollback.
+      # and the two eu-central-1 spec-ci SSM params. 7200s covers build +
+      # rollout; the job cap (120 min) exceeds it only through the schema-order
+      # wait, after which "Refresh AWS credentials" re-assumes the role.
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
@@ -340,11 +348,21 @@ jobs:
       #
       # So, on a push whose diff touches a path that triggers migrate.yml, this
       # step holds the rollout until migrate.yml's run for the SAME head_sha
-      # concludes `success`, bounded by 900 s (the deadline migrate.yml's own
-      # migrator wait uses). It FAILS the job — before update-service, so the
-      # prior revision keeps serving — on a migrate failure, on the deadline,
-      # and when the run cannot be read. Placed after the image push so the
-      # build overlaps the migration rather than queueing behind it.
+      # concludes `success`. Two clocks, because QUEUE time is not the
+      # migration's fault — on the hosted lane it is the very starvation this
+      # plan exists for:
+      #   * while the migrate job is QUEUED (or no run exists yet), keep
+      #     waiting, bounded only by this job's own cap: fail with "migrate
+      #     still queued after N min" once a migrate that started then could no
+      #     longer get its full 900 s plus the rollout reserve;
+      #   * once the migrate JOB has started (its jobs-API `started_at`, which
+      #     is runner pickup — the run's `run_started_at` is only creation),
+      #     900 s from that moment (the deadline migrate.yml's own migrator
+      #     wait uses).
+      # It FAILS the job — before update-service, so the prior revision keeps
+      # serving — on a migrate failure, on either clock, and when the run cannot
+      # be read. Placed after the image push so the build overlaps the
+      # migration rather than queueing behind it.
       #
       # Observable: the migrate.yml workflow run's conclusion, read from the
       # GitHub API. That job is green iff its migrator task exited 0 (every
@@ -365,8 +383,10 @@ jobs:
       # MIGRATE_PATHS mirrors migrate.yml `on.push.paths`. If they drift, the
       # run lookup below still catches a migrate run the diff did not predict.
       - name: Wait for this commit's migration (schema before image)
+        id: schema_order
         if: ${{ github.event_name == 'push' }}
-        timeout-minutes: 17
+        # Backstop only: the script ends itself by JOB_CAP_MIN - reserve.
+        timeout-minutes: 85
         env:
           GH_TOKEN: ${{ github.token }}
           PUSH_BEFORE: ${{ github.event.before }}
@@ -374,7 +394,11 @@ jobs:
           python3 - <<'PY'
           import http.client, json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 
-          DEADLINE = 900
+          from datetime import datetime
+
+          JOB_CAP_MIN = 120            # MUST equal this job's timeout-minutes
+          POST_WAIT_RESERVE = 40 * 60  # rollout + identity + smoke + rollback
+          STARTED_DEADLINE = 900       # once the migrate job has started
           INTERVAL = 15
           MIGRATE_PREFIXES = ("backend/alembic/",)
           MIGRATE_FILES = ("backend/pyproject.toml", "backend/poetry.lock")
@@ -384,6 +408,14 @@ jobs:
           sha = os.environ["GITHUB_SHA"]
           before = os.environ.get("PUSH_BEFORE", "")
           token = os.environ["GH_TOKEN"]
+          try:
+              job_start = int(os.environ["JOB_STARTED_EPOCH"])
+          except (KeyError, ValueError):
+              print("::warning::JOB_STARTED_EPOCH unset; sizing the wait from now")
+              job_start = int(time.time())
+          wait_end = job_start + JOB_CAP_MIN * 60 - POST_WAIT_RESERVE
+          # A migrate that leaves the queue by queue_end still gets its full 900 s.
+          queue_end = wait_end - STARTED_DEADLINE
 
 
           def fail(msg):
@@ -433,6 +465,19 @@ jobs:
               return runs[0] if runs else None
 
 
+          def iso(ts):
+              return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+
+
+          def job_started_at(run):
+              """Earliest runner-pickup time of the run's latest-attempt jobs; None while all are queued."""
+              jobs = get(f"/repos/{repo}/actions/runs/{run['id']}/jobs",
+                         filter="latest", per_page=50).get("jobs") or []
+              started = [iso(j["started_at"]) for j in jobs
+                         if j.get("status") in ("in_progress", "completed") and j.get("started_at")]
+              return min(started) if started else None
+
+
           def descendant_success(after):
               """A later successful main migrate run whose commit contains ours."""
               runs = get(f"/repos/{repo}/actions/workflows/migrate.yml/runs",
@@ -462,7 +507,9 @@ jobs:
           else:
               print(f"Push touches migrate.yml paths ({len(hits)}): {', '.join(hits[:10])}")
 
-          start = time.monotonic()
+          t0 = time.time()
+          started = None  # migrate job's runner-pickup time, once observed
+          queued_since = t0  # the migrate run's creation, once a run is seen
           last = "no migrate.yml push run exists for this commit yet"
           while True:
               try:
@@ -471,30 +518,56 @@ jobs:
                       last = "no migrate.yml push run exists for this commit yet"
                   else:
                       url, status, concl = run["html_url"], run.get("status"), run.get("conclusion")
+                      if run.get("created_at"):
+                          queued_since = min(queued_since, iso(run["created_at"]))
                       if status == "completed" and concl == "success":
-                          print(f"Migration applied: {url} concluded success after {int(time.monotonic() - start)}s of waiting. Rolling out.")
+                          print(f"Migration applied: {url} concluded success after {int(time.time() - t0)}s of waiting. Rolling out.")
                           sys.exit(0)
                       if status == "completed" and concl == "cancelled":
                           succ = descendant_success(run.get("created_at") or "")
                           if succ:
                               print(f"This commit's migrate run {url} was cancelled, but {succ['html_url']} (at {succ['head_sha'][:9]}, which contains {sha[:9]}) succeeded. Rolling out.")
                               sys.exit(0)
+                          # The successor that would carry our chain may itself be
+                          # queued, so this is a queue wait again.
+                          started = None
                           last = f"migrate run {url} was cancelled and no later successful main run contains {sha[:9]} yet"
                       elif status == "completed":
                           fail(f"migrate run {url} concluded '{concl}': the schema for {sha[:9]} is NOT confirmed applied, so this image is NOT rolled out (the prior revision keeps serving). Fix forward and re-run migrate.yml, then re-run this job.")
-                      elif status in ("queued", "pending", "waiting", "requested"):
-                          last = (f"migrate run {url} is still '{status}' (never started: a queue or concurrency wait, "
-                                  "NOT a migration failure)")
                       else:
-                          last = f"migrate run {url} is still '{status}'"
+                          started = job_started_at(run) or started
+                          if started is None:
+                              last = (f"migrate run {url} is '{status}' and its job has not started "
+                                      "(a queue or concurrency wait, NOT a migration failure)")
+                          else:
+                              last = (f"migrate run {url} is '{status}'; its job started "
+                                      f"{int(time.time() - started)}s ago")
               except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError, KeyError) as e:
                   last = f"the GitHub API was unreadable ({e})"
-              elapsed = time.monotonic() - start
-              if elapsed >= DEADLINE:
-                  fail(f"schema-order wait timed out after {DEADLINE}s: {last}. This commit's image is NOT rolled out (the prior revision keeps serving). Re-run this job once migrate.yml has succeeded for {sha[:9]}.")
-              print(f"  {int(elapsed)}s: {last}; waiting")
-              time.sleep(min(INTERVAL, DEADLINE - elapsed))
+              now = time.time()
+              if started is not None:
+                  deadline = min(started + STARTED_DEADLINE, wait_end)
+                  if now >= deadline:
+                      fail(f"migrate job started {int(now - started)}s ago and has not succeeded within {STARTED_DEADLINE}s: {last}. This commit's image is NOT rolled out (the prior revision keeps serving). Re-run this job once migrate.yml has succeeded for {sha[:9]}.")
+              else:
+                  deadline = queue_end
+                  if now >= deadline:
+                      fail(f"migrate still queued after {int((now - queued_since) / 60)} min (the deploy job's {JOB_CAP_MIN}-min cap leaves no room for a {STARTED_DEADLINE}s migration plus the rollout): {last}. This commit's image is NOT rolled out (the prior revision keeps serving). Re-run this job once migrate.yml has succeeded for {sha[:9]}, or route both workflows to the release lane (WEB_RELEASE_LANE=self-hosted).")
+              print(f"  {int(now - t0)}s: {last}; waiting (deadline in {int(deadline - now)}s)")
+              time.sleep(max(1, min(INTERVAL, deadline - now)))
           PY
+
+      # The schema-order wait can outlast the 7200 s session assumed above
+      # (job cap 120 min), so re-assume the same role for the rollout and any
+      # rollback. Same OIDC subject, same role; only the session is new.
+      - name: Refresh AWS credentials
+        if: ${{ steps.schema_order.outcome == 'success' }}
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: arn:aws:iam::047719635665:role/qontinui-web-deploy
+          role-session-name: deploy-web-${{ github.run_id }}-post-wait
+          role-duration-seconds: 7200
+          aws-region: ${{ env.AWS_REGION }}
 
       # Record the currently-live task-def BEFORE we point the service at the
       # new revision. This is the deterministic last-known-good rollback target
