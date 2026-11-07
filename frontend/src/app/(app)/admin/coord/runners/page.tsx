@@ -61,6 +61,7 @@ import { DeviceWorktreeCapControl } from "@/components/operations/DeviceWorktree
 import {
   DevicePicker,
   findRosterDevice,
+  pickableDevices,
 } from "@/components/operations/DevicePicker";
 import {
   resolveDeviceDrain,
@@ -507,8 +508,10 @@ export default function CoordRunnersPage() {
   const rosterNotice = fleet.error
     ? `Could not load the device roster — ${fleet.error}. A device id in the link still works.`
     : fleet.data && devices.length === 0
-      ? "Coord reported 0 live devices for this tenant. A device is listed only while it is bound to this tenant and heartbeating."
-      : null;
+      ? "Coord reported 0 devices for this tenant. A device is listed only while it is bound to this tenant."
+      : fleet.data && pickableDevices(devices).shown.length === 0
+        ? "No runner machine to offer: every device coord reported is a CI runner registration or abandoned. A device id in the link still works."
+        : null;
 
   const sample = readiness.read.kind === "fresh" ? readiness.read.sample : null;
 

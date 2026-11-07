@@ -36,7 +36,10 @@ import {
   type ClaudeAccountRow,
   type ClaudeAccountsPayload,
 } from "@/lib/api/operations/agents";
-import { findRosterDevice } from "@/components/operations/DevicePicker";
+import {
+  findRosterDevice,
+  pickableDevices,
+} from "@/components/operations/DevicePicker";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   MAX_CAUSE_LENGTH,
@@ -167,6 +170,17 @@ export function useSpawnRoster(open: boolean, device: string) {
               "listed only if it is bound to this tenant and its last heartbeat " +
               "is recent, so a healthy machine can still be absent. Enter the " +
               "device id directly if you know it.",
+          });
+          setManualDevice(true);
+        } else if (pickableDevices(roster).shown.length === 0) {
+          // Rows came back, but every one is a CI runner registration or
+          // abandoned, so the picker would open on nothing.
+          setDevicesError({
+            kind: "empty",
+            message:
+              "No runner machine to offer: every device coord reported is a " +
+              "CI runner registration or abandoned. Enter the device id " +
+              "directly if you know it.",
           });
           setManualDevice(true);
         }
