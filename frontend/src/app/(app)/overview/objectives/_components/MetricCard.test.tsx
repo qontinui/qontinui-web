@@ -145,6 +145,17 @@ describe("a measure whose definition can't be read", () => {
     checkpoint_results: [
       checkpoint({ report: report({ rows: [row] }) }),
       checkpoint({ id: "checkpoint-2", report: report({ rows: [] }) }),
+      // A report whose rows the results read could not vouch for: its
+      // status line leads with the due date.
+      checkpoint({
+        id: "checkpoint-3",
+        status: "not_fully_read",
+        status_reason: "the checkpoint results page came back full",
+        report: report({
+          finding_id: "00000000-0000-4000-8000-000000000003",
+          shape: "rows_unread",
+        }),
+      }),
     ],
   });
 
@@ -168,6 +179,30 @@ describe("a measure whose definition can't be read", () => {
     expect(
       screen.getByText(/whether the document lists it is unknown/)
     ).toBeInTheDocument();
+    // Nor are its checkpoints' due dates, the checkpoints themselves, or the
+    // results list a report is recorded in (D1): all the definition's, and
+    // none of it was read.
+    expect(screen.queryByText(/no due date declared/i)).toBeNull();
+    expect(
+      screen.queryByText(/named by a report, not by the document/)
+    ).toBeNull();
+    expect(screen.queryByText(/not yet recorded on the document/)).toBeNull();
+    expect(
+      screen.getAllByText(/· due date unknown \(the definition can't be read\)/)
+    ).toHaveLength(3);
+    expect(
+      screen.getByText(
+        "Due date unknown (the definition can't be read) — results were not fully read"
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText(
+        "Whether the document declares this checkpoint is unknown (the definition can't be read)."
+      )
+    ).toHaveLength(3);
+    expect(
+      screen.getAllByText(/whether the document records it is unknown/)
+    ).toHaveLength(3);
   });
 
   it("names no source type for the reading", () => {
@@ -215,6 +250,75 @@ describe("how a checkpoint was checked (D10 R8)", () => {
     expect(screen.getByText(/^How this was checked/).textContent).toBe(
       "How this was checked (1 note about the reported result)"
     );
+  });
+});
+
+describe("recorded reports that could not be shown (N2)", () => {
+  const lost = {
+    checkpoint: "checkpoint-1",
+    finding_id: "00000000-0000-4000-8000-000000000007",
+    reason: "read_failed" as const,
+    detail: "coord did not answer the findings read (HTTP 503).",
+  };
+
+  it("lists a checkpoint's in How this was checked, said once and never on the face", () => {
+    const m = metric({
+      checkpoints: [{ id: "checkpoint-1", due: "2026-10-08", label: null }],
+      checkpoint_results: [
+        checkpoint({
+          declared: true,
+          due: "2026-10-08",
+          status: "unreadable",
+          // The read joins the entries' details into the status's reason.
+          status_reason: lost.detail,
+          report: null,
+          unresolved_results: [lost],
+        }),
+      ],
+    });
+    render(<MetricCard metric={m} editing={EDITING} />);
+    expect(
+      screen.getByText("Due 8 Oct — results can't be read")
+    ).toBeInTheDocument();
+    const summary = screen.getByText(/^How this was checked/);
+    expect(summary.textContent).toBe(
+      "How this was checked (1 recorded report could not be shown)"
+    );
+    const disclosure = summary.closest("details")!;
+    expect(disclosure).not.toHaveAttribute("open");
+    const said = screen.getAllByText(/HTTP 503/);
+    expect(said).toHaveLength(1);
+    expect(disclosure).toContainElement(said[0]!);
+    expect(said[0]!.textContent).toBe(
+      "00000000-0000-4000-8000-000000000007: coord did not answer the findings read (HTTP 503)."
+    );
+    expect(within(disclosure).queryByText("Why")).toBeNull();
+  });
+
+  it("lists one naming no checkpoint in the card's own disclosure", () => {
+    const m = metric({
+      unresolved_results: [
+        {
+          checkpoint: null,
+          finding_id: "not-a-uuid",
+          reason: "invalid_id",
+          detail: "The recorded finding id is not a uuid.",
+        },
+      ],
+    });
+    render(<MetricCard metric={m} editing={EDITING} />);
+    const summary = screen.getByText(/^How this was checked/);
+    expect(summary.textContent).toBe(
+      "How this was checked (1 recorded report could not be shown)"
+    );
+    const disclosure = summary.closest("details")!;
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(
+      within(disclosure).getByText(
+        "not-a-uuid (names no checkpoint): The recorded finding id is not a uuid."
+      )
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/is not a uuid/)).toHaveLength(1);
   });
 });
 

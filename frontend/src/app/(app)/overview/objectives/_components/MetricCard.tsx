@@ -32,11 +32,10 @@ import {
   metricAnchor,
   shortDay,
   targetLines,
-  unresolvedResultText,
   type FigureLine,
 } from "../../_lib/objectives";
 import type { MetricRead } from "../../_lib/objectives-api";
-import { CheckpointResults } from "./CheckpointResults";
+import { CheckpointResults, HowChecked } from "./CheckpointResults";
 import { CriterionList } from "./CriterionRows";
 import { TallyMarks } from "./VerdictMark";
 import { DISCLOSURE, MUTED, NOTICE, SERIF, TEXT_LINK } from "./ui";
@@ -312,21 +311,14 @@ export function MetricCard({
         </>
       )}
 
-      {metric.unresolved_results.length > 0 && (
-        <ul
-          className={`mt-3 ${NOTICE} ${MUTED}`}
-          role="status"
-          data-ui-bridge-id={`${base}.unresolved-results`}
-        >
-          {metric.unresolved_results.map((u, i) => (
-            <li key={`${u.finding_id ?? "none"}-${i}`}>
-              {unresolvedResultText(u)}
-            </li>
-          ))}
-        </ul>
-      )}
-
       <div className="mt-3 flex flex-col items-start">
+        {/* Recorded results that name no checkpoint, so no checkpoint row
+            can carry them: counted on the summary, why one disclosure down. */}
+        <HowChecked
+          why={null}
+          unresolved={metric.unresolved_results}
+          uiBridgeId={`${base}.unresolved-results`}
+        />
         {metric.state !== "unreadable" && (
           <MeasureMechanics metric={metric} uiBridgeId={`${base}.mechanics`} />
         )}

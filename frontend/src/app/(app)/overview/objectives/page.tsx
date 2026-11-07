@@ -21,9 +21,13 @@ import { useCanEdit } from "@/components/overview/editing/permissions";
 import { useObjectives } from "../_hooks/useObjectives";
 import { useOverviewProject } from "../_hooks/useOverviewProject";
 import {
+  declaresNoObjectives,
   groupObjectives,
+  initiativeFieldProblems,
   initiativeUnreadableText,
+  missingMeasureLines,
   noInitiativeWritten,
+  noMeasureText,
   pageHiddenCopy,
   shortDay,
   sourceNotices,
@@ -38,8 +42,6 @@ import { ObjectiveGroup } from "./_components/ObjectiveGroup";
 import type { CardEditing } from "./_components/MetricCard";
 import { DISCLOSURE, MUTED, NOTICE, SERIF, bridgeSafe } from "./_components/ui";
 
-const NO_MEASURE = "No measure declared for this objective yet.";
-
 function period(group: InitiativeGroupModel): string | null {
   const from = shortDay(group.initiative.starts);
   const to = shortDay(group.initiative.ends);
@@ -51,14 +53,22 @@ function InitiativeBlock({
   group,
   metrics,
   editing,
+  noMeasure,
+  voidMetricNames,
 }: {
   group: InitiativeGroupModel;
   metrics: ReadonlyMap<string, MetricRead>;
   editing: CardEditing;
+  /** What an objective no shown measure serves says (`noMeasureText`). */
+  noMeasure: string;
+  /** The measures hidden as published to the wrong project. */
+  voidMetricNames: readonly string[];
 }) {
   const { initiative } = group;
   const base = `overview.objectives.initiative.${bridgeSafe(initiative.name)}`;
   const when = period(group);
+  const problems = initiativeFieldProblems(initiative);
+  const missing = missingMeasureLines(initiative, voidMetricNames);
   return (
     <section className="space-y-8" data-ui-bridge-id={base}>
       <div>
@@ -71,39 +81,56 @@ function InitiativeBlock({
             : (initiative.status ?? "Status not declared")}
           {when ? ` · ${when}` : ""}
         </p>
-        {initiative.missing_metric_names.length > 0 && (
+        {missing.map((line, i) => (
           <p
+            key={line}
             className={`mt-1 ${MUTED}`}
-            data-ui-bridge-id={`${base}.missing-measures`}
+            data-ui-bridge-id={`${base}.missing-measures.${i}`}
           >
-            It names{" "}
-            {initiative.missing_metric_names.length === 1
-              ? "a measure"
-              : "measures"}{" "}
-            with no readable document:{" "}
-            {initiative.missing_metric_names.join(", ")}.
+            {line}
           </p>
-        )}
+        ))}
+        {/* A field that could not be read: what it would declare is
+            unknown, so it is said here, never "declares no objectives". */}
+        {problems.map((line, i) => (
+          <p
+            key={line}
+            className={`mt-1 ${NOTICE} ${MUTED}`}
+            role="status"
+            data-ui-bridge-id={`${base}.field-error.${i}`}
+          >
+            {line}
+          </p>
+        ))}
+        {initiative.frontmatter_warnings.map((warning, i) => (
+          <p
+            key={`${i}-${warning}`}
+            className={`mt-1 ${MUTED}`}
+            data-ui-bridge-id={`${base}.warning.${i}`}
+          >
+            Note: {warning}
+          </p>
+        ))}
       </div>
-      {group.objectives.length === 0 ? (
-        <p className={MUTED} data-ui-bridge-id={`${base}.no-objectives`}>
-          This initiative declares no objectives.
-        </p>
-      ) : (
-        group.objectives.map((objective) => (
-          <ObjectiveGroup
-            key={objective.id}
-            heading={objective.text}
-            headingLevel={3}
-            objectiveId={objective.id}
-            items={objective.items}
-            metrics={metrics}
-            editing={editing}
-            empty={NO_MEASURE}
-            uiBridgeId={`${base}.objective.${bridgeSafe(objective.id)}`}
-          />
-        ))
-      )}
+      {group.objectives.length > 0
+        ? group.objectives.map((objective) => (
+            <ObjectiveGroup
+              key={objective.id}
+              heading={objective.text}
+              headingLevel={3}
+              objectiveId={objective.id}
+              items={objective.items}
+              metrics={metrics}
+              editing={editing}
+              empty={noMeasure}
+              uiBridgeId={`${base}.objective.${bridgeSafe(objective.id)}`}
+            />
+          ))
+        : declaresNoObjectives(initiative) && (
+            <p className={MUTED} data-ui-bridge-id={`${base}.no-objectives`}>
+              This initiative declares no objectives.
+            </p>
+          )}
     </section>
   );
 }
@@ -196,6 +223,7 @@ function Objectives({
   const model = groupObjectives(read);
   const metrics = new Map(read.metrics.map((m) => [m.name, m]));
   const documentsUnknown = read.sources.intent_documents.status !== "ok";
+  const noMeasure = noMeasureText(read);
   return (
     <div className="space-y-12">
       <div className="space-y-3">
@@ -219,6 +247,8 @@ function Objectives({
           group={group}
           metrics={metrics}
           editing={editing}
+          noMeasure={noMeasure}
+          voidMetricNames={read.void_metric_names}
         />
       ))}
       {model.earlier.length > 0 && (
@@ -233,6 +263,8 @@ function Objectives({
                 group={group}
                 metrics={metrics}
                 editing={editing}
+                noMeasure={noMeasure}
+                voidMetricNames={read.void_metric_names}
               />
             ))}
           </div>

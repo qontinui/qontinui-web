@@ -4,12 +4,18 @@ import {
   checkpointResultsNotice,
   checkpointStatusCopy,
   currentValueText,
+  declaresNoObjectives,
   definitionHref,
   DEFINITION_UNKNOWN,
+  dueWords,
   groupObjectives,
   hiddenCopy,
+  howCheckedCount,
+  initiativeFieldProblems,
   initiativeUnreadableText,
+  missingMeasureLines,
   noInitiativeWritten,
+  noMeasureText,
   outOfDateNotice,
   pageHiddenCopy,
   placementDisagreement,
@@ -21,7 +27,7 @@ import {
   tallyText,
   targetLines,
   unknownReasonText,
-  unresolvedResultText,
+  unresolvedResultLine,
   VERDICT_LOOK,
 } from "./objectives";
 import type {
@@ -396,6 +402,32 @@ describe("an unreadable source is never 'no results'", () => {
     );
   });
 
+  it("says a due date is unknown, never undeclared, when the definition can't be read", () => {
+    const cp = checkpoint({ due: null, declared: false });
+    for (const status of [
+      "awaiting",
+      "no_report_found",
+      "unreadable",
+      "checkpoint_results_unreadable",
+      "not_fully_read",
+    ] as const) {
+      const copy = checkpointStatusCopy(
+        { ...cp, status },
+        { definitionUnreadable: true }
+      );
+      expect(copy.text).toMatch(
+        /^Due date unknown \(the definition can't be read\) — /
+      );
+      expect(copy.text).not.toMatch(/declared/);
+    }
+    expect(dueWords(cp, true)).toBe(
+      "due date unknown (the definition can't be read)"
+    );
+    expect(dueWords(cp, false)).toBe("no due date declared");
+    // A due date the read does carry is still said.
+    expect(dueWords(checkpoint(), true)).toBe("due 8 Oct");
+  });
+
   it("treats the Summary's failed objectives read as status unknown, void docs unfiltered", () => {
     const entries = [{ name: "real" }, { name: "void-one" }];
     const rows = summaryMetricRows(entries, {
@@ -659,6 +691,90 @@ describe("grouping (D1)", () => {
   });
 });
 
+describe("what can't be read declares nothing (review round 2)", () => {
+  it("says an in_scope nobody could read can't be read, never 'declares no objectives'", () => {
+    const notAList = initiative({
+      objectives: [],
+      field_errors: { in_scope: "in_scope must be a list of {id, text}." },
+    });
+    expect(declaresNoObjectives(notAList)).toBe(false);
+    expect(initiativeFieldProblems(notAList)).toEqual([
+      "Which objectives this initiative declares can't be read: in_scope must be a list of {id, text}.",
+    ]);
+    // Some items read, one with no id: what it declares is not fully known.
+    const partial = initiative({
+      objectives: [{ id: "a", text: "A", metric_names: [] }],
+      field_errors: { in_scope: "item 2 has no quoted id." },
+    });
+    expect(initiativeFieldProblems(partial)).toEqual([
+      "Not every objective this initiative declares can be read: item 2 has no quoted id.",
+    ]);
+    const names = initiative({
+      field_errors: {
+        success_metrics: "success_metrics must be a list of names.",
+      },
+    });
+    expect(initiativeFieldProblems(names)).toEqual([
+      "Which measures this initiative names can't be read: success_metrics must be a list of names.",
+    ]);
+    // An in_scope that was read and holds nothing does declare none.
+    expect(declaresNoObjectives(initiative({ objectives: [] }))).toBe(true);
+    expect(initiativeFieldProblems(initiative())).toEqual([]);
+  });
+
+  it("says no READABLE measure declares an objective while some measure can't be read", () => {
+    expect(noMeasureText(read({ metrics: [metric()] }))).toBe(
+      "No measure declared for this objective yet."
+    );
+    expect(
+      noMeasureText(
+        read({
+          metrics: [
+            metric({ name: "ok" }),
+            metric({ name: "broken", frontmatter_error: "bad yaml" }),
+          ],
+        })
+      )
+    ).toBe(
+      "No readable measure declares this objective; 1 measure can't be read."
+    );
+    expect(
+      noMeasureText(
+        read({
+          metrics: [
+            metric({ name: "gone", state: "unreadable" }),
+            metric({
+              name: "serves-broken",
+              field_errors: { serves: "serves must be a list of names." },
+            }),
+          ],
+        })
+      )
+    ).toBe(
+      "No readable measure declares this objective; 2 measures can't be read."
+    );
+  });
+
+  it("says a named measure published to the wrong project is that, not missing", () => {
+    const i = initiative({
+      missing_metric_names: ["never-written", "wrong-project"],
+    });
+    expect(missingMeasureLines(i, ["wrong-project"])).toEqual([
+      "It names a measure with no readable document: never-written.",
+      "It names a measure whose document is marked as published to the wrong project, so it is not shown: wrong-project.",
+    ]);
+    expect(
+      missingMeasureLines(initiative({ missing_metric_names: ["a", "b"] }), [
+        "a",
+        "b",
+      ])
+    ).toEqual([
+      "It names measures whose documents are marked as published to the wrong project, so they are not shown: a, b.",
+    ]);
+    expect(missingMeasureLines(initiative(), ["a"])).toEqual([]);
+  });
+});
+
 describe("hidden documents", () => {
   it("counts void and skeleton documents instead of dropping them silently", () => {
     expect(
@@ -829,23 +945,32 @@ describe("review round 1", () => {
 
   it("words a results entry that names no checkpoint honestly", () => {
     expect(
-      unresolvedResultText({
+      unresolvedResultLine({
         checkpoint: null,
         finding_id: "not-a-uuid",
         reason: "invalid_id",
         detail: "The recorded finding id is not a uuid.",
       })
     ).toBe(
-      "A recorded result names no checkpoint and could not be shown: The recorded finding id is not a uuid."
+      "not-a-uuid (names no checkpoint): The recorded finding id is not a uuid."
     );
     expect(
-      unresolvedResultText({
+      unresolvedResultLine({
         checkpoint: "checkpoint-1",
         finding_id: null,
         reason: "invalid_id",
         detail: "x",
       })
-    ).toBe("A recorded report could not be shown: x");
+    ).toBe("(no finding id): x");
+  });
+
+  it("counts what How this was checked holds on its summary", () => {
+    expect(howCheckedCount(0, 0)).toBeNull();
+    expect(howCheckedCount(1, 0)).toBe("1 recorded report could not be shown");
+    expect(howCheckedCount(2, 1)).toBe(
+      "2 recorded reports could not be shown; 1 note about the reported result"
+    );
+    expect(howCheckedCount(0, 3)).toBe("3 notes about the reported result");
   });
 
   it("flags a placement disagreement on the checkpoint row", () => {

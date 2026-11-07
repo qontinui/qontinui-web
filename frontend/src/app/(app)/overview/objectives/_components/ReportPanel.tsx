@@ -36,14 +36,30 @@ const SHAPE_WORDS: Record<ReportRead["shape"], string> = {
   rows_unread: "with a result whose rows could not be read",
 };
 
+/** Whether the document's `results:` list records the report. When the
+ *  measure's definition can't be read, that list was never read either, so
+ *  it is unknown — never "not yet recorded". */
+function recordedWords(
+  report: ReportRead,
+  definitionUnreadable: boolean
+): string {
+  if (report.recorded) return ".";
+  return definitionUnreadable
+    ? "; whether the document records it is unknown (the definition can't be read)."
+    : "; not yet recorded on the document.";
+}
+
 export function ReportPanel({
   metricName,
   report,
+  definitionUnreadable = false,
   label = "Open the report",
   uiBridgeId,
 }: {
   metricName: string;
   report: ReportRead;
+  /** The measure's definition (its frontmatter) can't be read. */
+  definitionUnreadable?: boolean;
   label?: string;
   uiBridgeId: string;
 }) {
@@ -65,7 +81,7 @@ export function ReportPanel({
             ? ` (${formatRelativeTime(report.created_at)})`
             : ""}
           , {SHAPE_WORDS[report.shape]}
-          {report.recorded ? "." : "; not yet recorded on the document."}
+          {recordedWords(report, definitionUnreadable)}
         </p>
         {report.checkpoint_mismatch && (
           <p
