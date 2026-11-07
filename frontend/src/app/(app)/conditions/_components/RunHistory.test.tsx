@@ -89,7 +89,10 @@ describe("RunHistory", () => {
     ).not.toBeNull();
     expect(within(unknownRow).getByText("Unknown")).toBeTruthy();
     // The control: a fail still draws the cross, so the absence above is real.
-    expect(rowOf(TEXTS[1]!).querySelector(".lucide-circle-x")).not.toBeNull();
+    const failRow = rowOf(TEXTS[1]!);
+    expect(failRow.querySelector(".lucide-circle-x")).not.toBeNull();
+    // A screen reader hears the verdict the cross shows.
+    expect(within(failRow).getByText("Fail").classList).toContain("sr-only");
   });
 
   it("draws a verdict word it does not recognise neutrally, and names it", async () => {
@@ -147,13 +150,28 @@ describe("RunHistory", () => {
     ).toBeTruthy();
     const missingRow = rowOf(TEXTS[4]!);
     expect(within(missingRow).getByText("No verdict reported")).toBeTruthy();
+    expect(
+      missingRow.querySelector(".lucide-circle-question-mark")
+    ).not.toBeNull();
+    expect(missingRow.querySelector(".lucide-circle-check")).toBeNull();
     expect(missingRow.querySelector(".lucide-circle-x")).toBeNull();
+    // The control: a reported pass does draw the check, so the absence of one
+    // on the missing row is real.
+    const passRow = rowOf(TEXTS[0]!);
+    expect(passRow.querySelector(".lucide-circle-check")).not.toBeNull();
+    // A screen reader hears the verdict the check shows.
+    expect(within(passRow).getByText("Pass").classList).toContain("sr-only");
   });
 
-  it("lists a missing condition once when coord also served it as a result", async () => {
+  it("lists each missing condition once, even when coord also served it as a result or named it twice", async () => {
     await showRuns(
       wireRun({
-        coverage: { expected: 2, reported: 1, unknown: 1, missing: ["c2"] },
+        coverage: {
+          expected: 3,
+          reported: 1,
+          unknown: 2,
+          missing: ["c2", "c3", "c3"],
+        },
         results: [
           { condition_id: "c1", verdict: "pass", evidence: "ok" },
           { condition_id: "c2", verdict: "unknown" },
@@ -161,7 +179,28 @@ describe("RunHistory", () => {
       })
     );
     expect(screen.getAllByText(TEXTS[1]!)).toHaveLength(1);
+    expect(screen.getAllByText(TEXTS[2]!)).toHaveLength(1);
+    expect(screen.getAllByText("No verdict reported")).toHaveLength(1);
+  });
+
+  it("ignores a coverage.missing that is not an array", async () => {
+    await showRuns(
+      wireRun({
+        coverage: {
+          expected: 1,
+          reported: 0,
+          unknown: 1,
+          missing: { c1: true },
+        },
+      })
+    );
+    expect(
+      screen.getByText("0 of 1 condition reported · 1 unknown")
+    ).toBeTruthy();
     expect(screen.queryByText("No verdict reported")).toBeNull();
+    expect(
+      screen.getByText("No per-condition results recorded for this run.")
+    ).toBeTruthy();
   });
 
   it("shows the agent's claimed status only where it differs from the run's", async () => {
@@ -174,15 +213,83 @@ describe("RunHistory", () => {
   });
 
   it("passes the run's unknown reason and detail to its badge", async () => {
-    const container = await showRuns(
+    const run = wireRun({
+      unknown_reason: "capability_unavailable_in_build",
+      unknown_detail: "no_secret_capable_runner",
+    });
+    const { container } = render(
+      <RunHistory
+        groupId="g1"
+        conditions={CONDITIONS}
+        listRuns={async () => [run]}
+        getRun={async () => run}
+        refreshKey={0}
+      />
+    );
+    await waitFor(() =>
+      expect(container.querySelector('[data-slot="badge"]')?.textContent).toBe(
+        "Unknown — No runner can type this group's credentials yet. Update " +
+          "a runner to a build that substitutes secrets."
+      )
+    );
+  });
+
+  it("reads its header and footer from the same run snapshot as the expanded body", async () => {
+    // The list row was read while the run was still running, so it carries no
+    // results and no finish time; expanding it fetches the run as it is now.
+    const listed = wireRun({
+      status: "running",
+      results: null,
+      finished_at: null,
+    });
+    const fetched = wireRun({
+      unknown_reason: "no_event_before_timeout",
+      unknown_detail: "no_report_within_deadline",
+    });
+    const started = new Date("2026-11-06T10:00:00Z").toLocaleString();
+    const finished = new Date("2026-11-06T10:01:00Z").toLocaleString();
+    const { container } = render(
+      <RunHistory
+        groupId="g1"
+        conditions={CONDITIONS}
+        listRuns={async () => [listed]}
+        getRun={async () => fetched}
+        refreshKey={0}
+      />
+    );
+    const badgeText = () =>
+      container.querySelector('[data-slot="badge"]')?.textContent;
+    const headerTiming = () =>
+      container.querySelector("button[aria-expanded] .ml-auto")?.textContent;
+    await waitFor(() => expect(badgeText()).toBe("Running"));
+    expect(headerTiming()).toBe(started);
+    await userEvent.click(
+      container.querySelector<HTMLElement>("button[aria-expanded]")!
+    );
+    await waitFor(() =>
+      expect(badgeText()).toBe(
+        "Unknown — The check agent sent no report before the run's " +
+          "deadline. Check that the runner paired to this project is " +
+          "online, then run the group again."
+      )
+    );
+    // The fetched run has ended: the header shows its duration and the footer
+    // its finish time, not the list row's.
+    expect(headerTiming()).toBe(`${started} · 1m 0s`);
+    expect(screen.getByText(`Finished: ${finished}`)).toBeTruthy();
+  });
+
+  it("shows a neutral placeholder for a verdict whose condition the report did not name", async () => {
+    await showRuns(
       wireRun({
-        unknown_reason: "capability_unavailable_in_build",
-        unknown_detail: "no_secret_capable_runner",
+        results: [
+          { condition_id: null, verdict: "fail", evidence: "no price" },
+        ],
       })
     );
-    expect(container.querySelector('[data-slot="badge"]')?.textContent).toBe(
-      "Unknown — No runner can type this group's credentials yet. Update a " +
-        "runner to a build that substitutes secrets."
-    );
+    const placeholder = screen.getByText("Condition not named in the report");
+    expect(placeholder.classList.contains("text-muted-foreground")).toBe(true);
+    // The verdict itself still renders, evidence included.
+    expect(placeholder.closest("li")?.textContent).toContain("no price");
   });
 });

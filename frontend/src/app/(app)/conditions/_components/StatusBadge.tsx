@@ -136,16 +136,16 @@ const CODE_SENTENCES: ReadonlyMap<string, string> = new Map([
   ],
 ]);
 
-function present(word: string | null | undefined): string | null {
-  const trimmed = word?.trim();
-  return trimmed ? trimmed : null;
+/** A non-blank string, trimmed. Anything else is absent: the wire is unchecked. */
+function present(word: unknown): string | null {
+  return typeof word === "string" ? word.trim() || null : null;
 }
 
 /**
- * The sentence a badge adds after "<label> — ". A mapped cause wins over its
- * code, being the more specific of the two; without one, the code's sentence.
- * A word with no sentence renders as itself, so nothing coord sends is hidden:
- * an unmapped cause still shows, in brackets after its code's text.
+ * The sentence a badge adds after "<label> — ". A mapped cause's sentence
+ * replaces its code's (the code is then not shown); without a mapped cause,
+ * the code's sentence. A word with no sentence renders as itself, and an
+ * unmapped cause shows in brackets after its code's text.
  */
 function reasonSentence(
   reason: string | null | undefined,

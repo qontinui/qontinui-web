@@ -78,7 +78,8 @@ export interface ConditionEvidence {
 
 /** One condition's outcome inside a completed run. */
 export interface ConditionRunResult {
-  condition_id: string;
+  /** `null` when the report did not name it: coord stores the id as optional. */
+  condition_id: string | null;
   verdict: ConditionVerdict;
   /**
    * A plain string, or `{note, observed}`. `null` or absent when the agent
