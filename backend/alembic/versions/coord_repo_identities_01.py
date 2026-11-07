@@ -44,6 +44,18 @@ new repo B is created under A's old name, both ids may briefly carry that name
 until the sweep or the webhook catches up. A unique index would make coord's
 write of B fail on a stale row for A.
 
+## Owner-only (``system_only``)
+
+The table is cross-tenant: GitHub repo ids are global, so one row can name any
+tenant's repository and there is no ``tenant_id`` column. coordrls_01's
+``ALTER DEFAULT PRIVILEGES`` gives ``coord_tenant`` and
+``coord_tenant_preflight`` DML on every coord table created after it, and with
+no ``tenant_id`` column neither r10's oracle nor
+``coord_tenant_tables_unenforced`` would ever revisit this one, so upgrade()
+revokes both roles here, exactly as ``ingcred_01`` does for its cross-tenant
+ledger. A tenant role that could write a row could spoof a rename. coord itself
+connects as the owning migrator role, so its reads and writes are unaffected.
+
 ## Head choice
 
 ``down_revision`` is the repo's single alembic head at authoring time
@@ -62,8 +74,8 @@ in production, and must degrade on a missing table
 
 ## Safety
 
-Additive: one ``CREATE TABLE IF NOT EXISTS`` on a new name, one index on the
-table this file creates, and ``COMMENT ON``. No existing table is touched, so
+Additive: one ``CREATE TABLE IF NOT EXISTS`` on a new name, a ``REVOKE`` on
+that new table, one index on it, and ``COMMENT ON``. No existing table is touched, so
 there is no lock on a hot table and nothing to backfill. Every SQL string is a
 static literal with no ``:word`` sequence, so the revision renders unchanged in
 offline ``--sql`` mode. ``downgrade`` drops only what ``upgrade`` created.
@@ -94,6 +106,11 @@ def upgrade() -> None:
                 CHECK (btrim(repo) <> '')
         )
         """
+    )
+    # system_only: undo the DML coordrls_01's default privileges just gave the
+    # tenant roles on this new table (module docs, "Owner-only").
+    op.execute(
+        "REVOKE ALL ON coord.repo_identities FROM coord_tenant, coord_tenant_preflight"
     )
     # The rename handler and the sweep look a repo up by name, case-insensitively.
     op.execute(

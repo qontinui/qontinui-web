@@ -137,6 +137,19 @@ def _assert_shape(engine: Engine) -> None:
             )
         ).scalar_one()
     assert comment and "2026-11-02-coord-follows-a-repository-rename" in comment
+    # system_only: neither tenant role keeps any DML the default privileges gave.
+    with engine.connect() as conn:
+        for role in ("coord_tenant", "coord_tenant_preflight"):
+            for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                held = conn.execute(
+                    text("SELECT has_table_privilege(:role, :rel, :privilege)"),
+                    {
+                        "role": role,
+                        "rel": "coord.repo_identities",
+                        "privilege": privilege,
+                    },
+                ).scalar_one()
+                assert held is False, (role, privilege)
 
 
 def _assert_absent(engine: Engine) -> None:
