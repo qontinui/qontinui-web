@@ -2248,7 +2248,10 @@ function SourceRow({
                 <RedactedText
                   text={withoutVerdictWords(s.exclusionReason)}
                   repo={null}
-                  descriptor={reasonDescriptor("excluded", s.asOf)}
+                  descriptor={reasonDescriptor(
+                    detection ? "detection lag" : "excluded",
+                    s.asOf
+                  )}
                 />
               </p>
             )}
@@ -2389,8 +2392,13 @@ export function DoesNotKnowSection({
               data-testid="coord-home.does-not-know.all-read"
             >
               {stale
-                ? `Coord had read every source it lists ${lastGoodReadPhrase(generatedAt)}.`
-                : "Coord read every source it lists."}
+                ? `Coord had read every source it lists ${lastGoodReadPhrase(generatedAt)}`
+                : "Coord read every source it lists"}
+              {slow.length === 0
+                ? "."
+                : slow.length === 1
+                  ? "; 1 area reaches this view slower than the fault-to-visibility target."
+                  : `; ${slow.length} areas reach this view slower than the fault-to-visibility target.`}
             </p>
           ) : (
             unread.length > 0 && (

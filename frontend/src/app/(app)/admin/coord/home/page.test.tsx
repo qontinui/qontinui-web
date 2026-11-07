@@ -1444,7 +1444,7 @@ describe("/admin/coord/home", () => {
     expect(
       within(dnk).getByTestId("coord-home.does-not-know.not-read.unstated")
     ).toHaveTextContent(
-      "Coord stated no age bound for 1 of 2, and no count of excluded rows for 1 of 2."
+      "Coord stated no age bound for it, and no count of excluded rows for it."
     );
     fireEvent.click(
       within(dnk).getByText(
@@ -1456,6 +1456,32 @@ describe("/admin/coord/home", () => {
     );
     expect(unknownRow).not.toHaveTextContent(/Rows considered|not stated/);
     expect(unknownRow).toHaveTextContent("Why this lag:");
+  });
+
+  // With every source read, the headline must not say all is well while a
+  // slow plane is listed right under it.
+  it("names the slow planes in the all-read headline", async () => {
+    await renderWith(
+      doorBody({
+        does_not_know: [
+          { source: "work_units", state: "read" },
+          {
+            source: "detection_bound:merge_train",
+            state: "read",
+            freshness_bound_secs: 3600,
+          },
+        ],
+      })
+    );
+    const dnk = screen.getByTestId("coord-home.does-not-know");
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.all-read")
+    ).toHaveTextContent(
+      "Coord read every source it lists; 1 area reaches this view slower than the fault-to-visibility target."
+    );
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.slow")
+    ).toBeInTheDocument();
   });
 
   // `useVisiblePoll`'s single-flight guard covers the poll only; a press
