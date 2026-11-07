@@ -26,8 +26,9 @@ The six columns
 * ``coverage`` JSONB -- the condition ids the run was dispatched with, then the
   counts the report derives from them: ``expected``, ``reported``, ``unknown``
   and the ``missing`` ids (the shape plan Phase 1 renders).
-* ``unknown_reason`` TEXT -- why the run reads ``unknown``: a member of the
-  shared ``UnknownCode`` set (plan D-D12).
+* ``unknown_reason`` TEXT -- the run's code from the shared ``UnknownCode``
+  set (plan D-D12): why the run reads ``unknown``, or ``producer_failed`` on a
+  spawn-failure ``error`` run (D-D2).
 * ``unknown_detail`` TEXT -- the run-level cause beside that code, from the
   closed list the plan owns (``no_report_within_deadline``,
   ``publish_refused``, ``runner_refused`` plus its reason, ``spawn_failed``,
