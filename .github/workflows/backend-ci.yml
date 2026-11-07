@@ -234,7 +234,8 @@ jobs:
     # (2026-10-04 amendment). Poetry installs under $RUNNER_TEMP, never the
     # shared runner HOME. Plan
     # 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
 
     defaults:
       run:
@@ -1333,7 +1334,8 @@ jobs:
     # p50 2.42 / p90 4.03 / max 7.20 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 15
     name: Security Scanning
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     permissions:
       contents: read
       security-events: write
@@ -1538,7 +1540,8 @@ jobs:
     # shard SKIPS this job, and a skipped check is not a red check -- the
     # aggregate would go MISSING at exactly the moment it needs to say no.
     if: always()
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - name: Assert every shard succeeded
@@ -1668,7 +1671,8 @@ jobs:
     # `always()` so a failed or budget-cancelled shard still gets measured --
     # a shard cancelled AT its budget is the loudest over_margin there is.
     if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, Linux, X64, qontinui-host-nawa, qontinui, ram-2g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui","ram-2g"]' || '"ubuntu-latest"') }}
     timeout-minutes: 5
     # Same scopes as the workflow-level `permissions:` today; restated here so
     # the jobs read this job makes (`actions: read`) survives any later
