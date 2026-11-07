@@ -5,7 +5,7 @@
  *
  * Every milestone is its own record on the authoring contract, so a change
  * is written as soon as it is made — one create, update or delete per row
- * (`planMilestoneWrites`), each naming the version it was built on. A CSV
+ * (`planRecordWrites`), each naming the version it was built on. A CSV
  * paste adds and updates (matched by title) and never removes. A write
  * somebody else has overtaken is a conflict shown side by side, never an
  * overwrite. Controls are absent for a reader who may not edit.
@@ -14,6 +14,7 @@
 import { useMemo, useState } from "react";
 import { ChangeLogPanel } from "@/components/overview/editing/ChangeLogPanel";
 import { ConflictDialog } from "@/components/overview/editing/ConflictDialog";
+import type { PasteOutcome } from "@/components/overview/editing/CsvPasteDialog";
 import { RecordTable } from "@/components/overview/editing/RecordTable";
 import {
   VersionConflictError,
@@ -27,12 +28,19 @@ import type {
 } from "@/components/overview/editing/useResource";
 import type { WriteSource } from "@/components/overview/editing/api";
 import {
-  createBody,
+  bodyOf,
+  classifyImport,
+  planImportWrites,
+  planRecordWrites,
+  type Writes,
+} from "@/components/overview/editing/writes";
+import {
+  MILESTONE_WRITABLE,
+  milestoneKey,
   milestoneRowProblem,
   milestoneTable,
   milestoneToRow,
   otherPhases,
-  planMilestoneWrites,
   type MilestoneRow,
   type PhaseChoice,
 } from "../../_lib/milestones";
@@ -126,17 +134,39 @@ export function MilestonesSection({
     }
   };
 
+  // The table's own rules a paste is held to: the one rule the served
+  // schema cannot express, and the table's identity.
+  const rules = { rowProblem: milestoneRowProblem, table };
+
   const apply = async (next: MilestoneRow[], how: "edit" | "import") => {
     const source: WriteSource = how === "import" ? "import" : "ui";
-    const plan = planMilestoneWrites(rows, next, how);
     const problems: string[] = [];
-    // The one rule the served schema cannot express, refused before sending.
-    for (const row of [
-      ...plan.creates,
-      ...plan.updates.map((u) => ({ ...u.row, ...u.patch })),
-    ]) {
-      const problem = milestoneRowProblem(row);
-      if (problem) problems.push(`${row.title}: ${problem}`);
+    let plan: Writes<MilestoneRow>;
+    if (how === "import") {
+      // Re-classified against the milestones as they stand now. The preview
+      // already left out every refused line, so a refusal here can only be a
+      // race with another writer — and refuses the whole batch.
+      const fates = classifyImport(
+        rows,
+        next,
+        MILESTONE_WRITABLE,
+        milestoneKey,
+        rules
+      );
+      for (const fate of fates)
+        if (fate.kind === "refused")
+          problems.push(`${fate.row.title}: ${fate.reason}`);
+      plan = planImportWrites(fates);
+    } else {
+      plan = planRecordWrites(rows, next, how, MILESTONE_WRITABLE);
+      // The one rule the served schema cannot express, refused before sending.
+      for (const row of [
+        ...plan.creates,
+        ...plan.updates.map((u) => ({ ...u.row, ...u.patch })),
+      ]) {
+        const problem = milestoneRowProblem(row);
+        if (problem) problems.push(`${row.title}: ${problem}`);
+      }
     }
     if (problems.length > 0) {
       setErrors(problems);
@@ -145,7 +175,7 @@ export function MilestonesSection({
     setBusy(true);
     const failures: string[] = [];
     for (const row of plan.creates) {
-      const result = await create(createBody(row), { source });
+      const result = await create(bodyOf(row, MILESTONE_WRITABLE), { source });
       if (!result.ok && "error" in result)
         failures.push(`${row.title}: ${result.error}`);
     }
@@ -173,6 +203,21 @@ export function MilestonesSection({
     setErrors(failures);
   };
 
+  // What a paste would do, classified from the same inputs `apply` hands
+  // `planImportWrites` — so the paste button says what the writes will be.
+  const pasteOutcome = (
+    pasted: MilestoneRow[]
+  ): PasteOutcome<MilestoneRow> => ({
+    kind: "merge",
+    fates: classifyImport(
+      rows,
+      pasted,
+      MILESTONE_WRITABLE,
+      milestoneKey,
+      rules
+    ),
+  });
+
   const latest = milestones.reduce<Milestone | null>(
     (newest, m) => (!newest || m.updated_at > newest.updated_at ? m : newest),
     null
@@ -187,6 +232,7 @@ export function MilestonesSection({
         busy={busy}
         rowSchema={descriptor?.schemas.create}
         onChange={(next, how) => void apply(next, how)}
+        pasteOutcome={pasteOutcome}
         uiBridgeId="overview.timeline.milestones.table"
       />
       {errors.length > 0 && (
@@ -227,7 +273,7 @@ export function MilestonesSection({
               if (chosen.kind === "update") {
                 const result = await update(
                   chosen.theirs,
-                  createBody(chosen.mine)
+                  bodyOf(chosen.mine, MILESTONE_WRITABLE)
                 );
                 if (!result.ok && "conflict" in result)
                   setPending({ ...chosen, theirs: result.conflict });

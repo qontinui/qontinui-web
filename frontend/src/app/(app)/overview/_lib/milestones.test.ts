@@ -6,12 +6,14 @@ import {
   textToRow,
 } from "@/components/overview/editing/fields";
 import type { JsonSchema } from "@/components/overview/editing/api";
+import { planRecordWrites } from "@/components/overview/editing/writes";
 import {
+  MILESTONE_WRITABLE,
+  milestoneKey,
   milestoneRowProblem,
   milestoneTable,
   otherPhases,
   parseMilestonesCsv,
-  planMilestoneWrites,
   type MilestoneRow,
 } from "./milestones";
 
@@ -161,7 +163,7 @@ describe("the milestone table's fields", () => {
   });
 });
 
-describe("planMilestoneWrites", () => {
+describe("planRecordWrites with the milestone table", () => {
   const a = row({ id: "a", title: "Alpha" });
   const b = row({ id: "b", title: "Beta" });
 
@@ -170,14 +172,22 @@ describe("planMilestoneWrites", () => {
       { ...a, status: "at_risk" as const },
       row({ id: "", version: 0, title: "Gamma" }),
     ];
-    const plan = planMilestoneWrites([a, b], next, "edit");
+    const plan = planRecordWrites(
+      [a, b],
+      next,
+      "edit",
+      MILESTONE_WRITABLE,
+      milestoneKey
+    );
     expect(plan.updates).toEqual([{ row: a, patch: { status: "at_risk" } }]);
     expect(plan.creates.map((r) => r.title)).toEqual(["Gamma"]);
     expect(plan.deletes).toEqual([b]);
   });
 
   it("writes nothing for an unchanged table", () => {
-    expect(planMilestoneWrites([a, b], [a, b], "edit")).toEqual({
+    expect(
+      planRecordWrites([a, b], [a, b], "edit", MILESTONE_WRITABLE, milestoneKey)
+    ).toEqual({
       creates: [],
       updates: [],
       deletes: [],
@@ -191,7 +201,13 @@ describe("planMilestoneWrites", () => {
       row({ id: "", version: 0, title: "Beta" }),
       row({ id: "", version: 0, title: "Delta" }),
     ];
-    const plan = planMilestoneWrites([a, b, twin], pasted, "import");
+    const plan = planRecordWrites(
+      [a, b, twin],
+      pasted,
+      "import",
+      MILESTONE_WRITABLE,
+      milestoneKey
+    );
     expect(plan.deletes).toEqual([]);
     expect(plan.updates).toEqual([
       { row: a, patch: { title: "alpha", target_date: "2026-04-01" } },
@@ -216,7 +232,13 @@ describe("a paste that updates", () => {
       PHASES
     );
     expect(issues).toEqual([]);
-    const plan = planMilestoneWrites([done], rows, "import");
+    const plan = planRecordWrites(
+      [done],
+      rows,
+      "import",
+      MILESTONE_WRITABLE,
+      milestoneKey
+    );
     expect(plan.updates).toEqual([
       { row: done, patch: { target_date: "2026-05-04" } },
     ]);
@@ -270,7 +292,13 @@ describe("a paste completing an already-done milestone", () => {
     );
     expect(issues).toEqual([]);
     for (const pasted of rows) {
-      const [update] = planMilestoneWrites([done], [pasted], "import").updates;
+      const [update] = planRecordWrites(
+        [done],
+        [pasted],
+        "import",
+        MILESTONE_WRITABLE,
+        milestoneKey
+      ).updates;
       expect(milestoneRowProblem({ ...done, ...update!.patch })).toBeNull();
     }
   });

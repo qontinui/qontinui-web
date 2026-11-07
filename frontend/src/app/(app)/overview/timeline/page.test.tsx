@@ -490,6 +490,76 @@ describe("milestones", () => {
     );
   });
 
+  async function pasted(text: string) {
+    await shown();
+    fireEvent.click(byId("overview.timeline.milestones.table.paste.open")!);
+    fireEvent.change(byId("overview.timeline.milestones.table.paste.input")!, {
+      target: { value: text },
+    });
+    fireEvent.click(byId("overview.timeline.milestones.table.paste.read")!);
+    return byId("overview.timeline.milestones.table.paste.commit")!;
+  }
+
+  it("says a pasted line naming a milestone updates it, and updates only it", async () => {
+    mocks.updateResource.mockResolvedValue({
+      ...MILESTONE,
+      target_date: "2026-04-01",
+      version: 2,
+    });
+    const commit = await pasted("Pilot live,2026-04-01");
+    expect(commit.textContent).toBe("Update this milestone");
+    expect(
+      byId("overview.timeline.milestones.table.paste.preview.row.0.fate")
+        ?.textContent
+    ).toBe("Updates");
+    await act(async () => {
+      fireEvent.click(commit);
+    });
+    expect(mocks.updateResource).toHaveBeenCalledTimes(1);
+    expect(mocks.updateResource).toHaveBeenCalledWith(
+      "milestones",
+      "m1",
+      { target_date: "2026-04-01" },
+      1,
+      "import"
+    );
+    expect(mocks.createResource).not.toHaveBeenCalled();
+  });
+
+  it("says a pasted line with a new title adds a milestone", async () => {
+    const commit = await pasted("First value,2026-05-01");
+    expect(commit.textContent).toBe("Add this milestone");
+    expect(commit.textContent).not.toMatch(/Replace/);
+  });
+
+  it("lists a pasted done line with no date at its line and commits the rest", async () => {
+    mocks.createResource.mockResolvedValue({
+      ...MILESTONE,
+      id: "m2",
+      title: "First value",
+    });
+    const commit = await pasted(
+      "Shipped,2026-05-01,done\nFirst value,2026-05-02"
+    );
+    expect(
+      byId("overview.timeline.milestones.table.paste.issues")?.textContent
+    ).toBe("line 1: A done milestone needs the date it was done.");
+    expect(commit.textContent).toBe("Add this milestone");
+    await act(async () => {
+      fireEvent.click(commit);
+    });
+    expect(mocks.createResource).toHaveBeenCalledTimes(1);
+    expect(mocks.createResource).toHaveBeenCalledWith(
+      "milestones",
+      expect.objectContaining({ title: "First value" }),
+      expect.any(String),
+      "import"
+    );
+    expect(mocks.updateResource).not.toHaveBeenCalled();
+    // Nothing was refused whole: the good line went, and no error is left.
+    expect(byId("overview.timeline.milestones.errors")).toBeNull();
+  });
+
   it("refuses a done milestone with no date without sending it", async () => {
     await shown();
     fireEvent.click(byId("overview.timeline.milestones.table.row.0.edit")!);

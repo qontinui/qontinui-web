@@ -1,8 +1,47 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+
+/** The options of the most recent `useUIComponent` registration. */
+const bridge = vi.hoisted(() => ({
+  last: null as {
+    id: string;
+    name: string;
+    description?: string;
+    state?: () => Record<string, unknown>;
+    actions?: Array<{
+      id: string;
+      label?: string;
+      description?: string;
+      effect?: string;
+      handler: () => Promise<unknown>;
+    }>;
+  } | null,
+}));
+
+vi.mock("@qontinui/ui-bridge/react", () => ({
+  useUIComponent: (options: typeof bridge.last) => {
+    bridge.last = options;
+  },
+}));
 import { ALLOCATION_SCHEMA, ROLE_SCHEMA } from "./__fixtures__/estimate-schema";
-import { CsvPasteDialog, previewPaste } from "./CsvPasteDialog";
+import type { ParsedRoleRow } from "@/app/(app)/overview/_lib/csv";
+import {
+  CsvPasteDialog,
+  NOTHING_READ_DESCRIPTION,
+  alreadyRecordedText,
+  commitLabel,
+  previewPaste,
+  replacesWorkingCopy,
+  type PasteOutcome,
+} from "./CsvPasteDialog";
 import { ESTIMATE_ALLOCATIONS, ESTIMATE_ROLES } from "./registry";
+import type { ImportFate } from "./writes";
 
 /**
  * The paste contract — paste, read, see every line that will not be used and
@@ -35,6 +74,8 @@ describe("previewPaste", () => {
       [4, "error", "this row has no role code in its first column"],
       [5, "error", "People (FTE) must be less than 100,000."],
     ]);
+    // The line each kept row came from: DL's two cells, then BE's.
+    expect(preview.lines).toEqual([2, 2, 3]);
   });
 });
 
@@ -44,6 +85,7 @@ function open(onCommit = vi.fn(), busy = false) {
       table={ESTIMATE_ALLOCATIONS}
       rowSchema={ALLOCATION_SCHEMA}
       onCommit={onCommit}
+      pasteOutcome={replacesWorkingCopy}
       busy={busy}
       uiBridgeId="t.paste"
     />
@@ -98,6 +140,7 @@ describe("CsvPasteDialog", () => {
         table={ESTIMATE_ROLES}
         rowSchema={ROLE_SCHEMA}
         onCommit={vi.fn()}
+        pasteOutcome={replacesWorkingCopy}
         busy
         uiBridgeId="t.paste"
       />
@@ -109,5 +152,393 @@ describe("CsvPasteDialog", () => {
         }) as HTMLButtonElement
       ).disabled
     ).toBe(true);
+  });
+});
+
+/** A cost-like row for the label tests: only its fates matter. */
+type Row = { id: string; what: string };
+const TABLE = { singular: "category", plural: "categories" };
+const row = (what: string): Row => ({ id: "", what });
+const add = (): ImportFate<Row> => ({ kind: "add", row: row("new") });
+const upd = (): ImportFate<Row> => ({
+  kind: "update",
+  row: row("x"),
+  match: { id: "1", what: "y" },
+  patch: { what: "x" },
+});
+const same = (): ImportFate<Row> => ({
+  kind: "unchanged",
+  row: row("y"),
+  match: { id: "1", what: "y" },
+});
+const merge = (...fates: ImportFate<Row>[]): PasteOutcome<Row> => ({
+  kind: "merge",
+  fates,
+});
+
+describe("commitLabel", () => {
+  it("says a replace replaces, and offers nothing for no rows", () => {
+    expect(commitLabel(TABLE, 1, replacesWorkingCopy())).toEqual({
+      text: "Replace the categories with this one",
+      enabled: true,
+    });
+    expect(commitLabel(TABLE, 4, replacesWorkingCopy())).toEqual({
+      text: "Replace the categories with these 4",
+      enabled: true,
+    });
+    expect(commitLabel(TABLE, 0, replacesWorkingCopy())).toEqual({
+      text: "Nothing to change",
+      enabled: false,
+    });
+  });
+
+  it("says a merge that only adds adds", () => {
+    expect(commitLabel(TABLE, 1, merge(add()))).toEqual({
+      text: "Add this category",
+      enabled: true,
+    });
+    expect(commitLabel(TABLE, 3, merge(add(), add(), add()))).toEqual({
+      text: "Add these 3 categories",
+      enabled: true,
+    });
+  });
+
+  it("says a merge that only updates updates", () => {
+    expect(commitLabel(TABLE, 1, merge(upd()))).toEqual({
+      text: "Update this category",
+      enabled: true,
+    });
+    expect(commitLabel(TABLE, 3, merge(upd(), upd(), same()))).toEqual({
+      text: "Update these 2 categories",
+      enabled: true,
+    });
+  });
+
+  it("names both counts when a merge adds and updates", () => {
+    expect(commitLabel(TABLE, 3, merge(add(), upd(), upd()))).toEqual({
+      text: "Add 1 category and update 2",
+      enabled: true,
+    });
+    expect(commitLabel(TABLE, 4, merge(add(), add(), upd(), same()))).toEqual({
+      text: "Add 2 categories and update 1",
+      enabled: true,
+    });
+  });
+
+  it("offers nothing when every row is already recorded", () => {
+    expect(commitLabel(TABLE, 2, merge(same(), same()))).toEqual({
+      text: "Nothing to change",
+      enabled: false,
+    });
+    expect(commitLabel(TABLE, 0, merge())).toEqual({
+      text: "Nothing to change",
+      enabled: false,
+    });
+  });
+});
+
+describe("commitLabel with refused rows", () => {
+  const refused = (): ImportFate<Row> => ({
+    kind: "refused",
+    row: row("bad"),
+    reason: "No.",
+  });
+  it("counts a refused row for nothing", () => {
+    expect(commitLabel(TABLE, 2, merge(add(), refused()))).toEqual({
+      text: "Add this category",
+      enabled: true,
+    });
+    expect(commitLabel(TABLE, 0, merge(refused()))).toEqual({
+      text: "Nothing to change",
+      enabled: false,
+    });
+  });
+});
+
+describe("alreadyRecordedText", () => {
+  it("counts the rows left alone, in agreement with their number", () => {
+    expect(alreadyRecordedText(0)).toBe("");
+    expect(alreadyRecordedText(1)).toBe(
+      "1 of them is already recorded exactly like that and will be left alone."
+    );
+    expect(alreadyRecordedText(2)).toBe(
+      "2 of them are already recorded exactly like that and will be left alone."
+    );
+  });
+});
+
+describe("CsvPasteDialog with a merge outcome", () => {
+  // DL updates, BE is already recorded as pasted, OP and QA are new.
+  const byCode = (pasted: ParsedRoleRow[]): PasteOutcome<ParsedRoleRow> => ({
+    kind: "merge",
+    fates: pasted.map((r): ImportFate<ParsedRoleRow> => {
+      if (r.code === "DL")
+        return { kind: "update", row: r, match: r, patch: { name: r.name } };
+      if (r.code === "BE") return { kind: "unchanged", row: r, match: r };
+      if (r.code === "XX")
+        return { kind: "refused", row: r, reason: "XX is not a role here." };
+      return { kind: "add", row: r };
+    }),
+  });
+
+  function openMerge(text: string, onCommit = vi.fn()) {
+    render(
+      <CsvPasteDialog
+        table={ESTIMATE_ROLES}
+        rowSchema={ROLE_SCHEMA}
+        onCommit={onCommit}
+        pasteOutcome={byCode}
+        uiBridgeId="t.paste"
+      />
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Paste from a spreadsheet" })
+    );
+    fireEvent.change(screen.getByLabelText("The pasted table"), {
+      target: { value: text },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Read it" }));
+    return onCommit;
+  }
+
+  it("says line by line what each row does, and what the commit does", () => {
+    const onCommit = openMerge(
+      "code,name\nDL,Lead\nBE,Backend\nOP,Platform\nQA,Quality"
+    );
+    expect(
+      screen.getByRole("columnheader", { name: "This line" })
+    ).toBeTruthy();
+    const fates = [0, 1, 2, 3].map(
+      (i) =>
+        document.querySelector(
+          `[data-ui-bridge-id="t.paste.preview.row.${i}.fate"]`
+        )?.textContent
+    );
+    expect(fates).toEqual(["Updates", "No change", "Adds", "Adds"]);
+    expect(screen.getByRole("status").textContent).toBe(
+      "Read 4 roles. 1 of them is already recorded exactly like that and will be left alone."
+    );
+    const commit = screen.getByRole("button", {
+      name: "Add 2 roles and update 1",
+    });
+    expect(commit.textContent).not.toMatch(/Replace/);
+    fireEvent.click(commit);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists a refused line at its line, counts it, and leaves it out", () => {
+    const onCommit = openMerge("code,name\nDL,Lead\nXX,Nope\nOP,Platform");
+    const issues = document.querySelector(
+      '[data-ui-bridge-id="t.paste.issues"]'
+    );
+    expect(issues?.textContent).toBe("line 3: XX is not a role here.");
+    expect(screen.getByRole("status").textContent).toBe(
+      "Read 2 roles. 1 line could not be used and is listed below; it is left out."
+    );
+    const fates = [0, 1, 2].map(
+      (i) =>
+        document.querySelector(
+          `[data-ui-bridge-id="t.paste.preview.row.${i}.fate"]`
+        )?.textContent
+    );
+    expect(fates).toEqual(["Updates", "Adds", undefined]);
+    // Neither counted in the label nor committed.
+    const commit = screen.getByRole("button", {
+      name: "Add 1 role and update 1",
+    });
+    fireEvent.click(commit);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(
+      (onCommit.mock.calls[0]![0] as ParsedRoleRow[]).map((r) => r.code)
+    ).toEqual(["DL", "OP"]);
+  });
+
+  it('offers a disabled "Nothing to change" that never commits', () => {
+    const onCommit = openMerge("code,name\nBE,Backend");
+    const commit = screen.getByRole("button", {
+      name: "Nothing to change",
+    }) as HTMLButtonElement;
+    expect(commit.disabled).toBe(true);
+    fireEvent.click(commit);
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it('shows no "This line" column for a replace', () => {
+    open();
+    fireEvent.change(screen.getByLabelText("The pasted table"), {
+      target: { value: "role,A0\nDL,1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Read it" }));
+    expect(
+      screen.queryByRole("columnheader", { name: "This line" })
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-ui-bridge-id="t.paste.preview.row.0.fate"]')
+    ).toBeNull();
+  });
+});
+
+describe("the UI Bridge declaration", () => {
+  /** The registered `commit` action, as of the latest render. */
+  const commitAction = () => {
+    const action = bridge.last?.actions?.find((a) => a.id === "commit");
+    if (!action) throw new Error("no commit action registered");
+    return action;
+  };
+  const state = () => bridge.last?.state?.();
+
+  function read(text: string) {
+    fireEvent.change(screen.getByLabelText("The pasted table"), {
+      target: { value: text },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Read it" }));
+  }
+
+  const byCode = (pasted: ParsedRoleRow[]): PasteOutcome<ParsedRoleRow> => ({
+    kind: "merge",
+    fates: pasted.map((r): ImportFate<ParsedRoleRow> => {
+      if (r.code === "DL")
+        return { kind: "update", row: r, match: r, patch: { name: r.name } };
+      if (r.code === "BE") return { kind: "unchanged", row: r, match: r };
+      if (r.code === "XX")
+        return { kind: "refused", row: r, reason: "XX is not a role here." };
+      return { kind: "add", row: r };
+    }),
+  });
+  const MERGE_PASTE =
+    "code,name\nDL,Lead\nBE,Backend\nXX,Nope\nOP,Platform\nQA,Quality";
+
+  function openMerge(onCommit = vi.fn()) {
+    render(
+      <CsvPasteDialog
+        table={ESTIMATE_ROLES}
+        rowSchema={ROLE_SCHEMA}
+        onCommit={onCommit}
+        pasteOutcome={byCode}
+        uiBridgeId="t.paste"
+      />
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Paste from a spreadsheet" })
+    );
+    return onCommit;
+  }
+
+  it("registers under the dialog's id, named and described by the table", () => {
+    open();
+    expect(bridge.last?.id).toBe("t.paste");
+    expect(bridge.last?.name).toBe(ESTIMATE_ALLOCATIONS.csv.label);
+    expect(bridge.last?.description).toBe(ESTIMATE_ALLOCATIONS.csv.help);
+    expect(bridge.last?.actions?.map((a) => a.id)).toEqual(["commit"]);
+    // Declared, never left for a consumer to infer.
+    expect(commitAction().effect).toBe("write");
+  });
+
+  it("says nothing is read yet, and rejects, before a reading", async () => {
+    const onCommit = open();
+    expect(commitAction().description).toBe(NOTHING_READ_DESCRIPTION);
+    expect(state()).toEqual({
+      open: true,
+      read: false,
+      commit: null,
+      enabled: false,
+      add: null,
+      update: null,
+      unchanged: null,
+      left_out: null,
+    });
+    await expect(commitAction().handler()).rejects.toThrow(
+      "Nothing has been read"
+    );
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("describes a replace, and its handler commits what the button commits", async () => {
+    const onCommit = open();
+    read(PARTLY_BAD);
+    const button = screen.getByRole("button", {
+      name: "Replace the allocations with these 3",
+    });
+    expect(commitAction().label).toBe(button.textContent);
+    expect(commitAction().effect).toBe("write");
+    expect(commitAction().description).toBe(
+      "Replaces the allocations in this page's working copy with the 3 rows read; nothing reaches the server until the page's Save."
+    );
+    expect(state()).toEqual({
+      open: true,
+      read: true,
+      commit: "Replace the allocations with these 3",
+      enabled: true,
+      add: null,
+      update: null,
+      unchanged: null,
+      left_out: 3,
+    });
+    await act(async () => {
+      await expect(commitAction().handler()).resolves.toEqual({
+        committed: 3,
+      });
+    });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    const byHandler = onCommit.mock.calls[0]![0] as unknown[];
+    // The same commit the button makes, from a fresh dialog.
+    cleanup();
+    const byButton = open();
+    read(PARTLY_BAD);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Replace the allocations with these 3",
+      })
+    );
+    expect(byButton.mock.calls[0]![0]).toEqual(byHandler);
+    // The handler closed the dialog, as the button does.
+    expect(state()?.open).toBe(false);
+  });
+
+  it("describes a merge from its outcome, and commits the button's rows", async () => {
+    const onCommit = openMerge();
+    read(MERGE_PASTE);
+    const button = screen.getByRole("button", {
+      name: "Add 2 roles and update 1",
+    });
+    expect(commitAction().label).toBe(button.textContent);
+    expect(commitAction().effect).toBe("write");
+    expect(commitAction().description).toBe(
+      "Writes now, one record per row: adds 2, updates 1, leaves 1 as recorded, leaves out 1 line it cannot use; never removes a role."
+    );
+    expect(state()).toEqual({
+      open: true,
+      read: true,
+      commit: "Add 2 roles and update 1",
+      enabled: true,
+      add: 2,
+      update: 1,
+      unchanged: 1,
+      left_out: 1,
+    });
+    await act(async () => {
+      await commitAction().handler();
+    });
+    const byHandler = onCommit.mock.calls[0]![0] as ParsedRoleRow[];
+    expect(byHandler.map((r) => r.code)).toEqual(["DL", "BE", "OP", "QA"]);
+    cleanup();
+    const byButton = openMerge();
+    read(MERGE_PASTE);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add 2 roles and update 1" })
+    );
+    expect(byButton.mock.calls[0]![0]).toEqual(byHandler);
+  });
+
+  it("rejects when the reading has nothing to change", async () => {
+    const onCommit = openMerge();
+    read("code,name\nBE,Backend");
+    expect(commitAction().label).toBe("Nothing to change");
+    expect(state()?.enabled).toBe(false);
+    expect(commitAction().description).toBe(
+      "Writes now, one record per row: adds 0, updates 0, leaves 1 as recorded, leaves out 0 lines it cannot use; never removes a role."
+    );
+    await expect(commitAction().handler()).rejects.toThrow("Nothing to change");
+    expect(onCommit).not.toHaveBeenCalled();
   });
 });

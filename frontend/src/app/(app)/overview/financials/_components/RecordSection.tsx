@@ -6,7 +6,7 @@
  * the three tables here.
  *
  * Every row is its own record, so a change is written as soon as it is made:
- * one create, update or delete per row (`planWrites`), each naming the
+ * one create, update or delete per row (`planRecordWrites`), each naming the
  * version it was built on. A write somebody else has overtaken is a conflict
  * shown side by side, never an overwrite. Controls are absent for a reader
  * who may not edit.
@@ -15,6 +15,7 @@
 import { useMemo, useState } from "react";
 import { ChangeLogPanel } from "@/components/overview/editing/ChangeLogPanel";
 import { ConflictDialog } from "@/components/overview/editing/ConflictDialog";
+import type { PasteOutcome } from "@/components/overview/editing/CsvPasteDialog";
 import { RecordTable } from "@/components/overview/editing/RecordTable";
 import {
   VersionConflictError,
@@ -28,7 +29,14 @@ import type {
   SaveResult,
   UpdateOptions,
 } from "@/components/overview/editing/useResource";
-import { bodyOf, planWrites } from "../../_lib/costs";
+import {
+  bodyOf,
+  type ImportRules,
+  classifyImport,
+  planImportWrites,
+  planRecordWrites,
+  type Writes,
+} from "@/components/overview/editing/writes";
 
 interface Audited extends VersionedRecord {
   updated_at: string;
@@ -46,7 +54,16 @@ export interface RecordSectionProps<
   /** Registry name, for the permission, schema and change log. */
   resource: string;
   table: TableDeclaration<Row>;
+  /** Every record of the table — not only the ones shown. */
   records: Rec[];
+  /**
+   * Which records the table shows (a page filter); all of them without it.
+   * A paste and a typed add are still checked against every record, and an
+   * edit is planned against the shown rows only, so it never deletes a
+   * hidden one. Keep it stable (`useCallback`): a new function re-derives
+   * the shown rows, which closes an open edit.
+   */
+  show?: (record: Rec) => boolean;
   toRow: (record: Rec) => Row;
   /** The fields a write may carry. */
   writable: readonly string[];
@@ -54,6 +71,9 @@ export interface RecordSectionProps<
   matchKey?: (row: Row) => string;
   /** A rule the served schema cannot express, refused before sending. */
   rowProblem?: (row: Row) => string | null;
+  /** An identity at least as loose as the server's, when that is looser
+   *  than the table's exact identity values (a name unique ignoring case). */
+  sameIdentity?: (row: Row) => string;
   /** A row (a create) or a patch (an update) as the API takes it, or the
    *  sentence saying why it cannot be sent. */
   toBody: (
@@ -86,10 +106,12 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
   resource,
   table,
   records,
+  show,
   toRow,
   writable,
   matchKey,
   rowProblem,
+  sameIdentity,
   toBody,
   label,
   describe,
@@ -103,7 +125,14 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
   uiBridgeId,
 }: RecordSectionProps<Rec, Row>) {
   const descriptor = useResourceDescriptor(resource);
-  const rows = useMemo(() => records.map(toRow), [records, toRow]);
+  // `rows` is a filter over `allRows`, so both hold the same objects — the
+  // typed-add check can tell the row under edit by reference.
+  const allRows = useMemo(() => records.map(toRow), [records, toRow]);
+  const rows = useMemo(() => {
+    if (!show) return allRows;
+    return allRows.filter((_row, index) => show(records[index] as Rec));
+    // `records` moves only with `allRows`, which derives from it.
+  }, [records, allRows, show]);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   // Every overtaken write of one save, shown one at a time so none is lost.
@@ -133,20 +162,34 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
 
   const apply = async (next: Row[], how: "edit" | "import") => {
     const source: WriteSource = how === "import" ? "import" : "ui";
-    const plan = planWrites(rows, next, how, writable, matchKey);
-    if (rowProblem) {
-      const problems: string[] = [];
-      for (const row of [
-        ...plan.creates,
-        ...plan.updates.map((u) => ({ ...u.row, ...u.patch })),
-      ]) {
-        const problem = rowProblem(row);
-        if (problem) problems.push(`${label(row)}: ${problem}`);
-      }
-      if (problems.length > 0) {
-        setErrors(problems);
-        return;
-      }
+    const problems: string[] = [];
+    let plan: Writes<Row>;
+    if (how === "import") {
+      // Re-classified against every record as it stands now. The preview
+      // already left out every refused line, so a refusal here can only be a
+      // race with another writer — and refuses the whole batch.
+      const fates = classifyImport(allRows, next, writable, matchKey, rules);
+      for (const fate of fates)
+        if (fate.kind === "refused")
+          problems.push(`${label(fate.row)}: ${fate.reason}`);
+      plan = planImportWrites(fates);
+    } else {
+      // An edit's deletes are the previous rows missing from `next`, and
+      // `next` is the SHOWN table — so it is planned against the shown rows
+      // alone, or every hidden record would be deleted.
+      plan = planRecordWrites(rows, next, how, writable, matchKey);
+      if (rowProblem)
+        for (const row of [
+          ...plan.creates,
+          ...plan.updates.map((u) => ({ ...u.row, ...u.patch })),
+        ]) {
+          const problem = rowProblem(row);
+          if (problem) problems.push(`${label(row)}: ${problem}`);
+        }
+    }
+    if (problems.length > 0) {
+      setErrors(problems);
+      return;
     }
     setBusy(true);
     const failures: string[] = [];
@@ -192,6 +235,33 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
     if (wrote) onWritten();
   };
 
+  // What a paste would do, classified from the same inputs `apply` hands
+  // `planImportWrites` — every record, and the table's own rules — so the
+  // paste button says what the writes will be and a line the commit would
+  // refuse is refused at its line.
+  //
+  // A line is held to `rowProblem` and to what `toBody` would refuse to send,
+  // so the preview never offers a write the commit then reports as failed.
+  // Only a create is held to `toBody`: an update's row here is the record it
+  // would leave (it has an id), and an update's own body is its patch.
+  const importProblem = (row: Row): string | null => {
+    const problem = rowProblem?.(row);
+    if (problem) return problem;
+    if (row.id) return null;
+    const body = toBody(bodyOf(row, writable) as Partial<Row>, "create");
+    return typeof body === "string" ? body : null;
+  };
+  const rules: ImportRules<Row> = {
+    rowProblem: importProblem,
+    table,
+    identityOf: sameIdentity,
+  };
+  const pasteOutcome = (pasted: Row[]): PasteOutcome<Row> => ({
+    kind: "merge",
+    fates: classifyImport(allRows, pasted, writable, matchKey, rules),
+  });
+
+  // The table's own last change, over every record — not the filtered view's.
   const latest = records.reduce<Rec | null>(
     (newest, r) => (!newest || r.updated_at > newest.updated_at ? r : newest),
     null
@@ -202,10 +272,12 @@ export function RecordSection<Rec extends Audited, Row extends { id: string }>({
       <RecordTable
         table={table}
         rows={rows}
+        identityRows={allRows}
         canEdit={canEdit}
         busy={busy}
         rowSchema={descriptor?.schemas.create}
         onChange={(next, how) => void apply(next, how)}
+        pasteOutcome={pasteOutcome}
         uiBridgeId={`${uiBridgeId}.table`}
       />
       {errors.length > 0 && (

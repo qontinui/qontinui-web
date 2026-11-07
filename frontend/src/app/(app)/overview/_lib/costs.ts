@@ -5,8 +5,8 @@
  *
  * Every row is a record of its own on the authoring contract (its own
  * version, `If-Match` and change-log row), so a table is never saved whole:
- * each change the reader makes (`planWrites`) is one create, update or
- * delete.
+ * each change the reader makes (the kit's `planRecordWrites`) is one
+ * create, update or delete.
  *
  * Pure: no React, no network.
  */
@@ -19,6 +19,7 @@ import {
 } from "@/components/overview/editing/csv";
 import { isIsoDay } from "@/components/overview/editing/fields";
 import type { TableDeclaration } from "@/components/overview/editing/registry";
+import type { Planned } from "@/components/overview/editing/writes";
 import { parseAmountToMicros } from "@/components/overview/money";
 import type {
   AmountKind,
@@ -129,97 +130,6 @@ function unknownCategory(name: string, categories: CategoryChoice[]): string {
   return `There is no category “${name}”. Use one of: ${
     categories.map((c) => c.name).join(", ") || "add categories first"
   }.`;
-}
-
-// ---------------------------------------------------------------------------
-// Planning writes
-// ---------------------------------------------------------------------------
-
-interface Planned {
-  id: string;
-  /** Set on a row read from a paste: the columns it actually gave, so an
-   *  update writes only those and an empty cell never clears a value. */
-  supplied?: string[];
-}
-
-export interface Writes<Row> {
-  creates: Row[];
-  /** `row` is the record as it stood; `patch` only what changed. */
-  updates: { row: Row; patch: Partial<Row> }[];
-  deletes: Row[];
-}
-
-function changed<Row>(
-  before: Row,
-  after: Row,
-  fields: readonly string[]
-): Partial<Row> {
-  const patch: Record<string, unknown> = {};
-  for (const field of fields) {
-    const a = (before as Record<string, unknown>)[field];
-    const b = (after as Record<string, unknown>)[field];
-    if (a !== b) patch[field] = b;
-  }
-  return patch as Partial<Row>;
-}
-
-/**
- * The writes that turn `previous` (what the server holds) into `next`.
- *
- * - An **edit** is the table as the reader left it: a row with no id is
- *   created, a row whose fields moved is updated with only those fields, a
- *   row that is gone is deleted.
- * - An **import** (a CSV paste) never deletes. With `matchKey`, a pasted row
- *   matching exactly ONE existing row updates it (only the columns it gave);
- *   every other row is created. Without one, every pasted row is new.
- */
-export function planWrites<Row extends Planned>(
-  previous: Row[],
-  next: Row[],
-  how: "edit" | "import",
-  writable: readonly string[],
-  matchKey?: (row: Row) => string
-): Writes<Row> {
-  const plan: Writes<Row> = { creates: [], updates: [], deletes: [] };
-  if (how === "import") {
-    for (const row of next) {
-      const same = matchKey
-        ? previous.filter((p) => matchKey(p) === matchKey(row))
-        : [];
-      if (same.length === 1) {
-        const patch = changed(same[0]!, row, row.supplied ?? writable);
-        if (Object.keys(patch).length > 0)
-          plan.updates.push({ row: same[0]!, patch });
-      } else {
-        plan.creates.push(row);
-      }
-    }
-    return plan;
-  }
-  const byId = new Map(previous.map((p) => [p.id, p]));
-  const kept = new Set<string>();
-  for (const row of next) {
-    const was = row.id ? byId.get(row.id) : undefined;
-    if (!was) {
-      plan.creates.push(row);
-      continue;
-    }
-    kept.add(row.id);
-    const patch = changed(was, row, writable);
-    if (Object.keys(patch).length > 0) plan.updates.push({ row: was, patch });
-  }
-  plan.deletes = previous.filter((p) => !kept.has(p.id));
-  return plan;
-}
-
-/** The fields of `row` a create sends. */
-export function bodyOf<Row>(
-  row: Row,
-  writable: readonly string[]
-): Record<string, unknown> {
-  return Object.fromEntries(
-    writable.map((f) => [f, (row as Record<string, unknown>)[f]])
-  );
 }
 
 // ---------------------------------------------------------------------------

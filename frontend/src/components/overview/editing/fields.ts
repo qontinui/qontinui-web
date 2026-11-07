@@ -205,10 +205,36 @@ export function rowProblems<Row extends object>(
 
 /** The identity of a row, as a key: two rows with one key are one too many. */
 export function identityKey<Row extends object>(
-  table: TableDeclaration<Row>,
+  table: Pick<TableDeclaration<Row>, "identity">,
   row: Row
 ): string {
   return table.identity.map((f) => String(get(row, f) ?? "")).join("\u0000");
+}
+
+/**
+ * Why a row cannot be added beside one with the same identity — the one
+ * message for both a typed add and a pasted line, and the field it belongs
+ * on (the identity's first).
+ */
+export function identityClash<Row extends object>(
+  table: Pick<TableDeclaration<Row>, "identity" | "fields" | "singular">
+): { field: string; message: string } {
+  const first = table.identity[0] as string;
+  const label = table.fields.find((f) => f.field === first)?.label ?? first;
+  return {
+    field: first,
+    message: `There is already a ${table.singular} with this ${
+      table.identity.length > 1 ? "combination" : label.toLowerCase()
+    }.`,
+  };
+}
+
+/** Why a pasted line cannot be added beside an earlier line of the same
+ *  paste with the same identity. */
+export function earlierLineClash<Row extends object>(
+  table: Pick<TableDeclaration<Row>, "singular">
+): string {
+  return `An earlier line already gives this ${table.singular}.`;
 }
 
 /** How a field reads in the table. */
