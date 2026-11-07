@@ -10,17 +10,19 @@ Phase 3: six nullable columns on ``coord.condition_runs`` -- ``claimed_status``,
    file, and the docstring's ``Revises:`` line agrees with it (the PR re-chains
    onto ``main``'s single head at open and after every rebase, and a re-chain
    that moves one but not the other fails here);
-2. both directions keep the shape coord's merge-train migration classifier
-   admits and the ``alembic-schema-arg-gate`` hook requires: a bounded lock
-   wait, then one ``op.add_column`` per column with an inline nullable
-   ``sa.Column``, ``schema="coord"`` and ``if_not_exists=True`` (reversed as
-   ``op.drop_column`` with ``if_exists=True``), and the idempotency marker the
-   classifier reads from the file's text;
+2. ``upgrade()`` keeps the shape coord's merge-train migration classifier
+   admits (``downgrade()`` is outside its scan): a bounded lock wait, then one
+   ``op.add_column`` per column with an inline nullable ``sa.Column`` and
+   ``if_not_exists=True``, plus the idempotency marker the classifier reads
+   from the file's text. Both directions carry the ``schema="coord"`` the
+   ``alembic-schema-arg-gate`` hook requires, and ``downgrade()`` reverses the
+   adds as ``op.drop_column`` with ``if_exists=True``;
 3. live: at the parent none of the six exist; after each upgrade all six do,
    with the planned type, nullable and with no default; after the downgrade
-   they are gone; the table gains no constraint and no index; a row written
-   before the upgrade keeps every value through up/down/up and reads six NULLs;
-   and re-applying ``upgrade()`` on top is a no-op.
+   they are gone, and re-applying ``downgrade()`` there is a no-op; the table
+   gains no constraint and no index; a row written before the upgrade keeps
+   every value through up/down/up and reads six NULLs; and re-applying
+   ``upgrade()`` on top is a no-op.
 
 The structural tests always run. The live one self-skips without a test
 Postgres and REPORTS the skip (``pytest -rs``): set ``QONTINUI_TEST_PG_DSN``
@@ -32,6 +34,7 @@ from __future__ import annotations
 import ast
 import re
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -167,9 +170,11 @@ def test_upgrade_adds_each_column_in_the_shape_the_classifier_admits() -> None:
 
     coord's merge-train classifier (qontinui-coord
     ``crates/coord/src/pr_merge/migration_classifier.rs``) reads a column's
-    options only from an inline ``sa.Column(...)`` and rejects a default, a
-    NOT NULL or any key/index option; ``schema="coord"`` is what the
-    ``alembic-schema-arg-gate`` pre-commit hook requires of every op.
+    options only from an inline ``sa.Column(...)``, and rejects a volatile
+    default, a NOT NULL without a constant server default, or a key/index
+    option. This test is stricter and allows no default at all.
+    ``schema="coord"`` is what the ``alembic-schema-arg-gate`` pre-commit hook
+    requires of every op.
     """
     calls = _op_calls("upgrade")
     assert len(calls) == 1 + len(_COLUMNS), [ast.unparse(c) for c in calls]
@@ -320,10 +325,22 @@ def _row(engine: Engine, run_id: uuid.UUID, columns: list[str]) -> tuple[object,
     return tuple(row)
 
 
+def _reapply(engine: Engine, step: Callable[[], None]) -> None:
+    """Run one of the revision's own functions again, outside alembic's ledger.
+
+    Once ``alembic_version`` names a revision, alembic will not re-run it, so
+    this is the only way to exercise an ``IF [NOT] EXISTS`` guard for real.
+    """
+    with engine.begin() as conn:
+        with Operations.context(MigrationContext.configure(conn)):
+            step()
+
+
 @_needs_pg
 def test_live_up_down_up_adds_and_drops_exactly_the_six_columns() -> None:
     root = backend_root()
     parent = _parent_revision_id()
+    module = load_revision_module(_revision_path(), f"_rerun_{_REVISION_ID}")
     with ephemeral_database(admin_database_url(), "condruns02") as (engine, db_url):
         # 1. Parent revision: the table exists, none of the six columns do.
         run_alembic(root, db_url, "upgrade", parent)
@@ -356,17 +373,19 @@ def test_live_up_down_up_adds_and_drops_exactly_the_six_columns() -> None:
         assert _table_indexes(engine) == baseline_indexes
         assert _row(engine, run_id, existing) == seeded
 
-        # 4. Re-upgrade: the six are back.
+        # 4. Re-applying downgrade() there is a no-op: if_exists=True is
+        #    exercised for real, not only read off the source.
+        _reapply(engine, module.downgrade)
+        assert _table_columns(engine) == baseline_columns
+
+        # 5. Re-upgrade: the six are back.
         run_alembic(root, db_url, "upgrade", _REVISION_ID)
         _assert_the_six(engine, present=True)
         assert _table_columns(engine) == baseline_columns | set(_COLUMN_NAMES)
 
-        # 5. Re-applying upgrade() on top is a no-op: if_not_exists=True is
+        # 6. Re-applying upgrade() on top is a no-op: if_not_exists=True is
         #    exercised for real, not only read off the source.
-        module = load_revision_module(_revision_path(), f"_rerun_{_REVISION_ID}")
-        with engine.begin() as conn:
-            with Operations.context(MigrationContext.configure(conn)):
-                module.upgrade()
+        _reapply(engine, module.upgrade)
         _assert_the_six(engine, present=True)
         assert _table_columns(engine) == baseline_columns | set(_COLUMN_NAMES)
         assert _row(engine, run_id, existing) == seeded
