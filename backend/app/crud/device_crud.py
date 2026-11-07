@@ -14,13 +14,18 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from qontinui_schemas.common import utc_now
-from sqlalchemy import or_, select, update
+from sqlalchemy import ColumnElement, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.models.device import Device
 from app.models.device_connection import DeviceConnection
 
 __all__ = [
+    "CI_RUNNER_CAPABILITY",
+    "DEVICE_IS_CI_RUNNER",
+    "DeviceIsCiRunnerError",
+    "carries_ci_runner_marker",
     "register_device",
     "ensure_device_for_secondary",
     "heartbeat_device",
@@ -37,6 +42,82 @@ __all__ = [
     "credential_revoked_at_for_devices",
     "lock_device_row",
 ]
+
+
+# ---------------------------------------------------------------------------
+# CI-registrar rows — the ``ci_runner`` marker
+#
+# qontinui-coord's CI-runner registrar (``crates/coord/src/ci_runner_registrar.rs``)
+# mints one ``coord.devices`` row per GitHub Actions runner, under a device id
+# anyone can compute from the runner's public name, and marks it by writing
+# ``CI_RUNNER_CAPABILITY`` into ``capabilities``. coord's predicate for the mark
+# is ``NOT_A_CI_RUNNER_DEVICE_SQL`` — ``capabilities @> '["ci_runner"]'::jsonb``,
+# a JSONB array holding that string as an element — and only the registrar may
+# write a marked row. This module is web's writer of the same table, so a
+# device JWT that names a marked row (a leftover pairing JWT from a squat of
+# the id, say) could otherwise re-own it and strip its marker on the WS
+# handshake. Plan ``2026-11-07-a-pre-registered-ci-registrar-row-keeps-the-
+# squatters-owner-and-home``, vet correction V1; coord finding ``3fc1ddb1``.
+#
+# What this refuses is REWRITING a marked row. It does not stop a client from
+# MARKING one: the handshake still writes the runner's own ``capabilities``
+# list verbatim, marker included, where coord's register door drops it at
+# ingest (coord finding ``cde2133b``, not closed here).
+#
+# NOT :attr:`Device.is_ci_runner`. That property answers a display question
+# ("infrastructure or workstation?") from ``capability_user_paired`` and the
+# label set, and reads False for the row this guard exists for: a squatted,
+# claimed registrar row has ``capability_user_paired = true``.
+# ---------------------------------------------------------------------------
+
+#: The marker coord's CI-runner registrar writes into ``coord.devices.capabilities``
+#: (qontinui-coord ``CI_RUNNER_CAPABILITY``, the same spelling).
+CI_RUNNER_CAPABILITY = "ci_runner"
+
+#: The code a write naming a marked row is refused with: the spelling coord's
+#: own doors answer (qontinui-coord ``DEVICE_IS_CI_RUNNER``).
+DEVICE_IS_CI_RUNNER = "device_is_ci_runner"
+
+
+class DeviceIsCiRunnerError(Exception):
+    """A write named a ``coord.devices`` row carrying the CI-registrar marker.
+
+    Raised before the raising call writes anything; the device row is left
+    exactly as it was.
+    """
+
+    def __init__(self, device_id: UUID) -> None:
+        super().__init__(f"{DEVICE_IS_CI_RUNNER}: {device_id}")
+        self.device_id = device_id
+
+
+def _ci_runner_marker() -> ColumnElement[bool]:
+    """``capabilities @> '["ci_runner"]'`` — coord's operator and literal.
+
+    The JSONB comparator renders ``.contains`` as ``@>`` (not ``LIKE``), so
+    Postgres decides membership exactly as coord does: an element of a
+    top-level array, never a substring, a nested array or an object key.
+    """
+    return Device.capabilities.contains([CI_RUNNER_CAPABILITY])
+
+
+def _not_a_ci_runner() -> ColumnElement[bool]:
+    """coord's ``NOT_A_CI_RUNNER_DEVICE_SQL``, arm for arm.
+
+    The ``IS NULL`` arm is unreachable (the column is ``NOT NULL DEFAULT
+    '[]'``); it is kept so the two predicates stay one predicate.
+    """
+    return or_(Device.capabilities.is_(None), ~_ci_runner_marker())
+
+
+async def carries_ci_runner_marker(db: AsyncSession, device_id: UUID) -> bool:
+    """Whether ``device_id``'s stored row carries the CI-registrar marker.
+
+    ``False`` when it does not, and when there is no row (nothing to protect).
+    A failed read RAISES; callers refuse on it, never read it as "unmarked".
+    """
+    stmt = select(_ci_runner_marker()).where(Device.device_id == device_id)
+    return bool((await db.execute(stmt)).scalar_one_or_none())
 
 
 async def register_device(
@@ -76,6 +157,18 @@ async def register_device(
 
     Both paths set ``capability_user_paired = true`` and
     ``derived_status = 'healthy'``.
+
+    EXCEPT on a row carrying the CI-registrar marker (see
+    :data:`CI_RUNNER_CAPABILITY`): that raises :class:`DeviceIsCiRunnerError`
+    and writes nothing. The UPDATE decides it, not the SELECT that found the
+    row, because the registrar can mark a row between the two and only the
+    statement re-evaluates its ``WHERE`` against the committed row. A caller's
+    earlier read is therefore an early answer, never the guard. The refusal
+    leaves the session's transaction to the caller and rolls nothing back:
+    nothing was written, a 0-row UPDATE holds no row lock, and a rollback
+    would expire every object in the caller's session, which a caller that
+    carries on after the refusal (the testing WebSocket handler, through
+    :func:`runner_crud.register_runner`) could not lazily reload under asyncio.
     """
     if device_id is not None:
         query = select(Device).where(Device.device_id == device_id)
@@ -93,20 +186,39 @@ async def register_device(
         # When called from the WS handshake the JWT-asserted user_id /
         # name supersede whatever the row had — coord is the identity
         # authority. ``device_id`` is the PK and never updated here.
-        existing.user_id = user_id
-        existing.name = name
-        existing.hostname = hostname
-        existing.port = port
-        existing.capabilities = capabilities
-        existing.restate_enabled = restate_enabled
-        existing.restate_healthy = restate_healthy
-        existing.last_heartbeat = now
-        existing.derived_status = "healthy"
-        existing.capability_user_paired = True
+        row_id: UUID = existing.device_id
+        values: dict[str, object] = {
+            "user_id": user_id,
+            "name": name,
+            "hostname": hostname,
+            "port": port,
+            "capabilities": capabilities,
+            "restate_enabled": restate_enabled,
+            "restate_healthy": restate_healthy,
+            "last_heartbeat": now,
+            "derived_status": "healthy",
+            "capability_user_paired": True,
+        }
         if os is not None:
-            existing.os = os
+            values["os"] = os
         if os_version is not None:
-            existing.os_version = os_version
+            values["os_version"] = os_version
+        written = (
+            await db.execute(
+                update(Device)
+                .where(Device.device_id == row_id, _not_a_ci_runner())
+                .values(values)
+                .returning(Device.device_id)
+                .execution_options(synchronize_session=False)
+            )
+        ).scalar_one_or_none()
+        if written is None:
+            # No rollback, on either arm: see the docstring's last sentence.
+            if await carries_ci_runner_marker(db, row_id):
+                raise DeviceIsCiRunnerError(row_id)
+            # The row vanished between the SELECT and the UPDATE — what the
+            # ORM's own flush raised here before this was a statement.
+            raise StaleDataError(f"device row {row_id} was deleted during registration")
         await db.commit()
         await db.refresh(existing)
         return existing
