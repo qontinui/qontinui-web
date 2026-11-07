@@ -64,10 +64,20 @@ function coverageLine(coverage: ConditionRunCoverage): string {
  */
 function VerdictMark({ verdict }: { verdict: string }) {
   if (verdict === "pass") {
-    return <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />;
+    return (
+      <>
+        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
+        <span className="sr-only">Pass</span>
+      </>
+    );
   }
   if (verdict === "fail") {
-    return <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />;
+    return (
+      <>
+        <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+        <span className="sr-only">Fail</span>
+      </>
+    );
   }
   return (
     <CircleHelp className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -100,7 +110,8 @@ function Evidence({ evidence }: { evidence: ConditionRunResult["evidence"] }) {
 }
 
 interface VerdictRowProps {
-  condition: string;
+  /** The condition's text; `null` when the report did not name it. */
+  condition: string | null;
   verdict: string;
   /** Text naming a non-pass, non-fail verdict. */
   label: string | null;
@@ -113,7 +124,11 @@ function VerdictRow({ condition, verdict, label, evidence }: VerdictRowProps) {
       <VerdictMark verdict={verdict} />
       <div className="min-w-0 flex-1">
         <p className="text-sm">
-          {condition}
+          {condition ?? (
+            <span className="text-muted-foreground">
+              Condition not named in the report
+            </span>
+          )}
           {label && (
             <span className="ml-2 text-xs text-muted-foreground">{label}</span>
           )}
@@ -152,8 +167,11 @@ export function RunHistory({
     void load();
   }, [load, refreshKey]);
 
-  const conditionText = (conditionId: string): string =>
-    conditions.find((c) => c.condition_id === conditionId)?.text ?? conditionId;
+  const conditionText = (conditionId: string | null): string | null =>
+    typeof conditionId === "string"
+      ? (conditions.find((c) => c.condition_id === conditionId)?.text ??
+        conditionId)
+      : null;
 
   return (
     <div className="space-y-3">
@@ -199,7 +217,7 @@ export function RunHistory({
 interface RunRowProps {
   run: ConditionRun;
   getRun: (runId: string) => Promise<ConditionRun | null>;
-  conditionText: (conditionId: string) => string;
+  conditionText: (conditionId: string | null) => string | null;
 }
 
 function RunRow({ run, getRun, conditionText }: RunRowProps) {
@@ -220,15 +238,20 @@ function RunRow({ run, getRun, conditionText }: RunRowProps) {
     }
   };
 
+  // The row shows ONE snapshot: the fetched run once there is one, else the
+  // list row. Only the fetch itself is keyed by the list row's id.
   const shown = detail ?? run;
   const results: ConditionRunResult[] = detail?.results ?? [];
   const summary = detail?.summary ?? run.summary ?? null;
-  const duration = fmtDuration(run.started_at, run.finished_at);
+  const duration = fmtDuration(shown.started_at, shown.finished_at);
   const coverage = shown.coverage ?? null;
-  // Conditions that got no verdict, unless coord also served them as results.
-  const missing = (coverage?.missing ?? []).filter(
-    (id) => !results.some((res) => res.condition_id === id)
-  );
+  // Conditions that got no verdict: read defensively (the proxy passes coord's
+  // JSON through unchecked), each id once so row keys stay unique, and none
+  // that coord also served as a result.
+  const reportedMissing = coverage?.missing;
+  const missing = (
+    Array.isArray(reportedMissing) ? [...new Set(reportedMissing)] : []
+  ).filter((id) => !results.some((res) => res.condition_id === id));
   // The agent's own word is shown only where coord's verdict disagrees with it.
   const claimed =
     shown.claimed_status && shown.claimed_status !== shown.status
@@ -249,15 +272,15 @@ function RunRow({ run, getRun, conditionText }: RunRowProps) {
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
         )}
         <StatusBadge
-          status={run.status}
-          reason={run.unknown_reason}
-          detail={run.unknown_detail}
+          status={shown.status}
+          reason={shown.unknown_reason}
+          detail={shown.unknown_detail}
         />
         <span className="text-xs capitalize text-muted-foreground">
-          {run.trigger}
+          {shown.trigger}
         </span>
         <span className="ml-auto text-xs text-muted-foreground">
-          {fmtTime(run.started_at)}
+          {fmtTime(shown.started_at)}
           {duration ? ` · ${duration}` : ""}
         </span>
       </button>
@@ -306,9 +329,9 @@ function RunRow({ run, getRun, conditionText }: RunRowProps) {
           )}
 
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span>Started: {fmtTime(run.started_at)}</span>
-            <span>Finished: {fmtTime(run.finished_at)}</span>
-            {run.device_id && <span>Device: {run.device_id}</span>}
+            <span>Started: {fmtTime(shown.started_at)}</span>
+            <span>Finished: {fmtTime(shown.finished_at)}</span>
+            {shown.device_id && <span>Device: {shown.device_id}</span>}
             {claimed && <span>Agent claimed: {claimed}</span>}
           </div>
         </div>

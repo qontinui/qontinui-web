@@ -126,6 +126,19 @@ describe("StatusBadge reason sentences", () => {
     );
   });
 
+  it("treats a reason or detail that is not a string as absent, never throwing", () => {
+    // The proxy passes coord's JSON through unchecked.
+    expect(
+      badge(
+        <StatusBadge
+          status="unknown"
+          reason={42 as unknown as string}
+          detail={{ cause: "x" } as unknown as string}
+        />
+      ).textContent
+    ).toBe("Unknown");
+  });
+
   it("names the runner's own reason inside the runner_refused sentence", () => {
     expect(
       badge(
