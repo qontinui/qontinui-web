@@ -62,6 +62,8 @@
  *   so there is no palette to enrol in `console/attention.test.ts`.
  */
 
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { NotebookText } from "lucide-react";
 import { KindAuthorshipTierControl } from "./_components/KindAuthorshipTierControl";
 import {
@@ -71,8 +73,28 @@ import {
 import { PolicyUpstreamDialControl } from "./_components/PolicyUpstreamDialControl";
 import { PolicyWriteDialControl } from "./_components/PolicyWriteDialControl";
 import { PromptDocumentList } from "./_components/PromptDocumentList";
-import { usePublishAll } from "./_hooks/usePublishAll";
+import { usePublishAll, type PublishAllState } from "./_hooks/usePublishAll";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
+import { parseDeepLink } from "./_lib/deepLink";
+
+/**
+ * The list, opened on `?kind=&name=` when the URL names a document (plan
+ * `2026-10-06-overview-objectives-view` D2). Its own component because
+ * `useSearchParams` must sit under a `<Suspense>` boundary in Next 15.
+ */
+function DeepLinkedList({
+  publishAllState,
+}: {
+  publishAllState: PublishAllState;
+}) {
+  const params = useSearchParams();
+  return (
+    <PromptDocumentList
+      publishAllState={publishAllState}
+      deepLink={parseDeepLink(params)}
+    />
+  );
+}
 
 export default function PromptDocumentsPage() {
   // ONE auto-publish status read for the whole page (plan
@@ -108,7 +130,15 @@ export default function PromptDocumentsPage() {
         </span>
       </p>
 
-      <PromptDocumentList publishAllState={publishAllState} />
+      <Suspense
+        fallback={
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            Loading documents…
+          </div>
+        }
+      >
+        <DeepLinkedList publishAllState={publishAllState} />
+      </Suspense>
 
       {/*
         The tenant-wide autonomy dial sits with the per-document write-access

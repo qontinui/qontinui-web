@@ -82,6 +82,30 @@ export default function DocumentsPage() {
 
   return (
     <div className="space-y-8" data-ui-bridge-id="overview.documents">
+      {/* Where the project's own description and its objectives live — they
+          are coord documents, not pages here (plan
+          `2026-10-06-overview-objectives-view` D1). */}
+      <p
+        className="max-w-[48rem] text-sm leading-relaxed text-muted-foreground"
+        data-ui-bridge-id="overview.documents.elsewhere"
+      >
+        Looking for the project&rsquo;s description or its measures of success?
+        The description is on the{" "}
+        <Link
+          href="/overview"
+          className="text-primary underline-offset-4 hover:underline"
+        >
+          Summary
+        </Link>
+        , and the objectives and how each measure is doing are on{" "}
+        <Link
+          href="/overview/objectives"
+          className="text-primary underline-offset-4 hover:underline"
+        >
+          Objectives
+        </Link>
+        .
+      </p>
       <div className="flex max-w-[48rem] flex-wrap items-end gap-3">
         <div className="min-w-0 flex-1">
           <label

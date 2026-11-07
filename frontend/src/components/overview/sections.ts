@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   Presentation,
   ShieldAlert,
+  Target,
   Users,
   Wallet,
   Workflow,
@@ -47,6 +48,15 @@ export const OVERVIEW_SECTIONS: readonly OverviewSection[] = [
     route: OVERVIEW_ROOT,
     icon: LayoutDashboard,
     description: "What this project is, who it is for, and where it stands",
+    available: true,
+  },
+  {
+    id: "overview-objectives",
+    label: "Objectives",
+    route: "/overview/objectives",
+    icon: Target,
+    description:
+      "What the project is aiming for, and how each measure is doing",
     available: true,
   },
   {
