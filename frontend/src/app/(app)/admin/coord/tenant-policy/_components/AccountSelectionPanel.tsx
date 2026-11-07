@@ -41,7 +41,7 @@ const LEVEL_COPY: Record<
   alternating_handoff: {
     label: "Alternating handoff",
     blurb:
-      "Every unpinned runner ranks the accounts still under their expected weekly pace by expected usage, highest first, and alternates session handoffs between the first account and each of the others in turn (1, 2, 1, 3, 1, 4, 1, 2, …), counting handoffs from the last 3 hours. With no handoffs in that window, the next one goes to the first account. A machine with fewer than two accounts is unaffected. This is also the mode a runner uses on its own when no mode is set on the machine. Runners that predate this mode keep their local mode.",
+      "Every unpinned runner ranks the accounts still under their expected weekly pace by expected usage, highest first, and alternates session handoffs between the first account and each of the others in turn (1, 2, 1, 3, 1, 4, 1, 2, …), counting handoffs from the last 3 hours. With no handoffs in that window, the next one goes to the first account. New sessions start on the first account; only handoffs alternate. A machine with fewer than two accounts is unaffected. Runners that predate this mode keep their local mode.",
   },
 };
 
