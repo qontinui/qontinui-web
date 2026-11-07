@@ -59,7 +59,9 @@ import {
   isKnownDecisionDomain,
   isKnownPlane,
   isLabelledSource,
+  isDetectionBoundSource,
   planeLabel,
+  unstatedSummary,
 } from "./coordHomeStatus";
 
 const CLASSES = Object.fromEntries(UNIT_CLASSES.map((c) => [c, 1]));
@@ -1483,6 +1485,103 @@ describe("round-8 review — R8 for what the view does not know", () => {
     expect(sourceLabel("watcher:health_ledger", PLANES, () => null)).toBe(
       "Watcher feeding 2 areas not named here"
     );
+  });
+
+  // Plan 2026-11-07-project-state-does-not-know-names-planes-slower-than-the-fault-to-visibility-bar:
+  // a `detection_bound:<plane>` row's bound is how old a fault on that plane
+  // can be before coord first observes it — a detection lag, not a data age.
+  describe("a detection_bound:<plane> row", () => {
+    const slow = () =>
+      row({
+        source: "detection_bound:merge_train",
+        state: "read",
+        freshness_bound_secs: 3600,
+        exclusion_reason:
+          "a fault on this plane can be up to 3600s old before coord first observes it, above the 600s fault-to-visibility target",
+      });
+    const unknown = () =>
+      row({
+        source: "detection_bound:cloud_service",
+        state: "unknown",
+        freshness_bound_secs: null,
+        exclusion_reason: "no detection bound could be derived for this plane",
+      });
+
+    it("is recognised by its prefix", () => {
+      expect(isDetectionBoundSource("detection_bound:merge_train")).toBe(true);
+      expect(isDetectionBoundSource("watcher:merge_train")).toBe(false);
+      expect(isDetectionBoundSource("work_units")).toBe(false);
+    });
+
+    it("is labelled by the area its fault lag is measured on", () => {
+      expect(sourceLabel("detection_bound:merge_train")).toBe(
+        "Time for a fault on merge train to reach this view"
+      );
+      expect(sourceLabel("detection_bound:coord_itself")).toBe(
+        "Time for a fault on coord to reach this view"
+      );
+      // An unmapped plane is spaced, as planeLabel spaces it.
+      expect(sourceLabel("detection_bound:new_plane")).toBe(
+        "Time for a fault on new plane to reach this view"
+      );
+      // An area the caller's words withhold is not named.
+      expect(sourceLabel("detection_bound:merge_train", null, () => null)).toBe(
+        "Time for a fault on an area not named here to reach this view"
+      );
+    });
+
+    it("words its bound as a detection lag, never as a data age", () => {
+      expect(sourceAgePhrase(slow())).toBe(
+        "a fault can be up to 1h old before coord sees it"
+      );
+      expect(sourceAgePhrase(slow())).not.toMatch(/may be up to/);
+      expect(sourceRowReason(slow())).toBe(
+        "a fault can be up to 1h old before coord sees it · exclusions not stated"
+      );
+    });
+
+    it("says no bound is known when coord could derive none", () => {
+      expect(sourceAgePhrase(unknown())).toBe("no detection bound known");
+      // Not dropped as an unstated age when a list states those once.
+      expect(sourceRowReason(unknown(), { omitUnstated: true })).toBe(
+        "no detection bound known"
+      );
+      expect(unstatedSummary([unknown()])).toBe(
+        "Coord stated no count of excluded rows for it."
+      );
+    });
+
+    it("leaves a slow-but-read plane out of the strip's sources not read", () => {
+      const body = calmBody();
+      body.does_not_know = [
+        { source: "work_units", state: "read" },
+        {
+          source: "detection_bound:merge_train",
+          state: "read",
+          freshness_bound_secs: 3600,
+        },
+      ];
+      const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
+      expect(strip.level).toBe("green");
+      const badge = strip.badges.find((b) => b.key === "unknown");
+      expect(badge?.label).toBe("unknown sources 0");
+    });
+
+    it("counts a plane with no derivable bound among sources not read", () => {
+      const body = calmBody();
+      body.does_not_know = [
+        {
+          source: "detection_bound:cloud_service",
+          state: "unknown",
+          freshness_bound_secs: null,
+        },
+      ];
+      const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
+      expect(strip.level).not.toBe("green");
+      expect(strip.badges.find((b) => b.key === "unknown")?.label).toBe(
+        "unknown sources 1"
+      );
+    });
   });
 
   it("spaces a source it has no label for, as it does an unknown domain", () => {

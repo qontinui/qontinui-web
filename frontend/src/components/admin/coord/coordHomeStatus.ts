@@ -1608,6 +1608,23 @@ export function isWatcherSource(source: string): boolean {
 }
 
 /**
+ * The prefix of a `does_not_know` row coord adds for each operator plane whose
+ * fault-to-visibility lag it measures against its target
+ * (`detection_bound:<plane>`, plan
+ * `2026-11-07-project-state-does-not-know-names-planes-slower-than-the-fault-to-visibility-bar`).
+ * Its `freshness_bound_secs` is how old a fault on that plane can be before
+ * coord first observes it — NOT the age of any data — or `null` (with
+ * `state: "unknown"`) when no bound could be derived. A slow-but-known plane
+ * is served `read` on purpose, so it is not counted among sources not read.
+ */
+const DETECTION_BOUND_SOURCE_PREFIX = "detection_bound:";
+
+/** Whether a `does_not_know` row is a plane's detection bound (`detection_bound:<plane>`). */
+export function isDetectionBoundSource(source: string): boolean {
+  return source.startsWith(DETECTION_BOUND_SOURCE_PREFIX);
+}
+
+/**
  * Whether the page's table labels `source` — its own key, never one inherited
  * from `Object.prototype`. A source it does not label reads as coord's own
  * identifier, {@link humanised}; the presentation lens words such a row in
@@ -1654,6 +1671,13 @@ export function sourceLabel(
       ? `Watcher feeding ${fed.named.join(", ")}`
       : "Watcher feeding Degrading";
   }
+  if (isDetectionBoundSource(source)) {
+    const plane = source.slice(DETECTION_BOUND_SOURCE_PREFIX.length);
+    const area = plane === "" ? null : label(plane);
+    return area === null
+      ? "Time for a fault on an area not named here to reach this view"
+      : `Time for a fault on ${area} to reach this view`;
+  }
   return humanised(source);
 }
 
@@ -1695,12 +1719,23 @@ export function sourceErrorSentence(s: SourceCoverageView): string | null {
  * - Any other row not read in full: the bound is stated as a bound. No age is
  *   promised for data the row may not hold.
  *
+ * - A detection-bound row (`detection_bound:<plane>`): the bound is how old a
+ *   fault on that plane can be before coord first observes it; with no bound,
+ *   coord could derive none, and the row says so.
+ *
  * The bound is written with {@link boundText}, to the second: coord's bounds
  * are not whole minutes (train health's is its 20 s memo TTL, and a watcher's
  * is at least 3 x the ledger's 30 s throttle floor, 90 s).
  */
 export function sourceAgePhrase(s: SourceCoverageView): string {
   const bound = s.freshnessBoundSecs;
+  if (isDetectionBoundSource(s.source)) {
+    // The bound is a detection lag, not a data age: "may be up to N old"
+    // would say the opposite of what coord measured.
+    return bound === null
+      ? "no detection bound known"
+      : `a fault can be up to ${boundText(bound)} old before coord sees it`;
+  }
   if (isWatcherSource(s.source)) {
     if (bound === null) return "freshness bound not stated";
     return s.error === "last_success_older_than_3x_interval"
@@ -1729,7 +1764,15 @@ export function sourceRowReason(
   // With `omitUnstated`, a field coord did not state is left off the row: the
   // list says it once for every row it applies to (`unstatedSummary`), rather
   // than repeat the identical clause on each.
-  if (!(omitUnstated && s.freshnessBoundSecs === null)) {
+  // A detection-bound row with no bound says so in its own words ("no
+  // detection bound known"), not as an unstated age, so it is never omitted.
+  if (
+    !(
+      omitUnstated &&
+      s.freshnessBoundSecs === null &&
+      !isDetectionBoundSource(s.source)
+    )
+  ) {
     parts.push(sourceAgePhrase(s));
   }
   if (s.rowsExcluded !== null) parts.push(`${s.rowsExcluded} excluded`);
@@ -1748,7 +1791,9 @@ export function unstatedSummary(
   sources: readonly SourceCoverageView[]
 ): string | null {
   const n = sources.length;
-  const noBound = sources.filter((s) => s.freshnessBoundSecs === null).length;
+  const noBound = sources.filter(
+    (s) => s.freshnessBoundSecs === null && !isDetectionBoundSource(s.source)
+  ).length;
   const noExcl = sources.filter((s) => s.rowsExcluded === null).length;
   const of = (k: number) =>
     k === n ? (n === 1 ? "it" : `all ${n}`) : `${k} of ${n}`;

@@ -601,6 +601,17 @@ export function fullBody(overrides: Record<string, unknown> = {}) {
         rows_considered: 2,
         rows_excluded: 0,
       },
+      // A plane slower than the fault-to-visibility target (qontinui-coord
+      // project_state.rs `detection_bound:<plane>`): `read` on purpose, and
+      // its bound is a detection lag, not a data age.
+      {
+        source: "detection_bound:merge_train",
+        state: "read",
+        as_of: ago(2),
+        freshness_bound_secs: 3600,
+        exclusion_reason:
+          "a fault on this plane can be up to 3600s old before coord first observes it, above the 600s fault-to-visibility target",
+      },
     ],
     ...overrides,
   };

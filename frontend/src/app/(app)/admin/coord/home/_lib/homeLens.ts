@@ -45,6 +45,7 @@ import {
   isKnownPlane,
   isLabelledSource,
   ownEntry,
+  isDetectionBoundSource,
   isWatcherSource,
   planeLabel,
   sourceLabel,
@@ -557,8 +558,9 @@ export const UNLABELLED_SOURCE = "A source this view has no name for";
 
 /**
  * A `does_not_know` row's label while presenting. The page's table labels the
- * sources it knows, and a watcher's row is named by the areas it feeds
- * (`sourceLabel`, each area as {@link presentedPlaneWords} words it); for any
+ * sources it knows, a watcher's row is named by the areas it feeds, and a
+ * detection-bound row by its area (`sourceLabel`, each area as
+ * {@link presentedPlaneWords} words it); for any
  * OTHER source the operator's label is coord's own
  * identifier with its underscores spaced: internal vocabulary an evaluator
  * does not share, from a list coord grows without this page. So while
@@ -571,7 +573,9 @@ export function presentedSourceLabel(
   source: string,
   planes: PlaneView[] | null
 ): string {
-  return isLabelledSource(source) || isWatcherSource(source)
+  return isLabelledSource(source) ||
+    isWatcherSource(source) ||
+    isDetectionBoundSource(source)
     ? sourceLabel(source, planes, presentedPlaneWords)
     : UNLABELLED_SOURCE;
 }
