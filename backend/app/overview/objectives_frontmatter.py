@@ -1,8 +1,17 @@
 """Intent-document frontmatter, read typed for the Objectives view.
 
-Plan ``2026-10-06-overview-objectives-view`` D3, D5 and D8: ``yaml.safe_load``,
-every date normalised to an ISO string at any depth, every field nullable, and a
-malformed block reported on its document — never failing the page.
+Plan ``2026-10-06-overview-objectives-view`` D3, D5 and D8: YAML read by
+``yaml.SafeLoader``'s rules, every date normalised to an ISO string at any
+depth, every field nullable, and a malformed block reported on its document —
+never failing the page.
+
+**Bounded.** A block is read only when it is at most
+:data:`MAX_FRONTMATTER_CHARS` long, uses no anchor or alias, and nests at most
+:data:`MAX_FRONTMATTER_DEPTH` levels; anything else is refused on its document
+(:class:`_StrictLoader`). An alias turns the loaded value into a graph: a few
+hundred bytes of aliases to aliases expand to hundreds of thousands of leaves
+once copied, and a chain of them nests deeper than the stack while the parser
+itself never recursed.
 """
 
 from __future__ import annotations
@@ -13,6 +22,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 import yaml
+from yaml.nodes import Node
 
 from app.overview.intent_documents import (
     IntentDocumentRead,
@@ -85,6 +95,12 @@ def _plain_text(text: str) -> str:
     return words if any(ch.isalnum() for ch in words) else ""
 
 
+def _slug_title(name: str) -> str:
+    """A document's slug read as words: ``"dev-speed"`` → ``"Dev speed"``."""
+    words = re.sub(r"[-_]+", " ", name).strip()
+    return words[:1].upper() + words[1:]
+
+
 def title_of_document(name: str, prose: str) -> str:
     """A document's own name for itself, from its opening heading, else its
     slug read as words — the Summary's ``titleOfDocument``."""
@@ -92,13 +108,69 @@ def title_of_document(name: str, prose: str) -> str:
     from_body = _plain_text(heading) if heading else ""
     if from_body:
         return from_body
-    words = re.sub(r"[-_]+", " ", name).strip()
-    return words[:1].upper() + words[1:]
+    return _slug_title(name)
 
 
 # ===========================================================================
 # Frontmatter
 # ===========================================================================
+
+#: The longest frontmatter block (characters between the fences) this read
+#: parses. The richest real document, the merge-train metric with its 17
+#: criteria, is about 3,500.
+MAX_FRONTMATTER_CHARS = 64_000
+#: The deepest a block may nest, counting each mapping, list and value as a
+#: level. That metric reaches 4 (the mapping, ``criteria``, one item, its
+#: ``target``).
+MAX_FRONTMATTER_DEPTH = 32
+
+
+class _FrontmatterRefused(Exception):
+    """A block this read declines to load; the message says why."""
+
+
+class _StrictLoader(yaml.SafeLoader):
+    """``yaml.SafeLoader`` that refuses every anchor and alias, and any node
+    nested deeper than :data:`MAX_FRONTMATTER_DEPTH`.
+
+    Both are checked as each node is composed, so a refused block is never
+    built: an alias bomb stops at its first anchor, and deep nesting stops
+    before the composer's own recursion gets deep.
+    """
+
+    def __init__(self, stream: str) -> None:
+        super().__init__(stream)
+        self._depth = 0
+
+    def compose_node(self, parent: Node | None, index: int) -> Node | None:
+        event = self.peek_event()
+        if (
+            isinstance(event, yaml.AliasEvent)
+            or getattr(event, "anchor", None) is not None
+        ):
+            raise _FrontmatterRefused(
+                "uses a YAML anchor or alias (&name / *name), which this page "
+                "does not read"
+            )
+        self._depth += 1
+        try:
+            if self._depth > MAX_FRONTMATTER_DEPTH:
+                raise _FrontmatterRefused(
+                    f"nests deeper than {MAX_FRONTMATTER_DEPTH} levels"
+                )
+            return super().compose_node(parent, index)
+        finally:
+            self._depth -= 1
+
+
+def _load(text: str) -> Any:
+    """One YAML document, read by :class:`_StrictLoader` (``yaml.safe_load``'s
+    construction rules: no Python objects)."""
+    loader = _StrictLoader(text)
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
 
 
 def _iso(value: Any) -> Any:
@@ -124,24 +196,34 @@ def _iso(value: Any) -> Any:
 
 def parse_frontmatter(block: str | None) -> tuple[dict[str, Any], str | None]:
     """``(mapping, error)``. No block is an empty mapping and no error; a block
-    that fails to parse, or is not a mapping, is an empty mapping and the
-    error — never an exception."""
+    that is too long, uses an anchor or alias, nests too deep, fails to parse,
+    or is not a mapping, is an empty mapping and the error — never an
+    exception."""
     if not block:
         return {}, None
     lines = block.lstrip("﻿").splitlines()
     inner = "\n".join(lines[1:-1])
+    if len(inner) > MAX_FRONTMATTER_CHARS:
+        return {}, (
+            f"The YAML block is {len(inner):,} characters long; this page reads "
+            f"blocks of at most {MAX_FRONTMATTER_CHARS:,}."
+        )
     try:
-        loaded = yaml.safe_load(inner)
+        loaded = _load(inner)
+        if loaded is None:
+            return {}, None
+        if not isinstance(loaded, dict):
+            return {}, "The YAML block is not a mapping of keys to values."
+        normalised: dict[str, Any] = _iso(loaded)
+    except _FrontmatterRefused as exc:
+        return {}, f"The YAML block is not read: it {exc}."
     except (yaml.YAMLError, ValueError, RecursionError) as exc:
         # PyYAML raises ValueError (not YAMLError) for an impossible date such
-        # as `2026-02-30`, and RecursionError for nesting deeper than the stack.
+        # as `2026-02-30`. RecursionError is the last bound: the depth limit
+        # stops nesting first, so a stack that still runs out is reported on
+        # this document like any other block that could not be read.
         message = " ".join(str(exc).split()) or type(exc).__name__
         return {}, f"The YAML block could not be parsed: {message[:300]}"
-    if loaded is None:
-        return {}, None
-    if not isinstance(loaded, dict):
-        return {}, "The YAML block is not a mapping of keys to values."
-    normalised: dict[str, Any] = _iso(loaded)
     return normalised, None
 
 
@@ -456,3 +538,43 @@ def build_initiative(doc: IntentDocumentRead) -> tuple[InitiativeRead, bool]:
     elif in_scope is not None:
         read.field_errors["in_scope"] = "in_scope must be a list of {id, text}."
     return read, False
+
+
+def _read_failed(exc: Exception) -> str:
+    return f"The definition could not be read ({type(exc).__name__})."
+
+
+def metric_read_failed(doc: IntentDocumentRead, exc: Exception) -> MetricRead:
+    """The metric when :func:`build_metric` itself crashed: shown, with the
+    crash as its definition error, so its card says its figures are unknown
+    and only this document is marked. Built from the document's fields alone
+    (the title is the slug), so it cannot crash the same way."""
+    return MetricRead(
+        name=doc.name,
+        title=_slug_title(doc.name),
+        state=doc.state,
+        version=doc.version,
+        updated_at=doc.updated_at,
+        updated_by=doc.updated_by,
+        overview_order=doc.overview_order,
+        body=doc.body,
+        error=doc.error,
+        frontmatter_error=_read_failed(exc),
+        current_value=_current_value("absent"),
+    )
+
+
+def initiative_read_failed(doc: IntentDocumentRead, exc: Exception) -> InitiativeRead:
+    """The initiative when :func:`build_initiative` itself crashed: listed with
+    the crash as its definition error, which makes the objectives unreadable
+    rather than empty."""
+    return InitiativeRead(
+        name=doc.name,
+        title=_slug_title(doc.name),
+        state=doc.state,
+        version=doc.version,
+        updated_at=doc.updated_at,
+        updated_by=doc.updated_by,
+        error=doc.error,
+        frontmatter_error=_read_failed(exc),
+    )

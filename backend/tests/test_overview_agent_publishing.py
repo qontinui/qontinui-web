@@ -820,6 +820,9 @@ class TestCoordBackedResources:
             ),
             ("PATCH", "/intent-documents/initiative:launch", {"body": "# Again\n"}),
             ("GET", "/change-log?resource=intent_documents", None),
+            # The objectives read is built from the same coord-backed
+            # documents, so it carries their rule.
+            ("GET", "/objectives", None),
         ],
     )
     async def test_every_request_is_refused_before_the_store_runs(

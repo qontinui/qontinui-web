@@ -34502,6 +34502,13 @@
             "title": "Serves",
             "type": "array"
           },
+          "serves_unchecked": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Serves Unchecked",
+            "type": "array"
+          },
           "serves_unknown": {
             "items": {
               "type": "string"
@@ -36301,9 +36308,19 @@
             "title": "Tenant Id",
             "type": "string"
           },
-          "void_hidden": {
-            "title": "Void Hidden",
-            "type": "integer"
+          "void_initiative_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Void Initiative Names",
+            "type": "array"
+          },
+          "void_metric_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Void Metric Names",
+            "type": "array"
           }
         },
         "required": [
@@ -36316,7 +36333,8 @@
           "initiative_named_metrics",
           "other_metrics",
           "skeletons_hidden",
-          "void_hidden",
+          "void_metric_names",
+          "void_initiative_names",
           "sources"
         ],
         "title": "ObjectivesRead",
@@ -65035,7 +65053,8 @@
               "superseded_or_missing",
               "read_failed",
               "not_read_over_limit",
-              "invalid_id"
+              "invalid_id",
+              "another_project"
             ],
             "title": "Reason",
             "type": "string"
@@ -113822,7 +113841,7 @@
     },
     "/api/v1/overview/objectives": {
       "get": {
-        "description": "What the project is aiming for, and how each measure is doing.\n\nReadable by any member of the active project (the same membership the\nSummary requires); coord authorizes the forwarded bearer on both upstream\nreads, so this route widens nothing. A gap upstream is a ``sources`` entry\nand an UNKNOWN on what it touches, never an error page and never a blank.",
+        "description": "What the project is aiming for, and how each measure is doing.\n\nReadable by any member of the active project (the same membership the\nSummary requires), under the ``intent_documents`` resource's own rule\n(``coord_admin``): a device principal gets the typed 403\n``device_not_supported_for_coord_backed_resource`` before anything is\nread. Coord authorizes the forwarded bearer on every upstream read, so\nthis route widens nothing. A gap upstream is a ``sources`` entry and an\nUNKNOWN on what it touches, never an error page and never a blank.",
         "operationId": "api_v1_overview_objectives_get",
         "responses": {
           "200": {

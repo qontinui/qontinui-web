@@ -75,8 +75,9 @@ DUE_WINDOW = timedelta(days=2)
 #: checkpoint key (the late path, Phase 0's reconciliation). Auxiliary findings
 #: are barred from this title, so a notice never matches it.
 LATE_PATH_TITLE = re.compile(r"^Merge-train checkpoint (\d+)\b")
-#: A resource key shaped like a checkpoint id (``checkpoint-<n>``).
-_CHECKPOINT_KEY = re.compile(r"^checkpoint-\d+$")
+#: A resource key shaped like a checkpoint id (``checkpoint-<n>``); applied
+#: with ``fullmatch`` (``$`` would also take a trailing newline).
+_CHECKPOINT_KEY = re.compile(r"checkpoint-\d+")
 
 # ===========================================================================
 # Talking to coord's findings
@@ -134,7 +135,11 @@ def metric_resource_keys(name: str) -> list[str]:
 class MetricFindings:
     state: FindingsReadState
     reason: str | None = None
+    #: This project's own findings at the metric's keys.
     findings: list[dict[str, Any]] = field(default_factory=list)
+    #: How many findings coord served at those keys that are NOT this
+    #: project's own (see :func:`_is_own`): set aside, never placed.
+    foreign: int = 0
 
 
 @dataclass
@@ -142,6 +147,23 @@ class ByIdResult:
     finding: dict[str, Any] | None = None
     reason: UnresolvedReason | None = None
     detail: str = ""
+
+
+#: Why a by-id read's answer is not this project's report.
+ANOTHER_PROJECT = (
+    "coord served this finding, but not as this project's own (coord also "
+    "serves other projects' fleet-wide findings), so it is not read as this "
+    "project's report."
+)
+
+
+def foreign_findings_note(count: int) -> str:
+    """The ``sources.findings`` detail for a measure's set-aside rows."""
+    return (
+        f"{count} finding(s) coord served at this measure's keys are not this "
+        "project's own (coord also serves other projects' fleet-wide findings), "
+        "so they were set aside, not read as this measure's reports."
+    )
 
 
 def _unavailable_reason(exc: HTTPException) -> str:
@@ -157,7 +179,36 @@ def _unreadable_reason(exc: Exception) -> str:
     return f"coord's findings answer could not be read ({type(exc).__name__})."
 
 
-def _page_findings(page: Any) -> tuple[list[dict[str, Any]] | None, str | None]:
+def _is_own(row: dict[str, Any], tenant_id: UUID) -> bool:
+    """Whether a served finding is THIS project's own.
+
+    Coord's findings reads serve ``(tenant_id = $1 OR scope = 'fleet-infra')``,
+    so every project's fleet-wide findings come back beside this project's,
+    each carrying its own ``tenant_id``. Only a row whose ``tenant_id`` is the
+    active project's is ever read as a report; a row naming another project,
+    or naming none readably, is not this project's evidence."""
+    raw = row.get("tenant_id")
+    if isinstance(raw, UUID):
+        return raw == tenant_id
+    if not isinstance(raw, str):
+        return False
+    try:
+        return UUID(raw) == tenant_id
+    except ValueError:
+        return False
+
+
+@dataclass
+class _Page:
+    """A coord findings page's rows with a finding id, split by whose."""
+
+    own: list[dict[str, Any]]
+    foreign: list[dict[str, Any]]
+    #: Every row the page held — coord's page limit counts them all.
+    served: int
+
+
+def _page_findings(page: Any, tenant_id: UUID) -> tuple[_Page | None, str | None]:
     """The rows of a coord findings page, or ``(None, reason)`` when the page
     says it cannot see its store — never an empty list for that."""
     if not isinstance(page, dict):
@@ -170,12 +221,18 @@ def _page_findings(page: Any) -> tuple[list[dict[str, Any]] | None, str | None]:
     rows = page.get("findings")
     if not isinstance(rows, list):
         return None, "coord's findings answer carried no findings list."
-    return [r for r in rows if isinstance(r, dict) and r.get("finding_id")], None
+    split = _Page(own=[], foreign=[], served=len(rows))
+    for row in rows:
+        if isinstance(row, dict) and row.get("finding_id"):
+            (split.own if _is_own(row, tenant_id) else split.foreign).append(row)
+    return split, None
 
 
 async def read_metric_findings(
     coord: CoordFindings, tenant_id: UUID, name: str, gate: asyncio.Semaphore
 ) -> MetricFindings:
+    """One metric's findings list read. Only this project's own rows
+    (``tenant_id``) are returned; the rest are counted in ``foreign``."""
     try:
         async with gate:
             page = await coord.list_for_keys(
@@ -186,13 +243,14 @@ async def read_metric_findings(
     except Exception as exc:  # a gap is reported, never a 500
         logger.exception("overview_objectives_findings_read_failed", metric=name)
         return MetricFindings(state="unavailable", reason=_unreadable_reason(exc))
-    rows, reason = _page_findings(page)
-    if rows is None:
+    split, reason = _page_findings(page, tenant_id)
+    if split is None:
         return MetricFindings(state="unavailable", reason=reason)
     count = page.get("count")
     applied = page.get("limit")
     limit = applied if isinstance(applied, int) and applied > 0 else FINDINGS_PAGE_LIMIT
-    full = (count if isinstance(count, int) else len(rows)) >= limit
+    # Another project's rows fill coord's page too: fullness counts them.
+    full = (count if isinstance(count, int) else split.served) >= limit
     narrowed = (
         page.get("resource_keys_truncated") is True or page.get("truncated") is True
     )
@@ -205,14 +263,16 @@ async def read_metric_findings(
                 if full
                 else "coord says the page is not the whole answer"
             ),
-            findings=rows,
+            findings=split.own,
+            foreign=len(split.foreign),
         )
-    return MetricFindings(state="ok", findings=rows)
+    return MetricFindings(state="ok", findings=split.own, foreign=len(split.foreign))
 
 
 async def read_by_id(
     coord: CoordFindings, tenant_id: UUID, finding_id: str, gate: asyncio.Semaphore
 ) -> ByIdResult:
+    """One finding by id — returned only when it is this project's own."""
     try:
         async with gate:
             page = await coord.get_by_id(tenant_id, finding_id)
@@ -221,12 +281,14 @@ async def read_by_id(
     except Exception as exc:  # a gap is reported, never a 500
         logger.exception("overview_objectives_by_id_read_failed", finding_id=finding_id)
         return ByIdResult(reason="read_failed", detail=_unreadable_reason(exc))
-    rows, reason = _page_findings(page)
-    if rows is None:
+    split, reason = _page_findings(page, tenant_id)
+    if split is None:
         return ByIdResult(reason="read_failed", detail=reason or "")
-    for row in rows:
+    for row in split.own:
         if row.get("finding_id") == finding_id:
             return ByIdResult(finding=row)
+    if any(row.get("finding_id") == finding_id for row in split.foreign):
+        return ByIdResult(reason="another_project", detail=ANOTHER_PROJECT)
     # A by-id read hides a row a later finding supersedes, and answers an id
     # it does not hold with an empty page — both read as this.
     return ByIdResult(
@@ -633,7 +695,7 @@ def join_results(
                 )
             # ANY checkpoint-id-shaped key bars the late path, declared or not:
             # the finding names a checkpoint, just not one this rule reads.
-            if any(_CHECKPOINT_KEY.match(k) for k in _keys(finding)):
+            if any(_CHECKPOINT_KEY.fullmatch(k) for k in _keys(finding)):
                 keyed.add(fid)
             notes.append(
                 RelatedNoteRead(
