@@ -295,11 +295,27 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
     );
     expect(screen.getAllByTestId("coord-home.on-track.group")).toHaveLength(4);
     openSourcesRead();
-    // One of the fixture's eight sources is not built yet: counted on one
+    // One of the fixture's ten sources is not built yet: counted on one
     // line while presenting, not listed.
-    expect(screen.getAllByTestId("coord-home.does-not-know.row")).toHaveLength(
-      7
+    const sourceRows = screen.getAllByTestId("coord-home.does-not-know.row");
+    expect(sourceRows).toHaveLength(9);
+    // A detection_bound row reads as the time for a fault on its area to
+    // reach the view, never as a source with no name or a data age.
+    const detection = sourceRows.find((r) =>
+      r.textContent?.includes("Time for a fault on merge train")
     );
+    expect(detection).toBeDefined();
+    expect(detection).toHaveTextContent(
+      "a fault can be up to 1h old before coord sees it"
+    );
+    expect(detection).not.toHaveTextContent(/may be up to/);
+    // A plane coord derived no bound for says so, named by its area.
+    const underivable = sourceRows.find((r) =>
+      r.textContent?.includes("Time for a fault on cloud service")
+    );
+    expect(underivable).toBeDefined();
+    expect(underivable).toHaveTextContent("no detection bound known");
+    expect(underivable).not.toHaveTextContent(/no name for|not stated/);
     expect(
       screen.getByTestId("coord-home.does-not-know.not-built")
     ).toHaveTextContent(
@@ -949,6 +965,20 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     expect(failed).not.toHaveTextContent(/quoted on the last line/);
     expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
   });
+
+  it("does not know: a detection-bound row's withheld reason is a detection lag, never an exclusion", async () => {
+    const view = await renderPresenting(fullBody());
+    const region = screen.getByTestId("coord-home.does-not-know");
+    for (const area of ["merge train", "cloud service"]) {
+      const detail = expandRow(region, `Time for a fault on ${area}`);
+      expect(detail).toHaveTextContent(
+        /Why this lag: Reason · detection lag · /
+      );
+      expect(detail).not.toHaveTextContent(/excluded/i);
+      expect(detail.querySelector("[data-console-raw]")).toBeNull();
+    }
+    expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+  });
 });
 
 describe("/admin/coord/home?present=1 — Correct? shows no write control", () => {
@@ -1349,5 +1379,42 @@ describe("/admin/coord/home?present=1 — remediation on the collapsed view (q4)
       screen.getByTestId("coord-home.on-track.no-recorded-change")
     ).toHaveTextContent(FIRST_PARTY_UNIT_TITLE);
     expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+  });
+});
+
+describe("/admin/coord/home?present=1 — a detection-bound source, from a body of its own", () => {
+  beforeEach(resetEnvironment);
+
+  // Built here, not from the presentation fixture's builders, so this pins
+  // the page's own labelling of a `detection_bound:<plane>` row rather than
+  // anything a shared fixture happens to carry.
+  function detectionBody() {
+    return {
+      schema: 1,
+      generated_at: new Date().toISOString(),
+      tenant_id: TENANT_ID,
+      scope: "operator",
+      does_not_know: [
+        {
+          source: "detection_bound:merge_train",
+          state: "read",
+          freshness_bound_secs: 3600,
+          as_of: new Date().toISOString(),
+        },
+        { source: "detection_bound:cloud_service", state: "unknown" },
+      ],
+    };
+  }
+
+  it("presenting: a detection-bound source is labelled through the page with an independent body", async () => {
+    await renderPresenting(detectionBody());
+    const region = screen.getByTestId("coord-home.does-not-know");
+    expect(region).toHaveTextContent(
+      "Time for a fault on merge train to reach this view"
+    );
+    expect(region).toHaveTextContent(
+      "Time for a fault on cloud service to reach this view"
+    );
+    expect(region).not.toHaveTextContent(UNLABELLED_SOURCE);
   });
 });
