@@ -69,8 +69,9 @@ jobs:
       # vitest defaults to nproc - 1 workers: 3 on the hosted 4-core VM, 127 on
       # a nawa runner. Pin the hosted value on both lanes.
       VITEST_MAX_WORKERS: 3
-    # Generous budget for the per-file loop over ~70+ test files; non-gating so
-    # the wall-clock never blocks anything.
+    # Budget for the per-file loop (~800 test files, run
+    # COVERAGE_PRODUCER_CONCURRENCY at a time); non-gating so the wall-clock
+    # never blocks anything.
     timeout-minutes: 45
 
     steps:
@@ -112,4 +113,9 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           # COORD_HTTP_URL defaults to https://coord.qontinui.io in the script;
           # set here only to target a non-prod coord.
+          # Test files run this many vitest processes at a time. The serial
+          # loop (812 files at ~2.4s p50) outgrew the 45-min cap once this job
+          # moved to nawa: five main runs cancelled at 741/812 on 2026-11-05,
+          # each POSTing nothing. A nawa runner has 127 cores; the hosted VM 4.
+          COVERAGE_PRODUCER_CONCURRENCY: ${{ runner.environment == 'github-hosted' && '2' || '12' }}
         run: node scripts/export-test-coverage.mjs
