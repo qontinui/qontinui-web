@@ -8,6 +8,9 @@ export const SESSION_ID = "6f1c2d3e-4b5a-4978-8a9b-0c1d2e3f4a5b";
 
 export const VERSION_OLD = "2d0c39d0d58ee0ae011096161ac49047d66dcf3c";
 
+/** coord's 16-hex digest over a group's `overlord_versions`. */
+export const VERSION_DIGEST = "9f86d081884c7d65";
+
 export const DEVICE_ID = "0d1e2f3a-4b5c-4d6e-8f70-819203a4b5c6";
 export const DEVICE_ID_2 = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
 
@@ -49,7 +52,11 @@ export const FULL_FLOW = {
   group_by: "overlord_version",
   groups: [
     {
-      overlord_version: VERSION_OLD,
+      overlord_version: VERSION_DIGEST,
+      overlord_versions: {
+        "triage-sessions.py": VERSION_OLD,
+        runner_git_sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      },
       passes_considered: 2,
       census_passes_considered: 1,
       unchanged_truncated: false,
@@ -68,6 +75,7 @@ export const FULL_FLOW = {
     },
     {
       overlord_version: null,
+      overlord_versions: null,
       passes_considered: 3,
       census_passes_considered: 3,
       unchanged_truncated: false,
