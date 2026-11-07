@@ -641,6 +641,7 @@ export function MachineCard({
       ? resolveLaneFreshness({
           stale_lanes: machine.coordHealth.stale_lanes,
           sample_stale_after_secs: machine.coordHealth.sample_stale_after_secs,
+          state: machine.coordHealth.state,
         })
       : null;
   const shownLaneFreshness =
@@ -836,9 +837,11 @@ export function MachineCard({
               <span
                 className="contents"
                 data-operations-lane-freshness={shownLaneFreshness.kind}
-                data-operations-stale-lanes={shownLaneFreshness.lanes
-                  .map(laneName)
-                  .join(",")}
+                data-operations-stale-lanes={
+                  shownLaneFreshness.lanes.length > 0
+                    ? shownLaneFreshness.lanes.map(laneName).join(",")
+                    : undefined
+                }
               >
                 <StatusBadge
                   status={shownLaneFreshness}

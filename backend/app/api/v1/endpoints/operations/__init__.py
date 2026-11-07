@@ -5557,10 +5557,13 @@ async def get_fleet_health(
       ``2026-11-04-devops-a-silent-wsl-lane-reads-healthy-because-freshness-is-graded-on-the-newest-lane``):
       a lane is expected iff it published inside coord's lookback, and
       ``devices[].stalest_sample_age_secs`` is the age ``state`` was
-      graded on. So a device with a fresh ``host`` lane and a silent
-      ``wsl`` lane reads ``stale`` while ``newest_sample_age_secs`` sits
-      well inside the threshold, which is exactly the box the old
-      newest-lane grade called ``healthy`` on 2026-11-04.
+      graded on. So a heartbeat-healthy device with a fresh ``host``
+      lane and a silent ``wsl`` lane reads ``stale`` while
+      ``newest_sample_age_secs`` sits well inside the threshold, which is
+      exactly the box the old newest-lane grade called ``healthy`` on
+      2026-11-04. (The ``stale`` overlay applies only to a device whose
+      heartbeat state is ``healthy``. ``stale_lanes`` is filled whatever
+      the heartbeat state.)
       ``devices[].stale_lanes`` names the lane(s) that crossed it, each
       ``{lane, lane_instance, age_secs}``. ``[]`` means the freshness
       read succeeded and nothing is stale. ``null`` means the read
@@ -5574,10 +5577,10 @@ async def get_fleet_health(
       strip's floors do** — so the client keeps no constant of its own
       and cannot disagree with coord about where stale begins, which is
       exactly the disagreement a client re-deriving "4 × the interval"
-      would eventually ship. ``null`` on either is UNKNOWN: not zero,
-      and not "fresh". They are also independently nullable: a device
-      with no sample in the lookback arrives with a null age and a
-      POPULATED threshold.
+      would eventually ship. ``null`` on any of the two ages or the
+      threshold is UNKNOWN: not zero, and not "fresh". They are also
+      independently nullable: a device with no sample in the lookback
+      arrives with null ages and a POPULATED threshold.
     * ``devices[].within_dispatch_window`` says whether coord would
       actually expect this machine to answer. The roster stopped
       dropping out-of-window devices and ships the answer instead, so

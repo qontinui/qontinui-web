@@ -100,6 +100,13 @@ export interface LaneFreshnessInput {
   stale_lanes?: LaneAge[] | null;
   /** The threshold coord graded against; `null`/absent = not computed. */
   sample_stale_after_secs?: number | null;
+  /**
+   * Coord's device `state`. Coord fills `stale_lanes` whatever the heartbeat
+   * state, and applies the `stale` overlay only to a heartbeat-healthy
+   * device, so only `state === "stale"` licenses saying the machine still
+   * heartbeats. A `partitioned` machine with a quiet lane must not be told so.
+   */
+  state?: string;
 }
 
 export interface LaneFreshnessStatus extends RowStatus<LaneFreshnessKind> {
@@ -155,8 +162,13 @@ export function resolveLaneFreshness(
       kind: "unknown",
       label: "lane freshness unknown",
       reason:
-        "Coord's per-lane freshness read failed this tick, so whether one " +
-        "sample lane has gone quiet is UNKNOWN. It is not 'no stale lanes'.",
+        stale_lanes === null
+          ? "Coord's per-lane freshness read failed this tick, so whether " +
+            "one sample lane has gone quiet is UNKNOWN. It is not 'no stale " +
+            "lanes'."
+          : "Coord sent per-lane freshness in a shape this console cannot " +
+            "read, so whether one sample lane has gone quiet is UNKNOWN. It " +
+            "is not 'no stale lanes'.",
       attention: LANE_FRESHNESS_ATTENTION_BY_KIND.unknown,
       lanes: [],
       measured: false,
@@ -190,8 +202,11 @@ export function resolveLaneFreshness(
       (threshold !== null
         ? `, past the ${formatLaneAge(threshold)} threshold. `
         : ". ") +
-      "The machine still heartbeats. The sampler on that lane has gone quiet, " +
-      "so headroom there is unknown.",
+      (input.state === "stale"
+        ? "The machine still heartbeats. The sampler on that lane has gone " +
+          "quiet, so headroom there is unknown."
+        : "Headroom on that lane is unknown. Read the device state beside " +
+          "this badge for whether coord still hears the machine at all."),
     attention: LANE_FRESHNESS_ATTENTION_BY_KIND.stale,
     lanes,
     measured: true,

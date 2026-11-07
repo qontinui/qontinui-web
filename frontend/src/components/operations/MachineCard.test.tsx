@@ -634,7 +634,9 @@ describe("MachineCard — per-lane sample freshness", () => {
     );
     expect(b?.getAttribute("data-operations-lane-freshness")).toBe("unknown");
     expect(b?.textContent ?? "").toMatch(/unknown/i);
-    expect(b?.textContent ?? "").not.toMatch(/none/i);
+    expect(b?.hasAttribute("data-operations-stale-lanes")).toBe(false);
+    // The badge carries its own reason, and a failed read says so.
+    expect(b?.innerHTML ?? "").toMatch(/read failed/);
   });
 
   it("renders an absent field (older coord) as UNKNOWN too", () => {
@@ -642,6 +644,8 @@ describe("MachineCard — per-lane sample freshness", () => {
       card({ matched: true, device_id: "d-1", state: "healthy" })
     );
     expect(b?.getAttribute("data-operations-lane-freshness")).toBe("unknown");
+    expect(b?.innerHTML ?? "").toMatch(/predates/);
+    expect(b?.innerHTML ?? "").not.toMatch(/read failed/);
   });
 
   it("adds no badge for a measured []", () => {
