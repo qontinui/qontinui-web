@@ -141,6 +141,49 @@ describe("AccountSelectionPanel", () => {
     }
   );
 
+  // The runner's own fallback mode (its enum `#[default]`) lives in
+  // qontinui-runner and moves there (2026-11-05: alternating_handoff ->
+  // weighted_random). A blurb that restates it goes false on this page — the
+  // one the operator uses to choose the fleet's mode — the day it moves.
+  it.each([
+    "manual",
+    "least_usage",
+    "highest_expected_usage",
+    "weighted_random",
+    "alternating_handoff",
+  ] as const)(
+    "does not restate the runner's own default in the %s blurb",
+    (level) => {
+      usePolicyMock.mockReturnValue(
+        hookState(
+          { ...LEAST_TENANT, effective_level: level },
+          { displayLevel: level }
+        )
+      );
+      render(<AccountSelectionPanel />);
+      expect(
+        screen.getByTestId("account-selection-blurb").textContent
+      ).not.toMatch(
+        /on its own|when no mode is set|by default|runner's default/i
+      );
+    }
+  );
+
+  // Alternating handoff spreads HANDOFFS, not new sessions; an operator
+  // choosing a mode to spread spawns needs to read that here.
+  it("says alternating handoff starts every new session on the first account", () => {
+    usePolicyMock.mockReturnValue(
+      hookState(
+        { ...LEAST_TENANT, effective_level: "alternating_handoff" },
+        { displayLevel: "alternating_handoff" }
+      )
+    );
+    render(<AccountSelectionPanel />);
+    expect(screen.getByTestId("account-selection-blurb").textContent).toMatch(
+      /New sessions start on the first account; only handoffs alternate/
+    );
+  });
+
   it("shows the resolved level and band", () => {
     usePolicyMock.mockReturnValue(leastTenant());
     render(<AccountSelectionPanel />);
