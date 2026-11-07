@@ -23,7 +23,7 @@ from smuggling one through this door either.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
@@ -44,6 +44,17 @@ PinIneligibility = Literal[
 machine's dispatch role (bench / ci_node) takes no runner work from coord;
 ``at_capacity`` — at its ``max_concurrent_agents`` cap (coord's resolve door
 does not produce it today, but the code is part of its wire enum)."""
+
+KNOWN_PIN_REASONS: frozenset[str] = frozenset(get_args(PinIneligibility))
+"""Every pin code this build knows. Any other non-empty string is passed
+through verbatim (``PinReason``) rather than failing the whole answer."""
+
+PinReason = PinIneligibility | Annotated[str, Field(min_length=1)]
+"""A pin code as coord sent it: one of ``PinIneligibility``, or — when coord
+added a code this build predates — that code verbatim. Not a failure: the
+answer around it (a refused pin, a released one) is still coord's answer, and
+its ``detail`` carries coord's own wording. An empty or non-string code is
+still ``malformed_response``."""
 
 
 class DeviceResolveRequest(BaseModel):
@@ -67,14 +78,14 @@ class ResolvedOutcome(BaseModel):
     outcome: Literal["resolved"] = "resolved"
     device_id: UUID
     via: Literal["pin", "pool"]
-    pin_released_reason: PinIneligibility | None = None
+    pin_released_reason: PinReason | None = None
     pin_released_detail: str | None = None
 
 
 class PinIneligibleOutcome(BaseModel):
     outcome: Literal["pin_ineligible"] = "pin_ineligible"
     device_id: UUID
-    reason: PinIneligibility
+    reason: PinReason
     detail: str
     missing_capabilities: list[str] = Field(default_factory=list)
 
@@ -93,7 +104,7 @@ class NoCapableDeviceOutcome(BaseModel):
         description="Online devices that have not run the cred probes while a "
         "cred: token is required. 0 from a coord that predates the field.",
     )
-    pin_released_reason: PinIneligibility | None = None
+    pin_released_reason: PinReason | None = None
     pin_released_detail: str | None = None
 
 
@@ -103,7 +114,7 @@ class AllCapableOfflineOutcome(BaseModel):
 
     outcome: Literal["all_capable_offline"] = "all_capable_offline"
     capable_offline: int
-    pin_released_reason: PinIneligibility | None = None
+    pin_released_reason: PinReason | None = None
     pin_released_detail: str | None = None
 
 
@@ -113,13 +124,13 @@ class AllCapableAtCapacityOutcome(BaseModel):
 
     outcome: Literal["all_capable_at_capacity"] = "all_capable_at_capacity"
     capable_devices: int
-    pin_released_reason: PinIneligibility | None = None
+    pin_released_reason: PinReason | None = None
     pin_released_detail: str | None = None
 
 
 class AllCapableDrainedOutcome(BaseModel):
     outcome: Literal["all_capable_drained"] = "all_capable_drained"
-    pin_released_reason: PinIneligibility | None = None
+    pin_released_reason: PinReason | None = None
     pin_released_detail: str | None = None
 
 
@@ -128,7 +139,7 @@ class AllCapableRoleClosedOutcome(BaseModel):
     its DISPATCH ROLE (bench / ci_node) — only a role change helps."""
 
     outcome: Literal["all_capable_role_closed"] = "all_capable_role_closed"
-    pin_released_reason: PinIneligibility | None = None
+    pin_released_reason: PinReason | None = None
     pin_released_detail: str | None = None
 
 

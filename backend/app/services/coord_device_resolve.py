@@ -30,6 +30,7 @@ from pydantic import ValidationError
 from app.core.config import coord_device_base
 from app.schemas.device_resolve import (
     KNOWN_COORD_OUTCOMES,
+    KNOWN_PIN_REASONS,
     CoordResolveBody,
     DeviceResolveRequest,
     DeviceResolveResult,
@@ -165,7 +166,23 @@ async def resolve_device(
         logger.warning("device_resolve_unknown_outcome", raw_outcome=raw_outcome)
         return UnknownOutcome(raw_outcome=raw_outcome)
     try:
-        return CoordResolveBody.model_validate(payload).root
+        outcome = CoordResolveBody.model_validate(payload).root
     except ValidationError:
         # A known tag whose fields are not the contract.
         return _unavailable("malformed_response", status=status)
+    _log_unknown_pin_reasons(outcome)
+    return outcome
+
+
+def _log_unknown_pin_reasons(outcome: DeviceResolveResult) -> None:
+    """Name a pin code this build predates. It is passed through verbatim
+    (``PinReason``), so the answer stands; the log says the build is behind."""
+    for field in ("reason", "pin_released_reason"):
+        code = getattr(outcome, field, None)
+        if code is not None and code not in KNOWN_PIN_REASONS:
+            logger.warning(
+                "device_resolve_unknown_pin_reason",
+                outcome=outcome.outcome,
+                field=field,
+                raw_reason=code,
+            )
