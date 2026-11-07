@@ -39,6 +39,10 @@ import {
   sourceRowReason,
   sourceTimeWords,
   needsRecommendationShareSentence,
+  needsKindSplit,
+  needsKindSplitText,
+  needsOldestSentence,
+  unreadBlockSentence,
   unservedDecisionsSentence,
   parseBlockState,
   parseOptions,
@@ -115,6 +119,20 @@ const BLOCK_KEY: Record<HomeBlock, string> = {
 
 const NOT_READ = BLOCK_STATES.filter((s) => s !== "read");
 
+/** The strip's words for an unread block, written out rather than derived. */
+const UNREAD_NOUN: Record<HomeBlock, string> = {
+  needs_me: "The needs-you list",
+  degradations: "The degradations list",
+  on_track: "The work-by-state summary",
+  correctness: "The correctness check",
+};
+const UNREAD_VERB: Record<string, string> = {
+  could_not_read: "could not be read",
+  stale: "may be incomplete or stale",
+  not_implemented: "is not built yet",
+  unknown: "is unknown",
+};
+
 describe("deriveHomeStrip — never green over what it does not know", () => {
   it("is green for a body whose every block is read and calm (the control)", () => {
     const strip = deriveHomeStrip(parseProjectState(calmBody()), CALM_MACHINES);
@@ -135,7 +153,9 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
       };
       const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
       expect(strip.level).not.toBe("green");
-      expect(strip.detail).toContain("Not read");
+      expect(strip.detail).toContain(
+        `${UNREAD_NOUN[block]} ${UNREAD_VERB[state]}.`
+      );
     }
   );
 
@@ -213,7 +233,7 @@ describe("deriveHomeStrip — never green over what it does not know", () => {
     const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
     expect(strip.level).toBe("red");
     expect(strip.headline).toBe("2 decisions need you");
-    expect(strip.detail).toContain("correct? unknown");
+    expect(strip.detail).toContain("The correctness check is unknown.");
   });
 
   it("is amber when something is degrading, and a declared drain is not a fault", () => {
@@ -2116,5 +2136,174 @@ describe("needsRecommendationShareSentence", () => {
       needsBody({ state: "could_not_read", total: 5, ...share(3) })
     )!;
     expect(needsRecommendationShareSentence(view.needsMe)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The strip's needs breakdown — what kind, how many recommended, how old
+// ---------------------------------------------------------------------------
+
+describe("deriveHomeStrip — the needs-you breakdown", () => {
+  /** A read needs_me block: approvals and agent questions, with ages and a share. */
+  function needsBody(needsMe: Record<string, unknown>) {
+    const body = calmBody();
+    body.needs_me = {
+      state: "read",
+      total: 5,
+      omitted: 3,
+      items: [
+        {
+          id: "g-1",
+          source: "operator_gate",
+          fork: "Delete branch?",
+          shape: "open_question",
+          asked_at: "2026-06-05T00:00:00Z",
+          age_secs: 3 * 86_400 + 4 * 3600,
+        },
+        { id: "q-1", fork: "Pick one", shape: "open_question", age_secs: 60 },
+      ],
+      by_domain: { operator_gate: 4, unclassified: 1 },
+      shape_share: { with_recommendation: 1, total: 5 },
+      ...needsMe,
+    };
+    return parseProjectState(body);
+  }
+
+  it("splits the headline into approvals and agent questions, and leads the detail with the share and the oldest", () => {
+    const strip = deriveHomeStrip(needsBody({}), CALM_MACHINES);
+    expect(strip.level).toBe("red");
+    expect(strip.headline).toBe(
+      "5 decisions need you — 4 approvals, 1 agent question"
+    );
+    expect(strip.detail).toMatch(
+      /^1 of 5 decisions came with a recommendation\. The oldest has waited 3d 4h\./
+    );
+  });
+
+  it("sums every bucket but operator_gate into agent questions", () => {
+    const view = needsBody({
+      by_domain: { operator_gate: 1, unclassified: 1, unscanned: 2, other: 1 },
+    });
+    expect(needsKindSplit(view.needsMe)).toEqual({
+      approvals: 1,
+      questions: 4,
+    });
+    expect(needsKindSplitText(view.needsMe)).toBe(
+      "1 approval, 4 agent questions"
+    );
+  });
+
+  it("names only the kinds that are present", () => {
+    const view = needsBody({ by_domain: { operator_gate: 5 } });
+    expect(deriveHomeStrip(view, CALM_MACHINES).headline).toBe(
+      "5 decisions need you — 5 approvals"
+    );
+  });
+
+  it.each([
+    ["by_domain absent (an older coord)", { by_domain: undefined }],
+    ["by_domain null", { by_domain: null }],
+    ["by_domain not summing to the total", { by_domain: { operator_gate: 2 } }],
+    [
+      "by_domain with an unreadable count",
+      { by_domain: { operator_gate: "4", unclassified: 1 } },
+    ],
+  ])("says no breakdown when %s", (_label, needsMe) => {
+    const view = needsBody(needsMe);
+    expect(needsKindSplit(view.needsMe)).toBeNull();
+    expect(deriveHomeStrip(view, CALM_MACHINES).headline).toBe(
+      "5 decisions need you"
+    );
+  });
+
+  it("gives no breakdown when coord says its count may be off, and says the oldest is a lower bound", () => {
+    // Coord's stale causes include a gate mirror counted both as a question
+    // and as an approval: the split itself may be off, so it is not shown.
+    const view = needsBody({ questions_coverage: "stale" });
+    expect(needsKindSplit(view.needsMe)).toBeNull();
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.headline).toBe("5 decisions need you (may be off)");
+    expect(strip.detail).toContain("The oldest has waited at least 3d 4h.");
+  });
+
+  it("says the oldest is a lower bound on a view kept from the last good read", () => {
+    const view = needsBody({});
+    expect(needsOldestSentence(view.needsMe, { stale: true })).toBe(
+      "The oldest has waited at least 3d 4h."
+    );
+    expect(
+      deriveHomeStrip(view, { ...CALM_MACHINES, stale: true }).detail
+    ).toContain("The oldest has waited at least 3d 4h.");
+  });
+
+  it("takes the largest listed age, not the first item's", () => {
+    const view = needsBody({
+      items: [
+        { id: "q-1", fork: "Pick one", shape: "open_question", age_secs: 60 },
+        { id: "q-2", fork: "Pick two", shape: "open_question", age_secs: 7200 },
+      ],
+    });
+    expect(needsOldestSentence(view.needsMe)).toBe(
+      "The oldest has waited 2h 0m."
+    );
+  });
+
+  it("says the oldest's wait is not known when any listed item has no age", () => {
+    const view = needsBody({
+      items: [
+        { id: "q-1", fork: "Pick one", shape: "open_question", age_secs: 60 },
+        { id: "q-2", fork: "Pick two", shape: "open_question" },
+      ],
+    });
+    expect(needsOldestSentence(view.needsMe)).toBe(
+      "How long the oldest has waited is not known."
+    );
+  });
+
+  it("gives no breakdown beside an unusable total", () => {
+    const view = needsBody({ total: null });
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.headline).toBe("Decisions need you — how many is unknown");
+  });
+
+  it("says a null recommendation share is not known — never 0", () => {
+    const view = needsBody({
+      shape_share: { with_recommendation: null, total: 5 },
+    });
+    const strip = deriveHomeStrip(view, CALM_MACHINES);
+    expect(strip.detail).toContain(
+      "How many of these decisions came with a recommendation is not known. The oldest has waited 3d 4h."
+    );
+    expect(strip.detail).not.toMatch(/\b0 of 5\b/);
+  });
+
+  it("says the oldest's wait is not known when coord served no age — never 0m", () => {
+    const view = needsBody({
+      items: [{ id: "q-1", fork: "Pick one", shape: "open_question" }],
+    });
+    expect(needsOldestSentence(view.needsMe)).toBe(
+      "How long the oldest has waited is not known."
+    );
+    expect(deriveHomeStrip(view, CALM_MACHINES).detail).not.toContain("0m");
+  });
+
+  it("says nothing of the oldest when no item is listed", () => {
+    const view = needsBody({ items: [], omitted: 5 });
+    expect(needsOldestSentence(view.needsMe)).toBeNull();
+  });
+
+  it("phrases each unread block as a sentence of its own", () => {
+    expect(unreadBlockSentence("degradations", "stale")).toBe(
+      "The degradations list may be incomplete or stale."
+    );
+    expect(unreadBlockSentence("needs_me", "not_implemented")).toBe(
+      "The needs-you list is not built yet."
+    );
+    expect(unreadBlockSentence("on_track", "could_not_read")).toBe(
+      "The work-by-state summary could not be read."
+    );
+    expect(unreadBlockSentence("correctness", "unknown")).toBe(
+      "The correctness check is unknown."
+    );
   });
 });
