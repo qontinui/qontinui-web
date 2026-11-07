@@ -566,6 +566,42 @@ def test_backfill_skips_operators_tied_at_the_earliest_grant() -> None:
 
 
 @_needs_pg
+def test_backfill_tie_partners_are_only_null_origin_granterless_rows() -> None:
+    """A same-instant row is a tie partner only if NULL-origin AND granter-less.
+
+    Each tenant pins one condition of the tie exclusion: in ``t_origin`` the
+    other operator's same-instant row is ``self_service`` (pins
+    ``grant_origin IS NULL``); in ``t_granter`` it is NULL-origin but has a
+    granter (pins ``granted_by IS NULL``). Neither is a tie partner, so the
+    granter-less NULL-origin creator is consented in both.
+    """
+    with ephemeral_database(admin_database_url(), "acctconsent_tiepart") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        with engine.begin() as conn:
+            t_origin = _seed_tenant(conn)
+            t_granter = _seed_tenant(conn)
+            creator = _seed_operator(conn, t_origin)
+            self_served = _seed_operator(conn, t_origin)
+            invited = _seed_operator(conn, t_granter)
+            # (a) same instant: the creator, and another operator's self_service row.
+            _grant(conn, creator, t_origin, "admin", _T0, None, None)
+            _grant(conn, self_served, t_origin, "admin", _T0, None, "self_service")
+            # (b) same instant: the creator, and another operator's NULL-origin
+            # row WITH a granter.
+            _grant(conn, creator, t_granter, "admin", _T0, None, None)
+            _grant(conn, invited, t_granter, "operator", _T0, creator, None)
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        rows = _consent_rows(engine)
+        assert rows.get((creator, t_origin)) == (_T0, "backfill", None), rows
+        assert rows.get((creator, t_granter)) == (_T0, "backfill", None), rows
+        assert (self_served, t_origin) in rows
+        assert (invited, t_granter) not in rows
+
+
+@_needs_pg
 def test_deleting_the_operator_or_tenant_cascades_its_consents() -> None:
     with ephemeral_database(admin_database_url(), "acctconsent_cascade") as (
         engine,
