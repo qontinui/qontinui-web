@@ -95,7 +95,7 @@ export const COORDINATION_OVERVIEW_CAPTIONS = {
     // target (`detection_bound:<plane>` rows, listed in the open), the other
     // read ones behind one disclosure; while presenting, sources not built
     // yet are counted on one line rather than listed.
-    oneLiner: copy`The sources the ${term("coord", "coordination service")} could not fully read for this view and the areas whose faults reach it slower than the target, with the sources it did read one click down.`,
+    oneLiner: copy`The sources the ${term("coord", "coordination service")} could not fully read for this view and the areas whose faults reach this view slower than the fault-to-visibility target, with the other sources it read one click down.`,
     whyItMatters:
       "A view that names what it could not read is one whose calm parts can be trusted: a source that was not read stays on this list, marked as not read, instead of being dropped.",
   },
