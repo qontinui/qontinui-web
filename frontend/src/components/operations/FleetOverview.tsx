@@ -298,6 +298,12 @@ function buildMachineGroups(
       capability: device.capability,
       runner_reports: device.runner_reports,
       runner_reports_scrape_up: runnerReportsScrapeUp,
+      // Per-lane freshness, carried through verbatim for the same reason:
+      // `null` (read failed) and `undefined` (coord predates the field) are
+      // UNKNOWN, and normalising either to `[]` would be this join inventing
+      // a "no stale lanes" measurement.
+      stale_lanes: device.stale_lanes,
+      sample_stale_after_secs: device.sample_stale_after_secs,
       ciRunner: isCiRunnerDevice(device),
     };
     if (group) {

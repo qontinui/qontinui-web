@@ -5550,9 +5550,23 @@ async def get_fleet_health(
       the row actually said. Omitted entirely in the common case, so its
       presence is the anomaly marker — do not default it in.
     * ``devices[].newest_sample_age_secs`` is seconds since that
-      device's newest resource sample, and
-      ``devices[].sample_stale_after_secs`` is the threshold it was
-      graded against. **It is NOT the configured cadence**: coord
+      device's newest resource sample on ANY lane, and
+      ``devices[].sample_stale_after_secs`` is the freshness threshold.
+      **Freshness is graded on the STALEST expected lane, not the newest
+      one** (plan
+      ``2026-11-04-devops-a-silent-wsl-lane-reads-healthy-because-freshness-is-graded-on-the-newest-lane``):
+      a lane is expected iff it published inside coord's lookback, and
+      ``devices[].stalest_sample_age_secs`` is the age ``state`` was
+      graded on. So a device with a fresh ``host`` lane and a silent
+      ``wsl`` lane reads ``stale`` while ``newest_sample_age_secs`` sits
+      well inside the threshold, which is exactly the box the old
+      newest-lane grade called ``healthy`` on 2026-11-04.
+      ``devices[].stale_lanes`` names the lane(s) that crossed it, each
+      ``{lane, lane_instance, age_secs}``. ``[]`` means the freshness
+      read succeeded and nothing is stale. ``null`` means the read
+      FAILED, and coord never sends ``[]`` then. Absent means a coord
+      predating the field. Both of the last two are UNKNOWN, never "no
+      stale lanes". **The threshold is NOT the configured cadence**: coord
       computes ``sample_interval_secs × SAMPLE_STALE_INTERVALS`` with
       that multiplier pinned at 4, falling back to a 30s interval where
       the tenant set none — so the default threshold is 120s, not 30s.

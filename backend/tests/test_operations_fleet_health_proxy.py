@@ -470,3 +470,67 @@ class TestFleetHealthProxyShape:
         )
 
         assert resp.json()["devices"][0]["state"] == "quarantined"
+
+
+# The 2026-11-04 shape (plan
+# `2026-11-04-devops-a-silent-wsl-lane-reads-healthy-because-freshness-is-graded-on-the-newest-lane`):
+# the host lane is fresh at 24s, so `newest_sample_age_secs` sits well inside
+# the threshold, yet the device reads `stale` because the wsl lane is 697s
+# old. Coord grades the STALEST expected lane and names it in `stale_lanes`.
+WSL_SILENT_DEVICE = {
+    **HEALTHY_DEVICE,
+    "device_id": "7a2e9b10-3c44-4d21-9a6e-1f0b8c5d2e33",
+    "hostname": "nawa",
+    "state": "stale",
+    "heartbeat_state": "healthy",
+    "newest_sample_age_secs": 24.0,
+    "stalest_sample_age_secs": 697.0,
+    "sample_stale_after_secs": 120.0,
+    "stale_lanes": [{"lane": "wsl", "lane_instance": "Ubuntu", "age_secs": 697.0}],
+}
+
+
+class TestFleetHealthProxyStaleLanes:
+    def test_stale_lanes_and_the_stalest_age_survive_the_hop(
+        self, auth_client: TestClient
+    ):
+        """A fresh newest lane beside a stale one: the lane that crossed the
+        threshold, and the age ``state`` was graded on, arrive verbatim."""
+        resp = _get(
+            auth_client,
+            {
+                "devices": [WSL_SILENT_DEVICE],
+                "count": 1,
+                "by_state": {"stale": 1},
+                "alerts": {"critical": 0, "warning": 1, "info": 0},
+            },
+        )
+
+        device = resp.json()["devices"][0]
+        assert device["state"] == "stale"
+        assert device["newest_sample_age_secs"] == 24.0
+        assert device["stalest_sample_age_secs"] == 697.0
+        assert device["stale_lanes"] == [
+            {"lane": "wsl", "lane_instance": "Ubuntu", "age_secs": 697.0}
+        ]
+
+    def test_a_failed_freshness_read_stays_null_not_empty(
+        self, auth_client: TestClient
+    ):
+        """``null`` (the read failed) and ``[]`` (measured, nothing stale) are
+        different claims. The proxy must not collapse either into the other."""
+        failed = {**HEALTHY_DEVICE, "stale_lanes": None}
+        fresh = {**HEALTHY_DEVICE, "device_id": DEVICE_ID[:-1] + "e", "stale_lanes": []}
+        resp = _get(
+            auth_client,
+            {
+                "devices": [failed, fresh],
+                "count": 2,
+                "by_state": {"healthy": 2},
+                "alerts": {"critical": 0, "warning": 0, "info": 0},
+            },
+        )
+
+        first, second = resp.json()["devices"]
+        assert "stale_lanes" in first and first["stale_lanes"] is None
+        assert second["stale_lanes"] == []

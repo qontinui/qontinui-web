@@ -46,6 +46,11 @@ import {
   resolveCoordCredential,
 } from "./coordCredentialStatus";
 import { CiRunnerBadge } from "./CiRunnerBadge";
+import {
+  LANE_FRESHNESS_PALETTE,
+  laneName,
+  resolveLaneFreshness,
+} from "./laneFreshnessStatus";
 import { resolveRunnerReports } from "./runnerReportStatus";
 import { RunnerReportsSection } from "./RunnerReportsSection";
 import {
@@ -623,6 +628,25 @@ export function MachineCard({
             `reports no state for it. Unknown, not healthy.`;
 
   /**
+   * WHICH sample lane went quiet — coord's per-lane `stale_lanes` (plan
+   * `2026-11-04-devops-a-silent-wsl-lane-reads-healthy-because-freshness-is-graded-on-the-newest-lane`).
+   * The badge above can say `stale`; only this says whether it is the host
+   * sampler or a WSL distro's. Rendered only for a matched device (an
+   * unmatched one already reads `unknown` above) and only when it says
+   * something: `stale`, or `unknown` (a failed or absent read, never "none").
+   * A measured `[]` adds no badge.
+   */
+  const laneFreshness =
+    machine.coordHealth?.matched === true
+      ? resolveLaneFreshness({
+          stale_lanes: machine.coordHealth.stale_lanes,
+          sample_stale_after_secs: machine.coordHealth.sample_stale_after_secs,
+        })
+      : null;
+  const shownLaneFreshness =
+    laneFreshness && laneFreshness.kind !== "fresh" ? laneFreshness : null;
+
+  /**
    * **Can this machine still reach coord?** — the second credential question
    * this card asks, and the one it could not ask at all until plan
    * `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
@@ -806,6 +830,21 @@ export function MachineCard({
                   {coordStateLabel}
                 </TooltipContent>
               </Tooltip>
+            )}
+
+            {shownLaneFreshness && (
+              <span
+                className="contents"
+                data-operations-lane-freshness={shownLaneFreshness.kind}
+                data-operations-stale-lanes={shownLaneFreshness.lanes
+                  .map(laneName)
+                  .join(",")}
+              >
+                <StatusBadge
+                  status={shownLaneFreshness}
+                  palette={LANE_FRESHNESS_PALETTE}
+                />
+              </span>
             )}
 
             {/* The credential axis. Rendered through the console's own
