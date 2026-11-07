@@ -16,6 +16,13 @@ import type {
 } from "@/types/code-packages";
 
 /**
+ * The one served prefix for every code-package route. The backend mounts the
+ * router at `/api/v1/code-packages` (`backend/app/api/v1/api.py`); no route is
+ * served under `/api/v1/marketplace`.
+ */
+const CODE_PACKAGES = `${ApiConfig.API_BASE_URL}/api/v1/code-packages`;
+
+/**
  * Backend API response types
  * These match the FastAPI Pydantic schemas
  */
@@ -119,11 +126,9 @@ interface BackendPopularPackageResponse {
  */
 export class CodePackageService {
   private httpClient: HttpClient;
-  private apiUrl: string;
 
   constructor(httpClient: HttpClient) {
     this.httpClient = httpClient;
-    this.apiUrl = ApiConfig.API_BASE_URL;
   }
 
   /**
@@ -148,7 +153,7 @@ export class CodePackageService {
     params.append("offset", offset.toString());
 
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/packages?${params.toString()}`
+      `${CODE_PACKAGES}/packages?${params.toString()}`
     );
 
     if (!response.ok) {
@@ -159,7 +164,9 @@ export class CodePackageService {
 
     // Transform backend response to frontend format
     return {
-      packages: data.packages.map(this.transformBackendPackageToFrontend),
+      packages: data.packages.map((p) =>
+        this.transformBackendPackageToFrontend(p)
+      ),
       total: data.total,
       page,
       limit: data.limit,
@@ -168,12 +175,25 @@ export class CodePackageService {
   }
 
   /**
-   * Get a single package by ID
+   * Get a single package by its URL slug (the `/marketplace/[slug]` route)
    */
-  async getPackage(id: string): Promise<CodePackage> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/packages/${id}`
+  async getPackage(slug: string): Promise<CodePackage> {
+    return this.fetchPackageDetail(
+      `${CODE_PACKAGES}/packages/by-slug/${encodeURIComponent(slug)}`
     );
+  }
+
+  /**
+   * Get a single package by its numeric ID
+   */
+  private async getPackageById(id: string): Promise<CodePackage> {
+    return this.fetchPackageDetail(
+      `${CODE_PACKAGES}/packages/${encodeURIComponent(id)}`
+    );
+  }
+
+  private async fetchPackageDetail(url: string): Promise<CodePackage> {
+    const response = await this.httpClient.fetch(url);
 
     if (!response.ok) {
       throw new Error("Package not found");
@@ -188,7 +208,7 @@ export class CodePackageService {
    */
   async getPopularPackages(): Promise<CodePackage[]> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/packages/popular`
+      `${CODE_PACKAGES}/packages/popular`
     );
 
     if (!response.ok) {
@@ -196,7 +216,7 @@ export class CodePackageService {
     }
 
     const data: BackendPopularPackageResponse = await response.json();
-    return data.packages.map(this.transformBackendPackageToFrontend);
+    return data.packages.map((p) => this.transformBackendPackageToFrontend(p));
   }
 
   /**
@@ -204,7 +224,7 @@ export class CodePackageService {
    */
   async getMyPackages(): Promise<CodePackage[]> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/users/me/packages`
+      `${CODE_PACKAGES}/users/me/packages`
     );
 
     if (!response.ok) {
@@ -212,7 +232,7 @@ export class CodePackageService {
     }
 
     const data: BackendPackageSearchResult[] = await response.json();
-    return data.map(this.transformBackendPackageToFrontend);
+    return data.map((p) => this.transformBackendPackageToFrontend(p));
   }
 
   /**
@@ -222,7 +242,7 @@ export class CodePackageService {
     projectId: string
   ): Promise<PackageInstallation[]> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/projects/${projectId}/packages`
+      `${CODE_PACKAGES}/projects/${projectId}/packages`
     );
 
     if (!response.ok) {
@@ -237,23 +257,20 @@ export class CodePackageService {
    * Create a new package
    */
   async createPackage(data: CreatePackageRequest): Promise<CodePackage> {
-    const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/packages`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          name: data.name,
-          description: data.description,
-          category_id: this.getCategoryId(data.category),
-          tags: data.tags,
-          license: data.license,
-          visibility: data.visibility,
-          repository_url: data.repository_url,
-          homepage_url: data.homepage_url,
-          documentation_url: data.documentation_url,
-        }),
-      }
-    );
+    const response = await this.httpClient.fetch(`${CODE_PACKAGES}/packages`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: data.name,
+        description: data.description,
+        category_id: this.getCategoryId(data.category),
+        tags: data.tags,
+        license: data.license,
+        visibility: data.visibility,
+        repository_url: data.repository_url,
+        homepage_url: data.homepage_url,
+        documentation_url: data.documentation_url,
+      }),
+    });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
@@ -292,7 +309,7 @@ export class CodePackageService {
       updateData.deprecated_reason = data.deprecated_reason;
 
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/packages/${id}`,
+      `${CODE_PACKAGES}/packages/${id}`,
       {
         method: "PUT",
         body: JSON.stringify(updateData),
@@ -315,7 +332,7 @@ export class CodePackageService {
     data: PublishVersionRequest
   ): Promise<CodePackage> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/packages/${packageId}/versions`,
+      `${CODE_PACKAGES}/packages/${packageId}/versions`,
       {
         method: "POST",
         body: JSON.stringify({
@@ -333,7 +350,7 @@ export class CodePackageService {
     }
 
     // After publishing version, fetch the updated package
-    return this.getPackage(packageId);
+    return this.getPackageById(packageId);
   }
 
   /**
@@ -343,7 +360,7 @@ export class CodePackageService {
     data: InstallPackageRequest
   ): Promise<PackageInstallation> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/packages/${data.package_id}/install`,
+      `${CODE_PACKAGES}/packages/${data.package_id}/install`,
       {
         method: "POST",
         body: JSON.stringify({
@@ -367,7 +384,7 @@ export class CodePackageService {
    */
   async uninstallPackage(packageId: string, projectId: string): Promise<void> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/packages/${packageId}/uninstall`,
+      `${CODE_PACKAGES}/packages/${packageId}/uninstall`,
       {
         method: "POST",
         body: JSON.stringify({
@@ -387,7 +404,7 @@ export class CodePackageService {
    */
   async getRatings(packageId: string): Promise<PackageRating[]> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/packages/${packageId}/ratings`
+      `${CODE_PACKAGES}/packages/${packageId}/ratings`
     );
 
     if (!response.ok) {
@@ -403,7 +420,7 @@ export class CodePackageService {
    */
   async ratePackage(data: RatePackageRequest): Promise<PackageRating> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/packages/${data.package_id}/ratings`,
+      `${CODE_PACKAGES}/packages/${data.package_id}/ratings`,
       {
         method: "POST",
         body: JSON.stringify({
@@ -434,7 +451,7 @@ export class CodePackageService {
    */
   async deletePackage(id: string): Promise<void> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/marketplace/packages/${id}`,
+      `${CODE_PACKAGES}/packages/${id}`,
       {
         method: "DELETE",
       }

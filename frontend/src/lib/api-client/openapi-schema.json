@@ -78952,6 +78952,49 @@
         ]
       }
     },
+    "/api/v1/code-packages/packages/by-slug/{slug}": {
+      "get": {
+        "description": "Get detailed package information by the package's URL slug.",
+        "operationId": "api_v1_code_packages_packages_by_slug_slug_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageDetailRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Package Details By Slug",
+        "tags": [
+          "code-packages"
+        ]
+      }
+    },
     "/api/v1/code-packages/packages/popular": {
       "get": {
         "description": "Get most popular packages by download count.",

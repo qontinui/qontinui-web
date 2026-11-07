@@ -245,26 +245,8 @@ async def search_packages(
     )
 
 
-@router.get("/packages/{package_id}", response_model=PackageDetailRead)
-async def get_package_details(
-    package_id: int,
-    db: AsyncSession = Depends(get_async_db),
-):
-    """Get detailed package information."""
-    package = await get_package_or_404(db, package_id)
-    return await package_response_builder.build_detail_response(db, package)
-
-
-@router.get("/packages/{package_id}/versions", response_model=list[VersionRead])
-async def list_package_versions(
-    package_id: int,
-    db: AsyncSession = Depends(get_async_db),
-):
-    """List all versions of a package."""
-    await get_package_or_404(db, package_id)
-    return await crud.get_package_versions(db, package_id)
-
-
+# Literal-path GET routes are declared before ``/packages/{package_id}`` so the
+# ``int`` path parameter does not capture them (a shadowed route answers 422).
 @router.get("/packages/popular", response_model=PopularPackageResponse)
 async def get_popular_packages(
     limit: int = Query(20, ge=1, le=100, description="Number of packages"),
@@ -287,6 +269,41 @@ async def get_trending_packages(
     results = await package_response_builder.build_search_results(db, packages)
     period = "week" if days <= 7 else ("month" if days <= 30 else "all")
     return TrendingPackageResponse(packages=results, period=period)
+
+
+@router.get("/packages/by-slug/{slug}", response_model=PackageDetailRead)
+async def get_package_details_by_slug(
+    slug: str,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Get detailed package information by the package's URL slug."""
+    package = await crud.get_package_by_slug(db, slug)
+    if not package:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Package not found",
+        )
+    return await package_response_builder.build_detail_response(db, package)
+
+
+@router.get("/packages/{package_id}", response_model=PackageDetailRead)
+async def get_package_details(
+    package_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Get detailed package information."""
+    package = await get_package_or_404(db, package_id)
+    return await package_response_builder.build_detail_response(db, package)
+
+
+@router.get("/packages/{package_id}/versions", response_model=list[VersionRead])
+async def list_package_versions(
+    package_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List all versions of a package."""
+    await get_package_or_404(db, package_id)
+    return await crud.get_package_versions(db, package_id)
 
 
 # ===== Installation Endpoints =====
