@@ -723,12 +723,12 @@ async def _close_connection_of_marked_row(
 
     The early read in :func:`_register_socket` saw no marker, a mark landed
     before this handshake's device upsert, and ``register_device`` refused,
-    leaving the device row untouched. The mark is the registrar's, or one
-    this handshake's own first upsert wrote for a new device id from a
-    client list carrying the marker (coord finding ``cde2133b``). This
-    handshake's connection row is closed rather than left open for a socket
-    that is about to be refused. Best effort: a failed close is logged and
-    must not turn the refusal into a 1011.
+    leaving the device row untouched. The mark is the registrar's: web's
+    writers drop a client-supplied one before writing
+    (:func:`device_crud.drop_ci_runner_capability`). This handshake's
+    connection row is closed rather than left open for a socket that is
+    about to be refused. Best effort: a failed close is logged and must not
+    turn the refusal into a 1011.
     """
     try:
         await device_connection_crud.close_connection_record(db, connection_pk)
@@ -905,6 +905,9 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         return
     os_name = info_msg.get("os")
     os_version = info_msg.get("os_version") or info_msg.get("osVersion")
+    # Client-asserted. A ``ci_runner`` element is registrar-only and never
+    # stored: every device_crud writer drops it first
+    # (``device_crud.drop_ci_runner_capability``).
     capabilities = info_msg.get("capabilities") or []
 
     # Client-asserted devenv block (plan 2026-08-05, decision 2):
