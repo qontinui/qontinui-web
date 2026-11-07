@@ -1846,9 +1846,11 @@ describe("merged rows", () => {
   });
 
   it("coord's ci-failed-stale-base reads as needs-rebase, not the author's red", () => {
-    // The GitHub fields say red; coord says the red sits on a stale base and
-    // its own freshen is the remedy. Without the override /fleet asked the
-    // author to "push a fix" for main's failure.
+    // The GitHub fields say red; coord says the red sits on a stale base, so
+    // the red may be main's. Coord's own freshen MAY update the branch, but
+    // whether it will is not served — the row says UNKNOWN, never a promise.
+    // Without the override /fleet asked the author to "push a fix" for main's
+    // failure.
     const stale = pr({
       pr_state: "open",
       merge_state_status: "BLOCKED",
@@ -1861,6 +1863,7 @@ describe("merged rows", () => {
     expect(status.kind).toBe("needs-rebase");
     expect(status.attention).toBe("waiting");
     expect(status.reason).toContain("stale base");
+    expect(status.reason).toContain("UNKNOWN");
     // The same red WITHOUT the token is still the author's.
     const plain = buildPipelineRows(
       [pr({ ...stale, merge_status: "ci-failed" })],
