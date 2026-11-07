@@ -92,6 +92,7 @@ from app.overview.objectives_results import (
     read_checkpoint_results,
 )
 from app.overview.permissions import OverviewAccess, require_read
+from app.overview.registry import REGISTRY
 from app.overview.resource import StoreContext
 
 logger = structlog.get_logger(__name__)
@@ -150,6 +151,12 @@ def _group(
     return initiative_named, other
 
 
+#: The initiative fields the grouping reads. An error in either leaves what
+#: the initiative declares — its objectives, or the measures it names — not
+#: fully known, however readable the rest of its frontmatter is.
+_OBJECTIVE_FIELDS = ("in_scope", "success_metrics")
+
+
 def _initiative_problems(
     initiatives: list[InitiativeRead],
     skeletons: int,
@@ -160,7 +167,9 @@ def _initiative_problems(
 
     No initiative document at all is NOT a problem — the project simply has
     none written yet, and the page says so. But a degraded listing cannot
-    vouch for that absence, so it is one."""
+    vouch for that absence, so it is one. Neither is an initiative whose
+    ``in_scope`` or ``success_metrics`` could not be read an empty one: that
+    is a problem too, so no ``serves:`` id is said to be declared by none."""
     problems: list[str] = []
     for i in initiatives:
         if i.state == "unreadable":
@@ -169,6 +178,13 @@ def _initiative_problems(
             )
         elif i.frontmatter_error:
             problems.append(f"initiative/{i.name}: {i.frontmatter_error}")
+        else:
+            problems.extend(
+                f"initiative/{i.name}: its {field} could not be read "
+                f"({i.field_errors[field].rstrip('.')})"
+                for field in _OBJECTIVE_FIELDS
+                if field in i.field_errors
+            )
     written = [i for i in initiatives if i.state in ("authored", "unknown")]
     if not written:
         if voids:
@@ -455,6 +471,9 @@ def _findings_source(listed: dict[str, MetricFindings]) -> SourceRead:
     unavailable = {n: r for n, r in listed.items() if r.state == "unavailable"}
     truncated = {n: r for n, r in listed.items() if r.state == "truncated"}
     details = {n: r.reason or r.state for n, r in {**unavailable, **truncated}.items()}
+    # The measures with a gap. A measure whose only note is set-aside foreign
+    # findings has none, so it is in `details` and never in `affected`.
+    affected = sorted({**unavailable, **truncated})
     # Another project's fleet-wide findings, set aside: counted per measure,
     # never placed. Setting them aside is not a gap, so alone it leaves the
     # status ok.
@@ -478,7 +497,7 @@ def _findings_source(listed: dict[str, MetricFindings]) -> SourceRead:
                 + (next(iter(unavailable.values())).reason or "coord did not answer")
                 + full
             ),
-            affected=sorted(details),
+            affected=affected,
             details=details,
         )
     if truncated:
@@ -489,7 +508,7 @@ def _findings_source(listed: dict[str, MetricFindings]) -> SourceRead:
                 + ", ".join(sorted(truncated))
                 + "; their unreported criteria read as not fully read."
             ),
-            affected=sorted(details),
+            affected=affected,
             details=details,
         )
     if foreign:
@@ -500,7 +519,6 @@ def _findings_source(listed: dict[str, MetricFindings]) -> SourceRead:
                 "own (other projects' fleet-wide findings) were set aside, not "
                 "read as reports."
             ),
-            affected=sorted(details),
             details=details,
         )
     return SourceRead(status="ok")
@@ -565,9 +583,12 @@ router = APIRouter()
 @router.get("/objectives", response_model=ObjectivesRead)
 async def read_objectives(
     request: Request,
-    # The intent documents' own read rule: any member of the active project,
-    # and never a device (coord serves them only behind operator routes).
-    access: OverviewAccess = Depends(require_read("coord_admin")),
+    # The intent documents' own read rule, taken from their registry entry so
+    # the two can never drift: any member of the active project, and never a
+    # device (coord serves the documents only behind operator routes).
+    access: OverviewAccess = Depends(
+        require_read(REGISTRY["intent_documents"].permission)
+    ),
     db: AsyncSession = Depends(get_async_db),
     store: IntentDocumentStore = Depends(intent_document_store),
     findings: CoordFindings = Depends(coord_findings),

@@ -129,6 +129,32 @@ class _FrontmatterRefused(Exception):
     """A block this read declines to load; the message says why."""
 
 
+#: The prefix of YAML's own tags: ``!!bool`` is ``tag:yaml.org,2002:bool``.
+_YAML_TAG = "tag:yaml.org,2002:"
+#: What a value of each of YAML's scalar types is, in words.
+_TAG_WORDS = {
+    "bool": "true or false",
+    "int": "a whole number",
+    "float": "a number",
+    "timestamp": "a date or time",
+}
+
+
+def _unbuildable(node: Node, exc: Exception) -> str:
+    """Why a value its type's constructor failed on could not be read:
+    ``the value 'maybe' is not true or false``."""
+    kind = node.tag.removeprefix(_YAML_TAG)
+    what = (
+        f"the value {node.value!r}" if isinstance(node, yaml.ScalarNode) else "a value"
+    )
+    words = _TAG_WORDS.get(kind, f"a valid {node.tag}")
+    # For a date, the ValueError says what is wrong with it ("day is out of
+    # range for month"); anything else names only the constructor's own
+    # internals ("invalid literal for int() with base 10").
+    why = f" ({exc})" if kind == "timestamp" and isinstance(exc, ValueError) else ""
+    return f"{what} is not {words}{why}"
+
+
 class _StrictLoader(yaml.SafeLoader):
     """``yaml.SafeLoader`` that refuses every anchor and alias, and any node
     nested deeper than :data:`MAX_FRONTMATTER_DEPTH`.
@@ -136,6 +162,12 @@ class _StrictLoader(yaml.SafeLoader):
     Both are checked as each node is composed, so a refused block is never
     built: an alias bomb stops at its first anchor, and deep nesting stops
     before the composer's own recursion gets deep.
+
+    A value its type's constructor cannot build is re-raised as a
+    ``yaml.YAMLError`` naming the value and where it is: PyYAML raises
+    ``AttributeError`` for ``!!timestamp x``, ``KeyError`` for ``!!bool
+    maybe`` and ``ValueError`` for an impossible date — none of them a
+    ``YAMLError``, and none of them saying which value was wrong.
     """
 
     def __init__(self, stream: str) -> None:
@@ -161,6 +193,16 @@ class _StrictLoader(yaml.SafeLoader):
             return super().compose_node(parent, index)
         finally:
             self._depth -= 1
+
+    def construct_object(self, node: Node, deep: bool = False) -> Any:
+        try:
+            return super().construct_object(node, deep=deep)
+        except (yaml.YAMLError, RecursionError):
+            raise
+        except Exception as exc:
+            raise yaml.constructor.ConstructorError(
+                None, None, _unbuildable(node, exc), node.start_mark
+            ) from exc
 
 
 def _load(text: str) -> Any:
@@ -217,9 +259,11 @@ def parse_frontmatter(block: str | None) -> tuple[dict[str, Any], str | None]:
         normalised: dict[str, Any] = _iso(loaded)
     except _FrontmatterRefused as exc:
         return {}, f"The YAML block is not read: it {exc}."
-    except (yaml.YAMLError, ValueError, RecursionError) as exc:
-        # PyYAML raises ValueError (not YAMLError) for an impossible date such
-        # as `2026-02-30`. RecursionError is the last bound: the depth limit
+    except Exception as exc:
+        # Any exception, so this never raises. A value PyYAML's constructors
+        # cannot build (`!!timestamp x`, `!!bool maybe`, the impossible date
+        # `2026-02-30`) arrives as the YAMLError _StrictLoader raises for it,
+        # naming the value. RecursionError is the last bound: the depth limit
         # stops nesting first, so a stack that still runs out is reported on
         # this document like any other block that could not be read.
         message = " ".join(str(exc).split()) or type(exc).__name__
@@ -274,6 +318,24 @@ def _current_value(kind: SourceQueryType) -> CurrentValueRead:
     else:
         reason = "Coord does not run measures yet."
     return CurrentValueRead(source_query_type=kind, reason=reason)
+
+
+#: ``current_value.reason`` for a measure whose definition can't be read —
+#: its document unreadable, its frontmatter refused or unparseable, or
+#: building it crashed. Where its value would come from is unknown, which is
+#: never "no source".
+DEFINITION_UNREADABLE_REASON = (
+    "The measure's definition can't be read, so where its value comes from is unknown."
+)
+
+
+def _current_value_unknown() -> CurrentValueRead:
+    """The current value of a measure whose definition can't be read.
+    ``source_query_type`` keeps the plan's fixed vocabulary, which has no
+    unknown; ``frontmatter_error`` / ``state`` say it was not read."""
+    return CurrentValueRead(
+        source_query_type="absent", reason=DEFINITION_UNREADABLE_REASON
+    )
 
 
 def _string_list(value: Any, key: str, errors: dict[str, str]) -> list[str]:
@@ -435,7 +497,9 @@ def build_metric(doc: IntentDocumentRead) -> tuple[MetricRead, bool]:
         overview_order=doc.overview_order,
         body=doc.body,
         error=doc.error,
-        current_value=_current_value("absent"),
+        # Until the frontmatter is read below, where the value comes from is
+        # unknown — the reason an unreadable or unparseable document keeps.
+        current_value=_current_value_unknown(),
     )
     if doc.state == "unreadable":
         return base, False
@@ -517,27 +581,36 @@ def build_initiative(doc: IntentDocumentRead) -> tuple[InitiativeRead, bool]:
     read.success_metrics = _string_list(
         fm.get("success_metrics"), "success_metrics", read.field_errors
     )
-    in_scope = fm.get("in_scope")
-    if isinstance(in_scope, list):
-        skipped = 0
-        for item in in_scope:
-            ident = item.get("id") if isinstance(item, dict) else None
-            if not isinstance(ident, str) or not ident.strip():
-                skipped += 1
-                continue
-            assert isinstance(item, dict)
-            read.objectives.append(
-                ObjectiveRead(
-                    id=ident, text=_text(item.get("text")) or ident, metric_names=[]
-                )
-            )
-        if skipped:
-            read.frontmatter_warnings.append(
-                f"{skipped} in_scope item(s) carry no id, so no measure can name them."
-            )
-    elif in_scope is not None:
-        read.field_errors["in_scope"] = "in_scope must be a list of {id, text}."
+    read.objectives = _parse_in_scope(fm.get("in_scope"), read.field_errors)
     return read, False
+
+
+def _parse_in_scope(value: Any, errors: dict[str, str]) -> list[ObjectiveRead]:
+    """The initiative's objectives. An item with no quoted id is named in
+    ``errors["in_scope"]`` — no measure can name it, so which objectives the
+    initiative declares is not fully known — and the items that have one are
+    still read: the rule :func:`_parse_criteria` applies to criteria."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        errors["in_scope"] = "in_scope must be a list of {id, text}."
+        return []
+    out: list[ObjectiveRead] = []
+    problems: list[str] = []
+    for i, item in enumerate(value):
+        ident = item.get("id") if isinstance(item, dict) else None
+        if not isinstance(ident, str) or not ident.strip():
+            problems.append(f"item {i + 1} has no quoted id")
+            continue
+        assert isinstance(item, dict)
+        out.append(
+            ObjectiveRead(
+                id=ident, text=_text(item.get("text")) or ident, metric_names=[]
+            )
+        )
+    if problems:
+        errors["in_scope"] = "; ".join(problems) + "."
+    return out
 
 
 def _read_failed(exc: Exception) -> str:
@@ -560,7 +633,7 @@ def metric_read_failed(doc: IntentDocumentRead, exc: Exception) -> MetricRead:
         body=doc.body,
         error=doc.error,
         frontmatter_error=_read_failed(exc),
-        current_value=_current_value("absent"),
+        current_value=_current_value_unknown(),
     )
 
 

@@ -39,6 +39,7 @@ from app.overview.intent_documents import IntentDocumentStore
 from app.overview.metric_checkpoint import validate_metric_checkpoint
 from app.overview.objectives import build_objectives
 from app.overview.objectives_frontmatter import (
+    DEFINITION_UNREADABLE_REASON,
     parse_frontmatter,
     source_query_type,
     title_of_document,
@@ -1771,7 +1772,8 @@ class TestAnotherProjectsFindings:
         assert {n.finding_id for n in metric.related_notes}.isdisjoint({_id(2), _id(3)})
         source = read.sources.findings
         assert source.status == "ok"
-        assert MERGE_TRAIN in source.affected
+        # Set aside is not a gap: counted in `details`, never `affected`.
+        assert source.affected == []
         assert source.details[MERGE_TRAIN].startswith("2 finding(s)")
         assert "not this project's own" in source.details[MERGE_TRAIN]
         # Its rows are not this project's table rows either.
@@ -1848,6 +1850,33 @@ class TestAnotherProjectsFindings:
         assert read.sources.findings.status == "truncated"
         detail = read.sources.findings.details[MERGE_TRAIN]
         assert "came back full" in detail and "not this project's own" in detail
+
+    async def test_affected_names_only_the_measures_with_a_gap(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        """One measure's page came back full; another's held only set-aside
+        foreign findings. Only the first has a gap."""
+        findings.list_override[MERGE_TRAIN] = {
+            "available": True,
+            "findings": [
+                {"finding_id": _id(700 + i), "tenant_id": str(TENANT),
+                 "scope": "tenant", "topic": "other", "title": "n",
+                 "resource_keys": [DOC_KEY], "created_at": "2026-10-07T00:00:00Z"}
+                for i in range(FINDINGS_PAGE_LIMIT)
+            ],
+            "limit": FINDINGS_PAGE_LIMIT,
+        }  # fmt: skip
+        self._foreign(
+            findings,
+            _id(8),
+            keys=["prompt_document:success_metric/development-speed"],
+        )
+        read = await _read(docs, findings)
+        source = read.sources.findings
+        assert source.status == "truncated"
+        assert source.affected == [MERGE_TRAIN]
+        assert source.details["development-speed"].startswith("1 finding(s)")
+        assert "came back full" in source.details[MERGE_TRAIN]
 
 
 class TestRecordedResults:
@@ -2137,6 +2166,83 @@ class TestDocumentShapes:
             ["remote-session-access", "coord-reachability"],
         )
 
+    @pytest.mark.parametrize(
+        ("in_scope", "said", "objectives", "unchecked"),
+        [
+            (
+                'in_scope: "parity, then reachability"\n',
+                "in_scope must be a list of {id, text}.",
+                [],
+                ["remote-session-access", "coord-reachability"],
+            ),
+            (
+                "in_scope:\n  - text: parity\n  - remote session access\n",
+                "item 1 has no quoted id; item 2 has no quoted id.",
+                [],
+                ["remote-session-access", "coord-reachability"],
+            ),
+            # The item that has an id is still read and still groups its
+            # measure; the one without (an unquoted number is not one) is
+            # named, and what the initiative declares is not fully known.
+            (
+                "in_scope:\n  - id: remote-session-access\n    text: remote\n"
+                "  - id: 2\n    text: reachability\n",
+                "item 2 has no quoted id.",
+                ["remote-session-access"],
+                ["coord-reachability"],
+            ),
+        ],
+        ids=["not_a_list", "no_item_has_an_id", "one_item_has_no_id"],
+    )
+    async def test_an_in_scope_that_cant_be_read_is_never_one_declaring_nothing(
+        self,
+        docs: FakeDocs,
+        findings: FakeFindings,
+        in_scope: str,
+        said: str,
+        objectives: list[str],
+        unchecked: list[str],
+    ) -> None:
+        docs.seed("initiative", "current-initiative",
+                  f"---\nstatus: live\n{in_scope}---\n\n# I\n")  # fmt: skip
+        read = await _read(docs, findings)
+        (initiative,) = read.initiatives
+        assert initiative.field_errors["in_scope"] == said
+        assert [o.id for o in initiative.objectives] == objectives
+        # The rest of its frontmatter was read: it is live, not unreadable.
+        assert initiative.live is True and initiative.frontmatter_error is None
+        assert read.objectives_readable is False
+        assert read.sources.intent_documents.status == "degraded"
+        assert "initiative/current-initiative: its in_scope could not be read" in (
+            read.sources.intent_documents.reason or ""
+        )
+        dev = _metric(read, "development-speed")
+        assert dev.serves_unchecked == unchecked
+        assert all(m.serves_unknown == [] for m in read.metrics)
+        if objectives:
+            assert initiative.objectives[0].metric_names == ["development-speed"]
+
+    async def test_a_success_metrics_that_cant_be_read_is_an_objectives_problem(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        docs.seed("initiative", "current-initiative",
+                  "---\nstatus: live\nin_scope:\n  - id: remote-session-access\n"
+                  "    text: remote\nsuccess_metrics: 42\n---\n\n# I\n")  # fmt: skip
+        read = await _read(docs, findings)
+        (initiative,) = read.initiatives
+        assert initiative.field_errors == {
+            "success_metrics": "success_metrics must be a list of names."
+        }
+        assert read.objectives_readable is False
+        assert "its success_metrics could not be read" in (
+            read.sources.intent_documents.reason or ""
+        )
+        dev = _metric(read, "development-speed")
+        assert (dev.serves_unknown, dev.serves_unchecked) == (
+            [],
+            ["coord-reachability"],
+        )
+
     async def test_a_degraded_listing_leaves_serves_unchecked(
         self, docs: FakeDocs, findings: FakeFindings
     ) -> None:
@@ -2252,8 +2358,19 @@ class TestDocumentShapes:
             # Deep nesting with no alias at all.
             ("metric: " + "[" * 3000 + "]" * 3000 + "\n", "nests deeper than 32"),
             ("metric: dev\nnotes: " + "x" * 70_000 + "\n", "64,000"),
+            # A tagged scalar its type cannot build: the block's own error,
+            # never the "could not be read (AttributeError)" crash path.
+            ("metric: dev\nstarts: !!timestamp x\n", "is not a date or time"),
+            ("metric: !!bool maybe\n", "is not true or false"),
         ],
-        ids=["alias_bomb", "alias_chain", "deep_nesting", "oversize"],
+        ids=[
+            "alias_bomb",
+            "alias_chain",
+            "deep_nesting",
+            "oversize",
+            "tagged_timestamp",
+            "tagged_bool",
+        ],
     )
     async def test_a_hostile_block_degrades_only_its_document_and_the_page_is_200(
         self, docs: FakeDocs, findings: FakeFindings, frontmatter: str, said: str
@@ -2295,6 +2412,7 @@ class TestDocumentShapes:
         body = response.json()
         dev = next(m for m in body["metrics"] if m["name"] == "development-speed")
         assert "RuntimeError" in dev["frontmatter_error"]
+        assert dev["current_value"]["reason"] == DEFINITION_UNREADABLE_REASON
         assert dev["title"] == "Development speed"
         assert "development-speed" in body["sources"]["intent_documents"]["affected"]
         merge = next(m for m in body["metrics"] if m["name"] == MERGE_TRAIN)
@@ -2505,6 +2623,23 @@ class TestCurrentValue:
             == "Coord does not run measures yet."
         )
 
+    async def test_a_definition_that_cant_be_read_never_says_it_has_no_source(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        """An unparseable block and an unreadable document: where the value
+        comes from is unknown, never "no source coord can run"."""
+        docs.seed("success_metric", "development-speed",
+                  "---\nmetric: [unclosed\n---\n\n# Dev\n")  # fmt: skip
+        docs.fail_get.add(("success_metric", "remote-session-interactivity"))
+        read = await _read(docs, findings)
+        for name in ("development-speed", "remote-session-interactivity"):
+            value = _metric(read, name).current_value
+            assert value.reason == DEFINITION_UNREADABLE_REASON, name
+            assert "no source" not in value.reason
+        assert _metric(read, MERGE_TRAIN).current_value.reason == (
+            "Measured by hand; no automatic reading."
+        )
+
 
 # ===========================================================================
 # The success path — the merge-train document's real shape
@@ -2644,6 +2779,34 @@ class TestFrontmatterUnits:
 
     def test_a_non_mapping_block_is_an_error(self) -> None:
         assert parse_frontmatter("---\n- a\n- b\n---\n")[1]
+
+    @pytest.mark.parametrize(
+        ("value", "said"),
+        [
+            # PyYAML's constructors raise AttributeError and KeyError for
+            # these — neither a YAMLError.
+            ("!!timestamp x", "the value 'x' is not a date or time"),
+            ("!!bool maybe", "the value 'maybe' is not true or false"),
+        ],
+        ids=["timestamp", "bool"],
+    )
+    def test_a_tagged_scalar_its_type_cannot_build_is_this_blocks_error(
+        self, value: str, said: str
+    ) -> None:
+        mapping, error = parse_frontmatter(f"---\nmetric: dev\nstarts: {value}\n---\n")
+        assert mapping == {}
+        assert error is not None
+        assert error.startswith("The YAML block could not be parsed: ")
+        assert said in error
+        assert "line 2" in error  # and where it is
+
+    def test_an_impossible_date_names_the_value_and_why(self) -> None:
+        _, error = parse_frontmatter("---\nbaseline_as_of: 2026-02-30\n---\n")
+        assert error is not None
+        assert (
+            "the value '2026-02-30' is not a date or time "
+            "(day is out of range for month)"
+        ) in error
 
     def test_the_title_rule_matches_the_summary(self) -> None:
         assert title_of_document("vision", "# Vision — the *autonomy* ratchet\n") == (
