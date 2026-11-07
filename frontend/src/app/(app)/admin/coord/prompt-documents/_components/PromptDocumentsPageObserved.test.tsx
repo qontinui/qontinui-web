@@ -45,6 +45,12 @@ vi.mock("@/services/service-factory", () => ({
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
+// The page reads `?kind=&name=` to open a deep-linked document (plan
+// `2026-10-06-overview-objectives-view` D2). Rendered outside Next's router,
+// it gets an empty query: no deep link, the list as it always was.
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock("./KindAuthorshipTierControl", () => ({
   KindAuthorshipTierControl: () => null,
 }));
