@@ -36,12 +36,15 @@ describe("overview write calls send what the server reads", () => {
       new Response(JSON.stringify(saved), { status: 200 })
     );
     const body = { base_currency: "EUR", expected_version: 7 };
-    await expect(writeSettings(body)).resolves.toEqual(saved);
+    await expect(writeSettings(body, "project-a")).resolves.toEqual(saved);
     const { url, init } = lastCall();
     expect(url).toBe("https://api.test/api/v1/overview/settings");
     expect(init.method).toBe("PUT");
     expect(JSON.parse(init.body as string)).toEqual(body);
-    expect(init.headers).toMatchObject({ "X-Overview-Source": "ui" });
+    expect(init.headers).toMatchObject({
+      "X-Overview-Source": "ui",
+      "X-Qontinui-Active-Tenant": "project-a",
+    });
     // A retried PUT that had already landed would 409 against its own write.
     expect(init.maxRetries).toBe(0);
     expect(init.idempotent).toBe(false);
@@ -61,7 +64,7 @@ describe("overview write calls send what the server reads", () => {
         { status: 409 }
       )
     );
-    const err = await writeSettings({}).catch((e: unknown) => e);
+    const err = await writeSettings({}, "project-a").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ResourceError);
     expect(err).toMatchObject({ status: 409, code: "version_conflict" });
   });

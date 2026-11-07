@@ -9,54 +9,33 @@
 import { describe, expect, it } from "vitest";
 import { paletteDisagreements } from "@/components/console";
 import {
-  VISIBILITY_CLEAR_OBSERVED,
-  VISIBILITY_CLEAR_UNOBSERVED,
-  VISIBILITY_HIDES_TEXT,
+  VISIBILITY_LOCAL_HIDES_TEXT,
+  VISIBILITY_RELAYED_CLEAR_OBSERVED,
+  VISIBILITY_RELAYED_CLEAR_UNOBSERVED,
+  VISIBILITY_RELAYED_HIDES_TEXT,
 } from "../__fixtures__/runnerBodies";
 import {
   OCCLUSION_ATTENTION_BY_KIND,
   OCCLUSION_BADGE_CLASS,
-  OCCLUSION_NOT_RELAYED,
   OCCLUSION_PALETTE,
   occlusionSummary,
+  occlusionTextDisclosureText,
   readOcclusion,
+  readOcclusionTextDisclosure,
 } from "./occlusionStatus";
 
 const data = (body: Record<string, unknown>) => body.data;
 
-describe("the standing reading while no relay carries the sweep", () => {
-  it("is UNKNOWN — never clear — with the cause in plain words", () => {
-    expect(OCCLUSION_NOT_RELAYED.kind).toBe("unknown");
-    expect(OCCLUSION_NOT_RELAYED.kind).not.toBe("clear");
-    expect(OCCLUSION_NOT_RELAYED.unknownReason).toMatch(
-      /the visibility sweep is not available over the relay yet/
-    );
-  });
-
-  it("claims no count: not zero occlusions, not zero elements", () => {
-    expect(OCCLUSION_NOT_RELAYED.occlusions).toBeNull();
-    expect(OCCLUSION_NOT_RELAYED.hidingText).toBeNull();
-    expect(OCCLUSION_NOT_RELAYED.elementCount).toBeNull();
-    expect(OCCLUSION_NOT_RELAYED.overlaysClassified).toBeNull();
-  });
-
-  it("is one sentence that says unknown is not clear", () => {
-    expect(occlusionSummary(OCCLUSION_NOT_RELAYED)).toBe(
-      "The visibility sweep is not available over the relay yet, so whether anything on the screen covers anything else is unknown — not clear."
-    );
-  });
-});
-
 describe("readOcclusion — clear only when occlusion data was observed", () => {
   it("reads a clear sweep that OBSERVED occlusion data as clear", () => {
-    const r = readOcclusion(data(VISIBILITY_CLEAR_OBSERVED));
+    const r = readOcclusion(data(VISIBILITY_RELAYED_CLEAR_OBSERVED));
     expect(r.kind).toBe("clear");
     expect(r.occlusions).toBe(0);
     expect(r.unknownReason).toBeNull();
   });
 
   it("reads a clear sweep with occlusionDataObserved: false as UNKNOWN, never clear", () => {
-    const r = readOcclusion(data(VISIBILITY_CLEAR_UNOBSERVED));
+    const r = readOcclusion(data(VISIBILITY_RELAYED_CLEAR_UNOBSERVED));
     expect(r.kind).toBe("unknown");
     expect(r.kind).not.toBe("clear");
     expect(r.occlusions).toBeNull();
@@ -94,11 +73,21 @@ describe("readOcclusion — clear only when occlusion data was observed", () => 
 
 describe("readOcclusion — findings", () => {
   it("counts occlusions and the ones hiding text, and calls hidden text out", () => {
-    const r = readOcclusion(data(VISIBILITY_HIDES_TEXT));
+    const r = readOcclusion(data(VISIBILITY_RELAYED_HIDES_TEXT));
     expect(r.kind).toBe("hides-text");
     expect(r.occlusions).toBe(2);
     expect(r.hidingText).toBe(1);
     expect(r.overlaysClassified).toBe(true);
+  });
+
+  it("reads the local shape — which names and quotes what it covers — to the same counts, carrying none of its text", () => {
+    const r = readOcclusion(data(VISIBILITY_LOCAL_HIDES_TEXT));
+    expect(r.kind).toBe("hides-text");
+    expect(r.occlusions).toBe(2);
+    expect(r.hidingText).toBe(1);
+    expect(JSON.stringify(r)).not.toContain("Partner A");
+    expect(JSON.stringify(r)).not.toContain("session-name");
+    expect(JSON.stringify(r)).not.toContain("minimap");
   });
 
   it("reads occlusions that hide no text as overlaps", () => {
@@ -129,14 +118,14 @@ describe("readOcclusion — findings", () => {
 
 describe("occlusionSummary", () => {
   it("states a real verdict with its scope, and an UNKNOWN as its reason", () => {
-    expect(occlusionSummary(readOcclusion(data(VISIBILITY_HIDES_TEXT)))).toBe(
-      "2 occlusions across 47 elements, 1 hiding text."
-    );
     expect(
-      occlusionSummary(readOcclusion(data(VISIBILITY_CLEAR_OBSERVED)))
+      occlusionSummary(readOcclusion(data(VISIBILITY_RELAYED_HIDES_TEXT)))
+    ).toBe("2 occlusions across 47 elements, 1 hiding text.");
+    expect(
+      occlusionSummary(readOcclusion(data(VISIBILITY_RELAYED_CLEAR_OBSERVED)))
     ).toBe("Nothing covered across 47 elements, with occlusion data observed.");
     const unknown = occlusionSummary(
-      readOcclusion(data(VISIBILITY_CLEAR_UNOBSERVED))
+      readOcclusion(data(VISIBILITY_RELAYED_CLEAR_UNOBSERVED))
     );
     expect(unknown).toMatch(/^The sweep found nothing covered/);
     expect(unknown).not.toMatch(/^Nothing covered/);
@@ -159,5 +148,80 @@ describe("the occlusion palette (R3)", () => {
     });
     expect(OCCLUSION_BADGE_CLASS.unknown).toMatch(/\bbg-amber-/);
     expect(OCCLUSION_BADGE_CLASS.clear).not.toMatch(/\bbg-(red|amber)-/);
+  });
+});
+
+describe("readOcclusionTextDisclosure — only the runner's two words are answers", () => {
+  it("reads a relayed report as withheld", () => {
+    expect(
+      readOcclusionTextDisclosure(data(VISIBILITY_RELAYED_HIDES_TEXT))
+    ).toEqual({
+      kind: "withheld",
+    });
+  });
+
+  it("reads a local report as included", () => {
+    expect(
+      readOcclusionTextDisclosure(data(VISIBILITY_LOCAL_HIDES_TEXT))
+    ).toEqual({
+      kind: "included",
+    });
+  });
+
+  it("reads an absent field as UNKNOWN, naming an older build", () => {
+    expect(readOcclusionTextDisclosure({ verdict: "clear" })).toEqual({
+      kind: "unknown",
+      reason:
+        "this runner's reply does not say (an older runner build does not)",
+    });
+  });
+
+  it("reads a payload that is no report at all as UNKNOWN, saying so rather than blaming the build", () => {
+    expect(readOcclusionTextDisclosure(undefined)).toEqual({
+      kind: "unknown",
+      reason: "the sweep sent no report",
+    });
+  });
+
+  it.each([["Withheld"], [true], [null], [0], ["maybe"]])(
+    "reads %j as UNKNOWN — claiming neither answer",
+    (said) => {
+      expect(readOcclusionTextDisclosure({ occlusionText: said })).toEqual({
+        kind: "unknown",
+        reason: "this runner's reply gave an answer this page does not know",
+      });
+    }
+  );
+
+  it("is carried on every reading, the UNKNOWN ones included", () => {
+    expect(
+      readOcclusion(data(VISIBILITY_RELAYED_CLEAR_OBSERVED)).textDisclosure
+    ).toEqual({ kind: "withheld" });
+    expect(
+      readOcclusion(data(VISIBILITY_RELAYED_CLEAR_UNOBSERVED)).textDisclosure
+    ).toEqual({ kind: "withheld" });
+    expect(readOcclusion(undefined).textDisclosure.kind).toBe("unknown");
+  });
+});
+
+describe("occlusionTextDisclosureText", () => {
+  it("says, for withheld, that which element is covered is not sent — and where it can be read", () => {
+    const text = occlusionTextDisclosureText({ kind: "withheld" });
+    expect(text).toMatch(/is not sent over the relay/);
+    expect(text).toMatch(/A local UI Bridge read on the runner names them/);
+  });
+
+  it("says, for included, that the report names them and the page shows only counts", () => {
+    expect(occlusionTextDisclosureText({ kind: "included" })).toMatch(
+      /this page shows only the counts/
+    );
+  });
+
+  it("says unknown, with its reason, for an UNKNOWN", () => {
+    expect(
+      occlusionTextDisclosureText({ kind: "unknown", reason: "because" })
+    ).toBe(
+      "Whether the sweep's report names the covered elements is unknown: because."
+    );
   });
 });

@@ -36,7 +36,7 @@ import type { UseFleetWorktreeSlotsResult } from "./useFleetWorktreeSlots";
 
 export interface DevOpsHeadlineStripProps {
   health: Pick<UseFleetHealthResult, "data" | "error" | "asOfMs">;
-  /** The page's device spine, shared with the sections below. */
+  /** The live machines: the workspace figure's population, as the machines figure's. */
   devices: FleetDeviceRef[];
   worktreeSlots: Pick<
     UseFleetWorktreeSlotsResult,
@@ -58,6 +58,7 @@ export function DevOpsHeadlineStrip({
         label: "Machines healthy",
         value: machinesHealthyFigure({
           devices: health.data?.devices ?? [],
+          completeness: health.data,
           answered: health.data !== null,
           error: health.error,
           asOfMs: health.asOfMs,

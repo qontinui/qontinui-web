@@ -432,9 +432,9 @@ export function groupBreakdownSentence(
 export function unnamedUnitsSentence(count: number | null): string | null {
   if (count === 0) return null;
   if (count === null) {
-    return "Coord names units here only when they have no recorded change or wait on a condition; how many of this repository's other units exist is unknown.";
+    return "Coord names units only when they have no recorded change (listed under the repositories) or wait on a condition (listed here); how many of this repository's other units exist is unknown.";
   }
-  return `Coord names units here only when they have no recorded change or wait on a condition, so ${count === 1 ? "the 1 other unit is" : `the ${count} other units are`} not listed here`;
+  return `Coord names units only when they have no recorded change (listed under the repositories) or wait on a condition (listed here), so ${count === 1 ? "the 1 other unit is" : `the ${count} other units are`} not listed here`;
 }
 
 /** Work attributed to an initiative item (or a bucket), as coord counts it. */
@@ -835,6 +835,39 @@ export function needsCountMayBeOff(needs: NeedsMeView): boolean {
 
 /** The words a possibly-off needs_me count carries after it. */
 export const NEEDS_COUNT_MAY_BE_OFF_WORDS = "(may be off)";
+
+/**
+ * How many of the decisions waiting came with a recommendation: coord's count
+ * over ALL of them, which the 20 rows it lists cannot say (`shape_share`;
+ * `audience_profile/human-operator`, *Escalation shape*).
+ * A `null` count is UNKNOWN (the column is absent, or the scan stopped short),
+ * never zero. `null` when there is nothing to say it about: no read block, no
+ * usable total, or a block from a coord that serves no share at all.
+ */
+export function needsRecommendationShareSentence(
+  needs: NeedsMeView
+): string | null {
+  const share = needs.shapeShare;
+  const count = needsDisplayCount(needs);
+  if (share === null || count === null || count === 0) return null;
+  const known = share.withRecommendation;
+  // A share over some other total, or one that is not a count of it, is not
+  // this count's.
+  if (
+    known === null ||
+    share.total !== count ||
+    !Number.isInteger(known) ||
+    known < 0 ||
+    known > count
+  ) {
+    return "How many of these decisions came with a recommendation is not known.";
+  }
+  return `${known} of ${count} ${
+    count === 1 ? "decision" : "decisions"
+  } came with a recommendation${
+    needsCountMayBeOff(needs) ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""
+  }.`;
+}
 
 /**
  * The sentence for a read needs_me block that counted decisions but served
@@ -1247,16 +1280,107 @@ export function degradationRawLine(d: DegradationView): string {
     .join(" · ");
 }
 
+/**
+ * Who is acting on a degradation, from coord's `auto_remediation` and
+ * `declared` (`project_state.rs` `DegradationRow`): an agent response is
+ * bound, it waits on an operator, it is caused by a setting, nothing is
+ * bound, or the binding was not served (`unknown` — never read as "none").
+ */
+export type RemediationClass =
+  | "declared"
+  | "bound"
+  | "operator"
+  | "setting"
+  | "none"
+  | "unknown";
+
+export function remediationClass(d: DegradationView): RemediationClass {
+  if (d.declared) return "declared";
+  const rem = d.autoRemediation;
+  if (!rem || rem.bound === null) return "unknown";
+  if (rem.bound) return "bound";
+  if (rem.response?.startsWith("operator:")) return "operator";
+  if (rem.response === "setting") return "setting";
+  return "none";
+}
+
+const REMEDIATION_PHRASE: Readonly<Record<RemediationClass, string>> = {
+  declared: "declared by an operator — not a fault",
+  bound: "an agent response is bound to it",
+  operator: "no automatic response — it waits on an operator",
+  setting: "caused by a setting, not a fault",
+  none: "no automatic response is bound",
+  unknown: "remediation binding unknown",
+};
+
 /** Plain words for a degradation's remediation binding. */
 export function remediationPhrase(d: DegradationView): string {
-  if (d.declared) return "declared by an operator — not a fault";
-  const rem = d.autoRemediation;
-  if (!rem || rem.bound === null) return "remediation binding unknown";
-  if (rem.bound) return "an agent response is bound to it";
-  if (rem.response?.startsWith("operator:"))
-    return "no automatic response — it waits on an operator";
-  if (rem.response === "setting") return "caused by a setting, not a fault";
-  return "no automatic response is bound";
+  return REMEDIATION_PHRASE[remediationClass(d)];
+}
+
+/**
+ * The collapsed row's remediation words: short enough for R2's reason slot,
+ * and the same fact {@link remediationPhrase} states in the detail.
+ */
+const REMEDIATION_SHORT: Readonly<Record<RemediationClass, string>> = {
+  declared: "declared",
+  bound: "agent response bound",
+  operator: "waits on an operator",
+  setting: "caused by a setting",
+  none: "no automatic response",
+  unknown: "remediation unknown",
+};
+
+export function remediationShort(d: DegradationView): string {
+  return REMEDIATION_SHORT[remediationClass(d)];
+}
+
+/** Tally order: who acts, most automatic first; unknown last. */
+const TALLY_ORDER: readonly Exclude<RemediationClass, "declared">[] = [
+  "bound",
+  "operator",
+  "setting",
+  "none",
+  "unknown",
+];
+
+const TALLY_WORDS: Readonly<
+  Record<Exclude<RemediationClass, "declared">, string>
+> = {
+  bound: "with an agent response bound",
+  operator: "waiting on an operator",
+  setting: "caused by a setting",
+  none: "with no automatic response",
+  unknown: "whose remediation coord did not say",
+};
+
+/**
+ * One visible sentence answering "is it being auto-remediated or waiting on
+ * someone?" over the open (non-declared) rows shown, so the answer is on the
+ * page without opening a row (R7: the signal does not collapse). `null` when
+ * no open row is shown. `partial` (a stale block) says the rows shown are not
+ * known to be all of them.
+ */
+export function remediationTallySentence(
+  open: readonly DegradationView[],
+  partial: boolean
+): string | null {
+  const rows = open.filter((d) => !d.declared);
+  if (rows.length === 0) return null;
+  const counts = new Map<Exclude<RemediationClass, "declared">, number>();
+  for (const d of rows) {
+    const c = remediationClass(d);
+    if (c === "declared") continue;
+    counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  const parts = TALLY_ORDER.flatMap((c) => {
+    const n = counts.get(c) ?? 0;
+    return n > 0 ? [`${n} ${TALLY_WORDS[c]}`] : [];
+  });
+  const lead = partial
+    ? `Of the ${rows.length} open shown`
+    : `Of ${rows.length} open`;
+  return `${lead}: ${parts.join(", ")}.`;
 }
 
 /**
@@ -1484,6 +1608,23 @@ export function isWatcherSource(source: string): boolean {
 }
 
 /**
+ * The prefix of a `does_not_know` row coord adds for each operator plane whose
+ * fault-to-visibility lag it measures against its target
+ * (`detection_bound:<plane>`, plan
+ * `2026-11-07-project-state-does-not-know-names-planes-slower-than-the-fault-to-visibility-bar`).
+ * Its `freshness_bound_secs` is how old a fault on that plane can be before
+ * coord first observes it — NOT the age of any data — or `null` (with
+ * `state: "unknown"`) when no bound could be derived. A slow-but-known plane
+ * is served `read` on purpose, so it is not counted among sources not read.
+ */
+const DETECTION_BOUND_SOURCE_PREFIX = "detection_bound:";
+
+/** Whether a `does_not_know` row is a plane's detection bound (`detection_bound:<plane>`). */
+export function isDetectionBoundSource(source: string): boolean {
+  return source.startsWith(DETECTION_BOUND_SOURCE_PREFIX);
+}
+
+/**
  * Whether the page's table labels `source` — its own key, never one inherited
  * from `Object.prototype`. A source it does not label reads as coord's own
  * identifier, {@link humanised}; the presentation lens words such a row in
@@ -1530,6 +1671,13 @@ export function sourceLabel(
       ? `Watcher feeding ${fed.named.join(", ")}`
       : "Watcher feeding Degrading";
   }
+  if (isDetectionBoundSource(source)) {
+    const plane = source.slice(DETECTION_BOUND_SOURCE_PREFIX.length);
+    const area = plane === "" ? null : label(plane);
+    return area === null
+      ? "Time for a fault on an area not named here to reach this view"
+      : `Time for a fault on ${area} to reach this view`;
+  }
   return humanised(source);
 }
 
@@ -1571,12 +1719,23 @@ export function sourceErrorSentence(s: SourceCoverageView): string | null {
  * - Any other row not read in full: the bound is stated as a bound. No age is
  *   promised for data the row may not hold.
  *
+ * - A detection-bound row (`detection_bound:<plane>`): the bound is how old a
+ *   fault on that plane can be before coord first observes it; with no bound,
+ *   coord could derive none, and the row says so.
+ *
  * The bound is written with {@link boundText}, to the second: coord's bounds
  * are not whole minutes (train health's is its 20 s memo TTL, and a watcher's
  * is at least 3 x the ledger's 30 s throttle floor, 90 s).
  */
 export function sourceAgePhrase(s: SourceCoverageView): string {
   const bound = s.freshnessBoundSecs;
+  if (isDetectionBoundSource(s.source)) {
+    // The bound is a detection lag, not a data age: "may be up to N old"
+    // would say the opposite of what coord measured.
+    return bound === null
+      ? "no detection bound known"
+      : `a fault can be up to ${boundText(bound)} old before coord sees it`;
+  }
   if (isWatcherSource(s.source)) {
     if (bound === null) return "freshness bound not stated";
     return s.error === "last_success_older_than_3x_interval"
@@ -1605,11 +1764,22 @@ export function sourceRowReason(
   // With `omitUnstated`, a field coord did not state is left off the row: the
   // list says it once for every row it applies to (`unstatedSummary`), rather
   // than repeat the identical clause on each.
-  if (!(omitUnstated && s.freshnessBoundSecs === null)) {
+  // A detection-bound row with no bound says so in its own words ("no
+  // detection bound known"), not as an unstated age, so it is never omitted.
+  if (
+    !(
+      omitUnstated &&
+      s.freshnessBoundSecs === null &&
+      !isDetectionBoundSource(s.source)
+    )
+  ) {
     parts.push(sourceAgePhrase(s));
   }
+  // A detection-bound row measures a plane, not rows: it never has an
+  // exclusion count, so none is said to be missing.
   if (s.rowsExcluded !== null) parts.push(`${s.rowsExcluded} excluded`);
-  else if (!omitUnstated) parts.push("exclusions not stated");
+  else if (!omitUnstated && !isDetectionBoundSource(s.source))
+    parts.push("exclusions not stated");
   return parts.join(" · ");
 }
 
@@ -1623,9 +1793,14 @@ export function sourceRowReason(
 export function unstatedSummary(
   sources: readonly SourceCoverageView[]
 ): string | null {
-  const n = sources.length;
-  const noBound = sources.filter((s) => s.freshnessBoundSecs === null).length;
-  const noExcl = sources.filter((s) => s.rowsExcluded === null).length;
+  // A detection-bound row states its own bound (or that none could be
+  // derived) and has no rows, so it owes neither clause: it is left out of
+  // both the counts and the "of N" total.
+  const owing = sources.filter((s) => !isDetectionBoundSource(s.source));
+  const n = owing.length;
+  if (n === 0) return null;
+  const noBound = owing.filter((s) => s.freshnessBoundSecs === null).length;
+  const noExcl = owing.filter((s) => s.rowsExcluded === null).length;
   const of = (k: number) =>
     k === n ? (n === 1 ? "it" : `all ${n}`) : `${k} of ${n}`;
   const parts: string[] = [];
@@ -2021,8 +2196,8 @@ export function deriveHomeStrip(
   // Coord's project state already lists a degrading machine as a row of its
   // own (`machineHealth.ts`); the roster read beside it adds only the
   // degrading machines that list does not show — never one twice — and says
-  // which machines have no verdict. An abandoned machine is a decision, not a
-  // degradation. Unread is UNKNOWN.
+  // which machines have no verdict. An abandoned machine (silent past coord's
+  // timer) is not a degradation. Unread is UNKNOWN.
   const machines = read.machines ?? null;
   const mc = machines?.counts ?? null;
   const unlistedDegrading =

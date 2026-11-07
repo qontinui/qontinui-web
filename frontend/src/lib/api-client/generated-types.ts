@@ -12183,11 +12183,20 @@ export interface paths {
          *     Only valid for kind ``decision_record``; coord is the authority on that and
          *     its 4xx passes through, as do unknown-document and non-admin refusals.
          *
-         *     Body: ``{reason}``. Only ``reason`` is forwarded. The withdrawer is NOT
-         *     stamped here and never taken from the browser: coord derives it from its own
-         *     authenticated ``OperatorContext``, for the same reason the version-restore
-         *     proxy above declines to stamp ``updated_by``. Whether a reason is required
-         *     (and what counts as blank) is coord's rule, not a second copy of it here.
+         *     Body: ``{reason, expected_version?}``. Only those two are forwarded. The
+         *     withdrawer is NOT stamped here and never taken from the browser: coord
+         *     derives it from its own authenticated ``OperatorContext``, for the same
+         *     reason the version-restore proxy above declines to stamp ``updated_by``.
+         *     Whether a reason is required (and what counts as blank) is coord's rule, not
+         *     a second copy of it here.
+         *
+         *     ``expected_version`` is the ``current_version`` the feed re-read before
+         *     posting. Coord compares it under its row lock and answers ``409
+         *     withdraw_stale`` (passed through) when the record moved in between, so the
+         *     re-read→POST window is closed rather than narrowed — on a coord that
+         *     carries that check. An older coord ignores the unknown key, and the window
+         *     is then only narrowed, as before. Its type is coord's to validate, like
+         *     ``reason``'s.
          */
         post: operations["api_v1_operations_coord_prompt_documents_kind_name_withdraw_post"];
         delete?: never;
@@ -13382,6 +13391,33 @@ export interface paths {
          *       runner could not decide", and ``readiness_state`` is coord's freshness
          *       verdict so no browser subtracts its own clock from ``sampled_at``. A
          *       ``stale`` or ``absent`` row renders UNKNOWN, never the last verdict.
+         *     * The **commit-attribution** fields (plan
+         *       ``2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out``
+         *       D1-D4), all OPTIONAL and on host-lane ``latest`` rows.
+         *       ``top_consumers`` (alembic ``topcons_01``) is
+         *       ``{entries: [{pid, name, private_bytes, started_at}], scanned,
+         *       unreadable, attributed_private_bytes}``: at most 5 entries by
+         *       per-process private bytes (the commit charge) descending, plus the
+         *       completeness counts without which a top-5 that misses the real
+         *       consumer reads the same as one that names it. ``name`` is the image
+         *       name only — command lines carry secrets and are never published.
+         *       ``commit_floor_eta_secs`` is coord's least-squares time until free
+         *       commit reaches the row's served ``floor.bytes``, fitted over the RAW
+         *       trailing 300 s of samples and confirmed over the trailing 600 s
+         *       window (never over ``history``): both must be covered and falling,
+         *       and the LATER of the two projections is served. It is null for a
+         *       stale lane, and observed and alerted on but never ranks or filters
+         *       dispatch. ``commit_floor_eta_state`` says what that number (or its
+         *       null) means: ``falling`` (the ETA is set), ``not_falling``,
+         *       ``at_or_below_floor``, or the UNKNOWN readings ``sparse`` (too few
+         *       points, coverage or span), ``stale`` (the newest sample is older
+         *       than the stale window) and ``degraded`` (coord could not read the
+         *       raw window); ``null`` is a lane with no commit floor. Passed through
+         *       untouched, and once more **NULL must stay NULL**: ``top_consumers:
+         *       null`` is a publisher that predates the field or a read that failed,
+         *       and a key **absent** is a coord that predates it. Every UNKNOWN
+         *       reading renders UNKNOWN — never "no consumers", and never "safe";
+         *       only ``not_falling`` may render as nothing.
          *
          *     ``schema_pending: true`` means the sibling alembic migration
          *     (qontinui-web#949) has not reached coord's database yet — coord
@@ -13994,7 +14030,10 @@ export interface paths {
          *
          *     Proxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards
          *     the JSON verbatim: ``{status: "available"|"taken"|"invalid"|
-         *     "owner_unbound", reason?, normalized_name}``. POST (despite the read
+         *     "owner_unbound"|"repo_bound_to_another_tenant", reason?, normalized_name}``.
+         *     ``repo_bound_to_another_tenant`` answers the tenant that owns the org when a
+         *     per-repo binding hands this name to another tenant. A failed governing read
+         *     is ``500 governing_tenant_unknown``. POST (despite the read
          *     semantics) so the runner's provisioning flow talks one verb to this
          *     surface; the upstream coord call is the GET.
          */
@@ -14020,8 +14059,11 @@ export interface paths {
          *     repo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.
          *
          *     Passes coord's status + JSON body through verbatim (like the onboarding
-         *     claim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when
-         *     the repo's owner isn't a GitHub account connected to the caller's workspace.
+         *     claim proxy) so the runner sees a clean ``403`` when the caller's tenant does
+         *     not govern the repo: ``repo_bound_to_another_tenant`` when it owns the repo's
+         *     org but a per-repo binding hands the repo to another tenant, otherwise
+         *     ``repo_owner_not_connected``. A failed governing read is
+         *     ``500 governing_tenant_unknown``.
          */
         post: operations["api_v1_operations_github_clone_credential_post"];
         delete?: never;
@@ -14046,7 +14088,8 @@ export interface paths {
          *     Proxies coord ``POST /coord/repos``. Success is coord's ``201
          *     {full_name, clone_url, html_url, default_branch}``; coord's error
          *     statuses + bodies pass through VERBATIM — ``409 name_taken``,
-         *     ``403 owner_unbound``, ``409 user_authorization_required`` (whose body
+         *     ``403 owner_unbound``, ``403 repo_bound_to_another_tenant``,
+         *     ``500 governing_tenant_unknown``, ``409 user_authorization_required`` (whose body
          *     carries the ``authorize_url`` the runner must surface), and
          *     ``503 app_unconfigured``.
          *
@@ -14123,8 +14166,9 @@ export interface paths {
          *
          *     Proxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` →
          *     ``{token, expires_at}``. The write-scoped sibling of the contents:read
-         *     clone-credential proxy above; coord enforces that the repo's owner is
-         *     bound to the caller's tenant.
+         *     clone-credential proxy above; coord enforces that the caller's tenant
+         *     governs the repo: a per-repo binding, else the owner's binding. A failed
+         *     governing read is ``500 governing_tenant_unknown``.
          */
         post: operations["api_v1_operations_github_push_credential_post"];
         delete?: never;
@@ -17070,6 +17114,45 @@ export interface paths {
          * @description Turn automatic resume on or off for the caller's effective tenant.
          */
         patch: operations["api_v1_operations_tenant_policy_resume_unfinished_patch"];
+        trace?: never;
+    };
+    "/api/v1/operations/tenant/github-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tenant Github Host
+         * @description Read the tenant's effective GitHub host (github.com when unconfigured).
+         *
+         *     ``can_edit`` follows :func:`get_fleet_policy` exactly — the operator's
+         *     roles in the EFFECTIVE tenant plus the superuser bypass — because the
+         *     writes go through ``require_coord_tenant_admin``.
+         */
+        get: operations["api_v1_operations_tenant_github_host_get"];
+        /**
+         * Put Tenant Github Host
+         * @description Set the tenant's GitHub host (GitHub Enterprise Server or GHE.com).
+         *
+         *     Tenant-admin gated web-side; coord re-checks and answers the typed
+         *     refusals listed above, which pass through as structured ``detail``.
+         *     Coord's echo is the stored row, so it is returned rather than re-read.
+         */
+        put: operations["api_v1_operations_tenant_github_host_put"];
+        post?: never;
+        /**
+         * Delete Tenant Github Host
+         * @description Return the tenant to github.com. Idempotent.
+         *
+         *     Coord refuses with ``repos_registered_on_another_host`` (409) while the
+         *     tenant still has repos enrolled on the configured host.
+         */
+        delete: operations["api_v1_operations_tenant_github_host_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/operations/tenants": {
@@ -48056,7 +48139,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "available" | "taken" | "invalid" | "owner_unbound";
+            status: "available" | "taken" | "invalid" | "owner_unbound" | "repo_bound_to_another_tenant";
         };
         /**
          * RepoPushCredentialResponse
@@ -53308,6 +53391,43 @@ export interface components {
         TenantCreateIn: {
             /** Display Name */
             display_name: string;
+        };
+        /**
+         * TenantGithubHostPut
+         * @description Body of ``PUT /tenant/github-host`` — coord's ``PutGithubHostRequest``.
+         *
+         *     Coord validates the shape (https, a host, no credentials, query, fragment;
+         *     ``web_base`` an origin) and that the host is public; the console does not
+         *     pre-judge either, so coord's ``invalid_github_host`` detail is the one
+         *     message the operator sees.
+         *
+         *     ``extra="forbid"`` mirrors coord's ``deny_unknown_fields``: a misspelled key
+         *     is a 422 here rather than silently dropped by ``model_dump()``.
+         */
+        TenantGithubHostPut: {
+            /** Api Base */
+            api_base: string;
+            /** Web Base */
+            web_base: string;
+        };
+        /**
+         * TenantGithubHostView
+         * @description The tenant's effective GitHub host, as coord resolves it.
+         *
+         *     ``configured`` is ``None`` when coord's answer did not carry it — UNKNOWN,
+         *     never "the github.com default". The bases are ``None`` on the same terms.
+         */
+        TenantGithubHostView: {
+            /** Api Base */
+            api_base: string | null;
+            /** Can Edit */
+            can_edit: boolean;
+            /** Configured */
+            configured: boolean | null;
+            /** Graphql Url */
+            graphql_url: string | null;
+            /** Web Base */
+            web_base: string | null;
         };
         /**
          * TenantRenameIn
@@ -81253,6 +81373,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_tenant_github_host_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantGithubHostView"];
+                };
+            };
+        };
+    };
+    api_v1_operations_tenant_github_host_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantGithubHostPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantGithubHostView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_tenant_github_host_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantGithubHostView"];
                 };
             };
         };

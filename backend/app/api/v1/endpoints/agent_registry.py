@@ -201,9 +201,13 @@ async def _coord_request(
     ``invalid_disposition``) reach the frontend intact rather than as an
     opaque string.
 
-    The transport statuses say whether coord may have acted, on the same split
-    as ``operations._proxy_coord_write``, because a caller of a write door
-    decides from them whether the write may have landed:
+    The transport statuses say whether coord may have acted, because a caller of
+    a write door decides from them whether the write may have landed. The split
+    is ``operations._proxy_coord_write``'s except where this door knows the
+    request never left: that helper still answers 504 to ``ConnectTimeout``,
+    ``PoolTimeout``, ``UnsupportedProtocol`` and ``LocalProtocolError`` (the
+    first is latent defect (b), Phase 5 of plan
+    ``2026-10-04-web-coord-http-client-is-copied-across-operations-and-six-modules``):
 
     * ``ConnectError``, ``ConnectTimeout``, ``PoolTimeout``,
       ``UnsupportedProtocol`` or ``LocalProtocolError`` → **502**: the request
@@ -214,8 +218,8 @@ async def _coord_request(
       or a 3xx, which httpx does not follow → **504**: coord may have committed,
       and only a re-read can tell.
 
-    Unlike that helper this one has no ``None`` arm: every caller reads a body, so
-    a 2xx with none (a 204, an empty 200) is a 504 as well.
+    Unlike that helper this one has no ``None`` arm and returns no 3xx: every
+    caller reads a body, so a 2xx with none (a 204, an empty 200) is a 504 as well.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(None)

@@ -421,24 +421,33 @@ def _effective_tenant_roles(
     return identity.roles
 
 
+def _selected_member_tenant_id(
+    identity: CoordIdentity, active_tenant: str | None
+) -> UUID | None:
+    """The tenant ``active_tenant`` names, when the operator is a member of it
+    (matched against ``identity.tenants`` by id, or slug defensively)."""
+    selection = (active_tenant or "").strip()
+    if selection:
+        for t in identity.tenants:
+            if str(t.tenant_id) == selection or t.slug == selection:
+                return t.tenant_id
+    return None
+
+
 def _effective_tenant_id(
     identity: CoordIdentity, active_tenant: str | None
 ) -> UUID | None:
     """The operator's EFFECTIVE tenant id: the active-switcher selection when
-    the operator is a member of it (matched against ``identity.tenants`` by
-    id, or slug defensively), else the home tenant.
+    the operator is a member of it, else the home tenant.
 
     The WS bridges use this: a browser ``WebSocket`` cannot send the
     ``X-Qontinui-Active-Tenant`` header, so the selection rides a query
     param and is membership-validated here — mirroring coord's
     ``auth::apply_active_tenant_override`` (non-member selection degrades
     to home, never widens)."""
-    selection = (active_tenant or "").strip()
-    if selection:
-        for t in identity.tenants:
-            if str(t.tenant_id) == selection or t.slug == selection:
-                return t.tenant_id
-    return identity.home_tenant_id
+    return _selected_member_tenant_id(identity, active_tenant) or (
+        identity.home_tenant_id
+    )
 
 
 async def require_coord_tenant_admin_target(
@@ -1735,8 +1744,11 @@ async def post_github_clone_credential(
     repo. Proxies coord ``POST /coord/onboarding/installations/clone-credential``.
 
     Passes coord's status + JSON body through verbatim (like the onboarding
-    claim proxy) so the runner sees a clean ``403 repo_owner_not_connected`` when
-    the repo's owner isn't a GitHub account connected to the caller's workspace.
+    claim proxy) so the runner sees a clean ``403`` when the caller's tenant does
+    not govern the repo: ``repo_bound_to_another_tenant`` when it owns the repo's
+    org but a per-repo binding hands the repo to another tenant, otherwise
+    ``repo_owner_not_connected``. A failed governing read is
+    ``500 governing_tenant_unknown``.
     """
     url = f"{settings.COORD_URL}/coord/onboarding/installations/clone-credential"
     headers = _tenant_headers(tenant_id)
@@ -1859,7 +1871,9 @@ class RepoNameCheckResponse(BaseModel):
     """Success body for ``POST /operations/github/check-name`` (forwarded
     verbatim from coord's ``GET /coord/repos/availability``)."""
 
-    status: Literal["available", "taken", "invalid", "owner_unbound"]
+    status: Literal[
+        "available", "taken", "invalid", "owner_unbound", "repo_bound_to_another_tenant"
+    ]
     reason: str | None = None
     normalized_name: str
 
@@ -1915,7 +1929,10 @@ async def post_github_check_name(
 
     Proxies coord ``GET /coord/repos/availability?owner=&name=`` and forwards
     the JSON verbatim: ``{status: "available"|"taken"|"invalid"|
-    "owner_unbound", reason?, normalized_name}``. POST (despite the read
+    "owner_unbound"|"repo_bound_to_another_tenant", reason?, normalized_name}``.
+    ``repo_bound_to_another_tenant`` answers the tenant that owns the org when a
+    per-repo binding hands this name to another tenant. A failed governing read
+    is ``500 governing_tenant_unknown``. POST (despite the read
     semantics) so the runner's provisioning flow talks one verb to this
     surface; the upstream coord call is the GET.
     """
@@ -1937,7 +1954,8 @@ async def post_github_create_repo(
     Proxies coord ``POST /coord/repos``. Success is coord's ``201
     {full_name, clone_url, html_url, default_branch}``; coord's error
     statuses + bodies pass through VERBATIM — ``409 name_taken``,
-    ``403 owner_unbound``, ``409 user_authorization_required`` (whose body
+    ``403 owner_unbound``, ``403 repo_bound_to_another_tenant``,
+    ``500 governing_tenant_unknown``, ``409 user_authorization_required`` (whose body
     carries the ``authorize_url`` the runner must surface), and
     ``503 app_unconfigured``.
 
@@ -1968,8 +1986,9 @@ async def post_github_push_credential(
 
     Proxies coord ``POST /coord/repos/{owner}/{name}/push-credential`` →
     ``{token, expires_at}``. The write-scoped sibling of the contents:read
-    clone-credential proxy above; coord enforces that the repo's owner is
-    bound to the caller's tenant.
+    clone-credential proxy above; coord enforces that the caller's tenant
+    governs the repo: a per-repo binding, else the owner's binding. A failed
+    governing read is ``500 governing_tenant_unknown``.
     """
     return await _proxy_coord_verbatim(
         "POST",
@@ -6952,6 +6971,33 @@ async def get_fleet_resource_samples(
       runner could not decide", and ``readiness_state`` is coord's freshness
       verdict so no browser subtracts its own clock from ``sampled_at``. A
       ``stale`` or ``absent`` row renders UNKNOWN, never the last verdict.
+    * The **commit-attribution** fields (plan
+      ``2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out``
+      D1-D4), all OPTIONAL and on host-lane ``latest`` rows.
+      ``top_consumers`` (alembic ``topcons_01``) is
+      ``{entries: [{pid, name, private_bytes, started_at}], scanned,
+      unreadable, attributed_private_bytes}``: at most 5 entries by
+      per-process private bytes (the commit charge) descending, plus the
+      completeness counts without which a top-5 that misses the real
+      consumer reads the same as one that names it. ``name`` is the image
+      name only — command lines carry secrets and are never published.
+      ``commit_floor_eta_secs`` is coord's least-squares time until free
+      commit reaches the row's served ``floor.bytes``, fitted over the RAW
+      trailing 300 s of samples and confirmed over the trailing 600 s
+      window (never over ``history``): both must be covered and falling,
+      and the LATER of the two projections is served. It is null for a
+      stale lane, and observed and alerted on but never ranks or filters
+      dispatch. ``commit_floor_eta_state`` says what that number (or its
+      null) means: ``falling`` (the ETA is set), ``not_falling``,
+      ``at_or_below_floor``, or the UNKNOWN readings ``sparse`` (too few
+      points, coverage or span), ``stale`` (the newest sample is older
+      than the stale window) and ``degraded`` (coord could not read the
+      raw window); ``null`` is a lane with no commit floor. Passed through
+      untouched, and once more **NULL must stay NULL**: ``top_consumers:
+      null`` is a publisher that predates the field or a read that failed,
+      and a key **absent** is a coord that predates it. Every UNKNOWN
+      reading renders UNKNOWN — never "no consumers", and never "safe";
+      only ``not_falling`` may render as nothing.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord
@@ -7734,6 +7780,7 @@ async def _proxy_coord_delete(
     params: dict[str, Any] | None = None,
     body: Any | None = None,
     tenant_id: UUID | None = None,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a DELETE request to coord and return the JSON body.
 
@@ -7750,6 +7797,9 @@ async def _proxy_coord_delete(
     ``client.request("DELETE", ..., json=body)``; ``client.delete`` does
     not accept ``json=``, so this branches. The bearer header is attached
     on both paths.
+
+    ``structured_errors`` — pass coord's typed JSON refusal object through
+    verbatim on a ≥400, the same opt-in as ``_proxy_coord_put``'s flag.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
@@ -7766,7 +7816,10 @@ async def _proxy_coord_delete(
         except httpx.TimeoutException:
             raise _coord_timeout(write=True)
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=_coord_error_detail(resp) if structured_errors else resp.text,
+        )
     # Coord may return 204 No Content for delete; tolerate empty bodies.
     if resp.status_code == 204 or not resp.content:
         return {"status": "ok"}
@@ -11029,7 +11082,9 @@ async def get_next_step_settings_fleet(
 # 2. Coord's GET answers with the asked-for domain's ``effective_level`` /
 #    ``master_enabled`` / ``resolved_scope`` — and ALSO with
 #    ``controls`` / ``controls_available`` / ``current_version`` / ``drain`` /
-#    ``drain_effective`` blocks read from the UNRELATED ``fleet_resources``
+#    ``drain_effective`` blocks, and the capacity-model dial resolved beside
+#    them (``capacity_controls_available`` / ``capacity_model_available`` /
+#    ``capacity_model``), all read from the UNRELATED ``fleet_resources``
 #    controls row (coord's ``read_controls`` deliberately reads that row
 #    "regardless of which domain the caller asked about"). Rendering those as
 #    the asked-for domain's own values is a real misreport, so this proxy
@@ -11051,6 +11106,11 @@ _FLEET_POLICY_CONTROL_KEYS = (
     "current_version",
     "drain",
     "drain_effective",
+    # The capacity-model dial (plan
+    # 2026-11-05-one-free-resource-model-places-sessions-builds-and-ci D9).
+    "capacity_controls_available",
+    "capacity_model_available",
+    "capacity_model",
 )
 
 
@@ -11877,6 +11937,129 @@ async def put_secrets_broker_device(
         effective=effective,
         readback_error=readback_error,
     )
+
+
+# ---- Tenant GitHub host proxy -------------------------------------------
+#
+# Plan ``2026-10-10-spec-front-end-phase-9-generic-boundary`` Phase 3 (parent
+# ``2026-10-09-spec-front-end-of-the-software-factory`` Phase 9 item 4): the
+# console's door onto coord's ``/coord/tenant/github-host``, which reads and
+# writes the caller's tenant's row in ``coord.tenant_github_hosts`` (qontinui-web
+# alembic ``coord_tenant_github_hosts_01``). No row means github.com.
+#
+# Coord authorizes on the operator bearer (``RequiredOperatorContext``) and
+# re-checks tenant admin on the PUT; its typed refusals —
+# ``invalid_github_host`` (400), ``admin_required`` (403),
+# ``repos_registered_on_another_host`` (409, with the offending ``repos``) and
+# ``schema_migration_pending`` (503) — pass through as structured ``detail``
+# objects so the panel can name them.
+
+
+class TenantGithubHostView(BaseModel):
+    """The tenant's effective GitHub host, as coord resolves it.
+
+    ``configured`` is ``None`` when coord's answer did not carry it — UNKNOWN,
+    never "the github.com default". The bases are ``None`` on the same terms.
+    """
+
+    api_base: str | None
+    web_base: str | None
+    graphql_url: str | None
+    configured: bool | None
+    #: Same effective-tenant rule as ``GET /fleet-policy``'s ``can_edit``.
+    can_edit: bool
+
+
+class TenantGithubHostPut(BaseModel):
+    """Body of ``PUT /tenant/github-host`` — coord's ``PutGithubHostRequest``.
+
+    Coord validates the shape (https, a host, no credentials, query, fragment;
+    ``web_base`` an origin) and that the host is public; the console does not
+    pre-judge either, so coord's ``invalid_github_host`` detail is the one
+    message the operator sees.
+
+    ``extra="forbid"`` mirrors coord's ``deny_unknown_fields``: a misspelled key
+    is a 422 here rather than silently dropped by ``model_dump()``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    api_base: str = Field(..., min_length=1)
+    web_base: str = Field(..., min_length=1)
+
+
+def _tenant_github_host_view(payload: Any, *, can_edit: bool) -> TenantGithubHostView:
+    body = payload if isinstance(payload, dict) else {}
+
+    def _text(key: str) -> str | None:
+        value = body.get(key)
+        return value if isinstance(value, str) and value else None
+
+    configured = body.get("configured")
+    return TenantGithubHostView(
+        api_base=_text("api_base"),
+        web_base=_text("web_base"),
+        graphql_url=_text("graphql_url"),
+        configured=configured if isinstance(configured, bool) else None,
+        can_edit=can_edit,
+    )
+
+
+@router.get("/tenant/github-host", response_model=TenantGithubHostView)
+async def get_tenant_github_host(
+    request: Request,
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> TenantGithubHostView:
+    """Read the tenant's effective GitHub host (github.com when unconfigured).
+
+    ``can_edit`` follows :func:`get_fleet_policy` exactly — the operator's
+    roles in the EFFECTIVE tenant plus the superuser bypass — because the
+    writes go through ``require_coord_tenant_admin``.
+    """
+    payload = await _proxy_coord_get("/coord/tenant/github-host", tenant_id=tenant_id)
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    can_edit = (
+        "admin" in _effective_tenant_roles(identity, active)
+        or current_user.is_superuser
+    )
+    return _tenant_github_host_view(payload, can_edit=can_edit)
+
+
+@router.put("/tenant/github-host", response_model=TenantGithubHostView)
+async def put_tenant_github_host(
+    body: TenantGithubHostPut,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> TenantGithubHostView:
+    """Set the tenant's GitHub host (GitHub Enterprise Server or GHE.com).
+
+    Tenant-admin gated web-side; coord re-checks and answers the typed
+    refusals listed above, which pass through as structured ``detail``.
+    Coord's echo is the stored row, so it is returned rather than re-read.
+    """
+    written = await _proxy_coord_put(
+        "/coord/tenant/github-host",
+        body.model_dump(),
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+    return _tenant_github_host_view(written, can_edit=True)
+
+
+@router.delete("/tenant/github-host", response_model=TenantGithubHostView)
+async def delete_tenant_github_host(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> TenantGithubHostView:
+    """Return the tenant to github.com. Idempotent.
+
+    Coord refuses with ``repos_registered_on_another_host`` (409) while the
+    tenant still has repos enrolled on the configured host.
+    """
+    reset = await _proxy_coord_delete(
+        "/coord/tenant/github-host", tenant_id=tenant_id, structured_errors=True
+    )
+    return _tenant_github_host_view(reset, can_edit=True)
 
 
 # ---- Unfinished sessions + auto-resume toggle proxy ---------------------
@@ -12729,16 +12912,28 @@ async def withdraw_prompt_document(
     Only valid for kind ``decision_record``; coord is the authority on that and
     its 4xx passes through, as do unknown-document and non-admin refusals.
 
-    Body: ``{reason}``. Only ``reason`` is forwarded. The withdrawer is NOT
-    stamped here and never taken from the browser: coord derives it from its own
-    authenticated ``OperatorContext``, for the same reason the version-restore
-    proxy above declines to stamp ``updated_by``. Whether a reason is required
-    (and what counts as blank) is coord's rule, not a second copy of it here.
+    Body: ``{reason, expected_version?}``. Only those two are forwarded. The
+    withdrawer is NOT stamped here and never taken from the browser: coord
+    derives it from its own authenticated ``OperatorContext``, for the same
+    reason the version-restore proxy above declines to stamp ``updated_by``.
+    Whether a reason is required (and what counts as blank) is coord's rule, not
+    a second copy of it here.
+
+    ``expected_version`` is the ``current_version`` the feed re-read before
+    posting. Coord compares it under its row lock and answers ``409
+    withdraw_stale`` (passed through) when the record moved in between, so the
+    re-read→POST window is closed rather than narrowed — on a coord that
+    carries that check. An older coord ignores the unknown key, and the window
+    is then only narrowed, as before. Its type is coord's to validate, like
+    ``reason``'s.
     """
     payload: dict[str, Any] = {}
     reason = (body or {}).get("reason")
     if reason is not None:
         payload["reason"] = reason
+    expected_version = (body or {}).get("expected_version")
+    if expected_version is not None:
+        payload["expected_version"] = expected_version
     # Re-encoded for the same reason as the restore proxy: FastAPI hands the
     # path segments back URL-decoded.
     return await _proxy_coord_post(

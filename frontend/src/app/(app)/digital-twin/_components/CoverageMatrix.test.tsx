@@ -69,7 +69,10 @@ vi.mock("@qontinui/ui-bridge/react", () => ({
 }));
 
 import { manifest } from "../_lib/resolve";
-import { COUNT_FILLS } from "../_lib/status-presentation";
+import {
+  COUNT_FILLS,
+  RESTRICTED_COUNT_MEANING,
+} from "../_lib/status-presentation";
 import {
   MANIFEST_SNAPSHOT_IDS,
   catalogDeclaring,
@@ -208,6 +211,11 @@ describe("CoverageMatrix per-cell access", () => {
     expect(screen.getByTestId("digital-twin-gauge-notes")).toHaveTextContent(
       "1 restricted (not yours to read)"
     );
+    // A counted refusal carries the refusal's meaning.
+    expect(screen.getByTestId("digital-twin-gauge-notes")).toHaveAttribute(
+      "title",
+      RESTRICTED_COUNT_MEANING
+    );
     // The operator's other cells stay live beside it.
     expect(screen.getByTestId("digital-twin-cell-memory")).toHaveTextContent(
       "Live"
@@ -221,6 +229,101 @@ describe("CoverageMatrix per-cell access", () => {
     setProbe(probesFor(SNAPSHOT_IDS, all, true));
     render(<CoverageMatrix />);
     expect(screen.getByText("Access restricted")).toBeInTheDocument();
+  });
+
+  it("gives the notes line no refusal meaning when nothing is restricted", () => {
+    setProbe(
+      probesFor(SNAPSHOT_IDS, {
+        release: { id: "release", status: "served", door_shape: "report" },
+      })
+    );
+    render(<CoverageMatrix />);
+    const notes = screen.getByTestId("digital-twin-gauge-notes");
+    expect(notes).toHaveTextContent("0 restricted");
+    // A tooltip explaining refusals beside a count of none would explain a
+    // number that is not there.
+    expect(notes).not.toHaveAttribute("title");
+  });
+
+  describe("an all-refused answer kept after its latest read failed", () => {
+    const READ_AT = Date.parse("2026-10-23T12:00:00Z");
+    const LEAKY_BODY = "upstream internal-host-7";
+    const REFRESH_ERROR = new Error(
+      `GET /api/v1/digital-twin/subspaces failed: 502 - ${LEAKY_BODY}`
+    );
+
+    function holdRefusal() {
+      const all = Object.fromEntries(
+        SNAPSHOT_IDS.map((id) => [id, { id, status: "restricted" as const }])
+      );
+      state.probe = {
+        data: probesFor(SNAPSHOT_IDS, all, true),
+        isLoading: false,
+        isError: true,
+        error: REFRESH_ERROR,
+        dataUpdatedAt: READ_AT,
+        errorUpdatedAt: READ_AT + 60_000,
+      };
+    }
+
+    function expectHeldNotice(): HTMLElement {
+      const notice = screen.getByTestId("digital-twin-access-restricted-held");
+      expect(notice).toHaveTextContent(
+        "the notice below rests on its last answer, not a current reading"
+      );
+      const chip = within(notice).getByTestId(
+        "digital-twin-access-restricted-held-provenance"
+      );
+      expect(chip).toHaveTextContent(
+        /^source: coord's live twin probe · as of /
+      );
+      expect(chip).toHaveAttribute("data-provenance-known", "true");
+      // It leads: above the access notice it qualifies.
+      const access = screen.getByTestId("digital-twin-access-restricted");
+      expect(
+        notice.compareDocumentPosition(access) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).not.toBe(0);
+      return notice;
+    }
+
+    it("names the failure and dates the refusal for the operator", () => {
+      holdRefusal();
+      render(<CoverageMatrix />);
+      expect(screen.getByText("Access restricted")).toBeInTheDocument();
+      const notice = expectHeldNotice();
+      expect(notice).toHaveTextContent(
+        `Coord's live probe's latest read failed: ${REFRESH_ERROR.message}`
+      );
+    });
+
+    it("names only the HTTP status while presenting", () => {
+      holdRefusal();
+      const view = renderInPresentationMode(<CoverageMatrix />, {
+        uiBridge: {
+          unobservable:
+            "CoverageMatrix.test.tsx mocks @qontinui/ui-bridge/react",
+        },
+      });
+      expectPresentationSafe(view);
+      const notice = expectHeldNotice();
+      expect(notice).toHaveTextContent(
+        "Coord's live probe's latest read failed (HTTP 502)"
+      );
+      expect(notice.textContent).not.toContain(LEAKY_BODY);
+    });
+
+    it("adds no qualifier to a refusal whose latest read succeeded", () => {
+      const all = Object.fromEntries(
+        SNAPSHOT_IDS.map((id) => [id, { id, status: "restricted" as const }])
+      );
+      setProbe(probesFor(SNAPSHOT_IDS, all, true));
+      render(<CoverageMatrix />);
+      expect(screen.getByText("Access restricted")).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("digital-twin-access-restricted-held")
+      ).toBeNull();
+    });
   });
 
   it("keeps answered cells visible even when the matrix is flagged restricted", () => {

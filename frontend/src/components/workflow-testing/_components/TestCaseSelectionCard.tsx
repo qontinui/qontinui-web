@@ -19,7 +19,7 @@ import {
 } from "@dnd-kit/sortable";
 import type { TestCase } from "@/services/workflow-testing-service";
 import { SortableTestCaseItem } from "./SortableTestCaseItem";
-import { useDropZone } from "@qontinui/ui-bridge";
+import { useDropZone } from "@qontinui/ui-bridge/react";
 
 interface TestCaseSelectionCardProps {
   selectedTestCaseIds: string[];

@@ -24,8 +24,9 @@ import { usePresentationMode } from "./PresentationModeProvider";
  * alias is of the WHOLE operator key, index suffix included: a bijection of
  * it, assigned on first sight and never reused, so a presented row opens,
  * stays open and collapses exactly when the operator's would (D1: the mode
- * changes rendering only). One registry per mounted region, kept across
- * polls ({@link useRowKey}).
+ * changes rendering only). Turning the mode on or off closes an open row: the
+ * two modes' keys differ. One registry per mounted region, kept across polls
+ * ({@link useRowKey}).
  */
 export class RowKeyAliases {
   private readonly aliases = new Map<string, number>();

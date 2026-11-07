@@ -22,6 +22,11 @@ import type {
  */
 export function clauseText(side: MergeClauseSide | undefined): string {
   if (!side) return "";
+  // A raw clause carries its whole block verbatim and leaves every labelled
+  // field empty; rendering the labels would diff "" against "". Its
+  // `## clause:` header is dropped so it diffs line-for-line against a
+  // labelled side, which renders no header either.
+  if (side.body != null) return withoutClauseHeader(side.body);
   const lines: string[] = [];
   const scalar = (label: string, value: string | null) => {
     if (value != null && value !== "") lines.push(`- **${label}:** ${value}`);
@@ -43,6 +48,19 @@ export function clauseText(side: MergeClauseSide | undefined): string {
   list("links", side.links);
   return lines.join("\n");
 }
+
+/** `body` minus a leading `## clause:` header line (and blank lines after it). */
+export function withoutClauseHeader(body: string): string {
+  const lines = body.split(/\r?\n/);
+  if (lines.length > 0 && CLAUSE_HEADER.test(lines[0] ?? "")) {
+    lines.shift();
+    while (lines.length > 0 && (lines[0] ?? "").trim() === "") lines.shift();
+  }
+  return lines.join("\n");
+}
+
+/** A `## clause:` block header line. */
+export const CLAUSE_HEADER = /^\s*##\s*clause:/;
 
 /**
  * The side an entry will land as, given the plan's decision and — for a

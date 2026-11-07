@@ -180,22 +180,37 @@ export function auditResourceRepo(resourceKey: string): string {
   return scope.kind === "repo" ? scope.repo : resourceKey;
 }
 
+/** A timestamp as coord writes it. `Date.parse` alone reads "tbl_x 12" as 2001. */
+const RFC_3339 =
+  /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/i;
+
 /**
- * The promoted blast-radius keys (`operatorAudit.ts` `BLAST_RADIUS_KEYS`)
- * whose values are coord's fixed vocabulary, a time or a number, and so are
- * shown as they are in presentation mode: drained / released, an expiry, a
- * commit prefix, an escalate clearance's writer, a fleet policy's name and
- * level, and a version. Every other key is a repository, a scope, a device, a
- * tenant or a person, and has its own redacting arm in the panel — or, if it
- * is ever added without one, is withheld (a blocklist fails open; this is an
- * allowlist).
+ * Whether a blast-radius value is a time, and so may be read as one. The date
+ * is checked on its own because `Date.parse` rolls "02-30" over to March.
  */
-export const VERBATIM_BLAST_KEYS: ReadonlySet<string> = new Set([
-  "drained",
-  "until",
-  "head_sha",
-  "via",
-  "domain",
-  "level",
-  "version",
-]);
+export function isAuditTimestamp(value: string): boolean {
+  const match = RFC_3339.exec(value);
+  if (!match || Number.isNaN(Date.parse(value))) return false;
+  const [year, month, day] = match.slice(1, 4).map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDate() === day;
+}
+
+/** Whether a blast-radius value is a plain count, such as a policy's version. */
+export function isAuditCount(value: string): boolean {
+  return /^\d+$/.test(value);
+}
+
+/**
+ * An escalate clearance's writer (`metadata.via`) in fixed words; `null` for a
+ * spelling this table does not name, which the panel withholds. Coord's two
+ * spellings are `operatorAudit.ts`'s own promotion rule.
+ */
+export function presentedClearanceWriter(via: string): string | null {
+  if (via === "service") return "an operator";
+  if (via === "agent_evidence") return "an agent, on evidence";
+  return null;
+}

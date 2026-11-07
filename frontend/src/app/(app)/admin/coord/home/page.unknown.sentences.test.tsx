@@ -328,6 +328,33 @@ const ARMS: Arm[] = [
     never: [/shown of 1(?! \(may be off\))/, /incomplete/],
   },
   {
+    // The share is coord's count over every decision, not the 20 it lists.
+    arm: "a share coord could not count",
+    body: {
+      needs_me: {
+        ...needsOne({}),
+        shape_share: { with_recommendation: null, total: 1 },
+      },
+    },
+    region: NEEDS,
+    says: [
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    never: [/0 of 1 decision/],
+  },
+  {
+    arm: "a share coord counted, over a scan it called stale",
+    body: {
+      needs_me: {
+        ...needsOne({}),
+        shape_share: { with_recommendation: 1, total: 1 },
+        questions_coverage: "stale",
+      },
+    },
+    region: NEEDS,
+    says: ["1 of 1 decision came with a recommendation (may be off)."],
+  },
+  {
     arm: "a stale needs_me scan that counted none",
     body: {
       needs_me: {
