@@ -64,7 +64,11 @@ permissions:
 jobs:
   produce:
     name: Per-file coverage -> coord
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FRONTEND_COVERAGE_PRODUCER || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    env:
+      # vitest defaults to nproc - 1 workers: 3 on the hosted 4-core VM, 127 on
+      # a nawa runner. Pin the hosted value on both lanes.
+      VITEST_MAX_WORKERS: 3
     # Generous budget for the per-file loop over ~70+ test files; non-gating so
     # the wall-clock never blocks anything.
     timeout-minutes: 45
@@ -94,7 +98,8 @@ jobs:
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
-          cache: "npm"
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
+          package-manager-cache: ${{ runner.environment == 'github-hosted' }}
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies

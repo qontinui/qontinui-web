@@ -3,6 +3,10 @@ import { fileURLToPath } from "url";
 import { FlatCompat } from "@eslint/eslintrc";
 
 import qontinuiWeb from "./eslint-rules/index.mjs";
+import {
+  UI_BRIDGE_CONTEXT_BOUND_EXPORTS,
+  UI_BRIDGE_ROOT_IMPORT_MESSAGE,
+} from "./eslint-rules/ui-bridge-root-imports.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -111,15 +115,12 @@ const eslintConfig = [
           paths: [
             {
               name: "@qontinui/ui-bridge",
-              importNames: [
-                "useUIComponent",
-                "useUIElement",
-                "useUIState",
-                "useUIBridge",
-                "useUIBridgeOptional",
-              ],
-              message:
-                'Import this hook from "@qontinui/ui-bridge/react": the package root bundles its own UIBridgeContext, so the provider mounted from /react never reaches it and its registration is inert.',
+              // Every context-bound export of the `/react` entry, partitioned
+              // against the installed package by
+              // eslint-rules/ui-bridge-root-imports.test.mjs so a ui-bridge
+              // bump cannot add an unlisted context hook.
+              importNames: UI_BRIDGE_CONTEXT_BOUND_EXPORTS,
+              message: UI_BRIDGE_ROOT_IMPORT_MESSAGE,
             },
           ],
         },

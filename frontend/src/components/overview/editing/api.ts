@@ -202,9 +202,12 @@ async function send(
     form?: FormData;
     timeoutMs?: number;
     maxRetries?: number;
+    /** The project this request is for, in place of the selection at send time. */
+    project?: string;
   } = {}
 ): Promise<Response> {
   const headers: Record<string, string> = {};
+  if (options.project) headers["X-Qontinui-Active-Tenant"] = options.project;
   if (options.ifMatch !== undefined)
     headers["If-Match"] = `"${options.ifMatch}"`;
   if (options.idempotencyKey)
@@ -305,7 +308,7 @@ export async function updateResource<T>(
 // a generic `path` parameter would leave it unresolved.
 
 /**
- * Replace the project's settings. This route REPLACES every field and defaults
+ * Replace `project`'s settings. This route REPLACES every field and defaults
  * what is omitted, so `body` must carry all of them; build it with
  * `saveBaseCurrency`, never by hand. It answers the bare settings, not an
  * `{item}` envelope, and a stale `expected_version` is a 409 whose body has no
@@ -313,14 +316,20 @@ export async function updateResource<T>(
  *
  * Never re-issued: the client would otherwise retry a PUT on a 5xx, and if the
  * first attempt had landed the retry would 409 against its own write.
+ *
+ * The project is named on the request, because neither the body nor the answer
+ * names one: a replay after a token refresh would otherwise read the selection
+ * again and could replace a different project's settings.
  */
 export async function writeSettings<T>(
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  project: string
 ): Promise<T> {
   const response = await send("PUT", `${OVERVIEW_API}/settings`, {
     body,
     source: "ui",
     maxRetries: 0,
+    project,
   });
   if (!response.ok) throw await refusal<T>(response);
   return (await response.json()) as T;

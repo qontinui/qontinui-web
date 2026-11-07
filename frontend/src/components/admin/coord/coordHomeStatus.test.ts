@@ -38,6 +38,7 @@ import {
   sourceRawLine,
   sourceRowReason,
   sourceTimeWords,
+  needsRecommendationShareSentence,
   unservedDecisionsSentence,
   parseBlockState,
   parseOptions,
@@ -58,7 +59,9 @@ import {
   isKnownDecisionDomain,
   isKnownPlane,
   isLabelledSource,
+  isDetectionBoundSource,
   planeLabel,
+  unstatedSummary,
 } from "./coordHomeStatus";
 
 const CLASSES = Object.fromEntries(UNIT_CLASSES.map((c) => [c, 1]));
@@ -1484,6 +1487,134 @@ describe("round-8 review — R8 for what the view does not know", () => {
     );
   });
 
+  // Plan 2026-11-07-project-state-does-not-know-names-planes-slower-than-the-fault-to-visibility-bar:
+  // a `detection_bound:<plane>` row's bound is how old a fault on that plane
+  // can be before coord first observes it — a detection lag, not a data age.
+  describe("a detection_bound:<plane> row", () => {
+    const slow = () =>
+      row({
+        source: "detection_bound:merge_train",
+        state: "read",
+        freshness_bound_secs: 3600,
+        exclusion_reason:
+          "a fault on this plane can be up to 3600s old before coord first observes it, above the 600s fault-to-visibility target",
+      });
+    const unknown = () =>
+      row({
+        source: "detection_bound:cloud_service",
+        state: "unknown",
+        freshness_bound_secs: null,
+        exclusion_reason: "no detection bound could be derived for this plane",
+      });
+
+    it("is recognised by its prefix", () => {
+      expect(isDetectionBoundSource("detection_bound:merge_train")).toBe(true);
+      expect(isDetectionBoundSource("watcher:merge_train")).toBe(false);
+      expect(isDetectionBoundSource("work_units")).toBe(false);
+    });
+
+    it("is labelled by the area its fault lag is measured on", () => {
+      expect(sourceLabel("detection_bound:merge_train")).toBe(
+        "Time for a fault on merge train to reach this view"
+      );
+      expect(sourceLabel("detection_bound:coord_itself")).toBe(
+        "Time for a fault on coord to reach this view"
+      );
+      // An unmapped plane is spaced, as planeLabel spaces it.
+      expect(sourceLabel("detection_bound:new_plane")).toBe(
+        "Time for a fault on new plane to reach this view"
+      );
+      // An area the caller's words withhold is not named.
+      expect(sourceLabel("detection_bound:merge_train", null, () => null)).toBe(
+        "Time for a fault on an area not named here to reach this view"
+      );
+    });
+
+    it("words its bound as a detection lag, never as a data age", () => {
+      expect(sourceAgePhrase(slow())).toBe(
+        "a fault can be up to 1h old before coord sees it"
+      );
+      expect(sourceAgePhrase(slow())).not.toMatch(/may be up to/);
+      // It has no rows, so no exclusion count is said to be missing.
+      expect(sourceRowReason(slow())).toBe(
+        "a fault can be up to 1h old before coord sees it"
+      );
+      expect(sourceRowReason(slow())).not.toMatch(/exclusions/);
+    });
+
+    it("writes an odd bound to the second", () => {
+      expect(
+        sourceAgePhrase(
+          row({
+            source: "detection_bound:merge_train",
+            state: "read",
+            freshness_bound_secs: 3601,
+          })
+        )
+      ).toBe("a fault can be up to 1h 1s old before coord sees it");
+    });
+
+    it("says no bound is known when coord could derive none", () => {
+      expect(sourceAgePhrase(unknown())).toBe("no detection bound known");
+      // Not dropped as an unstated age when a list states those once.
+      expect(sourceRowReason(unknown(), { omitUnstated: true })).toBe(
+        "no detection bound known"
+      );
+      expect(sourceRowReason(unknown())).toBe("no detection bound known");
+      // Neither an age bound nor an exclusion count is owed by a plane row.
+      expect(unstatedSummary([unknown()])).toBeNull();
+      expect(unstatedSummary([slow(), unknown()])).toBeNull();
+      // Beside an ordinary source, only that source is counted — in the
+      // total as well.
+      expect(
+        unstatedSummary([
+          unknown(),
+          row({ source: "work_units", state: "read" }),
+        ])
+      ).toBe(
+        "Coord stated no age bound for it, and no count of excluded rows for it."
+      );
+    });
+
+    it("labels a bare detection_bound: row without naming an area", () => {
+      expect(sourceLabel("detection_bound:")).toBe(
+        "Time for a fault on an area not named here to reach this view"
+      );
+    });
+
+    it("leaves a slow-but-read plane out of the strip's sources not read", () => {
+      const body = calmBody();
+      body.does_not_know = [
+        { source: "work_units", state: "read" },
+        {
+          source: "detection_bound:merge_train",
+          state: "read",
+          freshness_bound_secs: 3600,
+        },
+      ];
+      const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
+      expect(strip.level).toBe("green");
+      const badge = strip.badges.find((b) => b.key === "unknown");
+      expect(badge?.label).toBe("unknown sources 0");
+    });
+
+    it("counts a plane with no derivable bound among sources not read", () => {
+      const body = calmBody();
+      body.does_not_know = [
+        {
+          source: "detection_bound:cloud_service",
+          state: "unknown",
+          freshness_bound_secs: null,
+        },
+      ];
+      const strip = deriveHomeStrip(parseProjectState(body), CALM_MACHINES);
+      expect(strip.level).not.toBe("green");
+      expect(strip.badges.find((b) => b.key === "unknown")?.label).toBe(
+        "unknown sources 1"
+      );
+    });
+  });
+
   it("spaces a source it has no label for, as it does an unknown domain", () => {
     expect(sourceLabel("deploy_freshness_feed")).toBe("Deploy freshness feed");
   });
@@ -1881,13 +2012,13 @@ describe("a served key spelled like an Object.prototype member", () => {
   });
 });
 
-describe("needs_me questions_coverage — a stale scan's counts are never definite", () => {
-  function staleBody(needs: Record<string, unknown>) {
-    const body = calmBody();
-    body.needs_me = { state: "read", ...needs };
-    return body;
-  }
+function needsBody(needs: Record<string, unknown>) {
+  const body = calmBody();
+  body.needs_me = { state: "read", ...needs };
+  return body;
+}
 
+describe("needs_me questions_coverage — a stale scan's counts are never definite", () => {
   it.each([
     ["read", "read"],
     ["stale", "stale"],
@@ -1895,14 +2026,14 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
     ["maybe", "unknown"],
   ])("reads questions_coverage %p as %p", (raw, want) => {
     const view = parseProjectState(
-      staleBody({ total: 0, items: [], questions_coverage: raw })
+      needsBody({ total: 0, items: [], questions_coverage: raw })
     )!;
     expect(view.needsMe.coverage).toBe(want);
   });
 
   it("does not say nothing needs you over a stale zero", () => {
     const view = parseProjectState(
-      staleBody({
+      needsBody({
         total: 0,
         omitted: 0,
         items: [],
@@ -1959,7 +2090,7 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
     (_label, machines, over) => {
       // Every coord block read (correctness included): only the roster or the
       // degradations list keeps the page from calm.
-      const body = staleBody({
+      const body = needsBody({
         total: 0,
         omitted: 0,
         items: [],
@@ -1976,7 +2107,7 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
   it("says the qualified zero alone when everything else is read and calm", () => {
     const strip = deriveHomeStrip(
       parseProjectState(
-        staleBody({
+        needsBody({
           total: 0,
           omitted: 0,
           items: [],
@@ -1990,7 +2121,7 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
 
   it("marks a stale count as possibly off in the headline", () => {
     const view = parseProjectState(
-      staleBody({
+      needsBody({
         total: 2,
         omitted: 0,
         items: [
@@ -2017,7 +2148,7 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
   it("leaves a read (or unserved) coverage's zero as the definite answer", () => {
     for (const coverage of ["read", undefined]) {
       const view = parseProjectState(
-        staleBody({
+        needsBody({
           total: 0,
           omitted: 0,
           items: [],
@@ -2031,7 +2162,7 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
 
   it("reads a null share as unknown, never as zero", () => {
     const view = parseProjectState(
-      staleBody({
+      needsBody({
         total: 0,
         items: [],
         questions_coverage: "stale",
@@ -2042,5 +2173,78 @@ describe("needs_me questions_coverage — a stale scan's counts are never defini
       withRecommendation: null,
       total: null,
     });
+  });
+});
+
+describe("needsRecommendationShareSentence", () => {
+  const needs = (fields: Record<string, unknown>) =>
+    parseProjectState(needsBody({ total: 5, items: [], ...fields }))!.needsMe;
+  const share = (with_recommendation: unknown, total: unknown = 5) => ({
+    shape_share: { with_recommendation, total },
+  });
+
+  it.each([
+    [
+      "a count over the whole set",
+      share(3),
+      "3 of 5 decisions came with a recommendation.",
+    ],
+    [
+      "none of them, which is a count",
+      share(0),
+      "0 of 5 decisions came with a recommendation.",
+    ],
+    [
+      "a scan coord calls stale qualifies the count",
+      { ...share(3), questions_coverage: "stale" },
+      "3 of 5 decisions came with a recommendation (may be off).",
+    ],
+    [
+      "a null count is unknown, never zero",
+      share(null),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a share over another total is not this count's",
+      share(3, 4),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a negative share is not a count",
+      share(-1),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "a fractional share is not a count",
+      share(2.5),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+    [
+      "one decision is singular",
+      { total: 1, ...share(1, 1) },
+      "1 of 1 decision came with a recommendation.",
+    ],
+    [
+      "a share larger than its total is not a count",
+      share(6),
+      "How many of these decisions came with a recommendation is not known.",
+    ],
+  ])("%s", (_name, fields, want) => {
+    expect(needsRecommendationShareSentence(needs(fields))).toBe(want);
+  });
+
+  it.each([
+    ["coord served no share", {}],
+    ["nothing is waiting", { total: 0, ...share(0, 0) }],
+    ["no usable count", { total: null, ...share(1, null) }],
+  ])("says nothing when %s", (_name, fields) => {
+    expect(needsRecommendationShareSentence(needs(fields))).toBeNull();
+  });
+
+  it("says nothing for a block that was not read", () => {
+    const view = parseProjectState(
+      needsBody({ state: "could_not_read", total: 5, ...share(3) })
+    )!;
+    expect(needsRecommendationShareSentence(view.needsMe)).toBeNull();
   });
 });

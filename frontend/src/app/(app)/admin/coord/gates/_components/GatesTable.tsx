@@ -101,6 +101,7 @@ import {
   CONTINUATION_STATUS_PALETTE,
   CONTINUATION_UNKNOWN_OUTCOME_KINDS,
   deriveContinuationStatus,
+  heldBySiblingHolders,
   type ContinuationKind,
   type ContinuationStatus,
 } from "../continuationStatus";
@@ -1061,11 +1062,13 @@ function GateDetail({
   // is only worth saying while it is still a prediction. Once anything has
   // dispatched, been cancelled or expired, what actually happened (the
   // `problems`/`history` slots below) is the answer, and repeating the
-  // intention beside it invites reading the plan as the outcome.
+  // intention beside it invites reading the plan as the outcome. A drain
+  // expiry on a continuation coord reports HELD is not an outcome — the
+  // fanout still dispatches it — so the intent stays true there.
   const intent =
     !gate.continuation_dispatched_at &&
     !gate.continuation_cancelled_at &&
-    !gate.continuation_expired_at
+    (!gate.continuation_expired_at || heldBySiblingHolders(gate).length > 0)
       ? summarizeContinuation(
           // `GateOverviewRow` types the payload as opaque JSON (coord returns
           // it verbatim); `summarizeContinuation` reads two optional string

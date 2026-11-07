@@ -22,6 +22,12 @@
  *   the per-session console view when a Claude session id was proven.
  * - **Verdicts per pass** — the histogram over time, in a `<CollapsiblePanel>`
  *   with an `sr-only` table (R7).
+ * - **Closed sessions** — the sessions behind the time-to-close tile.
+ * - **By overlord version** — coord's `groups`, from the same one payload: do
+ *   the numbers move when the overlord changes?
+ * - **Passes** — the one surface with its own read (coord's pass ledger, on
+ *   opening the panel): each run, and on opening one, every terminal it
+ *   screened. A failure there stays there; the strip never reads it.
  *
  * **Three states per number** (`overlordFlowStatus.ts`): measured; coord's
  * explicit `null`, rendered as a labelled "no data"; and unknown, rendered as
@@ -40,7 +46,10 @@ import {
   type Stat,
 } from "@/components/console";
 import { fetchOverlordFlow } from "@/lib/api/operations/overlordFlow";
+import { ClosedSessionsPanel } from "./_components/ClosedSessionsPanel";
+import { PassesPanel } from "./_components/PassesPanel";
 import { UnchangedRow } from "./_components/UnchangedRow";
+import { VersionComparisonPanel } from "./_components/VersionComparisonPanel";
 import { VerdictHistogramChart } from "./_components/VerdictHistogramChart";
 import {
   FLOW_WINDOWS,
@@ -54,10 +63,12 @@ import {
   histogramPoints,
   metricTitle,
   metricValue,
+  nudgeNoDataWhy,
   parseFlowReadFailure,
   percentWords,
   readFlowBody,
   unchangedCoverage,
+  unchangedRowKey,
   type FlowReadFailure,
   type FlowView,
   type FlowWindowId,
@@ -128,8 +139,18 @@ function timeToCloseStats(v: FlowView | null): Stat[] {
       label: "gone from a full pass",
       value: countValue(t?.byAbsent),
       tone: "muted",
-      title: "no longer present in a later full pass on the same runner",
+      title:
+        "no longer present in a later full pass on the same runner and build",
       "data-testid": "overlord-flow-ttc-absent",
+    },
+    {
+      key: "absentUnproven",
+      label: "gone across a rebuild",
+      value: countValue(t?.absentUnproven),
+      tone: "muted",
+      title:
+        "stopped, then missing from a later full pass on a different or unknown runner build: a rebuild restarts the runner, so these are not counted as closed",
+      "data-testid": "overlord-flow-ttc-absent-unproven",
     },
   ];
 }
@@ -142,7 +163,7 @@ function nudgeProgressStats(v: FlowView | null): Stat[] {
       label: "progressed",
       value: n ? metricValue(n.progressRate, percentWords) : null,
       title: n
-        ? metricTitle(n.progressRate, "no nudge was sent in this window")
+        ? metricTitle(n.progressRate, nudgeNoDataWhy(n, "progress"))
         : UNKNOWN_TITLE,
       "data-testid": "overlord-flow-nudge-progress-rate",
     },
@@ -164,7 +185,26 @@ function nudgeProgressStats(v: FlowView | null): Stat[] {
         "nudges whose following rows never measured progress — counted apart, never as no progress",
       "data-testid": "overlord-flow-nudge-unmeasured",
     },
+    {
+      key: "pending",
+      label: "awaiting a later pass",
+      value: countValue(n?.pending),
+      tone: "muted",
+      title:
+        "delivered nudges with no later sighting of the session and no close yet — in no rate, because they have had no chance to show an effect",
+      "data-testid": "overlord-flow-nudge-pending",
+    },
   ];
+}
+
+/**
+ * `finished / (nudged - finishUnproven)` — the fraction coord's `finish_rate`
+ * is. A coord that sends no `finish_unproven` predates the split and divided
+ * by `nudged`, so that is its denominator.
+ */
+function finishCountsValue(n: FlowView["nudge"] | undefined): string | null {
+  if (!n || n.finished === undefined || n.nudged === undefined) return null;
+  return `${n.finished}/${n.nudged - (n.finishUnproven ?? 0)}`;
 }
 
 function nudgeFinishStats(v: FlowView | null): Stat[] {
@@ -175,18 +215,30 @@ function nudgeFinishStats(v: FlowView | null): Stat[] {
       label: "finished",
       value: n ? metricValue(n.finishRate, percentWords) : null,
       title: n
-        ? metricTitle(n.finishRate, "no nudge was sent in this window")
+        ? metricTitle(n.finishRate, nudgeNoDataWhy(n, "finish"))
         : UNKNOWN_TITLE,
       "data-testid": "overlord-flow-nudge-finish-rate",
     },
     {
       key: "finished",
-      label: "of nudged",
-      value:
-        n && n.finished !== undefined && n.nudged !== undefined
-          ? `${n.finished}/${n.nudged}`
-          : null,
+      // A coord that sends no `finish_unproven` divided by every nudge, so
+      // the denominator is not "known outcome" there and must not say so.
+      label: n?.finishUnproven === undefined ? "of nudged" : "of known outcome",
+      value: finishCountsValue(n),
+      title:
+        n?.finishUnproven === undefined
+          ? "finished out of every nudged session: this coord does not count sessions gone across a rebuild apart, so they are in the denominator as not finished"
+          : "finished out of the nudged sessions whose outcome is known: the rate's own numerator and denominator, so sessions gone across a rebuild are left out",
       "data-testid": "overlord-flow-nudge-finish-counts",
+    },
+    {
+      key: "unproven",
+      label: "gone across a rebuild",
+      value: countValue(n?.finishUnproven),
+      tone: "muted",
+      title:
+        "nudged, then missing from a later full pass on a different or unknown runner build: unknown whether they finished, so not in the rate",
+      "data-testid": "overlord-flow-nudge-finish-unproven",
     },
   ];
 }
@@ -248,6 +300,8 @@ export default function CoordOverlordFlowPage() {
   const [failure, setFailure] = useState<FlowReadFailure | null>(null);
   /** Only the newest read may land — a window change supersedes the rest. */
   const reqRef = useRef(0);
+  /** Lets the page's refresh re-read the separately fetched pass list. */
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   const fetchFlow = useCallback(async () => {
     const req = ++reqRef.current;
@@ -281,6 +335,11 @@ export default function CoordOverlordFlowPage() {
     void fetchFlow();
   }, [fetchFlow]);
 
+  const refresh = useCallback(async () => {
+    setRefreshNonce((n) => n + 1);
+    await fetchFlow();
+  }, [fetchFlow]);
+
   const win = flowWindow(windowId);
   const health = useMemo(
     () => deriveFlowHealth({ view, loaded, failed, failure, windowId }),
@@ -288,6 +347,9 @@ export default function CoordOverlordFlowPage() {
   );
   const unknown = readIsUnknown(loaded, failed);
   const shown = loaded ? view : null;
+  /** Nothing has answered yet: "not read" here would blame a read still running. */
+  const reading = !loaded && !failed;
+  const capped = shown?.truncated === true;
   const points = useMemo(
     () => (shown?.series ? histogramPoints(shown.series) : null),
     [shown]
@@ -322,7 +384,7 @@ export default function CoordOverlordFlowPage() {
           </Button>
         ))}
         <RefreshButton
-          onRefresh={fetchFlow}
+          onRefresh={refresh}
           label="Refresh session flow"
           title="Re-reads coord's flow metrics for the selected window now"
           data-testid="overlord-flow-refresh"
@@ -372,9 +434,29 @@ export default function CoordOverlordFlowPage() {
         <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground m-0">
           Unchanged across consecutive full passes
         </h2>
+        {shown?.unchangedTruncated === undefined &&
+          shown?.unchanged &&
+          shown.unchanged.length > 0 && (
+            <p
+              className="text-xs text-muted-foreground m-0"
+              data-testid="overlord-flow-unchanged-cut-unknown"
+            >
+              Coord did not say whether it cut this list, so more sessions may
+              have sat unchanged.
+            </p>
+          )}
+        {shown?.unchangedTruncated === true && shown.unchanged && (
+          <p
+            className="text-xs text-muted-foreground m-0"
+            data-testid="overlord-flow-unchanged-cut"
+          >
+            Coord cut this list: these {shown.unchanged.length} held longest,
+            and more sessions sat unchanged.
+          </p>
+        )}
         <RecordList
           items={shown?.unchanged ?? []}
-          itemKey={(r) => r.key}
+          itemKey={unchangedRowKey}
           loaded={loaded || failed}
           skeletonRows={3}
           renderRow={(r, ctx) => (
@@ -447,7 +529,30 @@ export default function CoordOverlordFlowPage() {
         />
       </section>
 
-      <VerdictHistogramChart points={points} windowWords={win.words} />
+      <VerdictHistogramChart
+        points={points}
+        windowWords={win.words}
+        truncated={shown?.seriesTruncated}
+        reading={reading}
+        capped={capped}
+      />
+
+      <ClosedSessionsPanel
+        closed={shown?.closed ?? null}
+        total={shown?.timeToClose.count}
+        windowWords={win.words}
+        reading={reading}
+        capped={capped}
+      />
+
+      <VersionComparisonPanel
+        groups={shown?.groups ?? null}
+        reading={reading}
+        capped={capped}
+        unchangedMinPasses={shown?.unchangedMinPasses}
+      />
+
+      <PassesPanel windowId={windowId} refreshNonce={refreshNonce} />
     </div>
   );
 }

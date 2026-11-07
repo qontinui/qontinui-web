@@ -115,7 +115,13 @@ jobs:
     # The members' caps are 5-10 min against p90s of ~0.15-0.22 min each; the
     # sum of thirteen sub-minute steps plus one checkout fits well inside 15.
     timeout-minutes: 15
-    runs-on: ubuntu-latest
+    # LIGHT LANE (WEB_CI_LANE_WEB_GUARDS || WEB_CI_LIGHT_LANE, fork-guarded to
+    # hosted). The two host dependencies that kept it hosted are handled in-job:
+    # pwsh is provisioned by ./.github/actions/ensure-pwsh, and the pytest
+    # member installs into a job venv rather than the shared tool-cache
+    # interpreter. Plans 2026-11-05-web-guards-stays-hosted-for-pwsh-and-pip-and-carries-the-light-lane-queue-wait
+    # and 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_WEB_GUARDS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
 
     steps:
       - name: Checkout
@@ -382,13 +388,29 @@ jobs:
           # the member's paths filter dropped it now runs on every in-scope
           # event. A package-index hiccup must not read as a guard failure
           # once `web-guards` is a required context.
-          python -m pip install --retries 5 --timeout 30 "pytest>=9,<10"
-          python -m pytest .pre-commit-hooks -rA
+          # A job venv: on the self-hosted light lane the setup-python
+          # interpreter lives in a tool cache every runner shares.
+          python -m venv "$RUNNER_TEMP/hook-tests-venv"
+          "$RUNNER_TEMP/hook-tests-venv/bin/python" -m pip install --retries 5 --timeout 30 "pytest>=9,<10"
+          "$RUNNER_TEMP/hook-tests-venv/bin/python" -m pytest .pre-commit-hooks -rA
 
       # ---- powershell-parse.yml --------------------------------------------
       # Scope: workflow_dispatch; pull_request -> [main] ONLY. No push lane.
       # The member's body, unchanged (zero-files-found is a failure, the
       # per-extension coverage line, the node_modules|.git exclusion).
+      # pwsh is not on the self-hosted pool's PATH. Its outcome is a row in the
+      # aggregate below, so a host that cannot get pwsh fails web-guards by name
+      # inside the verdict table instead of as an unexplained red.
+      - name: "powershell-parse: Ensure pwsh"
+        id: ensure-pwsh
+        continue-on-error: true
+        if: >-
+          ${{ !cancelled() && steps.checkout.outcome == 'success' && runner.environment == 'self-hosted' && (
+            github.event_name == 'workflow_dispatch' ||
+            (github.event_name == 'pull_request' && github.base_ref == 'main')
+          ) }}
+        uses: ./.github/actions/ensure-pwsh
+
       - name: "powershell-parse: Parse every .ps1 and .psm1 with the real PowerShell parser"
         id: powershell-parse
         if: >-
@@ -453,6 +475,7 @@ jobs:
           OUT_DRIFT_CHECK: ${{ steps.drift-check.outcome }}
           OUT_PRE_COMMIT_HOOK_TESTS: ${{ steps.pre-commit-hook-tests.outcome }}
           OUT_POWERSHELL_PARSE: ${{ steps.powershell-parse.outcome }}
+          OUT_ENSURE_PWSH: ${{ steps.ensure-pwsh.outcome }}
         run: |
           set -uo pipefail
           # member workflow | env var holding its step outcome
@@ -470,6 +493,7 @@ jobs:
             "dev-credentials-drift (drift-check)|OUT_DRIFT_CHECK"
             "pre-commit-hook-tests|OUT_PRE_COMMIT_HOOK_TESTS"
             "powershell-parse|OUT_POWERSHELL_PARSE"
+            "powershell-parse (ensure pwsh; skipped on hosted, which ships pwsh)|OUT_ENSURE_PWSH"
           )
           failed=0
           {

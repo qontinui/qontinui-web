@@ -205,6 +205,19 @@ function deviceStatusConnection(): HTMLElement {
   return line;
 }
 
+/**
+ * The fixture's nth audit row (`AUDIT_ID`), found by its place in the feed: a
+ * presented row carries no id for a test to find it by.
+ */
+function auditRow(n: number): HTMLElement {
+  const rows = document.querySelectorAll<HTMLElement>(
+    '[data-testid="audit-row-presented"]'
+  );
+  const row = rows[n - 1];
+  if (!row) throw new Error(`no audit row ${n} of ${rows.length}`);
+  return row;
+}
+
 describe("/admin/coord/devops?present=1 — no drain control, only aliased machines", () => {
   beforeEach(resetEnvironment);
 
@@ -376,19 +389,19 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
 
     // The partner's: its resource key and its `metadata.scope` are both
     // `repo:acme-partner/secret-repo`, and neither may reach the page.
-    fireEvent.click(toggleOf(screen.getByTestId("audit-row-audit-3")));
-    const partner = screen.getByTestId("audit-detail-audit-3");
+    fireEvent.click(toggleOf(auditRow(3)));
+    const partner = within(auditRow(3)).getByTestId("audit-detail-presented");
     expect(partner.textContent).not.toMatch(/acme|secret/i);
     expect(partner).toHaveTextContent(/Repository · /);
 
     // The tenant's own: the same row shape, and its repository shows — in
     // the row's label and in the blast radius.
-    fireEvent.click(toggleOf(screen.getByTestId("audit-row-audit-4")));
-    const own = screen.getByTestId("audit-row-audit-4");
+    fireEvent.click(toggleOf(auditRow(4)));
+    const own = auditRow(4);
     expect(own).toHaveTextContent(`repo:${FIRST_PARTY_REPO}`);
-    expect(screen.getByTestId("audit-blast-audit-4")).toHaveTextContent(
-      FIRST_PARTY_REPO
-    );
+    expect(
+      within(auditRow(4)).getByTestId("audit-blast-presented")
+    ).toHaveTextContent(FIRST_PARTY_REPO);
   });
 
   it("says what a gap or a limit means in plain words, never in coord's vocabulary", async () => {
@@ -436,9 +449,7 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     // action, a role lane's state, the conditions' owners and settings, the
     // slowest fault kinds, the resource legend's one unknown — so the scan
     // below finds translation, not an empty page.
-    expect(screen.getByTestId("audit-row-audit-2")).toHaveTextContent(
-      "A merge train change"
-    );
+    expect(auditRow(2)).toHaveTextContent("A merge train change");
     expect(
       screen.getByTestId("coord-devops-conditions-domain-merge_train")
     ).toBeTruthy();
@@ -447,7 +458,9 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       expect(engineeringVocabularyOnPage()).toEqual([]);
     });
     // A role row's lane table, opened: coord's state in words.
-    const lanes = [...document.querySelectorAll('[data-testid="fleet-roles-lanes"]')];
+    const lanes = [
+      ...document.querySelectorAll('[data-testid="fleet-roles-lanes"]'),
+    ];
     expect(lanes.some((t) => /closed by role/.test(t.textContent ?? ""))).toBe(
       true
     );
@@ -460,8 +473,8 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     await settle();
 
     // The row coord stamped with the nil operator id, opened.
-    fireEvent.click(toggleOf(screen.getByTestId("audit-row-audit-6")));
-    const detail = screen.getByTestId("audit-detail-audit-6");
+    fireEvent.click(toggleOf(auditRow(6)));
+    const detail = within(auditRow(6)).getByTestId("audit-detail-presented");
     expect(detail).toHaveTextContent("Operator: operator not recorded");
     // Its title says what that means to a reader, and nothing about which
     // coord fallback wrote it.
@@ -473,10 +486,10 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
       ...UNKNOWN_AMBER.split(" ")
     );
     // How far it reached was not recorded either, and the row says that too.
-    expect(screen.getByTestId("audit-row-audit-6")).toHaveTextContent(
-      "reach not stated"
-    );
-    expect(screen.getByTestId("audit-blast-audit-6")).toHaveTextContent(
+    expect(auditRow(6)).toHaveTextContent("reach not stated");
+    expect(
+      within(auditRow(6)).getByTestId("audit-blast-presented")
+    ).toHaveTextContent(
       "how far this change reached is unknown from this row, not zero"
     );
     expect(engineeringVocabularyOnPage()).toEqual([]);
@@ -523,15 +536,19 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
 
     // Audit feed: the drain row's blast radius names the device by the same
     // alias — not withheld, and not its id.
-    fireEvent.click(toggleOf(screen.getByTestId("audit-row-audit-1")));
-    expect(screen.getByTestId("audit-blast-audit-1")).toHaveTextContent(aliasA);
+    fireEvent.click(toggleOf(auditRow(1)));
+    expect(
+      within(auditRow(1)).getByTestId("audit-blast-presented")
+    ).toHaveTextContent(aliasA);
     // A write whose ACTOR is a machine: the Operator line is machine A's
     // alias too, and the machine it released is B's.
-    fireEvent.click(toggleOf(screen.getByTestId("audit-row-audit-5")));
-    expect(screen.getByTestId("audit-detail-audit-5")).toHaveTextContent(
-      `Operator: ${aliasA}`
-    );
-    expect(screen.getByTestId("audit-blast-audit-5")).toHaveTextContent(aliasB);
+    fireEvent.click(toggleOf(auditRow(5)));
+    expect(
+      within(auditRow(5)).getByTestId("audit-detail-presented")
+    ).toHaveTextContent(`Operator: ${aliasA}`);
+    expect(
+      within(auditRow(5)).getByTestId("audit-blast-presented")
+    ).toHaveTextContent(aliasB);
     const unknownRow = slotRows.find(
       (r) => r.getAttribute("data-worktree-slots-state") === "unknown"
     )!;
@@ -552,6 +569,75 @@ describe("/admin/coord/devops?present=1 — no drain control, only aliased machi
     for (const row of resourceRows) {
       expect(row.textContent).not.toContain(VOLUME_MOUNT);
     }
+  });
+
+  it("gives no machine figure when coord's cap withheld a machine that could be degrading", async () => {
+    mockRoutes({
+      healthExtras: { truncated: true, total: 10_001, degradable_dropped: 1 },
+    });
+    seedDeviceStatus();
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    await settle();
+
+    const machines = await screen.findByTestId("devops-headline-machines");
+    await waitFor(() =>
+      expect(machines).toHaveTextContent(/may leave out one that is degrading/)
+    );
+    expect(machines).not.toHaveTextContent("2 of 3");
+  });
+
+  it("says what coord's roster left out, without coord's own words for why", async () => {
+    mockRoutes({
+      healthExtras: {
+        excluded: null,
+        excluded_error: "pool timeout on db-prod-3",
+        truncated: true,
+        total: 4645,
+        degradable_dropped: 0,
+        row_cap: { soft: 1000, hard: 10_000 },
+      },
+    });
+    seedDeviceStatus();
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    await settle();
+
+    const machines = await screen.findByTestId("devops-headline-machines");
+    // A roster coord cannot vouch for yields no share to say out loud.
+    await waitFor(() =>
+      expect(machines).toHaveTextContent(/could not count the machines/)
+    );
+    expect(machines).not.toHaveTextContent("2 of 3");
+    expect(machines).not.toHaveTextContent("db-prod-3");
+    const strip = screen.getByTestId("coord-devops-health-strip");
+    expect(strip).toHaveTextContent(/lists 3 rows of 4645/);
+    expect(strip).not.toHaveTextContent("db-prod-3");
+    expect(engineeringVocabularyOnPage()).toEqual([]);
+  });
+
+  it("counts no abandoned row among the machines any headline figure divides by", async () => {
+    mockRoutes({
+      extraDevices: [
+        { device_id: "dev-gone", hostname: "gone-box", state: "abandoned" },
+        { device_id: "dev-gone-2", hostname: "gone-box-2", state: "abandoned" },
+      ],
+      healthExtras: { total: 5 },
+    });
+    seedDeviceStatus();
+    renderInPresentationMode(<CoordDevOpsPage />, { scope: SCOPE });
+    // Not `settle()`: it pins the fixture's three slot rows, and the machine
+    // list below still shows these two.
+    const machines = await screen.findByTestId("devops-headline-machines");
+    await waitFor(() => expect(machines).toHaveTextContent("2 of 3"));
+    expect(machines).toHaveTextContent(
+      /2 machines the coordination service marked abandoned/
+    );
+    // The nav is operator-only, so its reconcile line is too.
+    expect(
+      screen.getByTestId("coord-devops-health-strip")
+    ).not.toHaveTextContent("The nav's");
+    const workspaces = screen.getByTestId("devops-headline-workspaces");
+    await waitFor(() => expect(workspaces).toHaveTextContent("3 of 8"));
+    expect(workspaces).toHaveTextContent(/2 machines not counted/);
   });
 
   it("opens with three headline figures, each with its provenance", async () => {
@@ -916,9 +1002,9 @@ describe("/admin/coord/devops?present=1 — a failed read says it failed, in fix
     // for the operator in this same state.)
     // (`textContent` glues adjacent cells together — "not readUpdated" — so
     // the pattern keys on the word and the space after it, not a boundary.)
-    expect(
-      screen.getByTestId("coord-devops-machines").textContent
-    ).not.toMatch(/Updated\s/);
+    expect(screen.getByTestId("coord-devops-machines").textContent).not.toMatch(
+      /Updated\s/
+    );
     expectPresentationSafe(view, { captions: DEVOPS_CAPTIONS });
   });
 

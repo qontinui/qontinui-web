@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ENDPOINT_UNRESOLVED_CODE,
   isEndpointUnresolved,
   resolveEndpoint,
+  resolveServerBackendUrl,
   tryResolveEndpoint,
   type EndpointUnresolvedError,
 } from "./endpoint-unresolved";
@@ -87,6 +88,41 @@ describe("resolveEndpoint", () => {
     expect(refusal(() => resolveEndpoint("api", undefined, "test")).code).toBe(
       ENDPOINT_UNRESOLVED_CODE
     );
+  });
+});
+
+describe("resolveServerBackendUrl", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each(["wss://b.internal", "ws://b.internal", "WSS://b.internal", "  "])(
+    "falls through a BACKEND_URL of %j to NEXT_PUBLIC_API_URL, as the rewrite does",
+    (backend) => {
+      vi.stubEnv("BACKEND_URL", backend);
+      vi.stubEnv("NEXT_PUBLIC_API_URL", "https://api.example.com");
+      expect(resolveServerBackendUrl()).toBe("https://api.example.com");
+    }
+  );
+
+  it("prefers a usable BACKEND_URL", () => {
+    vi.stubEnv("BACKEND_URL", "http://b.internal/");
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "https://api.example.com");
+    expect(resolveServerBackendUrl()).toBe("http://b.internal");
+  });
+
+  it("refuses when every value is a websocket one, outside development", () => {
+    vi.stubEnv("BACKEND_URL", "wss://b.internal");
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "wss://a.internal");
+    vi.stubEnv("NODE_ENV", "production");
+    expect(refusal(() => resolveServerBackendUrl()).envVar).toBe("BACKEND_URL");
+  });
+
+  it("takes the dev default when every value is a websocket one, in development", () => {
+    vi.stubEnv("BACKEND_URL", "wss://b.internal");
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "");
+    vi.stubEnv("NODE_ENV", "development");
+    expect(resolveServerBackendUrl()).toBe("http://localhost:8000");
   });
 });
 

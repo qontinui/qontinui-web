@@ -379,11 +379,13 @@ type SettingsReplacement = Required<
  * Change the base currency and nothing else: every other field goes back as
  * read. `editing_roles` stays out deliberately, because absent is what leaves
  * the stored set alone. `expected_version` makes the server refuse a write
- * built on settings somebody has since changed.
+ * built on settings somebody has since changed. `project` is the one `settings`
+ * was read for, and the only one this write can land in.
  */
 export function saveBaseCurrency(
   settings: OverviewSettings,
-  baseCurrency: string
+  baseCurrency: string,
+  project: string
 ): Promise<OverviewSettings> {
   const body: SettingsReplacement = {
     base_currency: baseCurrency,
@@ -394,7 +396,7 @@ export function saveBaseCurrency(
     first_value_date: settings.first_value_date,
     expected_version: settings.version,
   };
-  return writeSettings<OverviewSettings>(body);
+  return writeSettings<OverviewSettings>(body, project);
 }
 
 export function fetchRollup(id: string): Promise<EstimateRollup> {

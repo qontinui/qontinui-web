@@ -84,7 +84,7 @@ jobs:
     # p50 0.13 / p90 0.17 / max 0.20 min; cap = max(5, 2x max). Replaces the 360-min default.
     timeout-minutes: 5
     name: Forbid new fixed sleeps in the Playwright E2E suite
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_FORBID_FIXED_SLEEPS_IN_E2E || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:

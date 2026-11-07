@@ -15,7 +15,9 @@ import {
   auditResourceRepo,
   auditScope,
   indexDevices,
-  VERBATIM_BLAST_KEYS,
+  isAuditCount,
+  isAuditTimestamp,
+  presentedClearanceWriter,
   presentedAuditActionLabel,
 } from "./auditPresentation";
 import type { AuditRow } from "./operatorAudit";
@@ -154,31 +156,39 @@ describe("merge-train scopes", () => {
   });
 });
 
-describe("the blast-radius values shown as they are", () => {
-  it("vouches only for fixed vocabulary, times and numbers", () => {
-    for (const key of [
-      "drained",
-      "until",
-      "head_sha",
-      "via",
-      "domain",
-      "level",
-      "version",
-    ]) {
-      expect(VERBATIM_BLAST_KEYS.has(key), key).toBe(true);
-    }
-    // Every key that names a repository, a scope, a device, a tenant or a
-    // person has its own redacting arm — never the verbatim one.
-    for (const key of [
-      "scope",
-      "scope_key",
-      "affected_repos",
-      "affected_tenant_ids",
-      "device_id",
-      "target_operator_id",
-    ]) {
-      expect(VERBATIM_BLAST_KEYS.has(key), key).toBe(false);
-    }
+describe("the blast-radius values that read as what they are", () => {
+  it.each([
+    ["2026-10-28T10:00:00Z", true],
+    ["2026-10-28T10:00:00.123+02:00", true],
+    // `Date.parse` reads these three as dates.
+    ["tbl_x 12", false],
+    ["build-7", false],
+    ["0", false],
+    // And rolls this one over to March.
+    ["2026-02-30T10:00:00Z", false],
+    ["2026-13-45T10:00:00Z", false],
+    ["", false],
+  ])("isAuditTimestamp(%j) is %s", (value, want) => {
+    expect(isAuditTimestamp(value)).toBe(want);
+  });
+
+  it.each([
+    ["12", true],
+    ["0", true],
+    ["-1", false],
+    ["v2", false],
+    ["tbl_x", false],
+    ["", false],
+  ])("isAuditCount(%j) is %s", (value, want) => {
+    expect(isAuditCount(value)).toBe(want);
+  });
+
+  it("words a clearance's writer, and names no other spelling", () => {
+    expect(presentedClearanceWriter("service")).toBe("an operator");
+    expect(presentedClearanceWriter("agent_evidence")).toBe(
+      "an agent, on evidence"
+    );
+    expect(presentedClearanceWriter("self")).toBeNull();
   });
 });
 

@@ -39,7 +39,7 @@ import {
   DragOverlay,
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import { useDropZone } from "@qontinui/ui-bridge";
+import { useDropZone } from "@qontinui/ui-bridge/react";
 
 // =============================================================================
 // Queue Tab — Workflow Sequence Builder

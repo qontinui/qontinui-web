@@ -28,7 +28,10 @@ import {
   UNKNOWN_COUNTS_DETAIL,
 } from "@/components/console";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
-import type { FlowUnchangedSession } from "@/lib/api/operations/overlordFlow";
+import type {
+  FlowLastIntervention,
+  FlowUnchangedSession,
+} from "@/lib/api/operations/overlordFlow";
 
 // ---------------------------------------------------------------------------
 // Window picker
@@ -59,6 +62,9 @@ export function flowQuery(id: FlowWindowId): string {
   const qs = new URLSearchParams();
   qs.set("window_hours", String(flowWindow(id).hours));
   qs.set("unchanged_min_passes", String(UNCHANGED_MIN_PASSES));
+  // Adds `groups` beside the same blocks, so the per-version comparison reads
+  // the page's one payload rather than a second fetch of the same window.
+  qs.set("group_by", "overlord_version");
   return qs.toString();
 }
 
@@ -102,6 +108,16 @@ export function unchangedCoverage(
         view.truncated === true
           ? "coord capped the rows it read — unchanged cannot be confirmed"
           : "coord did not say whether it capped the rows — unchanged cannot be confirmed",
+    };
+  }
+  // An empty list stands for "nothing is stuck" only if it is the whole list.
+  if (view.unchangedTruncated !== false) {
+    return {
+      everyRunnerCovered: false,
+      sentence:
+        view.unchangedTruncated === true
+          ? "coord cut the unchanged list — unchanged cannot be confirmed"
+          : "coord did not say whether it cut the unchanged list — unchanged cannot be confirmed",
     };
   }
   if (view.passesConsidered === undefined) {
@@ -149,10 +165,33 @@ export function unchangedCoverage(
 // Narrowing the wire shape
 // ---------------------------------------------------------------------------
 
+/**
+ * What `/next-move` last judged about an unchanged session, in words, or `null`
+ * when there is nothing to say: a coord predating the join (field absent) says
+ * nothing either way, and a session with no proven id has nothing to join on,
+ * which the row already says.
+ */
+export function lastInterventionWords(
+  row: FlowUnchangedSession,
+  formatTime: (iso: string) => string
+): string | null {
+  const last = row.last_intervention;
+  if (last === undefined || !row.claude_session_id) return null;
+  if (last === null)
+    return "No /next-move judgment is recorded for this session.";
+  let how = last.mode;
+  if (last.mode === "live" && last.executed !== true) {
+    how +=
+      last.executed === false ? ", not executed" : ", execution not recorded";
+  }
+  const outcome = last.outcome ? `, outcome ${last.outcome}` : "";
+  return `Last /next-move: class ${last.stop_class}, ${last.verb} (${how})${outcome}, ${formatTime(last.observed_at)}.`;
+}
+
 /** A measured number, coord's explicit `null`, or `undefined` (unknown). */
 export type Metric = number | null | undefined;
 
-function isObj(v: unknown): v is Record<string, unknown> {
+export function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
@@ -163,11 +202,11 @@ function metric(v: unknown): Metric {
 }
 
 /** A count is never "not measurable", so a `null` count is unknown too. */
-function count(v: unknown): number | undefined {
+export function count(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
-function str(v: unknown): string | null {
+export function str(v: unknown): string | null {
   return typeof v === "string" && v !== "" ? v : null;
 }
 
@@ -197,6 +236,57 @@ export interface VerdictPass {
   histogram: Record<string, number>;
 }
 
+/** One closed session, narrowed. The list's order is newest close first. */
+export interface ClosedSession {
+  key: string;
+  deviceId: string | null;
+  runnerPort: number | null;
+  firstStoppedAt: string;
+  /** `null` = not served; never read as "did not recover". */
+  stopEpisodeStartedAt: string | null;
+  closedAt: string;
+  secs: number;
+  /** `triage` or `absent` today; the word is coord's, so it stays open. */
+  closedBy: string;
+}
+
+/**
+ * Coord's closed sessions. When `truncated`, it kept those that first stopped
+ * most recently, so one that stopped long ago and closed just now can be cut.
+ */
+export interface ClosedSessions {
+  sessions: ClosedSession[];
+  /** `undefined` = coord did not say whether it cut the list. */
+  truncated: boolean | undefined;
+}
+
+/** One overlord version's numbers, narrowed. */
+export interface VersionGroup {
+  /**
+   * coord's digest over the group's recorded versions; `null` = coord says the
+   * version is unknown (none recorded, or an entry its runner had read missed).
+   */
+  version: string | null;
+  /**
+   * The versions the digest is over, file or `runner_git_sha` → sha. `null` on
+   * the unknown group; `undefined` = not served, or could not be read.
+   */
+  versions: Record<string, string> | null | undefined;
+  passes: number | undefined;
+  censusPasses: number | undefined;
+  closed: number | undefined;
+  medianSecs: Metric;
+  p90Secs: Metric;
+  nudged: number | undefined;
+  progressRate: Metric;
+  finishRate: Metric;
+  /** `undefined` = the list did not arrive, or an entry could not be read. */
+  unchanged: number | undefined;
+  /** `undefined` = coord did not say whether it cut this version's list. */
+  unchangedTruncated: boolean | undefined;
+  latestUnknownShare: Metric;
+}
+
 /** One runner's full-pass count, narrowed. */
 export interface RunnerPasses {
   deviceId: string | null;
@@ -214,6 +304,11 @@ export interface FlowView {
   passesConsidered: number | undefined;
   fullPassesConsidered: number | undefined;
   /**
+   * Full passes with stored rows and no failed run: the only ones coord reads
+   * absence and unchanged runs from.
+   */
+  censusPassesConsidered: number | undefined;
+  /**
    * coord's `full_passes_by_runner`. `undefined` = not served (an older
    * coord); `null` = served but unreadable (not a list, or any entry
    * malformed — a partial list could hide the short runner).
@@ -227,6 +322,8 @@ export interface FlowView {
     p90Secs: Metric;
     byTriage: number | undefined;
     byAbsent: number | undefined;
+    /** Missing across a runner build change: not in `count`. */
+    absentUnproven: number | undefined;
   };
   nudge: {
     nudged: number | undefined;
@@ -234,10 +331,19 @@ export interface FlowView {
     finished: number | undefined;
     progressRate: Metric;
     finishRate: Metric;
+    /** Went missing across a runner build change: not in `finishRate`. */
+    finishUnproven: number | undefined;
     unmeasured: number | undefined;
+    pending: number | undefined;
   };
   /** `null` = the list did not arrive (unknown), `[]` = coord found none. */
   unchanged: FlowUnchangedSession[] | null;
+  /** `undefined` = coord did not say whether it cut the list. */
+  unchangedTruncated: boolean | undefined;
+  /** `null` = the list did not arrive or could not be read — unknown. */
+  closed: ClosedSessions | null;
+  /** Oldest version first; `null` = the groups did not arrive or are unreadable. */
+  groups: VersionGroup[] | null;
   /**
    * The most recent pass's UNKNOWN share. `null` = coord sent an empty list
    * (no pass in the window); `undefined` = the list is absent, or any of
@@ -246,6 +352,8 @@ export interface FlowView {
   latestUnknown: LatestUnknownShare | null | undefined;
   /** Oldest first; `null` = the series did not arrive or could not be read. */
   series: VerdictPass[] | null;
+  /** `undefined` = coord did not say whether it cut the series. */
+  seriesTruncated: boolean | undefined;
 }
 
 /**
@@ -299,6 +407,8 @@ function unchangedOf(raw: unknown): FlowUnchangedSession[] | null {
     const reasonCodes = r.reason_codes as string[];
     rows.push({
       key,
+      device_id: str(r.device_id),
+      runner_port: count(r.runner_port),
       claude_session_id: str(r.claude_session_id),
       terminal_id: terminalId,
       session_name: str(r.session_name),
@@ -307,18 +417,199 @@ function unchangedOf(raw: unknown): FlowUnchangedSession[] | null {
       consecutive_full_passes: passes,
       first_seen_at: str(r.first_seen_at) ?? "",
       last_seen_at: str(r.last_seen_at) ?? "",
+      last_intervention: parseLastIntervention(r.last_intervention),
     });
   }
   return rows;
 }
 
+/**
+ * A session's `last_intervention` as sent. `null` is an answer (none recorded);
+ * an absent field or one missing its identifying words is no answer, so it comes
+ * back `undefined` and the row says nothing rather than "not judged".
+ */
+function parseLastIntervention(
+  raw: unknown
+): FlowLastIntervention | null | undefined {
+  if (raw === null) return null;
+  if (typeof raw !== "object" || raw === undefined) return undefined;
+  const r = raw as Record<string, unknown>;
+  const id = str(r.intervention_id);
+  const stopClass = str(r.stop_class);
+  const verb = str(r.verb);
+  const mode = str(r.mode);
+  const observedAt = str(r.observed_at);
+  if (!id || !stopClass || !verb || !mode || !observedAt) return undefined;
+  return {
+    intervention_id: id,
+    stop_class: stopClass,
+    verb,
+    mode,
+    executed: typeof r.executed === "boolean" ? r.executed : null,
+    outcome: str(r.outcome),
+    observed_at: observedAt,
+  };
+}
+
+function flag(v: unknown): boolean | undefined {
+  return typeof v === "boolean" ? v : undefined;
+}
+
+/**
+ * A list's length as a count, or as a floor when coord cut the list or did
+ * not say it kept all of it (`cut`). A floor is spelled `≥N` (style guide:
+ * "a total over a source that did not answer is a floor"), and a floor of 0
+ * says nothing, so it renders `–` rather than a number.
+ */
+export function countWords(n: number, cut: boolean): string {
+  if (!cut) return String(n);
+  return n === 0 ? "–" : `≥${n}`;
+}
+
+/** A timestamp that can be ordered and worded, else `null`. */
+export function time(v: unknown): string | null {
+  const s = str(v);
+  return s && Number.isFinite(Date.parse(s)) ? s : null;
+}
+
+/**
+ * Coord's closed sessions, newest close first, or `null` (UNKNOWN) when the
+ * list is absent OR any entry cannot be read: dropping one would make the list
+ * disagree with the tile's count without a word.
+ */
+function closedOf(raw: unknown, truncated: unknown): ClosedSessions | null {
+  if (!Array.isArray(raw)) return null;
+  const sessions: ClosedSession[] = [];
+  for (const c of raw) {
+    if (!isObj(c)) return null;
+    const key = str(c.key);
+    const firstStoppedAt = time(c.first_stopped_at);
+    const closedAt = time(c.closed_at);
+    const secs = count(c.secs);
+    const closedBy = str(c.closed_by);
+    if (
+      !key ||
+      !firstStoppedAt ||
+      !closedAt ||
+      secs === undefined ||
+      !closedBy ||
+      // Absent is "not served"; a value that cannot be read is not that.
+      (c.stop_episode_started_at !== undefined &&
+        c.stop_episode_started_at !== null &&
+        !time(c.stop_episode_started_at))
+    ) {
+      return null;
+    }
+    sessions.push({
+      key,
+      deviceId: str(c.device_id),
+      runnerPort: count(c.runner_port) ?? null,
+      firstStoppedAt,
+      stopEpisodeStartedAt: time(c.stop_episode_started_at),
+      closedAt,
+      secs,
+      closedBy,
+    });
+  }
+  sessions.sort((a, b) => Date.parse(b.closedAt) - Date.parse(a.closedAt));
+  return { sessions, truncated: flag(truncated) };
+}
+
+/**
+ * Coord's per-version groups, or `null` (UNKNOWN) when absent or any group
+ * cannot be read: a missing group would drop a version from the comparison.
+ * `overlord_version` must be PRESENT — its `null` is coord saying "recorded
+ * none", which an absent key is not.
+ */
+function groupsOf(raw: unknown): VersionGroup[] | null {
+  if (!Array.isArray(raw)) return null;
+  const groups: VersionGroup[] = [];
+  for (const g of raw) {
+    if (!isObj(g)) return null;
+    const version = g.overlord_version;
+    if (version !== null && (typeof version !== "string" || version === "")) {
+      return null;
+    }
+    const ttc = isObj(g.time_to_close) ? g.time_to_close : {};
+    const nudge = isObj(g.nudge) ? g.nudge : {};
+    const latest = latestUnknownOf(g.unknown_share);
+    const unchanged = unchangedOf(g.unchanged);
+    groups.push({
+      version,
+      versions: versionsOf(g.overlord_versions),
+      passes: count(g.passes_considered),
+      censusPasses: count(g.census_passes_considered),
+      closed: count(ttc.count),
+      medianSecs: metric(ttc.median_secs),
+      p90Secs: metric(ttc.p90_secs),
+      nudged: count(nudge.nudged),
+      progressRate: metric(nudge.progress_rate),
+      finishRate: metric(nudge.finish_rate),
+      unchanged: unchanged?.length,
+      unchangedTruncated: flag(g.unchanged_truncated),
+      latestUnknownShare: latest === null ? null : latest?.share,
+    });
+  }
+  return groups;
+}
+
+/**
+ * A group's `overlord_versions` map. `null` is coord's own (the unknown group);
+ * `undefined` = absent, or any entry is not a non-empty string, since a dropped
+ * entry would hide the very difference the map is there to show.
+ */
+function versionsOf(raw: unknown): Record<string, string> | null | undefined {
+  if (raw === null) return null;
+  if (!isObj(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v !== "string" || v === "") return undefined;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * What differs between a version group and the nearest OLDER group with a
+ * readable map: the entries whose sha changed, plus any entry only one side
+ * recorded (an entry one map lacks was not read there, so it MAY differ).
+ * `null` = nothing to compare against: the first known group, an unknown
+ * group, or a map not served.
+ */
+export function versionChanges(
+  groups: VersionGroup[],
+  index: number
+): string[] | null {
+  const cur = groups[index]?.versions;
+  if (!cur) return null;
+  for (let i = index - 1; i >= 0; i--) {
+    const prev = groups[i]?.versions;
+    if (!prev) continue;
+    const keys = new Set([...Object.keys(prev), ...Object.keys(cur)]);
+    return [...keys].filter((k) => prev[k] !== cur[k]).sort();
+  }
+  return null;
+}
+
+/** A version map as `name sha10` entries, for a tooltip. */
+export function versionMapWords(
+  versions: Record<string, string> | null | undefined
+): string | null {
+  if (!versions) return null;
+  const entries = Object.entries(versions).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0
+  );
+  if (entries.length === 0) return null;
+  return entries.map(([k, v]) => `${k} ${v.slice(0, 10)}`).join(" · ");
+}
+
 /** `full` / `filtered` as sent; anything else is unknown, never a default. */
-function scopeOf(v: unknown): PassScope {
+export function scopeOf(v: unknown): PassScope {
   return v === "full" || v === "filtered" ? v : null;
 }
 
 /** `report` / `act` as sent; anything else is unknown, never a default. */
-function modeOf(v: unknown): PassMode {
+export function modeOf(v: unknown): PassMode {
   return v === "report" || v === "act" ? v : null;
 }
 
@@ -446,6 +737,7 @@ export function readFlowBody(body: unknown): FlowView | null {
     truncated: typeof body.truncated === "boolean" ? body.truncated : undefined,
     passesConsidered: count(body.passes_considered),
     fullPassesConsidered: count(body.full_passes_considered),
+    censusPassesConsidered: count(body.census_passes_considered),
     runnerPasses: runnerPassesOf(body.full_passes_by_runner),
     unchangedMinPasses: appliedMinPasses(body.params),
     timeToClose: {
@@ -453,6 +745,7 @@ export function readFlowBody(body: unknown): FlowView | null {
       medianSecs: metric(ttc.median_secs),
       p90Secs: metric(ttc.p90_secs),
       ...closedBy(ttc.closed_by, ttcCount),
+      absentUnproven: count(ttc.absent_unproven),
     },
     nudge: {
       nudged: count(nudge.nudged),
@@ -460,11 +753,17 @@ export function readFlowBody(body: unknown): FlowView | null {
       finished: count(nudge.finished),
       progressRate: metric(nudge.progress_rate),
       finishRate: metric(nudge.finish_rate),
+      finishUnproven: count(nudge.finish_unproven),
       unmeasured: count(nudge.unmeasured_progress),
+      pending: count(nudge.pending),
     },
     unchanged: unchangedOf(body.unchanged),
+    unchangedTruncated: flag(body.unchanged_truncated),
+    closed: closedOf(ttc.sessions, ttc.sessions_truncated),
+    groups: groupsOf(body.groups),
     latestUnknown: latestUnknownOf(body.unknown_share),
     series: seriesOf(body.verdict_series),
+    seriesTruncated: flag(body.verdict_series_truncated),
   };
 }
 
@@ -513,6 +812,30 @@ export function metricValue(
   if (m === undefined) return null;
   if (m === null) return NO_DATA;
   return format(m);
+}
+
+/**
+ * Why a nudge rate is `null`, which is not always "no nudge". `progress_rate`
+ * is `null` when no nudge had a progress measurement, however many were sent,
+ * and a delivered nudge coord has not seen an effect of yet is `pending`, which
+ * `nudged` excludes. `finish_rate` can be `null` over sent nudges too, when none
+ * has a known outcome (a session lost across a runner rebuild).
+ */
+export function nudgeNoDataWhy(
+  nudge: Pick<FlowView["nudge"], "nudged" | "pending">,
+  rate: "progress" | "finish"
+): string {
+  if (nudge.nudged !== undefined && nudge.nudged > 0) {
+    return rate === "progress"
+      ? "no nudge in this window has a progress measurement yet"
+      : "no nudge in this window has a known outcome";
+  }
+  if (nudge.pending !== undefined && nudge.pending > 0) {
+    return `${nudge.pending} delivered, and no later pass has seen those sessions yet`;
+  }
+  return nudge.nudged === 0 && nudge.pending === 0
+    ? "no nudge was delivered in this window"
+    : "no nudge has been measured in this window";
 }
 
 /** The hover for a metric, so `–` and "no data" each say what they mean. */
@@ -575,7 +898,7 @@ export function failureSentence(f: FlowReadFailure): string {
     return "coord's pass ledger is not provisioned in this database yet (a migration is pending)";
   }
   if (f.code === "db_unavailable")
-    return "coord's database did not answer the flow read";
+    return "coord's database did not answer the read";
   if (f.status === 422 || f.status === 400) {
     return `coord refused the query${f.detail ? ` (${f.detail})` : ""}`;
   }
@@ -610,12 +933,19 @@ function flowBadges(view: FlowView | null): HealthBadge[] {
     {
       key: "full",
       label: `full ${dash(view?.fullPassesConsidered)}`,
-      title: "passes that screened every terminal — only these count absence",
+      title: "passes that set out to screen every terminal",
       "data-testid": "overlord-flow-badge-full",
     },
     {
+      key: "census",
+      label: `census ${dash(view?.censusPassesConsidered)}`,
+      title:
+        "full passes with stored rows and no failed run — only these count absence and unchanged",
+      "data-testid": "overlord-flow-badge-census",
+    },
+    {
       key: "unchanged",
-      label: `unchanged ${view?.unchanged ? view.unchanged.length : "–"}`,
+      label: `unchanged ${view?.unchanged ? countWords(view.unchanged.length, view.unchangedTruncated !== false) : "–"}`,
       tone:
         view?.unchanged && view.unchanged.length > 0 ? "waiting" : "default",
       title:
@@ -712,7 +1042,7 @@ export function deriveFlowHealth(input: {
   if (unchanged && unchanged > 0) {
     return {
       level: "amber",
-      headline: `${unchanged} ${unchanged === 1 ? "session has" : "sessions have"} not moved across consecutive full passes`,
+      headline: `${view.unchangedTruncated !== false ? "At least " : ""}${unchanged} ${unchanged === 1 ? "session has" : "sessions have"} not moved across consecutive full passes`,
       detail: `same verdict and reasons pass after pass, ${windowSentence}`,
       badges: flowBadges(view),
     };
@@ -850,4 +1180,95 @@ export function sessionHref(row: FlowUnchangedSession): string | null {
   return row.claude_session_id
     ? `/sessions/${encodeURIComponent(row.claude_session_id)}`
     : null;
+}
+
+/**
+ * Coord's `key` is the Claude session id, or `terminal:<id>` when none was
+ * proven, so a `terminal:` key has no session page to open.
+ */
+export function closedSessionHref(key: string): string | null {
+  return key.startsWith("terminal:")
+    ? null
+    : `/sessions/${encodeURIComponent(key)}`;
+}
+
+/**
+ * Coord breaks ties on `runner_port`, so one session can hold a row per runner.
+ * `key` alone would give those two rows one React key and one expanded state.
+ */
+export function unchangedRowKey(row: FlowUnchangedSession): string {
+  return `${row.key}@${row.device_id ?? ""}:${row.runner_port ?? ""}`;
+}
+
+/** Coord closes a session at most once per runner. */
+export function closedRowKey(row: ClosedSession): string {
+  return `${row.key}@${row.deviceId ?? ""}:${row.runnerPort ?? ""}`;
+}
+
+/**
+ * The closed row's label. The wire carries no session name here, and a bare
+ * UUID is not something to lead a row with (style guide R8).
+ */
+export function closedSessionLabel(key: string): string {
+  return key.startsWith("terminal:")
+    ? `terminal ${key.slice("terminal:".length)}`
+    : `session ${key.slice(0, 8)}`;
+}
+
+/**
+ * Coord capped the passes it read (`truncated`), keeping the newest. Everything
+ * derived from them is over that subset, whatever a list's own cut flag says.
+ */
+export const CAPPED_READ_NOTE =
+  "Coord capped the passes it read over this window, keeping the newest, so this covers only those.";
+
+/** Said when the tile's count and the list beside it cannot both be whole. */
+export function closedCountMismatch(
+  closed: ClosedSessions,
+  total: number | undefined
+): string | null {
+  if (closed.truncated !== false || total === closed.sessions.length) {
+    return null;
+  }
+  return `Coord counted ${total ?? "an unknown number of"} closed sessions but listed ${closed.sessions.length} without saying it cut the list, so this may not be all of them.`;
+}
+
+/** The time-to-close tile's own words for who closed a session. */
+export function closedByWords(closedBy: string): string {
+  if (closedBy === "triage") return "by triage";
+  if (closedBy === "absent") return "gone from a full pass";
+  return closedBy;
+}
+
+/**
+ * A blob sha, short enough for a table cell. The full sha is its title. `null`
+ * is coord saying none was recorded; `undefined` is that we were not told.
+ */
+export function versionWords(version: string | null | undefined): string {
+  if (version === undefined) return "unknown";
+  return version === null ? "none recorded" : version.slice(0, 10);
+}
+
+/**
+ * A version group's digest, short enough for a table cell. Its `null` is not
+ * "none recorded": coord puts a pass there that missed reading an entry its
+ * runner had read before, too, so the version is unknown.
+ */
+export function groupVersionWords(version: string | null): string {
+  return version === null ? "not read" : version.slice(0, 10);
+}
+
+/**
+ * When a closed session last began stopping, if that is not its first stop. Any
+ * other verdict in between resets it (UNKNOWN or LIMITED as much as real work,
+ * and the wire does not say which), so the session MAY not have been stopped for
+ * all of `secs`; an unread screen proves nothing. `null` when the times agree, or
+ * it was not served.
+ */
+export function laterStopAt(row: ClosedSession): string | null {
+  const episode = row.stopEpisodeStartedAt;
+  if (!episode) return null;
+  return Date.parse(episode) === Date.parse(row.firstStoppedAt)
+    ? null
+    : episode;
 }

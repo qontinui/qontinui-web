@@ -214,6 +214,72 @@ describe("machine health", () => {
     ).toBeNull();
   });
 
+  // The fields coord actually serves now its roster change has landed, as
+  // read off `GET /coord/fleet/health` on 2026-11-02 (`fleet_health.rs`,
+  // `device_state.rs` `RosterPage`): the arms #2028 could only write against
+  // the unlanded change's described shape.
+  describe("the completeness fields as coord serves them", () => {
+    const rows = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        device_id: `d${i}`,
+        state: "healthy",
+        dispatch_liveness: "within_dispatch_window",
+      }));
+    const served = {
+      excluded: { unbound: 0, bound_to_other_tenant: 0 },
+      excluded_error: null,
+      row_cap: { soft: 1000, hard: 10_000 },
+    };
+
+    it("reads an uncut roster as whole", () => {
+      const p = parseMachineHealth({
+        ...served,
+        devices: rows(67),
+        count: 67,
+        total: 67,
+        truncated: false,
+        degradable_dropped: 0,
+      } as never);
+      expect(p?.cut).toEqual({ kind: "whole" });
+      expect(p?.exclusions).toEqual({ kind: "none_withheld" });
+    });
+
+    it("reads a roster cut past the soft cap as a tail-only cut, at the served total", () => {
+      const p = parseMachineHealth({
+        ...served,
+        devices: rows(1000),
+        count: 1000,
+        total: 4645,
+        truncated: true,
+        degradable_dropped: 0,
+      } as never);
+      expect(p?.cut).toEqual({
+        kind: "cut_tail_only",
+        listed: 1000,
+        total: 4645,
+        limit: 1000,
+      });
+    });
+
+    it("reads a roster over the hard ceiling as withholding machines, at the served cap", () => {
+      const p = parseMachineHealth({
+        ...served,
+        devices: rows(10_000),
+        count: 10_000,
+        total: 10_040,
+        truncated: true,
+        degradable_dropped: 7,
+      } as never);
+      expect(p?.cut).toEqual({
+        kind: "cut_degradable",
+        listed: 10_000,
+        total: 10_040,
+        degradableDropped: 7,
+        hardLimit: 10_000,
+      });
+    });
+  });
+
   it("reads a body with no device list as no reading", () => {
     expect(parseMachineHealth({})).toBeNull();
     expect(parseMachineHealth(null)).toBeNull();
@@ -222,7 +288,7 @@ describe("machine health", () => {
 
   it("is calm only when read, current, and no machine is degrading or without a verdict", () => {
     expect(machinesAllHealthy(read(["healthy", "healthy"]))).toBe(true);
-    // Abandoned is a decision, not a degradation.
+    // Abandoned is silent past coord's timer, and not a degradation.
     expect(machinesAllHealthy(read(["healthy", "abandoned"]))).toBe(true);
     expect(machinesAllHealthy(read(["healthy", "degraded"]))).toBe(false);
     expect(machinesAllHealthy(read(["healthy", "unknown"]))).toBe(false);
@@ -462,7 +528,7 @@ describe("machine health", () => {
             readRosterCut(served(5, 6, 0, { soft: 5, hard: 50 }))
           )
         ).toBe(
-          "Coord's roster lists 5 rows of 6: the other 1 is an abandoned or placeholder row past coord's limit of 5, not listed here — coord says none of them could be degrading."
+          "Coord's roster lists 5 rows of 6: the other 1 is an abandoned or placeholder row past coord's limit of 5, not listed here — coord says it could not be degrading."
         );
       });
 
@@ -482,7 +548,7 @@ describe("machine health", () => {
         expect(rosterCutSentence(c)).not.toContain("limit of 1000");
         // At the limit exactly, the limit is still the reason given.
         expect(rosterCutSentence(readRosterCut(served(1000, 1001, 0)))).toBe(
-          "Coord's roster lists 1000 rows of 1001: the other 1 is an abandoned or placeholder row past coord's limit of 1000, not listed here — coord says none of them could be degrading."
+          "Coord's roster lists 1000 rows of 1001: the other 1 is an abandoned or placeholder row past coord's limit of 1000, not listed here — coord says it could not be degrading."
         );
       });
 
@@ -819,16 +885,16 @@ describe("machine health", () => {
   });
 
   describe("a roster with no live machine is never calm", () => {
-    it("says no live machine reports when every graded machine is abandoned", () => {
+    it("says no listed machine reports when every graded machine is abandoned", () => {
       const m = read(["abandoned", "abandoned", "abandoned"]);
       expect(machinesAllHealthy(m)).toBe(false);
       expect(machineHealthSentence(m)).toBe(
-        "All 3 machines coord grades are abandoned, so no live machine reports — there is no machine this view can call healthy."
+        "All 3 machines coord grades are abandoned, so no listed machine reports — there is no machine this view can call healthy."
       );
       const one = read(["abandoned"]);
       expect(machinesAllHealthy(one)).toBe(false);
       expect(machineHealthSentence(one)).toBe(
-        "The 1 machine coord grades is abandoned, so no live machine reports — there is no machine this view can call healthy."
+        "The 1 machine coord grades is abandoned, so no listed machine reports — there is no machine this view can call healthy."
       );
     });
 
@@ -841,7 +907,7 @@ describe("machine health", () => {
         ]),
       };
       expect(machinesAllHealthy(m)).toBe(false);
-      expect(machineHealthSentence(m)).toContain("no live machine reports");
+      expect(machineHealthSentence(m)).toContain("no listed machine reports");
     });
 
     it("is still calm with one live healthy machine beside abandoned ones", () => {
@@ -942,9 +1008,17 @@ describe("machine health", () => {
     expect(machineHealthSentence(read(["healthy", "healthy"]))).toBe(
       "All 2 machines report healthy."
     );
+    // The population is the live machines, never the rows: an abandoned one
+    // is in the reconcile line, not the denominator.
     expect(machineHealthSentence(read(["healthy", "abandoned"]))).toBe(
-      "1 of 2 machines reports healthy; none is degrading."
+      "The 1 machine reports healthy."
     );
+    expect(
+      machineHealthSentence(read(["degraded", "healthy", "abandoned"]))
+    ).toBe("1 of 2 machines is in a degrading state.");
+    expect(
+      machineHealthSentence(read(["healthy", "healthy", "abandoned"]))
+    ).toBe("All 2 machines report healthy.");
     // Number agreement for a roster of one.
     expect(machineHealthSentence(read(["healthy"]))).toBe(
       "The 1 machine reports healthy."

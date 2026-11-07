@@ -28,7 +28,7 @@ vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ isCoordAdmin: true, loading: false, user: { id: "u-1" } }),
 }));
 
-import { UNKNOWN_AMBER } from "@/components/console";
+import { absoluteTime, UNKNOWN_AMBER } from "@/components/console";
 import {
   FixedPresentationMode,
   NAVIGATION_ONLY_ATTRIBUTE,
@@ -56,6 +56,10 @@ function Panel({ presenting }: { presenting: boolean }) {
   );
 }
 
+const AUDIT_ID_A = "a0d17000-0000-4000-8000-00000000000a";
+const AUDIT_ID_B = "a0d17000-0000-4000-8000-00000000000b";
+const AUDIT_ID_C = "a0d17000-0000-4000-8000-00000000000c";
+
 const lastUrl = () => String(getMock.mock.calls.at(-1)?.[0] ?? "");
 
 /** Render for the operator, open the feed, and apply a resource-key search. */
@@ -67,7 +71,9 @@ async function narrowAsOperator() {
     target: { value: DEVICE_KEY },
   });
   fireEvent.click(screen.getByTestId("operator-audit-resource-key-apply"));
-  await waitFor(() => expect(lastUrl()).toContain(`resource_key=${DEVICE_KEY}`));
+  await waitFor(() =>
+    expect(lastUrl()).toContain(`resource_key=${DEVICE_KEY}`)
+  );
   return view;
 }
 
@@ -119,7 +125,7 @@ describe("OperatorAuditPanel?present=1 — a narrowed feed says so", () => {
     render(<Panel presenting />);
     fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
     await waitFor(() => expect(getMock).toHaveBeenCalled());
-    await screen.findByTestId("audit-row-aud-1");
+    await screen.findByTestId("audit-row-presented");
     expect(screen.queryByTestId("operator-audit-narrowed")).toBeNull();
     expect(lastUrl()).not.toContain("resource_key=");
   });
@@ -179,7 +185,7 @@ describe("OperatorAuditPanel — a page coord cut at its row limit says so", () 
   it("(control) says nothing when coord says nothing was cut", async () => {
     getMock.mockResolvedValue({ audit: rows(3), count: 3, truncated: false });
     await open(true);
-    await screen.findByTestId("audit-row-aud-0");
+    await screen.findAllByTestId("audit-row-presented");
     expect(screen.queryByTestId("operator-audit-truncated")).toBeNull();
   });
 });
@@ -197,7 +203,9 @@ describe("OperatorAuditPanel?present=1 — a row whose author was not recorded",
     getMock.mockResolvedValue({ audit: [NIL_ROW], count: 1 });
     render(<Panel presenting={presenting} />);
     fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
-    const row = await screen.findByTestId("audit-row-aud-nil");
+    const row = await screen.findByTestId(
+      presenting ? "audit-row-presented" : "audit-row-aud-nil"
+    );
     const toggle = row.querySelector("button[aria-expanded]");
     if (!toggle) throw new Error("the audit row has no disclosure toggle");
     fireEvent.click(toggle);
@@ -225,5 +233,142 @@ describe("OperatorAuditPanel?present=1 — a row whose author was not recorded",
     expect(marker.getAttribute("title")).toContain(
       "`resolve_operator_id(&headers)` fallback"
     );
+  });
+});
+
+describe("OperatorAuditPanel?present=1 — a presented row carries no audit id", () => {
+  const row = (audit_id: string, reason: string): AuditRow => ({
+    ...DRAIN_ROW,
+    audit_id,
+    metadata: { ...DRAIN_ROW.metadata, reason },
+  });
+  const presentedRows = () =>
+    screen.getAllByTestId("audit-row-presented").map((el) => ({
+      el,
+      open: toggle(el).getAttribute("aria-expanded") === "true",
+    }));
+  const toggle = (el: HTMLElement) =>
+    el.querySelector<HTMLElement>("button[aria-expanded]")!;
+
+  async function presentFeed(rows: AuditRow[]) {
+    getMock.mockResolvedValue({ audit: rows, count: rows.length });
+    render(<Panel presenting />);
+    fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
+    await screen.findAllByTestId("audit-row-presented");
+  }
+
+  it("keeps the id out of every attribute, the row's detail open or not", async () => {
+    await presentFeed([row(AUDIT_ID_A, "one"), row(AUDIT_ID_B, "two")]);
+    const [first] = presentedRows();
+    fireEvent.click(toggle(first!.el));
+    await screen.findByTestId("audit-detail-presented");
+
+    // The whole serialized DOM: `data-row-key`, every test id, every title.
+    expect(document.body.innerHTML).not.toContain(AUDIT_ID_A);
+    expect(document.body.innerHTML).not.toContain(AUDIT_ID_B);
+  });
+
+  it("keeps the open row on its record when a refresh removes the row above it", async () => {
+    await presentFeed([
+      row(AUDIT_ID_A, "one"),
+      row(AUDIT_ID_B, "two"),
+      row(AUDIT_ID_C, "three"),
+    ]);
+    fireEvent.click(toggle(presentedRows()[1]!.el));
+    expect(presentedRows().map((r) => r.open)).toEqual([false, true, false]);
+
+    // The row above leaves the feed: the record that was opened stays open,
+    // now in first place, and the one that moved into its place stays shut.
+    getMock.mockResolvedValue({
+      audit: [row(AUDIT_ID_B, "two"), row(AUDIT_ID_C, "three")],
+      count: 2,
+    });
+    fireEvent.click(screen.getByTestId("operator-audit-refresh"));
+    await waitFor(() => expect(presentedRows()).toHaveLength(2));
+    expect(presentedRows().map((r) => r.open)).toEqual([true, false]);
+  });
+});
+
+describe("OperatorAuditPanel?present=1 — a blast radius says what an outsider can read", () => {
+  async function presentRow(row: AuditRow): Promise<HTMLElement> {
+    getMock.mockResolvedValue({ audit: [row], count: 1 });
+    render(<Panel presenting />);
+    fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
+    const shown = await screen.findByTestId("audit-row-presented");
+    fireEvent.click(shown.querySelector("button[aria-expanded]")!);
+    return screen.getByTestId("audit-blast-presented");
+  }
+
+  it("withholds a commit prefix and words the clearance's writer", async () => {
+    const blast = await presentRow({
+      ...DRAIN_ROW,
+      action: "pr_merge.escalate_override",
+      metadata: { head_sha: "deadbeefcafe0123", via: "agent_evidence" },
+    });
+    expect(blast).toHaveTextContent("an agent, on evidence");
+    expect(blast).toHaveTextContent("withheld in presentation mode");
+    expect(document.body.textContent).not.toContain("deadbeefcafe");
+    expect(document.body.textContent).not.toContain("agent_evidence");
+  });
+
+  it("withholds a policy's internal name and its level, and shows its version", async () => {
+    const blast = await presentRow({
+      ...DRAIN_ROW,
+      action: "fleet_policy.upsert",
+      metadata: {
+        domain: "github_hosted_ci",
+        level: "tightening_only",
+        version: 7,
+      },
+    });
+    expect(blast).toHaveTextContent("Policy version");
+    expect(blast).toHaveTextContent(/7/);
+    expect(document.body.textContent).not.toContain("github_hosted_ci");
+    expect(document.body.textContent).not.toContain("tightening_only");
+  });
+
+  it("withholds a version that is not a count", async () => {
+    await presentRow({ ...DRAIN_ROW, metadata: { version: "tbl_x" } });
+    expect(document.body.textContent).not.toContain("tbl_x");
+  });
+
+  it("reads an expiry as a time", async () => {
+    const until = "2026-10-28T10:00:00Z";
+    const blast = await presentRow({
+      ...DRAIN_ROW,
+      metadata: { drained: true, until },
+    });
+    expect(blast).toHaveTextContent(absoluteTime(until));
+    expect(blast.textContent).not.toContain(until);
+  });
+
+  it("withholds an expiry that is not a time", async () => {
+    const blast = await presentRow({
+      ...DRAIN_ROW,
+      // `Date.parse` reads this one as a date in 2001.
+      metadata: { drained: true, until: "tbl_x 12" },
+    });
+    expect(blast).toHaveTextContent("withheld in presentation mode");
+    expect(document.body.textContent).not.toContain("tbl_x");
+  });
+});
+
+describe("OperatorAuditPanel — a failed read", () => {
+  async function failedRead(presenting: boolean) {
+    getMock.mockRejectedValue(new Error("boom"));
+    render(<Panel presenting={presenting} />);
+    fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
+    await screen.findByText(/This says nothing about whether anyone changed/);
+  }
+
+  it("presenting: says nothing of the route, its role or a status", async () => {
+    await failedRead(true);
+    expect(document.body.textContent).not.toMatch(/gates this route|403/);
+  });
+
+  it("(operator) keeps what a 403 means", async () => {
+    await failedRead(false);
+    expect(document.body.textContent).toMatch(/gates this route/);
+    expect(document.body.textContent).toMatch(/a 403\s+here means/);
   });
 });

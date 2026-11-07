@@ -21,7 +21,12 @@ import {
   absoluteTime,
 } from "@/components/console";
 import type { FlowUnchangedSession } from "@/lib/api/operations/overlordFlow";
-import { sessionHref, verdictWords } from "../_lib/overlordFlowStatus";
+import {
+  lastInterventionWords,
+  sessionHref,
+  unchangedRowKey,
+  verdictWords,
+} from "../_lib/overlordFlowStatus";
 
 export function UnchangedRow({
   row,
@@ -38,10 +43,11 @@ export function UnchangedRow({
     row.reason_codes.length > 0
       ? row.reason_codes.join(", ")
       : "no reason codes";
+  const judgment = lastInterventionWords(row, absoluteTime);
   return (
     <RecordRow
       data-testid="overlord-flow-unchanged-row"
-      rowKey={row.key}
+      rowKey={unchangedRowKey(row)}
       expanded={expanded}
       onToggle={onToggle}
       identity={
@@ -77,6 +83,14 @@ export function UnchangedRow({
               ? absoluteTime(row.first_seen_at)
               : "at an unknown time"}
             .
+            {judgment ? (
+              <span
+                className="block mt-1"
+                data-testid="overlord-flow-unchanged-judgment"
+              >
+                {judgment}
+              </span>
+            ) : null}
           </p>
         }
         actions={
@@ -102,7 +116,8 @@ export function UnchangedRow({
         raw={
           <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
             key {row.key} · terminal {row.terminal_id} · claude session{" "}
-            {row.claude_session_id ?? "not proven"}
+            {row.claude_session_id ?? "not proven"} · runner port{" "}
+            {row.runner_port ?? "unknown"}
           </p>
         }
       />
