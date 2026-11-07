@@ -58,6 +58,21 @@ export default function OnboardingPage() {
       */}
       <ConnectInstalledOrg flow="connect" defaultOrg={defaultOrg} />
       <MergeOrchestrationOnboarding />
+      <section data-testid="coord-onboarding-github-expectations">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          What you&apos;ll see on GitHub
+        </h2>
+        <ul className="mt-2 list-disc pl-5 space-y-1 text-sm">
+          <li>Coord lands pull requests on its own when their checks pass.</li>
+          <li>
+            GitHub reviews are optional and do not decide whether a PR lands.
+          </li>
+          <li>
+            Don&apos;t use the Merge button on GitHub; it bypasses coord&apos;s
+            merge train.
+          </li>
+        </ul>
+      </section>
     </div>
   );
 }
