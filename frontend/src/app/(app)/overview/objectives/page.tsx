@@ -22,13 +22,18 @@ import { useObjectives } from "../_hooks/useObjectives";
 import { useOverviewProject } from "../_hooks/useOverviewProject";
 import {
   groupObjectives,
-  hiddenCopy,
+  initiativeUnreadableText,
   noInitiativeWritten,
+  pageHiddenCopy,
   shortDay,
   sourceNotices,
   type InitiativeGroupModel,
 } from "../_lib/objectives";
-import type { MetricRead, ObjectivesRead } from "../_lib/objectives-api";
+import type {
+  InitiativeRead,
+  MetricRead,
+  ObjectivesRead,
+} from "../_lib/objectives-api";
 import { ObjectiveGroup } from "./_components/ObjectiveGroup";
 import type { CardEditing } from "./_components/MetricCard";
 import { DISCLOSURE, MUTED, NOTICE, SERIF, bridgeSafe } from "./_components/ui";
@@ -103,13 +108,34 @@ function InitiativeBlock({
   );
 }
 
+/** An initiative that can't be read: its title and why, and nothing it
+ *  might declare — never "Status not declared" or "declares no objectives",
+ *  which would be claims about a document nobody could read. */
+function UnreadableInitiative({ initiative }: { initiative: InitiativeRead }) {
+  const base = `overview.objectives.initiative.${bridgeSafe(initiative.name)}`;
+  return (
+    <section data-ui-bridge-id={base} data-read="unreadable">
+      <h2 className={`${SERIF} text-[1.625rem] leading-snug text-foreground`}>
+        {initiative.title}
+      </h2>
+      <p
+        className={`mt-1 ${NOTICE} ${MUTED}`}
+        role="status"
+        data-ui-bridge-id={`${base}.unreadable`}
+      >
+        {initiativeUnreadableText(initiative)}
+      </p>
+    </section>
+  );
+}
+
 function Notices({ read }: { read: ObjectivesRead }) {
   // The objectives-unreadable banner already carries the documents' reason;
   // a second notice for the same failure would say it twice.
   const notices = sourceNotices(read).filter(
     (n) => read.objectives_readable || n.key !== "intent_documents"
   );
-  const hidden = hiddenCopy(read);
+  const hidden = pageHiddenCopy(read);
   return (
     <>
       {!read.objectives_readable && (
@@ -184,6 +210,9 @@ function Objectives({
           objectives to group its measures under.
         </p>
       )}
+      {model.unreadable.map((initiative) => (
+        <UnreadableInitiative key={initiative.name} initiative={initiative} />
+      ))}
       {model.live.map((group) => (
         <InitiativeBlock
           key={group.initiative.name}
@@ -195,8 +224,7 @@ function Objectives({
       {model.earlier.length > 0 && (
         <details data-ui-bridge-id="overview.objectives.earlier">
           <summary className={DISCLOSURE}>
-            Earlier and other initiatives (
-            {read.earlier_initiatives_count || model.earlier.length})
+            Earlier and other initiatives ({model.earlier.length})
           </summary>
           <div className="mt-6 space-y-12">
             {model.earlier.map((group) => (

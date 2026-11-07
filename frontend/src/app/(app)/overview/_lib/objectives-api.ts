@@ -4,54 +4,43 @@
  * (plan `2026-10-06-overview-objectives-view` D3). The server does every join
  * and every YAML parse; the browser only presents what it is given.
  *
- * Hand-mirrored, like the overview's other derived reads (`timeline-api.ts`,
- * `estimate-api.ts`): overview routes are not in the generated-types set.
+ * The route IS in the generated-types set (`generated-types.ts` carries
+ * `/api/v1/overview/objectives` and every schema below). The literal unions
+ * are taken from it, so a status or reason the backend adds reaches every
+ * exhaustive `switch` here as a type error. The object shapes stay written out
+ * by hand: the generated set marks every field with a server-side default
+ * optional (`serves_unknown?: string[]`), though the server always sends it,
+ * and deriving them would need a deep `Required` mapping over nested
+ * references. Keep them in step with the generated schemas by hand.
  */
 
 import { httpClient } from "@/services/service-factory";
 import { OVERVIEW_API } from "@/components/overview/editing/api";
+import type { components } from "@/lib/api-client/generated-types";
+
+type Schemas = components["schemas"];
 
 export const OBJECTIVES_URL = `${OVERVIEW_API}/objectives`;
 
-export type IntentDocState = "authored" | "skeleton" | "unknown" | "unreadable";
-export type SourceQueryType =
-  | "named"
-  | "http"
-  | "manual"
-  | "untyped"
-  | "absent";
-export type SourceStatus = "ok" | "degraded" | "unavailable" | "truncated";
-export type Verdict = "met" | "missed" | "unknown";
+export type IntentDocState = Schemas["MetricRead"]["state"];
+export type SourceQueryType = Schemas["MetricRead"]["source_query_type"];
+export type SourceStatus = Schemas["SourceRead"]["status"];
+export type Verdict = Schemas["ResultRowRead"]["verdict"];
 /**
  * `structured`: coord's results table holds the report's rows.
  * `rows_not_recorded`: a readable result whose rows the table does not hold
  * yet (the results read SUCCEEDED). `rows_unread`: a readable result whose
  * rows the results read could not vouch for (it failed, or came back full).
  */
-export type ReportShape =
-  | "structured"
-  | "prose_only"
-  | "unreadable_block"
-  | "rows_not_recorded"
-  | "rows_unread";
-export type PlacedBy = "table" | "block" | "results" | "checkpoint_key";
-export type CheckpointStatus =
-  | "reported"
-  | "reported_prose_only"
-  | "reported_unreadable"
-  | "reported_rows_not_recorded"
-  | "awaiting"
-  | "no_report_found"
-  | "possible_report_unrecorded"
-  | "unreadable"
-  | "checkpoint_results_unreadable"
-  | "not_fully_read";
-export type FindingsReadState = "ok" | "truncated" | "unavailable" | "not_read";
-export type UnresolvedReason =
-  | "superseded_or_missing"
-  | "read_failed"
-  | "not_read_over_limit"
-  | "invalid_id";
+export type ReportShape = Schemas["ReportRead"]["shape"];
+export type PlacedBy = Schemas["ReportRead"]["placed_by"][number];
+export type CheckpointStatus = Schemas["CheckpointResultRead"]["status"];
+export type FindingsReadState = Schemas["MetricRead"]["findings_read"];
+/**
+ * `another_project`: coord served the recorded id as a finding that is not
+ * this project's own (coord serves every project's fleet-wide findings).
+ */
+export type UnresolvedReason = Schemas["UnresolvedResultRead"]["reason"];
 
 export interface SourceRead {
   status: SourceStatus;
@@ -255,7 +244,11 @@ export interface MetricRead {
   direction: "increase" | "decrease" | null;
   direction_text: string | null;
   serves: string[];
+  /** `serves:` ids no initiative declares — only when every one was read. */
   serves_unknown: string[];
+  /** `serves:` ids no READABLE initiative declares while some initiative
+   *  can't be read: whether any declares them can't be checked. */
+  serves_unchecked: string[];
   report_topic: string | null;
   structured_reporting_since: string | null;
   source_query_type: SourceQueryType;
@@ -279,14 +272,20 @@ export interface MetricRead {
 export interface ObjectivesRead {
   tenant_id: string;
   generated_at: string;
+  /** Live first. One that can't be read is neither live nor "earlier". */
   initiatives: InitiativeRead[];
+  /** The READABLE initiatives that are not live. */
   earlier_initiatives_count: number;
   objectives_readable: boolean;
   metrics: MetricRead[];
   initiative_named_metrics: string[];
   other_metrics: string[];
   skeletons_hidden: number;
-  void_hidden: number;
+  /** Void (`mispublished: true`) metric documents, hidden — and named, so a
+   *  list of written documents can tell them from ones the read missed. */
+  void_metric_names: string[];
+  /** Void initiative documents, hidden and named the same way. */
+  void_initiative_names: string[];
   sources: ObjectivesSources;
 }
 

@@ -46,6 +46,9 @@ export function MetricSummaryList({
 }) {
   const rows = summaryMetricRows(entries, status);
   const shown = rows.map((r) => r.entry);
+  // The void METRIC documents this list actually left out — never a void
+  // initiative, and never one kept because it changed after the read.
+  const hiddenVoid = entries.length - shown.length;
   const [moving, setMoving] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
 
@@ -82,15 +85,12 @@ export function MetricSummaryList({
           </details>
         </div>
       )}
-      {status.state === "ready" && status.voidHidden > 0 && (
+      {status.state === "ready" && hiddenVoid > 0 && (
         <p
           className="text-sm text-muted-foreground"
           data-ui-bridge-id="overview.summary.success-metric.void-hidden"
         >
-          {hiddenCopy({
-            void_hidden: status.voidHidden,
-            skeletons_hidden: 0,
-          }).join(" ")}
+          {hiddenCopy({ voidDocuments: hiddenVoid, skeletons: 0 }).join(" ")}
         </p>
       )}
       <ul className="divide-y divide-border">

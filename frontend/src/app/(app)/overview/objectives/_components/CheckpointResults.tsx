@@ -6,12 +6,15 @@
  * `2026-10-06-overview-objectives-view` D5: awaiting, no report found, a
  * possible report not yet recorded, results can't be read — each its own
  * words, none ever MISSED or blank), the report inline, and the
- * per-criterion rows one disclosure down.
+ * per-criterion rows one disclosure down. Why a read failed and the
+ * validator's notes (field paths such as `rows[0].cause`) are mechanics, so
+ * they sit in "How this was checked", never on the card face (D10 R8).
  */
 
 import { Fragment } from "react";
 import {
   checkpointStatusCopy,
+  DEFINITION_UNKNOWN,
   placementDisagreement,
   shortDay,
   unresolvedResultText,
@@ -24,6 +27,50 @@ import { CriterionList } from "./CriterionRows";
 import { ReportPanel } from "./ReportPanel";
 import { TallyMarks } from "./VerdictMark";
 import { DISCLOSURE, MUTED, NOTICE, bridgeSafe } from "./ui";
+
+/** The mechanics behind a checkpoint's status line: why a read failed, and
+ *  the notes the result's validator left. One disclosure down. */
+function HowChecked({
+  why,
+  notes,
+  uiBridgeId,
+}: {
+  why: string | null;
+  notes: string[];
+  uiBridgeId: string;
+}) {
+  if (!why && notes.length === 0) return null;
+  const count =
+    notes.length === 0
+      ? ""
+      : notes.length === 1
+        ? " (1 note about the reported result)"
+        : ` (${notes.length} notes about the reported result)`;
+  return (
+    <details className="mt-1" data-ui-bridge-id={uiBridgeId}>
+      <summary className={DISCLOSURE}>How this was checked{count}</summary>
+      <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        {why && (
+          <>
+            <dt>Why</dt>
+            <dd
+              className="break-words font-mono"
+              data-ui-bridge-id={`${uiBridgeId}.why`}
+            >
+              {why}
+            </dd>
+          </>
+        )}
+        {notes.map((note, i) => (
+          <Fragment key={`${i}-${note}`}>
+            <dt>Note</dt>
+            <dd className="break-words font-mono">{note}</dd>
+          </Fragment>
+        ))}
+      </dl>
+    </details>
+  );
+}
 
 function CheckpointBlock({
   metric,
@@ -49,7 +96,16 @@ function CheckpointBlock({
             {due ? ` · due ${due}` : " · no due date declared"}
           </span>
         </p>
-        <TallyMarks tally={cp.tally} uiBridgeId={`${uiBridgeId}.tally`} />
+        {metric.frontmatter_error ? (
+          // No criteria can be declared when the definition can't be read,
+          // so a 0 / 0 / 0 tally would claim a count nobody could make.
+          <span className={MUTED} data-ui-bridge-id={`${uiBridgeId}.tally`}>
+            <span aria-hidden>? </span>
+            Criteria: {DEFINITION_UNKNOWN.toLowerCase()}
+          </span>
+        ) : (
+          <TallyMarks tally={cp.tally} uiBridgeId={`${uiBridgeId}.tally`} />
+        )}
       </div>
       {!cp.declared && (
         <p className={MUTED}>
@@ -64,10 +120,12 @@ function CheckpointBlock({
       >
         {copy.unknown && <span aria-hidden>? </span>}
         {copy.text}
-        {copy.detail && (
-          <span className="block text-xs">Why: {copy.detail}</span>
-        )}
       </p>
+      <HowChecked
+        why={copy.detail}
+        notes={cp.report?.block_warnings ?? []}
+        uiBridgeId={`${uiBridgeId}.checked`}
+      />
       {disagreement && (
         <p
           className={`mt-1 ${MUTED}`}
@@ -93,14 +151,6 @@ function CheckpointBlock({
           uiBridgeId={`${uiBridgeId}.report`}
         />
       )}
-      {cp.report?.block_warnings.length ? (
-        <p className={`mt-1 text-xs text-muted-foreground`}>
-          {cp.report.block_warnings.length === 1
-            ? "1 note about the reported result"
-            : `${cp.report.block_warnings.length} notes about the reported result`}
-          : {cp.report.block_warnings.join("; ")}
-        </p>
-      ) : null}
       <details className="mt-1" data-ui-bridge-id={`${uiBridgeId}.criteria`}>
         <summary className={DISCLOSURE}>Show each criterion</summary>
         <div className="mt-1">
@@ -108,6 +158,7 @@ function CheckpointBlock({
             metric={metric}
             items={cp.criteria}
             undeclared={undeclared}
+            undeclaredReport={cp.report}
             uiBridgeId={`${uiBridgeId}.rows`}
           />
         </div>
@@ -140,6 +191,7 @@ function CheckpointBlock({
                     metric={metric}
                     items={[]}
                     undeclared={extra}
+                    undeclaredReport={r}
                     uiBridgeId={`${hid}.undeclared`}
                   />
                 )}

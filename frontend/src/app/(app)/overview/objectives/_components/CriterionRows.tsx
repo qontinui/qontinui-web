@@ -11,8 +11,9 @@
 import { Fragment } from "react";
 import {
   checkpointName,
+  DEFINITION_UNKNOWN,
   outOfDateNotice,
-  reportIdsOf,
+  reportsById,
   shortDay,
   unknownReasonText,
   VERDICT_LOOK,
@@ -20,6 +21,7 @@ import {
 import type {
   CriterionResultRead,
   MetricRead,
+  ReportRead,
   ResultRowRead,
 } from "../../_lib/objectives-api";
 import { openReport } from "./ReportPanel";
@@ -47,7 +49,8 @@ function MeasuredHow({
 }: {
   methodDeclared: string | null;
   row: ResultRowRead | null;
-  gateId?: string | null;
+  /** The gate the measuring session ran under, from the row's report. */
+  gateId: string | null;
   findingId: string | null;
   uiBridgeId: string;
 }) {
@@ -114,9 +117,10 @@ export function CriterionRow({
   const stale = outOfDateNotice(item);
   // Only offer "Open the report" for a report this card has a panel for;
   // a button that does nothing would be a broken promise.
-  const panels = reportIdsOf(metric);
+  const panels = reportsById(metric);
   const canOpen = (id: string | null | undefined): id is string =>
     !!id && panels.has(id);
+  const report = item.finding_id ? panels.get(item.finding_id) : undefined;
   return (
     <li className="py-3" data-ui-bridge-id={uiBridgeId}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -184,6 +188,7 @@ export function CriterionRow({
         <MeasuredHow
           methodDeclared={item.method}
           row={row}
+          gateId={report?.gate_id ?? null}
           findingId={item.finding_id}
           uiBridgeId={`${uiBridgeId}.method`}
         />
@@ -200,19 +205,28 @@ export function CriterionRow({
 }
 
 /** A reported row whose id the document does not declare (D5): shown,
- *  flagged, and never counted toward any declared criterion. */
+ *  flagged, and never counted toward any declared criterion. When the
+ *  definition can't be read, nothing is declared that the row could be
+ *  checked against, so it is never called "not in the document's list". */
 export function UndeclaredRow({
   row,
+  report,
+  definitionUnreadable,
   uiBridgeId,
 }: {
   row: ResultRowRead;
+  /** The report the row came in. */
+  report: ReportRead | null;
+  definitionUnreadable: boolean;
   uiBridgeId: string;
 }) {
   return (
     <li className="py-3" data-ui-bridge-id={uiBridgeId}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4">
         <p className="text-[15px] leading-snug text-foreground">
-          A reported row not in the document&rsquo;s list
+          {definitionUnreadable
+            ? "A reported row; whether the document lists it is unknown (the definition can’t be read)"
+            : "A reported row not in the document’s list"}
         </p>
         <VerdictMark
           verdict={row.verdict}
@@ -226,7 +240,8 @@ export function UndeclaredRow({
       <MeasuredHow
         methodDeclared={null}
         row={row}
-        findingId={null}
+        gateId={report?.gate_id ?? null}
+        findingId={report?.finding_id ?? null}
         uiBridgeId={`${uiBridgeId}.method`}
       />
     </li>
@@ -237,17 +252,23 @@ export function CriterionList({
   metric,
   items,
   undeclared = [],
+  undeclaredReport = null,
   uiBridgeId,
 }: {
   metric: MetricRead;
   items: CriterionResultRead[];
   undeclared?: ResultRowRead[];
+  /** The report the undeclared rows came in. */
+  undeclaredReport?: ReportRead | null;
   uiBridgeId: string;
 }) {
+  const definitionUnreadable = !!metric.frontmatter_error;
   if (items.length === 0 && undeclared.length === 0) {
     return (
       <p className={MUTED} data-ui-bridge-id={`${uiBridgeId}.none`}>
-        The document declares no criteria for this checkpoint.
+        {definitionUnreadable
+          ? `Criteria: ${DEFINITION_UNKNOWN.toLowerCase()}.`
+          : "The document declares no criteria for this checkpoint."}
       </p>
     );
   }
@@ -265,6 +286,8 @@ export function CriterionList({
         <UndeclaredRow
           key={`undeclared-${row.id}`}
           row={row}
+          report={undeclaredReport}
+          definitionUnreadable={definitionUnreadable}
           uiBridgeId={`${uiBridgeId}.undeclared-${bridgeSafe(row.id)}`}
         />
       ))}

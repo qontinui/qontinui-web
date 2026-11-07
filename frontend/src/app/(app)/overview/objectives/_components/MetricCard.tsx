@@ -92,9 +92,11 @@ function MeasureMechanics({
   metric: MetricRead;
   uiBridgeId: string;
 }) {
-  const lines: [string, string][] = [
-    ["Source of the reading", metric.source_query_type],
-  ];
+  // A definition that can't be read names no source: the served type is
+  // only the default ("absent"), which would read as a fact about it.
+  const lines: [string, string][] = metric.frontmatter_error
+    ? []
+    : [["Source of the reading", metric.source_query_type]];
   if (metric.metric) lines.push(["Metric", metric.metric]);
   if (metric.direction) lines.push(["Direction", metric.direction]);
   else if (metric.direction_text)
@@ -107,6 +109,7 @@ function MeasureMechanics({
     lines.push([`${field} could not be read`, error]);
   for (const warning of metric.frontmatter_warnings)
     lines.push(["Note", warning]);
+  if (lines.length === 0) return null;
   return (
     <details data-ui-bridge-id={uiBridgeId}>
       <summary className={DISCLOSURE}>How this is measured</summary>
@@ -224,8 +227,9 @@ export function MetricCard({
               role="status"
               data-ui-bridge-id={`${base}.definition-unreadable`}
             >
-              The measure&rsquo;s definition can&rsquo;t be read, so its target
-              and checkpoints are unknown: {metric.frontmatter_error}
+              The measure&rsquo;s definition can&rsquo;t be read, so its target,
+              baseline, checkpoints and criteria are unknown:{" "}
+              {metric.frontmatter_error}
             </p>
           )}
           <dl
@@ -244,6 +248,16 @@ export function MetricCard({
             >
               It says it serves {metric.serves_unknown.join(", ")}, which no
               initiative declares.
+            </p>
+          )}
+          {metric.serves_unchecked.length > 0 && (
+            <p
+              className={`mt-2 ${MUTED}`}
+              data-ui-bridge-id={`${base}.serves-unchecked`}
+            >
+              It says it serves {metric.serves_unchecked.join(", ")}; whether an
+              initiative declares that can&rsquo;t be checked, because the
+              project&rsquo;s objectives can&rsquo;t be fully read.
             </p>
           )}
 
