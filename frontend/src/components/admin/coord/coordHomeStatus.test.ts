@@ -1535,9 +1535,23 @@ describe("round-8 review — R8 for what the view does not know", () => {
         "a fault can be up to 1h old before coord sees it"
       );
       expect(sourceAgePhrase(slow())).not.toMatch(/may be up to/);
+      // It has no rows, so no exclusion count is said to be missing.
       expect(sourceRowReason(slow())).toBe(
-        "a fault can be up to 1h old before coord sees it · exclusions not stated"
+        "a fault can be up to 1h old before coord sees it"
       );
+      expect(sourceRowReason(slow())).not.toMatch(/exclusions/);
+    });
+
+    it("writes an odd bound to the second", () => {
+      expect(
+        sourceAgePhrase(
+          row({
+            source: "detection_bound:merge_train",
+            state: "read",
+            freshness_bound_secs: 3601,
+          })
+        )
+      ).toBe("a fault can be up to 1h 1s old before coord sees it");
     });
 
     it("says no bound is known when coord could derive none", () => {
@@ -1546,8 +1560,24 @@ describe("round-8 review — R8 for what the view does not know", () => {
       expect(sourceRowReason(unknown(), { omitUnstated: true })).toBe(
         "no detection bound known"
       );
-      expect(unstatedSummary([unknown()])).toBe(
-        "Coord stated no count of excluded rows for it."
+      expect(sourceRowReason(unknown())).toBe("no detection bound known");
+      // Neither an age bound nor an exclusion count is owed by a plane row.
+      expect(unstatedSummary([unknown()])).toBeNull();
+      expect(unstatedSummary([slow(), unknown()])).toBeNull();
+      // Beside an ordinary source, only that source is counted.
+      expect(
+        unstatedSummary([
+          unknown(),
+          row({ source: "work_units", state: "read" }),
+        ])
+      ).toBe(
+        "Coord stated no age bound for 1 of 2, and no count of excluded rows for 1 of 2."
+      );
+    });
+
+    it("labels a bare detection_bound: row without naming an area", () => {
+      expect(sourceLabel("detection_bound:")).toBe(
+        "Time for a fault on an area not named here to reach this view"
       );
     });
 

@@ -612,6 +612,12 @@ export function fullBody(overrides: Record<string, unknown> = {}) {
         exclusion_reason:
           "a fault on this plane can be up to 3600s old before coord first observes it, above the 600s fault-to-visibility target",
       },
+      // A plane coord could derive no detection bound for: `unknown`, no bound.
+      {
+        source: "detection_bound:cloud_service",
+        state: "unknown",
+        exclusion_reason: "no detection bound could be derived for this plane",
+      },
     ],
     ...overrides,
   };

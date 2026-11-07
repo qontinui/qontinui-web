@@ -1775,8 +1775,11 @@ export function sourceRowReason(
   ) {
     parts.push(sourceAgePhrase(s));
   }
+  // A detection-bound row measures a plane, not rows: it never has an
+  // exclusion count, so none is said to be missing.
   if (s.rowsExcluded !== null) parts.push(`${s.rowsExcluded} excluded`);
-  else if (!omitUnstated) parts.push("exclusions not stated");
+  else if (!omitUnstated && !isDetectionBoundSource(s.source))
+    parts.push("exclusions not stated");
   return parts.join(" · ");
 }
 
@@ -1794,7 +1797,10 @@ export function unstatedSummary(
   const noBound = sources.filter(
     (s) => s.freshnessBoundSecs === null && !isDetectionBoundSource(s.source)
   ).length;
-  const noExcl = sources.filter((s) => s.rowsExcluded === null).length;
+  // A detection-bound row has no rows, so no exclusion count is owed.
+  const noExcl = sources.filter(
+    (s) => s.rowsExcluded === null && !isDetectionBoundSource(s.source)
+  ).length;
   const of = (k: number) =>
     k === n ? (n === 1 ? "it" : `all ${n}`) : `${k} of ${n}`;
   const parts: string[] = [];
