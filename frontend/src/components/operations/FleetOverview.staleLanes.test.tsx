@@ -97,7 +97,7 @@ const nawa = (over: Partial<FleetHealthDevice>): FleetHealthDevice => ({
   ...over,
 });
 
-async function laneBadge(devices: FleetHealthDevice[]) {
+function renderFleet(devices: FleetHealthDevice[]) {
   routeEmptyRunnerFleet();
   return render(<Host devices={devices} />).container;
 }
@@ -108,7 +108,7 @@ describe("FleetOverview — per-lane sample freshness on the machine card", () =
   });
 
   it("names the silent wsl lane coord served in stale_lanes", async () => {
-    const c = await laneBadge([
+    const c = renderFleet([
       nawa({
         stale_lanes: [{ lane: "wsl", lane_instance: "Ubuntu", age_secs: 697 }],
       }),
@@ -123,7 +123,7 @@ describe("FleetOverview — per-lane sample freshness on the machine card", () =
   });
 
   it("keeps a failed read (null) UNKNOWN through the join, never []", async () => {
-    const c = await laneBadge([nawa({ state: "healthy", stale_lanes: null })]);
+    const c = renderFleet([nawa({ state: "healthy", stale_lanes: null })]);
     await vi.waitFor(() =>
       expect(
         c
@@ -131,5 +131,9 @@ describe("FleetOverview — per-lane sample freshness on the machine card", () =
           ?.getAttribute("data-operations-lane-freshness")
       ).toBe("unknown")
     );
+    // Null must arrive as null, not as absent: the badge names a failed read.
+    expect(
+      c.querySelector("[data-operations-lane-freshness]")?.innerHTML ?? ""
+    ).toMatch(/read failed/);
   });
 });
