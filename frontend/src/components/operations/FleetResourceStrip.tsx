@@ -93,7 +93,10 @@ import {
   useMachineAliaser,
   usePresentationMode,
 } from "@/components/presentation";
-import { deviceStateBadgeVariant } from "./FleetHealthSummary";
+import {
+  deviceStateBadgeVariant,
+  deviceStateLabel,
+} from "./FleetHealthSummary";
 import { PressureSparkline } from "./PressureSparkline";
 import { presentedFailureReason } from "./presentedFailure";
 import {
@@ -1693,7 +1696,7 @@ export function FleetResourceStrip({
                                   variant={deviceStateBadgeVariant(group.state)}
                                   data-coord-state={group.state}
                                 >
-                                  {group.state}
+                                  {deviceStateLabel(group.state)}
                                 </Badge>
                               )}
                             </span>
