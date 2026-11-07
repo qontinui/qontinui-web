@@ -68,7 +68,9 @@ class SourceRead(BaseModel):
     reason: str | None = None
     #: The metric names (or finding ids) the status is about.
     affected: list[str] = Field(default_factory=list)
-    #: ``affected`` entry → what happened to it.
+    #: ``affected`` entry → what happened to it. ``findings`` also counts here,
+    #: per measure, the other projects' findings it set aside; a measure with
+    #: only that note has no gap, so it is not in ``affected``.
     details: dict[str, str] = Field(default_factory=dict)
 
 
@@ -92,8 +94,10 @@ class ObjectiveRead(BaseModel):
 
     id: str
     text: str
-    #: The shown metrics whose ``serves:`` names this id. Empty means "No
-    #: measure declared for this objective yet", never a blank group.
+    #: The shown metrics whose ``serves:`` names this id. Empty is never a
+    #: blank group: "No measure declared for this objective yet" when every
+    #: shown metric's ``serves:`` could be read, otherwise that no READABLE
+    #: measure declares it and how many can't be read.
     metric_names: list[str]
 
 
@@ -117,6 +121,9 @@ class InitiativeRead(BaseModel):
     #: Names in ``success_metrics`` with no shown metric document.
     missing_metric_names: list[str] = Field(default_factory=list)
     frontmatter_error: str | None = None
+    #: An ``in_scope`` or ``success_metrics`` entry here (an item with no
+    #: quoted id included) leaves what the initiative declares unknown, so
+    #: ``objectives_readable`` is false — never "declares no objectives".
     field_errors: dict[str, str] = Field(default_factory=dict)
     frontmatter_warnings: list[str] = Field(default_factory=list)
 
