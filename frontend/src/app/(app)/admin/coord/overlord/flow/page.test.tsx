@@ -602,9 +602,9 @@ describe("/admin/coord/overlord/flow", () => {
       render(<CoordOverlordFlowPage />);
       const rows = await screen.findAllByTestId("overlord-flow-versions-row");
       expect(rows).toHaveLength(2);
-      expect(rows[0]).toHaveTextContent("2d0c39d0d5");
+      expect(rows[0]).toHaveTextContent("9f86d08188");
       expect(rows[0]).toHaveTextContent("no data");
-      expect(rows[1]).toHaveTextContent("none recorded");
+      expect(rows[1]).toHaveTextContent("not read");
       expect(rows[1]).toHaveTextContent("1h 30m");
       expect(fetchFlow).toHaveBeenCalledTimes(1);
     });
