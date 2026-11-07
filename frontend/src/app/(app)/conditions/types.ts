@@ -11,15 +11,23 @@
 /**
  * Terminal status of the most recent run for a group (drives the status
  * badge). `running` is transient; a group that has never run reports no
- * status (`null`/absent) which the UI renders as "Never run".
+ * status (`null`/absent) which the UI renders as "Never run". `unknown` means
+ * the run produced no verdict that can be trusted (no report arrived, the
+ * check never ran, or a condition got no verdict): it is never a pass.
+ *
+ * The wire is wider than this union: the backend proxy passes coord's status
+ * through unchanged, so `StatusBadge` renders any other word as itself.
  */
-export type ConditionStatus = "pass" | "fail" | "error" | "running";
+export type ConditionStatus = "pass" | "fail" | "error" | "running" | "unknown";
 
 /** How a run was triggered. */
 export type ConditionRunTrigger = "manual" | "scheduled";
 
-/** Per-condition verdict inside a completed run. */
-export type ConditionVerdict = "pass" | "fail";
+/**
+ * Per-condition verdict inside a completed run. `unknown` means the condition
+ * could not be judged; like any word outside this union, it is never a pass.
+ */
+export type ConditionVerdict = "pass" | "fail" | "unknown";
 
 /**
  * Optional auth-setup blob stored on a group. Kept as a free-form JSON object
@@ -62,11 +70,36 @@ export interface ConditionGroupDetail extends ConditionGroup {
   conditions: Condition[];
 }
 
+/** What the check agent observed for one condition, with an optional note. */
+export interface ConditionEvidence {
+  note?: string;
+  observed: string;
+}
+
 /** One condition's outcome inside a completed run. */
 export interface ConditionRunResult {
   condition_id: string;
   verdict: ConditionVerdict;
-  evidence: string;
+  /**
+   * A plain string, or `{note, observed}`. `null` or absent when the agent
+   * sent none (coord stores a report's evidence as optional).
+   */
+  evidence?: string | ConditionEvidence | null;
+}
+
+/**
+ * How much of what a run was dispatched with got a verdict. Coord serves it
+ * once it derives a run's status from coverage; older runs carry none.
+ */
+export interface ConditionRunCoverage {
+  /** Conditions the run needs a verdict for. */
+  expected: number;
+  /** Conditions that got a verdict. */
+  reported: number;
+  /** Conditions whose verdict is unknown, the missing ones included. */
+  unknown: number;
+  /** Ids of the conditions that got no verdict at all. */
+  missing?: string[];
 }
 
 /** A single execution of a group, as returned by the run endpoints. */
@@ -79,6 +112,19 @@ export interface ConditionRun {
   results?: ConditionRunResult[] | null;
   summary?: string | null;
   device_id?: string | null;
+  /** `null` while the run is still running. */
+  coverage?: ConditionRunCoverage | null;
+  /**
+   * The status the check agent itself reported. Coord derives `status` from
+   * the verdicts, so this is only ever a claim, and it can be any word.
+   */
+  claimed_status?: string | null;
+  /** Why the run reads unknown: a code from the shared unknown-code set. */
+  unknown_reason?: string | null;
+  /** What ended the run there, e.g. `no_report_within_deadline`. */
+  unknown_detail?: string | null;
+  /** When the agent committed its check plan, before any verdict counted. */
+  plan_committed_at?: string | null;
 }
 
 /** `POST /groups/{group_id}/run` response. */

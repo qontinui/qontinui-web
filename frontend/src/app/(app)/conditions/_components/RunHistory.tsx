@@ -7,11 +7,17 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  CircleHelp,
   RefreshCw,
   XCircle,
 } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
-import type { Condition, ConditionRun, ConditionRunResult } from "../types";
+import type {
+  Condition,
+  ConditionRun,
+  ConditionRunCoverage,
+  ConditionRunResult,
+} from "../types";
 
 interface RunHistoryProps {
   groupId: string;
@@ -42,11 +48,88 @@ function fmtDuration(
   return `${mins}m ${secs % 60}s`;
 }
 
+/** "4 of 5 conditions reported · 1 unknown". */
+function coverageLine(coverage: ConditionRunCoverage): string {
+  const noun = coverage.expected === 1 ? "condition" : "conditions";
+  const reported = `${coverage.reported} of ${coverage.expected} ${noun} reported`;
+  return coverage.unknown > 0
+    ? `${reported} · ${coverage.unknown} unknown`
+    : reported;
+}
+
 /**
- * Recent runs for the selected group. Each row shows status, trigger, and
- * timestamps; expanding a row reveals per-condition pass/fail + evidence and
- * the run summary (fetched lazily via `getRun` when the list row omits
- * `results`).
+ * The mark beside a verdict. Only `pass` and `fail` get the check and the
+ * cross: an `unknown`, or any word this page does not know, gets a neutral
+ * mark, so it never reads as a fail.
+ */
+function VerdictMark({ verdict }: { verdict: string }) {
+  if (verdict === "pass") {
+    return <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />;
+  }
+  if (verdict === "fail") {
+    return <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />;
+  }
+  return (
+    <CircleHelp className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+  );
+}
+
+/** How a non-pass, non-fail verdict is named in text; `null` for those two. */
+function verdictLabel(verdict: string): string | null {
+  if (verdict === "pass" || verdict === "fail") return null;
+  return verdict === "unknown" ? "Unknown" : verdict;
+}
+
+/** A verdict's evidence: a plain string, or what was observed plus a note. */
+function Evidence({ evidence }: { evidence: ConditionRunResult["evidence"] }) {
+  if (!evidence) return null;
+  if (typeof evidence === "string") {
+    return <p className="text-xs text-muted-foreground">{evidence}</p>;
+  }
+  // Read defensively: the proxy passes coord's JSON through unchecked.
+  const observed =
+    typeof evidence.observed === "string" ? evidence.observed : "";
+  const note = typeof evidence.note === "string" ? evidence.note : "";
+  if (!observed && !note) return null;
+  return (
+    <div className="space-y-0.5 text-xs text-muted-foreground">
+      {observed && <p>Observed: {observed}</p>}
+      {note && <p>Note: {note}</p>}
+    </div>
+  );
+}
+
+interface VerdictRowProps {
+  condition: string;
+  verdict: string;
+  /** Text naming a non-pass, non-fail verdict. */
+  label: string | null;
+  evidence?: ConditionRunResult["evidence"];
+}
+
+function VerdictRow({ condition, verdict, label, evidence }: VerdictRowProps) {
+  return (
+    <li className="flex items-start gap-2">
+      <VerdictMark verdict={verdict} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm">
+          {condition}
+          {label && (
+            <span className="ml-2 text-xs text-muted-foreground">{label}</span>
+          )}
+        </p>
+        <Evidence evidence={evidence} />
+      </div>
+    </li>
+  );
+}
+
+/**
+ * Recent runs for the selected group. Each row shows status (with the reason
+ * a run reads unknown), trigger, and timestamps; expanding a row reveals how
+ * many conditions got a verdict, each verdict with its evidence (any condition
+ * that got none is listed too), and the run summary — fetched lazily via
+ * `getRun` when the list row omits `results`.
  */
 export function RunHistory({
   groupId,
@@ -137,9 +220,20 @@ function RunRow({ run, getRun, conditionText }: RunRowProps) {
     }
   };
 
+  const shown = detail ?? run;
   const results: ConditionRunResult[] = detail?.results ?? [];
   const summary = detail?.summary ?? run.summary ?? null;
   const duration = fmtDuration(run.started_at, run.finished_at);
+  const coverage = shown.coverage ?? null;
+  // Conditions that got no verdict, unless coord also served them as results.
+  const missing = (coverage?.missing ?? []).filter(
+    (id) => !results.some((res) => res.condition_id === id)
+  );
+  // The agent's own word is shown only where coord's verdict disagrees with it.
+  const claimed =
+    shown.claimed_status && shown.claimed_status !== shown.status
+      ? shown.claimed_status
+      : null;
 
   return (
     <li className="rounded-lg border border-border bg-card">
@@ -154,7 +248,11 @@ function RunRow({ run, getRun, conditionText }: RunRowProps) {
         ) : (
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
         )}
-        <StatusBadge status={run.status} />
+        <StatusBadge
+          status={run.status}
+          reason={run.unknown_reason}
+          detail={run.unknown_detail}
+        />
         <span className="text-xs capitalize text-muted-foreground">
           {run.trigger}
         </span>
@@ -166,6 +264,12 @@ function RunRow({ run, getRun, conditionText }: RunRowProps) {
 
       {expanded && (
         <div className="space-y-3 border-t border-border px-3 py-3">
+          {coverage && (
+            <p className="text-xs text-muted-foreground">
+              {coverageLine(coverage)}
+            </p>
+          )}
+
           {summary && (
             <p className="text-sm text-muted-foreground">{summary}</p>
           )}
@@ -175,37 +279,29 @@ function RunRow({ run, getRun, conditionText }: RunRowProps) {
               <Skeleton className="h-6 w-full" />
               <Skeleton className="h-6 w-3/4" />
             </div>
-          ) : results.length === 0 ? (
+          ) : results.length === 0 && missing.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               No per-condition results recorded for this run.
             </p>
           ) : (
             <ul className="space-y-2">
-              {results.map((res, i) => {
-                const pass = res.verdict === "pass";
-                return (
-                  <li
-                    key={`${res.condition_id}-${i}`}
-                    className="flex items-start gap-2"
-                  >
-                    {pass ? (
-                      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
-                    ) : (
-                      <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm">
-                        {conditionText(res.condition_id)}
-                      </p>
-                      {res.evidence && (
-                        <p className="text-xs text-muted-foreground">
-                          {res.evidence}
-                        </p>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
+              {results.map((res, i) => (
+                <VerdictRow
+                  key={`${res.condition_id}-${i}`}
+                  condition={conditionText(res.condition_id)}
+                  verdict={res.verdict}
+                  label={verdictLabel(res.verdict)}
+                  evidence={res.evidence}
+                />
+              ))}
+              {missing.map((id) => (
+                <VerdictRow
+                  key={`missing-${id}`}
+                  condition={conditionText(id)}
+                  verdict="unknown"
+                  label="No verdict reported"
+                />
+              ))}
             </ul>
           )}
 
@@ -213,6 +309,7 @@ function RunRow({ run, getRun, conditionText }: RunRowProps) {
             <span>Started: {fmtTime(run.started_at)}</span>
             <span>Finished: {fmtTime(run.finished_at)}</span>
             {run.device_id && <span>Device: {run.device_id}</span>}
+            {claimed && <span>Agent claimed: {claimed}</span>}
           </div>
         </div>
       )}
