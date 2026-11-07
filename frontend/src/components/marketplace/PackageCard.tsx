@@ -162,7 +162,7 @@ export function PackageCard({
         {/* License */}
         {!compact && (
           <div className="mt-2 text-xs text-text-muted">
-            License: {pkg.license}
+            License: {pkg.license ?? "Unknown"}
           </div>
         )}
       </CardContent>

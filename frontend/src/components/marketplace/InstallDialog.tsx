@@ -250,7 +250,11 @@ export function InstallDialog({
                       issues={selectedVersion.security_scan.issues}
                     />
                   )}
-                  {scan.status === "unknown" && (
+                  {/* Retry re-reads the version list, so it is offered only
+                      when that read failed. A served version whose scan is
+                      `unknown` keeps its label: a refetch would serve the
+                      same scan. */}
+                  {versionsFailed && (
                     <Button
                       variant="outline"
                       size="sm"

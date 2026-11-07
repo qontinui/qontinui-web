@@ -37,6 +37,7 @@ type Schemas = components["schemas"];
 type BackendPackageSearchResult = Schemas["PackageSearchResult"];
 type BackendPackageListResponse = Schemas["PackageListResponse"];
 type BackendPopularPackageResponse = Schemas["PopularPackageResponse"];
+type PackageRead = Schemas["PackageRead"];
 type PackageDetailRead = Schemas["PackageDetailRead"];
 type VersionRead = Schemas["VersionRead"];
 type BackendInstallResponse = Schemas["InstallResponse"];
@@ -233,8 +234,8 @@ export class CodePackageService {
       throw new Error(error.detail || "Failed to create package");
     }
 
-    const backendData = await response.json();
-    return this.transformBackendPackageToFrontend(backendData);
+    const backendData: PackageRead = await response.json();
+    return this.transformPackageReadToFrontend(backendData);
   }
 
   /**
@@ -276,8 +277,8 @@ export class CodePackageService {
       throw new Error("Failed to update package");
     }
 
-    const backendData = await response.json();
-    return this.transformBackendPackageToFrontend(backendData);
+    const backendData: PackageRead = await response.json();
+    return this.transformPackageReadToFrontend(backendData);
   }
 
   /**
@@ -437,7 +438,7 @@ export class CodePackageService {
         verified: pkg.is_verified,
         staff: false,
       },
-      license: (pkg.license ?? "Other") as PackageLicense,
+      ...(pkg.license ? { license: pkg.license as PackageLicense } : {}),
       visibility: "public" as const,
       // A search result names the latest version but carries no version
       // record, so `latest_version` is left absent rather than made up.
@@ -455,6 +456,33 @@ export class CodePackageService {
       deprecated: false,
       function_name: "",
     };
+  }
+
+  /**
+   * Transform the `PackageRead` the create and update routes serve. It names
+   * no latest version, so `latest_version` and `latest_version_number` stay
+   * absent and any scan read from it is `unknown`.
+   */
+  private transformPackageReadToFrontend(pkg: PackageRead): CodePackage {
+    const basePackage = this.transformBackendPackageToFrontend({
+      id: pkg.id,
+      name: pkg.name,
+      slug: pkg.slug,
+      description: pkg.description,
+      author_id: pkg.author_id,
+      category_id: pkg.category_id ?? null,
+      category_name: pkg.category?.name ?? null,
+      license: pkg.license ?? null,
+      tags: pkg.tags ?? [],
+      is_verified: pkg.is_verified,
+      total_downloads: pkg.total_downloads,
+      avg_rating: pkg.avg_rating,
+      latest_version: null,
+      created_at: pkg.created_at,
+    });
+    // `null` would read "no published version"; the payload does not say.
+    delete basePackage.latest_version_number;
+    return { ...basePackage, updated_at: pkg.updated_at };
   }
 
   /**
@@ -721,7 +749,8 @@ function unscannedVersion(fields: {
 
 /**
  * The package an installation payload names. It carries no latest-version
- * record, so `latest_version` and `latest_version_number` stay absent.
+ * record, so `latest_version` and `latest_version_number` stay absent; no
+ * category, so it reads `other`; and no licence, so `license` stays absent.
  */
 function installedPackageShell(
   packageId: number,
@@ -738,10 +767,9 @@ function installedPackageShell(
     slug: fields.slug,
     name: fields.name,
     description: fields.description,
-    category: "utilities",
+    category: "other",
     tags: [],
     author: { id: "", username: "", verified: false, staff: false },
-    license: "MIT",
     visibility: "public",
     created_at: fields.created_at,
     updated_at: fields.updated_at,

@@ -19,6 +19,7 @@ even where no database is available.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, AsyncIterator
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import httpx
@@ -152,10 +153,35 @@ async def test_popular_answers_200_not_422(
 async def test_trending_answers_200_not_422(
     client: httpx.AsyncClient, seeded_package: CodePackage
 ) -> None:
-    resp = await client.get(f"{PREFIX}/packages/trending")
+    # ``limit=100`` (the route's maximum) so other rows cannot crowd the
+    # seeded package off the page.
+    resp = await client.get(f"{PREFIX}/packages/trending", params={"limit": 100})
 
     assert resp.status_code == 200, resp.text
-    assert resp.json()["period"] == "week"
+    body = resp.json()
+    assert body["period"] == "week"
+    assert seeded_package.slug in {p["slug"] for p in body["packages"]}
+
+
+@pytest.mark.asyncio
+async def test_trending_omits_a_package_created_before_the_window(
+    client: httpx.AsyncClient,
+    seeded_package: CodePackage,
+    async_db_session: AsyncSession,
+) -> None:
+    seeded_package.created_at = datetime.now(UTC) - timedelta(days=30)
+    await async_db_session.commit()
+
+    week = await client.get(f"{PREFIX}/packages/trending", params={"limit": 100})
+    quarter = await client.get(
+        f"{PREFIX}/packages/trending", params={"days": 60, "limit": 100}
+    )
+
+    assert week.status_code == 200, week.text
+    assert seeded_package.slug not in {p["slug"] for p in week.json()["packages"]}
+    assert quarter.status_code == 200, quarter.text
+    assert quarter.json()["period"] == "all"
+    assert seeded_package.slug in {p["slug"] for p in quarter.json()["packages"]}
 
 
 # =============================================================================

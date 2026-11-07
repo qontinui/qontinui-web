@@ -244,6 +244,7 @@ export default function MarketplacePage() {
 
         {selectedPackage && (
           <InstallDialog
+            key={selectedPackage.id}
             open={installDialogOpen}
             onOpenChange={setInstallDialogOpen}
             package={selectedPackage}

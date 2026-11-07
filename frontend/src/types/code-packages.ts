@@ -232,7 +232,11 @@ export interface CodePackage {
   category: PackageCategory;
   tags: string[];
   author: PackageAuthor;
-  license: PackageLicense;
+  /**
+   * The licence as served. Absent when the payload does not carry one
+   * (installations) or the package declares none; readers render "Unknown".
+   */
+  license?: PackageLicense;
   visibility: PackageVisibility;
 
   // Versions

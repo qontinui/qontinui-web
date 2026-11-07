@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   CodePackage,
+  InstallStatus,
   PackageScanStatus,
   PackageVersion,
 } from "@/types/code-packages";
@@ -92,7 +93,16 @@ function loaded(versions: PackageVersion[]): VersionsQuery {
   };
 }
 
-function renderDialog(error?: string, installStatus?: "failed") {
+/** The progress the pages derive from the install status. */
+function progressFor(installStatus: InstallStatus): number {
+  return installStatus === "installing"
+    ? 50
+    : installStatus === "installed"
+      ? 100
+      : 0;
+}
+
+function renderDialog(error?: string, installStatus: InstallStatus = "idle") {
   return render(
     <InstallDialog
       open
@@ -101,6 +111,7 @@ function renderDialog(error?: string, installStatus?: "failed") {
       projects={[{ id: "p1", name: "Project" }]}
       onInstall={() => {}}
       installStatus={installStatus}
+      installProgress={progressFor(installStatus)}
       error={error}
     />
   );
@@ -148,6 +159,15 @@ describe("InstallDialog scan status", () => {
       expect(installButton().disabled).toBe(blocked);
     }
   );
+
+  it("a served unknown scan keeps its label and offers no retry", () => {
+    state.versions = loaded([version("unknown")]);
+    renderDialog();
+
+    expect(scanElement().dataset.scanStatus).toBe("unknown");
+    expect(screen.getByText("Scan status unavailable")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
 
   it("passed with warnings lists them and does not read as a clean pass", () => {
     state.versions = loaded([version("passed", 2)]);

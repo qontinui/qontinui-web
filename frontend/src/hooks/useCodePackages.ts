@@ -52,8 +52,14 @@ export const packageKeys = {
   lists: () => [...packageKeys.all, "list"] as const,
   list: (filters?: SearchFilters) =>
     [...packageKeys.lists(), { filters }] as const,
+  /**
+   * Every detail entry. A detail is cached under whatever the page fetched it
+   * by — the marketplace page uses the URL slug — while mutations know only
+   * the numeric id, so a mutation invalidates this prefix rather than
+   * `detail(id)`, which would miss the slug-keyed entry.
+   */
   details: () => [...packageKeys.all, "detail"] as const,
-  detail: (id: string) => [...packageKeys.details(), id] as const,
+  detail: (idOrSlug: string) => [...packageKeys.details(), idOrSlug] as const,
   popular: () => [...packageKeys.all, "popular"] as const,
   myPackages: () => [...packageKeys.all, "my-packages"] as const,
   installed: (projectId: string) =>
@@ -157,9 +163,9 @@ export function usePackages(filters?: SearchFilters) {
 }
 
 /**
- * Hook to fetch a single package by ID
+ * Hook to fetch a single package
  *
- * @param id - Package ID to fetch
+ * @param id - The package's URL slug (what `getPackage` resolves)
  * @param enabled - Whether to run the query (defaults to true)
  */
 export function usePackageDetails(id: string, enabled = true) {
@@ -264,13 +270,13 @@ export function useCreatePackage() {
 
   return useMutation({
     mutationFn: (data: CreatePackageRequest) => packageApi.createPackage(data),
-    onSuccess: (newPackage) => {
+    onSuccess: () => {
       // Invalidate lists to show new package
       queryClient.invalidateQueries({ queryKey: packageKeys.lists() });
       queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() });
-
-      // Set the new package in cache
-      queryClient.setQueryData(packageKeys.detail(newPackage.id), newPackage);
+      // The create response names no latest version, so it is not seeded as
+      // a detail entry; any cached detail is refetched instead.
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
     },
   });
 }
@@ -316,9 +322,10 @@ export function useUpdatePackage() {
         );
       }
     },
-    onSuccess: (_data, { id }) => {
-      // Refetch to ensure consistency
-      queryClient.invalidateQueries({ queryKey: packageKeys.detail(id) });
+    onSuccess: () => {
+      // Refetch to ensure consistency — the whole detail prefix, since the
+      // detail page caches under the slug, not this id.
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
       queryClient.invalidateQueries({ queryKey: packageKeys.lists() });
       queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() });
     },
@@ -343,9 +350,10 @@ export function usePublishVersion() {
       packageId: string;
       data: PublishVersionRequest;
     }) => packageApi.publishVersion(packageId, data),
-    onSuccess: (updatedPackage, { packageId }) => {
-      // Update package details with new version
-      queryClient.setQueryData(packageKeys.detail(packageId), updatedPackage);
+    onSuccess: (_updatedPackage, { packageId }) => {
+      // Refetch every detail entry (the page caches under the slug, not this
+      // id) so the new version and its scan are read from the server.
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
       queryClient.invalidateQueries({
         queryKey: packageKeys.versions(packageId),
       });
@@ -375,10 +383,9 @@ export function useInstallPackage() {
         queryKey: packageKeys.installed(variables.project_id),
       });
 
-      // Update package stats (download count)
-      queryClient.invalidateQueries({
-        queryKey: packageKeys.detail(variables.package_id),
-      });
+      // Update package stats (download count). The detail page caches
+      // under the slug, so the whole detail prefix is invalidated.
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
       queryClient.invalidateQueries({
         queryKey: packageKeys.versions(variables.package_id),
       });
@@ -410,9 +417,7 @@ export function useUninstallPackage() {
         queryKey: packageKeys.installed(variables.projectId),
       });
       // Also invalidate package details to update install count if shown
-      queryClient.invalidateQueries({
-        queryKey: packageKeys.detail(variables.packageId),
-      });
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
     },
   });
 }
@@ -436,9 +441,7 @@ export function useRatePackage() {
       });
 
       // Invalidate package details to update average rating
-      queryClient.invalidateQueries({
-        queryKey: packageKeys.detail(variables.package_id),
-      });
+      queryClient.invalidateQueries({ queryKey: packageKeys.details() });
     },
   });
 }

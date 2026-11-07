@@ -36,6 +36,7 @@ type PackageDetailRead = components["schemas"]["PackageDetailRead"];
 type VersionRead = components["schemas"]["VersionRead"];
 type ProjectPackagesResponse = components["schemas"]["ProjectPackagesResponse"];
 type InstallResponse = components["schemas"]["InstallResponse"];
+type PackageRead = components["schemas"]["PackageRead"];
 
 const PREFIX = `${ApiConfig.API_BASE_URL}/api/v1/code-packages`;
 
@@ -442,6 +443,9 @@ describe("payloads with no scan read unknown", () => {
     });
     expect(installation.package.latest_version).toBeUndefined();
     expect(installation.enabled).toBe(true);
+    // The payload names no category or licence, so none is made up.
+    expect(installation.package.category).toBe("other");
+    expect(installation.package.license).toBeUndefined();
   });
 
   it("installPackage: the install response's scan is unknown", async () => {
@@ -473,5 +477,79 @@ describe("payloads with no scan read unknown", () => {
     });
     expect(installation.package.latest_version).toBeUndefined();
     expect(installation.project_id).toBe("42");
+    expect(installation.package.category).toBe("other");
+    expect(installation.package.license).toBeUndefined();
+  });
+});
+
+/** The `PackageRead` the create and update routes serve. */
+function packageRead(overrides: Partial<PackageRead> = {}): PackageRead {
+  return {
+    id: 9,
+    name: "new-pkg",
+    slug: "new-pkg",
+    description: "A new package",
+    author_id: "4f1c2a9e-0000-4000-8000-000000000001",
+    category_id: 3,
+    license: "Apache-2.0",
+    tags: ["io"],
+    is_verified: false,
+    total_downloads: 0,
+    avg_rating: null,
+    created_at: "2026-11-04T10:00:00Z",
+    updated_at: "2026-11-05T10:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("create and update map the served PackageRead", () => {
+  it("createPackage maps every served field and names no latest version", async () => {
+    const { fetch, service } = stubClient(packageRead(), 201);
+
+    const pkg = await service.createPackage({
+      name: "new-pkg",
+      description: "A new package",
+      category: "integrations",
+      tags: ["io"],
+      license: "Apache-2.0",
+      code: "",
+      function_name: "run",
+      visibility: "public",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      `${PREFIX}/packages`,
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(pkg).toMatchObject({
+      id: "9",
+      slug: "new-pkg",
+      category: "integrations",
+      license: "Apache-2.0",
+      tags: ["io"],
+      created_at: "2026-11-04T10:00:00Z",
+      updated_at: "2026-11-05T10:00:00Z",
+    });
+    // PackageRead carries no version, so neither "no published version"
+    // (null) nor a made-up one is asserted.
+    expect(pkg).not.toHaveProperty("latest_version");
+    expect(pkg).not.toHaveProperty("latest_version_number");
+  });
+
+  it("updatePackage: no category_id reads other, no licence stays absent", async () => {
+    const served = packageRead({ license: null });
+    delete served.category_id;
+    const { fetch, service } = stubClient(served);
+
+    const pkg = await service.updatePackage("9", { description: "changed" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      `${PREFIX}/packages/9`,
+      expect.objectContaining({ method: "PUT" })
+    );
+    expect(pkg.category).toBe("other");
+    expect(pkg.license).toBeUndefined();
+    expect(pkg).not.toHaveProperty("latest_version_number");
+    expect(pkg.updated_at).toBe("2026-11-05T10:00:00Z");
   });
 });

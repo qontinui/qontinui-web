@@ -93,7 +93,7 @@ export function PackageSidebar({ pkg, onRetryScan }: PackageSidebarProps) {
         </CardHeader>
         <CardContent>
           <Badge variant="outline" className="text-sm">
-            {pkg.license}
+            {pkg.license ?? "Unknown"}
           </Badge>
         </CardContent>
       </Card>
