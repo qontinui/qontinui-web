@@ -97,8 +97,15 @@ either moves the count or, under the new body, deletes the row. Two rare cases
 can still leave a row at zero: a held row whose writer rolls back, and a row that
 a transaction already in flight under the old body takes to zero and commits
 after this statement's snapshot. Neither makes a count wrong; each costs a later read one
-extra row. The table has no index on ``n``, so this scans the rollup, which is
-small.
+extra row. The table has no index on ``n``, so this scans the whole rollup once.
+It holds one row per key, category and labeled hour, far fewer than the base
+table it summarises, though no production size was measured for this revision.
+
+It sets no ``lock_timeout``. It never waits on a row lock, and its ROW EXCLUSIVE
+table lock waits only behind DDL or an explicit LOCK on the rollup. If it fails,
+the new function is already committed and the revision is not stamped, and a
+re-run is safe: ``CREATE OR REPLACE FUNCTION``, the comment and this DELETE are
+all idempotent.
 
 ## Downgrade
 

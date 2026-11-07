@@ -496,6 +496,15 @@ def test_a_writer_racing_a_zero_row_delete_ends_exact(
             _hashtext(engine, "route_serving_safety|ok"),
             "ShareLock",
         ) in _fence_locks(engine)
+        # The deleter's trigger has already deleted the row it took to zero, so
+        # the racer below meets a deleted row and retries its insert. Under the
+        # revision 01 body the row would still be here at zero.
+        assert (
+            deleter.execute(
+                text("SELECT count(*) FROM coord.policy_outcome_counts")
+            ).scalar_one()
+            == 0
+        )
 
         thread = threading.Thread(target=racer)
         thread.start()
