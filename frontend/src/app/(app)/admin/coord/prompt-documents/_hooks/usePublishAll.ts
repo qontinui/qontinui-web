@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { readActiveTenantId } from "@/services/http-client";
 import {
   fetchAutoPublishStatus,
   previewPublishAll,
@@ -12,6 +13,7 @@ import {
   classifyPublishError,
   type PublishRefusal,
 } from "./usePromptDocumentPublications";
+import type { TenantPin } from "@/lib/api/operations/coordPromptDocuments";
 import type {
   AutoPublishStatusEntry,
   AutoPublishStatusResponse,
@@ -153,6 +155,18 @@ export function usePublishAll() {
   const [unavailable, setUnavailable] = useState<{
     refusal: PublishRefusal;
     detail: string;
+    /**
+     * The project the refused request was PINNED to (`null`: none selected).
+     * Every request that can latch is sent with its project pinned
+     * (`pinActiveTenant`): the header is set explicitly, so every attempt the
+     * client makes — the first, a retry, a replay after a token refresh —
+     * carries this same project, and the answer is about it. A `null` pin has
+     * no header to pin: it is not retried, but a replay after a token refresh
+     * still re-reads the stored project, so a `null` stamp is weaker than a
+     * project one. A reader that acts on the refusal (adopt-all offers itself
+     * only in a non-system tenant) must compare this first.
+     */
+    tenant: string | null;
   } | null>(null);
 
   /**
@@ -161,14 +175,17 @@ export function usePublishAll() {
    * Only these two. A `version_conflict` or a `kind_not_publishable` is about
    * one document and must never retire the button for the rest.
    */
-  const latch = useCallback((detail: string): boolean => {
-    const refusal = classifyPublishError(detail);
-    if (refusal === "not_system_tenant" || refusal === "not_proxied") {
-      setUnavailable({ refusal, detail });
-      return true;
-    }
-    return false;
-  }, []);
+  const latch = useCallback(
+    (detail: string, tenant: string | null): boolean => {
+      const refusal = classifyPublishError(detail);
+      if (refusal === "not_system_tenant" || refusal === "not_proxied") {
+        setUnavailable({ refusal, detail, tenant });
+        return true;
+      }
+      return false;
+    },
+    []
+  );
 
   /**
    * The preview: every candidate, each with the version it would publish.
@@ -179,68 +196,93 @@ export function usePublishAll() {
    * "nothing to publish", which is the one claim a failed read cannot support.
    */
   const loadCandidates = useCallback(async (): Promise<void> => {
+    const tenant = readActiveTenantId();
     try {
       setPreviewing(true);
-      const data = await previewPublishAll();
+      const data = await previewPublishAll({ tenant });
       setCandidates(data.candidates ?? []);
       setUnavailable(null);
     } catch (err) {
       const detail = message(err, "Failed to preview the changed documents");
-      if (!latch(detail)) toast.error(detail);
+      if (!latch(detail, tenant)) toast.error(detail);
     } finally {
       setPreviewing(false);
     }
   }, [latch]);
 
-  /** What the auto-publisher would do next, per candidate. */
-  const loadStatus = useCallback(async (): Promise<void> => {
-    // Reads now overlap (mount, a mode write, a switch write), so only the
-    // newest request may land: an older answer arriving last would put back
-    // the mode or switch the operator just changed.
-    const request = ++statusRequest.current;
-    try {
-      const data = await fetchAutoPublishStatus();
-      if (request !== statusRequest.current) return;
-      setStatus(data.candidates ?? []);
-      // The D5 switch as coord resolved it. Absent is UNKNOWN (`undefined`),
-      // never `true`: a badge must not promise a publication on a guess.
-      setPublishingEnabled(
-        typeof data.publishing_enabled === "boolean"
-          ? data.publishing_enabled
-          : undefined
-      );
-      // Coord's own count for the same set. Preferred over the array's length:
-      // if the two disagree, the array is the thing that got truncated.
-      setServedCount(
-        typeof data.count === "number"
-          ? data.count
-          : (data.candidates ?? []).length
-      );
-      // The OBSERVED worker (plan 2026-10-17 D5). Absent from an older coord,
-      // and `undefined` renders UNKNOWN — the dial never infers a healthy loop
-      // from the switch being on.
-      setWorker(data.worker ?? undefined);
-      setStatusSettled(true);
-    } catch (err) {
-      if (request !== statusRequest.current) return;
-      // A failed read observes nothing, so a previously read worker must not
-      // linger as if it were current: drop it, and the dial reads UNKNOWN.
-      setWorker(undefined);
-      setStatusSettled(true);
-      // Silent by the same rule as the latch above, and one step further: a
-      // failed status read costs an ADVISORY badge. Every non-system tenant
-      // fails it on every page load, and nothing an operator can do depends on
-      // it. The badges simply do not render, which is what "unknown" looks
-      // like here.
-      latch(message(err, "Failed to read the auto-publish status"));
-    }
-  }, [latch]);
+  /**
+   * What the auto-publisher would do next, per candidate. `pin` sends it in a
+   * named project; omitted, in the stored one.
+   */
+  const loadStatus = useCallback(
+    async (pin?: TenantPin): Promise<void> => {
+      // Reads now overlap (mount, a mode write, a switch write), so only the
+      // newest request may land: an older answer arriving last would put back
+      // the mode or switch the operator just changed.
+      const request = ++statusRequest.current;
+      const tenant = pin ? pin.tenant : readActiveTenantId();
+      try {
+        const data = await fetchAutoPublishStatus({ tenant });
+        if (request !== statusRequest.current) return;
+        setStatus(data.candidates ?? []);
+        // The D5 switch as coord resolved it. Absent is UNKNOWN (`undefined`),
+        // never `true`: a badge must not promise a publication on a guess.
+        setPublishingEnabled(
+          typeof data.publishing_enabled === "boolean"
+            ? data.publishing_enabled
+            : undefined
+        );
+        // Coord's own count for the same set. Preferred over the array's length:
+        // if the two disagree, the array is the thing that got truncated.
+        setServedCount(
+          typeof data.count === "number"
+            ? data.count
+            : (data.candidates ?? []).length
+        );
+        // The OBSERVED worker (plan 2026-10-17 D5). Absent from an older coord,
+        // and `undefined` renders UNKNOWN — the dial never infers a healthy loop
+        // from the switch being on.
+        setWorker(data.worker ?? undefined);
+        setStatusSettled(true);
+        // The status door answers 200 only to the system tenant, so a refusal
+        // latched earlier saying THIS pinned project is not the system tenant
+        // no longer holds. A refusal stamped `null` (no project; its answer
+        // may have come from a replay in whatever project was stored) is
+        // superseded too, but only by an EXPLICITLY pinned read — the page's
+        // own project. A refusal stamped with another project is left alone.
+        setUnavailable((prev) =>
+          prev !== null &&
+          prev.refusal === "not_system_tenant" &&
+          (prev.tenant === tenant ||
+            (prev.tenant === null && pin !== undefined && tenant !== null))
+            ? null
+            : prev
+        );
+      } catch (err) {
+        if (request !== statusRequest.current) return;
+        // A failed read observes nothing, so a previously read worker must not
+        // linger as if it were current: drop it, and the dial reads UNKNOWN.
+        setWorker(undefined);
+        setStatusSettled(true);
+        // Silent by the same rule as the latch above, and one step further: a
+        // failed status read costs an ADVISORY badge. Every non-system tenant
+        // fails it on every page load, and nothing an operator can do depends on
+        // it. The badges simply do not render, which is what "unknown" looks
+        // like here.
+        latch(message(err, "Failed to read the auto-publish status"), tenant);
+      }
+    },
+    [latch]
+  );
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    await loadStatus();
-    setLoading(false);
-  }, [loadStatus]);
+  const reload = useCallback(
+    async (pin?: TenantPin) => {
+      setLoading(true);
+      await loadStatus(pin);
+      setLoading(false);
+    },
+    [loadStatus]
+  );
 
   useEffect(() => {
     void reload();
@@ -267,6 +309,7 @@ export function usePublishAll() {
         // Verbatim from the dry run. This is the optimistic lock.
         expected_version: candidate.current_version,
       }));
+      const tenant = readActiveTenantId();
       try {
         setPublishing(true);
         // `dry_run: false` is written by the client function, never omitted:
@@ -277,7 +320,8 @@ export function usePublishAll() {
         // 26 documents at once.
         const result = await publishAllPromptDocuments(
           releaseNote.trim() ? releaseNote.trim() : null,
-          items
+          items,
+          { tenant }
         );
         const results = result.results ?? [];
         const published = results.filter(
@@ -300,7 +344,7 @@ export function usePublishAll() {
         return result;
       } catch (err) {
         const detail = message(err, "Failed to publish the changed documents");
-        if (!latch(detail)) toast.error(detail);
+        if (!latch(detail, tenant)) toast.error(detail);
         return null;
       } finally {
         setPublishing(false);
@@ -337,12 +381,18 @@ export function usePublishAll() {
       name: string,
       mode: PublishMode
     ): Promise<boolean> => {
+      const tenant = readActiveTenantId();
       try {
         setSavingMode(true);
-        await updatePromptDocument(kind, name, {
-          publish_mode: mode,
-          change_description: `Publish mode set to \`${mode}\` by an operator`,
-        });
+        await updatePromptDocument(
+          kind,
+          name,
+          {
+            publish_mode: mode,
+            change_description: `Publish mode set to \`${mode}\` by an operator`,
+          },
+          { tenant }
+        );
         setModeSchemaPending(null);
         toast.success(`${kind}/${name} now publishes: ${mode}.`);
         // The badges key on the served mode, so the status read is re-taken:
@@ -360,7 +410,7 @@ export function usePublishAll() {
               "rather than degrading, because a decision the schema cannot " +
               "hold must not look like it was saved."
           );
-        } else if (!latch(detail)) {
+        } else if (!latch(detail, tenant)) {
           toast.error(detail);
         }
         return false;

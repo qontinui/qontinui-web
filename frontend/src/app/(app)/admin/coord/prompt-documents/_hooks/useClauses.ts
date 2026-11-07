@@ -42,8 +42,15 @@ export function useClauses(
   kind: PromptDocumentKind,
   name: string,
   enabled: boolean,
-  onAttrsSaved?: () => void
+  onAttrsSaved?: () => void,
+  /**
+   * Checked before every write; `false` sends nothing (the caller says why).
+   * The prompt-documents page passes its cross-tab guard here, so a clause
+   * write cannot land in a project another tab switched to.
+   */
+  canWrite?: () => boolean
 ) {
+  const blocked = () => canWrite !== undefined && !canWrite();
   const [clauses, setClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -68,6 +75,7 @@ export function useClauses(
   }, [load]);
 
   const createClause = async (body: ClauseCreate): Promise<boolean> => {
+    if (blocked()) return false;
     try {
       setSaving(true);
       await createPromptDocumentClause(kind, name, body);
@@ -86,6 +94,7 @@ export function useClauses(
     clauseId: string,
     body: ClauseUpdate
   ): Promise<boolean> => {
+    if (blocked()) return false;
     try {
       setSaving(true);
       await updatePromptDocumentClause(kind, name, clauseId, body);
@@ -101,6 +110,7 @@ export function useClauses(
   };
 
   const deleteClause = async (clauseId: string): Promise<boolean> => {
+    if (blocked()) return false;
     try {
       setSaving(true);
       await deletePromptDocumentClause(kind, name, clauseId);
@@ -117,6 +127,7 @@ export function useClauses(
 
   /** Persist a new order (array of clause_ids). Optimistic: re-fetches after. */
   const reorderClauses = async (clauseIds: string[]): Promise<boolean> => {
+    if (blocked()) return false;
     try {
       setSaving(true);
       await reorderPromptDocumentClauses(kind, name, clauseIds);
@@ -139,6 +150,7 @@ export function useClauses(
   const importCandidates = async (
     candidates: ClauseCreate[]
   ): Promise<number> => {
+    if (blocked()) return 0;
     let created = 0;
     const failures: string[] = [];
     try {
@@ -176,6 +188,7 @@ export function useClauses(
    * REPLACES the stored attrs object with it wholesale.
    */
   const saveAttrs = async (attrs: PromptDocumentAttrs): Promise<boolean> => {
+    if (blocked()) return false;
     try {
       setSaving(true);
       // Safe to re-issue (`idempotent: true` in the client):

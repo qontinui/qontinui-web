@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  type TenantPin,
   createPromptDocument,
   fetchPromptDocument,
   fetchPromptDocumentVersion,
@@ -41,31 +42,74 @@ function message(err: unknown, fallback: string): string {
  * empty list means "cannot see", not "nothing is there"). Neither is flattened
  * into a confident "no documents" empty state.
  */
-export function usePromptDocuments() {
+export function usePromptDocuments(
+  options: {
+    /**
+     * The project every list read without a pin of its own is sent in —
+     * the re-read after each row write included — so the rows on screen stay
+     * that project's whichever project another tab stores. Omitted (or while
+     * the caller cannot know it yet), reads go in the stored project.
+     */
+    listPin?: TenantPin;
+  } = {}
+) {
+  // The pin as a ref, so `loadDocuments` stays stable. Synced in an effect —
+  // declared before the mount load below, so it runs first — rather than
+  // written during render.
+  const listPinRef = useRef<TenantPin | undefined>(options.listPin);
+  const hasListPin = options.listPin !== undefined;
+  const listPinTenant = options.listPin?.tenant;
+  useEffect(() => {
+    listPinRef.current = hasListPin
+      ? { tenant: listPinTenant ?? null }
+      : undefined;
+  }, [hasListPin, listPinTenant]);
   const [documents, setDocuments] = useState<PromptDocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [degraded, setDegraded] = useState<string | null>(null);
 
-  const loadDocuments = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await listPromptDocuments();
-      const items = (data.documents ?? [])
-        .slice()
-        .sort((a, b) => (a.description ?? a.name).localeCompare(b.description ?? b.name));
-      setDocuments(items);
-      setDegraded(data.degraded ?? null);
-      setError(null);
-    } catch (err) {
-      // Keep the last-good list on screen rather than blanking it; the banner
-      // says the view is stale.
-      setError(message(err, "Failed to load prompt documents"));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  /**
+   * Re-read the list. Resolves to what coord just served — the documents AND
+   * its `degraded` reason, because a degraded answer can carry an empty list
+   * that means "unknown", not "none" — or `null` when the read failed. A caller
+   * that needs THIS read (the adopt-all preview pins versions from it) is not
+   * left guessing whether state has settled. `pin` sends it in the pinned
+   * project (`pinActiveTenant`: a project id on every attempt; a `null` pin is
+   * not retried, though a token-refresh replay re-reads the stored project);
+   * omitted, it goes in the hook's `listPin`, else the stored project.
+   */
+  const loadDocuments = useCallback(
+    async (
+      pin?: TenantPin
+    ): Promise<{
+      documents: PromptDocumentSummary[];
+      degraded: string | null;
+    } | null> => {
+      try {
+        setLoading(true);
+        const data = await listPromptDocuments(pin ?? listPinRef.current);
+        const items = (data.documents ?? [])
+          .slice()
+          .sort((a, b) =>
+            (a.description ?? a.name).localeCompare(b.description ?? b.name)
+          );
+        setDocuments(items);
+        setDegraded(data.degraded ?? null);
+        setError(null);
+        return { documents: items, degraded: data.degraded ?? null };
+      } catch (err) {
+        // Keep the last-good list on screen rather than blanking it; the banner
+        // says the view is stale.
+        setError(message(err, "Failed to load prompt documents"));
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     loadDocuments();
