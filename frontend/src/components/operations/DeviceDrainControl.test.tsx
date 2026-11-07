@@ -501,3 +501,328 @@ describe("disabledReason", () => {
     expect(unknown).toContain("read failed");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Lanes — finding f802311d-aef5-40e8-a5f8-4bd3a554b37e. The lever used to send
+// no `lanes`, so every drain and every release took BOTH lanes: an operator
+// holding only spawns on a machine took its CI away too.
+// ---------------------------------------------------------------------------
+
+type LaneSpec = { until: string; reason: string };
+
+/** A drain map entry in the lane-aware shape coord's read serves. */
+function laneDrainedState(byLane: {
+  agent?: LaneSpec;
+  ci?: LaneSpec;
+}): DeviceDrainState {
+  const held = (["agent", "ci"] as const).flatMap((lane) => {
+    const spec = byLane[lane];
+    return spec ? [{ lane, spec }] : [];
+  });
+  const last = held.reduce((a, b) =>
+    Date.parse(b.spec.until) > Date.parse(a.spec.until) ? b : a
+  ).spec;
+  const read = parseFleetDrain({
+    state: "known",
+    drained: [
+      {
+        device_id: DEVICE,
+        until: last.until,
+        reason: last.reason,
+        drained_by: "jspinak@gmail.com",
+        drained_at: "2026-09-01T11:00:00Z",
+        lanes: held.map((h) => h.lane),
+        by_lane: Object.fromEntries(
+          held.map((h) => [
+            h.lane,
+            {
+              until: h.spec.until,
+              reason: h.spec.reason,
+              drained_by: "jspinak@gmail.com",
+              drained_at: "2026-09-01T11:00:00Z",
+            },
+          ])
+        ),
+      },
+    ],
+  });
+  return resolveDeviceDrain(read, DEVICE, NOW);
+}
+
+function fillAndSubmitDrain() {
+  fireEvent.change(screen.getByTestId("device-drain-reason"), {
+    target: { value: "hold spawns on nilan" },
+  });
+  fireEvent.change(screen.getByTestId("device-drain-until"), {
+    target: { value: toLocalInputValue(Date.now() + 3_600_000) },
+  });
+  fireEvent.click(screen.getByTestId("device-drain-submit"));
+}
+
+function postedBody(): Record<string, unknown> {
+  const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+  return JSON.parse(String(init.body));
+}
+
+describe("DeviceDrainControl — choosing the lanes to hold", () => {
+  it("defaults to both lanes, and then sends NO lanes field", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { onActed } = renderControl();
+    fireEvent.click(screen.getByTestId("device-drain-open"));
+    await screen.findByTestId("device-drain-dialog");
+    expect(screen.getByTestId("device-drain-lanes-both")).toHaveAttribute(
+      "data-state",
+      "checked"
+    );
+    expect(screen.getByTestId("device-drain-submit")).toHaveTextContent(
+      "Drain machine"
+    );
+    fillAndSubmitDrain();
+    await waitFor(() => expect(onActed).toHaveBeenCalled());
+    // Absent = both, coord's own default; `[]` would be a 400.
+    expect(postedBody()).not.toHaveProperty("lanes");
+  });
+
+  it.each([
+    ["agent", "Agent sessions"],
+    ["ci", "CI"],
+  ] as const)("holds only the %s lane when that is chosen", async (lane, label) => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { onActed } = renderControl();
+    fireEvent.click(screen.getByTestId("device-drain-open"));
+    await screen.findByTestId("device-drain-dialog");
+    fireEvent.click(screen.getByTestId(`device-drain-lanes-${lane}`));
+    expect(screen.getByTestId("device-drain-submit")).toHaveTextContent(
+      `Drain ${label} only`
+    );
+    fillAndSubmitDrain();
+    await waitFor(() => expect(onActed).toHaveBeenCalled());
+    const body = postedBody();
+    expect(body.lanes).toEqual([lane]);
+    expect(Object.keys(body).sort()).toEqual([
+      "device_id",
+      "lanes",
+      "reason",
+      "until",
+    ]);
+    expect(String(toastSuccess.mock.calls[0]?.[0])).toContain(`${label} only`);
+  });
+
+  it("resets to both lanes each time the dialog opens", async () => {
+    renderControl();
+    fireEvent.click(screen.getByTestId("device-drain-open"));
+    await screen.findByTestId("device-drain-dialog");
+    fireEvent.click(screen.getByTestId("device-drain-lanes-ci"));
+    fireEvent.click(screen.getByTestId("device-drain-cancel"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("device-drain-dialog")).toBeNull()
+    );
+    fireEvent.click(screen.getByTestId("device-drain-open"));
+    await screen.findByTestId("device-drain-dialog");
+    expect(screen.getByTestId("device-drain-lanes-both")).toHaveAttribute(
+      "data-state",
+      "checked"
+    );
+  });
+});
+
+describe("DeviceDrainControl — a row held on ONE lane", () => {
+  const agentOnly = () =>
+    laneDrainedState({
+      agent: { until: "2026-09-01T15:00:00Z", reason: "hold spawns" },
+    });
+
+  it("names the held lane and says the other is still sent work", () => {
+    renderControl({ drain: agentOnly(), now: NOW });
+    const block = screen.getByTestId("device-drain-state");
+    expect(block).toHaveTextContent("Drained — Agent sessions only");
+    expect(block).toHaveTextContent("still sends it CI-node jobs");
+    const lanes = screen.getByTestId("device-drain-lanes-held");
+    const agent = lanes.querySelector('[data-lane="agent"]');
+    const ci = lanes.querySelector('[data-lane="ci"]');
+    expect(agent).toHaveAttribute("data-held", "true");
+    expect(agent?.textContent).toContain("in 3h");
+    expect(agent?.textContent).toContain("hold spawns");
+    expect(ci).toHaveAttribute("data-held", "false");
+    expect(ci?.textContent).toContain("not held");
+  });
+
+  it("still offers Drain… for the free lane, preselecting it", async () => {
+    renderControl({ drain: agentOnly(), now: NOW });
+    expect(screen.getByTestId("device-drain-undrain")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("device-drain-open"));
+    await screen.findByTestId("device-drain-dialog");
+    expect(screen.getByTestId("device-drain-lanes-ci")).toHaveAttribute(
+      "data-state",
+      "checked"
+    );
+    expect(
+      screen.getByTestId("device-drain-lanes-already-held")
+    ).toHaveTextContent("Already held: Agent sessions");
+  });
+
+  it("releases that lane BY NAME rather than every lane", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { onActed } = renderControl({ drain: agentOnly(), now: NOW });
+    fireEvent.click(screen.getByTestId("device-drain-undrain"));
+    await screen.findByTestId("device-drain-dialog");
+    // One lane held: nothing to choose, and the scope is stated.
+    expect(screen.queryByTestId("device-drain-release-lanes")).toBeNull();
+    expect(screen.getByTestId("device-drain-release-scope")).toHaveTextContent(
+      "Releases the Agent sessions hold"
+    );
+    fireEvent.change(screen.getByTestId("device-drain-reason"), {
+      target: { value: "spawns may resume" },
+    });
+    fireEvent.click(screen.getByTestId("device-drain-submit"));
+    await waitFor(() => expect(onActed).toHaveBeenCalled());
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/fleet/undrain");
+    expect(postedBody().lanes).toEqual(["agent"]);
+  });
+});
+
+describe("DeviceDrainControl — releasing one lane of two", () => {
+  const both = () =>
+    laneDrainedState({
+      agent: { until: "2026-09-01T18:00:00Z", reason: "rebuild" },
+      ci: { until: "2026-09-01T14:00:00Z", reason: "pause ci" },
+    });
+
+  it("shows each lane's own deadline", () => {
+    renderControl({ drain: both(), now: NOW });
+    const lanes = screen.getByTestId("device-drain-lanes-held");
+    expect(lanes.querySelector('[data-lane="agent"]')?.textContent).toContain(
+      "in 6h"
+    );
+    expect(lanes.querySelector('[data-lane="ci"]')?.textContent).toContain(
+      "in 2h"
+    );
+    // Both held: no second Drain… button.
+    expect(screen.queryByTestId("device-drain-open")).toBeNull();
+  });
+
+  it("defaults the release to both lanes, sent as NO lanes field", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { onActed } = renderControl({ drain: both(), now: NOW });
+    fireEvent.click(screen.getByTestId("device-drain-undrain"));
+    await screen.findByTestId("device-drain-dialog");
+    expect(screen.getByTestId("device-drain-release-lanes-both")).toHaveAttribute(
+      "data-state",
+      "checked"
+    );
+    fireEvent.change(screen.getByTestId("device-drain-reason"), {
+      target: { value: "done" },
+    });
+    fireEvent.click(screen.getByTestId("device-drain-submit"));
+    await waitFor(() => expect(onActed).toHaveBeenCalled());
+    expect(postedBody()).not.toHaveProperty("lanes");
+  });
+
+  it("releases only CI when that is chosen, and says agent stays held", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { onActed } = renderControl({ drain: both(), now: NOW });
+    fireEvent.click(screen.getByTestId("device-drain-undrain"));
+    const dialog = await screen.findByTestId("device-drain-dialog");
+    expect(dialog).toHaveTextContent("Agent sessions stays held until");
+    fireEvent.click(screen.getByTestId("device-drain-release-lanes-ci"));
+    fireEvent.change(screen.getByTestId("device-drain-reason"), {
+      target: { value: "ci may resume" },
+    });
+    fireEvent.click(screen.getByTestId("device-drain-submit"));
+    await waitFor(() => expect(onActed).toHaveBeenCalled());
+    expect(postedBody().lanes).toEqual(["ci"]);
+    expect(String(toastSuccess.mock.calls[0]?.[0])).toContain("CI released");
+  });
+});
+
+describe("DeviceDrainControl — a read that did not say which lanes", () => {
+  it("says so, and offers only the release of every lane", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { onActed } = renderControl({ drain: drainedState(), now: NOW });
+    expect(screen.getByTestId("device-drain-lanes-unknown")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("device-drain-undrain"));
+    await screen.findByTestId("device-drain-dialog");
+    expect(screen.queryByTestId("device-drain-release-lanes")).toBeNull();
+    expect(screen.getByTestId("device-drain-release-scope")).toHaveTextContent(
+      "releases every lane"
+    );
+    fireEvent.change(screen.getByTestId("device-drain-reason"), {
+      target: { value: "done" },
+    });
+    fireEvent.click(screen.getByTestId("device-drain-submit"));
+    await waitFor(() => expect(onActed).toHaveBeenCalled());
+    expect(postedBody()).not.toHaveProperty("lanes");
+  });
+
+  it("puts no clipping class in a lane-aware drained row", () => {
+    renderControl({
+      drain: laneDrainedState({
+        ci: { until: "2026-09-01T15:00:00Z", reason: "pause ci" },
+      }),
+      now: NOW,
+    });
+    assertNoClipping(screen.getByTestId("device-drain-state"));
+  });
+});
+
+describe("DeviceDrainControl — the read changing under an open release dialog", () => {
+  const twoLanes = () =>
+    laneDrainedState({
+      agent: { until: "2026-09-01T18:00:00Z", reason: "rebuild" },
+      ci: { until: "2026-09-01T14:00:00Z", reason: "pause ci" },
+    });
+  const agentOnly = () =>
+    laneDrainedState({
+      agent: { until: "2026-09-01T18:00:00Z", reason: "rebuild" },
+    });
+
+  function rerenderWith(
+    rerender: (ui: React.ReactElement) => void,
+    onActed: () => void,
+    drain: DeviceDrainState
+  ) {
+    rerender(
+      <DeviceDrainControl
+        target={IDENTIFIED}
+        drain={drain}
+        rowHostname="spaceship-wsl"
+        onActed={onActed}
+        now={NOW}
+      />
+    );
+  }
+
+  it("releases the lane the operator CHOSE even if the other lapses meanwhile", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { onActed, rerender } = renderControl({ drain: twoLanes(), now: NOW });
+    fireEvent.click(screen.getByTestId("device-drain-undrain"));
+    await screen.findByTestId("device-drain-dialog");
+    fireEvent.click(screen.getByTestId("device-drain-release-lanes-ci"));
+    // A poll lands: CI has lapsed, only agent is held now.
+    rerenderWith(rerender, onActed, agentOnly());
+    fireEvent.change(screen.getByTestId("device-drain-reason"), {
+      target: { value: "ci may resume" },
+    });
+    fireEvent.click(screen.getByTestId("device-drain-submit"));
+    await waitFor(() => expect(onActed).toHaveBeenCalled());
+    // Never the agent lane the operator chose to keep.
+    expect(postedBody().lanes).toEqual(["ci"]);
+  });
+
+  it("does not widen a one-lane release when another lane is drained meanwhile", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const { onActed, rerender } = renderControl({ drain: agentOnly(), now: NOW });
+    fireEvent.click(screen.getByTestId("device-drain-undrain"));
+    await screen.findByTestId("device-drain-dialog");
+    // Another operator drains CI while this dialog is open.
+    rerenderWith(rerender, onActed, twoLanes());
+    expect(screen.queryByTestId("device-drain-release-lanes")).toBeNull();
+    fireEvent.change(screen.getByTestId("device-drain-reason"), {
+      target: { value: "spawns may resume" },
+    });
+    fireEvent.click(screen.getByTestId("device-drain-submit"));
+    await waitFor(() => expect(onActed).toHaveBeenCalled());
+    expect(postedBody().lanes).toEqual(["agent"]);
+  });
+});

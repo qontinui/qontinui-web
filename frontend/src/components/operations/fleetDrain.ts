@@ -83,7 +83,29 @@
  * absence. `until` is the exception: an entry without a parseable deadline is
  * not an entry at all, and is reported as an unreadable DEVICE instead.
  */
-export interface DrainEntry {
+export interface DrainEntry extends DrainLaneRecord {
+  /**
+   * The lanes coord says this drain holds (`DrainSummary.lanes`), or absent
+   * when the read did not say — a coord build predating lanes, or a lane name
+   * this build does not know. Absent is UNKNOWN, never "both" and never
+   * "none": the lever then offers only the whole-drain release.
+   */
+  lanes?: DrainLane[];
+  /**
+   * Each held lane's own record (`DrainSummary.by_lane`) — its own deadline,
+   * reason and owner, since coord writes and expires lanes independently.
+   * Absent when the read carried none; a lane listed in `lanes` with no record
+   * here falls back to the headline fields above.
+   */
+  byLane?: Partial<Record<DrainLane, DrainLaneRecord>>;
+}
+
+/**
+ * One drain record — the headline of a device's drain, or one lane's own.
+ *
+ * Coord's `DrainEntry` (`fleet_drain.rs`) has all four fields non-optional.
+ */
+export interface DrainLaneRecord {
   /** RFC 3339, verbatim from coord. Parseable by construction — see the parse. */
   until: string;
   /** Coord requires it non-blank on the write; `null` if this read lost it. */
@@ -92,6 +114,138 @@ export interface DrainEntry {
   drainedBy: string | null;
   /** RFC 3339. */
   drainedAt: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Lanes
+// ---------------------------------------------------------------------------
+
+/**
+ * A drain holds LANES (coord `fleet_drain::DrainLane`, plan
+ * `2026-09-28-machine-maintenance-pause-ci-and-drain-in-one-place` §D3):
+ *
+ * - `agent` — agent-session spawns and gate continuations;
+ * - `ci` — CI-node jobs, builds and merge-capacity dispatch.
+ *
+ * Both writes take an optional `lanes` list: ABSENT means both (what every
+ * caller written before lanes meant), and an EMPTY list is a 400. So this UI
+ * never sends `[]`, and sends nothing at all for "both" — the request the
+ * lever has always sent.
+ */
+export type DrainLane = "agent" | "ci";
+
+/** Coord's lane order (`DrainLane::ALL`). */
+export const DRAIN_LANES: readonly DrainLane[] = ["agent", "ci"];
+
+/** Operator-facing lane names. */
+export const DRAIN_LANE_LABEL: Record<DrainLane, string> = {
+  agent: "Agent sessions",
+  ci: "CI",
+};
+
+/** What holding each lane stops coord sending — the dialog's own words. */
+export const DRAIN_LANE_HELP: Record<DrainLane, string> = {
+  agent: "agent-session spawns and gate continuations",
+  ci: "CI-node jobs, builds and merge-capacity dispatch",
+};
+
+/**
+ * The lever's lane choice. `both` is the default and is sent as NO `lanes`
+ * field, so choosing nothing reproduces the request the lever always sent.
+ */
+export type DrainLaneChoice = "both" | DrainLane;
+
+/** The `lanes` field a choice puts on the wire — `undefined` means omit it. */
+export function lanesForChoice(
+  choice: DrainLaneChoice
+): DrainLane[] | undefined {
+  return choice === "both" ? undefined : [choice];
+}
+
+/** A lane list as prose: "Agent sessions", "Agent sessions and CI". */
+export function describeLanes(lanes: readonly DrainLane[] | undefined): string {
+  const named = (lanes ?? DRAIN_LANES).map((l) => DRAIN_LANE_LABEL[l]);
+  return named.join(" and ");
+}
+
+function parseLaneName(value: unknown): DrainLane | null {
+  return value === "agent" || value === "ci" ? value : null;
+}
+
+/**
+ * Read `lanes` / `by_lane` off one wire entry. A list naming a lane this
+ * build does not know is NOT narrowed to the lanes it does know — that would
+ * report a partially held machine as held on fewer lanes than coord holds —
+ * so it reads as absent (UNKNOWN), and the lever falls back to whole release.
+ */
+function parseEntryLanes(
+  value: Record<string, unknown>
+): Pick<DrainEntry, "lanes" | "byLane"> {
+  const out: Pick<DrainEntry, "lanes" | "byLane"> = {};
+  if (Array.isArray(value.lanes) && value.lanes.length > 0) {
+    const lanes = value.lanes.map(parseLaneName);
+    if (lanes.every((l): l is DrainLane => l !== null)) {
+      out.lanes = DRAIN_LANES.filter((l) => lanes.includes(l));
+    }
+  }
+  if (isRecord(value.by_lane)) {
+    const byLane: Partial<Record<DrainLane, DrainLaneRecord>> = {};
+    let unknownLane = false;
+    for (const [name, rec] of Object.entries(value.by_lane)) {
+      const lane = parseLaneName(name);
+      if (lane === null) {
+        unknownLane = true;
+        continue;
+      }
+      const parsed = parseLaneRecord(rec);
+      if (parsed) byLane[lane] = parsed;
+    }
+    if (Object.keys(byLane).length > 0) out.byLane = byLane;
+    // A record under a lane name this build does not know means `lanes`
+    // cannot be trusted as the whole story either.
+    if (unknownLane) delete out.lanes;
+  }
+  return out;
+}
+
+/**
+ * Whether a drain holds `lane` at `now`: `true`, `false`, or `null` when the
+ * read did not say which lanes are held. A consumer that cares about one lane
+ * — the spawns console about `agent`, say — must not read a CI-only drain as
+ * one that stops its work; on `null` it keeps the pre-lane reading (a drain
+ * held everything), which is what every lane-less drain in fact did.
+ */
+export function holdsLane(
+  entry: DrainEntry,
+  lane: DrainLane,
+  now: number
+): boolean | null {
+  const held = heldLanes(entry, now);
+  return held === null ? null : held.some((h) => h.lane === lane);
+}
+
+/**
+ * The lanes a drained device is held on AT `now`, each with its own record,
+ * in coord's lane order — or `null` when the read did not say which lanes are
+ * held (UNKNOWN; the lever then offers only the whole release).
+ *
+ * Coord expires lanes independently and only on read, so a lane whose own
+ * record has passed its `until` while this page held the payload is dropped
+ * here rather than rendered as still held.
+ */
+export function heldLanes(
+  entry: DrainEntry,
+  now: number
+): Array<{ lane: DrainLane; record: DrainLaneRecord }> | null {
+  if (!entry.lanes) return null;
+  const held: Array<{ lane: DrainLane; record: DrainLaneRecord }> = [];
+  for (const lane of entry.lanes) {
+    const record = entry.byLane?.[lane] ?? entry;
+    const untilMs = parseTimestamp(record.until);
+    if (untilMs !== null && untilMs <= now) continue;
+    held.push({ lane, record });
+  }
+  return held;
 }
 
 /**
@@ -192,6 +346,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * something to render as a drain.
  */
 export function parseDrainEntry(value: unknown): DrainEntry | null {
+  const record = parseLaneRecord(value);
+  if (record === null || !isRecord(value)) return null;
+  return { ...record, ...parseEntryLanes(value) };
+}
+
+/** One drain record's four fields; `null` without a parseable `until`. */
+function parseLaneRecord(value: unknown): DrainLaneRecord | null {
   if (!isRecord(value)) return null;
   const until = optionalString(value.until);
   if (until === null || parseTimestamp(until) === null) return null;

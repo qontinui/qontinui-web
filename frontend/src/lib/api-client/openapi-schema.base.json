@@ -18992,6 +18992,24 @@
             "title": "Device Id",
             "type": "string"
           },
+          "lanes": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "agent",
+                    "ci"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lanes"
+          },
           "reason": {
             "maxLength": 2000,
             "minLength": 1,
@@ -63143,6 +63161,24 @@
             "title": "Device Id",
             "type": "string"
           },
+          "lanes": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "agent",
+                    "ci"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lanes"
+          },
           "reason": {
             "maxLength": 2000,
             "minLength": 1,
@@ -102021,7 +102057,7 @@
         ]
       },
       "post": {
-        "description": "Stop coord sending one machine new work until ``until``.\n\nBody is assembled from the closed model above \u2014 never forwarded verbatim\n\u2014 because coord's ``DrainRequest`` is ``deny_unknown_fields``. ``until``\nis serialised as RFC 3339; ``device_id`` as its canonical UUID string.\n\nCoord's refusals are typed and mean different things:\n``admin_required`` (not an admin in your own tenant),\n``device_not_in_tenant`` (the drain reaches every tenant that shares the\nmachine, so the caller must be one of them), and a 400 from\n``validate_drain``. They pass through with coord's own status code so the\nconsole can tell them apart rather than rendering one \"failed\".\n\nThis does NOT stop work already running on the machine, and nothing on\nthis path may imply that it does.",
+        "description": "Stop coord sending one machine new work until ``until``.\n\nBody is assembled from the closed model above \u2014 never forwarded verbatim\n\u2014 because coord's ``DrainRequest`` is ``deny_unknown_fields``. ``until``\nis serialised as RFC 3339; ``device_id`` as its canonical UUID string.\n``lanes`` is forwarded only when the caller named some (an absent field\nis coord's \"both lanes\"); before it was declared here, the closed model\n422'd it, so no console could hold one lane without the other.\n\nCoord's refusals are typed and mean different things:\n``admin_required`` (not an admin in your own tenant),\n``device_not_in_tenant`` (the drain reaches every tenant that shares the\nmachine, so the caller must be one of them), and a 400 from\n``validate_drain``. They pass through with coord's own status code so the\nconsole can tell them apart rather than rendering one \"failed\".\n\nThis does NOT stop work already running on the machine, and nothing on\nthis path may imply that it does.",
         "operationId": "api_v1_operations_fleet_drain_post",
         "requestBody": {
           "content": {

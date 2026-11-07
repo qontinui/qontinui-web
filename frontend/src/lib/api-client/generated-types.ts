@@ -13037,6 +13037,9 @@ export interface paths {
          *     Body is assembled from the closed model above — never forwarded verbatim
          *     — because coord's ``DrainRequest`` is ``deny_unknown_fields``. ``until``
          *     is serialised as RFC 3339; ``device_id`` as its canonical UUID string.
+         *     ``lanes`` is forwarded only when the caller named some (an absent field
+         *     is coord's "both lanes"); before it was declared here, the closed model
+         *     422'd it, so no console could hold one lane without the other.
          *
          *     Coord's refusals are typed and mean different things:
          *     ``admin_required`` (not an admin in your own tenant),
@@ -35223,6 +35226,8 @@ export interface components {
              * Format: uuid
              */
             device_id: string;
+            /** Lanes */
+            lanes?: ("agent" | "ci")[] | null;
             /** Reason */
             reason: string;
             /**
@@ -55390,6 +55395,8 @@ export interface components {
              * Format: uuid
              */
             device_id: string;
+            /** Lanes */
+            lanes?: ("agent" | "ci")[] | null;
             /** Reason */
             reason: string;
         };

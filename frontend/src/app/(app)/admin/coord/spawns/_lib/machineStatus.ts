@@ -50,6 +50,7 @@ import {
 } from "@/components/operations/fleetDispatchRoles";
 import {
   formatDrainRemaining,
+  holdsLane,
   resolveDeviceDrain,
   type FleetDrainRead,
 } from "@/components/operations/fleetDrain";
@@ -128,13 +129,28 @@ function drainCell(
   const d = resolveDeviceDrain(read, deviceId, nowMs);
   switch (d.state) {
     case "drained": {
-      const until = formatDrainRemaining(d.entry.until, nowMs);
+      // A drain that holds only CI does not stop spawns: coord still sends
+      // this machine agent sessions, so it reads as taking new work here.
+      if (holdsLane(d.entry, "agent", nowMs) === false) {
+        return {
+          state: "not_drained",
+          text: "taking new work — CI held",
+          title: presenting
+            ? undefined
+            : `Drained for CI only, until ${d.entry.byLane?.ci?.until ?? d.entry.until}; agent-session spawns still reach it.`,
+          unknown: false,
+        };
+      }
+      // Spawns come back when the AGENT lane's own record ends, which can be
+      // earlier than the headline (the last lane to end).
+      const rec = d.entry.byLane?.agent ?? d.entry;
+      const until = formatDrainRemaining(rec.until, nowMs);
       return {
         state: "drained",
         text: `out of service — back ${until}`,
         title: presenting
           ? undefined
-          : `Drained until ${d.entry.until}${d.entry.reason ? ` — ${d.entry.reason}` : ""}${d.entry.drainedBy ? ` (by ${d.entry.drainedBy})` : ""}.`,
+          : `Drained until ${rec.until}${rec.reason ? ` — ${rec.reason}` : ""}${rec.drainedBy ? ` (by ${rec.drainedBy})` : ""}.`,
         unknown: false,
       };
     }

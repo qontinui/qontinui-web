@@ -54,6 +54,7 @@ import {
   type FleetHealthPayload,
 } from "@/lib/api/operations/coordFleet";
 import {
+  holdsLane,
   parseFleetDrain,
   resolveDeviceDrain,
   type FleetDrainRead,
@@ -100,6 +101,9 @@ export function runnerHintFor(
   for (const d of online) {
     const s = resolveDeviceDrain(drain, d.device_id, now);
     if (s.state !== "drained") return null;
+    // A drain that holds only CI still lets coord send this runner agent
+    // work, so it does not make the runner unavailable for a run.
+    if (holdsLane(s.entry, "agent", now) === false) return null;
   }
   return "all_drained";
 }
