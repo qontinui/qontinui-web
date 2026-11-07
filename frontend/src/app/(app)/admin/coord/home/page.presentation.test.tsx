@@ -1381,3 +1381,40 @@ describe("/admin/coord/home?present=1 — remediation on the collapsed view (q4)
     expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
   });
 });
+
+describe("/admin/coord/home?present=1 — a detection-bound source, from a body of its own", () => {
+  beforeEach(resetEnvironment);
+
+  // Built here, not from the presentation fixture's builders, so this pins
+  // the page's own labelling of a `detection_bound:<plane>` row rather than
+  // anything a shared fixture happens to carry.
+  function detectionBody() {
+    return {
+      schema: 1,
+      generated_at: new Date().toISOString(),
+      tenant_id: TENANT_ID,
+      scope: "operator",
+      does_not_know: [
+        {
+          source: "detection_bound:merge_train",
+          state: "read",
+          freshness_bound_secs: 3600,
+          as_of: new Date().toISOString(),
+        },
+        { source: "detection_bound:cloud_service", state: "unknown" },
+      ],
+    };
+  }
+
+  it("presenting: a detection-bound source is labelled through the page with an independent body", async () => {
+    await renderPresenting(detectionBody());
+    const region = screen.getByTestId("coord-home.does-not-know");
+    expect(region).toHaveTextContent(
+      "Time for a fault on merge train to reach this view"
+    );
+    expect(region).toHaveTextContent(
+      "Time for a fault on cloud service to reach this view"
+    );
+    expect(region).not.toHaveTextContent(UNLABELLED_SOURCE);
+  });
+});
