@@ -333,8 +333,8 @@ command = ["python", "scripts/ci/check_forbidden_public_schema.py"]
 name = "alembic-single-head"
 # alembic-graph-pr.yml, step "Count alembic heads". Offline textual scan of
 # backend/alembic/versions/*.py — it never imports env.py, so it costs nothing
-# and needs no database, which is exactly why this gate CAN live here while the
-# rest of backend-ci.yml's `test` job (gap 1 above) cannot.
+# and needs no database or test session, so it can live here whatever becomes
+# of the `test` job's own blockers (gap 1 above).
 #
 # FIVE lanes now share this script: the required PR check, this manifest, the
 # post-land companion (alembic-graph-check.yml), .pre-commit-config.yaml's
@@ -580,16 +580,18 @@ name = "composed-build"
 # EASILY THE MOST EXPENSIVE STEP HERE — a full `next build`, minutes rather than
 # seconds. Mirrored regardless: the disclosed-gap list at the top of this file
 # is for steps that CANNOT run, and cost has never been a reason to drop a gate
-# from it (gap 1 is impossibility, not expense). It runs last so everything
+# from it (gap 1's blockers are the per-step cap and the conftest DSN, not
+# expense). It runs last so everything
 # cheaper has already had its chance to fail.
 command = ["npm", "run", "build"]
 working_dir = "frontend"
 
 # ---------------------------------------------------------------------------
 # BACKEND — mirrors backend-ci.yml's `lint` job, plus the `test` job's
-# "Check OpenAPI snapshot is up to date" step (which needs no database: the
-# exporter builds the FastAPI app from its route table and self-configures the
-# minimal env it needs, so it is the one gate of that job this lane CAN hold).
+# "Check OpenAPI snapshot is up to date" step (the exporter builds the FastAPI
+# app from its route table and self-configures the minimal env it needs, so it
+# runs in seconds and sits clear of both of gap 1's blockers; it is the one gate
+# of that job this lane holds today).
 # ---------------------------------------------------------------------------
 
 [[steps]]
