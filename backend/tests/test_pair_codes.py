@@ -632,3 +632,527 @@ class TestRedeemCoordFailureRelay:
         )
         assert resp.status_code == 502, resp.text
         assert resp.json()["detail"] == {"coord_status": 409, "coord_body": refusal}
+
+
+class TestRedeemMintsDeviceMachineKey:
+    """A pair-code redeem hands the box a device machine key (``dmk_``), the
+    same cold-start credential ``/pair-cli`` returns (plan
+    ``2026-11-03-pair-code-pairing-mints-no-device-machine-key`` Phase 1),
+    and only when the code's tenant is the device's home tenant
+    (``coord.devices.tenant_id``).
+
+    These run against the real test database: the device row, the mint, the
+    code's consumption and the savepoint that separates them are what is
+    under test. Every refusal asserts the logged ``outcome``, so a generic
+    ``failed`` cannot pass for a guard.
+    """
+
+    # -- fixtures ------------------------------------------------------------
+
+    async def _device(
+        self,
+        async_db_session: AsyncSession,
+        *,
+        tenant_id: UUID | None = _FIXTURE_TENANT_ID,
+        credential_revoked_at: datetime | None = None,
+    ) -> UUID:
+        """A ``coord.devices`` row — what coord's pair-cli leaves behind."""
+        from app.models.device import Device
+
+        device_id = uuid4()
+        async_db_session.add(
+            Device(
+                device_id=device_id,
+                name="host-a",
+                hostname="host-a",
+                state="healthy",
+                tenant_id=tenant_id,
+                credential_revoked_at=credential_revoked_at,
+            )
+        )
+        await async_db_session.commit()
+        return device_id
+
+    async def _redeem(
+        self,
+        async_db_session: AsyncSession,
+        code: str,
+        device_id: UUID,
+        outcomes: list[str] | None = None,
+    ) -> httpx.Response:
+        """Redeem ``code`` for ``device_id`` with coord's pair-cli stubbed;
+        append each logged auto-mint outcome to ``outcomes``."""
+        from app.services import device_machine_key_automint as automint_mod
+
+        coord_body = {
+            "token": "device-jwt-abc",
+            "device_id": str(device_id),
+            "exp": 1234567890,
+        }
+        app = _build_test_app(db_session=async_db_session, user_id=None)
+        transport = httpx.ASGITransport(app=app)
+        recorder = MagicMock()
+        with (
+            patch("app.api.v1.endpoints.pair_codes.coord_service_account") as bridge,
+            patch(
+                "app.api.v1.endpoints.pair_codes.post_to_coord",
+                AsyncMock(
+                    return_value=_mock_resp(status_code=201, json_data=coord_body)
+                ),
+            ),
+            patch.object(automint_mod, "logger", recorder),
+        ):
+            bridge.enabled = True
+            bridge._headers = AsyncMock(return_value={"X-Test": "1"})
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    f"/api/v1/devices/pair-codes/{code}/redeem",
+                    json={"device_id": str(device_id), "hostname": "host-a"},
+                )
+        self.automint_logs = [
+            call.kwargs
+            for call in recorder.info.call_args_list + recorder.warning.call_args_list
+            if call.args and call.args[0] == "device_machine_key_automint"
+        ]
+        if outcomes is not None:
+            outcomes.extend(kw["outcome"] for kw in self.automint_logs)
+        return resp
+
+    async def _mint_code(self, async_db_session: AsyncSession, test_user):
+        return await pair_code_crud.mint_pair_code(
+            async_db_session,
+            tenant_id=_FIXTURE_TENANT_ID,
+            issued_by_user_id=test_user.id,
+        )
+
+    async def _credentials_for(self, async_db_session: AsyncSession, device_id: UUID):
+        from sqlalchemy import select
+
+        from app.models.devenv import DeviceMachineCredential
+
+        stmt = select(DeviceMachineCredential).where(
+            DeviceMachineCredential.device_id == device_id
+        )
+        rows = list((await async_db_session.execute(stmt)).scalars().all())
+        for row in rows:
+            await async_db_session.refresh(row)
+        return rows
+
+    async def _existing_key(
+        self,
+        async_db_session: AsyncSession,
+        device_id: UUID,
+        test_user,
+        *,
+        tenant_id: UUID | None,
+        expires_in: timedelta | None = None,
+    ):
+        from app.crud import device_machine_credential_crud as dmk_crud
+
+        key, cred = await dmk_crud.mint(
+            async_db_session,
+            device_id=device_id,
+            owner_user_id=test_user.id,
+            tenant_id=tenant_id,
+        )
+        if expires_in is not None:
+            cred.expires_at = datetime.now(UTC) + expires_in
+        await async_db_session.commit()
+        return key, cred
+
+    @staticmethod
+    def _snapshot(cred) -> tuple:
+        return (
+            cred.dmk_hash,
+            cred.dmk_prefix,
+            cred.owner_user_id,
+            cred.tenant_id,
+            cred.expires_at,
+            cred.revoked_at,
+        )
+
+    async def _assert_consumed(
+        self, async_db_session: AsyncSession, code: str, device_id: UUID
+    ) -> None:
+        consumed = await pair_code_crud.find_by_code(async_db_session, code)
+        assert consumed is not None
+        await async_db_session.refresh(consumed)
+        assert consumed.redeemed_at is not None
+        assert consumed.redeemed_by_device_id == device_id
+        assert await pair_code_crud.get_redeemable(async_db_session, code) is None
+
+    async def _assert_refused(
+        self,
+        async_db_session: AsyncSession,
+        test_user,
+        device_id: UUID,
+        expected_outcome: str,
+    ) -> None:
+        """Redeem a fresh code for ``device_id``: 200, no key, the code
+        consumed, and exactly ``expected_outcome`` logged."""
+        row = await self._mint_code(async_db_session, test_user)
+        outcomes: list[str] = []
+        resp = await self._redeem(async_db_session, row.code, device_id, outcomes)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["device_machine_key"] is None
+        assert outcomes == [expected_outcome]
+        # ``committed`` is meaningful only for a minted outcome.
+        assert self.automint_logs[0]["committed"] is None
+        await self._assert_consumed(async_db_session, row.code, device_id)
+
+    # -- minting -------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_redeem_returns_a_dmk_the_exchange_door_accepts(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        from app.api.deps import get_async_db
+        from app.api.v1.endpoints.devices import (
+            get_authenticated_device_credential,
+        )
+        from app.api.v1.endpoints.devices import router as devices_router
+        from app.crud import device_crud
+        from app.services.coord_service_account import coord_service_account
+
+        device_id = await self._device(async_db_session)
+        row = await self._mint_code(async_db_session, test_user)
+        outcomes: list[str] = []
+        with patch.object(
+            device_crud,
+            "get_credential_anchor",
+            wraps=device_crud.get_credential_anchor,
+        ) as anchor_read:
+            resp = await self._redeem(async_db_session, row.code, device_id, outcomes)
+
+        assert resp.status_code == 200, resp.text
+        assert outcomes == ["minted"]
+        # An UNBOUND code shares no pair-code lock with the operator paths, so
+        # the auto-mint serializes with them on the device row (FOR SHARE).
+        assert anchor_read.call_args.kwargs == {"lock_for_share": True}
+        # The redeem owns the commit, so the helper's line is pre-commit.
+        assert self.automint_logs[0]["committed"] is False
+        key = resp.json()["device_machine_key"]
+        assert isinstance(key, str) and key.startswith("dmk_")
+
+        # Minted under the code's issuer and the device's (= code's) tenant.
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        assert cred.owner_user_id == test_user.id
+        assert cred.tenant_id == _FIXTURE_TENANT_ID
+
+        # The header auth dependency accepts it ...
+        authed = await get_authenticated_device_credential(
+            x_device_machine_key=key, db=async_db_session
+        )
+        assert authed.device_id == device_id
+
+        # ... and so does the exchange door, end to end.
+        app = FastAPI()
+
+        async def _db_override():
+            yield async_db_session
+
+        app.dependency_overrides[get_async_db] = _db_override
+        app.include_router(devices_router, prefix="/api/v1/devices")
+        with (
+            patch.object(coord_service_account, "_admin_secret", "test-secret"),
+            patch.object(
+                coord_service_account,
+                "mint_device_token",
+                AsyncMock(return_value=(200, {"token": "exchanged-device-jwt"})),
+            ) as mock_mint_token,
+        ):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                exch = await client.post(
+                    f"/api/v1/devices/{device_id}/machine-credential/exchange",
+                    headers={"X-Device-Machine-Key": key},
+                )
+        assert exch.status_code == 200, exch.text
+        assert exch.json()["token"] == "exchanged-device-jwt"
+        assert mock_mint_token.call_args.args[:2] == (
+            str(test_user.id),
+            str(device_id),
+        )
+
+    @pytest.mark.asyncio
+    async def test_second_redeem_is_409_and_mints_nothing(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        from app.crud import device_machine_credential_crud as dmk_crud
+
+        device_id = await self._device(async_db_session)
+        row = await self._mint_code(async_db_session, test_user)
+        first = await self._redeem(async_db_session, row.code, device_id)
+        assert first.status_code == 200, first.text
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        hash_after_first = cred.dmk_hash
+
+        outcomes: list[str] = []
+        with patch.object(dmk_crud, "mint", AsyncMock()) as mock_mint:
+            second = await self._redeem(async_db_session, row.code, device_id, outcomes)
+
+        assert second.status_code == 409, second.text
+        assert second.json()["detail"]["code"] == "pair_code_already_redeemed"
+        mock_mint.assert_not_called()
+        assert outcomes == []
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        assert cred.dmk_hash == hash_after_first
+
+    @pytest.mark.asyncio
+    async def test_a_failing_mint_never_fails_the_redeem_and_the_code_is_consumed(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The mint fails with a real database error. Without the savepoint
+        that aborts the redeem's transaction and its commit fails; with it,
+        only the key's work is rolled back and the code is still consumed."""
+        from sqlalchemy import text
+
+        from app.crud import device_machine_credential_crud as dmk_crud
+
+        async def _broken_mint(db, **_kwargs):
+            await db.execute(text("SELECT 1 / 0"))
+            raise AssertionError("unreachable")
+
+        device_id = await self._device(async_db_session)
+        row = await self._mint_code(async_db_session, test_user)
+        outcomes: list[str] = []
+        with patch.object(dmk_crud, "mint", _broken_mint):
+            resp = await self._redeem(async_db_session, row.code, device_id, outcomes)
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["device_machine_key"] is None
+        assert body["device_token_jwt"] == "device-jwt-abc"
+        assert outcomes == ["failed"]
+        await self._assert_consumed(async_db_session, row.code, device_id)
+        assert await self._credentials_for(async_db_session, device_id) == []
+
+    @pytest.mark.asyncio
+    async def test_a_device_with_a_usable_key_keeps_it(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        from app.crud import device_machine_credential_crud as dmk_crud
+
+        device_id = await self._device(async_db_session)
+        key, existing = await self._existing_key(
+            async_db_session, device_id, test_user, tenant_id=_FIXTURE_TENANT_ID
+        )
+        before = self._snapshot(existing)
+
+        await self._assert_refused(
+            async_db_session, test_user, device_id, "kept_usable_key"
+        )
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        assert self._snapshot(cred) == before
+        assert cred.dmk_hash == dmk_crud.hash_device_machine_key(key)
+
+    @pytest.mark.asyncio
+    async def test_same_tenant_expired_key_is_renewed(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        from app.crud import device_machine_credential_crud as dmk_crud
+
+        device_id = await self._device(async_db_session)
+        _key, existing = await self._existing_key(
+            async_db_session,
+            device_id,
+            test_user,
+            tenant_id=_FIXTURE_TENANT_ID,
+            expires_in=timedelta(days=-1),
+        )
+        old_hash = existing.dmk_hash
+
+        row = await self._mint_code(async_db_session, test_user)
+        outcomes: list[str] = []
+        resp = await self._redeem(async_db_session, row.code, device_id, outcomes)
+
+        assert resp.status_code == 200, resp.text
+        assert outcomes == ["minted"]
+        new_key = resp.json()["device_machine_key"]
+        assert isinstance(new_key, str) and new_key.startswith("dmk_")
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        assert cred.dmk_hash != old_hash
+        assert cred.dmk_hash == dmk_crud.hash_device_machine_key(new_key)
+
+    # -- the tenant anchor: coord.devices.tenant_id, not the key row ---------
+
+    @pytest.mark.asyncio
+    async def test_a_foreign_device_gets_no_key_and_no_row_is_created(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The squat: a code from this tenant names ANOTHER tenant's device
+        that has no key yet. Nothing is inserted, so the rightful tenant's
+        own pairing is not locked out later."""
+        device_id = await self._device(async_db_session, tenant_id=uuid4())
+
+        await self._assert_refused(
+            async_db_session, test_user, device_id, "foreign_tenant_key"
+        )
+        assert await self._credentials_for(async_db_session, device_id) == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "expires_in",
+        [timedelta(days=-1), timedelta(days=2)],
+        ids=["expired", "near_expiry"],
+    )
+    async def test_another_tenants_key_is_never_re_owned(
+        self, async_db_session: AsyncSession, test_user, expires_in: timedelta
+    ) -> None:
+        """A key the renewal window would otherwise rotate (expired, or near
+        expiry) on another tenant's device is left exactly as it is."""
+        other_tenant = uuid4()
+        device_id = await self._device(async_db_session, tenant_id=other_tenant)
+        _key, existing = await self._existing_key(
+            async_db_session,
+            device_id,
+            test_user,
+            tenant_id=other_tenant,
+            expires_in=expires_in,
+        )
+        before = self._snapshot(existing)
+
+        await self._assert_refused(
+            async_db_session, test_user, device_id, "foreign_tenant_key"
+        )
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        assert self._snapshot(cred) == before
+
+    @pytest.mark.asyncio
+    async def test_a_squatted_foreign_row_is_repaired_by_the_rightful_tenant(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """A key row recorded under a foreign tenant (a squat written before
+        the anchor existed) does not lock the device's own tenant out: its
+        pairing rotates the row and re-stamps the device's tenant."""
+        device_id = await self._device(async_db_session)
+        _key, existing = await self._existing_key(
+            async_db_session,
+            device_id,
+            test_user,
+            tenant_id=uuid4(),
+            expires_in=timedelta(days=-1),
+        )
+        squat_hash = existing.dmk_hash
+
+        row = await self._mint_code(async_db_session, test_user)
+        outcomes: list[str] = []
+        resp = await self._redeem(async_db_session, row.code, device_id, outcomes)
+
+        assert resp.status_code == 200, resp.text
+        assert outcomes == ["minted"]
+        assert resp.json()["device_machine_key"].startswith("dmk_")
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        assert cred.dmk_hash != squat_hash
+        assert cred.tenant_id == _FIXTURE_TENANT_ID
+
+    @pytest.mark.asyncio
+    async def test_a_null_tenant_row_is_renewed_by_the_rightful_tenant(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Legacy rows (pair-cli used to mint with no tenant) are renewable."""
+        device_id = await self._device(async_db_session)
+        _key, existing = await self._existing_key(
+            async_db_session,
+            device_id,
+            test_user,
+            tenant_id=None,
+            expires_in=timedelta(days=-1),
+        )
+        legacy_hash = existing.dmk_hash
+
+        row = await self._mint_code(async_db_session, test_user)
+        outcomes: list[str] = []
+        resp = await self._redeem(async_db_session, row.code, device_id, outcomes)
+
+        assert resp.status_code == 200, resp.text
+        assert outcomes == ["minted"]
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        assert cred.dmk_hash != legacy_hash
+        assert cred.tenant_id == _FIXTURE_TENANT_ID
+
+    @pytest.mark.asyncio
+    async def test_a_device_with_no_tenant_is_refused(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        device_id = await self._device(async_db_session, tenant_id=None)
+
+        await self._assert_refused(
+            async_db_session, test_user, device_id, "device_tenant_unknown"
+        )
+        assert await self._credentials_for(async_db_session, device_id) == []
+
+    @pytest.mark.asyncio
+    async def test_a_device_with_no_row_is_refused(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        device_id = uuid4()
+
+        await self._assert_refused(
+            async_db_session, test_user, device_id, "device_tenant_unknown"
+        )
+        assert await self._credentials_for(async_db_session, device_id) == []
+
+    # -- revocation ----------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_a_revoked_machine_key_is_never_re_armed(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        from app.crud import device_machine_credential_crud as dmk_crud
+
+        device_id = await self._device(async_db_session)
+        await self._existing_key(
+            async_db_session, device_id, test_user, tenant_id=_FIXTURE_TENANT_ID
+        )
+        revoked = await dmk_crud.revoke(async_db_session, device_id)
+        assert revoked is not None
+        await async_db_session.commit()
+        before = self._snapshot(revoked)
+
+        await self._assert_refused(
+            async_db_session, test_user, device_id, "machine_key_revoked"
+        )
+        (cred,) = await self._credentials_for(async_db_session, device_id)
+        assert self._snapshot(cred) == before
+        assert cred.revoked_at is not None and cred.dmk_hash == ""
+
+    @pytest.mark.asyncio
+    async def test_a_device_whose_credentials_are_revoked_gets_no_key(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The redeem refuses such a device up front (next test), so the
+        helper's own arm is reached only when an operator's revoke lands after
+        that check — simulated by passing the up-front check while
+        ``coord.devices.credential_revoked_at`` is set."""
+        device_id = await self._device(
+            async_db_session, credential_revoked_at=datetime.now(UTC)
+        )
+        with patch(
+            "app.api.v1.endpoints.pair_codes.refuse_if_credential_revoked",
+            AsyncMock(return_value=None),
+        ):
+            await self._assert_refused(
+                async_db_session, test_user, device_id, "device_credential_revoked"
+            )
+        assert await self._credentials_for(async_db_session, device_id) == []
+
+    @pytest.mark.asyncio
+    async def test_a_revoked_device_is_refused_before_anything_is_consumed(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        device_id = await self._device(
+            async_db_session, credential_revoked_at=datetime.now(UTC)
+        )
+
+        row = await self._mint_code(async_db_session, test_user)
+        outcomes: list[str] = []
+        resp = await self._redeem(async_db_session, row.code, device_id, outcomes)
+
+        assert resp.status_code == 403, resp.text
+        assert outcomes == []
+        assert await self._credentials_for(async_db_session, device_id) == []
+        assert await pair_code_crud.get_redeemable(async_db_session, row.code)
