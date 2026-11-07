@@ -132,7 +132,7 @@ describe("a degradation's subject with an id and no name", () => {
     const view = await renderPresenting(namelessSubjectBody());
     const row = screen.getByTestId("coord-home.degrading.degrading");
     expect(within(row).getByTestId("row-reason")).toHaveTextContent(
-      /^unnamed subject$/
+      /^unnamed subject · remediation unknown$/
     );
     checkBehindEveryDisclosure(() => {
       expectPresentationSafe(view, { forbidden: [NAMELESS_SUBJECT_ID] });
@@ -144,7 +144,7 @@ describe("a degradation's subject with an id and no name", () => {
     await renderOperator(namelessSubjectBody());
     const row = screen.getByTestId("coord-home.degrading.degrading");
     expect(within(row).getByTestId("row-reason")).toHaveTextContent(
-      /^unnamed subject$/
+      /^unnamed subject · remediation unknown$/
     );
     expect(
       within(expandRow(row, "unnamed subject")).getByTestId(
@@ -155,12 +155,12 @@ describe("a degradation's subject with an id and no name", () => {
 });
 
 describe("a work unit's link, whose URL carries its slug", () => {
-  /** The first-party repository's row opened, and its one unit's name. */
+  /**
+   * The one unit's name, in the no-recorded-change list under the repository
+   * list — visible on first load, with no row opened (q7).
+   */
   function unitName() {
-    const own = expandRow(
-      screen.getByTestId("coord-home.on-track"),
-      FIRST_PARTY_REPO
-    );
+    const own = screen.getByTestId("coord-home.on-track.no-recorded-change");
     const name = own.querySelector(
       '[data-testid^="coord-home.on-track.named."] [data-redacted]'
     );
@@ -237,10 +237,7 @@ describe("a work unit's link, whose URL carries its slug", () => {
         { slug: "2026-10-01-acme-rollout", title: null },
       ])
     );
-    const own = expandRow(
-      screen.getByTestId("coord-home.on-track"),
-      FIRST_PARTY_REPO
-    );
+    const own = screen.getByTestId("coord-home.on-track.no-recorded-change");
     expect(
       within(own).getByRole("link", { name: "2026-10-01-acme-rollout" })
     ).toHaveAttribute(
