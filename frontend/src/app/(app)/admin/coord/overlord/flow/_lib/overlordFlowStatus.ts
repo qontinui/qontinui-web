@@ -518,8 +518,9 @@ function closedOf(raw: unknown, truncated: unknown): ClosedSessions | null {
 /**
  * Coord's per-version groups, or `null` (UNKNOWN) when absent or any group
  * cannot be read: a missing group would drop a version from the comparison.
- * `overlord_version` must be PRESENT — its `null` is coord saying "recorded
- * none", which an absent key is not.
+ * `overlord_version` must be PRESENT — its `null` is coord saying the version
+ * is unknown (none recorded, or an entry its runner had read missed), which an
+ * absent key is not.
  */
 function groupsOf(raw: unknown): VersionGroup[] | null {
   if (!Array.isArray(raw)) return null;
