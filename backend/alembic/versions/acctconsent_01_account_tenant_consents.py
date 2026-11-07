@@ -39,15 +39,33 @@ What changes
   DESIGN NOTE. The plan originally backfilled ``self_service`` only. A prod
   read on 2026-11-07 found 13 of 19 role rows carry a NULL ``grant_origin``
   (written before ``grantorig_01`` started origin tracking), including the
-  own home tenants of the account owner, which a self_service-only backfill would
-  have shown as pending invitations. The legacy creator shape (the tenant's
-  first grant, no granter) recovers those. Later-granted NULL-origin rows are
-  legacy invitations and are NOT backfilled: they require acceptance.
+  own home tenants of the account owner, which a self_service-only backfill
+  would have shown as pending invitations (coord finding
+  0ebf933e-97d2-46d3-8984-70c6c0ef53d4). The legacy creator shape (the first
+  grant in the tenant, no granter) recovers those. Later-granted NULL-origin
+  rows are legacy invitations and are NOT backfilled: they require acceptance.
+
+  TIES. A NULL-origin granter-less row counts as creator-shaped ONLY when the
+  earliest-granted granter-less NULL-origin rows of its tenant belong to
+  exactly ONE operator. Several distinct operators tied at that earliest
+  ``granted_at`` are one-transaction inserts (``group_auto_create``,
+  ``default_role``), not a creator, so none of them gets a consent from the
+  NULL-origin arm; they must accept. ``self_service`` rows are unaffected.
 * ``coord.devices.membership_autobind`` vocabulary: ``created`` becomes
   ``account`` (bind every tenant the account has consented to); ``off`` is
   unchanged. Existing ``created`` rows are rewritten and the default moves.
 * ``ck_tenant_device_unbinds_reason`` widens to admit ``owner_withdrew``: the
   tombstone written when the account withdraws its consent to a tenant.
+
+Downgrade
+=========
+
+Reverses each step. It DROPS ``coord.account_tenant_consents`` and so loses
+every recorded consent, backfilled or accepted. ``owner_withdrew`` tombstones
+are KEPT, rewritten to ``owner_declined`` (both are owner-initiated with
+``unbound_by_operator_id`` NULL, and the primary key does not involve the
+reason, so nothing collides): deleting them would let an unattended pass
+re-bind a tenant the owner withdrew from.
 """
 
 from collections.abc import Sequence
@@ -118,6 +136,15 @@ def upgrade() -> None:
                                   FROM coord.operator_roles f
                                  WHERE f.tenant_id = q.tenant_id
                             )
+                            AND NOT EXISTS (
+                                SELECT 1
+                                  FROM coord.operator_roles s
+                                 WHERE s.tenant_id = q.tenant_id
+                                   AND s.granted_at = q.granted_at
+                                   AND s.grant_origin IS NULL
+                                   AND s.granted_by IS NULL
+                                   AND s.operator_id <> q.operator_id
+                            )
                         )
                    )
          )
@@ -185,7 +212,8 @@ def downgrade() -> None:
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
-        DELETE FROM coord.tenant_device_unbinds
+        UPDATE coord.tenant_device_unbinds
+           SET reason = 'owner_declined'
          WHERE reason = 'owner_withdrew'
         """
     )
