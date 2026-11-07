@@ -53,4 +53,15 @@ describe("onboarding page ?connect= hand-off", () => {
     render(<OnboardingPage />);
     expect(screen.getByTestId("connect-installed-org-stub")).toHaveTextContent("");
   });
+
+  it("explains what coord-managed PRs look like on GitHub", () => {
+    render(<OnboardingPage />);
+    const block = screen.getByTestId("coord-onboarding-github-expectations");
+    expect(block).toHaveTextContent("What you'll see on GitHub");
+    const items = block.querySelectorAll("li");
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent("Coord lands pull requests on its own");
+    expect(items[1]).toHaveTextContent("GitHub reviews are optional");
+    expect(items[2]).toHaveTextContent("Don't use the Merge button");
+  });
 });
