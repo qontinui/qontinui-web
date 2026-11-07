@@ -965,6 +965,20 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     expect(failed).not.toHaveTextContent(/quoted on the last line/);
     expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
   });
+
+  it("does not know: a detection-bound row's withheld reason is a detection lag, never an exclusion", async () => {
+    const view = await renderPresenting(fullBody());
+    const region = screen.getByTestId("coord-home.does-not-know");
+    for (const area of ["merge train", "cloud service"]) {
+      const detail = expandRow(region, `Time for a fault on ${area}`);
+      expect(detail).toHaveTextContent(
+        /Why this lag: Reason · detection lag · /
+      );
+      expect(detail).not.toHaveTextContent(/excluded/i);
+      expect(detail.querySelector("[data-console-raw]")).toBeNull();
+    }
+    expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+  });
 });
 
 describe("/admin/coord/home?present=1 — Correct? shows no write control", () => {

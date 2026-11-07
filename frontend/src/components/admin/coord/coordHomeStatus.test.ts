@@ -1564,14 +1564,15 @@ describe("round-8 review — R8 for what the view does not know", () => {
       // Neither an age bound nor an exclusion count is owed by a plane row.
       expect(unstatedSummary([unknown()])).toBeNull();
       expect(unstatedSummary([slow(), unknown()])).toBeNull();
-      // Beside an ordinary source, only that source is counted.
+      // Beside an ordinary source, only that source is counted — in the
+      // total as well.
       expect(
         unstatedSummary([
           unknown(),
           row({ source: "work_units", state: "read" }),
         ])
       ).toBe(
-        "Coord stated no age bound for 1 of 2, and no count of excluded rows for 1 of 2."
+        "Coord stated no age bound for it, and no count of excluded rows for it."
       );
     });
 

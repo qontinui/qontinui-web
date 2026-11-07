@@ -1793,14 +1793,14 @@ export function sourceRowReason(
 export function unstatedSummary(
   sources: readonly SourceCoverageView[]
 ): string | null {
-  const n = sources.length;
-  const noBound = sources.filter(
-    (s) => s.freshnessBoundSecs === null && !isDetectionBoundSource(s.source)
-  ).length;
-  // A detection-bound row has no rows, so no exclusion count is owed.
-  const noExcl = sources.filter(
-    (s) => s.rowsExcluded === null && !isDetectionBoundSource(s.source)
-  ).length;
+  // A detection-bound row states its own bound (or that none could be
+  // derived) and has no rows, so it owes neither clause: it is left out of
+  // both the counts and the "of N" total.
+  const owing = sources.filter((s) => !isDetectionBoundSource(s.source));
+  const n = owing.length;
+  if (n === 0) return null;
+  const noBound = owing.filter((s) => s.freshnessBoundSecs === null).length;
+  const noExcl = owing.filter((s) => s.rowsExcluded === null).length;
   const of = (k: number) =>
     k === n ? (n === 1 ? "it" : `all ${n}`) : `${k} of ${n}`;
   const parts: string[] = [];
