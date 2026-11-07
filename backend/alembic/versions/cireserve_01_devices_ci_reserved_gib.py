@@ -51,9 +51,11 @@ Deploy ordering
 
 This revision lands FIRST and on its own; no coord build names the column when it
 applies. The reverse order — a coord build that names the column deploying before this
-applies — is the coord PR's responsibility (``schema_read_contract`` CI gate plus a
-``MIGRATOR_DIGEST`` bump, and a readiness-selected statement for the write), exactly as
-``cisplit_01_devices_max_concurrent_ci_jobs`` documents for its column.
+applies — is the coord PR's responsibility: coord's ``schema_read_contract`` CI gate
+and a ``MIGRATOR_DIGEST`` bump, plus a ``schema_readiness``-selected statement for the
+write, as ``cisplit_01_devices_max_concurrent_ci_jobs`` documents for its column
+(``Present`` names the column; ``Missing`` AND ``Unknown`` select a statement that does
+not — ``Unknown`` must never fail open).
 
 No table rewrite, no index
 ==========================
