@@ -39,6 +39,30 @@ describe("resolveLaneFreshness", () => {
     expect(s.attention).toBe("waiting");
   });
 
+  it("says 'still heartbeats' only for a device coord overlaid to stale", () => {
+    const lanes = [{ lane: "wsl", lane_instance: "Ubuntu", age_secs: 697 }];
+    const overlaid = resolveLaneFreshness({
+      stale_lanes: lanes,
+      state: "stale",
+    });
+    expect(overlaid.reason).toContain("still heartbeats");
+    const partitioned = resolveLaneFreshness({
+      stale_lanes: lanes,
+      state: "partitioned",
+    });
+    expect(partitioned.kind).toBe("stale");
+    expect(partitioned.reason).not.toContain("heartbeats");
+  });
+
+  it("names a malformed value as unreadable, not as a failed read", () => {
+    const s = resolveLaneFreshness({
+      stale_lanes: "oops" as unknown as null,
+    });
+    expect(s.kind).toBe("unknown");
+    expect(s.reason).toMatch(/cannot read/);
+    expect(s.reason).not.toMatch(/read failed/);
+  });
+
   it("orders several stale lanes stalest first", () => {
     const s = resolveLaneFreshness({
       stale_lanes: [
