@@ -70,7 +70,7 @@ describe("the Summary's compact metric list", () => {
           state: "ready",
           byName: new Map([["real-measure", metric]]),
           generatedAt: "2026-10-06T00:00:00Z",
-          voidHidden: 1,
+          voidNames: new Set(["void-measure"]),
         }}
         canEdit
         move={vi.fn()}
@@ -88,5 +88,26 @@ describe("the Summary's compact metric list", () => {
     expect(
       screen.getByRole("link", { name: "See it on Objectives" })
     ).toHaveAttribute("href", "/overview/objectives#metric-real-measure");
+  });
+
+  it("keeps a measure the read did not return, as status unknown, and counts only what it hid", () => {
+    render(
+      <MetricSummaryList
+        entries={entries}
+        status={{
+          state: "ready",
+          byName: new Map(),
+          generatedAt: "2026-10-06T00:00:00Z",
+          // A void initiative is not among these, so nothing here is hidden.
+          voidNames: new Set(),
+        }}
+        canEdit={false}
+        move={vi.fn()}
+      />
+    );
+    expect(screen.getByText("Real measure")).toBeInTheDocument();
+    expect(screen.getByText("Void measure")).toBeInTheDocument();
+    expect(screen.getAllByText(/Status unknown/)).toHaveLength(2);
+    expect(screen.queryByText(/published to the wrong project/)).toBeNull();
   });
 });

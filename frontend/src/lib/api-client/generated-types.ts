@@ -17957,9 +17957,12 @@ export interface paths {
          * @description What the project is aiming for, and how each measure is doing.
          *
          *     Readable by any member of the active project (the same membership the
-         *     Summary requires); coord authorizes the forwarded bearer on both upstream
-         *     reads, so this route widens nothing. A gap upstream is a ``sources`` entry
-         *     and an UNKNOWN on what it touches, never an error page and never a blank.
+         *     Summary requires), under the ``intent_documents`` resource's own rule
+         *     (``coord_admin``): a device principal gets the typed 403
+         *     ``device_not_supported_for_coord_backed_resource`` before anything is
+         *     read. Coord authorizes the forwarded bearer on every upstream read, so
+         *     this route widens nothing. A gap upstream is a ``sources`` entry and an
+         *     UNKNOWN on what it touches, never an error page and never a blank.
          */
         get: operations["api_v1_overview_objectives_get"];
         put?: never;
@@ -42816,6 +42819,8 @@ export interface components {
             results?: components["schemas"]["ResultEntryRead"][];
             /** Serves */
             serves?: string[];
+            /** Serves Unchecked */
+            serves_unchecked?: string[];
             /** Serves Unknown */
             serves_unknown?: string[];
             /**
@@ -43612,8 +43617,10 @@ export interface components {
              * Format: uuid
              */
             tenant_id: string;
-            /** Void Hidden */
-            void_hidden: number;
+            /** Void Initiative Names */
+            void_initiative_names: string[];
+            /** Void Metric Names */
+            void_metric_names: string[];
         };
         /** ObjectivesSources */
         ObjectivesSources: {
@@ -56026,7 +56033,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "superseded_or_missing" | "read_failed" | "not_read_over_limit" | "invalid_id";
+            reason: "superseded_or_missing" | "read_failed" | "not_read_over_limit" | "invalid_id" | "another_project";
         };
         /**
          * UpdateStrategyEnum

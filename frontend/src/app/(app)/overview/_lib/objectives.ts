@@ -78,8 +78,10 @@ export function tallyText(tally: TallyRead): string {
 
 const UNKNOWN_REASONS: Record<string, string> = {
   not_reported: "Not in any report yet",
-  results_not_fully_read:
-    "The results were not fully read (the findings page came back full)",
+  // Sent for a findings page that came back full, a checkpoint results read
+  // that was cut short or held rows it could not read, and a report whose
+  // rows that read could not vouch for — so it names none of them.
+  results_not_fully_read: "The results were not fully read",
   results_unreadable: "The results can't be read",
   checkpoint_results_unreadable:
     "Results can't be read (the checkpoint results read failed)",
@@ -239,11 +241,11 @@ export function reportsOf(cp: CheckpointResultRead): ReportRead[] {
   return cp.report ? [cp.report, ...cp.history] : [...cp.history];
 }
 
-/** Every finding id the card renders a report panel for. */
-export function reportIdsOf(metric: MetricRead): Set<string> {
-  return new Set(
+/** Every report the card renders a panel for, by its finding id. */
+export function reportsById(metric: MetricRead): Map<string, ReportRead> {
+  return new Map(
     metric.checkpoint_results.flatMap((c) =>
-      reportsOf(c).map((r) => r.finding_id)
+      reportsOf(c).map((r) => [r.finding_id, r] as const)
     )
   );
 }
@@ -291,8 +293,15 @@ function figure(
   return null;
 }
 
+/** What a figure or a criterion says when the measure's definition (its
+ *  frontmatter) can't be read: unknown — never "not declared". */
+export const DEFINITION_UNKNOWN = "Unknown (the definition can't be read)";
+
 /** The target (or, without one, a declared ceiling/floor), never "null". */
 export function targetLines(metric: MetricRead): FigureLine[] {
+  if (metric.frontmatter_error) {
+    return [{ label: "Target", text: DEFINITION_UNKNOWN, asWritten: false }];
+  }
   const target = figure(
     "Target",
     metric.target,
@@ -310,6 +319,9 @@ export function targetLines(metric: MetricRead): FigureLine[] {
 }
 
 export function baselineLine(metric: MetricRead): FigureLine {
+  if (metric.frontmatter_error) {
+    return { label: "Baseline", text: DEFINITION_UNKNOWN, asWritten: false };
+  }
   const base = figure(
     "Baseline",
     metric.baseline,
@@ -406,26 +418,41 @@ export function sourceNotices(read: ObjectivesRead): SourceNotice[] {
   return out;
 }
 
-/** "n documents are marked as published to the wrong project and are not shown". */
-export function hiddenCopy(
-  read: Pick<ObjectivesRead, "void_hidden" | "skeletons_hidden">
-): string[] {
+/** "n documents are marked as published to the wrong project and are not
+ *  shown". The caller says which void documents it counts: the page counts
+ *  metrics and initiatives, the Summary's metric list metrics only. */
+export function hiddenCopy({
+  voidDocuments,
+  skeletons,
+}: {
+  voidDocuments: number;
+  skeletons: number;
+}): string[] {
   const lines: string[] = [];
-  if (read.void_hidden > 0) {
+  if (voidDocuments > 0) {
     lines.push(
-      read.void_hidden === 1
+      voidDocuments === 1
         ? "1 document is marked as published to the wrong project and is not shown."
-        : `${read.void_hidden} documents are marked as published to the wrong project and are not shown.`
+        : `${voidDocuments} documents are marked as published to the wrong project and are not shown.`
     );
   }
-  if (read.skeletons_hidden > 0) {
+  if (skeletons > 0) {
     lines.push(
-      read.skeletons_hidden === 1
+      skeletons === 1
         ? "1 template nobody has filled in yet is not shown; write it from the Summary."
-        : `${read.skeletons_hidden} templates nobody has filled in yet are not shown; write them from the Summary.`
+        : `${skeletons} templates nobody has filled in yet are not shown; write them from the Summary.`
     );
   }
   return lines;
+}
+
+/** The page's hidden-document lines: every void document, both kinds. */
+export function pageHiddenCopy(read: ObjectivesRead): string[] {
+  return hiddenCopy({
+    voidDocuments:
+      read.void_metric_names.length + read.void_initiative_names.length,
+    skeletons: read.skeletons_hidden,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -457,8 +484,25 @@ export interface InitiativeGroupModel {
 export interface ObjectivesPageModel {
   live: InitiativeGroupModel[];
   earlier: InitiativeGroupModel[];
+  /** Initiatives that can't be read: whether each is live, and what it
+   *  aims for, are unknown — shown with the error, in neither group. */
+  unreadable: InitiativeRead[];
   named: GroupItem[];
   other: GroupItem[];
+}
+
+/** An initiative whose frontmatter could be read. */
+export function initiativeReadable(initiative: InitiativeRead): boolean {
+  return initiative.state !== "unreadable" && !initiative.frontmatter_error;
+}
+
+/** Why an initiative can't be read, in its own words. */
+export function initiativeUnreadableText(initiative: InitiativeRead): string {
+  const why =
+    initiative.state === "unreadable"
+      ? initiative.error
+      : initiative.frontmatter_error;
+  return `This initiative can't be read, so whether it is live and which objectives it declares are unknown${why ? `: ${why}` : "."}`;
 }
 
 /**
@@ -487,7 +531,7 @@ export function groupObjectives(read: ObjectivesRead): ObjectivesPageModel {
     })),
   });
   const live = read.initiatives
-    .filter((i) => i.live)
+    .filter((i) => i.live && initiativeReadable(i))
     .map((i) => build(i, true));
   const named = read.initiative_named_metrics
     .map((n) => take(n))
@@ -503,9 +547,10 @@ export function groupObjectives(read: ObjectivesRead): ObjectivesPageModel {
   }
   // Earlier initiatives last: every appearance is a link to a card above.
   const earlier = read.initiatives
-    .filter((i) => !i.live)
+    .filter((i) => !i.live && initiativeReadable(i))
     .map((i) => build(i, false));
-  return { live, earlier, named, other };
+  const unreadable = read.initiatives.filter((i) => !initiativeReadable(i));
+  return { live, earlier, unreadable, named, other };
 }
 
 // ---------------------------------------------------------------------------
@@ -527,8 +572,9 @@ export type SummaryMetrics =
       state: "ready";
       byName: Map<string, MetricRead>;
       generatedAt: string;
-      /** Void documents the read excluded; the list says how many. */
-      voidHidden: number;
+      /** The void metric documents the read NAMED; only these are hidden,
+       *  and the list says how many. */
+      voidNames: ReadonlySet<string>;
     };
 
 const STATUS_UNKNOWN: SummaryMetricStatus = {
@@ -587,12 +633,13 @@ export function summaryStatusOf(metric: MetricRead): SummaryMetricStatus {
 /**
  * Which written metric documents the Summary lists, and what each says.
  *
- * Ready: only the names the objectives read shows (void tombstones are
- * excluded there, so they are excluded here too, and counted) — except a
- * document changed AFTER that read was taken (one just written on the
- * Summary), which the read cannot speak for: it stays, "status unknown".
- * Failed: every written document, void ones included, each "status unknown"
- * — nothing is filtered on evidence the page could not read.
+ * Ready: every written document except the ones the objectives read NAMED
+ * as void (excluded there, so excluded here too, and counted) — and even a
+ * void-named document stays when it changed AFTER the read was taken (one
+ * just written on the Summary), which the read cannot speak for. A document
+ * the read did not return at all is never dropped: it stays, "status
+ * unknown". Failed: every written document, void ones included, each "status
+ * unknown" — nothing is filtered on evidence the page could not read.
  */
 export function summaryMetricRows<
   T extends { name: string; updatedAt?: string | null },
@@ -612,7 +659,9 @@ export function summaryMetricRows<
     return Number.isFinite(at) && Number.isFinite(readAt) && at > readAt;
   };
   return entries
-    .filter((entry) => status.byName.has(entry.name) || newerThanRead(entry))
+    .filter(
+      (entry) => !status.voidNames.has(entry.name) || newerThanRead(entry)
+    )
     .map((entry) => {
       const metric = status.byName.get(entry.name);
       return {
@@ -637,7 +686,7 @@ export function summaryMetricsFrom(read: ObjectivesRead): SummaryMetrics {
     state: "ready",
     byName: new Map(read.metrics.map((m) => [m.name, m])),
     generatedAt: read.generated_at,
-    voidHidden: read.void_hidden,
+    voidNames: new Set(read.void_metric_names),
   };
 }
 

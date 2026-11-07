@@ -5,10 +5,13 @@ import {
   checkpointStatusCopy,
   currentValueText,
   definitionHref,
+  DEFINITION_UNKNOWN,
   groupObjectives,
   hiddenCopy,
+  initiativeUnreadableText,
   noInitiativeWritten,
   outOfDateNotice,
+  pageHiddenCopy,
   placementDisagreement,
   shortDay,
   sourceNotices,
@@ -67,6 +70,7 @@ function metric(overrides: Partial<MetricRead> = {}): MetricRead {
     direction_text: null,
     serves: [],
     serves_unknown: [],
+    serves_unchecked: [],
     report_topic: null,
     structured_reporting_since: null,
     source_query_type: "manual",
@@ -171,7 +175,8 @@ function read(overrides: Partial<ObjectivesRead> = {}): ObjectivesRead {
     initiative_named_metrics: [],
     other_metrics: [],
     skeletons_hidden: 0,
-    void_hidden: 0,
+    void_metric_names: [],
+    void_initiative_names: [],
     sources: {
       intent_documents: OK,
       findings: OK,
@@ -422,10 +427,36 @@ describe("an unreadable source is never 'no results'", () => {
     });
   });
 
+  it("says a figure is unknown, never 'not declared', when the definition can't be read", () => {
+    const broken = metric({
+      frontmatter_error: "The YAML block could not be parsed: x",
+    });
+    expect(targetLines(broken)).toEqual([
+      { label: "Target", text: DEFINITION_UNKNOWN, asWritten: false },
+    ]);
+    expect(baselineLine(broken)).toEqual({
+      label: "Baseline",
+      text: DEFINITION_UNKNOWN,
+      asWritten: false,
+    });
+    expect(DEFINITION_UNKNOWN).toBe("Unknown (the definition can't be read)");
+  });
+
   it("never prints 'null' for a target", () => {
     expect(targetLines(metric({ target_text: "null" }))).toEqual([
       { label: "Target", text: "No target declared", asWritten: false },
     ]);
+  });
+
+  it("words 'not fully read' without naming a read it may not have been", () => {
+    // Sent for a full findings page, a cut-short checkpoint results read and
+    // a report whose rows that read could not vouch for.
+    expect(unknownReasonText("results_not_fully_read")).toBe(
+      "The results were not fully read"
+    );
+    expect(unknownReasonText("results_not_fully_read")).not.toMatch(
+      /findings page/
+    );
   });
 
   it("gives every unknown reason plain words", () => {
@@ -582,6 +613,44 @@ describe("grouping (D1)", () => {
     ]);
   });
 
+  it("sets an initiative that can't be read apart, with its error", () => {
+    const unreadable = initiative({
+      name: "current-initiative",
+      state: "unreadable",
+      error: "coord did not answer (HTTP 500)",
+      status: null,
+      live: false,
+    });
+    const broken = initiative({
+      name: "broken-yaml",
+      status: null,
+      live: false,
+      frontmatter_error: "The YAML block could not be parsed: x",
+    });
+    const old = initiative({ name: "old", status: "done", live: false });
+    const model = groupObjectives(
+      read({
+        initiatives: [unreadable, broken, old],
+        objectives_readable: false,
+      })
+    );
+    expect(model.unreadable.map((i) => i.name)).toEqual([
+      "current-initiative",
+      "broken-yaml",
+    ]);
+    expect(model.live).toEqual([]);
+    expect(model.earlier.map((g) => g.initiative.name)).toEqual(["old"]);
+    expect(initiativeUnreadableText(unreadable)).toBe(
+      "This initiative can't be read, so whether it is live and which objectives it declares are unknown: coord did not answer (HTTP 500)"
+    );
+    expect(initiativeUnreadableText(broken)).toMatch(
+      /unknown: The YAML block could not be parsed/
+    );
+    expect(initiativeUnreadableText(unreadable)).not.toMatch(
+      /not declared|declares no objectives/
+    );
+  });
+
   it("never drops a metric no group placed", () => {
     const model = groupObjectives(
       read({ metrics: [metric({ name: "lost" })] })
@@ -592,11 +661,22 @@ describe("grouping (D1)", () => {
 
 describe("hidden documents", () => {
   it("counts void and skeleton documents instead of dropping them silently", () => {
-    expect(hiddenCopy(read({ void_hidden: 4, skeletons_hidden: 1 }))).toEqual([
+    expect(
+      pageHiddenCopy(
+        read({
+          void_metric_names: ["a", "b", "c"],
+          void_initiative_names: ["d"],
+          skeletons_hidden: 1,
+        })
+      )
+    ).toEqual([
       "4 documents are marked as published to the wrong project and are not shown.",
       "1 template nobody has filled in yet is not shown; write it from the Summary.",
     ]);
-    expect(hiddenCopy(read())).toEqual([]);
+    expect(pageHiddenCopy(read())).toEqual([]);
+    expect(hiddenCopy({ voidDocuments: 1, skeletons: 0 })).toEqual([
+      "1 document is marked as published to the wrong project and is not shown.",
+    ]);
   });
 });
 
@@ -614,7 +694,9 @@ describe("the Summary's compact list", () => {
     });
     const rows = summaryMetricRows(
       [{ name: "real" }, { name: "void-one" }],
-      summaryMetricsFrom(read({ metrics: [m] }))
+      summaryMetricsFrom(
+        read({ metrics: [m], void_metric_names: ["void-one"] })
+      )
     );
     expect(rows).toEqual([
       {
@@ -633,13 +715,41 @@ describe("the Summary's compact list", () => {
         { name: "void-one", updatedAt: "2026-10-01T00:00:00Z" },
         { name: "just-written", updatedAt: "2026-10-06T00:05:00Z" },
       ],
-      summaryMetricsFrom(read({ metrics: [] }))
+      summaryMetricsFrom(read({ metrics: [], void_metric_names: ["void-one"] }))
     );
     expect(rows).toEqual([
       {
         entry: { name: "just-written", updatedAt: "2026-10-06T00:05:00Z" },
         status: { line: "Status unknown", unknown: true },
       },
+    ]);
+  });
+
+  it("keeps a written measure the read did not return, as status unknown", () => {
+    // Not void-named and not returned (a degraded listing, say): the read
+    // cannot speak for it, so it is never dropped without a notice.
+    const rows = summaryMetricRows(
+      [
+        { name: "unreturned", updatedAt: "2026-10-01T00:00:00Z" },
+        { name: "void-one", updatedAt: "2026-10-01T00:00:00Z" },
+      ],
+      summaryMetricsFrom(read({ metrics: [], void_metric_names: ["void-one"] }))
+    );
+    expect(rows).toEqual([
+      {
+        entry: { name: "unreturned", updatedAt: "2026-10-01T00:00:00Z" },
+        status: { line: "Status unknown", unknown: true },
+      },
+    ]);
+  });
+
+  it("keeps a void-named measure changed after the read, as status unknown", () => {
+    const rows = summaryMetricRows(
+      [{ name: "void-one", updatedAt: "2026-10-06T00:05:00Z" }],
+      summaryMetricsFrom(read({ metrics: [], void_metric_names: ["void-one"] }))
+    );
+    expect(rows.map((r) => r.status)).toEqual([
+      { line: "Status unknown", unknown: true },
     ]);
   });
 
@@ -696,9 +806,14 @@ describe("the Summary's compact list", () => {
     ).toEqual({ line: "No checkpoint reported yet", unknown: false });
   });
 
-  it("carries the void count so the Summary can say what it hid", () => {
-    const status = summaryMetricsFrom(read({ void_hidden: 4 }));
-    expect(status.state === "ready" && status.voidHidden).toBe(4);
+  it("carries the void METRIC names, never a void initiative", () => {
+    const status = summaryMetricsFrom(
+      read({ void_metric_names: ["a", "b"], void_initiative_names: ["i"] })
+    );
+    expect(status.state === "ready" && [...status.voidNames]).toEqual([
+      "a",
+      "b",
+    ]);
   });
 });
 
