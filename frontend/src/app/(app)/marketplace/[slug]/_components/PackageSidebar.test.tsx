@@ -7,7 +7,7 @@
  * `unknown` row.
  */
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -104,7 +104,10 @@ describe("PackageSidebar scan status", () => {
     delete served.total_downloads;
     render(<PackageSidebar pkg={served} />);
 
-    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    const row = screen.getByText("Downloads").closest(".justify-between");
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByText("Unknown")).toBeInTheDocument();
+    expect(within(row as HTMLElement).queryByText("0")).toBeNull();
   });
 
   it("passed with warnings lists them and is not a clean pass", () => {

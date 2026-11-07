@@ -105,12 +105,12 @@ export function PackageContentTabs({
                   Loading versions...
                 </div>
               )}
-              {versionsQuery.isError && (
+              {versionsQuery.isError && !versionsQuery.data && (
                 <div className="text-sm text-muted-foreground">
                   The package versions could not be loaded
                 </div>
               )}
-              {versionsQuery.isSuccess && versions.length === 0 && (
+              {versionsQuery.data !== undefined && versions.length === 0 && (
                 <div className="text-sm text-muted-foreground">
                   No published version
                 </div>
