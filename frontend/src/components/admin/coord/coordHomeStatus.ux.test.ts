@@ -390,7 +390,7 @@ describe("the strip over the machine roster", () => {
       "Nothing needs you and no live machine reports — none can be called healthy"
     );
     expect(s.detail).toContain(
-      "All 2 machines coord grades are abandoned, so no live machine reports — there is no machine this view can call healthy."
+      "All 2 machines coord grades are abandoned, so no listed machine reports — there is no machine this view can call healthy."
     );
     // The reconcile line points back rather than counting them again.
     expect(s.detail).toContain(
