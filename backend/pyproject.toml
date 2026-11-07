@@ -59,6 +59,9 @@ opencv-python-headless = "^4.8"
 pgvector = "^0.4.2"
 geoip2 = "^5.2.0"
 croniter = "^6"
+# Parses intent-document frontmatter for the overview's Objectives read
+# (app/overview/objectives.py). Previously only a transitive dependency.
+pyyaml = "^6.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9"
@@ -75,6 +78,7 @@ ruff = "^0.14"
 types-passlib = "^1.7.7.20250602"
 bandit = "^1.9.2"
 types-requests = "^2.32.4.20260107"
+types-pyyaml = "^6.0"
 
 
 [build-system]
