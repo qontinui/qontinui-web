@@ -287,8 +287,13 @@ export function placeholdersSentence(
  * - `not_stated` — a coord that serves neither field: UNKNOWN.
  */
 export type RosterExclusions =
-  | { kind: "none_withheld" }
-  | { kind: "withheld"; unbound: number; boundToOtherTenant: number }
+  | { kind: "none_withheld"; retired?: number }
+  | {
+      kind: "withheld";
+      unbound: number;
+      boundToOtherTenant: number;
+      retired?: number;
+    }
   | { kind: "withheld_unmeasured"; reason: string | null }
   | { kind: "not_stated" };
 
@@ -349,9 +354,17 @@ export function readRosterExclusions(
   if (!isCount(unbound) || !isCount(boundToOtherTenant)) {
     return { kind: "withheld_unmeasured", reason: null };
   }
+  // `retired` (coord's device reaper set `reaped_at`; plan
+  // `2026-11-03-devops-fleet-partitioned-counts-retired-ephemeral-ci-registrations`)
+  // is served beside the two binding counts but is NOT a binding fault and
+  // NOT incompleteness: those rows are retired on purpose and never come
+  // back to zero. It only explains an empty or short roster. Absent or not a
+  // count (an older coord) is simply not stated.
+  const { retired } = x as Record<string, unknown>;
+  const retiredPart = isCount(retired) && retired > 0 ? { retired } : {};
   return unbound + boundToOtherTenant > 0
-    ? { kind: "withheld", unbound, boundToOtherTenant }
-    : { kind: "none_withheld" };
+    ? { kind: "withheld", unbound, boundToOtherTenant, ...retiredPart }
+    : { kind: "none_withheld", ...retiredPart };
 }
 
 /** Whether coord withheld devices, or could not count what it withheld. */
@@ -391,6 +404,23 @@ export function rosterIncompleteSentence(
   }
 }
 
+/**
+ * Retired rows in words, or null when coord stated none: hidden on purpose,
+ * never a fault. Every empty-roster surface appends it so an empty list
+ * beside thousands of retired rows is explained the same way everywhere.
+ */
+export function retiredRowsSentence(e: RosterExclusions): string | null {
+  const n =
+    e.kind === "none_withheld" || e.kind === "withheld" ? e.retired : undefined;
+  if (!n) return null;
+  return `${n} ${n === 1 ? "device was" : "devices were"} retired after going unseen past coord's reaper grace period and ${n === 1 ? "is" : "are"} not listed.`;
+}
+
+function withRetired(sentence: string, e: RosterExclusions): string {
+  const r = retiredRowsSentence(e);
+  return r ? `${sentence} ${r}` : sentence;
+}
+
 function withheldParts(e: { unbound: number; boundToOtherTenant: number }) {
   const parts: string[] = [];
   if (e.unbound > 0) parts.push(`${e.unbound} with no binding`);
@@ -410,10 +440,16 @@ export function emptyRosterSentence(
 ): string {
   switch (e.kind) {
     case "none_withheld":
-      return "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy.";
+      return withRetired(
+        "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy.",
+        e
+      );
     case "withheld": {
       const n = e.unbound + e.boundToOtherTenant;
-      return `Coord lists no machines but withheld ${n} from its roster (${withheldParts(e).join(", ")}) — a binding fault, not an empty fleet, so machine health is unknown.`;
+      return withRetired(
+        `Coord lists no machines but withheld ${n} from its roster (${withheldParts(e).join(", ")}) — a binding fault, not an empty fleet, so machine health is unknown.`,
+        e
+      );
     }
     case "withheld_unmeasured":
       return `Coord lists no machines and could not count the machines it withheld from its roster${withReason && e.reason ? ` (${e.reason})` : ""} — machine health is unknown.`;
