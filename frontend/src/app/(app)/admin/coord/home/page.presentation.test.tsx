@@ -295,10 +295,10 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
     );
     expect(screen.getAllByTestId("coord-home.on-track.group")).toHaveLength(4);
     openSourcesRead();
-    // One of the fixture's nine sources is not built yet: counted on one
+    // One of the fixture's ten sources is not built yet: counted on one
     // line while presenting, not listed.
     const sourceRows = screen.getAllByTestId("coord-home.does-not-know.row");
-    expect(sourceRows).toHaveLength(8);
+    expect(sourceRows).toHaveLength(9);
     // A detection_bound row reads as the time for a fault on its area to
     // reach the view, never as a source with no name or a data age.
     const detection = sourceRows.find((r) =>
@@ -309,6 +309,13 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
       "a fault can be up to 1h old before coord sees it"
     );
     expect(detection).not.toHaveTextContent(/may be up to/);
+    // A plane coord derived no bound for says so, named by its area.
+    const underivable = sourceRows.find((r) =>
+      r.textContent?.includes("Time for a fault on cloud service")
+    );
+    expect(underivable).toBeDefined();
+    expect(underivable).toHaveTextContent("no detection bound known");
+    expect(underivable).not.toHaveTextContent(/no name for|not stated/);
     expect(
       screen.getByTestId("coord-home.does-not-know.not-built")
     ).toHaveTextContent(
