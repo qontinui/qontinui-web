@@ -6,6 +6,7 @@ import {
   RUNNERS_ALL_COVERED,
   RUNNERS_TWO_SHORT,
   SESSION_ID,
+  VERSION_DIGEST,
   VERSION_OLD,
 } from "../__fixtures__/flow";
 import {
@@ -35,7 +36,10 @@ import {
   insetSegment,
   unchangedCoverage,
   unchangedRowKey,
+  versionChanges,
+  versionMapWords,
   versionWords,
+  groupVersionWords,
   type ClosedSession,
   type ClosedSessions,
   type FlowView,
@@ -161,7 +165,9 @@ describe("the fields coord serves beyond the tiles", () => {
 
   it("reads the version groups in coord's order, with their three states", () => {
     const groups = view().groups as VersionGroup[];
-    expect(groups.map((g) => g.version)).toEqual([VERSION_OLD, null]);
+    expect(groups.map((g) => g.version)).toEqual([VERSION_DIGEST, null]);
+    expect(groups[0].versions?.["triage-sessions.py"]).toBe(VERSION_OLD);
+    expect(groups[1].versions).toBeNull();
     expect(groups[0]).toMatchObject({
       passes: 2,
       censusPasses: 1,
@@ -174,6 +180,9 @@ describe("the fields coord serves beyond the tiles", () => {
       unchanged: 1,
       latestUnknownShare: 0.05,
     });
+    expect(groupVersionWords(VERSION_DIGEST)).toBe("9f86d08188");
+    expect(groupVersionWords(null)).toBe("not read");
+    // A pass's own triage sha keeps its wording: there null is none recorded.
     expect(versionWords(VERSION_OLD)).toBe("2d0c39d0d5");
     expect(versionWords(null)).toBe("none recorded");
   });
@@ -213,6 +222,64 @@ describe("the fields coord serves beyond the tiles", () => {
 
   it("words a missing version as unknown, not as none recorded", () => {
     expect(versionWords(undefined)).toBe("unknown");
+  });
+
+  it("reads a version map that cannot be read as not served, keeping the table", () => {
+    const read = (overlord_versions: unknown) =>
+      (
+        (
+          readFlowBody({
+            ...FULL_FLOW,
+            groups: [{ ...FULL_FLOW.groups[0], overlord_versions }],
+          }) as FlowView
+        ).groups as VersionGroup[]
+      )[0].versions;
+    expect(read(undefined)).toBeUndefined();
+    expect(read({ "triage-sessions.py": null })).toBeUndefined();
+    expect(read({ "triage-sessions.py": "" })).toBeUndefined();
+    expect(read("abc")).toBeUndefined();
+    expect(read(null)).toBeNull();
+    expect(read({})).toEqual({});
+  });
+
+  it("names what changed since the previous readable version", () => {
+    const g = (
+      versions: Record<string, string> | null | undefined
+    ): VersionGroup =>
+      ({ version: versions === null ? null : "d", versions }) as VersionGroup;
+    const groups = [
+      g({ "triage-sessions.py": "t1", runner_git_sha: "r1" }),
+      g(null),
+      g({ "triage-sessions.py": "t1", runner_git_sha: "r2" }),
+      g(undefined),
+      g({
+        "triage-sessions.py": "t1",
+        runner_git_sha: "r2",
+        "next-move.md": "n",
+      }),
+      g({
+        "triage-sessions.py": "t1",
+        runner_git_sha: "r2",
+        "next-move.md": "n",
+      }),
+    ];
+    expect(versionChanges(groups, 0)).toBeNull();
+    expect(versionChanges(groups, 1)).toBeNull();
+    // Skips the unknown group to compare against the last readable map.
+    expect(versionChanges(groups, 2)).toEqual(["runner_git_sha"]);
+    expect(versionChanges(groups, 3)).toBeNull();
+    // An entry only one side recorded is named: it may differ.
+    expect(versionChanges(groups, 4)).toEqual(["next-move.md"]);
+    expect(versionChanges(groups, 5)).toEqual([]);
+  });
+
+  it("words a version map entry by entry, sorted", () => {
+    expect(versionMapWords({ b: "0123456789abc", a: "fedcba9876543" })).toBe(
+      "a fedcba9876 · b 0123456789"
+    );
+    expect(versionMapWords(null)).toBeNull();
+    expect(versionMapWords(undefined)).toBeNull();
+    expect(versionMapWords({})).toBeNull();
   });
 
   it.each([
