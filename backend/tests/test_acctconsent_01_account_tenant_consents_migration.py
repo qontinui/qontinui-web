@@ -15,13 +15,18 @@ What is pinned:
    ``accepted_via`` CHECK (which refuses an unknown value).
 3. The backfill: a ``self_service`` row is consented; a NULL-origin,
    granter-less row that is its tenant's FIRST grant is consented; a
-   later-granted NULL-origin row and an ``admin_grant`` row are NOT;
-   ``accepted_at`` is the operator's MIN ``granted_at`` in that tenant.
+   later-granted NULL-origin row, an ``admin_grant`` row, a NULL-origin row
+   WITH a granter at the tenant's earliest ``granted_at``, and operators TIED
+   at that earliest ``granted_at`` are NOT; ``accepted_at`` is the operator's
+   MIN ``granted_at`` over ALL its roles in that tenant (qualifying or not);
+   a second ``upgrade()`` really runs ON CONFLICT DO NOTHING and changes no
+   row. Deleting an operator or a tenant cascades its consent rows.
 4. ``membership_autobind``: ``created`` rows read ``account``, the default is
    ``account``, and the CHECK refuses ``created``.
 5. ``tenant_device_unbinds.reason`` admits ``owner_withdrew``.
 6. Downgrade restores the prior state (``created`` vocabulary, two-value
-   reason CHECK, no consents table, ``owner_withdrew`` rows gone), and
+   reason CHECK, no consents table, ``owner_withdrew`` tombstones KEPT as
+   ``owner_declined``), and
    up-down-up leaves no residue.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
@@ -38,6 +43,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
@@ -397,6 +404,25 @@ def test_shape_primary_key_foreign_keys_index_and_checks() -> None:
                     )
 
 
+def _consent_rows(engine: Engine) -> dict[tuple[str, str], tuple[object, ...]]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT operator_id::text, tenant_id::text, accepted_at, "
+                "accepted_via, withdrawn_at FROM coord.account_tenant_consents"
+            )
+        ).all()
+    return {(r[0], r[1]): (r[2], r[3], r[4]) for r in rows}
+
+
+def _rerun_upgrade(engine: Engine) -> None:
+    """Invoke the revision upgrade() a second time, so ON CONFLICT really runs."""
+    module = load_revision_module(_revision_path(), f"_rerun_{_REVISION_ID}")
+    with engine.begin() as conn:
+        with Operations.context(MigrationContext.configure(conn)):
+            module.upgrade()
+
+
 @_needs_pg
 def test_backfill_consents_creators_and_not_invitees() -> None:
     with ephemeral_database(admin_database_url(), "acctconsent_backfill") as (
@@ -407,14 +433,26 @@ def test_backfill_consents_creators_and_not_invitees() -> None:
         with engine.begin() as conn:
             t_self = _seed_tenant(conn)  # self_service creator
             t_legacy = _seed_tenant(conn)  # NULL-origin legacy creator
+            t_granted = _seed_tenant(conn)  # earliest NULL-origin row HAS a granter
             owner = _seed_operator(conn, t_self)
             legacy_invitee = _seed_operator(conn, t_legacy)
             admin_invitee = _seed_operator(conn, t_legacy)
             legacy_creator = _seed_operator(conn, t_legacy)
+            granted_first = _seed_operator(conn, t_granted)
 
-            # owner: self_service admin in t_self, plus a LATER extra role there
-            # (accepted_at must be the MIN granted_at, the earlier one).
-            _grant(conn, owner, t_self, "operator", _T0 + timedelta(days=3), None, None)
+            # owner in t_self: a NON-qualifying role first (NULL origin with a
+            # granter, so not creator-shaped) at day 0.5, the qualifying
+            # self_service admin at day 1, a later extra role at day 3.
+            # accepted_at must be the MIN over ALL of them: day 0.5.
+            _grant(
+                conn,
+                owner,
+                t_self,
+                "viewer",
+                _T0 + timedelta(hours=12),
+                legacy_creator,
+                None,
+            )
             _grant(
                 conn,
                 owner,
@@ -424,6 +462,7 @@ def test_backfill_consents_creators_and_not_invitees() -> None:
                 None,
                 "self_service",
             )
+            _grant(conn, owner, t_self, "operator", _T0 + timedelta(days=3), None, None)
 
             # t_legacy: the first-granted granter-less NULL-origin row is the creator.
             _grant(conn, legacy_creator, t_legacy, "admin", _T0, None, None)
@@ -451,38 +490,121 @@ def test_backfill_consents_creators_and_not_invitees() -> None:
             _grant(
                 conn, owner, t_legacy, "operator", _T0 + timedelta(days=7), None, None
             )
+            # t_granted: the EARLIEST row of the tenant is NULL-origin but has a
+            # granter, so it is an invitation, not a creator.
+            _grant(conn, granted_first, t_granted, "admin", _T0, legacy_creator, None)
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
-        with engine.connect() as conn:
-            rows = conn.execute(
-                text(
-                    "SELECT operator_id::text, tenant_id::text, accepted_at, "
-                    "accepted_via, withdrawn_at FROM coord.account_tenant_consents"
-                )
-            ).all()
+        rows = _consent_rows(engine)
         # The chain itself seeds one bootstrap admin (coord_tenant_scope_columns:
-        # the personal tenant, granted_by NULL, its only grant), which is
-        # creator-shaped and so consented too; it is checked separately.
-        seeded = {owner, legacy_invitee, admin_invitee, legacy_creator}
-        got = {(r[0], r[1]): (r[2], r[3], r[4]) for r in rows if r[0] in seeded}
-        assert set(got) == {(owner, t_self), (legacy_creator, t_legacy)}, got
-        chain_seeded = [r for r in rows if r[0] not in seeded]
+        # the personal tenant, granted_by NULL, its only grant, one operator),
+        # which is creator-shaped and so consented too; it is checked separately.
+        seeded = {owner, legacy_invitee, admin_invitee, legacy_creator, granted_first}
+        got = {k: v for k, v in rows.items() if k[0] in seeded}
+        expected = {(owner, t_self), (legacy_creator, t_legacy)}
+        assert set(got) == expected, got
+        chain_seeded = {k: v for k, v in rows.items() if k[0] not in seeded}
         bootstrap_roles = scalar(
             engine,
             "SELECT count(*) FROM coord.operator_roles WHERE operator_id::text <> ALL(:ids)",
             ids=list(seeded),
         )
+        assert isinstance(bootstrap_roles, int)
         assert len(chain_seeded) == bootstrap_roles == 1, (
             chain_seeded,
             bootstrap_roles,
         )
-        assert got[(owner, t_self)] == (_T0 + timedelta(days=1), "backfill", None)
+        assert got[(owner, t_self)] == (_T0 + timedelta(hours=12), "backfill", None)
         assert got[(legacy_creator, t_legacy)] == (_T0, "backfill", None)
 
-        # Idempotent: re-running from the parent changes nothing.
-        run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
+        # Idempotent: a second upgrade() over the populated table must hit
+        # ON CONFLICT DO NOTHING for every pair and overwrite nothing -- not
+        # even a row the account has since re-accepted on another surface.
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE coord.account_tenant_consents SET accepted_via = 'web' "
+                    "WHERE operator_id = :o AND tenant_id = :t"
+                ),
+                {"o": owner, "t": t_self},
+            )
+        before = _consent_rows(engine)
+        assert len(before) == len(expected) + bootstrap_roles
+        _rerun_upgrade(engine)
+        assert _consent_rows(engine) == before
+
+
+@_needs_pg
+def test_backfill_skips_operators_tied_at_the_earliest_grant() -> None:
+    with ephemeral_database(admin_database_url(), "acctconsent_tie") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        with engine.begin() as conn:
+            t_tie = _seed_tenant(conn)
+            first = _seed_operator(conn, t_tie)
+            second = _seed_operator(conn, t_tie)
+            creator = _seed_operator(conn, t_tie)
+            # Two distinct operators, both NULL-origin granter-less, tied at the
+            # earliest granted_at of the tenant: a one-transaction insert.
+            _grant(conn, first, t_tie, "admin", _T0, None, None)
+            _grant(conn, second, t_tie, "operator", _T0, None, None)
+            # A self_service row in the same tenant is unaffected by the tie.
+            _grant(
+                conn,
+                creator,
+                t_tie,
+                "admin",
+                _T0 + timedelta(days=1),
+                None,
+                "self_service",
+            )
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
-        assert scalar(engine, "SELECT count(*) FROM coord.account_tenant_consents") == 3
+        got = {k: v for k, v in _consent_rows(engine).items() if k[1] == t_tie}
+        assert got == {(creator, t_tie): (_T0 + timedelta(days=1), "backfill", None)}
+
+
+@_needs_pg
+def test_deleting_the_operator_or_tenant_cascades_its_consents() -> None:
+    with ephemeral_database(admin_database_url(), "acctconsent_cascade") as (
+        engine,
+        db_url,
+    ):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        count = "SELECT count(*) FROM coord.account_tenant_consents"
+        baseline = scalar(engine, count)
+        assert isinstance(baseline, int)
+        with engine.begin() as conn:
+            home = _seed_tenant(conn)
+            tenant_a = _seed_tenant(conn)
+            tenant_b = _seed_tenant(conn)
+            op_a = _seed_operator(conn, home)
+            op_b = _seed_operator(conn, home)
+            for o, t in ((op_a, tenant_a), (op_a, tenant_b), (op_b, tenant_b)):
+                conn.execute(
+                    text(
+                        "INSERT INTO coord.account_tenant_consents "
+                        "(operator_id, tenant_id, accepted_via) VALUES (:o, :t, 'web')"
+                    ),
+                    {"o": o, "t": t},
+                )
+        assert scalar(engine, count) == baseline + 3
+        with engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM coord.operators WHERE operator_id = :o"), {"o": op_b}
+            )
+        assert scalar(engine, count) == baseline + 2
+        with engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM coord.tenants WHERE tenant_id = :t"), {"t": tenant_a}
+            )
+        remaining = {
+            k
+            for k in _consent_rows(engine)
+            if k[0] in (op_a, op_b) or k[1] in (tenant_a, tenant_b)
+        }
+        assert remaining == {(op_a, tenant_b)}
 
 
 @_needs_pg
@@ -593,7 +715,16 @@ def test_downgrade_restores_prior_state_and_up_down_up_leaves_no_residue() -> No
             engine,
             "SELECT array_agg(reason ORDER BY reason) FROM coord.tenant_device_unbinds",
         )
-        assert reasons == ["owner_declined"]
+        # owner_withdrew tombstones are KEPT, mapped to owner_declined.
+        assert reasons == ["owner_declined", "owner_declined"]
+        assert (
+            scalar(
+                engine,
+                "SELECT reason FROM coord.tenant_device_unbinds WHERE tenant_id = :t",
+                t=tenant,
+            )
+            == "owner_declined"
+        )
         reason_check = _constraint_def(engine, _REASON_CHECK)
         assert reason_check is not None and "owner_withdrew" not in reason_check
         autobind_check = _constraint_def(engine, _AUTOBIND_CHECK)
