@@ -49,7 +49,7 @@ export interface FleetHealthDevice {
   /**
    * Coord liveness state — `DeviceHealthSnapshot.state` (Rust
    * `DeviceState`, serde-lowercase): healthy | degraded | **stale** |
-   * partitioned | abandoned. Absent on a device coord has no verdict for,
+   * ci_offline | partitioned | abandoned. Absent on a device coord has no verdict for,
    * which renders as `unknown` — never as healthy.
    *
    * `stale` is the fifth and newest, a DERIVED overlay coord never persists
