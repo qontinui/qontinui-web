@@ -49,7 +49,7 @@ describe("readRosterExclusions with retired rows", () => {
       excluded: { unbound: 0, bound_to_other_tenant: 0, retired: 1 },
     });
     expect(emptyRosterSentence(e, { withReason: false })).toBe(
-      "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy. 1 device was retired after going unseen past coord's reaper grace period and is not listed."
+      "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy. 1 device was retired after going unseen past coord's reaper grace period and is not listed — retired, which is not a withheld machine."
     );
   });
 

@@ -413,7 +413,7 @@ export function retiredRowsSentence(e: RosterExclusions): string | null {
   const n =
     e.kind === "none_withheld" || e.kind === "withheld" ? e.retired : undefined;
   if (!n) return null;
-  return `${n} ${n === 1 ? "device was" : "devices were"} retired after going unseen past coord's reaper grace period and ${n === 1 ? "is" : "are"} not listed.`;
+  return `${n} ${n === 1 ? "device was" : "devices were"} retired after going unseen past coord's reaper grace period and ${n === 1 ? "is" : "are"} not listed — retired, which is not a withheld machine.`;
 }
 
 function withRetired(sentence: string, e: RosterExclusions): string {
