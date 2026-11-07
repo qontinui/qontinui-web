@@ -112,10 +112,34 @@ export interface StatusCopy {
   unknown: boolean;
 }
 
-/** The line a checkpoint shows under its due date. */
-export function checkpointStatusCopy(cp: CheckpointResultRead): StatusCopy {
+/**
+ * A checkpoint's due date in words: "due 8 Oct", "no due date declared", or
+ * — when the measure's definition can't be read, so nothing it declares is
+ * known — "due date unknown (the definition can't be read)", never "not
+ * declared".
+ */
+export function dueWords(
+  cp: CheckpointResultRead,
+  definitionUnreadable: boolean
+): string {
   const day = shortDay(cp.due);
-  const due = day ? `Due ${day}` : "No due date declared";
+  if (day) return `due ${day}`;
+  return definitionUnreadable
+    ? "due date unknown (the definition can't be read)"
+    : "no due date declared";
+}
+
+function sentenceCase(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** The line a checkpoint shows under its due date. `definitionUnreadable`:
+ *  the measure's definition can't be read, so its due date is unknown. */
+export function checkpointStatusCopy(
+  cp: CheckpointResultRead,
+  { definitionUnreadable = false }: { definitionUnreadable?: boolean } = {}
+): StatusCopy {
+  const due = sentenceCase(dueWords(cp, definitionUnreadable));
   switch (cp.status) {
     case "reported":
       return { text: provenanceLine(cp), detail: null, unknown: false };
@@ -352,11 +376,35 @@ export function currentValueText(metric: MetricRead): {
   return { text: "Current value: not measured yet", reason };
 }
 
-/** One `results:` entry whose report could not be shown, in plain words. */
-export function unresolvedResultText(u: UnresolvedResultRead): string {
-  return u.checkpoint
-    ? `A recorded report could not be shown: ${u.detail}`
-    : `A recorded result names no checkpoint and could not be shown: ${u.detail}`;
+/** One `results:` entry whose report could not be shown, as "How this was
+ *  checked" lists it: which finding, and why (D10 R8: mechanics, so one
+ *  disclosure down — never on the card face). */
+export function unresolvedResultLine(u: UnresolvedResultRead): string {
+  const id = u.finding_id?.trim() ? u.finding_id : "(no finding id)";
+  return `${id}${u.checkpoint ? "" : " (names no checkpoint)"}: ${u.detail}`;
+}
+
+/** What "How this was checked" counts on its summary, the line the card
+ *  face does show: "1 recorded report could not be shown; 2 notes about the
+ *  reported result". Null when there is nothing to count. */
+export function howCheckedCount(
+  unresolved: number,
+  notes: number
+): string | null {
+  const parts: string[] = [];
+  if (unresolved > 0)
+    parts.push(
+      unresolved === 1
+        ? "1 recorded report could not be shown"
+        : `${unresolved} recorded reports could not be shown`
+    );
+  if (notes > 0)
+    parts.push(
+      notes === 1
+        ? "1 note about the reported result"
+        : `${notes} notes about the reported result`
+    );
+  return parts.length > 0 ? parts.join("; ") : null;
 }
 
 /** D6: the one-line flag a checkpoint row carries when the placement rules
@@ -503,6 +551,89 @@ export function initiativeUnreadableText(initiative: InitiativeRead): string {
       ? initiative.error
       : initiative.frontmatter_error;
   return `This initiative can't be read, so whether it is live and which objectives it declares are unknown${why ? `: ${why}` : "."}`;
+}
+
+/**
+ * What a readable initiative says about the fields of it that could not be
+ * read. An `in_scope` nobody could read (not a list, or an item with no
+ * quoted id) leaves which objectives it declares unknown, and a
+ * `success_metrics` one which measures it names — said instead of "declares
+ * no objectives".
+ */
+export function initiativeFieldProblems(initiative: InitiativeRead): string[] {
+  return Object.entries(initiative.field_errors).map(([field, error]) => {
+    if (field === "in_scope") {
+      return initiative.objectives.length === 0
+        ? `Which objectives this initiative declares can't be read: ${error}`
+        : `Not every objective this initiative declares can be read: ${error}`;
+    }
+    if (field === "success_metrics") {
+      return `Which measures this initiative names can't be read: ${error}`;
+    }
+    return `Its ${field} can't be read: ${error}`;
+  });
+}
+
+/** "This initiative declares no objectives" holds only when its `in_scope`
+ *  was read and holds none. */
+export function declaresNoObjectives(initiative: InitiativeRead): boolean {
+  return (
+    initiative.objectives.length === 0 &&
+    initiative.field_errors["in_scope"] === undefined
+  );
+}
+
+/** A measure whose `serves:` could not be read — its document, its
+ *  definition or the field itself — so it may serve any objective. */
+function servesUnreadable(metric: MetricRead): boolean {
+  return (
+    metric.state === "unreadable" ||
+    !!metric.frontmatter_error ||
+    metric.field_errors["serves"] !== undefined
+  );
+}
+
+/**
+ * What an objective no shown measure serves says (D1): "No measure declared
+ * for this objective yet" only when every shown measure's `serves:` could be
+ * read; otherwise that no READABLE measure declares it, and how many can't
+ * be read.
+ */
+export function noMeasureText(read: ObjectivesRead): string {
+  const unread = read.metrics.filter(servesUnreadable).length;
+  if (unread === 0) return "No measure declared for this objective yet.";
+  return `No readable measure declares this objective; ${
+    unread === 1 ? "1 measure can't" : `${unread} measures can't`
+  } be read.`;
+}
+
+/**
+ * What an initiative says about the measures its `success_metrics` names
+ * that have no card. One whose document is marked as published to the wrong
+ * project is said to be so — it is hidden, not missing — and never "no
+ * readable document".
+ */
+export function missingMeasureLines(
+  initiative: InitiativeRead,
+  voidMetricNames: readonly string[]
+): string[] {
+  const voids = new Set(voidMetricNames);
+  const voided = initiative.missing_metric_names.filter((n) => voids.has(n));
+  const missing = initiative.missing_metric_names.filter((n) => !voids.has(n));
+  const lines: string[] = [];
+  if (missing.length > 0) {
+    lines.push(
+      `It names ${missing.length === 1 ? "a measure" : "measures"} with no readable document: ${missing.join(", ")}.`
+    );
+  }
+  if (voided.length > 0) {
+    lines.push(
+      voided.length === 1
+        ? `It names a measure whose document is marked as published to the wrong project, so it is not shown: ${voided[0]}.`
+        : `It names measures whose documents are marked as published to the wrong project, so they are not shown: ${voided.join(", ")}.`
+    );
+  }
+  return lines;
 }
 
 /**
