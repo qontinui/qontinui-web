@@ -57,6 +57,7 @@ from tests._alembic_harness import (
 )
 from tests.test_coord_policy_outcome_counts_01_migration import (
     _OTHER_TENANT,
+    _TENANT,
     _TRIGGERS,
     _counts,
     _entity,
@@ -501,7 +502,11 @@ def test_a_writer_racing_a_zero_row_delete_ends_exact(
         # revision 01 body the row would still be here at zero.
         assert (
             deleter.execute(
-                text("SELECT count(*) FROM coord.policy_outcome_counts")
+                text(
+                    "SELECT count(*) FROM coord.policy_outcome_counts"
+                    " WHERE tenant_id = ANY(:tenants)"
+                ),
+                {"tenants": [_TENANT, _OTHER_TENANT]},
             ).scalar_one()
             == 0
         )
