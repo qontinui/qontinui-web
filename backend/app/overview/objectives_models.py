@@ -43,8 +43,15 @@ CheckpointStatus = Literal[
     "not_fully_read",
 ]
 FindingsReadState = Literal["ok", "truncated", "unavailable", "not_read"]
+#: ``another_project``: coord served the recorded id as another project's
+#: finding (it serves every project's ``scope: fleet-infra`` findings), so it
+#: is never read as this project's report.
 UnresolvedReason = Literal[
-    "superseded_or_missing", "read_failed", "not_read_over_limit", "invalid_id"
+    "superseded_or_missing",
+    "read_failed",
+    "not_read_over_limit",
+    "invalid_id",
+    "another_project",
 ]
 
 
@@ -67,10 +74,13 @@ class SourceRead(BaseModel):
 
 class ObjectivesSources(BaseModel):
     intent_documents: SourceRead
-    #: The per-metric findings list reads.
+    #: The per-metric findings list reads. Coord also serves other projects'
+    #: ``scope: fleet-infra`` findings; those are set aside, never placed, and
+    #: counted per measure in ``details``.
     findings: SourceRead
     #: The by-id reads of the ids metric documents record in ``results:`` and
-    #: of every result row's evidence finding (each report's inline body).
+    #: of every result row's evidence finding (each report's inline body). An
+    #: id coord serves as another project's finding is named in ``details``.
     findings_by_id: SourceRead
     #: The read of coord's checkpoint results table — where every verdict
     #: row comes from (Phase 4).
@@ -333,8 +343,14 @@ class MetricRead(BaseModel):
     direction: Literal["increase", "decrease"] | None = None
     direction_text: str | None = None
     serves: list[str] = Field(default_factory=list)
-    #: ``serves:`` ids no initiative declares.
+    #: ``serves:`` ids no initiative declares — said only when every
+    #: initiative could be read.
     serves_unknown: list[str] = Field(default_factory=list)
+    #: ``serves:`` ids no READABLE initiative declares while some initiative
+    #: could not be read (or the document list was incomplete): whether any
+    #: initiative declares them can't be checked, so they are never
+    #: ``serves_unknown``.
+    serves_unchecked: list[str] = Field(default_factory=list)
     report_topic: str | None = None
     structured_reporting_since: str | None = None
     source_query_type: SourceQueryType = "absent"
@@ -362,9 +378,12 @@ class MetricRead(BaseModel):
 class ObjectivesRead(BaseModel):
     tenant_id: UUID
     generated_at: datetime
-    #: Live initiatives first; the others belong under "Earlier and other
-    #: initiatives".
+    #: Live initiatives first; the other readable ones belong under "Earlier
+    #: and other initiatives". An initiative that can't be read (``state ==
+    #: "unreadable"`` or a ``frontmatter_error``) is neither: whether it is
+    #: live is unknown.
     initiatives: list[InitiativeRead]
+    #: The readable initiatives that are not live.
     earlier_initiatives_count: int
     #: False: "The project's objectives can't be read" (reason in
     #: ``sources.intent_documents``) — never an empty objectives list.
@@ -376,6 +395,11 @@ class ObjectivesRead(BaseModel):
     #: Every other shown metric.
     other_metrics: list[str]
     skeletons_hidden: int
-    #: Documents marked ``mispublished: true``: published to the wrong project.
-    void_hidden: int
+    #: Metric documents marked ``mispublished: true`` (published to the wrong
+    #: project): hidden, and NAMED, so a client listing the written documents
+    #: can tell a void one from one this read did not return.
+    void_metric_names: list[str]
+    #: Initiative documents marked ``mispublished: true``, hidden and named
+    #: the same way.
+    void_initiative_names: list[str]
     sources: ObjectivesSources

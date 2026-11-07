@@ -3,9 +3,9 @@
 Plan ``2026-10-06-overview-objectives-view`` Phase 1. Failure arms come first:
 the whole point of the read is that a gap upstream renders as UNKNOWN with its
 reason, never as "no results" and never as an error page. The success path
-then uses the merge-train metric's real v2 frontmatter
-(``tests/fixtures/objectives/merge_train_throughput_v2.md``) and the live
-initiative's real frontmatter shape.
+then uses the shape of the merge-train metric's v2 frontmatter
+(``tests/fixtures/objectives/merge_train_throughput_v2.md``, sanitized) and
+the shape of the live initiative's frontmatter.
 
 The ``metric-checkpoint/v1`` validator runs every golden case in
 ``tests/fixtures/metric_checkpoint_v1/cases.json`` — the same file Phase 3
@@ -27,6 +27,7 @@ import copy
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -56,6 +57,9 @@ API = "/api/v1/overview"
 
 pytestmark = pytest.mark.asyncio
 TENANT = UUID("aaaaaaaa-0000-4000-8000-00000000000a")
+#: Another project on the same coord: its ``scope: fleet-infra`` findings are
+#: served to every project's reads.
+OTHER_TENANT = UUID("bbbbbbbb-0000-4000-8000-00000000000b")
 FIXTURES = Path(__file__).parent / "fixtures"
 MERGE_TRAIN = "merge-train-throughput-2026-10"
 DOC_KEY = f"prompt_document:success_metric/{MERGE_TRAIN}"
@@ -210,8 +214,11 @@ class FakeFindings:
 
     Faithful where it matters: a list read hides expired and superseded rows
     and caps at ``limit``; a by-id read serves an expired row but hides a
-    superseded one, and answers an unknown id with an empty page. The results
-    door behaves like coord's insert path: a finding whose block passes the
+    superseded one, and answers an unknown id with an empty page. Both serve,
+    as coord does (``tenant_id = $1 OR scope = 'fleet-infra'``), the caller's
+    own findings AND every other project's fleet-infra ones, each row naming
+    its ``tenant_id``. The results door behaves like coord's insert path, and
+    is scoped to the caller's own project: a finding whose block passes the
     shape-only validator (coord's Phase 3 check) has one row per block row,
     whatever its age; a superseded report's rows are not served. ``unrecorded``
     finding ids have no rows (an insert skipped on 42P01, or a report that
@@ -248,12 +255,16 @@ class FakeFindings:
         created_at: str = "2026-10-08T16:10:00Z",
         expired: bool = False,
         supersedes: str | None = None,
+        tenant: UUID = TENANT,
+        scope: str = "tenant",
     ) -> dict[str, Any]:
         refs: dict[str, Any] = {}
         if block is not None:
             refs["metric_checkpoint"] = block
         row = {
             "finding_id": finding_id,
+            "tenant_id": str(tenant),
+            "scope": scope,
             "kind": "status",
             "topic": topic,
             "title": title,
@@ -270,6 +281,12 @@ class FakeFindings:
 
     def _superseded(self) -> set[str]:
         return {r["supersedes"] for r in self.rows if r.get("supersedes")}
+
+    @staticmethod
+    def _visible(row: dict[str, Any], tenant_id: UUID) -> bool:
+        """Coord's findings visibility: own rows, plus fleet-infra rows of
+        any project."""
+        return row["tenant_id"] == str(tenant_id) or row["scope"] == "fleet-infra"
 
     async def list_for_keys(
         self, tenant_id: UUID, resource_keys: list[str], limit: int
@@ -288,6 +305,7 @@ class FakeFindings:
             if set(r["resource_keys"]) & set(resource_keys)
             and r["expires_at"] > "2026-10-06"
             and r["finding_id"] not in hidden
+            and self._visible(r, tenant_id)
         ][:limit]
         return {
             "available": True,
@@ -304,17 +322,22 @@ class FakeFindings:
         hits = [
             copy.deepcopy(r)
             for r in self.rows
-            if r["finding_id"] == finding_id and finding_id not in self._superseded()
+            if r["finding_id"] == finding_id
+            and finding_id not in self._superseded()
+            and self._visible(r, tenant_id)
         ]
         return {"available": True, "count": len(hits), "findings": hits, "limit": 20}
 
-    def table_rows(self) -> list[dict[str, Any]]:
-        """What coord's results table holds, as its door serves a row."""
+    def table_rows(self, tenant_id: UUID = TENANT) -> list[dict[str, Any]]:
+        """What coord's results table holds for ``tenant_id``, as its door
+        serves a row (the door reads one project's rows only)."""
         hidden = self._superseded()
         out: list[dict[str, Any]] = []
         for f in self.rows:
             fid = f["finding_id"]
             if fid in hidden or fid in self.unrecorded:
+                continue
+            if f["tenant_id"] != str(tenant_id):
                 continue
             block = f["artifact_refs"].get("metric_checkpoint")
             if (
@@ -392,7 +415,7 @@ class FakeFindings:
             }
         if override is not None:
             return override
-        rows = [r for r in self.table_rows() if r["name"] in names]
+        rows = [r for r in self.table_rows(tenant_id) if r["name"] in names]
         return {"available": True, "rows": rows[:limit], "truncated": len(rows) > limit}
 
 
@@ -493,7 +516,7 @@ def _criterion(read: ObjectivesRead, cid: str, name: str = MERGE_TRAIN) -> Any:
 
 
 def _app(docs: FakeDocs, findings: FakeFindings) -> FastAPI:
-    from app.api.deps import get_async_db
+    from app.api.deps import current_active_user_optional, get_async_db
     from app.overview.intent_documents import intent_document_store
     from app.overview.objectives_join import coord_findings
     from app.overview.permissions import get_overview_access
@@ -505,6 +528,12 @@ def _app(docs: FakeDocs, findings: FakeFindings) -> FastAPI:
         yield None
 
     app.dependency_overrides[get_async_db] = _db
+    # A person's session: the route's device gate (`require_read`) resolves
+    # the caller before the access the stub below stands in for. A device is
+    # refused there (tests/test_overview_agent_publishing.py).
+    app.dependency_overrides[current_active_user_optional] = lambda: SimpleNamespace(
+        id=None, email="reader@example.com"
+    )
     app.dependency_overrides[get_overview_access] = _access
     app.dependency_overrides[intent_document_store] = lambda: IntentDocumentStore(docs)
     app.dependency_overrides[coord_findings] = lambda: findings
@@ -627,8 +656,9 @@ class TestFindingsReadFailures:
         self, docs: FakeDocs, findings: FakeFindings
     ) -> None:
         rows = [
-            {"finding_id": _id(500 + i), "topic": "other", "title": "n",
-             "resource_keys": [DOC_KEY], "created_at": "2026-10-07T00:00:00Z"}
+            {"finding_id": _id(500 + i), "tenant_id": str(TENANT), "scope": "tenant",
+             "topic": "other", "title": "n", "resource_keys": [DOC_KEY],
+             "created_at": "2026-10-07T00:00:00Z"}
             for i in range(FINDINGS_PAGE_LIMIT)
         ]  # fmt: skip
         findings.list_override[MERGE_TRAIN] = {
@@ -1694,6 +1724,132 @@ class TestPlacement:
         assert "document.name" in (report.block_error or "")
 
 
+class TestAnotherProjectsFindings:
+    """Coord serves every project's ``scope: fleet-infra`` findings to every
+    project's reads (``findings.rs``: ``tenant_id = $1 OR scope =
+    'fleet-infra'``), each row naming its ``tenant_id``. Only this project's
+    own rows are ever its reports."""
+
+    def _foreign(self, findings: FakeFindings, fid: str, **kwargs: Any) -> None:
+        findings.add(fid, tenant=OTHER_TENANT, scope="fleet-infra", **kwargs)
+
+    async def test_a_foreign_fleet_infra_report_shape_is_never_placed(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        # This project's report for checkpoint 1, and another project's
+        # finding shaped exactly like a later report for it: the document's
+        # key, the report topic, the checkpoint key and a valid block.
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=_block())
+        self._foreign(
+            findings,
+            _id(2),
+            title="Merge-train checkpoint 1 (another project)",
+            keys=[DOC_KEY, "merge-train-metrics", "checkpoint-1"],
+            block=_block(measured_at="2026-10-08T18:00:00Z"),
+            created_at="2026-10-08T18:05:00Z",
+        )
+        # ...and one shaped like a later prose-only report for checkpoint 2,
+        # which would otherwise mark checkpoint 1's verdicts out of date.
+        self._foreign(
+            findings,
+            _id(3),
+            title="Merge-train checkpoint 2 (prose)",
+            keys=[DOC_KEY, "checkpoint-2"],
+            created_at="2026-10-13T10:05:00Z",
+        )
+        read = await _read(docs, findings, now=datetime(2026, 10, 16, tzinfo=UTC))
+        metric = _metric(read)
+        cp1 = _checkpoint(read, "checkpoint-1")
+        assert cp1.report is not None and cp1.report.finding_id == _id(1)
+        assert cp1.history == []
+        assert _checkpoint(read, "checkpoint-2").report is None
+        assert _checkpoint(read, "checkpoint-2").status == "no_report_found"
+        latest = _criterion(read, "1.2")
+        assert latest.verdict == "met" and latest.finding_id == _id(1)
+        assert latest.out_of_date_notice is None
+        # Not a note either: set aside, and counted.
+        assert {n.finding_id for n in metric.related_notes}.isdisjoint({_id(2), _id(3)})
+        source = read.sources.findings
+        assert source.status == "ok"
+        assert MERGE_TRAIN in source.affected
+        assert source.details[MERGE_TRAIN].startswith("2 finding(s)")
+        assert "not this project's own" in source.details[MERGE_TRAIN]
+        # Its rows are not this project's table rows either.
+        assert all(r["evidence_finding_id"] != _id(2) for r in findings.table_rows())
+
+    async def test_a_foreign_finding_recorded_in_results_is_not_read_as_the_report(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        docs.seed("success_metric", MERGE_TRAIN,
+                  _with_results(MERGE_TRAIN_BODY, [("checkpoint-1", _id(4))]))  # fmt: skip
+        # Not at this metric's keys: only the by-id read of the recorded id
+        # finds it.
+        self._foreign(
+            findings,
+            _id(4),
+            title="Merge-train checkpoint 1",
+            keys=["prompt_document:success_metric/another-metric", "checkpoint-1"],
+            block=_block(),
+        )
+        read = await _read(docs, findings, now=datetime(2026, 10, 14, tzinfo=UTC))
+        assert findings.by_id_calls == [_id(4)]
+        cp1 = _checkpoint(read, "checkpoint-1")
+        assert cp1.report is None
+        assert [u.reason for u in cp1.unresolved_results] == ["another_project"]
+        # The document records a report this project cannot read: unknown,
+        # never "no report found" and never MET.
+        assert cp1.status == "unreadable"
+        assert {c.verdict for c in cp1.criteria} == {"unknown"}
+        source = read.sources.findings_by_id
+        assert source.status == "ok"
+        assert _id(4) in source.affected
+        assert "not as this project's own" in source.details[_id(4)]
+
+    async def test_a_row_naming_no_project_is_not_read_as_a_report(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        # Shaped like a report placed by topic + checkpoint key (rule (c)),
+        # but naming no project at all.
+        row = {
+            "finding_id": _id(5), "scope": "tenant", "kind": "status",
+            "topic": "merge-train-metrics", "title": "Merge-train checkpoint 1",
+            "body": "b", "resource_keys": [DOC_KEY, "checkpoint-1"],
+            "artifact_refs": {}, "created_at": "2026-10-08T16:10:00Z",
+            "expires_at": "2026-10-22T16:10:00Z", "supersedes": None,
+        }  # fmt: skip
+        findings.list_override[MERGE_TRAIN] = {
+            "available": True,
+            "count": 1,
+            "findings": [row],
+            "limit": FINDINGS_PAGE_LIMIT,
+        }
+        read = await _read(docs, findings)
+        assert _checkpoint(read, "checkpoint-1").report is None
+        assert _metric(read).related_notes == []
+        assert read.sources.findings.details[MERGE_TRAIN].startswith("1 finding(s)")
+
+    async def test_foreign_rows_still_fill_the_page(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        """Coord's page limit counts every row it served, foreign ones too."""
+        rows = [
+            {"finding_id": _id(600 + i), "tenant_id": str(OTHER_TENANT),
+             "scope": "fleet-infra", "topic": "other", "title": "n",
+             "resource_keys": [DOC_KEY], "created_at": "2026-10-07T00:00:00Z"}
+            for i in range(FINDINGS_PAGE_LIMIT)
+        ]  # fmt: skip
+        findings.list_override[MERGE_TRAIN] = {
+            "available": True,
+            "findings": rows,
+            "limit": FINDINGS_PAGE_LIMIT,
+        }
+        read = await _read(docs, findings)
+        assert _metric(read).findings_read == "truncated"
+        assert read.sources.findings.status == "truncated"
+        detail = read.sources.findings.details[MERGE_TRAIN]
+        assert "came back full" in detail and "not this project's own" in detail
+
+
 class TestRecordedResults:
     async def test_an_expired_result_is_served_by_id_from_results(
         self, docs: FakeDocs, findings: FakeFindings
@@ -1913,11 +2069,12 @@ class TestDocumentShapes:
         assert "example-metric" not in {m.name for m in read.metrics}
         assert all("example-metric" not in k[0][0] for k in findings.list_calls)
 
-    async def test_a_mispublished_document_is_void_hidden_and_counted(
+    async def test_a_mispublished_document_is_void_hidden_and_named(
         self, docs: FakeDocs, findings: FakeFindings
     ) -> None:
         read = await _read(docs, findings)
-        assert read.void_hidden == 1
+        assert read.void_metric_names == ["citation-groundedness"]
+        assert read.void_initiative_names == []
         assert "citation-groundedness" not in {m.name for m in read.metrics}
         assert "citation-groundedness" not in read.other_metrics
 
@@ -1928,7 +2085,9 @@ class TestDocumentShapes:
                   "---\nmispublished: true\nstatus: live\nin_scope:\n  - id: x\n"
                   "    text: x\n---\n\n# Void\n")  # fmt: skip
         read = await _read(docs, findings)
-        assert read.void_hidden == 2
+        # Counted apart: a void initiative is never reported as a hidden metric.
+        assert read.void_initiative_names == ["wrong-project"]
+        assert read.void_metric_names == ["citation-groundedness"]
         assert [i.name for i in read.initiatives] == ["current-initiative"]
 
     async def test_an_unreadable_metric_is_shown_and_named_in_sources(
@@ -1950,8 +2109,45 @@ class TestDocumentShapes:
         assert read.objectives_readable is False
         assert read.sources.intent_documents.status == "degraded"
         assert "can't be read" in (read.sources.intent_documents.reason or "")
-        assert read.initiatives[0].state == "unreadable"
+        initiative = read.initiatives[0]
+        assert initiative.state == "unreadable"
+        assert initiative.error  # rendered with its error, not as empty
+        # Whether it is live is unknown, so it is not an "earlier" one either.
+        assert read.earlier_initiatives_count == 0
         assert len(read.metrics) == 4  # the measures still show
+        # The unreadable initiative may declare what a measure serves: that
+        # can't be checked, and is never "no initiative declares it".
+        dev = _metric(read, "development-speed")
+        assert dev.serves_unknown == []
+        assert dev.serves_unchecked == ["remote-session-access", "coord-reachability"]
+        assert all(m.serves_unknown == [] for m in read.metrics)
+
+    async def test_an_initiative_frontmatter_error_leaves_serves_unchecked(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        docs.seed("initiative", "current-initiative",
+                  "---\nstatus: [unclosed\n---\n\n# I\n")  # fmt: skip
+        read = await _read(docs, findings)
+        assert read.objectives_readable is False
+        assert read.initiatives[0].frontmatter_error
+        assert read.earlier_initiatives_count == 0
+        dev = _metric(read, "development-speed")
+        assert (dev.serves_unknown, dev.serves_unchecked) == (
+            [],
+            ["remote-session-access", "coord-reachability"],
+        )
+
+    async def test_a_degraded_listing_leaves_serves_unchecked(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        """A degraded list may be missing an initiative that declares it."""
+        docs.seed("success_metric", "github-actions-monthly-spend",
+                  "---\nserves: [cost-control]\n---\n\n# Spend\n")  # fmt: skip
+        docs.degraded = "the store answered a partial page"
+        read = await _read(docs, findings)
+        spend = _metric(read, "github-actions-monthly-spend")
+        assert spend.serves_unknown == []
+        assert spend.serves_unchecked == ["cost-control"]
 
     async def test_no_initiative_written_is_readable_and_empty_not_unreadable(
         self, docs: FakeDocs, findings: FakeFindings
@@ -2015,10 +2211,8 @@ class TestDocumentShapes:
             # PyYAML raises ValueError, not YAMLError, for an impossible date.
             "metric: dev\nbaseline_as_of: 2026-02-30\n",
             "metric: dev\nbaseline_as_of: 2026-10-08 25:00:00\n",
-            # ...and RecursionError for nesting deeper than the stack.
-            "metric: " + "[" * 3000 + "]" * 3000 + "\n",
         ],
-        ids=["syntax", "impossible_date", "impossible_time", "too_deep"],
+        ids=["syntax", "impossible_date", "impossible_time"],
     )
     async def test_unparseable_yaml_never_fails_the_page(
         self, docs: FakeDocs, findings: FakeFindings, frontmatter: str
@@ -2033,6 +2227,83 @@ class TestDocumentShapes:
         )
         assert metric.metric is None
         assert "development-speed" in read.sources.intent_documents.affected
+
+    @pytest.mark.parametrize(
+        ("frontmatter", "said"),
+        [
+            # Billion laughs: ~300 bytes that expand to 9**6 leaves once the
+            # aliases are copied.
+            (
+                "metric: dev\n"
+                + "a0: &a0 [x, x, x, x, x, x, x, x, x]\n"
+                + "".join(
+                    f"a{i}: &a{i} [{', '.join([f'*a{i - 1}'] * 9)}]\n"
+                    for i in range(1, 6)
+                ),
+                "anchor or alias",
+            ),
+            # A ~20 KB alias chain: each list holds the previous one, so the
+            # value nests ~1,000 deep while the parser never recursed.
+            (
+                "metric: dev\nc0: &c0 [x]\n"
+                + "".join(f"c{i}: &c{i} [*c{i - 1}]\n" for i in range(1, 1000)),
+                "anchor or alias",
+            ),
+            # Deep nesting with no alias at all.
+            ("metric: " + "[" * 3000 + "]" * 3000 + "\n", "nests deeper than 32"),
+            ("metric: dev\nnotes: " + "x" * 70_000 + "\n", "64,000"),
+        ],
+        ids=["alias_bomb", "alias_chain", "deep_nesting", "oversize"],
+    )
+    async def test_a_hostile_block_degrades_only_its_document_and_the_page_is_200(
+        self, docs: FakeDocs, findings: FakeFindings, frontmatter: str, said: str
+    ) -> None:
+        docs.seed("success_metric", "development-speed",
+                  f"---\n{frontmatter}---\n\n# Dev\n")  # fmt: skip
+        response = await _get(docs, findings)
+        assert response.status_code == 200, response.text[:500]
+        body = response.json()
+        metrics = {m["name"]: m for m in body["metrics"]}
+        dev = metrics["development-speed"]
+        assert said in (dev["frontmatter_error"] or ""), dev["frontmatter_error"]
+        assert dev["metric"] is None and dev["criteria"] == []
+        assert "development-speed" in body["sources"]["intent_documents"]["affected"]
+        # Every other document reads as before.
+        assert metrics[MERGE_TRAIN]["frontmatter_error"] is None
+        assert len(metrics[MERGE_TRAIN]["criteria"]) == 17
+        assert body["objectives_readable"] is True
+
+    async def test_a_crash_building_one_document_marks_only_that_document(
+        self, docs: FakeDocs, findings: FakeFindings, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.overview import objectives
+
+        real_metric = objectives.build_metric
+
+        def metric_or_crash(doc: Any) -> Any:
+            if doc.name == "development-speed":
+                raise RuntimeError("boom")
+            return real_metric(doc)
+
+        def initiative_or_crash(doc: Any) -> Any:
+            raise RecursionError("too deep")
+
+        monkeypatch.setattr(objectives, "build_metric", metric_or_crash)
+        monkeypatch.setattr(objectives, "build_initiative", initiative_or_crash)
+        response = await _get(docs, findings)
+        assert response.status_code == 200, response.text[:500]
+        body = response.json()
+        dev = next(m for m in body["metrics"] if m["name"] == "development-speed")
+        assert "RuntimeError" in dev["frontmatter_error"]
+        assert dev["title"] == "Development speed"
+        assert "development-speed" in body["sources"]["intent_documents"]["affected"]
+        merge = next(m for m in body["metrics"] if m["name"] == MERGE_TRAIN)
+        assert merge["frontmatter_error"] is None
+        # The crashed initiative is listed, unreadable — never an empty one.
+        assert body["objectives_readable"] is False
+        (initiative,) = body["initiatives"]
+        assert "RecursionError" in initiative["frontmatter_error"]
+        assert initiative["objectives"] == []
 
     async def test_free_text_bounds_and_a_ceiling_without_a_target(
         self, docs: FakeDocs, findings: FakeFindings
@@ -2382,6 +2653,73 @@ class TestFrontmatterUnits:
         assert title_of_document("x", "Setext Title\n=====\n\nbody") == "Setext Title"
         assert title_of_document("x-y", "# ***\n") == "X y"
         assert title_of_document("x", "- item\n===\n") == "X"
+
+
+class TestFrontmatterBounds:
+    @pytest.mark.parametrize("where", ["_load", "_iso"])
+    def test_a_stack_that_runs_out_is_this_blocks_error_not_an_exception(
+        self, monkeypatch: pytest.MonkeyPatch, where: str
+    ) -> None:
+        """The depth bound stops nesting first; a RecursionError anywhere in
+        the parse is still reported on the document, never raised."""
+        from app.overview import objectives_frontmatter as fm
+
+        def run_out(*_: Any) -> Any:
+            raise RecursionError("maximum recursion depth exceeded")
+
+        monkeypatch.setattr(fm, where, run_out)
+        mapping, error = fm.parse_frontmatter("---\na: 2026-10-08\n---\n")
+        assert mapping == {}
+        assert error and "could not be parsed" in error
+
+    def test_the_real_merge_train_shape_is_within_every_bound(self) -> None:
+        from app.overview.intent_documents import split_frontmatter
+
+        block, _ = split_frontmatter(MERGE_TRAIN_BODY)
+        mapping, error = parse_frontmatter(block)
+        assert error is None and len(mapping["criteria"]) == 17
+
+
+class TestValidatorAnchors:
+    """``$`` matches before a trailing newline; every pattern is applied
+    with ``fullmatch``, so a value with one is refused."""
+
+    def test_a_trailing_newline_is_not_a_uuid(self) -> None:
+        from app.overview.metric_checkpoint import is_uuid
+
+        assert is_uuid(_id(1))
+        assert not is_uuid(_id(1) + "\n")
+
+    def test_a_trailing_newline_is_not_a_utc_timestamp(self) -> None:
+        from app.overview.metric_checkpoint import is_utc_timestamp
+
+        assert is_utc_timestamp("2026-10-08T16:05:00Z")
+        assert not is_utc_timestamp("2026-10-08T16:05:00Z\n")
+
+    def test_a_block_with_trailing_newlines_is_refused_field_by_field(self) -> None:
+        block = _block()
+        block["document"]["name"] = MERGE_TRAIN + "\n"
+        block["measured_at"] = "2026-10-08T16:05:00Z\n"
+        block["gate_id"] = f"{block['gate_id']}\n"
+        result = validate_metric_checkpoint(
+            block, resource_keys=[DOC_KEY, f"{DOC_KEY}\n"]
+        )
+        fields = {p.field for p in result.errors}
+        assert {"document.name", "measured_at", "gate_id"} <= fields
+
+    async def test_a_checkpoint_key_with_a_trailing_newline_is_not_one(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        """A late-path candidate is barred only by a real checkpoint key."""
+        findings.add(
+            _id(1),
+            title="Merge-train checkpoint 1: unblocked",
+            keys=[DOC_KEY, "checkpoint-1\n"],
+            created_at="2026-10-06T19:00:00Z",
+        )
+        read = await _read(docs, findings)
+        (note,) = _metric(read).related_notes
+        assert note.possible_report_for == "checkpoint-1"
 
 
 _CASES = json.loads(

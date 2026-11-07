@@ -10,8 +10,9 @@ rows are never partly trusted.
 **Strict, never normalising.** Every rule in Appendix A is a refusal, except
 the two the appendix marks as warnings (``cause`` / ``action`` missing on a
 ``missed`` / ``unknown`` row: an honest unknown can have no known cause) and an
-undeclared row id (plan D5, which the coordinator ruled governs over Appendix
-A's web-only refusal).
+undeclared row id (plan D5 — the plan records "D5 over Appendix A" as a
+decision the implementing session took, so D5 governs over Appendix A's
+web-only refusal).
 
 **Two validators, one schema.** Coord validates the same block on write (the
 plan's Phase 3). The checks that need the metric document are web-only, because
@@ -70,14 +71,16 @@ MAX_ROWS = 64
 MAX_STRING = 500
 MAX_BYTES = 32 * 1024
 
+# Every pattern below is applied with ``fullmatch``: ``$`` would also match
+# before a trailing newline, so ``"<uuid>\n"`` would pass as a uuid.
 #: Coord's own name rule for a hand-authored prompt document.
-_DOC_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_DOC_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _UUID = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 )
 #: RFC 3339 in UTC, with seconds: ``2026-10-08T16:05:00Z`` (or ``+00:00``).
 _UTC_TIMESTAMP = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|\+00:00)$"
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|\+00:00)"
 )
 
 
@@ -114,7 +117,7 @@ class ValidationResult:
 
 
 def is_utc_timestamp(value: Any) -> bool:
-    if not isinstance(value, str) or not _UTC_TIMESTAMP.match(value):
+    if not isinstance(value, str) or not _UTC_TIMESTAMP.fullmatch(value):
         return False
     try:
         datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -124,7 +127,7 @@ def is_utc_timestamp(value: Any) -> bool:
 
 
 def is_uuid(value: Any) -> bool:
-    return isinstance(value, str) and bool(_UUID.match(value))
+    return isinstance(value, str) and bool(_UUID.fullmatch(value))
 
 
 def _is_int(value: Any) -> bool:
@@ -254,7 +257,7 @@ def _check_document(
         check.error("document.kind", "must be success_metric")
     name = document.get("name")
     if "name" in document:
-        if not isinstance(name, str) or not _DOC_NAME.match(name):
+        if not isinstance(name, str) or not _DOC_NAME.fullmatch(name):
             check.error("document.name", "must be a document name (kebab-case)")
         elif document_resource_key(name) not in set(resource_keys or ()):
             check.error(
