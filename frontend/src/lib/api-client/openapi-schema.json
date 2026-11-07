@@ -8992,10 +8992,12 @@
               "reported",
               "reported_prose_only",
               "reported_unreadable",
+              "reported_rows_not_recorded",
               "awaiting",
               "no_report_found",
               "possible_report_unrecorded",
               "unreadable",
+              "checkpoint_results_unreadable",
               "not_fully_read"
             ],
             "title": "Status",
@@ -31800,7 +31802,9 @@
             "enum": [
               "structured",
               "prose_only",
-              "unreadable_block"
+              "unreadable_block",
+              "rows_not_recorded",
+              "rows_unread"
             ],
             "title": "Shape",
             "type": "string"
@@ -34850,6 +34854,17 @@
             "title": "Checkpoint Results",
             "type": "array"
           },
+          "checkpoint_results_read": {
+            "default": "not_read",
+            "enum": [
+              "ok",
+              "truncated",
+              "unavailable",
+              "not_read"
+            ],
+            "title": "Checkpoint Results Read",
+            "type": "string"
+          },
           "checkpoints": {
             "items": {
               "$ref": "#/components/schemas/CheckpointDeclRead"
@@ -36867,6 +36882,9 @@
       },
       "ObjectivesSources": {
         "properties": {
+          "checkpoint_results": {
+            "$ref": "#/components/schemas/SourceRead"
+          },
           "findings": {
             "$ref": "#/components/schemas/SourceRead"
           },
@@ -36880,7 +36898,8 @@
         "required": [
           "intent_documents",
           "findings",
-          "findings_by_id"
+          "findings_by_id",
+          "checkpoint_results"
         ],
         "title": "ObjectivesSources",
         "type": "object"
@@ -48359,6 +48378,17 @@
             ],
             "title": "Body"
           },
+          "body_unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Unavailable"
+          },
           "checkpoint": {
             "title": "Checkpoint",
             "type": "string"
@@ -48436,6 +48466,7 @@
           "placed_by": {
             "items": {
               "enum": [
+                "table",
                 "block",
                 "results",
                 "checkpoint_key"
@@ -48461,7 +48492,9 @@
             "enum": [
               "structured",
               "prose_only",
-              "unreadable_block"
+              "unreadable_block",
+              "rows_not_recorded",
+              "rows_unread"
             ],
             "title": "Shape",
             "type": "string"
@@ -48790,7 +48823,7 @@
         "type": "object"
       },
       "ResultRowRead": {
-        "description": "One row of a valid ``metric-checkpoint/v1`` block, as stated.",
+        "description": "One verdict row from coord's checkpoint results table, as the\nmeasurer stated it.",
         "properties": {
           "action": {
             "anyOf": [

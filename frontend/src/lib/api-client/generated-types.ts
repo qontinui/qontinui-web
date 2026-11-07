@@ -30494,7 +30494,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "reported" | "reported_prose_only" | "reported_unreadable" | "awaiting" | "no_report_found" | "possible_report_unrecorded" | "unreadable" | "not_fully_read";
+            status: "reported" | "reported_prose_only" | "reported_unreadable" | "reported_rows_not_recorded" | "awaiting" | "no_report_found" | "possible_report_unrecorded" | "unreadable" | "checkpoint_results_unreadable" | "not_fully_read";
             /** Status Reason */
             status_reason?: string | null;
             tally?: components["schemas"]["TallyRead"];
@@ -41194,7 +41194,7 @@ export interface components {
              * Shape
              * @enum {string}
              */
-            shape: "structured" | "prose_only" | "unreadable_block";
+            shape: "structured" | "prose_only" | "unreadable_block" | "rows_not_recorded" | "rows_unread";
         };
         /**
          * LearnedWorkflowResponse
@@ -42761,6 +42761,12 @@ export interface components {
             ceiling_text?: string | null;
             /** Checkpoint Results */
             checkpoint_results?: components["schemas"]["CheckpointResultRead"][];
+            /**
+             * Checkpoint Results Read
+             * @default not_read
+             * @enum {string}
+             */
+            checkpoint_results_read: "ok" | "truncated" | "unavailable" | "not_read";
             /** Checkpoints */
             checkpoints?: components["schemas"]["CheckpointDeclRead"][];
             /** Checkpoints Text */
@@ -43611,6 +43617,7 @@ export interface components {
         };
         /** ObjectivesSources */
         ObjectivesSources: {
+            checkpoint_results: components["schemas"]["SourceRead"];
             findings: components["schemas"]["SourceRead"];
             findings_by_id: components["schemas"]["SourceRead"];
             intent_documents: components["schemas"]["SourceRead"];
@@ -48566,6 +48573,8 @@ export interface components {
             block_warnings?: string[];
             /** Body */
             body: string | null;
+            /** Body Unavailable */
+            body_unavailable?: string | null;
             /** Checkpoint */
             checkpoint: string;
             /** Checkpoint Mismatch */
@@ -48583,7 +48592,7 @@ export interface components {
             /** Measured At */
             measured_at?: string | null;
             /** Placed By */
-            placed_by: ("block" | "results" | "checkpoint_key")[];
+            placed_by: ("table" | "block" | "results" | "checkpoint_key")[];
             /**
              * Recorded
              * @default false
@@ -48595,7 +48604,7 @@ export interface components {
              * Shape
              * @enum {string}
              */
-            shape: "structured" | "prose_only" | "unreadable_block";
+            shape: "structured" | "prose_only" | "unreadable_block" | "rows_not_recorded" | "rows_unread";
             /** Title */
             title: string | null;
             /** Topic */
@@ -48747,7 +48756,8 @@ export interface components {
         };
         /**
          * ResultRowRead
-         * @description One row of a valid ``metric-checkpoint/v1`` block, as stated.
+         * @description One verdict row from coord's checkpoint results table, as the
+         *     measurer stated it.
          */
         ResultRowRead: {
             action?: components["schemas"]["ActionRead"] | null;
