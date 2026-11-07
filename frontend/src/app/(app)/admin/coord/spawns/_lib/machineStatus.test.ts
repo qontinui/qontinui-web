@@ -72,6 +72,29 @@ describe("machineStatusLines", () => {
     expect(b.role.text).toBe("Bench");
   });
 
+  it("reads a CI-only drain as still taking new sessions", () => {
+    // Finding f802311d: a drain may now hold one lane, and this console is
+    // about agent spawns — a CI hold must not read as "out of service".
+    const body = drainBody(NOW);
+    const entry = body.drained[DEVICE_B];
+    const lanes = (l: Array<"agent" | "ci">) =>
+      parseFleetDrain({
+        ...body,
+        drained: { [DEVICE_B]: { ...entry, lanes: l } },
+      });
+    const ciOnly = lineOf(machineStatusLines(input({ drain: lanes(["ci"]) })), DEVICE_B);
+    expect(ciOnly.drain).toMatchObject({
+      state: "not_drained",
+      text: "taking new work — CI held",
+      unknown: false,
+    });
+    const agentOnly = lineOf(
+      machineStatusLines(input({ drain: lanes(["agent"]) })),
+      DEVICE_B
+    );
+    expect(agentOnly.drain.state).toBe("drained");
+  });
+
   it("says in flight against ceiling is UNKNOWN on every line, naming the door no console reads", () => {
     for (const line of machineStatusLines(input()) ?? []) {
       expect(line.inFlight.unknown).toBe(true);

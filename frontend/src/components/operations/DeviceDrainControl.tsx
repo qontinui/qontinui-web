@@ -63,14 +63,32 @@
  * The block carries `data-testid="device-drain-status"` rather than the
  * operator's `device-drain`, so "no drain control on the page" is checkable by
  * testid.
+ *
+ * ## Lanes (finding f802311d-aef5-40e8-a5f8-4bd3a554b37e)
+ *
+ * A drain holds coord's two lanes separately — `agent` (agent-session spawns
+ * and gate continuations) and `ci` (CI-node, build and merge-capacity
+ * dispatch). Until this lever offered a choice it always sent no `lanes`, so
+ * it always held or released BOTH: on 2026-11-04 an operator who needed only
+ * to stop spawns on one machine took its CI away with them. So:
+ *
+ * - the drain dialog offers both (the default, sent as NO `lanes` field — the
+ *   request this lever always sent), agent sessions only, or CI only;
+ * - a drained row names which lanes are held, each with its own deadline,
+ *   from the read's `lanes` / `by_lane`, and a row held on one lane keeps a
+ *   Drain… button for the other;
+ * - the release dialog may release one lane of two. A read that did not say
+ *   which lanes are held is UNKNOWN about them, and gets only the whole
+ *   release — never a guess.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { CircleSlash, HelpCircle, PlayCircle, PowerOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -88,13 +106,22 @@ import { createLogger } from "@/lib/logger";
 import { absoluteTime } from "@/components/console/time";
 import { OperatorOnly, usePresentationMode } from "@/components/presentation";
 import {
+  DRAIN_LANES,
+  DRAIN_LANE_HELP,
+  DRAIN_LANE_LABEL,
   DRAIN_PRESETS,
   MAX_DRAIN_DAYS,
   describeDrainError,
+  describeLanes,
   formatDrainRemaining,
+  heldLanes,
+  lanesForChoice,
   toLocalInputValue,
   validateDrainForm,
   type DeviceDrainState,
+  type DrainLane,
+  type DrainLaneChoice,
+  type DrainLaneRecord,
   type DrainTarget,
 } from "./fleetDrain";
 import { postDrain, postUndrain } from "./useFleetDrain";
@@ -231,6 +258,205 @@ interface StateLineInput {
   clock: number;
 }
 
+/** The lanes a drained row holds now, or `null` when not drained / not said. */
+type HeldLanes = Array<{ lane: DrainLane; record: DrainLaneRecord }> | null;
+
+function heldLanesOf(drain: DeviceDrainState, clock: number): HeldLanes {
+  if (drain.state !== "drained") return null;
+  const held = heldLanes(drain.entry, clock);
+  // An empty list cannot be told apart from a read that lost the lanes, so it
+  // is UNKNOWN about them too. (The headline `until` is the LATEST lane's, so
+  // a row still `drained` with no live lane should not occur.)
+  return held && held.length > 0 ? held : null;
+}
+
+/**
+ * A drain held on exactly ONE lane: that lane, its record, and the lane it
+ * leaves FREE — or `null` for any other shape (both held, or unknown).
+ */
+function singleLane(
+  held: HeldLanes
+): { lane: DrainLane; record: DrainLaneRecord; free: DrainLane } | null {
+  const only = held?.length === 1 ? held[0] : undefined;
+  if (!only) return null;
+  const free = DRAIN_LANES.find((l) => l !== only.lane);
+  return free ? { ...only, free } : null;
+}
+
+/**
+ * Per lane: held until when, by whom and why — or not held. Coord writes and
+ * expires each lane on its own, so a two-lane drain can end at two times.
+ */
+function HeldLanesList({
+  held,
+  clock,
+}: {
+  held: NonNullable<HeldLanes>;
+  clock: number;
+}) {
+  return (
+    <span
+      className="mt-1 block space-y-0.5"
+      data-testid="device-drain-lanes-held"
+    >
+      {DRAIN_LANES.map((lane) => {
+        const hit = held.find((h) => h.lane === lane);
+        return (
+          <span
+            key={lane}
+            className="block break-words"
+            data-lane={lane}
+            data-held={hit ? "true" : "false"}
+          >
+            <span className="font-medium text-foreground">
+              {DRAIN_LANE_LABEL[lane]}
+            </span>{" "}
+            {hit ? (
+              <>
+                — held until{" "}
+                <span className="font-medium text-foreground">
+                  {absoluteTime(hit.record.until)}
+                </span>{" "}
+                ({formatDrainRemaining(hit.record.until, clock)}) by{" "}
+                {hit.record.drainedBy ?? "an operator this read did not name"},
+                reason {hit.record.reason ?? "not recorded"}.
+              </>
+            ) : (
+              <>— not held; coord still sends it {DRAIN_LANE_HELP[lane]}.</>
+            )}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+interface LaneOption {
+  value: DrainLaneChoice;
+  label: string;
+  detail: string;
+}
+
+/**
+ * A lane choice, as a labelled radio group. It sits inside the consent dialog,
+ * which `OperatorOnly` unmounts while presenting — every option is a write
+ * scope, so none of it may be marked navigation-only.
+ */
+function LaneChoiceGroup({
+  label,
+  value,
+  options,
+  onChange,
+  disabled,
+  testIdPrefix,
+}: {
+  label: string;
+  value: DrainLaneChoice;
+  options: ReadonlyArray<LaneOption>;
+  onChange: (next: DrainLaneChoice) => void;
+  disabled: boolean;
+  testIdPrefix: string;
+}) {
+  const baseId = useId();
+  return (
+    <div className="space-y-1.5">
+      <Label id={`${baseId}-label`}>{label}</Label>
+      <RadioGroup
+        value={value}
+        onValueChange={(v) => onChange(v as DrainLaneChoice)}
+        disabled={disabled}
+        aria-labelledby={`${baseId}-label`}
+        className="gap-2"
+        data-testid={testIdPrefix}
+      >
+        {options.map((option) => {
+          const id = `${baseId}-${option.value}`;
+          return (
+            <div key={option.value} className="flex items-start gap-2">
+              <RadioGroupItem
+                value={option.value}
+                id={id}
+                className="mt-0.5"
+                data-testid={`${testIdPrefix}-${option.value}`}
+              />
+              <label htmlFor={id} className="cursor-pointer text-sm break-words">
+                <span className="font-medium">{option.label}</span>
+                <span className="block text-[11px] text-muted-foreground">
+                  {option.detail}
+                </span>
+              </label>
+            </div>
+          );
+        })}
+      </RadioGroup>
+    </div>
+  );
+}
+
+/** The drain dialog's lane options. `both` first: it is the default. */
+const DRAIN_LANE_OPTIONS: ReadonlyArray<LaneOption> = [
+  {
+    value: "both",
+    label: "Both lanes",
+    detail: `Holds ${DRAIN_LANE_HELP.agent}, and ${DRAIN_LANE_HELP.ci}.`,
+  },
+  {
+    value: "agent",
+    label: "Agent sessions only",
+    detail: `Holds ${DRAIN_LANE_HELP.agent}. CI keeps being sent here.`,
+  },
+  {
+    value: "ci",
+    label: "CI only",
+    detail: `Holds ${DRAIN_LANE_HELP.ci}. Agent sessions keep landing here.`,
+  },
+];
+
+/** The release dialog's lane options, for a row held on both lanes. */
+function releaseLaneOptions(
+  held: NonNullable<HeldLanes>,
+  clock: number
+): LaneOption[] {
+  const stays = (lane: DrainLane) => {
+    const rec = held.find((h) => h.lane === lane)?.record;
+    return rec
+      ? `${DRAIN_LANE_LABEL[lane]} stays held until ${absoluteTime(rec.until)} (${formatDrainRemaining(rec.until, clock)}).`
+      : `${DRAIN_LANE_LABEL[lane]} stays held.`;
+  };
+  return [
+    {
+      value: "both",
+      label: "Both lanes",
+      detail: "Removes the drain: coord may send it any new work again.",
+    },
+    {
+      value: "agent",
+      label: "Agent sessions only",
+      detail: `Coord may send it ${DRAIN_LANE_HELP.agent} again. ${stays("ci")}`,
+    },
+    {
+      value: "ci",
+      label: "CI only",
+      detail: `Coord may send it ${DRAIN_LANE_HELP.ci} again. ${stays("agent")}`,
+    },
+  ];
+}
+
+/**
+ * The lanes a release sends. A row held on ONE lane names that lane rather
+ * than omitting the field: an omitted field releases every lane, which would
+ * also release a lane another operator drained after this page last read.
+ */
+function releaseLanesFor(
+  held: HeldLanes,
+  choice: DrainLaneChoice
+): DrainLane[] | undefined {
+  if (held === null) return undefined;
+  const only = singleLane(held);
+  if (only) return [only.lane];
+  return lanesForChoice(choice);
+}
+
 /**
  * The drain STATE as an external evaluator reads it: in service, out of
  * service until when, or unknown. No actor and no reason (an operator's
@@ -256,6 +482,23 @@ function presentedStateLine({ target, drain, clock }: StateLineInput) {
         taking new work — this is a statement about the read, not about the
         machine.
       </DrainNotice>
+    );
+  }
+  const held = heldLanesOf(drain, clock);
+  const only = singleLane(held);
+  if (drain.state === "drained" && only) {
+    // Held on ONE lane: the machine is still in service for the other, and
+    // "Out of service" would overstate it.
+    const rec = only.record;
+    return (
+      <DrainedNotice headline="Partly out of service">
+        No new {DRAIN_LANE_HELP[only.lane]} are sent to it until{" "}
+        <span className="font-medium text-foreground">
+          {absoluteTime(rec.until)}
+        </span>{" "}
+        ({formatDrainRemaining(rec.until, clock)}); {DRAIN_LANE_HELP[only.free]}{" "}
+        still reach it, and anything already running on it keeps running.
+      </DrainedNotice>
     );
   }
   if (drain.state === "drained") {
@@ -304,8 +547,16 @@ function operatorStateLine({ target, drain, clock }: StateLineInput) {
     );
   }
   if (drain.state === "drained") {
+    const held = heldLanesOf(drain, clock);
+    const only = singleLane(held);
     return (
-      <DrainedNotice headline="Drained">
+      <DrainedNotice
+        headline={
+          only
+            ? `Drained — ${DRAIN_LANE_LABEL[only.lane]} only`
+            : "Drained"
+        }
+      >
         Drained until{" "}
         <span className="font-medium text-foreground">
           {absoluteTime(drain.entry.until)}
@@ -322,8 +573,20 @@ function operatorStateLine({ target, drain, clock }: StateLineInput) {
         {drain.entry.drainedAt
           ? `Drained at ${absoluteTime(drain.entry.drainedAt)}. `
           : ""}
-        Coord sends it no new work until then; anything already running on it
-        keeps running.
+        {only
+          ? `Coord sends it no new ${DRAIN_LANE_HELP[only.lane]} until then, and still sends it ${DRAIN_LANE_HELP[only.free]}; `
+          : held && new Set(held.map((h) => h.record.until)).size > 1
+            ? "That is when the LAST lane ends — each lane comes back at its own time, below; "
+            : "Coord sends it no new work until then; "}
+        anything already running on it keeps running.
+        {held ? (
+          <HeldLanesList held={held} clock={clock} />
+        ) : (
+          <span className="mt-1 block" data-testid="device-drain-lanes-unknown">
+            Coord&apos;s read did not say which lanes this drain holds, so only
+            a release of every lane is offered.
+          </span>
+        )}
       </DrainedNotice>
     );
   }
@@ -355,10 +618,22 @@ export function DeviceDrainControl({
   const [mode, setMode] = useState<"drain" | "undrain" | null>(null);
   const [untilLocal, setUntilLocal] = useState("");
   const [reason, setReason] = useState("");
+  // Which lanes the open dialog acts on. `both` is the default every time a
+  // dialog opens, and is sent as NO `lanes` field.
+  const [laneChoice, setLaneChoice] = useState<DrainLaneChoice>("both");
+  // The lanes held when Undrain was clicked. The release dialog renders and
+  // submits from THIS, not from the live read: a poll or a lane expiring while
+  // the operator types would otherwise change which lanes the release names
+  // (a two-lane choice collapsing to "the one left", or a one-lane release
+  // widening to both and taking another operator's new drain with it).
+  const [releaseHeld, setReleaseHeld] = useState<HeldLanes>(null);
   const [busy, setBusy] = useState(false);
   const clock = now ?? Date.now();
 
   const deviceId = target.state === "identified" ? target.deviceId : null;
+  const held = heldLanesOf(drain, clock);
+  // The lane a single-lane drain leaves open — the one Drain… can still hold.
+  const freeLane = singleLane(held)?.free ?? null;
 
   // Not memoised: it is three string comparisons, and the submit path
   // re-validates against a fresh clock anyway — that second check is the one
@@ -369,6 +644,8 @@ export function DeviceDrainControl({
     setMode(null);
     setUntilLocal("");
     setReason("");
+    setLaneChoice("both");
+    setReleaseHeld(null);
   }, []);
 
   const submit = useCallback(async () => {
@@ -382,11 +659,13 @@ export function DeviceDrainControl({
         });
         return;
       }
+      const lanes = lanesForChoice(laneChoice);
       setBusy(true);
       const res = await postDrain({
         deviceId,
         untilIso: fresh.untilIso,
         reason: trimmed,
+        lanes,
       });
       setBusy(false);
       if (!res.ok) {
@@ -400,8 +679,12 @@ export function DeviceDrainControl({
         return;
       }
       toast.success(
-        `${rowHostname} drained — coord will send it no new work until the ` +
-          `expiry. Work already running on it is not stopped.`
+        lanes
+          ? `${rowHostname} drained for ${describeLanes(lanes)} only — coord ` +
+              `will send it no new ${lanes.map((l) => DRAIN_LANE_HELP[l]).join(" or ")} ` +
+              `until the expiry. Work already running on it is not stopped.`
+          : `${rowHostname} drained — coord will send it no new work until the ` +
+              `expiry. Work already running on it is not stopped.`
       );
       close();
       onActed?.();
@@ -416,8 +699,13 @@ export function DeviceDrainControl({
       });
       return;
     }
+    const releaseLanes = releaseLanesFor(releaseHeld, laneChoice);
     setBusy(true);
-    const res = await postUndrain({ deviceId, reason: trimmed });
+    const res = await postUndrain({
+      deviceId,
+      reason: trimmed,
+      lanes: releaseLanes,
+    });
     setBusy(false);
     if (!res.ok) {
       log.warn("undrain failed", res.status, res.body);
@@ -430,13 +718,27 @@ export function DeviceDrainControl({
       return;
     }
     toast.success(
-      res.changed
-        ? `${rowHostname} released — coord may send it work again.`
-        : `${rowHostname} was not drained, so nothing was released.`
+      !res.changed
+        ? releaseLanes
+          ? `${rowHostname} was not drained for ${describeLanes(releaseLanes)}, so nothing was released.`
+          : `${rowHostname} was not drained, so nothing was released.`
+        : releaseLanes && releaseLanes.length < DRAIN_LANES.length
+          ? `${rowHostname}: ${describeLanes(releaseLanes)} released — coord may send it ${releaseLanes.map((l) => DRAIN_LANE_HELP[l]).join(" or ")} again.`
+          : `${rowHostname} released — coord may send it work again.`
     );
     close();
     onActed?.();
-  }, [close, deviceId, mode, onActed, reason, rowHostname, untilLocal]);
+  }, [
+    close,
+    deviceId,
+    laneChoice,
+    mode,
+    onActed,
+    reason,
+    releaseHeld,
+    rowHostname,
+    untilLocal,
+  ]);
 
   // The state key the tests and the UI Bridge key on. `no_device` wins over
   // the drain state: with no device id there is nothing the drain map could
@@ -477,19 +779,27 @@ export function DeviceDrainControl({
       <OperatorOnly>
         <CoordAdminOnly fallback={<ReadOnlyNotice />}>
           <div className="flex flex-wrap items-center gap-2">
-            {drain.state === "drained" ? (
+            {drain.state === "drained" && (
               <Button
                 size="sm"
                 variant="outline"
                 disabled={!actable || busy}
                 title={actable ? undefined : disabledReason(target, drain)}
-                onClick={() => setMode("undrain")}
+                onClick={() => {
+                  setReason("");
+                  setLaneChoice("both");
+                  setReleaseHeld(held);
+                  setMode("undrain");
+                }}
                 data-testid="device-drain-undrain"
               >
                 <PlayCircle className="h-3.5 w-3.5" />
                 Undrain
               </Button>
-            ) : (
+            )}
+            {/* Drain… stays offered on a row held on ONE lane, so the other
+                lane can be held too without releasing the first. */}
+            {(drain.state !== "drained" || freeLane !== null) && (
               <Button
                 size="sm"
                 variant="outline"
@@ -498,6 +808,7 @@ export function DeviceDrainControl({
                 onClick={() => {
                   setUntilLocal("");
                   setReason("");
+                  setLaneChoice(freeLane ?? "both");
                   setMode("drain");
                 }}
                 data-testid="device-drain-open"
@@ -534,8 +845,8 @@ export function DeviceDrainControl({
                 <div className="space-y-2 text-sm">
                   <p className="break-words">
                     {mode === "undrain"
-                      ? "Coord may send this machine new work again as soon as this lands."
-                      : "Coord will stop sending this machine NEW work — CI jobs, builds, agent-session spawns and continuations. Work already running on it is not stopped, and no session is moved."}
+                      ? "Coord may send this machine new work again, on the lanes released, as soon as this lands."
+                      : "Coord will stop sending this machine NEW work on the lanes chosen below — agent-session spawns and continuations, CI jobs, builds and merge capacity. Work already running on it is not stopped, and no session is moved."}
                   </p>
                   {deviceId !== null && (
                     <p className="break-words">
@@ -554,6 +865,50 @@ export function DeviceDrainControl({
             </DialogHeader>
 
             <div className="space-y-3">
+              {mode === "drain" && (
+                <LaneChoiceGroup
+                  label="Lanes to hold"
+                  value={laneChoice}
+                  options={DRAIN_LANE_OPTIONS}
+                  onChange={setLaneChoice}
+                  disabled={busy}
+                  testIdPrefix="device-drain-lanes"
+                />
+              )}
+              {mode === "drain" && held !== null && (
+                <p
+                  className="text-[11px] text-muted-foreground break-words"
+                  data-testid="device-drain-lanes-already-held"
+                >
+                  Already held: {describeLanes(held.map((h) => h.lane))}.
+                  Holding a lane that is already held replaces its deadline
+                  and reason with these; a lane you do not choose keeps its
+                  own.
+                </p>
+              )}
+              {mode === "undrain" &&
+                releaseHeld !== null &&
+                releaseHeld.length > 1 && (
+                <LaneChoiceGroup
+                  label="Lanes to release"
+                  value={laneChoice}
+                  options={releaseLaneOptions(releaseHeld, clock)}
+                  onChange={setLaneChoice}
+                  disabled={busy}
+                  testIdPrefix="device-drain-release-lanes"
+                />
+              )}
+              {mode === "undrain" &&
+                (releaseHeld === null || releaseHeld.length === 1) && (
+                <p
+                  className="text-[11px] text-muted-foreground break-words"
+                  data-testid="device-drain-release-scope"
+                >
+                  {releaseHeld === null
+                    ? "Coord's read did not say which lanes this drain holds, so this releases every lane."
+                    : `Releases the ${describeLanes(releaseHeld.map((h) => h.lane))} hold — the only lane held.`}
+                </p>
+              )}
               {mode === "drain" && (
                 <div className="space-y-1.5">
                   <Label htmlFor="device-drain-until">Expiry (required)</Label>
@@ -648,7 +1003,11 @@ export function DeviceDrainControl({
                 onClick={() => void submit()}
                 data-testid="device-drain-submit"
               >
-                {mode === "undrain" ? "Release" : "Drain machine"}
+                {mode === "undrain"
+                  ? "Release"
+                  : laneChoice === "both"
+                    ? "Drain machine"
+                    : `Drain ${DRAIN_LANE_LABEL[laneChoice]} only`}
               </Button>
             </DialogFooter>
           </DialogContent>

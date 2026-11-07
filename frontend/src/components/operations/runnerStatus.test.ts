@@ -226,6 +226,36 @@ describe("drainBadgeLabel", () => {
     expect(drainBadgeLabel({ state: "unknown", reason: "x" })).toBe("drain UNKNOWN");
     expect(drainBadgeLabel({ state: "not_drained" })).toBe("not drained");
   });
+
+  it("names the lane of a one-lane drain, and stays plain otherwise", () => {
+    const entry = { until: "2026-09-01T18:00:00Z", reason: null, drainedBy: null, drainedAt: null };
+    const at = Date.parse("2026-09-01T12:00:00Z");
+    expect(
+      drainBadgeLabel({ state: "drained", entry: { ...entry, lanes: ["agent"] } }, at)
+    ).toBe("drained: Agent sessions only");
+    expect(
+      drainBadgeLabel({ state: "drained", entry: { ...entry, lanes: ["agent", "ci"] } }, at)
+    ).toBe("drained");
+    // A read that did not say which lanes is not narrowed to one.
+    expect(drainBadgeLabel({ state: "drained", entry }, at)).toBe("drained");
+  });
+
+  it("drops a lane whose own record lapsed, agreeing with the lever", () => {
+    const entry = {
+      until: "2026-09-01T18:00:00Z",
+      reason: null,
+      drainedBy: null,
+      drainedAt: null,
+      lanes: ["agent", "ci"] as Array<"agent" | "ci">,
+      byLane: {
+        agent: { until: "2026-09-01T18:00:00Z", reason: null, drainedBy: null, drainedAt: null },
+        ci: { until: "2026-09-01T11:00:00Z", reason: null, drainedBy: null, drainedAt: null },
+      },
+    };
+    expect(
+      drainBadgeLabel({ state: "drained", entry }, Date.parse("2026-09-01T12:00:00Z"))
+    ).toBe("drained: Agent sessions only");
+  });
 });
 
 describe("deriveRunnerSessionStatus", () => {

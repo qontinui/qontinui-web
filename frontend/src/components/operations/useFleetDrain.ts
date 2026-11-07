@@ -48,7 +48,11 @@ import {
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { servedAsOfMs } from "./servedAsOf";
 import { useSingleFlightPoll } from "./useSingleFlightPoll";
-import { parseFleetDrain, type FleetDrainRead } from "./fleetDrain";
+import {
+  parseFleetDrain,
+  type DrainLane,
+  type FleetDrainRead,
+} from "./fleetDrain";
 
 /**
  * Poll cadence. Slow on purpose — see the module doc. A drain is measured in
@@ -141,38 +145,54 @@ export type DrainWriteResult =
 /**
  * `POST /api/v1/operations/fleet/drain`.
  *
- * The body is assembled here from the three fields coord's `DrainRequest`
- * declares and nothing else: that struct is `#[serde(deny_unknown_fields)]`,
- * so one hopeful extra key is a 422 for the whole write. `drained_by` is
+ * The body is assembled here from the fields coord's `DrainRequest` declares
+ * and nothing else: that struct is `#[serde(deny_unknown_fields)]`, so one
+ * hopeful extra key is a 422 for the whole write. `drained_by` is
  * deliberately absent — coord stamps the author from the authenticated
  * operator context, and an audit trail with a client-asserted author is not an
  * audit trail.
+ *
+ * `lanes` is put on the wire only when the caller names some: coord reads an
+ * ABSENT field as both lanes (the request this lever always sent) and refuses
+ * an empty list with a 400, so `undefined` and `[]` both mean "omit it" here.
  */
 export async function postDrain(input: {
   deviceId: string;
   untilIso: string;
   reason: string;
+  lanes?: DrainLane[];
 }): Promise<DrainWriteResult> {
   return drainWriteResult(() =>
     postFleetDrain({
       device_id: input.deviceId,
       until: input.untilIso,
       reason: input.reason,
+      ...lanesField(input.lanes),
     })
   );
 }
 
-/** `POST /api/v1/operations/fleet/undrain`. Coord requires a reason here too. */
+/**
+ * `POST /api/v1/operations/fleet/undrain`. Coord requires a reason here too.
+ * `lanes` names the lanes to RELEASE; omitted, every lane is released.
+ */
 export async function postUndrain(input: {
   deviceId: string;
   reason: string;
+  lanes?: DrainLane[];
 }): Promise<DrainWriteResult> {
   return drainWriteResult(() =>
     postFleetUndrain({
       device_id: input.deviceId,
       reason: input.reason,
+      ...lanesField(input.lanes),
     })
   );
+}
+
+/** `{lanes}` when some are named, else nothing — never an empty list. */
+function lanesField(lanes: DrainLane[] | undefined): { lanes?: DrainLane[] } {
+  return lanes && lanes.length > 0 ? { lanes } : {};
 }
 
 /**

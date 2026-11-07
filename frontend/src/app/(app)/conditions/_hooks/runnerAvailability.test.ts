@@ -75,6 +75,25 @@ describe("runnerHintFor", () => {
     ).toBeNull();
   });
 
+  it("does not count a CI-only drain as holding the runner out of a run", () => {
+    // Finding f802311d: a drain may now hold one lane. Runs are agent-lane
+    // work, so a runner whose drain holds only CI is still available.
+    const roster = [{ device_id: A, within_dispatch_window: true }];
+    const entry = {
+      until: "2026-10-01T00:00:00Z",
+      reason: "pause ci",
+      drainedBy: null,
+      drainedAt: null,
+    };
+    const read = (lanes: Array<"agent" | "ci">): FleetDrainRead => ({
+      state: "ok",
+      entries: new Map([[A, { ...entry, lanes }]]),
+      unreadableDevices: new Set(),
+    });
+    expect(runnerHintFor(roster, read(["ci"]), NOW)).toBeNull();
+    expect(runnerHintFor(roster, read(["agent"]), NOW)).toBe("all_drained");
+  });
+
   it("treats an expired drain as available", () => {
     const roster = [{ device_id: A, within_dispatch_window: true }];
     const read = drained(A);

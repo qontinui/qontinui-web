@@ -20,7 +20,11 @@ import {
   MAX_DRAIN_DAYS,
   canActOnDrain,
   describeDrainError,
+  describeLanes,
   formatDrainRemaining,
+  heldLanes,
+  holdsLane,
+  lanesForChoice,
   parseDrainEntry,
   parseFleetDrain,
   resolveDeviceDrain,
@@ -384,5 +388,125 @@ describe("describeDrainError", () => {
 
   it("falls back to the bare status on an empty body", () => {
     expect(describeDrainError(500, "")).toBe("HTTP 500");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lanes — coord's read serves `lanes` and `by_lane` per drained device
+// (`fleet_drain::DrainSummary`). Finding f802311d-aef5-40e8-a5f8-4bd3a554b37e.
+// ---------------------------------------------------------------------------
+
+describe("parseDrainEntry — lanes", () => {
+  const laneRecord = (until: string, reason: string) => ({
+    until,
+    reason,
+    drained_by: "op@example.com",
+    drained_at: "2026-09-01T11:00:00Z",
+  });
+
+  it("reads lanes and each lane's own record", () => {
+    const entry = parseDrainEntry(
+      wireEntry({
+        lanes: ["ci", "agent"],
+        by_lane: {
+          agent: laneRecord("2026-09-01T18:00:00Z", "rebuild"),
+          ci: laneRecord("2026-09-01T13:00:00Z", "pause ci"),
+        },
+      })
+    );
+    // Coord's lane order, whatever order the list arrived in.
+    expect(entry?.lanes).toEqual(["agent", "ci"]);
+    expect(entry?.byLane?.ci).toEqual({
+      until: "2026-09-01T13:00:00Z",
+      reason: "pause ci",
+      drainedBy: "op@example.com",
+      drainedAt: "2026-09-01T11:00:00Z",
+    });
+  });
+
+  it("leaves lanes ABSENT on a pre-lane entry — unknown, not 'both'", () => {
+    const entry = parseDrainEntry(wireEntry());
+    expect(entry).not.toBeNull();
+    expect(entry?.lanes).toBeUndefined();
+    expect(entry?.byLane).toBeUndefined();
+  });
+
+  it("does not narrow a lane list naming a lane this build does not know", () => {
+    // Narrowing ["agent","gpu"] to ["agent"] would report a machine as held
+    // on fewer lanes than coord holds.
+    expect(
+      parseDrainEntry(wireEntry({ lanes: ["agent", "gpu"] }))?.lanes
+    ).toBeUndefined();
+    expect(
+      parseDrainEntry(
+        wireEntry({
+          lanes: ["agent"],
+          by_lane: {
+            agent: laneRecord("2026-09-01T18:00:00Z", "x"),
+            gpu: laneRecord("2026-09-01T18:00:00Z", "y"),
+          },
+        })
+      )?.lanes
+    ).toBeUndefined();
+  });
+
+  it("reads an empty lane list as absent", () => {
+    expect(parseDrainEntry(wireEntry({ lanes: [] }))?.lanes).toBeUndefined();
+  });
+});
+
+describe("heldLanes", () => {
+  it("drops a lane whose own record lapsed while the page held the read", () => {
+    const entry = parseDrainEntry(
+      wireEntry({
+        until: "2026-09-01T18:00:00Z",
+        lanes: ["agent", "ci"],
+        by_lane: {
+          agent: { until: "2026-09-01T18:00:00Z", reason: "a" },
+          ci: { until: "2026-09-01T11:30:00Z", reason: "c" },
+        },
+      })
+    );
+    if (!entry) throw new Error("entry did not parse");
+    expect(heldLanes(entry, NOW)?.map((h) => h.lane)).toEqual(["agent"]);
+  });
+
+  it("falls back to the headline record for a lane with no record of its own", () => {
+    const entry = parseDrainEntry(wireEntry({ lanes: ["ci"] }));
+    if (!entry) throw new Error("entry did not parse");
+    const held = heldLanes(entry, NOW);
+    expect(held?.[0]?.lane).toBe("ci");
+    expect(held?.[0]?.record.until).toBe("2026-09-01T18:00:00Z");
+  });
+
+  it("is null — UNKNOWN — when the read did not say which lanes", () => {
+    const entry = parseDrainEntry(wireEntry());
+    if (!entry) throw new Error("entry did not parse");
+    expect(heldLanes(entry, NOW)).toBeNull();
+  });
+});
+
+describe("holdsLane", () => {
+  it("answers per lane, and null — never false — when lanes are unknown", () => {
+    const ciOnly = parseDrainEntry(wireEntry({ lanes: ["ci"] }));
+    const preLane = parseDrainEntry(wireEntry());
+    if (!ciOnly || !preLane) throw new Error("entry did not parse");
+    expect(holdsLane(ciOnly, "ci", NOW)).toBe(true);
+    expect(holdsLane(ciOnly, "agent", NOW)).toBe(false);
+    // A consumer keeps the pre-lane "held everything" reading on null.
+    expect(holdsLane(preLane, "agent", NOW)).toBeNull();
+  });
+});
+
+describe("lanesForChoice / describeLanes", () => {
+  it("sends NO lanes for both — never an empty list, which coord 400s", () => {
+    expect(lanesForChoice("both")).toBeUndefined();
+    expect(lanesForChoice("agent")).toEqual(["agent"]);
+    expect(lanesForChoice("ci")).toEqual(["ci"]);
+  });
+
+  it("names lanes in operator words", () => {
+    expect(describeLanes(["agent"])).toBe("Agent sessions");
+    expect(describeLanes(undefined)).toBe("Agent sessions and CI");
   });
 });

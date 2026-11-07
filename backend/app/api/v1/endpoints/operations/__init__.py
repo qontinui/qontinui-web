@@ -5725,6 +5725,40 @@ async def get_project_state(
 #: trip that comes back as a Rust string.
 _MAX_DRAIN_DAYS = 30
 
+#: Coord's drain lanes (``fleet_drain::DrainLane``): ``agent`` = agent-session
+#: spawns and gate continuations; ``ci`` = CI-node, build and merge-capacity
+#: dispatch. A ``Literal`` so an unknown lane is a local 422.
+DrainLaneName = Literal["agent", "ci"]
+
+#: Coord's lane order (``DrainLane::ALL``).
+_DRAIN_LANE_ORDER: tuple[DrainLaneName, ...] = ("agent", "ci")
+
+
+def _normalize_drain_lanes(
+    v: list[DrainLaneName] | None,
+) -> list[DrainLaneName] | None:
+    """Collapse repeats into coord's lane order, and refuse an empty list.
+
+    Coord's ``lanes`` is an optional ``BTreeSet``: ABSENT means both lanes
+    (what every caller written before lanes meant), and an EMPTY list is a 400
+    — a drain or release of no lane would be a no-op reported as a success.
+    Refusing ``[]`` here makes it a legible local 422. ``None`` stays ``None``
+    so the field is left OFF the forwarded body and coord's own default
+    governs, rather than a default this hop chose.
+    """
+    if v is None:
+        return None
+    if not v:
+        raise ValueError(
+            'lanes must name at least one lane ("agent", "ci"); omit the field for both'
+        )
+    return [lane for lane in _DRAIN_LANE_ORDER if lane in v]
+
+
+def _drain_body_lanes(lanes: list[DrainLaneName] | None) -> dict[str, Any]:
+    """``{"lanes": [...]}`` when the caller named lanes, else nothing at all."""
+    return {} if lanes is None else {"lanes": lanes}
+
 
 class DrainRequestBody(BaseModel):
     """Closed body for ``POST /operations/fleet/drain``.
@@ -5747,6 +5781,15 @@ class DrainRequestBody(BaseModel):
     #: need a round trip to be named.
     until: datetime
     reason: str = Field(..., min_length=1, max_length=2000)
+    #: Lanes to hold. ABSENT = both — and forwarded as absent.
+    lanes: list[DrainLaneName] | None = None
+
+    @field_validator("lanes")
+    @classmethod
+    def _lanes_named_or_absent(
+        cls, v: list[DrainLaneName] | None
+    ) -> list[DrainLaneName] | None:
+        return _normalize_drain_lanes(v)
 
     @field_validator("reason")
     @classmethod
@@ -5806,6 +5849,16 @@ class UndrainRequestBody(BaseModel):
 
     device_id: UUID
     reason: str = Field(..., min_length=1, max_length=2000)
+    #: Lanes to RELEASE. ABSENT = every lane (the drain is removed); a partial
+    #: release keeps the lanes it does not name.
+    lanes: list[DrainLaneName] | None = None
+
+    @field_validator("lanes")
+    @classmethod
+    def _lanes_named_or_absent(
+        cls, v: list[DrainLaneName] | None
+    ) -> list[DrainLaneName] | None:
+        return _normalize_drain_lanes(v)
 
     @field_validator("reason")
     @classmethod
@@ -5860,6 +5913,9 @@ async def post_fleet_drain(
     Body is assembled from the closed model above — never forwarded verbatim
     — because coord's ``DrainRequest`` is ``deny_unknown_fields``. ``until``
     is serialised as RFC 3339; ``device_id`` as its canonical UUID string.
+    ``lanes`` is forwarded only when the caller named some (an absent field
+    is coord's "both lanes"); before it was declared here, the closed model
+    422'd it, so no console could hold one lane without the other.
 
     Coord's refusals are typed and mean different things:
     ``admin_required`` (not an admin in your own tenant),
@@ -5877,6 +5933,7 @@ async def post_fleet_drain(
             "device_id": str(body.device_id),
             "until": body.until.isoformat(),
             "reason": body.reason,
+            **_drain_body_lanes(body.lanes),
         },
         tenant_id=tenant_id,
         structured_errors=True,
@@ -5898,7 +5955,11 @@ async def post_fleet_undrain(
     """
     return await _proxy_coord_post(
         "/coord/fleet/undrain",
-        {"device_id": str(body.device_id), "reason": body.reason},
+        {
+            "device_id": str(body.device_id),
+            "reason": body.reason,
+            **_drain_body_lanes(body.lanes),
+        },
         tenant_id=tenant_id,
         structured_errors=True,
     )
