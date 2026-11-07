@@ -11,9 +11,10 @@ it.
 Without a database (always runs):
 
 1. Chain wiring, static SQL, and nothing dropped.
-2. ``downgrade()`` restores the exact function body and comment of revision 01,
-   and the new body is that body plus exactly the zero-row delete lines, so the
-   delta arithmetic pinned by the revision 01 tests cannot have moved.
+2. ``downgrade()`` restores the function body of revision 01 byte for byte,
+   indentation included, and its comment exactly, and the new body is that body
+   plus exactly the zero-row delete lines, so the delta arithmetic pinned by the
+   revision 01 tests cannot have moved.
 
 With a database (skipped when none is reachable; a skip proves nothing). Point
 the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
@@ -25,9 +26,10 @@ the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
 5. An unseeded key below zero keeps its row until a label takes it to zero.
 6. A writer racing a zero-row delete of one rollup row ends exact, whether the
    deleter commits or rolls back, and the delete still holds the SHARED fence.
-7. Up, down, up: the old body comes back and leaves zero rows in place, and the
-   re-upgrade clears those rows, skips a row a writer holds, keeps every other
-   row, and brings the new body back.
+7. Up, down, up: the downgrade brings back the function definition and comment
+   the parent revision had, exactly as Postgres stores them, the old body leaves
+   zero rows in place, and the re-upgrade clears those rows, skips a row a writer
+   holds, keeps every other row, and brings the new body back.
 """
 
 from __future__ import annotations
@@ -73,7 +75,7 @@ _V1_FILENAME = "coord_policy_outcome_counts_01_rollup.py"
 
 # Pinned as a literal, not read back from the module, so a re-point of
 # down_revision is a deliberate two-file change.
-_PARENT_REVISION_ID = "coord_agent_sessions_identity_01"
+_PARENT_REVISION_ID = "outbound_budget_windows_01"
 
 # The lines the new function body adds to the revision 01 body, in order.
 _ADDED_BODY_LINES = [
@@ -186,6 +188,39 @@ def test_downgrade_restores_revision_01_exactly() -> None:
         assert sql in v1, f"downgrade SQL is not a revision 01 statement: {sql[:80]}"
 
 
+def _raw_literal(path: Path, function: str, marker: str) -> str:
+    """The one execute literal in ``function`` containing ``marker``, unnormalized."""
+    found = [
+        c.sql
+        for c in upgrade_execute_calls(path, function=function)
+        if c.sql is not None and marker in c.sql
+    ]
+    assert len(found) == 1, f"{path.name} {function}: {len(found)} {marker!r} literals"
+    return found[0]
+
+
+def test_downgrade_restores_the_revision_01_body_byte_for_byte() -> None:
+    # Postgres keeps the text between the dollar quotes verbatim as prosrc and
+    # pg_dump prints it verbatim, so the Migration Reversal Tested check reads a
+    # body that differs only in indentation as a different schema. The
+    # whitespace-collapsed comparison above cannot see that.
+    def body(path: Path, function: str) -> str:
+        sql = _raw_literal(path, function, "CREATE OR REPLACE FUNCTION")
+        match = re.search(r"AS \$fn\$(.*)\$fn\$", sql, re.S)
+        assert match, f"{path.name} {function}: no $fn$ body"
+        return match.group(1)
+
+    def comment(path: Path, function: str) -> str:
+        sql = _raw_literal(path, function, "COMMENT ON FUNCTION")
+        match = re.search(r"\bIS\s*'(.*)'", sql, re.S)
+        assert match, f"{path.name} {function}: no comment literal"
+        return match.group(1)
+
+    v1 = _revision_path(_V1_FILENAME)
+    assert body(_revision_path(), "downgrade") == body(v1, "upgrade")
+    assert comment(_revision_path(), "downgrade") == comment(v1, "upgrade")
+
+
 def test_new_body_is_the_old_body_plus_the_zero_row_delete() -> None:
     new = _body_lines(_revision_path(), "upgrade")
     old = _body_lines(_revision_path(_V1_FILENAME), "upgrade")
@@ -240,6 +275,24 @@ def _function_source(engine: Engine) -> str:
     )
     assert isinstance(value, str)
     return value
+
+
+def _function_definition(engine: Engine) -> tuple[str, str]:
+    """The function as Postgres stores it: the full definition and its comment."""
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT pg_catalog.pg_get_functiondef(p.oid),"
+                " pg_catalog.obj_description(p.oid, 'pg_proc')"
+                " FROM pg_catalog.pg_proc p"
+                " JOIN pg_catalog.pg_namespace ns ON ns.oid = p.pronamespace"
+                " WHERE ns.nspname = 'coord'"
+                " AND p.proname = 'policy_outcome_counts_apply'"
+            )
+        ).one()
+    definition, comment = row
+    assert isinstance(definition, str) and isinstance(comment, str)
+    return definition, comment
 
 
 def _delete_where(engine: Engine, predicate: str) -> int:
@@ -466,11 +519,16 @@ def test_a_writer_racing_a_zero_row_delete_ends_exact(
 @_needs_pg
 def test_up_down_up() -> None:
     with ephemeral_database(admin_database_url(), "poc02_rt") as (engine, url):
+        run_alembic(backend_root(), url, "upgrade", _PARENT_REVISION_ID)
+        before = _function_definition(engine)
         run_alembic(backend_root(), url, "upgrade", _REVISION_ID)
         assert "zero_rows" in _function_source(engine)
 
         run_alembic(backend_root(), url, "downgrade", _PARENT_REVISION_ID)
         assert "zero_rows" not in _function_source(engine)
+        # Exactly what the parent revision had, whitespace included: the same
+        # comparison the Migration Reversal Tested check makes over pg_dump.
+        assert _function_definition(engine) == before
         with engine.begin() as conn:
             _insert(conn, [_LABELED])
         _delete_where(engine, "outcome_category IS NOT NULL")

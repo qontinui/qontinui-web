@@ -1,7 +1,7 @@
 """coord.policy_outcome_counts — delete a rollup row when its count reaches zero
 
 Revision ID: coord_policy_outcome_counts_02
-Revises: coord_agent_sessions_identity_01
+Revises: outbound_budget_windows_01
 Create Date: 2026-11-02
 
 Post-merge follow-up to ``coord_policy_outcome_counts_01``, plan
@@ -84,9 +84,9 @@ not touch the triggers. ``CREATE OR REPLACE FUNCTION`` takes no lock on
 ``upgrade()`` also deletes every row already at ``n = 0``, once. Otherwise a zero
 row made earlier would stay if coord seeded its key first, because the seeder
 does not revisit a seeded key and reconcile sees no drift. A downgrade followed
-by a re-upgrade leaves the same residue. With this delete, the landing order
-against qontinui-coord#3583 and a round trip leave only the rare residue
-described below.
+by a re-upgrade leaves the same residue. With this delete, the coord seeder
+having run first (qontinui-coord#3725, which superseded #3583, landed before
+this revision) and a round trip leave only the rare residue described below.
 
 It runs in an autocommit block, after the batch holding the new function has
 committed, so no transaction that starts from then on can leave a new zero row,
@@ -106,6 +106,15 @@ Restores the exact function body and comment of
 ``coord_policy_outcome_counts_01``. Rows are untouched: a deleted zero row
 already read as zero, and later zero rows simply stay until the next upgrade.
 
+"Exact" means byte for byte, indentation included. Postgres stores the text
+between the ``$fn$`` markers verbatim as ``prosrc``, and ``pg_dump`` prints it
+verbatim, so a body that differs only in leading whitespace is a different
+schema to the ``Migration Reversal Tested`` check. Revision 01 creates the
+function inside ``autocommit_block()`` and ``try:``, so its body is indented
+eight spaces deeper than a literal at function level. The downgrade literal
+carries that indentation, and the migration test compares the two bodies
+exactly rather than with whitespace collapsed.
+
 ## Merge-train classifier disposition
 
 Expected to classify Reject, as ``coord_policy_outcome_counts_01`` did:
@@ -119,7 +128,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_policy_outcome_counts_02"
-down_revision: str | Sequence[str] | None = "coord_agent_sessions_identity_01"
+down_revision: str | Sequence[str] | None = "outbound_budget_windows_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -308,140 +317,142 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Restore the function body and comment of coord_policy_outcome_counts_01."""
+    # The literal below is indented to match revision 01 byte for byte, because
+    # the function body is stored and dumped verbatim. Do not re-indent it.
     op.execute(
         """
-        CREATE OR REPLACE FUNCTION coord.policy_outcome_counts_apply()
-        RETURNS trigger
-        LANGUAGE plpgsql
-        SET search_path = pg_catalog, coord
-        AS $fn$
-        DECLARE
-            delta coord.policy_outcome_counts[];
-            k record;
-        BEGIN
-            IF TG_OP = 'TRUNCATE' THEN
-                UPDATE coord.policy_outcome_counts_seed_state
-                   SET full_pass_completed_at = NULL;
-                DELETE FROM coord.policy_outcome_counts;
-                DELETE FROM coord.policy_outcome_counts_seeded;
-                RETURN NULL;
-            ELSIF TG_OP = 'INSERT' THEN
-                SELECT array_agg(ROW(g.decision_domain, g.surface, g.decision,
-                                     g.tenant_id, g.policy_id, g.labeled_hour,
-                                     g.outcome_category, g.n
-                                 )::coord.policy_outcome_counts)
-                  INTO delta
-                  FROM (
-                    SELECT s.decision_domain, s.surface, s.decision,
-                           s.tenant_id, s.policy_id, s.labeled_hour,
-                           s.outcome_category, sum(s.sign)::bigint AS n
-                      FROM (
-                        SELECT r.resolved_entity->>'decision_domain' AS decision_domain,
-                               r.resolved_entity->>'surface' AS surface,
-                               r.resolved_entity->>'decision' AS decision,
-                               r.tenant_id, r.policy_id,
-                               date_trunc('hour', r.outcome_labeled_at AT TIME ZONE 'UTC') AS labeled_hour,
-                               r.outcome_category,
-                               1 AS sign
-                          FROM new_rows r
-                         WHERE r.outcome_category IS NOT NULL
-                      ) s
-                     GROUP BY 1, 2, 3, 4, 5, 6, 7
-                    HAVING sum(s.sign) <> 0
-                  ) g;
-            ELSIF TG_OP = 'UPDATE' THEN
-                SELECT array_agg(ROW(g.decision_domain, g.surface, g.decision,
-                                     g.tenant_id, g.policy_id, g.labeled_hour,
-                                     g.outcome_category, g.n
-                                 )::coord.policy_outcome_counts)
-                  INTO delta
-                  FROM (
-                    SELECT s.decision_domain, s.surface, s.decision,
-                           s.tenant_id, s.policy_id, s.labeled_hour,
-                           s.outcome_category, sum(s.sign)::bigint AS n
-                      FROM (
-                        SELECT r.resolved_entity->>'decision_domain' AS decision_domain,
-                               r.resolved_entity->>'surface' AS surface,
-                               r.resolved_entity->>'decision' AS decision,
-                               r.tenant_id, r.policy_id,
-                               date_trunc('hour', r.outcome_labeled_at AT TIME ZONE 'UTC') AS labeled_hour,
-                               r.outcome_category,
-                               1 AS sign
-                          FROM new_rows r
-                         WHERE r.outcome_category IS NOT NULL
-                        UNION ALL
-                        SELECT r.resolved_entity->>'decision_domain',
-                               r.resolved_entity->>'surface',
-                               r.resolved_entity->>'decision',
-                               r.tenant_id, r.policy_id,
-                               date_trunc('hour', r.outcome_labeled_at AT TIME ZONE 'UTC'),
-                               r.outcome_category,
-                               -1
-                          FROM old_rows r
-                         WHERE r.outcome_category IS NOT NULL
-                      ) s
-                     GROUP BY 1, 2, 3, 4, 5, 6, 7
-                    HAVING sum(s.sign) <> 0
-                  ) g;
-            ELSIF TG_OP = 'DELETE' THEN
-                SELECT array_agg(ROW(g.decision_domain, g.surface, g.decision,
-                                     g.tenant_id, g.policy_id, g.labeled_hour,
-                                     g.outcome_category, g.n
-                                 )::coord.policy_outcome_counts)
-                  INTO delta
-                  FROM (
-                    SELECT s.decision_domain, s.surface, s.decision,
-                           s.tenant_id, s.policy_id, s.labeled_hour,
-                           s.outcome_category, sum(s.sign)::bigint AS n
-                      FROM (
-                        SELECT r.resolved_entity->>'decision_domain' AS decision_domain,
-                               r.resolved_entity->>'surface' AS surface,
-                               r.resolved_entity->>'decision' AS decision,
-                               r.tenant_id, r.policy_id,
-                               date_trunc('hour', r.outcome_labeled_at AT TIME ZONE 'UTC') AS labeled_hour,
-                               r.outcome_category,
-                               -1 AS sign
-                          FROM old_rows r
-                         WHERE r.outcome_category IS NOT NULL
-                      ) s
-                     GROUP BY 1, 2, 3, 4, 5, 6, 7
-                    HAVING sum(s.sign) <> 0
-                  ) g;
-            END IF;
+                CREATE OR REPLACE FUNCTION coord.policy_outcome_counts_apply()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                SET search_path = pg_catalog, coord
+                AS $fn$
+                DECLARE
+                    delta coord.policy_outcome_counts[];
+                    k record;
+                BEGIN
+                    IF TG_OP = 'TRUNCATE' THEN
+                        UPDATE coord.policy_outcome_counts_seed_state
+                           SET full_pass_completed_at = NULL;
+                        DELETE FROM coord.policy_outcome_counts;
+                        DELETE FROM coord.policy_outcome_counts_seeded;
+                        RETURN NULL;
+                    ELSIF TG_OP = 'INSERT' THEN
+                        SELECT array_agg(ROW(g.decision_domain, g.surface, g.decision,
+                                             g.tenant_id, g.policy_id, g.labeled_hour,
+                                             g.outcome_category, g.n
+                                         )::coord.policy_outcome_counts)
+                          INTO delta
+                          FROM (
+                            SELECT s.decision_domain, s.surface, s.decision,
+                                   s.tenant_id, s.policy_id, s.labeled_hour,
+                                   s.outcome_category, sum(s.sign)::bigint AS n
+                              FROM (
+                                SELECT r.resolved_entity->>'decision_domain' AS decision_domain,
+                                       r.resolved_entity->>'surface' AS surface,
+                                       r.resolved_entity->>'decision' AS decision,
+                                       r.tenant_id, r.policy_id,
+                                       date_trunc('hour', r.outcome_labeled_at AT TIME ZONE 'UTC') AS labeled_hour,
+                                       r.outcome_category,
+                                       1 AS sign
+                                  FROM new_rows r
+                                 WHERE r.outcome_category IS NOT NULL
+                              ) s
+                             GROUP BY 1, 2, 3, 4, 5, 6, 7
+                            HAVING sum(s.sign) <> 0
+                          ) g;
+                    ELSIF TG_OP = 'UPDATE' THEN
+                        SELECT array_agg(ROW(g.decision_domain, g.surface, g.decision,
+                                             g.tenant_id, g.policy_id, g.labeled_hour,
+                                             g.outcome_category, g.n
+                                         )::coord.policy_outcome_counts)
+                          INTO delta
+                          FROM (
+                            SELECT s.decision_domain, s.surface, s.decision,
+                                   s.tenant_id, s.policy_id, s.labeled_hour,
+                                   s.outcome_category, sum(s.sign)::bigint AS n
+                              FROM (
+                                SELECT r.resolved_entity->>'decision_domain' AS decision_domain,
+                                       r.resolved_entity->>'surface' AS surface,
+                                       r.resolved_entity->>'decision' AS decision,
+                                       r.tenant_id, r.policy_id,
+                                       date_trunc('hour', r.outcome_labeled_at AT TIME ZONE 'UTC') AS labeled_hour,
+                                       r.outcome_category,
+                                       1 AS sign
+                                  FROM new_rows r
+                                 WHERE r.outcome_category IS NOT NULL
+                                UNION ALL
+                                SELECT r.resolved_entity->>'decision_domain',
+                                       r.resolved_entity->>'surface',
+                                       r.resolved_entity->>'decision',
+                                       r.tenant_id, r.policy_id,
+                                       date_trunc('hour', r.outcome_labeled_at AT TIME ZONE 'UTC'),
+                                       r.outcome_category,
+                                       -1
+                                  FROM old_rows r
+                                 WHERE r.outcome_category IS NOT NULL
+                              ) s
+                             GROUP BY 1, 2, 3, 4, 5, 6, 7
+                            HAVING sum(s.sign) <> 0
+                          ) g;
+                    ELSIF TG_OP = 'DELETE' THEN
+                        SELECT array_agg(ROW(g.decision_domain, g.surface, g.decision,
+                                             g.tenant_id, g.policy_id, g.labeled_hour,
+                                             g.outcome_category, g.n
+                                         )::coord.policy_outcome_counts)
+                          INTO delta
+                          FROM (
+                            SELECT s.decision_domain, s.surface, s.decision,
+                                   s.tenant_id, s.policy_id, s.labeled_hour,
+                                   s.outcome_category, sum(s.sign)::bigint AS n
+                              FROM (
+                                SELECT r.resolved_entity->>'decision_domain' AS decision_domain,
+                                       r.resolved_entity->>'surface' AS surface,
+                                       r.resolved_entity->>'decision' AS decision,
+                                       r.tenant_id, r.policy_id,
+                                       date_trunc('hour', r.outcome_labeled_at AT TIME ZONE 'UTC') AS labeled_hour,
+                                       r.outcome_category,
+                                       -1 AS sign
+                                  FROM old_rows r
+                                 WHERE r.outcome_category IS NOT NULL
+                              ) s
+                             GROUP BY 1, 2, 3, 4, 5, 6, 7
+                            HAVING sum(s.sign) <> 0
+                          ) g;
+                    END IF;
 
-            IF delta IS NULL THEN
-                RETURN NULL;
-            END IF;
+                    IF delta IS NULL THEN
+                        RETURN NULL;
+                    END IF;
 
-            -- Seeding fence: one SHARED advisory lock per
-            -- (decision_domain, surface) key, ascending by lock key.
-            -- The coord seeder takes the same lock EXCLUSIVE.
-            FOR k IN
-                SELECT DISTINCT pg_catalog.hashtext(
-                           coalesce(x.decision_domain, '') || '|' || coalesce(x.surface, '')
-                       ) AS lock_key
-                  FROM unnest(delta) AS x
-                 ORDER BY 1
-            LOOP
-                PERFORM pg_catalog.pg_advisory_xact_lock_shared(774177001, k.lock_key);
-            END LOOP;
+                    -- Seeding fence: one SHARED advisory lock per
+                    -- (decision_domain, surface) key, ascending by lock key.
+                    -- The coord seeder takes the same lock EXCLUSIVE.
+                    FOR k IN
+                        SELECT DISTINCT pg_catalog.hashtext(
+                                   coalesce(x.decision_domain, '') || '|' || coalesce(x.surface, '')
+                               ) AS lock_key
+                          FROM unnest(delta) AS x
+                         ORDER BY 1
+                    LOOP
+                        PERFORM pg_catalog.pg_advisory_xact_lock_shared(774177001, k.lock_key);
+                    END LOOP;
 
-            INSERT INTO coord.policy_outcome_counts AS c (
-                decision_domain, surface, decision, tenant_id, policy_id,
-                labeled_hour, outcome_category, n
-            )
-            SELECT x.decision_domain, x.surface, x.decision, x.tenant_id,
-                   x.policy_id, x.labeled_hour, x.outcome_category, x.n
-              FROM unnest(delta) AS x
-             ORDER BY x.decision_domain, x.surface, x.decision, x.tenant_id,
-                      x.policy_id, x.labeled_hour, x.outcome_category
-            ON CONFLICT (decision_domain, surface, decision, tenant_id,
-                         policy_id, labeled_hour, outcome_category)
-            DO UPDATE SET n = c.n + EXCLUDED.n;
+                    INSERT INTO coord.policy_outcome_counts AS c (
+                        decision_domain, surface, decision, tenant_id, policy_id,
+                        labeled_hour, outcome_category, n
+                    )
+                    SELECT x.decision_domain, x.surface, x.decision, x.tenant_id,
+                           x.policy_id, x.labeled_hour, x.outcome_category, x.n
+                      FROM unnest(delta) AS x
+                     ORDER BY x.decision_domain, x.surface, x.decision, x.tenant_id,
+                              x.policy_id, x.labeled_hour, x.outcome_category
+                    ON CONFLICT (decision_domain, surface, decision, tenant_id,
+                                 policy_id, labeled_hour, outcome_category)
+                    DO UPDATE SET n = c.n + EXCLUDED.n;
 
-            RETURN NULL;
-        END
-        $fn$
+                    RETURN NULL;
+                END
+                $fn$
         """
     )
     op.execute(
