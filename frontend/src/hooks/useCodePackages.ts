@@ -282,11 +282,11 @@ export function useCreatePackage() {
 }
 
 /**
- * Hook to update an existing package
+ * Hook to update an existing package.
  *
- * Features:
- * - Optimistic updates for immediate UI feedback
- * - Automatic rollback on error
+ * No optimistic cache write: the detail page caches under the slug, not the
+ * id this mutation is given, so a write keyed by id would land nowhere. The
+ * whole detail prefix is invalidated on success instead.
  */
 export function useUpdatePackage() {
   const queryClient = useQueryClient();
@@ -294,34 +294,6 @@ export function useUpdatePackage() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdatePackageRequest }) =>
       packageApi.updatePackage(id, data),
-    onMutate: async ({ id, data }) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: packageKeys.detail(id) });
-
-      // Snapshot previous value
-      const previousPackage = queryClient.getQueryData<CodePackage>(
-        packageKeys.detail(id)
-      );
-
-      // Optimistically update
-      if (previousPackage) {
-        queryClient.setQueryData<CodePackage>(packageKeys.detail(id), {
-          ...previousPackage,
-          ...data,
-        });
-      }
-
-      return { previousPackage, id };
-    },
-    onError: (_err, _variables, context) => {
-      // Rollback on error
-      if (context?.previousPackage) {
-        queryClient.setQueryData(
-          packageKeys.detail(context.id),
-          context.previousPackage
-        );
-      }
-    },
     onSuccess: () => {
       // Refetch to ensure consistency — the whole detail prefix, since the
       // detail page caches under the slug, not this id.

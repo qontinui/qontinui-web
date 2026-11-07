@@ -430,7 +430,9 @@ export class CodePackageService {
       slug: pkg.slug,
       name: pkg.name,
       description: pkg.description,
-      category: this.mapCategoryIdToName(pkg.category_id),
+      // A package with no (or an unrecognised) category leaves it absent
+      // rather than reading as "other".
+      ...this.categoryField(pkg.category_id),
       tags: pkg.tags || [],
       author: {
         id: pkg.author_id,
@@ -634,7 +636,16 @@ export class CodePackageService {
   /**
    * Map category ID to name
    */
-  private mapCategoryIdToName(categoryId: number | null): PackageCategory {
+  private categoryField(categoryId: number | null): {
+    category?: PackageCategory;
+  } {
+    const category = this.mapCategoryIdToName(categoryId);
+    return category ? { category } : {};
+  }
+
+  private mapCategoryIdToName(
+    categoryId: number | null
+  ): PackageCategory | undefined {
     const idToName: Record<number, PackageCategory> = {
       1: "automation",
       2: "utilities",
@@ -647,7 +658,7 @@ export class CodePackageService {
       9: "web-scraping",
       10: "other",
     };
-    return (categoryId !== null && idToName[categoryId]) || "other";
+    return categoryId !== null ? idToName[categoryId] : undefined;
   }
 }
 
@@ -749,8 +760,8 @@ function unscannedVersion(fields: {
 
 /**
  * The package an installation payload names. It carries no latest-version
- * record, so `latest_version` and `latest_version_number` stay absent; no
- * category, so it reads `other`; and no licence, so `license` stays absent.
+ * record, category, author, licence or download count, so all of those stay
+ * absent and readers hide them.
  */
 function installedPackageShell(
   packageId: number,
@@ -767,13 +778,10 @@ function installedPackageShell(
     slug: fields.slug,
     name: fields.name,
     description: fields.description,
-    category: "other",
     tags: [],
-    author: { id: "", username: "", verified: false, staff: false },
     visibility: "public",
     created_at: fields.created_at,
     updated_at: fields.updated_at,
-    total_downloads: 0,
     weekly_downloads: 0,
     average_rating: 0,
     rating_count: 0,

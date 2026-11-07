@@ -200,6 +200,20 @@ describe("InstallDialog scan status", () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
+  it("a failed background refetch keeps the cached list, with no error or retry", () => {
+    state.versions = {
+      ...loaded([version("passed")]),
+      isError: true,
+      isSuccess: false,
+    };
+    renderDialog();
+
+    expect(scanElement().dataset.scanStatus).toBe("passed");
+    expect(screen.getByText("Security scan passed")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(installButton().disabled).toBe(false);
+  });
+
   it("no published version disables install and shows no scan", () => {
     state.versions = loaded([]);
     renderDialog();

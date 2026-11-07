@@ -73,8 +73,12 @@ export function InstallDialog({
   const latestVersionId = versions[0]?.id;
 
   const versionsLoading = versionsQuery.isPending && open;
-  const versionsFailed = versionsQuery.isError;
-  const noPublishedVersion = versionsQuery.isSuccess && versions.length === 0;
+  // Failed only when there is nothing served to show: a background refetch
+  // that fails keeps the cached list (`isError` with `data`), and that list is
+  // still what the API served.
+  const versionsFailed = versionsQuery.isError && !versionsQuery.data;
+  const noPublishedVersion =
+    versionsQuery.data !== undefined && versions.length === 0;
 
   // A version whose scan cannot be read, and a version list that could not be
   // loaded, both render as `unknown` — never as a pass.

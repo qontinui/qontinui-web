@@ -5,7 +5,6 @@ import {
   ExternalLink,
   Flag,
   GitBranch,
-  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,11 +28,14 @@ import { cn } from "@/lib/utils";
 
 interface PackageSidebarProps {
   pkg: CodePackage;
-  /** Re-read the package when its latest scan status could not be read. */
-  onRetryScan: () => void;
 }
 
-export function PackageSidebar({ pkg, onRetryScan }: PackageSidebarProps) {
+/**
+ * The sidebar renders only a served detail payload, so an `unknown` scan here
+ * is what the API served — re-reading would serve the same thing, and no
+ * Retry is offered.
+ */
+export function PackageSidebar({ pkg }: PackageSidebarProps) {
   const latest = pkg.latest_version ?? null;
   const scan = latest ? scanDisplay(latest.security_scan) : null;
   return (
@@ -49,7 +51,9 @@ export function PackageSidebar({ pkg, onRetryScan }: PackageSidebarProps) {
               <span className="text-sm">Downloads</span>
             </div>
             <span className="font-semibold text-foreground">
-              {formatDownloads(pkg.total_downloads)}
+              {pkg.total_downloads !== undefined
+                ? formatDownloads(pkg.total_downloads)
+                : "Unknown"}
             </span>
           </div>
           <Separator className="bg-border" />
@@ -153,20 +157,12 @@ export function PackageSidebar({ pkg, onRetryScan }: PackageSidebarProps) {
               <span className={SCAN_TONE_TEXT[scan.tone]}>{scan.label}</span>
             </CardTitle>
           </CardHeader>
-          {(scan.detail ||
-            latest.security_scan.issues.length > 0 ||
-            scan.status === "unknown") && (
+          {(scan.detail || latest.security_scan.issues.length > 0) && (
             <CardContent className="space-y-2">
               {scan.detail && (
                 <p className="text-sm text-muted-foreground">{scan.detail}</p>
               )}
               <ScanIssueList issues={latest.security_scan.issues} />
-              {scan.status === "unknown" && (
-                <Button variant="outline" size="sm" onClick={onRetryScan}>
-                  <RefreshCw className="w-3 h-3 mr-2" />
-                  Retry
-                </Button>
-              )}
             </CardContent>
           )}
         </Card>

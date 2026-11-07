@@ -8,7 +8,7 @@
  */
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type {
   CodePackage,
@@ -81,9 +81,7 @@ describe("PackageSidebar scan status", () => {
     ["failed", false],
     ["unknown", false],
   ] as const)("%s: passed text shown=%s", (status, showsPassed) => {
-    render(
-      <PackageSidebar pkg={pkg(version(status))} onRetryScan={() => {}} />
-    );
+    render(<PackageSidebar pkg={pkg(version(status))} />);
 
     expect(scanElement()?.dataset.scanStatus).toBe(status);
     expect(screen.queryByText("Security scan passed") !== null).toBe(
@@ -94,21 +92,23 @@ describe("PackageSidebar scan status", () => {
     );
   });
 
-  it("unknown offers a retry that re-reads the package", () => {
-    const onRetryScan = vi.fn();
-    render(
-      <PackageSidebar pkg={pkg(version("unknown"))} onRetryScan={onRetryScan} />
-    );
+  it("a served unknown offers no retry — a re-read serves the same", () => {
+    render(<PackageSidebar pkg={pkg(version("unknown"))} />);
 
     expect(screen.getByText("Scan status unavailable")).toBeInTheDocument();
-    screen.getByRole("button", { name: "Retry" }).click();
-    expect(onRetryScan).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("an absent download count reads Unknown, not 0", () => {
+    const served = pkg(version("passed"));
+    delete served.total_downloads;
+    render(<PackageSidebar pkg={served} />);
+
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
   });
 
   it("passed with warnings lists them and is not a clean pass", () => {
-    render(
-      <PackageSidebar pkg={pkg(version("passed", 1))} onRetryScan={() => {}} />
-    );
+    render(<PackageSidebar pkg={pkg(version("passed", 1))} />);
 
     expect(screen.getByText("Passed with 1 warning")).toBeInTheDocument();
     expect(screen.getByText("warning 0")).toBeInTheDocument();
@@ -116,7 +116,7 @@ describe("PackageSidebar scan status", () => {
   });
 
   it("no published version shows no scan", () => {
-    render(<PackageSidebar pkg={pkg(null)} onRetryScan={() => {}} />);
+    render(<PackageSidebar pkg={pkg(null)} />);
 
     expect(scanElement()).toBeNull();
     expect(screen.getAllByText("No published version").length).toBeGreaterThan(

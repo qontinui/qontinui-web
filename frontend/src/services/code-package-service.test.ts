@@ -443,8 +443,11 @@ describe("payloads with no scan read unknown", () => {
     });
     expect(installation.package.latest_version).toBeUndefined();
     expect(installation.enabled).toBe(true);
-    // The payload names no category or licence, so none is made up.
-    expect(installation.package.category).toBe("other");
+    // The payload names no category, author, licence or download count, so
+    // none is made up.
+    expect(installation.package).not.toHaveProperty("category");
+    expect(installation.package).not.toHaveProperty("author");
+    expect(installation.package).not.toHaveProperty("total_downloads");
     expect(installation.package.license).toBeUndefined();
   });
 
@@ -477,7 +480,9 @@ describe("payloads with no scan read unknown", () => {
     });
     expect(installation.package.latest_version).toBeUndefined();
     expect(installation.project_id).toBe("42");
-    expect(installation.package.category).toBe("other");
+    expect(installation.package).not.toHaveProperty("category");
+    expect(installation.package).not.toHaveProperty("author");
+    expect(installation.package).not.toHaveProperty("total_downloads");
     expect(installation.package.license).toBeUndefined();
   });
 });
@@ -536,7 +541,7 @@ describe("create and update map the served PackageRead", () => {
     expect(pkg).not.toHaveProperty("latest_version_number");
   });
 
-  it("updatePackage: no category_id reads other, no licence stays absent", async () => {
+  it("updatePackage: no category_id leaves category absent, no licence stays absent", async () => {
     const served = packageRead({ license: null });
     delete served.category_id;
     const { fetch, service } = stubClient(served);
@@ -547,7 +552,7 @@ describe("create and update map the served PackageRead", () => {
       `${PREFIX}/packages/9`,
       expect.objectContaining({ method: "PUT" })
     );
-    expect(pkg.category).toBe("other");
+    expect(pkg).not.toHaveProperty("category");
     expect(pkg.license).toBeUndefined();
     expect(pkg).not.toHaveProperty("latest_version_number");
     expect(pkg.updated_at).toBe("2026-11-05T10:00:00Z");

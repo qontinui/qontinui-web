@@ -95,9 +95,11 @@ export function PackageCard({
 
         {/* Tags */}
         <div className="flex flex-wrap gap-1 mt-2">
-          <Badge variant="outline" className="text-xs">
-            {getCategoryLabel(pkg.category)}
-          </Badge>
+          {pkg.category && (
+            <Badge variant="outline" className="text-xs">
+              {getCategoryLabel(pkg.category)}
+            </Badge>
+          )}
           {pkg.featured && (
             <Badge className="bg-gradient-to-r from-cyan-500 to-purple-500 text-white text-xs">
               Featured
@@ -118,26 +120,30 @@ export function PackageCard({
       </CardHeader>
 
       <CardContent className={cn("relative", compact && "py-2")}>
-        {/* Author */}
-        <div className="flex items-center gap-2 text-sm text-text-muted mb-3">
-          <span>by</span>
-          <span className="font-medium text-text-secondary">
-            {pkg.author.username}
-          </span>
-          {pkg.author.verified && (
-            <ShieldCheck className="w-3 h-3 text-cyan-500" />
-          )}
-        </div>
+        {/* Author — hidden when the payload names none */}
+        {pkg.author && (
+          <div className="flex items-center gap-2 text-sm text-text-muted mb-3">
+            <span>by</span>
+            <span className="font-medium text-text-secondary">
+              {pkg.author.username}
+            </span>
+            {pkg.author.verified && (
+              <ShieldCheck className="w-3 h-3 text-cyan-500" />
+            )}
+          </div>
+        )}
 
         {/* Stats */}
         <div className="flex items-center gap-4 text-sm text-text-muted">
-          <div
-            className="flex items-center gap-1"
-            title={`${pkg.total_downloads} total downloads`}
-          >
-            <Download className="w-4 h-4" />
-            <span>{formatDownloads(pkg.total_downloads)}</span>
-          </div>
+          {pkg.total_downloads !== undefined && (
+            <div
+              className="flex items-center gap-1"
+              title={`${pkg.total_downloads} total downloads`}
+            >
+              <Download className="w-4 h-4" />
+              <span>{formatDownloads(pkg.total_downloads)}</span>
+            </div>
+          )}
           {pkg.rating_count > 0 && (
             <div
               className="flex items-center gap-1"

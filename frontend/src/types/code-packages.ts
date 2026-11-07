@@ -229,9 +229,17 @@ export interface CodePackage {
   slug: string; // URL-friendly identifier
   name: string;
   description: string;
-  category: PackageCategory;
+  /**
+   * The category as served. Absent when the payload does not carry one
+   * (installations) or the package names none; readers hide it.
+   */
+  category?: PackageCategory;
   tags: string[];
-  author: PackageAuthor;
+  /**
+   * The author as served. Absent when the payload does not name one
+   * (installations); readers hide the byline.
+   */
+  author?: PackageAuthor;
   /**
    * The licence as served. Absent when the payload does not carry one
    * (installations) or the package declares none; readers render "Unknown".
@@ -259,7 +267,11 @@ export interface CodePackage {
   published_at?: string;
 
   // Stats
-  total_downloads: number;
+  /**
+   * Total downloads as served. Absent when the payload does not carry a
+   * count (installations); readers hide it rather than show 0.
+   */
+  total_downloads?: number;
   weekly_downloads: number;
   average_rating: number;
   rating_count: number;

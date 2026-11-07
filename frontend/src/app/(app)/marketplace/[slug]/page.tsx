@@ -28,7 +28,7 @@ export default function PackageDetailsPage() {
     "readme" | "code" | "versions" | "dependencies"
   >("readme");
 
-  const { data: pkg, isLoading, refetch } = usePackageDetails(slug);
+  const { data: pkg, isLoading } = usePackageDetails(slug);
   const { data: ratings } = usePackageRatings(pkg?.id || "", !!pkg?.id);
   const { data: projects } = useProjects();
   const ratePackageMutation = useRatePackage();
@@ -105,7 +105,7 @@ export default function PackageDetailsPage() {
             </Card>
           </div>
 
-          <PackageSidebar pkg={pkg} onRetryScan={() => void refetch()} />
+          <PackageSidebar pkg={pkg} />
         </div>
       </div>
 

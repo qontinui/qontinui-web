@@ -141,7 +141,9 @@ async def test_by_id_detail_still_serves_the_package(
 async def test_popular_answers_200_not_422(
     client: httpx.AsyncClient, seeded_package: CodePackage
 ) -> None:
-    resp = await client.get(f"{PREFIX}/packages/popular")
+    # ``limit=100`` (the route's maximum) so other rows cannot crowd the
+    # seeded package off the page.
+    resp = await client.get(f"{PREFIX}/packages/popular", params={"limit": 100})
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
