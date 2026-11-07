@@ -2,8 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useOptionalTenant } from "@/contexts/tenant-context";
+import { fetchAutoPublishStatus } from "@/lib/api/operations/coordPromptDocuments";
+import { readActiveTenantId } from "@/services/http-client";
 import {
   AlertTriangle,
+  ArrowDownToLine,
   CloudDownload,
   History,
   ListTree,
@@ -24,10 +28,18 @@ import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
 import { PromptDocumentPublishDialog } from "./PromptDocumentPublishDialog";
 import { PromptDocumentUpstreamDialog } from "./PromptDocumentUpstreamDialog";
 import { PublishAllDialog } from "./PublishAllDialog";
+import { AdoptAllDialog, type AdoptAllPreviewSource } from "./AdoptAllDialog";
 import { PublishModeControl } from "./PublishModeControl";
 import { ClauseManagerDialog } from "./ClauseManagerDialog";
 import { AgentWriteAccessControl } from "./AgentWriteAccessControl";
 import { upstreamBadge } from "../_lib/upstreamStatus";
+import {
+  adoptAllCandidates,
+  coordSaidNotSystemTenant,
+  isNotSystemTenantAnswer,
+  publishSurfaceRetired,
+  type AdoptAllCandidate,
+} from "../_lib/adoptAll";
 import {
   autoPublishBadge,
   autoPublishStatusByDocument,
@@ -51,6 +63,22 @@ import {
   PROMPT_DOCUMENT_BANDS,
   SESSION_BRIEFING_DOCUMENT_NAMES,
 } from "../types";
+
+/**
+ * Ask coord, now, whether the active project is the system tenant, through
+ * the publish-all status door: it answers `200` only to the system tenant and
+ * `403 not_system_tenant` to every other. Anything else is UNKNOWN.
+ */
+async function probeTenancy(
+  tenant: string | null
+): Promise<"not_system" | "system" | "unknown"> {
+  try {
+    await fetchAutoPublishStatus({ tenant });
+    return "system";
+  } catch (err) {
+    return isNotSystemTenantAnswer(err) ? "not_system" : "unknown";
+  }
+}
 
 function formatWhen(iso: string): string {
   const d = new Date(iso);
@@ -136,8 +164,90 @@ function PromptDocumentListBody({
   autoPublishRefreshKey: number;
   publishAllState: PublishAllState;
 }) {
+  // The project stored when this page mounted (`null`: none stored yet) —
+  // the one its first status read is pinned to. Captured once, before any
+  // request was sent.
+  const [mountTenant] = useState<string | null>(() => readActiveTenantId());
+  const tenantContext = useOptionalTenant();
+  // Whether the provider was still loading when this page mounted — i.e.
+  // whether its reconcile is of the SAME stored project this page's first
+  // reads carried. The layout's provider outlives client-side navigation and
+  // never follows another tab's write, so one that had loaded earlier can name
+  // a project this page was never served in.
+  const [providerLoadingAtMount] = useState<boolean>(
+    () => tenantContext !== null && tenantContext.loading
+  );
+  /**
+   * The project this page's reads were SERVED in — `undefined` while that is
+   * not known — as first resolved.
+   *
+   * - No provider (mounted standalone, under test): the project the page
+   *   loaded with.
+   * - The project the page loaded with is in the provider's membership list:
+   *   that project — coord serves a member id as asked.
+   * - It is not (none stored yet, or a stale id), and the provider was still
+   *   loading when this page mounted: the provider's RECONCILED project. Those
+   *   first reads were served the home project (coord's override is
+   *   fail-soft), and the provider's reconcile of that same stored value is
+   *   the home project too — so a fresh browser's seed is not a switch.
+   * - It is not, and the provider had loaded before this page mounted (a
+   *   client-side navigation): UNKNOWN. The provider's project then predates
+   *   this page and says nothing about what its reads were served.
+   * - The provider is loading, or failed: UNKNOWN.
+   *
+   * UNKNOWN offers nothing.
+   */
+  const resolvedPageTenant: string | null | undefined = (() => {
+    if (tenantContext === null) return mountTenant;
+    if (tenantContext.loading || tenantContext.error !== null) {
+      return undefined;
+    }
+    if (
+      mountTenant !== null &&
+      tenantContext.tenants.some((t) => t.id === mountTenant)
+    ) {
+      return mountTenant;
+    }
+    return providerLoadingAtMount ? tenantContext.activeTenantId : undefined;
+  })();
+  const providerReady =
+    tenantContext !== null &&
+    !tenantContext.loading &&
+    tenantContext.error === null;
+  // The provider's project as this page last saw it loaded, and the project
+  // the page followed it to. A CHANGE of the provider's project is THIS tab
+  // switching project through the provider (another tab's write never
+  // reaches this tab's provider), and the page follows it — to whichever
+  // project it changed to, the one the provider had loaded in included.
+  const providerTenant = providerReady
+    ? tenantContext.activeTenantId
+    : undefined;
+  const [seenProviderTenant, setSeenProviderTenant] = useState<
+    string | null | undefined
+  >(providerTenant);
+  const [followedTenant, setFollowedTenant] = useState<
+    string | null | undefined
+  >(undefined);
+  useEffect(() => {
+    if (providerTenant === undefined || providerTenant === seenProviderTenant) {
+      return;
+    }
+    if (seenProviderTenant !== undefined) setFollowedTenant(providerTenant);
+    setSeenProviderTenant(providerTenant);
+  }, [providerTenant, seenProviderTenant]);
+  /**
+   * The page's project: as first resolved, until THIS tab switches project
+   * through the provider — then the page follows it (re-reading below).
+   * Another tab's switch is not followed: Adopt all is withheld while the
+   * stored project differs from this one.
+   */
+  const pageTenant: string | null | undefined =
+    followedTenant !== undefined ? followedTenant : resolvedPageTenant;
+
   const {
     documents,
+    documentsTenant,
+    newestReadTenant,
     loading,
     saving,
     error,
@@ -151,6 +261,22 @@ function PromptDocumentListBody({
     restoreDefault,
     restoreVersion,
   } = usePromptDocuments();
+
+  // Re-read the rows, pinned to the page's project, whenever that project
+  // changes — first resolved, or followed to — and the NEWEST read sent (not
+  // the newest landed) went out in another: this tab's own switch, a switch
+  // back before the previous switch's read answered, or a fresh browser's
+  // mount read, which went out with no project. The newest read owns the
+  // list, so this one supersedes whatever is still in flight. Only on a
+  // change of the page's project, so a row write's own re-read is left as
+  // it was before this change.
+  useEffect(() => {
+    if (pageTenant === undefined) return;
+    const sentIn = newestReadTenant();
+    // None sent yet: nothing is in flight to supersede.
+    if (sentIn === undefined) return;
+    if (sentIn !== pageTenant) void reload({ tenant: pageTenant });
+  }, [pageTenant, newestReadTenant, reload]);
 
   const {
     publishing,
@@ -171,8 +297,9 @@ function PromptDocumentListBody({
    * work that the row badges come from.
    *
    * `publishAllUnavailable` latches coord's `not_system_tenant` — or this
-   * deployment's not-yet-proxied 404 — for the rest of the visit, and it is the
-   * gate on both the button and every badge. It is tracked separately from
+   * deployment's not-yet-proxied 404 — stamped with the project its request
+   * was pinned to, and `publishAllRetired` below is the gate it puts on the
+   * button and every publish-mode control. It is tracked separately from
    * `publishUnavailable` above on purpose: the two doors can answer differently
    * during a deploy (coord carrying `/publish` but not yet `/publish-all`), and
    * folding them would hide a working control because a different one is
@@ -190,6 +317,7 @@ function PromptDocumentListBody({
     setPublishMode,
     modeSchemaPending,
     unavailable: publishAllUnavailable,
+    answeredFor: statusAnsweredFor,
     reload: reloadPublishAll,
     publishAll,
   } = publishAllState;
@@ -201,6 +329,20 @@ function PromptDocumentListBody({
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishAllOpen, setPublishAllOpen] = useState(false);
   const [upstreamOpen, setUpstreamOpen] = useState(false);
+  const [adoptAllOpen, setAdoptAllOpen] = useState(false);
+  const [adoptAllPreview, setAdoptAllPreview] = useState<
+    AdoptAllCandidate[] | null
+  >(null);
+  const [adoptAllSource, setAdoptAllSource] =
+    useState<AdoptAllPreviewSource>("fresh");
+  const [adoptAllDegraded, setAdoptAllDegraded] = useState<string | null>(null);
+  const [adoptAllTenant, setAdoptAllTenant] = useState<string | null>(null);
+  // The project the preview was read in — a ref, because the run's guard is
+  // read between requests, long after the render that started it.
+  const adoptAllTenantRef = useRef<string | null>(null);
+  // Bumped by every open: only the newest open's re-read may become the
+  // preview, so a slow read from an earlier open cannot land late over it.
+  const adoptAllRequest = useRef(0);
   const [publishTarget, setPublishTarget] =
     useState<PromptDocumentSummary | null>(null);
   const [editing, setEditing] = useState<PromptDocument | null>(null);
@@ -410,6 +552,144 @@ function PromptDocumentListBody({
     await loadPublishAllPreview();
   };
 
+  /**
+   * How many documents coord says have an upstream update — the "Adopt all
+   * updates (N)" count. Coord's `update_available` as served, never a local
+   * comparison (`../_lib/upstreamStatus`); absent is not counted.
+   */
+  const updatesAvailable = useMemo(
+    () => documents.filter((d) => d.update_available === true).length,
+    [documents]
+  );
+
+  /**
+   * Whether adopt-all may be offered: coord has ANSWERED that THIS PAGE'S
+   * project is not positively the system tenant. In the system tenant its own
+   * policies read `update_available` with nothing tracked, and one confirmed
+   * run would replace every policy edited since publication with the older
+   * published body; while the answer is unknown, the control is not offered.
+   *
+   * The answer counts only when its stamp IS the page's project — a refusal
+   * stamped with another project, or with none (a `null` pin can be replayed
+   * after a token refresh under whatever project is stored by then), is not
+   * counted. It is not offered while the stored project differs from the
+   * page's, whose rows another tab's switch would otherwise put this button
+   * over, nor over rows read in any project but the page's (a switch whose
+   * re-read has not landed yet). Per-row Adopt is unaffected. Opening re-asks
+   * coord (`openAdoptAll`), so this governs only whether the button shows.
+   */
+  const adoptAllOffered =
+    pageTenant !== undefined &&
+    readActiveTenantId() === pageTenant &&
+    documentsTenant === pageTenant &&
+    coordSaidNotSystemTenant(publishAllUnavailable, pageTenant) &&
+    updatesAvailable > 0;
+
+  // The gate on "Publish all changed" and every publish-mode control: a
+  // refusal another project earned does not hide them once this project's
+  // own status read has answered. See `publishSurfaceRetired`.
+  const publishAllRetired = publishSurfaceRetired(
+    publishAllUnavailable,
+    pageTenant,
+    statusAnsweredFor
+  );
+
+  /**
+   * Re-take the status read, PINNED to the page's project, whenever that
+   * project is known and is not the one the last read was taken for: a
+   * fresh browser's or a stale id's reconcile (the mount read went out with
+   * what was stored, `null` or the stale id, so its answer is not stamped
+   * with the page's project and is not counted), and every switch this tab
+   * makes — back to the project it mounted in too.
+   */
+  const statusTakenFor = useRef<string | null | undefined>(mountTenant);
+  useEffect(() => {
+    if (pageTenant === undefined || pageTenant === statusTakenFor.current) {
+      return;
+    }
+    statusTakenFor.current = pageTenant;
+    void reloadPublishAll({ tenant: pageTenant });
+  }, [pageTenant, reloadPublishAll]);
+
+  /**
+   * The project the preview was read in — and every request of the run is
+   * pinned to — named from ITS OWN row in the membership list. Never the
+   * provider's active project, which can be a different one (a provider that
+   * predates a client-side navigation). Not in the list: the id itself, said
+   * to be unknown.
+   */
+  const runTenantRow =
+    adoptAllTenant === null
+      ? undefined
+      : tenantContext?.tenants.find((t) => t.id === adoptAllTenant);
+  const tenantLabel =
+    adoptAllTenant === null
+      ? "your home project (none selected)"
+      : runTenantRow
+        ? runTenantRow.name?.trim() ||
+          runTenantRow.slug?.trim() ||
+          adoptAllTenant
+        : `${adoptAllTenant} (unknown project — not in this page's project list)`;
+
+  /**
+   * Open adopt-all on a FRESH read of the list, and freeze that read as the
+   * preview. Every adopt is pinned to the versions on these rows, so they
+   * should be the ones coord served seconds ago rather than whatever this page
+   * read when it loaded — the same reason publish-all takes its dry run at
+   * open.
+   *
+   * The project is pinned too. The HTTP client reads the active project on
+   * every request, so another tab switching it would otherwise retarget this
+   * page's writes: a preview is refused outright when the project already
+   * differs from the one this page (and coord's system-tenant answer) was
+   * loaded in, and the run re-checks it before every request.
+   */
+  const openAdoptAll = async () => {
+    const request = ++adoptAllRequest.current;
+    const tenant = readActiveTenantId();
+    adoptAllTenantRef.current = tenant;
+    setAdoptAllTenant(tenant);
+    setAdoptAllPreview(null);
+    setAdoptAllSource("fresh");
+    setAdoptAllDegraded(null);
+    setAdoptAllOpen(true);
+    const refuse = (source: AdoptAllPreviewSource) => {
+      setAdoptAllSource(source);
+      setAdoptAllPreview([]);
+    };
+    // `pageTenant` is never `undefined` here — the button is not offered then —
+    // and an unknown page project could not be "unchanged" in any case.
+    if (pageTenant === undefined || tenant !== pageTenant) {
+      return refuse("tenant_changed");
+    }
+    // Ask coord AGAIN, now, in this project: the answer that showed the button
+    // may be minutes old. The list is re-read beside it. Both are PINNED to
+    // the project, so a retry after another tab switched cannot answer for a
+    // different one.
+    const [tenancy, fresh] = await Promise.all([
+      probeTenancy(tenant),
+      reload({ tenant }),
+    ]);
+    // A later open owns the preview; this read arrived too late to be it.
+    if (request !== adoptAllRequest.current) return;
+    // Both answers must be about the project the preview will be pinned to.
+    if (readActiveTenantId() !== tenant) return refuse("tenant_changed");
+    if (tenancy === "system") return refuse("system_tenant");
+    if (tenancy === "unknown") return refuse("tenancy_unknown");
+    if (fresh === null) {
+      // No fresh read of THIS project: offer nothing. The rows on the page are
+      // not evidence of what it holds — they may be another project's.
+      return refuse("reread_failed");
+    } else if (fresh.degraded !== null) {
+      // A degraded answer's list is UNKNOWN, not empty — offer nothing.
+      setAdoptAllSource("degraded");
+      setAdoptAllDegraded(fresh.degraded);
+      setAdoptAllPreview([]);
+    } else {
+      setAdoptAllPreview(adoptAllCandidates(fresh.documents));
+    }
+  };
+
   const initialLoading = loading && documents.length === 0;
 
   /**
@@ -426,14 +706,14 @@ function PromptDocumentListBody({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         {/*
           D1 — visible only when N > 0. There is no disabled state and no "0
           changed" label: a button that can never do anything is noise on every
           page load in every tenant, and its absence already says the one thing
           it would say. The count is coord's dry run, not a local derivation.
         */}
-        {publishAllUnavailable === null && changedCount > 0 && (
+        {!publishAllRetired && changedCount > 0 && (
           <Button
             size="sm"
             variant="outline"
@@ -443,6 +723,24 @@ function PromptDocumentListBody({
           >
             <Send className="size-4" />
             Publish all changed ({changedCount})
+          </Button>
+        )}
+        {/*
+          The inbound twin of the control above: shown only when coord serves
+          at least one `update_available === true` AND has answered that this
+          is not the system tenant, with no disabled "0" state for the same
+          reason.
+        */}
+        {adoptAllOffered && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => void openAdoptAll()}
+            data-testid="adopt-all"
+          >
+            <ArrowDownToLine className="size-4" />
+            Adopt all updates ({updatesAvailable})
           </Button>
         )}
         <Button
@@ -652,8 +950,7 @@ function PromptDocumentListBody({
                             // system-tenant rows, and a control whose only
                             // outcome is a refusal is a dead end.
                             onSetPublishMode={
-                              isPublishableKind(doc.kind) &&
-                              publishAllUnavailable === null
+                              isPublishableKind(doc.kind) && !publishAllRetired
                                 ? async (mode) => {
                                     const ok = await setPublishMode(
                                       doc.kind,
@@ -762,6 +1059,46 @@ function PromptDocumentListBody({
           // armed batch can move every row on the page at once.
           if (res) await Promise.all([reload(), reloadPublishAll()]);
           return res;
+        }}
+      />
+
+      <AdoptAllDialog
+        open={adoptAllOpen}
+        onOpenChange={setAdoptAllOpen}
+        candidates={adoptAllPreview}
+        previewSource={adoptAllSource}
+        degradedReason={adoptAllDegraded}
+        tenantLabel={tenantLabel}
+        tenantUnchanged={() =>
+          readActiveTenantId() === adoptAllTenantRef.current
+        }
+        // The per-document door, quiet: the dialog reports every row itself,
+        // so a toast per document would only repeat it.
+        onAdopt={(kind, name, publicationVersion, expectedVersion) =>
+          adoptUpstream(kind, name, publicationVersion, expectedVersion, {
+            silent: true,
+            // Pinned: a re-issued write cannot land in another project.
+            tenant: adoptAllTenantRef.current,
+          })
+        }
+        // Every adopt moved a tracked version and a body, so the rows' badges
+        // and the publish-all count are stale the moment the run ends. The
+        // re-read also goes back to the dialog, which checks every row it
+        // could not confirm against it. It must be a read of the RUN'S project
+        // — the HTTP client reads the project per request — or it would
+        // reconcile one project's rows against another's list; so a project
+        // that changed before or during it makes it no answer, as does a
+        // degraded one. A project that changed before it is not re-read at
+        // all: this page's rows are better stale than another project's.
+        onFinished={async () => {
+          const runTenant = adoptAllTenantRef.current;
+          if (readActiveTenantId() !== runTenant) return null;
+          const [reread] = await Promise.all([
+            reload({ tenant: runTenant }),
+            reloadPublishAll(),
+          ]);
+          if (readActiveTenantId() !== runTenant) return null;
+          return reread && reread.degraded === null ? reread.documents : null;
         }}
       />
 
