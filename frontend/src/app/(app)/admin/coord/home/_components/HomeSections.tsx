@@ -150,6 +150,8 @@ import {
   isKnownPlane,
   withoutVerdictWords,
   remediationPhrase,
+  remediationShort,
+  remediationTallySentence,
   sourceErrorSentence,
   sourceLabel,
   sourceRawLine,
@@ -878,7 +880,14 @@ function DegradationRow({
         )
       }
       status={<HomeBadge kind={kind} label={label} />}
-      reason={subjectText(d, kind)}
+      // Who is acting on it rides the collapsed line (q4, R7): an open row
+      // says whether an agent response is bound or it waits on someone. A
+      // declared row's badge already says "declared"; a cleared one is over.
+      reason={
+        kind === "degrading"
+          ? `${subjectText(d, kind)} · ${remediationShort(d)}`
+          : subjectText(d, kind)
+      }
       time={time}
       attention={HOME_ATTENTION_BY_KIND[kind]}
       expanded={expanded}
@@ -1010,6 +1019,38 @@ function MachineHealthLine({
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * Whether the open degradations are being acted on, on the page without
+ * opening a row: how many have an agent response bound, how many wait on an
+ * operator, and how many coord did not say about (never counted as either).
+ */
+function RemediationTally({
+  open,
+  partial,
+  asOf,
+}: {
+  open: readonly DegradationView[];
+  partial: boolean;
+  /** Set when the latest poll failed: when the rows were last read. */
+  asOf: string | null;
+}) {
+  const tally = remediationTallySentence(open, partial);
+  const sentence =
+    tally === null || asOf === null
+      ? tally
+      : `${tally.slice(0, -1)} — ${asOf}.`;
+  if (sentence === null) return null;
+  return (
+    <p
+      className="m-0 text-sm text-muted-foreground"
+      data-testid="coord-home.degrading.remediation"
+      data-ui-bridge-id="coord-home.degrading.remediation"
+    >
+      {sentence}
+    </p>
   );
 }
 
@@ -1169,6 +1210,15 @@ export function DegradingSection({
                   onToggle={ctx.onToggle}
                 />
               )}
+            />
+          )}
+          {open !== null && (
+            <RemediationTally
+              open={open}
+              // Coord's own "cannot say none exist" headline makes the rows
+              // shown a floor, exactly as a stale block does.
+              partial={deg.state !== "read" || deg.headline === "unknown"}
+              asOf={stale ? lastGoodReadPhrase(generatedAt) : null}
             />
           )}
           <CollapsiblePanel
@@ -1386,7 +1436,18 @@ function NamedUnits({
     );
   }
   if (list.units.length === 0) {
-    return <p className="m-0 text-muted-foreground">{title}: none.</p>;
+    // "none" only when coord says it left none out: an empty list with units
+    // omitted, or with an unknown omitted count, is not an empty class.
+    return (
+      <p className="m-0 text-muted-foreground">
+        {title}:{" "}
+        {list.omitted === 0
+          ? "none."
+          : list.omitted === null
+            ? "none named here; whether any exist is unknown."
+            : `${list.omitted} not named here.`}
+      </p>
+    );
   }
   return (
     <div className="space-y-1">
@@ -1461,6 +1522,212 @@ function GroupUnitsAccount({
   );
 }
 
+/**
+ * A repository group's name as the page may show it (D3.3): its key, shown
+ * while presenting only when the scope clears it; a withheld repository is its
+ * alias ("Repository A"), so two withheld repositories never read as one.
+ */
+function useGroupNaming(
+  g: RepoGroup,
+  aliases: RepositoryAliases
+): { keyShown: boolean; alias: string | null; identity: ReactNode } {
+  const { presenting } = usePresentationMode();
+  const scope = usePresentationScopeState();
+  const key = g.key;
+  const keyShown =
+    key !== null &&
+    (!presenting || redactionVerdict({ text: key, repo: key }, scope).show);
+  const alias =
+    presenting && g.kind === "repo" && key !== null && !keyShown
+      ? aliases.alias(key)
+      : null;
+  const identity: ReactNode =
+    g.kind !== "repo" ? (
+      "no repo named"
+    ) : key === null ? (
+      "repo"
+    ) : (
+      <RedactedText
+        text={key}
+        repo={key}
+        descriptor={
+          alias === null
+            ? REPOSITORY_DESCRIPTOR
+            : repositoryAliasDescriptor(alias)
+        }
+      />
+    );
+  return { keyShown, alias, identity };
+}
+
+/**
+ * A group whose no-recorded-change list was read complete and empty while its
+ * count is not a known zero: the two disagree, so the list cannot be "none".
+ */
+function countDisagrees(g: RepoGroup): boolean {
+  const l = g.named.stalled;
+  return (
+    l !== null &&
+    l.units.length === 0 &&
+    l.omitted === 0 &&
+    g.classes.stalled !== 0
+  );
+}
+
+/**
+ * When coord's group count exceeds the units it named plus the ones it says it
+ * omitted, how many are unaccounted for and the figures behind it; null when
+ * they agree or the count or omitted figure is unknown. (Nothing named and
+ * nothing omitted is `countDisagrees`'s case, which renders instead.)
+ */
+function namedShortfall(
+  g: RepoGroup
+): { count: number; named: number; omitted: number; missing: number } | null {
+  const l = g.named.stalled;
+  const n = g.classes.stalled;
+  if (l === null || n === null || l.omitted === null) return null;
+  const missing = n - l.units.length - l.omitted;
+  return missing > 0
+    ? { count: n, named: l.units.length, omitted: l.omitted, missing }
+    : null;
+}
+
+/** One group's named no-recorded-change units, under the group's name. */
+function GroupNamedNoChange({
+  g,
+  days,
+  reposOf,
+  aliases,
+}: {
+  g: RepoGroup;
+  days: number;
+  reposOf: (slug: string) => readonly string[] | null;
+  aliases: RepositoryAliases;
+}) {
+  const { identity } = useGroupNaming(g, aliases);
+  const title = `No recorded change in ${days} days`;
+  const shortfall = namedShortfall(g);
+  return (
+    <div
+      className="space-y-1"
+      data-testid="coord-home.on-track.no-recorded-change.group"
+    >
+      <p className="m-0 font-mono text-xs">{identity}</p>
+      {countDisagrees(g) ? (
+        // Coord's count and its complete, empty list disagree: say so,
+        // never "none" under a count that is not zero.
+        <p
+          className="m-0 text-muted-foreground"
+          data-testid="coord-home.on-track.no-recorded-change.disagrees"
+        >
+          {title}: coord counts{" "}
+          {g.classes.stalled === null ? "an unknown number" : g.classes.stalled}{" "}
+          but named none, so which units they are is unknown.
+        </p>
+      ) : (
+        <>
+          <NamedUnits
+            title={title}
+            list={g.named.stalled}
+            kind="no_recorded_change"
+            reposOf={reposOf}
+          />
+          {shortfall !== null && (
+            // Coord's count exceeds what it named plus what it says it left
+            // out: the remainder is unknown, never "all of them are listed".
+            <p
+              className="m-0 text-xs text-muted-foreground"
+              data-testid="coord-home.on-track.no-recorded-change.shortfall"
+            >
+              Coord counts {shortfall.count} but named {shortfall.named}
+              {shortfall.omitted > 0
+                ? ` and says it left ${shortfall.omitted} out`
+                : ""}
+              , so{" "}
+              {shortfall.missing === 1
+                ? "the other unit is unknown."
+                : `the other ${shortfall.missing} units are unknown.`}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The named units with no recorded change in the stall window, per
+ * repository group, VISIBLE on first load (q7; R7 — the signal does not
+ * collapse). A group is listed when coord named units there, named more than
+ * it listed, or served no list (unknown — never read as none). When every
+ * group's list was read and names none, one sentence says so.
+ */
+function NamedNoChangeBlock({
+  groups,
+  windowSecs,
+  reposOf,
+  aliases,
+  stale,
+  generatedAt,
+  totalCount,
+}: {
+  groups: readonly RepoGroup[];
+  windowSecs: number | null;
+  reposOf: (slug: string) => readonly string[] | null;
+  aliases: RepositoryAliases;
+  /** The latest poll failed; this is the last good read (style guide R6). */
+  stale: boolean;
+  generatedAt: string | null;
+  /** Coord's section-wide no-recorded-change count; null = not served. */
+  totalCount: number | null;
+}) {
+  const days = stallWindowDays(windowSecs);
+  const shown = groups.filter((g) => {
+    const l = g.named.stalled;
+    return (
+      l === null || l.units.length > 0 || l.omitted !== 0 || countDisagrees(g)
+    );
+  });
+  return (
+    <div
+      className="space-y-2 text-sm"
+      data-testid="coord-home.on-track.no-recorded-change"
+      data-ui-bridge-id="coord-home.on-track.no-recorded-change"
+    >
+      {shown.length === 0 && totalCount !== 0 ? (
+        // Every group is a known zero but the section total is not: coord
+        // disagrees with itself, so the page does not say none.
+        <p
+          className="m-0 text-muted-foreground"
+          data-testid="coord-home.on-track.no-recorded-change.disagrees"
+        >
+          Coord counts{" "}
+          {totalCount === null
+            ? "an unknown number of work units"
+            : `${totalCount} work unit${totalCount === 1 ? "" : "s"}`}{" "}
+          with no recorded change in {days} days but named none, so which units
+          they are is unknown.
+        </p>
+      ) : shown.length === 0 ? (
+        <p className="m-0 text-muted-foreground">
+          Coord named no unit with no recorded change in {days} days
+          {stale ? ` ${lastGoodReadPhrase(generatedAt)}` : ""}.
+        </p>
+      ) : (
+        shown.map((g, i) => (
+          <GroupNamedNoChange
+            key={`${g.kind}:${g.key ?? "none"}:${i}`}
+            g={g}
+            days={days}
+            reposOf={reposOf}
+            aliases={aliases}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
 function RepoGroupRow({
   g,
   windowSecs,
@@ -1477,41 +1744,11 @@ function RepoGroupRow({
   /** The section's repository aliases, kept across polls. */
   aliases: RepositoryAliases;
 }) {
-  const { presenting } = usePresentationMode();
-  const scope = usePresentationScopeState();
-  const days = stallWindowDays(windowSecs);
-  // A repository's name can be a client's (D3.3): it shows while presenting
-  // only when the scope clears it, and the sentence below says "this
-  // repository" rather than repeat a descriptor.
+  const { keyShown, alias, identity } = useGroupNaming(g, aliases);
   const key = g.key;
-  const keyShown =
-    key !== null &&
-    (!presenting || redactionVerdict({ text: key, repo: key }, scope).show);
-  // A withheld repository is its alias ("Repository A"), so two withheld
-  // repositories never read as one; the alias is all the presentation says.
-  const alias =
-    presenting && g.kind === "repo" && key !== null && !keyShown
-      ? aliases.alias(key)
-      : null;
   return (
     <RecordRow
-      identity={
-        g.kind !== "repo" ? (
-          "no repo named"
-        ) : key === null ? (
-          "repo"
-        ) : (
-          <RedactedText
-            text={key}
-            repo={key}
-            descriptor={
-              alias === null
-                ? REPOSITORY_DESCRIPTOR
-                : repositoryAliasDescriptor(alias)
-            }
-          />
-        )
-      }
+      identity={identity}
       label={groupSummary(g, windowSecs)}
       status={<HomeBadge kind="repo_group" label={unitCountText(g.rowCount)} />}
       attention={HOME_ATTENTION_BY_KIND.repo_group}
@@ -1530,12 +1767,6 @@ function RepoGroupRow({
         problems={
           <div className="space-y-2">
             <GroupUnitsAccount g={g} windowSecs={windowSecs} />
-            <NamedUnits
-              title={`No recorded change in ${days} days`}
-              list={g.named.stalled}
-              kind="no_recorded_change"
-              reposOf={unitRepos.stalled}
-            />
             <NamedUnits
               title="Waiting on a condition"
               list={g.named.waitingOnGate}
@@ -1734,6 +1965,11 @@ export function OnTrackSection({
     }),
     [onTrack.groups]
   );
+  // coord always serves the unattributed group, even at zero; an empty one is
+  // noise and would mask the "No work units." state.
+  const shownGroups = (onTrack.groups ?? []).filter(
+    (g) => !(g.kind === "unattributed_repo" && g.rowCount === 0)
+  );
   const stats: Stat[] = UNIT_CLASSES.map((cls) => ({
     key: cls,
     label: `${unitClassLabel(cls, stallWindow)} `,
@@ -1781,11 +2017,7 @@ export function OnTrackSection({
               </p>
             )}
           <RecordList
-            // coord always serves the unattributed group, even at zero; an
-            // empty one is noise and would mask the "No work units." state.
-            items={(onTrack.groups ?? []).filter(
-              (g) => !(g.kind === "unattributed_repo" && g.rowCount === 0)
-            )}
+            items={shownGroups}
             itemKey={(g, i) =>
               rowKey("group", `${g.kind}:${g.key ?? "none"}:${i}`)
             }
@@ -1807,6 +2039,17 @@ export function OnTrackSection({
               />
             )}
           />
+          {onTrack.groups !== null && shownGroups.length > 0 && (
+            <NamedNoChangeBlock
+              groups={shownGroups}
+              windowSecs={stallWindow}
+              reposOf={unitRepos.stalled}
+              aliases={repoAliases}
+              stale={stale}
+              generatedAt={generatedAt}
+              totalCount={onTrack.totals ? onTrack.totals.stalled : null}
+            />
+          )}
         </>
       )}
       <InitiativeBlock onTrack={onTrack} generatedAt={generatedAt} />
