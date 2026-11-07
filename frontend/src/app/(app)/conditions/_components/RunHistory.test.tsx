@@ -293,3 +293,142 @@ describe("RunHistory", () => {
     expect(placeholder.closest("li")?.textContent).toContain("no price");
   });
 });
+
+describe("RunHistory: a failed read is not an absence", () => {
+  it("says the history could not be loaded, not that there are no runs", async () => {
+    render(
+      <RunHistory
+        groupId="g1"
+        conditions={CONDITIONS}
+        listRuns={async () => null}
+        getRun={async () => null}
+        refreshKey={0}
+      />
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Couldn’t load the run history/);
+    expect(screen.queryByText(/No runs yet/)).toBeNull();
+  });
+
+  it("still says no runs yet when the read succeeded with none", async () => {
+    render(
+      <RunHistory
+        groupId="g1"
+        conditions={CONDITIONS}
+        listRuns={async () => []}
+        getRun={async () => null}
+        refreshKey={0}
+      />
+    );
+    expect(await screen.findByText(/No runs yet/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says a failed detail read is unknown, and Retry fetches it again", async () => {
+    // The list row omits `results`, so expanding fetches the detail.
+    const listed = wireRun({ status: "pass", results: undefined });
+    const fetched = wireRun({
+      status: "pass",
+      results: [{ condition_id: "c1", verdict: "pass", evidence: "ok" }],
+    });
+    let calls = 0;
+    const { container } = render(
+      <RunHistory
+        groupId="g1"
+        conditions={CONDITIONS}
+        listRuns={async () => [listed]}
+        getRun={async () => (++calls === 1 ? null : fetched)}
+        refreshKey={0}
+      />
+    );
+    await waitFor(() =>
+      expect(container.querySelector("button[aria-expanded]")).not.toBeNull()
+    );
+    await userEvent.click(
+      container.querySelector<HTMLElement>("button[aria-expanded]")!
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Couldn’t load this run’s per-condition/);
+    expect(screen.queryByText(/No per-condition results recorded/)).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: /Retry/ }));
+    expect(await screen.findByText(TEXTS[0])).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(calls).toBe(2);
+  });
+});
+
+describe("RunHistory: only the newest read settles the list", () => {
+  it("a slow failed read does not overwrite a newer read that succeeded", async () => {
+    let failSlow: (v: null) => void = () => {};
+    let calls = 0;
+    const listRuns = (): Promise<ConditionRun[] | null> =>
+      ++calls === 1
+        ? new Promise((resolve) => (failSlow = resolve))
+        : Promise.resolve([wireRun({ status: "pass" })]);
+    const { rerender } = render(
+      <RunHistory
+        groupId="g1"
+        conditions={CONDITIONS}
+        listRuns={listRuns}
+        getRun={async () => null}
+        refreshKey={0}
+      />
+    );
+    rerender(
+      <RunHistory
+        groupId="g1"
+        conditions={CONDITIONS}
+        listRuns={listRuns}
+        getRun={async () => null}
+        refreshKey={1}
+      />
+    );
+    expect(await screen.findByText("Pass")).toBeInTheDocument();
+    failSlow(null);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("Pass")).toBeInTheDocument();
+  });
+
+  it("after a refresh, a row carrying its results no longer reads as failed", async () => {
+    const listed = wireRun({ status: "pass", results: undefined });
+    const refreshed = wireRun({
+      status: "pass",
+      results: [{ condition_id: "c1", verdict: "pass", evidence: "ok" }],
+    });
+    const props = {
+      groupId: "g1",
+      conditions: CONDITIONS,
+      getRun: async () => null,
+    };
+    const { container, rerender } = render(
+      <RunHistory {...props} listRuns={async () => [listed]} refreshKey={0} />
+    );
+    await waitFor(() =>
+      expect(container.querySelector("button[aria-expanded]")).not.toBeNull()
+    );
+    await userEvent.click(
+      container.querySelector<HTMLElement>("button[aria-expanded]")!
+    );
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    rerender(
+      <RunHistory
+        {...props}
+        listRuns={async () => [refreshed]}
+        refreshKey={1}
+      />
+    );
+    // A reload remounts every row, so the refreshed row's own results are
+    // what re-expanding it shows; the earlier failure does not linger.
+    await waitFor(() =>
+      expect(container.querySelector("button[aria-expanded]")).not.toBeNull()
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    await userEvent.click(
+      container.querySelector<HTMLElement>("button[aria-expanded]")!
+    );
+    expect(await screen.findByText(TEXTS[0])).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
