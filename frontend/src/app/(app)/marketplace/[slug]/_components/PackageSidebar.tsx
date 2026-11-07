@@ -5,23 +5,37 @@ import {
   ExternalLink,
   Flag,
   GitBranch,
-  CheckCircle2,
-  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { formatDownloads, formatRating } from "@/types/code-packages";
+import {
+  formatDownloads,
+  formatRating,
+  scanDisplay,
+} from "@/types/code-packages";
 import type { CodePackage } from "@/types/code-packages";
+import {
+  SCAN_STATUS_BRIDGE_ID,
+  SCAN_TONE_SURFACE,
+  SCAN_TONE_TEXT,
+  ScanIcon,
+  ScanIssueList,
+} from "@/components/marketplace/ScanStatus";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 
 interface PackageSidebarProps {
   pkg: CodePackage;
+  /** Re-read the package when its latest scan status could not be read. */
+  onRetryScan: () => void;
 }
 
-export function PackageSidebar({ pkg }: PackageSidebarProps) {
+export function PackageSidebar({ pkg, onRetryScan }: PackageSidebarProps) {
+  const latest = pkg.latest_version ?? null;
+  const scan = latest ? scanDisplay(latest.security_scan) : null;
   return (
     <div className="space-y-6">
       <Card className="bg-muted/50 border-border">
@@ -55,7 +69,7 @@ export function PackageSidebar({ pkg }: PackageSidebarProps) {
               <span className="text-sm">Version</span>
             </div>
             <span className="font-mono text-sm font-semibold text-foreground">
-              v{pkg.latest_version.version}
+              {latest ? `v${latest.version}` : "No published version"}
             </span>
           </div>
           <Separator className="bg-border" />
@@ -127,45 +141,42 @@ export function PackageSidebar({ pkg }: PackageSidebarProps) {
         </Card>
       )}
 
-      {pkg.latest_version.security_scan.scanned && (
+      {latest && scan ? (
         <Card
-          className={cn(
-            "border-border",
-            pkg.latest_version.security_scan.passed
-              ? "bg-green-500/10 border-green-500/50"
-              : "bg-red-950/20 border-red-500/50"
-          )}
+          className={cn(SCAN_TONE_SURFACE[scan.tone])}
+          data-ui-bridge-id={SCAN_STATUS_BRIDGE_ID}
+          data-scan-status={scan.status}
         >
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              {pkg.latest_version.security_scan.passed ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  Security Scan Passed
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="w-4 h-4 text-red-500" />
-                  Security Issues Found
-                </>
-              )}
+              <ScanIcon display={scan} />
+              <span className={SCAN_TONE_TEXT[scan.tone]}>{scan.label}</span>
             </CardTitle>
           </CardHeader>
-          {!pkg.latest_version.security_scan.passed &&
-            pkg.latest_version.security_scan.issues && (
-              <CardContent className="space-y-2">
-                {pkg.latest_version.security_scan.issues.map((issue, index) => (
-                  <div key={index} className="text-sm">
-                    <Badge variant="destructive" className="mr-2">
-                      {issue.severity}
-                    </Badge>
-                    <span className="text-muted-foreground">
-                      {issue.description}
-                    </span>
-                  </div>
-                ))}
-              </CardContent>
-            )}
+          {(scan.detail ||
+            latest.security_scan.issues.length > 0 ||
+            scan.status === "unknown") && (
+            <CardContent className="space-y-2">
+              {scan.detail && (
+                <p className="text-sm text-muted-foreground">{scan.detail}</p>
+              )}
+              <ScanIssueList issues={latest.security_scan.issues} />
+              {scan.status === "unknown" && (
+                <Button variant="outline" size="sm" onClick={onRetryScan}>
+                  <RefreshCw className="w-3 h-3 mr-2" />
+                  Retry
+                </Button>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      ) : (
+        <Card className="bg-muted/50 border-border">
+          <CardHeader>
+            <CardTitle className="text-base text-muted-foreground">
+              No published version
+            </CardTitle>
+          </CardHeader>
         </Card>
       )}
 

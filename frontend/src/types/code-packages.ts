@@ -53,6 +53,146 @@ export interface PackageDependency {
   optional: boolean;
 }
 
+/**
+ * The scan statuses the API serves on a version
+ * (`backend/app/models/code_package.py` `SecurityScanStatus`).
+ */
+export const SERVED_SCAN_STATUSES = [
+  "pending",
+  "scanning",
+  "passed",
+  "failed",
+  "skipped",
+] as const;
+
+export type ServedScanStatus = (typeof SERVED_SCAN_STATUSES)[number];
+
+/**
+ * A version's scan status: one the API served, or `unknown` when the payload
+ * carries no status (search results, installations, install responses) or a
+ * status string outside the served five. `unknown` is never a pass.
+ */
+export type PackageScanStatus = ServedScanStatus | "unknown";
+
+/**
+ * Severities the scanner emits (`backend/app/services/security/models.py`
+ * `IssueSeverity`), plus `unknown` for a served severity outside them.
+ */
+export type PackageScanIssueSeverity =
+  | "info"
+  | "low"
+  | "medium"
+  | "high"
+  | "critical"
+  | "unknown";
+
+export interface PackageScanIssue {
+  severity: PackageScanIssueSeverity;
+  /** The served issue's `message`. */
+  description: string;
+  line_number?: number;
+}
+
+export interface PackageScan {
+  status: PackageScanStatus;
+  /** From `security_scan_result.issues`; empty when none were served. */
+  issues: PackageScanIssue[];
+  scanned_at?: string;
+}
+
+/** The scan of a version whose payload carries no scan at all. */
+export const UNKNOWN_SCAN: PackageScan = { status: "unknown", issues: [] };
+
+export function isServedScanStatus(value: string): value is ServedScanStatus {
+  return (SERVED_SCAN_STATUSES as readonly string[]).includes(value);
+}
+
+export type ScanTone = "success" | "warning" | "danger" | "neutral";
+
+export interface ScanDisplay {
+  status: PackageScanStatus;
+  label: string;
+  /** A second line under the label, or null when the label says it all. */
+  detail: string | null;
+  tone: ScanTone;
+  /** True when this version must not be installed on the client's word. */
+  blocksInstall: boolean;
+}
+
+/**
+ * The one decision of how a version's scan renders. Every marketplace surface
+ * (`InstallDialog`, `PackageSidebar`, `PackageHeader`) renders from it, so
+ * distinct states never share an indicator and only a served `passed` shows
+ * "Security scan passed".
+ *
+ * `failed` and `unknown` block install: `failed` because the server refuses
+ * it, `unknown` because nothing was observed. `pending`, `scanning` and
+ * `skipped` do not, mirroring the server, which refuses only `failed`.
+ */
+export function scanDisplay(scan: PackageScan): ScanDisplay {
+  switch (scan.status) {
+    case "failed":
+      return {
+        status: "failed",
+        label: "Security issues detected",
+        detail: null,
+        tone: "danger",
+        blocksInstall: true,
+      };
+    case "passed": {
+      const warnings = scan.issues.length;
+      if (warnings === 0) {
+        return {
+          status: "passed",
+          label: "Security scan passed",
+          detail: "No security issues detected",
+          tone: "success",
+          blocksInstall: false,
+        };
+      }
+      return {
+        status: "passed",
+        label: `Passed with ${warnings} ${warnings === 1 ? "warning" : "warnings"}`,
+        detail: null,
+        tone: "warning",
+        blocksInstall: false,
+      };
+    }
+    case "pending":
+      return {
+        status: "pending",
+        label: "Scan pending",
+        detail: "The security scan has not run yet",
+        tone: "neutral",
+        blocksInstall: false,
+      };
+    case "scanning":
+      return {
+        status: "scanning",
+        label: "Scan in progress",
+        detail: null,
+        tone: "neutral",
+        blocksInstall: false,
+      };
+    case "skipped":
+      return {
+        status: "skipped",
+        label: "Scan skipped",
+        detail: "No security scan was run on this version",
+        tone: "neutral",
+        blocksInstall: false,
+      };
+    default:
+      return {
+        status: "unknown",
+        label: "Scan status unavailable",
+        detail: "The scan result could not be read",
+        tone: "neutral",
+        blocksInstall: true,
+      };
+  }
+}
+
 export interface PackageVersion {
   id: string;
   version: string;
@@ -67,15 +207,7 @@ export interface PackageVersion {
     min_qontinui_version?: string;
     max_qontinui_version?: string;
   };
-  security_scan: {
-    scanned: boolean;
-    passed: boolean;
-    issues?: Array<{
-      severity: "low" | "medium" | "high" | "critical";
-      description: string;
-    }>;
-    scanned_at?: string;
-  };
+  security_scan: PackageScan;
 }
 
 export interface PackageRating {
@@ -104,8 +236,18 @@ export interface CodePackage {
   visibility: PackageVisibility;
 
   // Versions
-  latest_version: PackageVersion;
-  versions: PackageVersion[];
+  /**
+   * The served latest version record. `null` when the API served the package
+   * with no published version; absent when the payload carries no version
+   * record (search results, installations). The version list is loaded
+   * separately (`usePackageVersions`).
+   */
+  latest_version?: PackageVersion | null;
+  /**
+   * The latest version's number as served. `null` when the package has no
+   * published version; absent when the payload does not say.
+   */
+  latest_version_number?: string | null;
 
   // Metadata
   created_at: string;

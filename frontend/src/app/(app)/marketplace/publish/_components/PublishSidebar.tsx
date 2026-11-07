@@ -1,6 +1,6 @@
 "use client";
 
-import { Upload, AlertTriangle, CheckCircle2, Sparkles } from "lucide-react";
+import { Upload, AlertTriangle, CheckCircle2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,77 +10,78 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import type { PreCheckResult } from "../_hooks/usePublishPreCheck";
 
 interface PublishSidebarProps {
   code: string;
-  showSecurityScan: boolean;
-  securityScanPassed: boolean | null;
+  preCheckResult: PreCheckResult;
   isFormValid: boolean;
   isPublishing: boolean;
-  onSecurityScan: () => void;
+  onPreCheck: () => void;
   onPublish: () => void;
 }
 
 export function PublishSidebar({
   code,
-  showSecurityScan,
-  securityScanPassed,
+  preCheckResult,
   isFormValid,
   isPublishing,
-  onSecurityScan,
+  onPreCheck,
   onPublish,
 }: PublishSidebarProps) {
   return (
     <div className="space-y-6">
       <Card className="bg-muted/50 border-border">
         <CardHeader>
-          <CardTitle className="text-base">Security Scan</CardTitle>
+          <CardTitle className="text-base">Pre-check</CardTitle>
           <CardDescription>
-            Scan your code for security issues before publishing
+            A quick local check for <code>eval(</code> and <code>exec(</code>.
+            The security scan runs on the server when a version is published.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Button
             variant="outline"
             className="w-full"
-            onClick={onSecurityScan}
-            disabled={!code || showSecurityScan}
+            onClick={onPreCheck}
+            disabled={!code}
           >
-            <Sparkles className="w-4 h-4 mr-2" />
-            {showSecurityScan ? "Scanning..." : "Run Security Scan"}
+            <Search className="w-4 h-4 mr-2" />
+            Run pre-check
           </Button>
 
-          {showSecurityScan && securityScanPassed !== null && (
+          {preCheckResult === "clean" && (
             <Alert
-              variant={securityScanPassed ? "default" : "destructive"}
-              className={
-                securityScanPassed ? "border-green-500/50 bg-green-500/10" : ""
-              }
+              variant="default"
+              data-ui-bridge-id="marketplace.publish-pre-check"
+              data-pre-check={preCheckResult}
             >
               <AlertDescription className="flex items-start gap-2">
-                {securityScanPassed ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5 text-green-500" />
-                    <div>
-                      <div className="font-medium text-green-500">
-                        Scan passed
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        No security issues detected
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-medium">Security issues found</div>
-                      <div className="text-xs">
-                        Potentially dangerous patterns detected (eval, exec)
-                      </div>
-                    </div>
-                  </>
-                )}
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5 text-muted-foreground" />
+                <div className="text-sm">
+                  Pre-check: no <code>eval(</code>/<code>exec(</code> found —
+                  the security scan runs when a version is published
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+          {preCheckResult === "flagged" && (
+            <Alert
+              variant="destructive"
+              data-ui-bridge-id="marketplace.publish-pre-check"
+              data-pre-check={preCheckResult}
+            >
+              <AlertDescription className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-medium">
+                    Pre-check: <code>eval(</code> or <code>exec(</code> found
+                  </div>
+                  <div className="text-xs">
+                    Remove it before publishing — the security scan flags
+                    dynamic code execution
+                  </div>
+                </div>
               </AlertDescription>
             </Alert>
           )}
@@ -107,11 +108,7 @@ export function PublishSidebar({
         size="lg"
         className="w-full bg-primary"
         onClick={onPublish}
-        disabled={
-          !isFormValid ||
-          isPublishing ||
-          (showSecurityScan && !securityScanPassed)
-        }
+        disabled={!isFormValid || isPublishing || preCheckResult === "flagged"}
       >
         {isPublishing ? (
           <>

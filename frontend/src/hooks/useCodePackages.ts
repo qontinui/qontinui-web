@@ -37,6 +37,7 @@ import type {
   PackageSearchResult,
   PackageInstallation,
   PackageRating,
+  PackageVersion,
   CreatePackageRequest,
   UpdatePackageRequest,
   PublishVersionRequest,
@@ -59,6 +60,8 @@ export const packageKeys = {
     [...packageKeys.all, "installed", projectId] as const,
   ratings: (packageId: string) =>
     [...packageKeys.all, "ratings", packageId] as const,
+  versions: (packageId: string) =>
+    [...packageKeys.all, "versions", packageId] as const,
 };
 
 // API service adapter - uses CodePackageService
@@ -69,6 +72,10 @@ const packageApi = {
 
   async getPackage(id: string): Promise<CodePackage> {
     return codePackageService.getPackage(id);
+  },
+
+  async getPackageVersions(packageId: string): Promise<PackageVersion[]> {
+    return codePackageService.getPackageVersions(packageId);
   },
 
   async getPopularPackages(): Promise<CodePackage[]> {
@@ -230,6 +237,22 @@ export function usePackageRatings(packageId: string, enabled = true) {
 }
 
 /**
+ * Hook to fetch every published version of a package, newest first, each
+ * carrying the security scan status the API served for it
+ *
+ * @param packageId - Numeric package ID (as a string)
+ * @param enabled - Whether to run the query
+ */
+export function usePackageVersions(packageId: string, enabled = true) {
+  return useQuery({
+    queryKey: packageKeys.versions(packageId),
+    queryFn: () => packageApi.getPackageVersions(packageId),
+    enabled: enabled && !!packageId,
+    staleTime: 60000,
+  });
+}
+
+/**
  * Hook to create a new package
  *
  * Features:
@@ -323,6 +346,9 @@ export function usePublishVersion() {
     onSuccess: (updatedPackage, { packageId }) => {
       // Update package details with new version
       queryClient.setQueryData(packageKeys.detail(packageId), updatedPackage);
+      queryClient.invalidateQueries({
+        queryKey: packageKeys.versions(packageId),
+      });
       queryClient.invalidateQueries({ queryKey: packageKeys.lists() });
       queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() });
     },
@@ -352,6 +378,9 @@ export function useInstallPackage() {
       // Update package stats (download count)
       queryClient.invalidateQueries({
         queryKey: packageKeys.detail(variables.package_id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: packageKeys.versions(variables.package_id),
       });
     },
   });

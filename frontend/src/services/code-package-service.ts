@@ -13,7 +13,13 @@ import type {
   RatePackageRequest,
   PackageLicense,
   PackageCategory,
+  PackageVersion,
+  PackageScan,
+  PackageScanIssue,
+  PackageScanIssueSeverity,
 } from "@/types/code-packages";
+import { UNKNOWN_SCAN, isServedScanStatus } from "@/types/code-packages";
+import type { components } from "@/lib/api-client/generated-types";
 
 /**
  * The one served prefix for every code-package route. The backend mounts the
@@ -23,83 +29,19 @@ import type {
 const CODE_PACKAGES = `${ApiConfig.API_BASE_URL}/api/v1/code-packages`;
 
 /**
- * Backend API response types
- * These match the FastAPI Pydantic schemas
+ * Backend API response types. The package, version and installation payloads
+ * are the generated OpenAPI types, so a backend schema change is a type error
+ * here rather than a silent drift.
  */
-interface BackendPackageSearchResult {
-  id: number;
-  name: string;
-  slug: string;
-  description: string;
-  author_id: string;
-  category_id: number;
-  category_name: string | null;
-  license: string;
-  tags: string[];
-  is_verified: boolean;
-  total_downloads: number;
-  avg_rating: number | null;
-  latest_version: string | null;
-  created_at: string;
-}
-
-interface BackendPackageListResponse {
-  packages: BackendPackageSearchResult[];
-  total: number;
-  limit: number;
-  offset: number;
-  has_more: boolean;
-}
-
-interface BackendPackageDetailRead {
-  id: number;
-  name: string;
-  slug: string;
-  description: string;
-  long_description: string | null;
-  author_id: string;
-  category_id: number;
-  license: string;
-  tags: string[];
-  is_verified: boolean;
-  total_downloads: number;
-  avg_rating: number | null;
-  created_at: string;
-  updated_at: string;
-  category: unknown;
-  latest_version: unknown;
-  total_versions: number;
-  total_ratings: number;
-}
-
-interface BackendInstallResponse {
-  id: number;
-  package_id: number;
-  version_id: number;
-  project_id: string;
-  status: string;
-  installed_at: string;
-  package_name: string;
-  package_version: string;
-}
-
-interface BackendInstalledPackageRead {
-  id: number;
-  package_id: number;
-  version_id: number;
-  package_name: string;
-  package_slug: string;
-  package_description: string;
-  version: string;
-  status: string;
-  installed_at: string;
-  updated_at: string;
-}
-
-interface BackendProjectPackagesResponse {
-  packages: BackendInstalledPackageRead[];
-  total: number;
-}
+type Schemas = components["schemas"];
+type BackendPackageSearchResult = Schemas["PackageSearchResult"];
+type BackendPackageListResponse = Schemas["PackageListResponse"];
+type BackendPopularPackageResponse = Schemas["PopularPackageResponse"];
+type PackageDetailRead = Schemas["PackageDetailRead"];
+type VersionRead = Schemas["VersionRead"];
+type BackendInstallResponse = Schemas["InstallResponse"];
+type BackendInstalledPackageRead = Schemas["InstalledPackageRead"];
+type BackendProjectPackagesResponse = Schemas["ProjectPackagesResponse"];
 
 interface BackendRatingRead {
   id: number;
@@ -114,11 +56,6 @@ interface BackendRatingRead {
 interface BackendRatingWithUser extends BackendRatingRead {
   user_email: string;
   user_username: string;
-}
-
-interface BackendPopularPackageResponse {
-  packages: BackendPackageSearchResult[];
-  period: string;
 }
 
 /**
@@ -199,8 +136,25 @@ export class CodePackageService {
       throw new Error("Package not found");
     }
 
-    const data: BackendPackageDetailRead = await response.json();
+    const data: PackageDetailRead = await response.json();
     return this.transformBackendDetailToFrontend(data);
+  }
+
+  /**
+   * Get every published version of a package, newest first, each with the
+   * security scan status the API served for it
+   */
+  async getPackageVersions(packageId: string): Promise<PackageVersion[]> {
+    const response = await this.httpClient.fetch(
+      `${CODE_PACKAGES}/packages/${encodeURIComponent(packageId)}/versions`
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch package versions");
+    }
+
+    const data: VersionRead[] = await response.json();
+    return data.map((v) => toPackageVersion(v));
   }
 
   /**
@@ -250,7 +204,9 @@ export class CodePackageService {
     }
 
     const data: BackendProjectPackagesResponse = await response.json();
-    return data.packages.map(this.transformBackendInstallationToFrontend);
+    return data.packages.map((i) =>
+      this.transformBackendInstallationToFrontend(i)
+    );
   }
 
   /**
@@ -412,7 +368,7 @@ export class CodePackageService {
     }
 
     const data: BackendRatingWithUser[] = await response.json();
-    return data.map(this.transformBackendRatingToFrontend);
+    return data.map((r) => this.transformBackendRatingToFrontend(r));
   }
 
   /**
@@ -481,23 +437,11 @@ export class CodePackageService {
         verified: pkg.is_verified,
         staff: false,
       },
-      license: pkg.license as PackageLicense,
+      license: (pkg.license ?? "Other") as PackageLicense,
       visibility: "public" as const,
-      latest_version: {
-        id: "0",
-        version: pkg.latest_version || "0.0.0",
-        package_id: pkg.id.toString(),
-        code: "",
-        dependencies: [],
-        created_at: pkg.created_at,
-        downloads: pkg.total_downloads,
-        compatibility: {},
-        security_scan: {
-          scanned: true,
-          passed: true,
-        },
-      },
-      versions: [],
+      // A search result names the latest version but carries no version
+      // record, so `latest_version` is left absent rather than made up.
+      latest_version_number: pkg.latest_version,
       created_at: pkg.created_at,
       updated_at: pkg.created_at,
       total_downloads: pkg.total_downloads,
@@ -517,97 +461,60 @@ export class CodePackageService {
    * Transform backend package detail to frontend format
    */
   private transformBackendDetailToFrontend(
-    pkg: BackendPackageDetailRead
+    pkg: PackageDetailRead
   ): CodePackage {
+    const latest = pkg.latest_version ?? null;
     const basePackage = this.transformBackendPackageToFrontend({
       id: pkg.id,
       name: pkg.name,
       slug: pkg.slug,
       description: pkg.description,
       author_id: pkg.author_id,
-      category_id: pkg.category_id,
-      category_name:
-        ((pkg.category as Record<string, unknown>)?.name as string | null) ||
-        null,
-      license: pkg.license,
-      tags: pkg.tags,
+      category_id: pkg.category_id ?? null,
+      category_name: pkg.category?.name ?? null,
+      license: pkg.license ?? null,
+      tags: pkg.tags ?? [],
       is_verified: pkg.is_verified,
       total_downloads: pkg.total_downloads,
       avg_rating: pkg.avg_rating,
-      latest_version:
-        ((pkg.latest_version as Record<string, unknown>)?.version as string) ||
-        null,
+      latest_version: latest?.version ?? null,
       created_at: pkg.created_at,
     });
 
     return {
       ...basePackage,
+      latest_version: latest ? toPackageVersion(latest) : null,
       updated_at: pkg.updated_at,
       rating_count: pkg.total_ratings,
     };
   }
 
   /**
-   * Transform backend installation to frontend format
+   * Transform backend installation to frontend format. An installation names
+   * the installed version but carries no scan for it, so its scan is
+   * `unknown`, and it carries no latest-version record for the package.
    */
   private transformBackendInstallationToFrontend(
     installation: BackendInstalledPackageRead
   ): PackageInstallation {
+    const version = unscannedVersion({
+      id: installation.version_id,
+      version: installation.version,
+      package_id: installation.package_id,
+      created_at: installation.installed_at,
+    });
     return {
       id: installation.id.toString(),
       package_id: installation.package_id.toString(),
-      package: {
-        id: installation.package_id.toString(),
+      package: installedPackageShell(installation.package_id, {
         slug: installation.package_slug,
         name: installation.package_name,
         description: installation.package_description,
-        category: "utilities",
-        tags: [],
-        author: {
-          id: "",
-          username: "",
-          verified: false,
-          staff: false,
-        },
-        license: "MIT",
-        visibility: "public",
-        latest_version: {
-          id: installation.version_id.toString(),
-          version: installation.version,
-          package_id: installation.package_id.toString(),
-          code: "",
-          dependencies: [],
-          created_at: installation.installed_at,
-          downloads: 0,
-          compatibility: {},
-          security_scan: { scanned: true, passed: true },
-        },
-        versions: [],
         created_at: installation.installed_at,
         updated_at: installation.updated_at,
-        total_downloads: 0,
-        weekly_downloads: 0,
-        average_rating: 0,
-        rating_count: 0,
-        fork_count: 0,
-        star_count: 0,
-        verified: false,
-        featured: false,
-        deprecated: false,
-        function_name: "",
-      },
+      }),
       version_id: installation.version_id.toString(),
-      version: {
-        id: installation.version_id.toString(),
-        version: installation.version,
-        package_id: installation.package_id.toString(),
-        code: "",
-        dependencies: [],
-        created_at: installation.installed_at,
-        downloads: 0,
-        compatibility: {},
-        security_scan: { scanned: true, passed: true },
-      },
+      version,
       project_id: "",
       user_id: "",
       installed_at: installation.installed_at,
@@ -616,62 +523,32 @@ export class CodePackageService {
   }
 
   /**
-   * Transform backend install response to frontend format
+   * Transform backend install response to frontend format. Like an
+   * installation, it carries no scan, so the installed version's scan is
+   * `unknown`.
    */
   private transformBackendInstallResponseToFrontend(
     response: BackendInstallResponse
   ): PackageInstallation {
+    const version = unscannedVersion({
+      id: response.version_id,
+      version: response.package_version,
+      package_id: response.package_id,
+      created_at: response.installed_at,
+    });
     return {
       id: response.id.toString(),
       package_id: response.package_id.toString(),
-      package: {
-        id: response.package_id.toString(),
+      package: installedPackageShell(response.package_id, {
         slug: "",
         name: response.package_name,
         description: "",
-        category: "utilities",
-        tags: [],
-        author: { id: "", username: "", verified: false, staff: false },
-        license: "MIT",
-        visibility: "public",
-        latest_version: {
-          id: response.version_id.toString(),
-          version: response.package_version,
-          package_id: response.package_id.toString(),
-          code: "",
-          dependencies: [],
-          created_at: response.installed_at,
-          downloads: 0,
-          compatibility: {},
-          security_scan: { scanned: true, passed: true },
-        },
-        versions: [],
         created_at: response.installed_at,
         updated_at: response.installed_at,
-        total_downloads: 0,
-        weekly_downloads: 0,
-        average_rating: 0,
-        rating_count: 0,
-        fork_count: 0,
-        star_count: 0,
-        verified: false,
-        featured: false,
-        deprecated: false,
-        function_name: "",
-      },
+      }),
       version_id: response.version_id.toString(),
-      version: {
-        id: response.version_id.toString(),
-        version: response.package_version,
-        package_id: response.package_id.toString(),
-        code: "",
-        dependencies: [],
-        created_at: response.installed_at,
-        downloads: 0,
-        compatibility: {},
-        security_scan: { scanned: true, passed: true },
-      },
-      project_id: response.project_id,
+      version,
+      project_id: String(response.project_id),
       user_id: "",
       installed_at: response.installed_at,
       enabled: response.status === "installed",
@@ -729,7 +606,7 @@ export class CodePackageService {
   /**
    * Map category ID to name
    */
-  private mapCategoryIdToName(categoryId: number): PackageCategory {
+  private mapCategoryIdToName(categoryId: number | null): PackageCategory {
     const idToName: Record<number, PackageCategory> = {
       1: "automation",
       2: "utilities",
@@ -742,6 +619,141 @@ export class CodePackageService {
       9: "web-scraping",
       10: "other",
     };
-    return idToName[categoryId] || "other";
+    return (categoryId !== null && idToName[categoryId]) || "other";
   }
+}
+
+/**
+ * Read a served version's scan. Each of the five served statuses passes
+ * through unchanged; a status string outside them reads `unknown`, never a
+ * pass. Issues come from `security_scan_result.issues` (the scanner's
+ * `SecurityScanResult`, `backend/app/services/security/models.py`).
+ */
+function readPackageScan(
+  status: string,
+  result: VersionRead["security_scan_result"]
+): PackageScan {
+  const scan: PackageScan = {
+    status: isServedScanStatus(status) ? status : "unknown",
+    issues: readScanIssues(result?.issues),
+  };
+  if (typeof result?.scanned_at === "string") {
+    scan.scanned_at = result.scanned_at;
+  }
+  return scan;
+}
+
+const ISSUE_SEVERITIES: readonly PackageScanIssueSeverity[] = [
+  "info",
+  "low",
+  "medium",
+  "high",
+  "critical",
+];
+
+function readScanIssues(raw: unknown): PackageScanIssue[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === "object" && item !== null
+    )
+    .map((item) => {
+      const severity = ISSUE_SEVERITIES.find((s) => s === item.severity);
+      const issue: PackageScanIssue = {
+        severity: severity ?? "unknown",
+        description: typeof item.message === "string" ? item.message : "",
+      };
+      if (typeof item.line_number === "number") {
+        issue.line_number = item.line_number;
+      }
+      return issue;
+    });
+}
+
+/** Build a frontend version from a served `VersionRead`. */
+function toPackageVersion(v: VersionRead): PackageVersion {
+  const version: PackageVersion = {
+    id: String(v.id),
+    version: v.version,
+    package_id: String(v.package_id),
+    code: v.code_content,
+    dependencies: (v.dependencies ?? []).map((dep) => ({
+      package_id: dep.name ?? "",
+      package_name: dep.name ?? "",
+      version_constraint: dep.version ?? "",
+      optional: false,
+    })),
+    created_at: v.created_at,
+    downloads: v.download_count,
+    compatibility: {},
+    security_scan: readPackageScan(
+      v.security_scan_status,
+      v.security_scan_result
+    ),
+  };
+  if (v.changelog) version.changelog = v.changelog;
+  return version;
+}
+
+/**
+ * A version named by an installation payload, which serves its id and number
+ * but no code, downloads or scan — so the scan is `unknown`.
+ */
+function unscannedVersion(fields: {
+  id: number;
+  version: string;
+  package_id: number;
+  created_at: string;
+}): PackageVersion {
+  return {
+    id: String(fields.id),
+    version: fields.version,
+    package_id: String(fields.package_id),
+    code: "",
+    dependencies: [],
+    created_at: fields.created_at,
+    downloads: 0,
+    compatibility: {},
+    security_scan: { ...UNKNOWN_SCAN, issues: [] },
+  };
+}
+
+/**
+ * The package an installation payload names. It carries no latest-version
+ * record, so `latest_version` and `latest_version_number` stay absent.
+ */
+function installedPackageShell(
+  packageId: number,
+  fields: {
+    slug: string;
+    name: string;
+    description: string;
+    created_at: string;
+    updated_at: string;
+  }
+): CodePackage {
+  return {
+    id: String(packageId),
+    slug: fields.slug,
+    name: fields.name,
+    description: fields.description,
+    category: "utilities",
+    tags: [],
+    author: { id: "", username: "", verified: false, staff: false },
+    license: "MIT",
+    visibility: "public",
+    created_at: fields.created_at,
+    updated_at: fields.updated_at,
+    total_downloads: 0,
+    weekly_downloads: 0,
+    average_rating: 0,
+    rating_count: 0,
+    fork_count: 0,
+    star_count: 0,
+    verified: false,
+    featured: false,
+    deprecated: false,
+    function_name: "",
+  };
 }

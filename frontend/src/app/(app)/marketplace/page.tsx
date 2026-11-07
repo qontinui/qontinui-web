@@ -257,6 +257,7 @@ export default function MarketplacePage() {
                   ? 100
                   : 0
             }
+            error={installPackageMutation.error?.message}
           />
         )}
       </div>

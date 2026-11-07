@@ -148,9 +148,15 @@ export function PackageCard({
               <span className="text-text-muted">({pkg.rating_count})</span>
             </div>
           )}
-          <div className="flex items-center gap-1 text-xs">
-            <span>v{pkg.latest_version.version}</span>
-          </div>
+          {pkg.latest_version_number !== undefined && (
+            <div className="flex items-center gap-1 text-xs">
+              <span>
+                {pkg.latest_version_number === null
+                  ? "No published version"
+                  : `v${pkg.latest_version_number}`}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* License */}

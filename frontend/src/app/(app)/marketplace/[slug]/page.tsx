@@ -28,7 +28,7 @@ export default function PackageDetailsPage() {
     "readme" | "code" | "versions" | "dependencies"
   >("readme");
 
-  const { data: pkg, isLoading } = usePackageDetails(slug);
+  const { data: pkg, isLoading, refetch } = usePackageDetails(slug);
   const { data: ratings } = usePackageRatings(pkg?.id || "", !!pkg?.id);
   const { data: projects } = useProjects();
   const ratePackageMutation = useRatePackage();
@@ -38,6 +38,7 @@ export default function PackageDetailsPage() {
     setInstallDialogOpen,
     installStatus,
     installProgress,
+    installError,
     handleInstallClick,
     handleInstall,
   } = usePackageInstall(pkg?.id);
@@ -68,15 +69,10 @@ export default function PackageDetailsPage() {
     return <PackageNotFound onBack={handleBack} />;
   }
 
-  const hasSecurityIssues =
-    pkg.latest_version.security_scan.scanned &&
-    !pkg.latest_version.security_scan.passed;
-
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
       <PackageHeader
         pkg={pkg}
-        hasSecurityIssues={hasSecurityIssues}
         onBack={handleBack}
         onInstallClick={handleInstallClick}
       />
@@ -109,7 +105,7 @@ export default function PackageDetailsPage() {
             </Card>
           </div>
 
-          <PackageSidebar pkg={pkg} />
+          <PackageSidebar pkg={pkg} onRetryScan={() => void refetch()} />
         </div>
       </div>
 
@@ -121,6 +117,7 @@ export default function PackageDetailsPage() {
         onInstall={handleInstall}
         installStatus={installStatus}
         installProgress={installProgress}
+        error={installError}
       />
     </div>
   );

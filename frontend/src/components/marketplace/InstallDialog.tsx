@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { AlertTriangle, Check, X, Package, ChevronRight } from "lucide-react";
+import { Check, X, Package, ChevronRight, RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -22,11 +22,20 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
+import { usePackageVersions } from "@/hooks/useCodePackages";
+import { UNKNOWN_SCAN, scanDisplay } from "@/types/code-packages";
 import type {
   CodePackage,
   PackageDependency,
   InstallStatus,
 } from "@/types/code-packages";
+import {
+  SCAN_STATUS_BRIDGE_ID,
+  SCAN_TONE_SURFACE,
+  SCAN_TONE_TEXT,
+  ScanIcon,
+  ScanIssueList,
+} from "./ScanStatus";
 
 interface InstallDialogProps {
   open: boolean;
@@ -54,20 +63,28 @@ export function InstallDialog({
   const [selectedProjectId, setSelectedProjectId] = useState(
     initialProjectId || projects[0]?.id || ""
   );
-  const [selectedVersionId, setSelectedVersionId] = useState(
-    pkg.latest_version.id
-  );
-
+  // The served versions, newest first. The selection defaults to the newest
+  // (`versions[0]`) until the user picks another.
+  const versionsQuery = usePackageVersions(pkg.id, open);
+  const versions = versionsQuery.data ?? [];
+  const [pickedVersionId, setPickedVersionId] = useState<string | undefined>();
   const selectedVersion =
-    pkg.versions.find((v) => v.id === selectedVersionId) || pkg.latest_version;
-  const hasDependencies = selectedVersion.dependencies.length > 0;
-  const hasSecurityIssues =
-    selectedVersion.security_scan.scanned &&
-    !selectedVersion.security_scan.passed;
+    versions.find((v) => v.id === pickedVersionId) ?? versions[0];
+  const latestVersionId = versions[0]?.id;
+
+  const versionsLoading = versionsQuery.isPending && open;
+  const versionsFailed = versionsQuery.isError;
+  const noPublishedVersion = versionsQuery.isSuccess && versions.length === 0;
+
+  // A version whose scan cannot be read, and a version list that could not be
+  // loaded, both render as `unknown` — never as a pass.
+  const scan = scanDisplay(selectedVersion?.security_scan ?? UNKNOWN_SCAN);
+  const showScan = !!selectedVersion || versionsFailed;
+  const hasDependencies = (selectedVersion?.dependencies.length ?? 0) > 0;
 
   const handleInstall = () => {
-    if (selectedProjectId) {
-      onInstall(selectedProjectId, selectedVersionId);
+    if (selectedProjectId && selectedVersion) {
+      onInstall(selectedProjectId, selectedVersion.id);
     }
   };
 
@@ -143,34 +160,47 @@ export function InstallDialog({
             >
               Version
             </label>
-            <Select
-              value={selectedVersionId}
-              onValueChange={setSelectedVersionId}
-              disabled={isInstalling || isComplete}
-            >
-              <SelectTrigger
-                id="version"
-                className="bg-surface-canvas/50 border-border-default"
+            {versionsLoading && (
+              <div className="text-sm text-text-muted">Loading versions...</div>
+            )}
+            {noPublishedVersion && (
+              <div
+                className="text-sm text-text-muted"
+                data-ui-bridge-id="marketplace.no-published-version"
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {pkg.versions.map((version) => (
-                  <SelectItem key={version.id} value={version.id}>
-                    v{version.version}
-                    {version.id === pkg.latest_version.id && (
-                      <Badge variant="secondary" className="ml-2 text-xs">
-                        Latest
-                      </Badge>
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                No published version
+              </div>
+            )}
+            {selectedVersion && (
+              <Select
+                value={selectedVersion.id}
+                onValueChange={setPickedVersionId}
+                disabled={isInstalling || isComplete}
+              >
+                <SelectTrigger
+                  id="version"
+                  className="bg-surface-canvas/50 border-border-default"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {versions.map((version) => (
+                    <SelectItem key={version.id} value={version.id}>
+                      v{version.version}
+                      {version.id === latestVersionId && (
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          Latest
+                        </Badge>
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {/* Dependencies */}
-          {hasDependencies && (
+          {selectedVersion && hasDependencies && (
             <div className="space-y-2">
               <div className="text-sm font-medium text-text-secondary">
                 Dependencies ({selectedVersion.dependencies.length})
@@ -183,47 +213,55 @@ export function InstallDialog({
             </div>
           )}
 
-          {/* Security Scan Results */}
-          {selectedVersion.security_scan.scanned && (
+          {/* Security Scan Results — the served status of the selected version */}
+          {showScan && (
             <Alert
-              variant={hasSecurityIssues ? "destructive" : "default"}
+              variant={scan.tone === "danger" ? "destructive" : "default"}
               className={cn(
-                !hasSecurityIssues && "border-green-500/50 bg-green-950/20"
+                scan.tone !== "danger" && SCAN_TONE_SURFACE[scan.tone]
               )}
+              data-ui-bridge-id={SCAN_STATUS_BRIDGE_ID}
+              data-scan-status={scan.status}
             >
               <AlertDescription className="flex items-start gap-2">
-                {hasSecurityIssues ? (
-                  <>
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                    <div className="space-y-1 flex-1">
-                      <div className="font-medium">
-                        Security issues detected
-                      </div>
-                      {selectedVersion.security_scan.issues?.map(
-                        (issue, index) => (
-                          <div key={index} className="text-xs">
-                            <Badge variant="destructive" className="mr-2">
-                              {issue.severity}
-                            </Badge>
-                            {issue.description}
-                          </div>
-                        )
-                      )}
+                <ScanIcon display={scan} className="mt-0.5" />
+                <div className="space-y-1 flex-1">
+                  <div
+                    className={cn(
+                      "font-medium",
+                      scan.tone !== "danger" && SCAN_TONE_TEXT[scan.tone]
+                    )}
+                  >
+                    {scan.label}
+                  </div>
+                  {versionsFailed ? (
+                    <div className="text-xs text-text-muted">
+                      The package versions could not be loaded
                     </div>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-4 h-4 flex-shrink-0 mt-0.5 text-green-500" />
-                    <div>
-                      <div className="font-medium text-green-500">
-                        Security scan passed
-                      </div>
+                  ) : (
+                    scan.detail && (
                       <div className="text-xs text-text-muted">
-                        No security issues detected
+                        {scan.detail}
                       </div>
-                    </div>
-                  </>
-                )}
+                    )
+                  )}
+                  {selectedVersion && (
+                    <ScanIssueList
+                      issues={selectedVersion.security_scan.issues}
+                    />
+                  )}
+                  {scan.status === "unknown" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void versionsQuery.refetch()}
+                      disabled={versionsQuery.isFetching}
+                    >
+                      <RefreshCw className="w-3 h-3 mr-2" />
+                      Retry
+                    </Button>
+                  )}
+                </div>
               </AlertDescription>
             </Alert>
           )}
@@ -276,7 +314,12 @@ export function InstallDialog({
           {!isComplete && (
             <Button
               onClick={handleInstall}
-              disabled={!selectedProjectId || isInstalling || hasSecurityIssues}
+              disabled={
+                !selectedProjectId ||
+                isInstalling ||
+                !selectedVersion ||
+                scan.blocksInstall
+              }
               className="bg-gradient-to-r from-brand-primary to-brand-secondary"
             >
               {isInstalling ? (
