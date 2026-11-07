@@ -248,6 +248,8 @@ export interface DevOpsFixture {
    * worked starts failing.
    */
   failingRoutes?: string[];
+  /** More rows on coord's fleet-health roster, after the three the fixture serves. */
+  extraDevices?: Record<string, unknown>[];
 }
 
 export function mockDevOpsRoutes(
@@ -460,6 +462,13 @@ export function mockDevOpsRoutes(
     }
     if (u.includes("fleet/health")) {
       return Promise.resolve({
+        // A whole roster, as coord serves it, unless a test says otherwise.
+        excluded: { unbound: 0, bound_to_other_tenant: 0 },
+        excluded_error: null,
+        truncated: false,
+        total: 3,
+        degradable_dropped: 0,
+        row_cap: { soft: 1000, hard: 10_000 },
         ...fixture.healthExtras,
         devices: [
           {
@@ -512,6 +521,7 @@ export function mockDevOpsRoutes(
             state: "healthy",
             ci_runner_status: "idle",
           },
+          ...(fixture.extraDevices ?? []),
         ],
         credential_dark_scrape_up: true,
         // A question waiting on the operator, and a deliberate setting whose
