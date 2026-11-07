@@ -90,10 +90,12 @@ export const COORDINATION_OVERVIEW_CAPTIONS = {
     title: "What this view does not know",
     // Coord's `does_not_know` list: each source, its state, its read time
     // (a watcher's last successful run) and its freshness bound.
-    // `DoesNotKnowSection`: the unread sources listed, the read ones behind
-    // one disclosure; while presenting, sources not built yet are counted on
-    // one line rather than listed.
-    oneLiner: copy`The sources the ${term("coord", "coordination service")} could not fully read for this view, with the ones it did read one click down.`,
+    // `DoesNotKnowSection`: the unread sources listed, then the areas it read
+    // whose faults reach this view slower than the fault-to-visibility
+    // target (`detection_bound:<plane>` rows, listed in the open), the other
+    // read ones behind one disclosure; while presenting, sources not built
+    // yet are counted on one line rather than listed.
+    oneLiner: copy`The sources the ${term("coord", "coordination service")} could not fully read for this view and the areas whose faults reach it slower than the target, with the sources it did read one click down.`,
     whyItMatters:
       "A view that names what it could not read is one whose calm parts can be trusted: a source that was not read stays on this list, marked as not read, instead of being dropped.",
   },
