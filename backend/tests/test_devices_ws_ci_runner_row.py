@@ -32,7 +32,12 @@ Pinned here, driving the real endpoint against the test Postgres:
   including a mark committed between its SELECT and its UPDATE, and leaves
   the caller's session usable (it rolls nothing back);
 * the marker test is coord's predicate exactly, checked against coord's own
-  SQL text over every stored shape that could be mistaken for the marker.
+  SQL text over every stored shape that could be mistaken for the marker;
+* a client cannot FORGE the marker (coord finding ``cde2133b``): a
+  ``ci_runner`` element in ``runner_info.capabilities`` is dropped before any
+  web writer stores the list, on a new row under every role and on an
+  existing row, exactly as coord's register door drops it at ingest, while
+  every other token is kept verbatim and in order.
 
 DB-backed on purpose: the guard is a statement's interaction with a row other
 connections commit, which a mocked session cannot exercise.
@@ -758,3 +763,158 @@ async def test_the_marker_is_coords_predicate_exactly(
         else:
             record = await call
             assert record.capabilities == ["gui_automation"]
+
+
+# ---------------------------------------------------------------------------
+# A client cannot forge the marker (coord finding cde2133b)
+# ---------------------------------------------------------------------------
+
+#: A runner_info list carrying the marker twice among ordinary tokens.
+_FORGED = ["gui_automation", "ci_runner", "os:linux", "ci_runner"]
+#: What coord's register door stores from it, and what web must store.
+_FORGED_KEPT = ["gui_automation", "os:linux"]
+#: No marker, but each way a lazy drop could over-reach: lookalikes, another
+#: case, a duplicate and a governed token, all kept byte-for-byte and in order.
+_VERBATIM = [
+    "gui_automation",
+    "ci_runner_v2",
+    "CI_RUNNER",
+    "os:linux",
+    "gui_automation",
+    "cred:gh",
+]
+
+_DROPPED = "device_capabilities_ci_runner_dropped"
+
+
+def _info_with(role: str, capabilities: list[Any]) -> dict[str, Any]:
+    return {**_info(role), "capabilities": list(capabilities)}
+
+
+async def _stored_capabilities(env: SimpleNamespace) -> Any:
+    return (await _identity(env))[1]
+
+
+async def _is_marked(env: SimpleNamespace) -> bool:
+    async with env.maker() as db:
+        return await device_crud.carries_ci_runner_marker(db, env.device_id)
+
+
+@pytest.mark.parametrize("role", _ROLES)
+async def test_a_forged_marker_never_reaches_a_new_row(env, role: str) -> None:
+    """No row yet. A primary's upsert, or a secondary's
+    ``ensure_device_for_secondary``, creates it from a list carrying the
+    marker, and creates it unmarked: the socket registers like any other
+    device instead of minting a row coord would take for the registrar's."""
+    with structlog.testing.capture_logs() as logs:
+        sock = await _handshake(env, _info_with(role, _FORGED))
+
+    assert sock.closed is None, f"the handshake was refused: {sock.closed!r}"
+    assert sock.acked
+    assert await _stored_capabilities(env) == _FORGED_KEPT
+    assert await _is_marked(env) is False
+    drops = _events(logs, _DROPPED)
+    assert drops, "the drop was not logged"
+    assert {entry["device_id"] for entry in drops} == {str(env.device_id)}
+    assert all(e["log_level"] == "warning" and e["dropped"] == 2 for e in drops)
+
+
+@pytest.mark.parametrize("role", _PRIMARY_FIELD_WRITERS)
+async def test_a_forged_marker_never_reaches_an_existing_row(env, role: str) -> None:
+    """An existing unmarked row: the primary's UPDATE writes the client's list
+    without the marker, so the row stays one this door may write."""
+    await _seed(env, _CLAIMED_ROW, marked=False)
+
+    with structlog.testing.capture_logs() as logs:
+        sock = await _handshake(env, _info_with(role, _FORGED))
+
+    assert sock.closed is None, f"the handshake was refused: {sock.closed!r}"
+    assert sock.acked
+    assert await _stored_capabilities(env) == _FORGED_KEPT
+    assert await _is_marked(env) is False
+    (drop,) = _events(logs, _DROPPED)
+    assert drop["device_id"] == str(env.device_id)
+
+
+@pytest.mark.parametrize("role", _ROLES)
+async def test_other_capabilities_are_kept_verbatim(env, role: str) -> None:
+    """The control: a list without the marker reaches the new row byte-for-byte,
+    order and duplicates included, and no drop is logged."""
+    with structlog.testing.capture_logs() as logs:
+        sock = await _handshake(env, _info_with(role, _VERBATIM))
+
+    assert sock.closed is None, f"the handshake was refused: {sock.closed!r}"
+    assert sock.acked
+    assert await _stored_capabilities(env) == _VERBATIM
+    assert _events(logs, _DROPPED) == []
+
+
+@pytest.mark.parametrize(
+    "writer",
+    [
+        "register_device_insert",
+        "register_device_update",
+        "register_runner_legacy_update",
+        "ensure_device_for_secondary_insert",
+    ],
+)
+async def test_no_device_crud_writer_stores_a_wire_supplied_marker(
+    env, writer: str
+) -> None:
+    """Every web writer of ``coord.devices.capabilities``, called directly: both
+    arms of ``register_device`` and the secondary's insert (the WS handshake's
+    writers), and the legacy ``(user_id, name)`` path the testing WS handler
+    reaches through ``runner_crud.register_runner``."""
+    if writer.endswith("_update"):
+        await _seed(env, _CLAIMED_ROW, marked=False)
+    fields: dict[str, Any] = {
+        "user_id": env.user_id,
+        "name": _SEEDED_NAME,
+        "hostname": "squatter.example",
+        "capabilities": list(_FORGED),
+    }
+    async with env.maker() as db:
+        if writer == "ensure_device_for_secondary_insert":
+            await device_crud.ensure_device_for_secondary(
+                db, device_id=env.device_id, **fields
+            )
+        else:
+            fields.update(port=9876, restate_enabled=False, restate_healthy=False)
+            if writer == "register_runner_legacy_update":
+                await runner_crud.register_runner(db, **fields)
+            else:
+                await device_crud.register_device(db, device_id=env.device_id, **fields)
+
+    assert await _stored_capabilities(env) == _FORGED_KEPT
+    assert await _is_marked(env) is False
+
+
+_DROP_CASES: dict[str, tuple[list[Any], list[Any]]] = {
+    # coord's own cases (routes_phase3.rs register_column_drops_the_ci_runner_marker)
+    "marker_among_others": (
+        ["os:linux", "ci_runner", "gpu:NVIDIA:24GB"],
+        ["os:linux", "gpu:NVIDIA:24GB"],
+    ),
+    "only_the_marker_becomes_empty": (["ci_runner"], []),
+    "lookalike_is_ordinary": (["ci_runner_x"], ["ci_runner_x"]),
+    # every copy goes, and nothing that merely resembles it does
+    "every_copy_dropped": (["ci_runner", "a", "ci_runner"], ["a"]),
+    "empty_stays_empty": ([], []),
+    "near_misses_kept": (
+        ["CI_RUNNER", " ci_runner", "ci_runner "],
+        ["CI_RUNNER", " ci_runner", "ci_runner "],
+    ),
+    "non_strings_kept": (
+        [["ci_runner"], {"ci_runner": True}, 1],
+        [["ci_runner"], {"ci_runner": True}, 1],
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("given", "kept"), list(_DROP_CASES.values()), ids=list(_DROP_CASES)
+)
+async def test_the_drop_is_coords_exact_match(
+    given: list[Any], kept: list[Any]
+) -> None:
+    assert device_crud.drop_ci_runner_capability(list(given), device_id=None) == kept

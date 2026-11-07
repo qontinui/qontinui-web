@@ -12,6 +12,7 @@ status, heartbeat).
 from datetime import datetime
 from uuid import UUID
 
+import structlog
 from fastapi import HTTPException, status
 from qontinui_schemas.common import utc_now
 from sqlalchemy import ColumnElement, or_, select, update
@@ -21,11 +22,14 @@ from sqlalchemy.orm.exc import StaleDataError
 from app.models.device import Device
 from app.models.device_connection import DeviceConnection
 
+logger = structlog.get_logger(__name__)
+
 __all__ = [
     "CI_RUNNER_CAPABILITY",
     "DEVICE_IS_CI_RUNNER",
     "DeviceIsCiRunnerError",
     "carries_ci_runner_marker",
+    "drop_ci_runner_capability",
     "register_device",
     "ensure_device_for_secondary",
     "heartbeat_device",
@@ -59,10 +63,12 @@ __all__ = [
 # handshake. Plan ``2026-11-07-a-pre-registered-ci-registrar-row-keeps-the-
 # squatters-owner-and-home``, vet correction V1; coord finding ``3fc1ddb1``.
 #
-# What this refuses is REWRITING a marked row. It does not stop a client from
-# MARKING one: the handshake still writes the runner's own ``capabilities``
-# list verbatim, marker included, where coord's register door drops it at
-# ingest (coord finding ``cde2133b``, not closed here).
+# Two halves keep the marker the registrar's alone. A marked row is never
+# REWRITTEN (``register_device``'s guarded UPDATE, and the WS handshake's early
+# read). And no row is MARKED from the wire: every writer here passes the
+# client's ``capabilities`` list through :func:`drop_ci_runner_capability`
+# first, as coord's register door drops the marker at ingest (coord finding
+# ``cde2133b``).
 #
 # NOT :attr:`Device.is_ci_runner`. That property answers a display question
 # ("infrastructure or workstation?") from ``capability_user_paired`` and the
@@ -120,6 +126,36 @@ async def carries_ci_runner_marker(db: AsyncSession, device_id: UUID) -> bool:
     return bool((await db.execute(stmt)).scalar_one_or_none())
 
 
+def drop_ci_runner_capability(
+    capabilities: list[str], *, device_id: UUID | None
+) -> list[str]:
+    """A wire-supplied capability list with every ``ci_runner`` element dropped.
+
+    Web's counterpart of the marker half of coord's register ingest drop
+    (qontinui-coord ``routes_phase3::register_capabilities_column``). Only the
+    registrar may write the marker, and it never enters ``coord.devices``
+    through a coord wire door, so it must not enter through web's either.
+    Every writer in this module passes the client's list through this before
+    writing it.
+
+    The match is exact, as coord's is: an element equal to the string
+    ``"ci_runner"`` is dropped. A lookalike (``"ci_runner_x"``,
+    ``"CI_RUNNER"``) or a non-string element is an ordinary token and is kept.
+    Everything kept stays byte-for-byte and in order, and a list holding
+    nothing but the marker becomes ``[]``. A drop is logged with the device id
+    and the dropped family, never with the list.
+    """
+    kept = [c for c in capabilities if c != CI_RUNNER_CAPABILITY]
+    if len(kept) != len(capabilities):
+        logger.warning(
+            "device_capabilities_ci_runner_dropped",
+            device_id=str(device_id) if device_id is not None else None,
+            dropped=len(capabilities) - len(kept),
+            families=[CI_RUNNER_CAPABILITY],
+        )
+    return kept
+
+
 async def register_device(
     db: AsyncSession,
     *,
@@ -156,7 +192,9 @@ async def register_device(
     fixtures that don't go through coord pairing.
 
     Both paths set ``capability_user_paired = true`` and
-    ``derived_status = 'healthy'``.
+    ``derived_status = 'healthy'``. Both write ``capabilities`` only after
+    :func:`drop_ci_runner_capability`, so a client list carrying the
+    CI-registrar marker never marks a row, new or existing.
 
     EXCEPT on a row carrying the CI-registrar marker (see
     :data:`CI_RUNNER_CAPABILITY`): that raises :class:`DeviceIsCiRunnerError`
@@ -170,6 +208,7 @@ async def register_device(
     carries on after the refusal (the testing WebSocket handler, through
     :func:`runner_crud.register_runner`) could not lazily reload under asyncio.
     """
+    capabilities = drop_ci_runner_capability(capabilities, device_id=device_id)
     if device_id is not None:
         query = select(Device).where(Device.device_id == device_id)
     else:
@@ -273,7 +312,8 @@ async def ensure_device_for_secondary(
     did) is one created, because ``coord.device_connections.device_id`` needs
     a parent. It is created with ``port = NULL`` and ``derived_status =
     'offline'``: no primary is connected, and the primary's own registration
-    fills both when it arrives.
+    fills both when it arrives. Its ``capabilities`` pass through
+    :func:`drop_ci_runner_capability`, so the row is never created marked.
     """
     existing = await get_device(db, device_id)
     if existing is not None:
@@ -285,7 +325,7 @@ async def ensure_device_for_secondary(
         name=name,
         hostname=hostname,
         port=None,
-        capabilities=capabilities,
+        capabilities=drop_ci_runner_capability(capabilities, device_id=device_id),
         restate_enabled=False,
         restate_healthy=False,
         # ``state`` is coord's MACHINE liveness (CHECK: healthy | degraded |
