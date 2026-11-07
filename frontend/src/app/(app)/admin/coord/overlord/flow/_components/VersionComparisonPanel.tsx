@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * Do the flow numbers move when the overlord changes? One line per
- * `triage-sessions.py` version that ran in the window, from coord's
- * `group_by=overlord_version` groups — the reason the ledger records versions
- * at all (the plan's "whether any of those numbers moves when the overlord
- * changes").
+ * Do the flow numbers move when the overlord changes? One line per overlord
+ * version (every script, the `/next-move` brief and the runner build) that ran
+ * in the window, from coord's `group_by=overlord_version` groups — the reason
+ * the ledger records versions at all (the plan's "whether any of those numbers
+ * moves when the overlord changes").
  */
 
 import { GitCompare } from "lucide-react";
@@ -18,7 +18,9 @@ import {
   metricTitle,
   metricValue,
   percentWords,
-  versionWords,
+  versionChanges,
+  versionMapWords,
+  groupVersionWords,
   type Metric,
   type VersionGroup,
 } from "../_lib/overlordFlowStatus";
@@ -37,6 +39,45 @@ function unchangedState(
   if (g.unchanged !== 0) return "count";
   if (minPasses === undefined || g.censusPasses === undefined) return "unknown";
   return g.censusPasses >= minPasses ? "count" : "too-few";
+}
+
+/** Title for a version cell: its map, or why there is none. */
+function versionTitle(g: VersionGroup): string {
+  if (g.version === null) {
+    return "unknown version — these passes recorded none, or missed reading one their runner had read before";
+  }
+  return (
+    versionMapWords(g.versions) ??
+    `${g.version} — coord did not say which versions this is over`
+  );
+}
+
+/** What changed since the previous version, in words. */
+function ChangedCell({
+  groups,
+  index,
+}: {
+  groups: VersionGroup[];
+  index: number;
+}) {
+  const changed = versionChanges(groups, index);
+  return (
+    <td
+      className="py-1 pr-3 font-mono"
+      data-testid="overlord-flow-versions-changed"
+      title={
+        changed === null
+          ? "nothing to compare against: the first version with a readable map, an unknown version, or a map coord did not serve"
+          : "entries that differ from the previous version; one that only one side recorded may differ"
+      }
+    >
+      {changed === null
+        ? UNKNOWN
+        : changed.length === 0
+          ? "same map"
+          : changed.join(", ")}
+    </td>
+  );
 }
 
 function MetricCell({
@@ -160,13 +201,15 @@ export function VersionComparisonPanel({
               data-testid="overlord-flow-versions-table"
             >
               <caption className="sr-only">
-                Flow numbers per triage-sessions.py version, oldest version
-                first
+                Flow numbers per overlord version, oldest version first
               </caption>
               <thead className="text-muted-foreground">
                 <tr>
                   <th scope="col" className="font-normal pb-1 pr-3">
                     version
+                  </th>
+                  <th scope="col" className="font-normal pb-1 pr-3">
+                    changed
                   </th>
                   <th scope="col" className="font-normal pb-1 pr-3">
                     passes
@@ -201,7 +244,7 @@ export function VersionComparisonPanel({
                 </tr>
               </thead>
               <tbody>
-                {groups.map((g) => (
+                {groups.map((g, i) => (
                   <tr
                     key={g.version === null ? "no-version" : `v:${g.version}`}
                     data-testid="overlord-flow-versions-row"
@@ -209,10 +252,11 @@ export function VersionComparisonPanel({
                     <th
                       scope="row"
                       className="font-mono font-normal py-1 pr-3"
-                      title={g.version ?? "these passes recorded no version"}
+                      title={versionTitle(g)}
                     >
-                      {versionWords(g.version)}
+                      {groupVersionWords(g.version)}
                     </th>
+                    <ChangedCell groups={groups} index={i} />
                     <CountCell n={g.passes} />
                     <CountCell n={g.censusPasses} />
                     <CountCell n={g.closed} />
@@ -268,16 +312,20 @@ export function VersionComparisonPanel({
             className="text-[11px] text-muted-foreground m-0"
             data-testid="overlord-flow-versions-caption"
           >
-            A version is the git blob sha of triage-sessions.py as it ran,
-            oldest first. Each line is worked out from that version&apos;s own
-            passes as if no others ran, so a stop or close seen under another
-            version does not count here. A session that stopped before this
-            version ran and closed under it can show a shorter time than its
-            real one, or none. An unchanged 0 is per version too: it does not
-            prove every runner ran enough passes. &ldquo;no data&rdquo; means
-            coord had nothing to measure for that version, a dash means the
-            number did not arrive or is a cut list with no rows, and a ≥ means a
-            list coord cut, so the count is a floor.
+            A version is a digest over every script, the /next-move brief and
+            the runner build a pass recorded, oldest first; hover it for the
+            shas, and &ldquo;changed&rdquo; names what differs from the version
+            before. &ldquo;not read&rdquo; is an unknown version: a pass that
+            recorded none, or missed one its runner had read before. Each line
+            is worked out from that version&apos;s own passes as if no others
+            ran, so a stop or close seen under another version does not count
+            here. A session that stopped before this version ran and closed
+            under it can show a shorter time than its real one, or none. An
+            unchanged 0 is per version too: it does not prove every runner ran
+            enough passes. &ldquo;no data&rdquo; means coord had nothing to
+            measure for that version, a dash means the number did not arrive or
+            is a cut list with no rows, and a ≥ means a list coord cut, so the
+            count is a floor.
           </p>
         </div>
       )}
