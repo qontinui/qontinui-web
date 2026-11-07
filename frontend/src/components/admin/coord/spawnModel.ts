@@ -9,6 +9,7 @@
  * `SpawnModal.test.ts` pins it directly.
  */
 
+import type { AccountSelectionLevel } from "@/app/(app)/admin/coord/tenant-policy/types";
 import type { ClaudeAccountRow } from "@/lib/api/operations/agents";
 
 /**
@@ -143,17 +144,36 @@ export function deriveAccountRoster(input: {
   };
 }
 
-const SELECTION_MODE_LABELS: Record<string, string> = {
-  least_usage: "least-usage rotation across its accounts",
+/** Prose for each runner `account_selection_mode` wire spelling. Keyed by
+ *  the same set the tenant-policy console offers (`ACCOUNT_SELECTION_LEVELS`
+ *  minus `off`), so `tsc` fails on a missing key. A mode
+ *  missing here is printed raw rather than guessed at. */
+export const SELECTION_MODE_LABELS: Record<
+  Exclude<AccountSelectionLevel, "off">,
+  string
+> = {
   manual: "the account pinned in its own settings",
+  least_usage: "least-usage rotation across its accounts",
+  highest_expected_usage:
+    "the account expected to use the most among those under their weekly pace",
+  weighted_random:
+    "a random account under its weekly pace, weighted by expected usage and how far it is behind its pace",
+  alternating_handoff:
+    "its top-ranked account under its weekly pace at spawn, then alternating handoffs between that account and each of the others in turn",
 };
+
+/** What a runner does when no mode is set on the machine. It changed from
+ *  `least_usage` to `alternating_handoff`, so a runner this console cannot
+ *  see may be on either — which is why neither is ever printed as observed. */
+const RUNNER_DEFAULT_NOTE =
+  "It is not necessarily the runner's default (alternating handoff, or least-usage on runners built before the default changed).";
 
 /** The *"this machine will use: &lt;mode&gt;"* line.
  *
  *  `known: false` is a first-class answer. `account_selection_mode` is
  *  `#[serde(default)]` on coord's row and null on any deployment whose
  *  columns predate `coord_claude_acct_usage_02`, so the honest rendering of
- *  a missing mode is "unknown" — printing the `least_usage` default would
+ *  a missing mode is "unknown" — printing the runner's default would
  *  state a machine-global behaviour we did not observe. */
 export function describeSelectionMode(
   deviceAccounts: ClaudeAccountRow[],
@@ -162,7 +182,7 @@ export function describeSelectionMode(
    *  only an empty array and cannot tell "the machine reported no mode"
    *  from "we never got to ask" — and it would then state a CAUSE it did
    *  not observe, which is the same class of lie as printing the
-   *  `least_usage` default. Defaults to `ready`, the only state in which an
+   *  runner's default. Defaults to `ready`, the only state in which an
    *  empty array really does mean the machine said nothing. */
   rosterKind: AccountRosterState["kind"] = "ready"
 ): { known: boolean; text: string } {
@@ -178,7 +198,10 @@ export function describeSelectionMode(
   );
   const [only] = declared;
   if (declared.length === 1 && only !== undefined) {
-    return { known: true, text: SELECTION_MODE_LABELS[only] ?? only };
+    const label = Object.hasOwn(SELECTION_MODE_LABELS, only)
+      ? SELECTION_MODE_LABELS[only as keyof typeof SELECTION_MODE_LABELS]
+      : undefined;
+    return { known: true, text: label ?? only };
   }
   if (declared.length > 1) {
     // Rows of different vintages can disagree (the ingest upserts and never
@@ -204,13 +227,11 @@ export function describeSelectionMode(
               : "unknown — this machine has not reported a selection mode.";
   return {
     known: false,
-    // The trailing clause is load-bearing: `least_usage` is the RUNNER's
-    // `#[default]`, and an operator who knows that would otherwise fill the
-    // blank in with it themselves.
+    // The trailing clause is load-bearing: an operator who knows the
+    // RUNNER's `#[default]` would otherwise fill the blank in with it
+    // themselves.
     text:
-      rosterKind === "no-device"
-        ? cause
-        : `${cause} It is not necessarily least-usage.`,
+      rosterKind === "no-device" ? cause : `${cause} ${RUNNER_DEFAULT_NOTE}`,
   };
 }
 
