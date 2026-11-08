@@ -2255,26 +2255,37 @@ class TestDocumentShapes:
         if objectives:
             assert initiative.objectives[0].metric_names == ["development-speed"]
 
-    async def test_a_success_metrics_that_cant_be_read_is_an_objectives_problem(
-        self, docs: FakeDocs, findings: FakeFindings
+    @pytest.mark.parametrize(
+        "success_metrics",
+        ["success_metrics: 42\n", "success_metrics: [development-speed, 7]\n"],
+        ids=["not_a_list", "an_item_not_a_name"],
+    )
+    async def test_a_success_metrics_that_cant_be_read_leaves_the_serves_check(
+        self, docs: FakeDocs, findings: FakeFindings, success_metrics: str
     ) -> None:
+        """The ``serves:`` check reads only ``in_scope`` ids, so a
+        ``success_metrics`` error is shown on its initiative and changes
+        nothing it did not touch: the objectives are readable, and a
+        ``serves:`` id the readable ``in_scope`` lacks is still one no
+        initiative declares — checked, never downgraded to unchecked."""
         docs.seed("initiative", "current-initiative",
                   "---\nstatus: live\nin_scope:\n  - id: remote-session-access\n"
-                  "    text: remote\nsuccess_metrics: 42\n---\n\n# I\n")  # fmt: skip
+                  f"    text: remote\n{success_metrics}---\n\n# I\n")  # fmt: skip
         read = await _read(docs, findings)
         (initiative,) = read.initiatives
         assert initiative.field_errors == {
             "success_metrics": "success_metrics must be a list of names."
         }
-        assert read.objectives_readable is False
-        assert "its success_metrics could not be read" in (
-            read.sources.intent_documents.reason or ""
-        )
+        # No "can't be read" banner: the documents read is not degraded by it.
+        assert read.objectives_readable is True
+        assert read.sources.intent_documents.status == "ok"
+        assert read.sources.intent_documents.reason is None
         dev = _metric(read, "development-speed")
         assert (dev.serves_unknown, dev.serves_unchecked) == (
-            [],
             ["coord-reachability"],
+            [],
         )
+        assert initiative.objectives[0].metric_names == ["development-speed"]
 
     async def test_a_degraded_listing_leaves_serves_unchecked(
         self, docs: FakeDocs, findings: FakeFindings

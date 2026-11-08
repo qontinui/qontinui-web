@@ -121,9 +121,11 @@ class InitiativeRead(BaseModel):
     #: Names in ``success_metrics`` with no shown metric document.
     missing_metric_names: list[str] = Field(default_factory=list)
     frontmatter_error: str | None = None
-    #: An ``in_scope`` or ``success_metrics`` entry here (an item with no
-    #: quoted id included) leaves what the initiative declares unknown, so
-    #: ``objectives_readable`` is false — never "declares no objectives".
+    #: An ``in_scope`` entry here (an item with no quoted id included) leaves
+    #: which objectives the initiative declares unknown, so
+    #: ``objectives_readable`` is false — never "declares no objectives". A
+    #: ``success_metrics`` entry leaves only which measures it names unknown:
+    #: the ``serves:`` check reads ``in_scope`` ids alone, so it stands.
     field_errors: dict[str, str] = Field(default_factory=dict)
     frontmatter_warnings: list[str] = Field(default_factory=list)
 
