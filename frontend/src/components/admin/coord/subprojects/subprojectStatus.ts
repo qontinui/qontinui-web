@@ -371,6 +371,41 @@ export function nextStepWords(
   };
 }
 
+/** coord's gate verdict words, grouped as the gates console reads them. */
+const GATE_VERDICT_WORDS: Readonly<Record<string, string>> = {
+  pass: "cleared",
+  passed: "cleared",
+  cleared: "cleared",
+  ready: "cleared",
+  ok: "cleared",
+  fail: "failed",
+  failed: "failed",
+  error: "failed",
+  veto: "vetoed",
+  rejected: "rejected",
+  withdrawn: "withdrawn",
+  cancelled: "cancelled",
+  canceled: "cancelled",
+  evaluating: "being evaluated",
+  running: "being evaluated",
+  in_progress: "being evaluated",
+  pending: "not cleared yet",
+  queued: "not cleared yet",
+  open: "not cleared yet",
+  registered: "not cleared yet",
+};
+
+/** A member gate's verdict in words (R8); coord's own word is on the raw
+ *  line. A word this console has no reading for is said to be one. */
+export function gateVerdictWords(verdict: string | null | undefined): string {
+  const v = (verdict ?? "").trim().toLowerCase();
+  if (v === "") return "not reported";
+  return (
+    own(GATE_VERDICT_WORDS, v) ??
+    `"${v.replace(/_/g, " ")}", a verdict this console has no reading for`
+  );
+}
+
 /** The phases a member unit has left (D7 c). `null` is UNKNOWN, never none. */
 export function phasesRemainingWords(phases: number[] | null): string {
   if (phases === null) return "phases left unknown";
@@ -794,10 +829,11 @@ export function memberList<T>(value: readonly T[] | null | undefined): {
 export function memberEmptyText(
   noun: string,
   known: boolean,
-  unread: readonly SubprojectSource[]
+  unread: readonly SubprojectSource[],
+  plural = `${noun}s`
 ): string {
   if (!known)
-    return `coord did not send the ${noun} with this read — unknown, not none.`;
+    return `coord did not send this subproject's ${plural} with this read — unknown, not none.`;
   if (unread.length === 0) return `coord lists no ${noun}.`;
   const names = unread.map((u) => u.source.replace(/_/g, " ")).join(", ");
   return `coord lists no ${noun}, but this verdict could not read ${names}, so the list may be incomplete.`;
@@ -868,14 +904,15 @@ export function tabOf(raw: string | null | undefined): SubprojectTab {
 export type CountView = SubprojectTab | "unknown";
 
 /** A view that is one filter — one stream of rows. */
-export type StreamView = Exclude<CountView, "open">;
+export type StreamView = CountView;
 
 /**
- * The query one stream reads. The not-done headlines read `status=open`: a
- * subproject declared done or archived is not stalled, whatever its last
- * cached headline was. Done reads every status, so a subproject the operator
- * marked done is still found under Done; All reads every status, so nothing is
- * hidden from it.
+ * The query one stream reads. Open is ONE read — every open subproject whose
+ * headline is not done (`exclude_headline=done`). The not-done headlines read
+ * `status=open`: a subproject declared done or archived is not stalled,
+ * whatever its last cached headline was. Done reads every status, so a
+ * subproject the operator marked done is still found under Done; All reads
+ * every status, so nothing is hidden from it.
  */
 export function viewQuery(
   view: StreamView,
@@ -885,16 +922,23 @@ export function viewQuery(
   const q = new URLSearchParams();
   if (view === "done" || view === "all") q.set("status", "all");
   else q.set("status", "open");
-  if (view !== "all") q.set("headline", view);
+  if (view === "open") q.set("exclude_headline", "done");
+  else if (view !== "all") q.set("headline", view);
   q.set("limit", String(limit));
   if (cursor) q.set("cursor", cursor);
   return q;
 }
 
-/** The streams a tab reads: Open is the union of the not-done headlines —
- *  coord filters one headline at a time — and every other tab is one. */
-export function viewStreams(tab: SubprojectTab): StreamView[] {
-  return tab === "open" ? [...OPEN_HEADLINES] : [tab];
+/**
+ * The streams a tab reads: one each. Open's `perHeadline` arm is the fallback
+ * for a coord that answers 400/422 to `exclude_headline` — then Open is the
+ * union of the five not-done headlines, one read each, merged.
+ */
+export function viewStreams(
+  tab: SubprojectTab,
+  perHeadline = false
+): StreamView[] {
+  return tab === "open" && perHeadline ? [...OPEN_HEADLINES] : [tab];
 }
 
 /** Rows from several streams as one list: each subproject once, the most
@@ -918,31 +962,51 @@ export function mergeStreamRows(
 }
 
 /**
+ * Is this row a one-off? coord's own answer when it sent one (`one_off`, the
+ * rule its `counts.folded.one_off` counts by: exactly one member session
+ * whose work is `finished`, no work unit, and a `done` headline). A row from
+ * a coord that does not send it is judged by the same rule as far as a row
+ * can show it: a done headline, one member session no longer live, no work
+ * unit. An uncounted half is not evidence of a one-off.
+ */
+function isOneOff(
+  s: Pick<SubprojectSummary, "headline" | "sessions" | "work_units" | "one_off">
+): boolean {
+  if (typeof s.one_off === "boolean") return s.one_off;
+  return (
+    s.headline === "done" &&
+    s.sessions.total === 1 &&
+    s.sessions.live === 0 &&
+    s.work_units.total === 0
+  );
+}
+
+/**
  * Why a row is listed only under All (D12), or `null` when it is not.
  *
- * coord defines a one-off (the list's `counts.folded.one_off`) as exactly one
- * member session, finished or closed, and no work unit. A row carries only
- * its sessions' live/total counts, so this test reads "finished or closed" as
- * "not live" — it also folds a subproject whose one session went STALE
- * without closing, which coord's count does not. The folded line names every
- * row it folds, so such a row is disclosed rather than hidden; a per-row flag
- * from coord would make the two agree exactly. An uncounted half is not
- * evidence of a one-off.
+ * A row whose headline asks for the operator — needs you, stalled — is NEVER
+ * folded out of a view, whatever else is true of it (merged, scheduled, or a
+ * flag that calls it a one-off): hiding a stall is the one mistake this page
+ * exists not to make.
  */
 export function foldedReason(
   s: Pick<
     SubprojectSummary,
-    "origin" | "merged_into" | "sessions" | "work_units"
+    | "origin"
+    | "merged_into"
+    | "sessions"
+    | "work_units"
+    | "headline"
+    | "one_off"
   >
 ): string | null {
+  const kind = headlineKindOf(s.headline);
+  if (kind !== null && SUBPROJECT_ATTENTION_BY_HEADLINE[kind] === "author")
+    return null;
   if (s.merged_into) return "merged into another subproject";
   if (s.origin === "scheduled") return "a scheduled task's standing subproject";
-  if (
-    s.sessions.total === 1 &&
-    s.sessions.live === 0 &&
-    s.work_units.total === 0
-  )
-    return "a one-off: a single session, now ended, and no work units";
+  if (isOneOff(s))
+    return "a one-off: a single session, now finished, and no work units";
   return null;
 }
 
@@ -1215,6 +1279,88 @@ export function openFromParts(parts: readonly CountReading[]): CountReading {
   return { value, answered, failure };
 }
 
+/** Each count view's name, as a tab and the strip say it. */
+const COUNT_VIEW_NAME: Record<CountView, string> = {
+  ...SUBPROJECT_TAB_LABEL,
+  unknown: "Unknown verdicts",
+};
+
+/** The order views are named in. */
+const COUNT_VIEW_ORDER: readonly CountView[] = [
+  "open",
+  "needs_you",
+  "stalled",
+  "working",
+  "waiting",
+  "unknown",
+  "done",
+  "all",
+];
+
+/**
+ * The qualification a tab carries beside a count that is NOT current (R6), or
+ * `null` for a current one: a number kept from the last good read, a read
+ * that failed with no number to keep, or an answer that did not take the
+ * count. The tab renders it as a `*` beside a kept number, as its title, and
+ * as screen-reader text, so a stale number never reads as a current one.
+ */
+export function countNoteOf(r: CountReading): string | null {
+  if (r.failure)
+    return r.value !== null
+      ? `the last good count; the latest read failed (${readFailureWords(r.failure)})`
+      : `could not be read (${readFailureWords(r.failure)})`;
+  if (r.answered && r.value === null) return "coord did not take this count";
+  return null;
+}
+
+/** "of M" for the loaded-rows line, qualified when M is not current; empty
+ *  when there is no number to quote. */
+export function ofCountWords(r: CountReading): string {
+  if (r.value === null) return "";
+  return r.failure
+    ? ` of ${r.value} (the last good count; its latest read failed)`
+    : ` of ${r.value}`;
+}
+
+function listWords(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * Every view whose count is not current — named, grouped by why — for the
+ * strip's detail line, or `null` when every count is current. `skip` names
+ * the views the strip's own sentence already accounts for.
+ */
+export function staleViewsDetail(
+  counts: SubprojectCounts,
+  skip: readonly CountView[] = []
+): string | null {
+  const groups = new Map<string, { kept: string[]; lost: string[] }>();
+  for (const view of COUNT_VIEW_ORDER) {
+    if (skip.includes(view)) continue;
+    const r = counts[view];
+    if (!r.failure) continue;
+    const why = readFailureWords(r.failure);
+    const group = groups.get(why) ?? { kept: [], lost: [] };
+    (r.value !== null ? group.kept : group.lost).push(COUNT_VIEW_NAME[view]);
+    groups.set(why, group);
+  }
+  if (groups.size === 0) return null;
+  return [...groups]
+    .map(([why, g]) => {
+      const parts: string[] = [];
+      if (g.kept.length > 0)
+        parts.push(
+          `${listWords(g.kept)} ${g.kept.length === 1 ? "is the last good count" : "are the last good counts"}`
+        );
+      if (g.lost.length > 0)
+        parts.push(`${listWords(g.lost)} could not be read`);
+      return `${parts.join("; ")} — the latest read failed (${why})`;
+    })
+    .join(". ");
+}
+
 // ─────────────────────────────── the list's health strip ───────────────────
 
 export interface SubprojectsHealth {
@@ -1258,10 +1404,30 @@ function countGap(name: string, r: CountReading): string | null {
  * - **Current** — red when anything needs you or is stalled; amber when either
  *   count was not taken, or a verdict is unknown; green only on a MEASURED
  *   zero of all three. Waiting and working never move the level.
+ *
+ * Every arm's detail also names each OTHER view whose count is not current —
+ * a Done or All kept from the last good read, say — so the strip and the tabs
+ * never disagree about which numbers are old.
  */
 export function deriveSubprojectsHealth(
   counts: SubprojectCounts
 ): SubprojectsHealth {
+  const health = deriveHealthArm(counts);
+  // Name every other view whose count is not current, so a stale Done or All
+  // is said on the strip as well as on its tab (R6).
+  const others = staleViewsDetail(counts, health.covers);
+  return {
+    level: health.level,
+    headline: health.headline,
+    detail: others ? `${health.detail} ${others}.` : health.detail,
+    readIsCurrent: health.readIsCurrent && others === null,
+  };
+}
+
+/** One arm of the strip, and the views its own sentence already names. */
+function deriveHealthArm(
+  counts: SubprojectCounts
+): SubprojectsHealth & { covers: CountView[] } {
   const needs = counts.needs_you;
   const stalled = counts.stalled;
   const unknown = counts.unknown;
@@ -1279,6 +1445,7 @@ export function deriveSubprojectsHealth(
               : "Subprojects could not be read",
         detail: `${readFailureWords(failure)}. Every count is a dash, not a zero.`,
         readIsCurrent: false,
+        covers: [...COUNT_VIEW_ORDER],
       };
     }
     return {
@@ -1286,6 +1453,7 @@ export function deriveSubprojectsHealth(
       headline: "Reading coord's subprojects…",
       detail: "No count has come back yet; a dash is unknown, not zero.",
       readIsCurrent: false,
+      covers: [...COUNT_VIEW_ORDER],
     };
   }
   const loud: string[] = [];
@@ -1308,6 +1476,7 @@ export function deriveSubprojectsHealth(
             : "Nothing was stalled or waiting on you at the last good read",
       detail: `${gaps.join("; ")}.`,
       readIsCurrent: false,
+      covers: ["needs_you", "stalled"],
     };
   }
   if (loud.length > 0) {
@@ -1319,6 +1488,7 @@ export function deriveSubprojectsHealth(
           ? `${gaps.join("; ")}.`
           : "A stalled subproject has nothing alive moving it, and nothing will restart it unless someone does.",
       readIsCurrent: true,
+      covers: ["needs_you", "stalled"],
     };
   }
   if (gaps.length > 0) {
@@ -1327,6 +1497,7 @@ export function deriveSubprojectsHealth(
       headline: "Whether anything is stalled or waiting on you is unknown",
       detail: `${gaps.join("; ")}.`,
       readIsCurrent: true,
+      covers: ["needs_you", "stalled"],
     };
   }
   const unknownGap = countGap("unknown-verdict", unknown);
@@ -1337,6 +1508,7 @@ export function deriveSubprojectsHealth(
         "Nothing is stalled or waiting on you; whether any verdict is unknown was not counted",
       detail: `${unknownGap}.`,
       readIsCurrent: true,
+      covers: ["needs_you", "stalled", "unknown"],
     };
   }
   if (unknown.value !== null && unknown.value > 0) {
@@ -1346,6 +1518,7 @@ export function deriveSubprojectsHealth(
       detail:
         "An unknown verdict is one coord has not computed, or one resting on evidence it could not read.",
       readIsCurrent: true,
+      covers: ["needs_you", "stalled", "unknown"],
     };
   }
   return {
@@ -1354,6 +1527,7 @@ export function deriveSubprojectsHealth(
     detail:
       "Every open subproject is working, waiting on a named mover, or done.",
     readIsCurrent: true,
+    covers: ["needs_you", "stalled", "unknown"],
   };
 }
 
@@ -1367,11 +1541,12 @@ export function deriveSubprojectsHealth(
 export type SubprojectChip =
   /** No Claude Code session id, so no membership can apply. */
   | { kind: "not_applicable" }
-  /** The page's lookup has not answered yet. */
+  /** The row's agent half did not answer, so whether it HAS a Claude Code
+   *  session id — and so a subproject — is not known. */
+  | { kind: "agent_unknown" }
+  /** The lookup has not answered for this session yet. */
   | { kind: "looking_up" }
-  /** Past the lookup's bound of one page of sessions. */
-  | { kind: "not_looked_up" }
-  /** The page's lookup failed. */
+  /** The latest lookup for this session failed. */
   | { kind: "failed"; failure: SubprojectReadFailure }
   /** coord lists no live membership (a pending one included). */
   | { kind: "none" }
@@ -1379,11 +1554,19 @@ export type SubprojectChip =
   | { kind: "unanswered" }
   | { kind: "member"; id: string; title: string; headline: string };
 
-export function subprojectChipWords(chip: SubprojectChip): {
+export interface SubprojectChipWords {
+  /** What the cell shows: the subproject's title, or a dash. */
   text: string;
+  /** The full sentence, for a hover. */
   title: string;
+  /** Where a member links; `null` for every other state. */
   href: string | null;
-} {
+  /** The SHORT accessible name, read in place of `text` (a dash says
+   *  nothing to a screen reader, and the title is too long to hear per row). */
+  label: string;
+}
+
+export function subprojectChipWords(chip: SubprojectChip): SubprojectChipWords {
   switch (chip.kind) {
     case "member": {
       const kind = headlineKindOf(chip.headline);
@@ -1394,6 +1577,7 @@ export function subprojectChipWords(chip: SubprojectChip): {
         text: chip.title,
         title: `Subproject: ${chip.title} — ${headline}`,
         href: `/admin/coord/subprojects/${encodeURIComponent(chip.id)}`,
+        label: `subproject: ${chip.title}, ${headline.toLowerCase()}`,
       };
     }
     case "none":
@@ -1402,6 +1586,7 @@ export function subprojectChipWords(chip: SubprojectChip): {
         title:
           "coord lists no subproject for this session (a membership still pending counts as none yet)",
         href: null,
+        label: "subproject: none",
       };
     case "not_applicable":
       return {
@@ -1409,21 +1594,29 @@ export function subprojectChipWords(chip: SubprojectChip): {
         title:
           "No Claude Code session id, so no subproject applies to this row",
         href: null,
+        label: "subproject: not applicable",
       };
-    case "looking_up":
-      return { text: "–", title: "Looking up the subproject…", href: null };
-    case "not_looked_up":
+    case "agent_unknown":
       return {
         text: "–",
         title:
-          "Not looked up: one lookup covers the first 200 sessions on this page",
+          "Unknown — the agent half did not answer for this row, so its Claude Code session id, and so its subproject, is not known",
         href: null,
+        label: "subproject: unknown",
+      };
+    case "looking_up":
+      return {
+        text: "–",
+        title: "Looking up the subproject…",
+        href: null,
+        label: "subproject: looking up",
       };
     case "failed":
       return {
         text: "–",
         title: `The subproject lookup failed — ${readFailureWords(chip.failure)}; unknown, not none`,
         href: null,
+        label: "subproject: lookup failed",
       };
     case "unanswered":
       return {
@@ -1431,6 +1624,7 @@ export function subprojectChipWords(chip: SubprojectChip): {
         title:
           "coord's lookup answered without naming this session — unknown, not none",
         href: null,
+        label: "subproject: unknown",
       };
   }
 }

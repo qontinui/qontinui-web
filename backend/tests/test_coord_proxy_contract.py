@@ -20,10 +20,16 @@ It pins, per helper:
 * the URL each helper builds and the timeout handed to ``httpx.AsyncClient``.
 
 Some cells record a DEFECT rather than a contract (P3 latent defect (a): a
-non-Connect transport error escapes most helpers as the raw ``httpx``
-exception, i.e. an unhandled 500; and a 2xx whose body is not JSON escapes as
-``json.JSONDecodeError``). Those cells assert the escape on purpose — Phase 5
-is where they change, deliberately, together with these cells.
+non-Connect transport error escapes the helpers that do not map it — the GET
+readers, ``_proxy_coord_delete``, the passthrough and the other modules'
+copies — as the raw ``httpx`` exception, i.e. an unhandled 500; and a 2xx
+whose body is not JSON escapes as ``json.JSONDecodeError``). Those cells
+assert the escape on purpose — Phase 5 is where they change, deliberately,
+together with these cells. The WRITERS no longer escape: ``_proxy_coord_write``
+(PATCH/PUT), ``_proxy_coord_verbatim`` and — since plan
+``2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled``
+— ``_proxy_coord_post`` map it to the 504 ``answer_lost`` (the outcome is
+unknown, so re-read before retrying), and their ``read_error`` cells say so.
 
 The patch style is the one the rest of the suite uses
 (``patch("<module>.httpx.AsyncClient")``). Patching ``httpx.AsyncClient``

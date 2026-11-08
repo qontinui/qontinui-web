@@ -1069,10 +1069,10 @@ def _coord_timeout(
         504,
         RefusalCode.upstream_timeout,
         NextActionKind.retry_later,
-        # The detail is the same constant for a read and a write: callers
-        # (``fleet_targets._reraise_coord_refusal``) recognise web's own
-        # transport text by it. The write's re-read lives in
-        # ``next_action.target``, which ``Refusal::render`` states since
+        # The detail is the same constant for a read and a write (callers
+        # recognise web's own transport refusals by their class,
+        # ``RefusalHTTPException``, not by this text). The write's re-read
+        # lives in ``next_action.target``, which ``Refusal::render`` states since
         # qontinui-schemas#204 ("... but first check "<target>": the earlier
         # attempt may already have taken effect"), as does the web reader's
         # mirror of it (frontend ``lib/errors/refusal.ts``).

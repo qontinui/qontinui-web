@@ -6,16 +6,33 @@
  * `2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled`
  * Phase 6).
  *
- * `useSubprojectsBySessions` asks coord ONCE per page of sessions
- * (`GET /operations/subprojects/by-sessions`, at most 200 ids) and re-asks
- * only when the set of sessions on the page changes — never per row, and on
- * no timer of its own (membership moves far more slowly than the 10 s session
- * poll). The answer is kept per session across reads, so a chip does not
- * flicker to a dash while the next page's lookup is out.
+ * `useSubprojectsBySessions` asks coord in BATCHES
+ * (`GET /operations/subprojects/by-sessions`, at most 200 ids a read — the
+ * rows on screen first) and keeps each session's answer with WHEN it came. It
+ * asks only for what is due:
  *
- * Only a member links. Every other state — no session id, not looked up yet,
- * past the 200 bound, a failed lookup, no live membership (a pending one
- * included), coord silent about this id — is a dash whose title says which
+ * - a session it has never asked about — at once, when it appears;
+ * - a session whose last lookup failed, once that failure is
+ *   {@link SUBPROJECT_CHIP_RETRY_MS} old;
+ * - a session coord placed in no subproject, or did not name, once that
+ *   answer is {@link SUBPROJECT_CHIP_REASK_MS} old — it may have joined one
+ *   since.
+ *
+ * A member's answer is kept: membership moves far more slowly than a session
+ * list polls, and the subproject's own page is one click away.
+ *
+ * WHEN it checks is the caller's: on every new `sessionIds` array — the
+ * sessions console hands it one per list poll, so the console's ONE visible
+ * poll (`SessionsConsolePolling.test.tsx`) is also this lookup's slow poll,
+ * and its due rules keep that to the reads above — and on `recheck`, which a
+ * page without a list poll of its own (the session detail page) runs on a slow
+ * visible poll ({@link SUBPROJECT_CHIP_POLL_MS}). The answers persist across
+ * reads, so a chip never flickers to a dash while the next batch is out.
+ *
+ * Only a member links. Every other state — no session id, an agent half that
+ * did not answer, looking up, a failed lookup, no live membership (a pending
+ * one included), coord silent about this id — is a dash whose title says
+ * which and whose accessible name is a short phrase
  * (`subprojectStatus.ts` `subprojectChipWords`): never a guess.
  */
 
@@ -34,100 +51,184 @@ import {
   type SubprojectReadFailure,
 } from "./subprojectStatus";
 
+/** How often a page with no list poll of its own re-checks what is due. */
+export const SUBPROJECT_CHIP_POLL_MS = 60_000;
+/** How old a failed lookup gets before it is retried. */
+export const SUBPROJECT_CHIP_RETRY_MS = 60_000;
+/** How old a "no subproject" (or unnamed) answer gets before it is re-asked. */
+export const SUBPROJECT_CHIP_REASK_MS = 180_000;
+
 /** The lookup a surface uses; injectable for tests. */
 export type SubprojectLookup = typeof fetchSubprojectsBySessions;
 
+/** One session's latest answer, and when it came (epoch ms). */
+type Answer =
+  | ({ kind: "member"; at: number } & SubprojectOfSession)
+  | { kind: "none" | "unanswered"; at: number }
+  | { kind: "failed"; failure: SubprojectReadFailure; at: number };
+
+function chunked<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size)
+    out.push(items.slice(i, i + size));
+  return out;
+}
+
+/** Is this session's answer due to be asked (again) at `now`? */
+function isDue(answer: Answer | undefined, now: number): boolean {
+  if (answer === undefined) return true;
+  switch (answer.kind) {
+    case "member":
+      return false;
+    case "failed":
+      return now - answer.at >= SUBPROJECT_CHIP_RETRY_MS;
+    default:
+      return now - answer.at >= SUBPROJECT_CHIP_REASK_MS;
+  }
+}
+
+export interface SubprojectsBySessions {
+  /** The chip for one session id (`null`: the row has none). */
+  chipOf: (sessionId: string | null) => SubprojectChip;
+  /** Ask about every session that is due now. */
+  recheck: () => Promise<void>;
+}
+
 /**
- * The chip for each session id on a page. `sessionIds` may hold `null` (a
- * row with no Claude Code session id) and repeats; the first 200 distinct ids
- * are looked up in one read, so a caller lists the rows on screen first.
+ * The chips for a page of sessions. `sessionIds` may hold `null` (a row with
+ * no Claude Code session id) and repeats; list the rows on screen first,
+ * since they are asked about first. Every new array is a check for what is
+ * due.
  */
 export function useSubprojectsBySessions(
   sessionIds: ReadonlyArray<string | null>,
   lookup: SubprojectLookup = fetchSubprojectsBySessions
-): (sessionId: string | null) => SubprojectChip {
-  const asked = useMemo(() => {
-    const out = new Set<string>();
+): SubprojectsBySessions {
+  const ids = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
     for (const id of sessionIds) {
-      if (out.size === SUBPROJECT_LOOKUP_MAX_IDS) break;
-      if (id) out.add(id);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
     }
     return out;
   }, [sessionIds]);
-  // The SET is the question, not its order: a re-sort or a re-filter that
-  // keeps the same sessions does not ask again.
-  const key = useMemo(() => [...asked].sort().join(","), [asked]);
-
-  const [known, setKnown] = useState<
-    ReadonlyMap<string, SubprojectOfSession | "none">
-  >(new Map());
-  const [answeredKey, setAnsweredKey] = useState<string | null>(null);
-  const [failure, setFailure] = useState<{
-    key: string;
-    failure: SubprojectReadFailure;
-  } | null>(null);
-  const seq = useRef(0);
-
+  const idsRef = useRef(ids);
   useEffect(() => {
-    if (key === "") return;
-    const ids = key.split(",");
-    seq.current += 1;
-    const mine = seq.current;
-    let alive = true;
-    lookup(ids, COORD_DASHBOARD_POLL_OPTIONS)
-      .then((body) => {
-        if (!alive || mine !== seq.current) return;
-        const items =
-          typeof body?.items === "object" && body.items !== null
-            ? body.items
-            : {};
-        const missing = new Set(
-          Array.isArray(body?.missing) ? body.missing : []
-        );
-        setKnown((prev) => {
-          const next = new Map(prev);
-          for (const id of ids) {
-            const item = Object.prototype.hasOwnProperty.call(items, id)
-              ? items[id]
-              : undefined;
-            if (item && typeof item.id === "string") next.set(id, item);
-            else if (missing.has(id)) next.set(id, "none");
-            else next.delete(id);
-          }
-          return next;
-        });
-        setAnsweredKey(key);
-        setFailure(null);
-      })
-      .catch((err: unknown) => {
-        if (!alive || mine !== seq.current) return;
-        setFailure({ key, failure: classifySubprojectReadFailure(err) });
-      });
-    return () => {
-      alive = false;
-    };
-  }, [key, lookup]);
+    idsRef.current = ids;
+  }, [ids]);
 
-  return useCallback(
+  // The answers are state, for the page, and mirrored in a ref, for the
+  // lookup, which must read its own writes in the same tick.
+  const [known, setKnown] = useState<ReadonlyMap<string, Answer>>(
+    () => new Map()
+  );
+  const answers = useRef<ReadonlyMap<string, Answer>>(known);
+  const asking = useRef(new Set<string>());
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  const record = useCallback((entries: ReadonlyArray<[string, Answer]>) => {
+    const next = new Map(answers.current);
+    for (const [id, answer] of entries) next.set(id, answer);
+    answers.current = next;
+    setKnown(next);
+  }, []);
+
+  const recheck = useCallback(async () => {
+    const now = Date.now();
+    const due = idsRef.current.filter(
+      (id) => !asking.current.has(id) && isDue(answers.current.get(id), now)
+    );
+    if (due.length === 0) return;
+    for (const id of due) asking.current.add(id);
+    await Promise.all(
+      chunked(due, SUBPROJECT_LOOKUP_MAX_IDS).map(async (batch) => {
+        try {
+          const body = await lookup(batch, COORD_DASHBOARD_POLL_OPTIONS);
+          if (!alive.current) return;
+          const at = Date.now();
+          const items =
+            typeof body?.items === "object" && body.items !== null
+              ? body.items
+              : {};
+          const missing = new Set(
+            Array.isArray(body?.missing) ? body.missing : []
+          );
+          record(
+            batch.map((id): [string, Answer] => {
+              const item = Object.prototype.hasOwnProperty.call(items, id)
+                ? items[id]
+                : undefined;
+              if (item && typeof item.id === "string")
+                return [
+                  id,
+                  {
+                    kind: "member",
+                    at,
+                    id: item.id,
+                    title: item.title,
+                    headline: item.headline,
+                  },
+                ];
+              return [
+                id,
+                { kind: missing.has(id) ? "none" : "unanswered", at },
+              ];
+            })
+          );
+        } catch (err) {
+          if (!alive.current) return;
+          const failure = classifySubprojectReadFailure(err);
+          const at = Date.now();
+          record(
+            batch.map((id): [string, Answer] => [
+              id,
+              { kind: "failed", failure, at },
+            ])
+          );
+        } finally {
+          for (const id of batch) asking.current.delete(id);
+        }
+      })
+    );
+  }, [lookup, record]);
+
+  // Every new list of sessions is a check: a new session is asked about at
+  // once, and an answer that has come due is asked again.
+  useEffect(() => {
+    void recheck();
+  }, [sessionIds, recheck]);
+
+  const chipOf = useCallback(
     (sessionId: string | null): SubprojectChip => {
       if (!sessionId) return { kind: "not_applicable" };
-      const entry = known.get(sessionId);
-      if (entry === "none") return { kind: "none" };
-      if (entry !== undefined)
-        return {
-          kind: "member",
-          id: entry.id,
-          title: entry.title,
-          headline: entry.headline,
-        };
-      if (!asked.has(sessionId)) return { kind: "not_looked_up" };
-      if (failure !== null && failure.key === key)
-        return { kind: "failed", failure: failure.failure };
-      if (answeredKey === key) return { kind: "unanswered" };
-      return { kind: "looking_up" };
+      const answer = known.get(sessionId);
+      if (answer === undefined) return { kind: "looking_up" };
+      switch (answer.kind) {
+        case "member":
+          return {
+            kind: "member",
+            id: answer.id,
+            title: answer.title,
+            headline: answer.headline,
+          };
+        case "failed":
+          return { kind: "failed", failure: answer.failure };
+        default:
+          return { kind: answer.kind };
+      }
     },
-    [known, asked, failure, key, answeredKey]
+    [known]
   );
+
+  return { chipOf, recheck };
 }
 
 /** One chip: the subproject's title as a link, or a dash that says why. */
@@ -146,6 +247,7 @@ export function SubprojectChipCell({
       <Link
         href={words.href}
         title={words.title}
+        aria-label={words.label}
         className={[
           "underline underline-offset-2 hover:text-foreground",
           className,
@@ -166,8 +268,8 @@ export function SubprojectChipCell({
       data-testid={testId}
       data-chip={chip.kind}
     >
-      {words.text}
-      <span className="sr-only"> ({words.title})</span>
+      <span aria-hidden="true">{words.text}</span>
+      <span className="sr-only">{words.label}</span>
     </span>
   );
 }
@@ -182,8 +284,8 @@ export function SubprojectChipText({ chip }: { chip: SubprojectChip }) {
   const words = subprojectChipWords(chip);
   return (
     <span title={words.title} data-chip={chip.kind}>
-      {words.text}
-      <span className="sr-only"> ({words.title})</span>
+      <span aria-hidden="true">{words.text}</span>
+      <span className="sr-only">{words.label}</span>
     </span>
   );
 }

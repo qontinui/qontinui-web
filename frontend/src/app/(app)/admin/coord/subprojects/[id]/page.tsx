@@ -74,6 +74,7 @@ import {
   deriveVerdictStatus,
   gateAttributionWords,
   historyEventWords,
+  gateVerdictWords,
   joinedViaWords,
   memberEmptyText,
   memberList,
@@ -95,7 +96,7 @@ import {
   unreadSources,
   type RefContext,
 } from "@/components/admin/coord/subprojects/subprojectStatus";
-import { RefList } from "@/components/admin/coord/subprojects/RefLink";
+import { RefLink, RefList } from "@/components/admin/coord/subprojects/RefLink";
 import { ContinueDialog } from "@/components/admin/coord/subprojects/ContinueDialog";
 import {
   MergeDialog,
@@ -232,20 +233,42 @@ function ReadState({
   }
   if (state.absence !== null) {
     return (
-      <p
-        className="m-0 text-sm text-muted-foreground"
-        data-testid="coord-subproject-not-found"
-      >
-        {state.absence === "invalid_id"
-          ? `"${id}" is not a subproject id.`
-          : `coord has no subproject ${id} in this project. It may have been archived, or the link is wrong.`}{" "}
-        <Link
-          href="/admin/coord/subprojects"
-          className="underline underline-offset-2"
+      <div className="space-y-1">
+        <p
+          className="m-0 text-sm text-muted-foreground"
+          data-testid="coord-subproject-not-found"
         >
-          All subprojects
-        </Link>
-      </p>
+          {state.absence === "invalid_id"
+            ? `"${id}" is not a subproject id.`
+            : `coord has no subproject ${id} in this project. It may have been archived, or the link is wrong.`}{" "}
+          <Link
+            href="/admin/coord/subprojects"
+            className="underline underline-offset-2"
+          >
+            All subprojects
+          </Link>
+        </p>
+        {/* coord's "none" was an answer — at the read that gave it. A later
+            re-read that failed did not repeat it, so it is dated, not
+            restated as current (R6). An invalid id stays invalid. */}
+        {state.failure && state.absence === "not_found" ? (
+          <p
+            className="m-0 text-xs text-amber-200"
+            role="status"
+            data-testid="coord-subproject-not-found-stale"
+          >
+            That was coord&apos;s answer at the last read that answered
+            {state.readAt ? (
+              <>
+                {" "}
+                (<RowTime at={state.readAt} verb="Read" />)
+              </>
+            ) : null}
+            ; the latest re-read failed — {readFailureWords(state.failure)} — so
+            whether it exists now is unknown.
+          </p>
+        ) : null}
+      </div>
     );
   }
   if (state.failure && !state.detail) {
@@ -300,6 +323,7 @@ function SubprojectBody({
   const unitList = memberList(detail.work_units);
   const prList = memberList(detail.prs);
   const historyList = memberList(detail.history);
+  const stepList = memberList(detail.next_steps);
   const sessions = sortMemberSessions(sessionList.items);
   const gates = sortMemberGates(gateList.items);
   const openGates = gates.filter(
@@ -439,9 +463,9 @@ function SubprojectBody({
       {/* 2 — what happens next. */}
       <section className="space-y-2" data-testid="coord-subproject-next-steps">
         <h2 className={SECTION_HEADING}>Next steps</h2>
-        {(detail.next_steps ?? []).length > 0 ? (
+        {stepList.items.length > 0 ? (
           <ol className="m-0 space-y-1.5 pl-4 list-decimal text-sm">
-            {detail.next_steps.map((step, i) => {
+            {stepList.items.map((step, i) => {
               const words = nextStepWords(step);
               return (
                 <li
@@ -478,8 +502,11 @@ function SubprojectBody({
             })}
           </ol>
         ) : (
-          <p className="m-0 text-xs text-muted-foreground">
-            coord served no next steps for this subproject.
+          <p
+            className="m-0 text-xs text-muted-foreground"
+            data-testid="coord-subproject-next-steps-empty"
+          >
+            {memberEmptyText("next step", stepList.known, unread, "next steps")}
           </p>
         )}
       </section>
@@ -773,7 +800,20 @@ function SessionRow({
             {status.label}: {sessionWorkWords(member.session_status)}
             {member.finish_reason ? ` — ${member.finish_reason}` : ""}. Joined
             as {joinedViaWords(member.joined_via)}
-            {member.via_ref ? ` (${member.via_ref})` : ""}.
+            {member.joined_via === "gate_continuation" && member.via_ref ? (
+              <>
+                {" "}
+                —{" "}
+                <RefLink
+                  subjectRef={{
+                    type: "gate",
+                    id: member.via_ref,
+                    label: "its gate",
+                  }}
+                />
+              </>
+            ) : null}
+            .
           </p>
         }
         actions={
@@ -839,7 +879,7 @@ function SessionRow({
             {member.coord_session_id ?? "—"} · allocation{" "}
             {member.allocation_agent_id ?? "—"} · device{" "}
             {member.device_id ?? "—"} · liveness {member.liveness} · joined_via{" "}
-            {member.joined_via}
+            {member.joined_via} · via_ref {member.via_ref ?? "—"}
           </p>
         }
       />
@@ -880,7 +920,7 @@ function GateRow({
           <p className="m-0 text-[13px] text-foreground/85">
             {status.label}
             {gate.mover.summary ? ` — ${gate.mover.summary}` : ""}. Verdict:{" "}
-            {gate.verdict}.
+            {gateVerdictWords(gate.verdict)}.
           </p>
         }
         problems={
@@ -901,8 +941,8 @@ function GateRow({
         }
         raw={
           <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
-            gate {gate.gate_id} · predicate {gate.predicate_kind} · mover{" "}
-            {gate.mover.state}
+            gate {gate.gate_id} · predicate {gate.predicate_kind} · verdict{" "}
+            {gate.verdict} · mover {gate.mover.state}
             {gate.registered_by_session
               ? ` · registered by ${gate.registered_by_session}`
               : ""}
@@ -997,7 +1037,7 @@ function PrRow({
     <RecordRow
       rowKey={rowKey}
       identity={`#${pr.number}`}
-      label={pr.repo}
+      label={<span title={`${pr.repo}#${pr.number}`}>{pr.repo}</span>}
       reason={prStateWords(pr.state)}
       expanded={expanded}
       onToggle={onToggle}

@@ -66,7 +66,6 @@ import {
   APPLIED_EFFORT_NOT_REPORTED,
   EFFORTS,
   EFFORT_PROFILES_DOCUMENT,
-  FALLBACK_EFFORT,
   buildContinueRequestBody,
   canSubmitContinue,
   describeContinuePlacement,
@@ -155,8 +154,12 @@ export function ContinueDialog({
     };
   }, [open]);
 
-  const effort: SubprojectEffort =
-    effortChoice ?? effortDefault?.effort ?? FALLBACK_EFFORT;
+  // No effort until one is SETTLED: the served profile (or its named
+  // fallback) has answered, or the operator picked one. While the profile is
+  // being read the select shows no value, so any pick — the eventual default
+  // included — is a choice the operator made.
+  const effort: SubprojectEffort | null =
+    effortChoice ?? effortDefault?.effort ?? null;
   const ultracode = ultracodeChoice ?? effortDefault?.ultracode ?? false;
 
   const repos = parseRepoList(reposText);
@@ -170,6 +173,7 @@ export function ContinueDialog({
   const offeredRepos = suggestedRepos.filter((r) => !repos.includes(r));
 
   const handleSubmit = useCallback(async () => {
+    if (effort === null) return;
     setRefusal(null);
     setSubmitting(true);
     const pinned = device !== "";
@@ -281,7 +285,7 @@ export function ContinueDialog({
               <Label htmlFor="subproject-continue-effort">Effort</Label>
               <div className="flex flex-wrap items-center gap-3">
                 <Select
-                  value={effort}
+                  value={effort ?? ""}
                   onValueChange={(v) => {
                     if (isEffort(v)) setEffortChoice(v);
                   }}
@@ -292,7 +296,7 @@ export function ContinueDialog({
                     className="w-[140px]"
                     data-testid="subproject-continue-effort"
                   >
-                    <SelectValue />
+                    <SelectValue placeholder="Choose…" />
                   </SelectTrigger>
                   <SelectContent>
                     {EFFORTS.map((e) => (
@@ -561,7 +565,11 @@ export function ContinueDialog({
                 disabled={!canSubmit}
                 data-testid="subproject-continue-submit"
               >
-                {submitting ? "Continuing…" : `Continue at ${effort}`}
+                {submitting
+                  ? "Continuing…"
+                  : effort !== null
+                    ? `Continue at ${effort}`
+                    : "Continue"}
               </Button>
             </>
           )}

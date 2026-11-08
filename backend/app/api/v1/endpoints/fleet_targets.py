@@ -56,12 +56,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.admin_deps import require_admin
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.api.v1.endpoints.operations import (
-    COORD_TIMEOUT_DETAIL,
-    COORD_UNREACHABLE_DETAIL,
     _proxy_coord_delete,
     _proxy_coord_post,
     get_tenant_id,
 )
+from app.core.refusal import RefusalHTTPException
 from app.models.app_deploy_state import AppDeployState
 from app.models.app_registry import App
 from app.models.device import Device
@@ -367,9 +366,6 @@ async def _other_project_conflict(
 # The two failures ``operations``' proxy helpers raise themselves (not coord's
 # body), safe to show verbatim. Shared constants, so a reworded helper message
 # cannot silently turn them into a generic ``coord_failed``.
-_PROXY_TRANSPORT_ERRORS = frozenset({COORD_UNREACHABLE_DETAIL, COORD_TIMEOUT_DETAIL})
-
-
 def _reraise_coord_refusal(exc: HTTPException) -> HTTPException:
     """Normalize a coord failure for the error envelope.
 
@@ -377,18 +373,22 @@ def _reraise_coord_refusal(exc: HTTPException) -> HTTPException:
       as ``coord_refused`` with a readable ``message`` —
       ``http_exception_handler`` would otherwise render ``message`` as the
       bare ``error`` string, with no "coord refused" framing.
+    * A typed refusal (``RefusalHTTPException``) passes through unchanged: it
+      is web's own sentence about the transport, never coord's text — coord
+      unreachable (nothing was applied), a timeout, or an answer lost in
+      transit (coord may have applied the designation, so its next action is
+      a re-read before any retry). Rewording it as "coord failed ... Retry"
+      would drop exactly that instruction.
     * 5xx: a generic "coord failed" with the status only. coord's 5xx text can
       carry SQL/pool context (``pg_error::wrap``), which must not reach the
       browser, and it is NOT tagged ``coord_refused`` — the frontend unwraps
       that code as an operator-facing refusal, which a server fault is not.
-      The proxy helpers' own transport messages (unreachable / timeout) are
-      kept, since they are web's text, not coord's.
     * Anything else passes through unchanged.
     """
+    if isinstance(exc, RefusalHTTPException):
+        return exc
     detail: Any = exc.detail
     if exc.status_code >= 500:
-        if isinstance(detail, str) and detail in _PROXY_TRANSPORT_ERRORS:
-            return exc
         return HTTPException(
             status_code=exc.status_code,
             detail={

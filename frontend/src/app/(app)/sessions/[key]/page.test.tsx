@@ -135,12 +135,15 @@ describe("each matched session's subproject (plan 2026-11-08 subprojects)", () =
 
     render(<SessionKeyPage />);
 
-    const link = await screen.findByRole("link", { name: "dashboards" });
+    // A short accessible name: the subproject and its headline.
+    const link = await screen.findByRole("link", {
+      name: "subproject: dashboards, stalled",
+    });
     expect(link).toHaveAttribute("href", "/admin/coord/subprojects/sp-9");
     expect(link).toHaveAttribute("title", "Subproject: dashboards — Stalled");
     expect(fetchSubprojectsBySessions).toHaveBeenCalledTimes(1);
-    // One read for the set of cards (asked in a stable order).
-    expect(fetchSubprojectsBySessions).toHaveBeenCalledWith(["s-1", "s-2"]);
+    // One read for every card, in the page's order.
+    expect(fetchSubprojectsBySessions).toHaveBeenCalledWith(["s-2", "s-1"]);
     // No live membership is a dash that says so — never a guess.
     const lines = screen.getAllByTestId("sessions-detail-subproject");
     expect(lines[1]).toHaveTextContent("–");
@@ -171,9 +174,12 @@ describe("each matched session's subproject (plan 2026-11-08 subprojects)", () =
           .querySelector("[data-chip]")
       ).toHaveAttribute("data-chip", "failed")
     );
-    expect(screen.getByTestId("sessions-detail-subproject")).toHaveTextContent(
-      /not migrated yet/
-    );
+    const chip = screen
+      .getByTestId("sessions-detail-subproject")
+      .querySelector("[data-chip]");
+    // The reason is the hover sentence; the accessible name stays short.
+    expect(chip?.getAttribute("title")).toMatch(/not migrated yet/);
+    expect(chip).toHaveTextContent("subproject: lookup failed");
   });
 });
 

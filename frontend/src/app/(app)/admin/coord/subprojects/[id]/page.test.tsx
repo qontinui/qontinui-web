@@ -527,6 +527,100 @@ describe("/admin/coord/subprojects/[id]", () => {
     expect(unlinked.querySelector(".sr-only")).not.toBeNull();
   });
 
+  it("says how a session joined in words, links its gate, and keeps the raw ref on the raw line", async () => {
+    const base = detail();
+    const GATE = "132fc978-0000-4000-8000-000000000001";
+    fetchSubproject.mockResolvedValue(
+      detail({
+        sessions: [
+          {
+            ...base.sessions[0]!,
+            joined_via: "gate_continuation",
+            via_ref: GATE,
+          },
+        ],
+      })
+    );
+    render(<SubprojectDetailPage />);
+    const row = await screen.findByTestId("coord-subproject-session-row");
+    fireEvent.click(row.querySelector("[data-console-row]") as HTMLElement);
+    const why = await within(row).findByText(
+      /Joined as a member gate's continuation/
+    );
+    // The id is not in the sentence (R8)...
+    expect(why).not.toHaveTextContent(GATE);
+    // ...the gate is a link, named in words...
+    expect(within(why).getByRole("link", { name: "its gate" })).toHaveAttribute(
+      "href",
+      `/admin/coord/gates?gate=${GATE}`
+    );
+    // ...and the raw value is on the raw line.
+    expect(row).toHaveTextContent(`via_ref ${GATE}`);
+  });
+
+  it("words a gate's verdict, with coord's own word only on the raw line", async () => {
+    fetchSubproject.mockResolvedValue(detail());
+    render(<SubprojectDetailPage />);
+    const rows = await screen.findAllByTestId("coord-subproject-gate-row");
+    const pendingGate = rows.find((r) =>
+      r.textContent?.includes("Phase 5 resume")
+    );
+    fireEvent.click(
+      pendingGate?.querySelector("[data-console-row]") as HTMLElement
+    );
+    const why = await within(pendingGate as HTMLElement).findByText(/Verdict:/);
+    expect(why).toHaveTextContent("Verdict: not cleared yet.");
+    expect(pendingGate).toHaveTextContent("verdict pending");
+  });
+
+  it("calls next steps coord did not send unknown, never none", async () => {
+    const base = detail();
+    const { next_steps: _omit, ...withoutSteps } = base;
+    fetchSubproject.mockResolvedValue(withoutSteps as SubprojectDetailResponse);
+    render(<SubprojectDetailPage />);
+    expect(
+      await screen.findByTestId("coord-subproject-next-steps-empty")
+    ).toHaveTextContent(
+      "coord did not send this subproject's next steps with this read — unknown, not none."
+    );
+  });
+
+  it("dates coord's 'no such subproject' once a later re-read fails", async () => {
+    fetchSubproject.mockRejectedValueOnce(
+      new Error(
+        `GET /api/v1/operations/subprojects/${ID} failed: 404 - {"error":"subproject_not_found"}`
+      )
+    );
+    render(<SubprojectDetailPage />);
+    await screen.findByTestId("coord-subproject-not-found");
+    expect(
+      screen.queryByTestId("coord-subproject-not-found-stale")
+    ).not.toBeInTheDocument();
+    fetchSubproject.mockRejectedValue(
+      new Error(
+        `GET /api/v1/operations/subprojects/${ID} failed: 502 - {"error":"BAD_GATEWAY"}`
+      )
+    );
+    fireEvent.click(screen.getByTestId("coord-subproject-refresh"));
+    expect(
+      await screen.findByTestId("coord-subproject-not-found-stale")
+    ).toHaveTextContent(
+      /the latest re-read failed — coord did not answer \(HTTP 502.*\) — so whether it exists now is unknown\./
+    );
+    expect(
+      screen.getByTestId("coord-subproject-not-found")
+    ).toBeInTheDocument();
+  });
+
+  it("gives a PR row's repository a tooltip, since the label truncates", async () => {
+    fetchSubproject.mockResolvedValue(detail());
+    render(<SubprojectDetailPage />);
+    const row = await screen.findByTestId("coord-subproject-pr-row");
+    expect(
+      within(row).getByTitle("qontinui/qontinui-runner#2569")
+    ).toHaveTextContent("qontinui/qontinui-runner");
+  });
+
   it("keeps a refused write in view as coord's reading", async () => {
     mockAdmin = true;
     fetchSubproject.mockResolvedValue(detail());

@@ -50,7 +50,13 @@ closed, so nothing here is best-effort:
   everything else becomes a 502 carrying coord's original code as
   ``coord_status``, so an upstream 404 is never confused with this route's own
   "user not found" and an upstream 500 never reads as "web crashed".
-* Coord unreachable / times out → 502.
+* Coord unreachable, or the operator lookup failing in any way → 502, and
+  the change was not applied (a read applies nothing). The disable or
+  enable timing out, or its answer being lost in transit after it was sent →
+  504 with the change's outcome UNKNOWN: coord may have applied it, so the
+  message says to re-read before retrying. (For a deactivation the local
+  write still never ran; coord may be the stricter side, which is the
+  harmless divergence.)
 
 ## Identifier mapping (web ``User`` → coord ``operator_id``)
 
@@ -175,8 +181,28 @@ def _capture_caller_context(request: Request) -> None:
     _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
 
 
-def _coord_failure(exc: HTTPException, error: str) -> CoordActivationSyncError:
-    """Re-raise a shared-proxy ``HTTPException`` as a named sync failure."""
+def _coord_failure(
+    exc: HTTPException, error: str, *, write: bool
+) -> CoordActivationSyncError:
+    """Re-raise a shared-proxy ``HTTPException`` as a named sync failure.
+
+    A 504 from the WRITE is not a refusal: the proxy raises it when coord's
+    answer timed out or was lost in transit after the request was sent (and
+    passes coord's own 504 through), so coord may have applied the disable or
+    enable. Saying "NOT applied" there invites a blind retry and tells the
+    operator a principal's coord access is unchanged when it is unknown, so it
+    becomes a 504 that says to re-read first. The lookup is a read — nothing
+    can have been applied by it — so its failures keep the "NOT applied" arm.
+    """
+    if write and exc.status_code == 504:
+        return CoordActivationSyncError(
+            504,
+            error,
+            f"coord's answer to the request did not arrive ({exc.detail!r}); "
+            "coord may have applied the change, so re-read the user's coord "
+            "access before retrying",
+            coord_status=exc.status_code,
+        )
     status_code = exc.status_code if exc.status_code in _PASSTHROUGH_STATUSES else 502
     return CoordActivationSyncError(
         status_code,
@@ -263,7 +289,7 @@ async def _resolve_operator_id(user: User) -> str:
             forward_bearer=True,
         )
     except HTTPException as exc:
-        raise _coord_failure(exc, "coord_operator_lookup_failed") from exc
+        raise _coord_failure(exc, "coord_operator_lookup_failed", write=False) from exc
 
     operators = payload.get("operators") if isinstance(payload, dict) else None
     if not isinstance(operators, list):
@@ -308,7 +334,9 @@ async def _sync(
             forward_bearer=True,
         )
     except HTTPException as exc:
-        raise _coord_failure(exc, f"coord_operator_{action}_failed") from exc
+        raise _coord_failure(
+            exc, f"coord_operator_{action}_failed", write=True
+        ) from exc
 
     logger.info(
         "coord_operator_activation_synced",

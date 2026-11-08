@@ -96,6 +96,48 @@ describe("FilterTabs (R6)", () => {
     ).toContain("text-muted-foreground");
   });
 
+  it("says a count is not current: a `*`, the note as title and as screen-reader text", () => {
+    render(
+      <FilterTabs
+        tabs={[
+          { id: "fresh", label: "Fresh", count: 3 },
+          {
+            id: "kept",
+            label: "Kept",
+            count: 3,
+            countNote: "the last good count; the latest read failed",
+          },
+          {
+            id: "lost",
+            label: "Lost",
+            count: null,
+            countNote: "could not be read",
+          },
+        ]}
+        active="fresh"
+        onChange={() => {}}
+        testIdPrefix="t"
+      />
+    );
+    // A current number carries nothing.
+    expect(screen.getByTestId("t-fresh")).toHaveTextContent(/^Fresh3$/);
+    expect(screen.getByTestId("t-fresh")).not.toHaveAttribute("title");
+    // A kept number is marked, and says why to a hover and a screen reader.
+    const kept = screen.getByTestId("t-kept");
+    expect(kept).toHaveAttribute(
+      "title",
+      "the last good count; the latest read failed"
+    );
+    expect(kept).toHaveAccessibleName(
+      /\(the last good count; the latest read failed\)$/
+    );
+    expect(kept.textContent).toContain("3*");
+    // A dash is not starred — it already says unknown — but still says why.
+    const lost = screen.getByTestId("t-lost");
+    expect(lost.textContent).not.toContain("*");
+    expect(lost).toHaveAccessibleName(/\(could not be read\)$/);
+  });
+
   it("omits the filter input entirely when no handler is supplied", () => {
     const { rerender } = render(
       <FilterTabs

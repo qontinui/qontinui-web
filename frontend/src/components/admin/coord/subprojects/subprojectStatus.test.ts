@@ -18,6 +18,7 @@ import {
   UNREAD_COUNT,
   answeredCount,
   classifySubprojectReadFailure,
+  countNoteOf,
   countText,
   countsFromFacet,
   defaultContinueRepos,
@@ -31,6 +32,7 @@ import {
   facetQuery,
   failedCount,
   foldedReason,
+  gateVerdictWords,
   githubPrUrl,
   headlineKindOf,
   historyEventWords,
@@ -41,6 +43,7 @@ import {
   memberSessionKey,
   mergeStreamRows,
   nextStepWords,
+  ofCountWords,
   openFromParts,
   phasesRemainingWords,
   predicateKindWords,
@@ -569,9 +572,22 @@ describe("list views", () => {
     expect(tabOf("all")).toBe("all");
     expect(tabOf("stalled")).toBe("stalled");
     expect(tabOf("bogus")).toBe("open");
-    expect(viewStreams("open")).toEqual([...OPEN_HEADLINES]);
     expect(OPEN_HEADLINES).not.toContain("done");
     expect(viewStreams("waiting")).toEqual(["waiting"]);
+  });
+
+  it("reads Open in ONE read that excludes done, and per headline only as the fallback", () => {
+    expect(viewStreams("open")).toEqual(["open"]);
+    expect(viewQuery("open", 100).toString()).toBe(
+      "status=open&exclude_headline=done&limit=100"
+    );
+    expect(viewQuery("open", 100, "c2").toString()).toBe(
+      "status=open&exclude_headline=done&limit=100&cursor=c2"
+    );
+    // A coord that answers 400/422 to `exclude_headline` gets five reads.
+    expect(viewStreams("open", true)).toEqual([...OPEN_HEADLINES]);
+    // The flag means nothing for any other tab.
+    expect(viewStreams("stalled", true)).toEqual(["stalled"]);
   });
 
   it("merges Open's streams most-recently-active first, each subproject once", () => {
@@ -592,17 +608,21 @@ describe("list views", () => {
     expect(mergeStreamRows([[a, b]]).map((s) => s.id)).toEqual(["a", "b"]);
   });
 
-  it("folds one-offs (coord's definition), scheduled and merged subprojects into All only", () => {
-    expect(foldedReason(summary())).toBeNull();
-    expect(foldedReason(summary({ origin: "scheduled" }))).toMatch(/scheduled/);
-    expect(foldedReason(summary({ merged_into: "x" }))).toMatch(/merged/);
-    // Exactly one member session, no longer live, and no work unit — whatever
-    // the headline. (coord's own count requires the session finished or
-    // closed; a row carries only live/total, so a stale one folds here too.)
+  it("folds one-offs (coord's rule), scheduled and merged subprojects into All only", () => {
+    const done = { headline: "done" as const };
+    expect(foldedReason(summary(done))).toBeNull();
+    expect(foldedReason(summary({ ...done, origin: "scheduled" }))).toMatch(
+      /scheduled/
+    );
+    expect(foldedReason(summary({ ...done, merged_into: "x" }))).toMatch(
+      /merged/
+    );
+    // coord's rule as far as a row can show it, when coord sends no flag: a
+    // done headline, one member session no longer live, no work unit.
     expect(
       foldedReason(
         summary({
-          headline: "stalled",
+          ...done,
           sessions: { live: 0, total: 1 },
           work_units: { total: 0, open: 0 },
         })
@@ -611,6 +631,7 @@ describe("list views", () => {
     expect(
       foldedReason(
         summary({
+          ...done,
           sessions: { live: 1, total: 1 },
           work_units: { total: 0, open: 0 },
         })
@@ -620,11 +641,67 @@ describe("list views", () => {
     expect(
       foldedReason(
         summary({
+          ...done,
           sessions: { live: 0, total: null },
           work_units: { total: 0, open: 0 },
         })
       )
     ).toBeNull();
+    // Not done is never a one-off (coord: "a stalled/needs_you subproject is
+    // never a one-off"), working or waiting included.
+    for (const headline of ["working", "waiting", "unknown"] as const)
+      expect(
+        foldedReason(
+          summary({
+            headline,
+            sessions: { live: 0, total: 1 },
+            work_units: { total: 0, open: 0 },
+          })
+        ),
+        headline
+      ).toBeNull();
+  });
+
+  it("NEVER folds a row that needs the operator, whatever else is true of it", () => {
+    for (const headline of ["stalled", "needs_you"] as const) {
+      for (const over of [
+        { sessions: { live: 0, total: 1 }, work_units: { total: 0, open: 0 } },
+        { one_off: true },
+        { merged_into: "x" },
+        { origin: "scheduled" },
+      ])
+        expect(
+          foldedReason(summary({ headline, ...over })),
+          `${headline} ${JSON.stringify(over)}`
+        ).toBeNull();
+    }
+  });
+
+  it("takes coord's one_off flag over the row heuristic when it sent one", () => {
+    const looksLikeOne = {
+      headline: "done" as const,
+      sessions: { live: 0, total: 1 },
+      work_units: { total: 0, open: 0 },
+    };
+    // coord says no (its session is closed, not finished): not folded.
+    expect(
+      foldedReason(summary({ ...looksLikeOne, one_off: false }))
+    ).toBeNull();
+    // coord says yes where the row cannot show it: folded.
+    expect(
+      foldedReason(
+        summary({
+          headline: "done",
+          sessions: { live: null, total: null },
+          work_units: { total: null, open: null },
+          one_off: true,
+        })
+      )
+    ).toMatch(/one-off/);
+    // A null flag is coord not knowing: the row's own rule decides.
+    expect(foldedReason(summary({ ...looksLikeOne, one_off: null }))).toMatch(
+      /one-off/
+    );
   });
 
   it("renders an uncounted number as a dash, never a zero", () => {
@@ -731,7 +808,10 @@ describe("member lists", () => {
     expect(memberList(undefined)).toEqual({ items: [], known: false });
     expect(memberList([1, 2])).toEqual({ items: [1, 2], known: true });
     expect(memberEmptyText("member gate", false, [])).toBe(
-      "coord did not send the member gate with this read — unknown, not none."
+      "coord did not send this subproject's member gates with this read — unknown, not none."
+    );
+    expect(memberEmptyText("next step", false, [], "next steps")).toBe(
+      "coord did not send this subproject's next steps with this read — unknown, not none."
     );
   });
 
@@ -758,6 +838,7 @@ describe("the session chip", () => {
       text: "dashboards",
       title: "Subproject: dashboards — Stalled",
       href: "/admin/coord/subprojects/sp%201",
+      label: "subproject: dashboards, stalled",
     });
   });
 
@@ -770,8 +851,8 @@ describe("the session chip", () => {
     for (const chip of [
       { kind: "none" as const },
       { kind: "not_applicable" as const },
+      { kind: "agent_unknown" as const },
       { kind: "looking_up" as const },
-      { kind: "not_looked_up" as const },
       { kind: "unanswered" as const },
       { kind: "failed" as const, failure },
     ]) {
@@ -779,10 +860,61 @@ describe("the session chip", () => {
       expect(words.text, chip.kind).toBe("–");
       expect(words.href, chip.kind).toBeNull();
       expect(words.title.length, chip.kind).toBeGreaterThan(10);
+      // The accessible name is a short phrase, never the whole sentence.
+      expect(words.label, chip.kind).toMatch(/^subproject: [a-z ]+$/);
     }
     expect(subprojectChipWords({ kind: "failed", failure }).title).toMatch(
       /unknown, not none/
     );
+    // An agent half that did not answer is unknown, not "no session id".
+    expect(subprojectChipWords({ kind: "agent_unknown" }).title).toMatch(
+      /^Unknown — the agent half did not answer/
+    );
+  });
+});
+
+describe("a member gate's verdict, in words (R8)", () => {
+  it("words coord's verdicts and says when it has no reading for one", () => {
+    expect(gateVerdictWords("passed")).toBe("cleared");
+    expect(gateVerdictWords("PENDING")).toBe("not cleared yet");
+    expect(gateVerdictWords("veto")).toBe("vetoed");
+    expect(gateVerdictWords("in_progress")).toBe("being evaluated");
+    expect(gateVerdictWords("")).toBe("not reported");
+    expect(gateVerdictWords(null)).toBe("not reported");
+    expect(gateVerdictWords("half_cleared")).toBe(
+      '"half cleared", a verdict this console has no reading for'
+    );
+  });
+});
+
+describe("a count that is not current says so", () => {
+  const DOWN: SubprojectReadFailure = {
+    kind: "unreachable",
+    status: 502,
+    detail: "",
+  };
+
+  it("qualifies a kept, a failed and an untaken count on its tab — never a current one", () => {
+    expect(countNoteOf(answeredCount(4))).toBeNull();
+    expect(countNoteOf(UNREAD_COUNT)).toBeNull();
+    expect(countNoteOf(failedCount(answeredCount(4), DOWN))).toBe(
+      "the last good count; the latest read failed (coord did not answer (HTTP 502))"
+    );
+    expect(countNoteOf(failedCount(UNREAD_COUNT, DOWN))).toBe(
+      "could not be read (coord did not answer (HTTP 502))"
+    );
+    expect(countNoteOf(answeredCount(null))).toBe(
+      "coord did not take this count"
+    );
+  });
+
+  it("qualifies 'of M' when M is the last good count, and drops it when there is none", () => {
+    expect(ofCountWords(answeredCount(8))).toBe(" of 8");
+    expect(ofCountWords(failedCount(answeredCount(8), DOWN))).toBe(
+      " of 8 (the last good count; its latest read failed)"
+    );
+    expect(ofCountWords(answeredCount(null))).toBe("");
+    expect(ofCountWords(UNREAD_COUNT)).toBe("");
   });
 });
 
@@ -954,6 +1086,40 @@ describe("count readings and the facet", () => {
 });
 
 describe("the list's health strip (R1, R6)", () => {
+  it("names every OTHER view whose count is not current, grouped by why", () => {
+    const h = deriveSubprojectsHealth({
+      ...ALL_ZERO,
+      done: failedCount(v(9), UNREACHABLE),
+      all: failedCount(v(14), UNREACHABLE),
+      working: failedCount(UNREAD_COUNT, { kind: "migration_pending" }),
+    });
+    // The attention verdict is still the needs-you and stalled counts'.
+    expect(h.level).toBe("green");
+    expect(h.headline).toBe("Nothing is stalled or waiting on you");
+    expect(h.detail).toContain(
+      "Working could not be read — the latest read failed (coord's subproject tables are not migrated yet (schema_migration_pending))."
+    );
+    expect(h.detail).toContain(
+      "Done and All are the last good counts — the latest read failed (coord did not answer (HTTP 502))."
+    );
+    // Not every count on screen is this poll's.
+    expect(h.readIsCurrent).toBe(false);
+    // Nothing stale: nothing named, and the read is current.
+    expect(deriveSubprojectsHealth(ALL_ZERO).detail).not.toMatch(
+      /last good|could not be read/
+    );
+    expect(deriveSubprojectsHealth(ALL_ZERO).readIsCurrent).toBe(true);
+  });
+
+  it("does not name the needs-you and stalled counts twice", () => {
+    const h = deriveSubprojectsHealth({
+      ...ALL_ZERO,
+      stalled: failedCount(v(2), UNREACHABLE),
+    });
+    expect(h.detail.match(/stalled count/g)).toHaveLength(1);
+    expect(h.detail).not.toMatch(/Stalled is the last good count/);
+  });
+
   it("is unknown — amber, dashed — when nothing ever answered, and says why", () => {
     const h = deriveSubprojectsHealth(
       counts({
