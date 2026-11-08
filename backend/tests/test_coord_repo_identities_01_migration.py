@@ -12,7 +12,10 @@ Phase 4) rely on:
    key); two ids may share a name (the name index is not unique).
 3. **Re-running is harmless**: with rows present, ``stamp <parent>`` then
    ``upgrade`` again changes nothing (every statement is ``IF NOT EXISTS``).
-4. **canonical_repos.bare_dir** (Phase 3): the nullable column, its
+4. **repo_identities.moved_at** (nullable) is part of the shape above, and
+   **coord.retired_bare_dirs** holds one row per safe directory and is gone
+   after downgrade.
+5. **canonical_repos.bare_dir** (Phase 3): the nullable column, its
    ``ck_canonical_repos_bare_dir_safe`` CHECK (only a safe relative
    ``owner/name``) and the unique ``ux_canonical_repos_effective_dir`` index
    on ``COALESCE(bare_dir, repo)`` (two rows never resolve to one bare
@@ -59,6 +62,7 @@ _EXPECTED_COLUMNS: dict[str, tuple[str, str]] = {
     "github_repo_id": ("bigint", "NO"),
     "repo": ("text", "NO"),
     "observed_at": ("timestamp with time zone", "NO"),
+    "moved_at": ("timestamp with time zone", "YES"),
 }
 
 _EXPECTED_CONSTRAINTS: dict[str, tuple[str, str]] = {
@@ -234,6 +238,35 @@ def _bare_dir_state(engine: Engine) -> tuple[tuple[str, str] | None, bool, str |
     )
 
 
+def _retired_state(engine: Engine) -> tuple[bool, bool]:
+    """(coord.retired_bare_dirs exists, its safe-path CHECK exists)."""
+    with engine.connect() as conn:
+        check = conn.execute(
+            text(
+                "SELECT count(*) FROM pg_constraint "
+                "WHERE conname = 'ck_retired_bare_dirs_bare_dir_safe'"
+            )
+        ).scalar_one()
+    return table_exists(engine, "coord", "retired_bare_dirs"), int(check) == 1
+
+
+def _assert_retired_contract(engine: Engine) -> None:
+    """retired_bare_dirs: one row per directory, safe paths only."""
+    assert _retired_state(engine) == (True, True)
+    insert = text(
+        "INSERT INTO coord.retired_bare_dirs (bare_dir, repo) VALUES (:dir, :repo)"
+    )
+    with engine.begin() as conn:
+        conn.execute(insert, {"dir": "acme/gone", "repo": "acme/gone-renamed"})
+    for unsafe in ("../x", "no-slash", "acme/.h", "a/b/c"):
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(insert, {"dir": unsafe, "repo": "acme/r"})
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        conn.execute(insert, {"dir": "acme/gone", "repo": "acme/again"})
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM coord.retired_bare_dirs"))
+
+
 def _insert_canonical(engine: Engine, repo: str, bare_dir: str | None) -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -329,6 +362,7 @@ def test_coord_repo_identities_01_creates_the_table_and_enforces_its_contract() 
         run_alembic(root, url, "upgrade", _PARENT_REVISION_ID)
         _assert_absent(engine)
         assert _bare_dir_state(engine) == (None, False, None)
+        assert _retired_state(engine) == (False, False)
         with engine.begin() as conn:
             conn.execute(
                 text(
@@ -341,6 +375,7 @@ def test_coord_repo_identities_01_creates_the_table_and_enforces_its_contract() 
         run_alembic(root, url, "upgrade", _REVISION_ID)
         _assert_shape(engine)
         _assert_bare_dir_contract(engine)
+        _assert_retired_contract(engine)
 
         # 3. A row needs only id and name; observed_at defaults to now.
         _insert(engine, 1_234_567_890_123, "jspinak/qontinui-web")
@@ -385,8 +420,10 @@ def test_coord_repo_identities_01_creates_the_table_and_enforces_its_contract() 
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         _assert_absent(engine)
         assert _bare_dir_state(engine) == (None, False, None)
+        assert _retired_state(engine) == (False, False)
 
         # 8. Re-apply: the downgrade left no residue.
         run_alembic(root, url, "upgrade", _REVISION_ID)
         _assert_shape(engine)
         _assert_bare_dir_contract(engine)
+        _assert_retired_contract(engine)
