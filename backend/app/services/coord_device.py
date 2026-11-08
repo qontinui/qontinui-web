@@ -22,7 +22,9 @@ Endpoints (all GET, bearer-authed, + ``x-qontinui-user-id`` header):
   (404 if not owned).
 * ``GET /coord/devices/by-user`` → ``{"devices": [<row>...], "count": N}``
   — the user's paired devices (each a full ``coord.devices`` row as JSON).
-* ``GET /coord/devices/:id/owned`` → ``<row>``, 404 if not owned.
+* ``GET /coord/devices/:id/owned`` → ``<row>``, 404 if not owned (read from
+  a request by :func:`get_owned_device`, from a bearer by
+  :func:`get_owned_device_with_bearer`).
 * ``GET /coord/devices/:id/state`` → the device's liveness row, including
   its ``tenant_id``; the one read here authorized by a forwarded **device**
   JWT rather than an operator bearer (the dmk ``/self-mint`` route).
@@ -218,9 +220,23 @@ async def get_owned_device(
     ownership check (404 if the device isn't owned by ``user_id``) replaces
     the web-side ``_ensure_owned``.
     """
+    return await get_owned_device_with_bearer(
+        device_id, bearer=extract_bearer(request), user_id=user_id
+    )
+
+
+async def get_owned_device_with_bearer(
+    device_id: str | UUID,
+    *,
+    bearer: str | None,
+    user_id: str,
+) -> dict[str, Any]:
+    """:func:`get_owned_device` for a caller that holds the bearer rather
+    than the request: the runner relay (``app/services/runner_relay.py``),
+    which reads the liveness clocks for its not-connected 503."""
     payload = await _get(
         f"/coord/devices/{device_id}/owned",
-        bearer=extract_bearer(request),
+        bearer=bearer,
         user_id=user_id,
     )
     if isinstance(payload, dict):

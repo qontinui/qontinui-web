@@ -15,6 +15,12 @@ coord-side, 404 → ``None``). This test pins the post-migration shape:
 * the relay handler no longer contains any ``coord.devices`` SQL string, and
 * it sources the device's ws-session from the coord routing client.
 
+The relay itself now lives in ``app/services/runner_relay.py``
+(:func:`app.services.runner_relay.relay_http`, plan
+``2026-11-08-save-per-tab-runner-session-lists-on-sessions-page-kept-14-days``
+Phase 2), so the lookup is asserted there, and the route that calls it is held
+to the same no-SQL rule.
+
 The behavioural cases (404 on unowned, 503 on null ws_session, 502/504 on
 coord transport faults) are covered by
 ``test_device_bridge_runner_proxy_relay.py``.
@@ -25,11 +31,16 @@ from __future__ import annotations
 import inspect
 
 from app.api.v1.endpoints import device_bridge_ws
+from app.services import runner_relay
 
 
 def test_runner_proxy_relay_no_longer_reads_coord_devices_sql() -> None:
     """The relay device lookup must not contain ``coord.devices`` SQL."""
-    source = inspect.getsource(device_bridge_ws._runner_proxy_relay)
+    route_source = inspect.getsource(device_bridge_ws._runner_proxy_relay)
+    assert "AsyncSessionLocal" not in route_source
+    assert "text(" not in route_source
+
+    source = inspect.getsource(runner_relay.relay_http)
 
     # No raw-SQL execution machinery remains in the handler body (we check
     # the execution seams rather than the literal `FROM coord.devices`
