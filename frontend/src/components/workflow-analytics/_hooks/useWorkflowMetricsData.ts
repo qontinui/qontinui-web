@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { WorkflowMetrics } from "@/services/workflow-analytics-service";
 import { ComplexityAnalysis } from "@/services/workflow-complexity-analyzer";
-import { TestResult } from "@/services/workflow-testing-service";
+import { TestResult } from "@/services/workflow-testing";
 import { CHART_COLORS } from "../workflow-metrics-panel-utils";
 import { formatRelativeTime } from "../workflow-metrics-panel-utils";
 import type {
