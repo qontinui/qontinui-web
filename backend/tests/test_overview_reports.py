@@ -425,6 +425,37 @@ class TestReports:
         assert stale.status_code == 409
         assert stale.json()["current"]["version"] == 3
 
+    async def test_a_revert_to_a_version_the_scan_now_refuses_is_422(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """A revert writes the old narrative as a NEW version, scanned as any
+        write is: one naming a term added since is refused 422
+        report_rejected, naming the field and never the value, and nothing
+        is written."""
+        await _set_scope(async_db_session, terms=[])
+        report = await _report(admin, body_md=f"# Progress\n\nWork for {TERM}.")
+        url = f"{API}/reports/{report['id']}"
+        rewritten = "# Progress\n\nRewritten."
+        edited = await admin.patch(
+            url, json={"body_md": rewritten}, headers={"If-Match": '"1"'}
+        )
+        assert edited.status_code == 200, edited.text
+        await _set_scope(async_db_session, terms=[TERM])
+        refused = await admin.post(
+            f"{url}/versions/1/revert", headers={"If-Match": '"2"'}
+        )
+        assert refused.status_code == 422, refused.text
+        body = refused.json()
+        assert body["error"] == "report_rejected"
+        assert {"slot": "body_md", "kind": "confidential_term"} in body["violations"]
+        assert TERM not in refused.text
+        got = (await admin.get(url)).json()["item"]
+        assert (got["version"], got["body_md"]) == (2, rewritten)
+        assert [r.action for r in await _log(async_db_session, "reports")] == [
+            "create",
+            "update",
+        ]
+
     async def test_if_match_is_required_and_a_stale_write_gets_the_servers_copy(
         self, admin: httpx.AsyncClient
     ) -> None:
@@ -949,6 +980,40 @@ class TestCardinality:
             f"{API}/reports/{report['id']}/view", params={"before": 999}
         )
         assert missing.status_code == 404
+
+    async def test_a_stop_withheld_whole_just_before_the_page_edge_is_skipped(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The page's first stop compares with the nearest stop BEFORE the
+        page that a reader is shown. When the one just before the 48-stop
+        edge is withheld whole, the comparison skips past it, and only the
+        older page, which holds it, lists it as withheld."""
+        report = await _report(admin)
+        stops = []
+        for day in range(50):
+            doc = _stop(day)
+            if day == 1:
+                # Its id names a term the project adds later: withheld whole.
+                doc["items"][0]["id"] = "northwind-mutual-pilot"
+            stops.append(await _snapshot(admin, report["id"], doc))
+        await _set_scope(async_db_session, terms=[TERM])
+        view = await _view(admin, report["id"])
+        # The newest 48 are stops 2..49; stop 1 sits just before the edge.
+        assert [s["seq"] for s in view["snapshots"]] == [s["seq"] for s in stops[2:]]
+        assert (view["shown"], view["total"], view["truncated"]) == (48, 50, True)
+        assert view["withheld"] == []
+        first = view["snapshots"][0]["changes_since_previous"]
+        assert first["previous_seq"] == stops[0]["seq"]
+        older = await _view(admin, report["id"], before=stops[2]["seq"])
+        assert [s["seq"] for s in older["snapshots"]] == [stops[0]["seq"]]
+        assert older["withheld"] == [
+            {
+                "seq": stops[1]["seq"],
+                "slot": "items[0].id",
+                "reason": "confidential_term",
+            }
+        ]
+        assert (older["shown"], older["total"], older["truncated"]) == (1, 50, False)
 
     async def test_a_stop_backfilled_with_an_earlier_as_of_takes_its_place(
         self, admin: httpx.AsyncClient
