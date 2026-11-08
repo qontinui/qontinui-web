@@ -12,6 +12,7 @@
  * with nowhere to go … says why").
  */
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import type { SubprojectRef } from "@/lib/api/operations/coordSubprojects";
 import { refTarget, type RefContext } from "./subprojectStatus";
@@ -71,19 +72,27 @@ export function RefLink({
 export function RefList({
   refs,
   context,
+  annotate,
 }: {
   refs: readonly SubprojectRef[];
   context?: RefContext;
+  /** What to show beside one ref — the other subproject's headline beside a
+   *  reason's `subproject` ref, say. `null` shows nothing. */
+  annotate?: (subjectRef: SubprojectRef) => ReactNode;
 }) {
   if (refs.length === 0) return null;
   return (
     <span className="text-xs text-muted-foreground">
-      {refs.map((r, i) => (
-        <span key={`${r.type}:${r.id}:${i}`}>
-          {i > 0 && ", "}
-          <RefLink subjectRef={r} context={context} />
-        </span>
-      ))}
+      {refs.map((r, i) => {
+        const beside = annotate?.(r) ?? null;
+        return (
+          <span key={`${r.type}:${r.id}:${i}`}>
+            {i > 0 && ", "}
+            <RefLink subjectRef={r} context={context} />
+            {beside !== null ? <> {beside}</> : null}
+          </span>
+        );
+      })}
     </span>
   );
 }

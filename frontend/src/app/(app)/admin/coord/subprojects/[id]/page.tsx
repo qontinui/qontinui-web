@@ -80,6 +80,7 @@ import {
   memberList,
   memberSessionKey,
   nextStepWords,
+  otherSubprojectOf,
   phasesRemainingWords,
   predicateKindWords,
   prHref,
@@ -408,6 +409,9 @@ function SubprojectBody({
           >
             {detail.verdict.reasons.map((r, i) => {
               const words = reasonWords(r.kind);
+              // A cause in ANOTHER subproject (D6): its headline beside the
+              // ref, so the operator sees where the stall actually is.
+              const other = otherSubprojectOf(r);
               return (
                 <li key={`${r.kind}:${i}`} data-reason-kind={r.kind}>
                   <span
@@ -422,7 +426,22 @@ function SubprojectBody({
                   {r.refs.length > 0 && (
                     <>
                       {" "}
-                      <RefList refs={r.refs} context={context} />
+                      <RefList
+                        refs={r.refs}
+                        context={context}
+                        annotate={(ref) =>
+                          other !== null &&
+                          ref.type === "subproject" &&
+                          ref.id === other.id ? (
+                            <span data-testid="coord-subproject-other-headline">
+                              <StatusBadge
+                                status={other.status}
+                                palette={SUBPROJECT_HEADLINE_PALETTE}
+                              />
+                            </span>
+                          ) : null
+                        }
+                      />
                     </>
                   )}
                 </li>
