@@ -343,14 +343,39 @@ def _recent_crash_from(value: dict[str, Any] | None) -> RunnerCrash | None:
         return RunnerCrash.model_validate(value)
     except Exception:
         return RunnerCrash(
-            filePath=str(value.get("file_path", value.get("filePath", ""))),
-            panicLocation=str(
-                value.get("panic_location", value.get("panicLocation", ""))
-            ),
-            panicMessage=str(value.get("panic_message", value.get("panicMessage", ""))),
-            reportedAt=str(value.get("reported_at", value.get("reportedAt", ""))),
-            thread=str(value.get("thread", "")),
+            filePath=_crash_text(value, "file_path", "filePath"),
+            panicLocation=_crash_text(value, "panic_location", "panicLocation"),
+            panicMessage=_crash_text(value, "panic_message", "panicMessage"),
+            reportedAt=_crash_text(value, "reported_at", "reportedAt"),
+            thread=_crash_text(value, "thread"),
+            pid=_crash_pid_from(value.get("pid")),
         )
+
+
+def _crash_text(value: dict[str, Any], snake: str, camel: str | None = None) -> str:
+    """One text field of a stored crash, under either casing, never ``"None"``.
+
+    The WS heartbeat stores the runner's camelCase ``RecentCrash``, whose
+    optional fields serialize as ``null`` when the dump lacks the section;
+    ``str(None)`` would render that as the literal text ``None``.
+    """
+    raw = value.get(snake)
+    if raw is None and camel is not None:
+        raw = value.get(camel)
+    return "" if raw is None else str(raw)
+
+
+def _crash_pid_from(value: Any) -> int | None:
+    """The crashed process's pid, or ``None`` when the dump recorded none.
+
+    The runner omits ``pid`` for a dump predating its ``Pid:`` header
+    (qontinui-runner#2551 / #2722), so an absent or non-integer value is
+    unknown, never a guessed pid. ``bool`` is excluded because it is an
+    ``int`` subclass.
+    """
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
 
 
 # ---------------------------------------------------------------------------
