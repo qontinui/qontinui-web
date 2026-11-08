@@ -290,8 +290,18 @@ let lastFailOpenLogWindow: number | null = null;
  * Warn that a Redis op failed and the limiter is failing open — at most once
  * per minute window per process, because during an outage EVERY request
  * takes this path.
+ *
+ * `status` is the client's connection state (ioredis `Redis.status`). It is
+ * what tells an outage (`reconnecting`, `end`) from a cold instance whose
+ * first request ran before its connection was ready (`connecting`): both
+ * fail with the same error message.
  */
-function logFailingOpen(err: unknown, kind: RateLimitKind, now: number): void {
+function logFailingOpen(
+  err: unknown,
+  kind: RateLimitKind,
+  now: number,
+  status: string | undefined,
+): void {
   const windowIdx = currentWindowIndex(now);
   if (windowIdx === lastFailOpenLogWindow) {
     return;
@@ -300,6 +310,7 @@ function logFailingOpen(err: unknown, kind: RateLimitKind, now: number): void {
   log.warn("rate_limit_redis_op_failed_failing_open", {
     error: err instanceof Error ? err.message : String(err),
     kind,
+    status: status ?? "unknown",
   });
 }
 
@@ -340,7 +351,7 @@ export async function checkRateLimit(
     // Any Redis-side error (a connection not ready yet, timeout, AUTH,
     // MOVED in a misconfigured cluster) → fail open, and say the count is
     // unknown. Warned at most once a minute per process (`logFailingOpen`).
-    logFailingOpen(err, kind, now);
+    logFailingOpen(err, kind, now, redis.status);
     return {
       allowed: true,
       count: 0,

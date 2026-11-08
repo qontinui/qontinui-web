@@ -111,6 +111,7 @@ function notReadyRedis(
   return {
     pipeline: () => pipeline,
     on: () => undefined,
+    status: "connecting",
   } as unknown as Parameters<typeof __setRedisClientForTest>[0];
 }
 
@@ -258,8 +259,15 @@ describe("checkRateLimit", () => {
       const warnings = warn.mock.calls.filter((call) =>
         String(call[0]).includes("rate_limit_redis_op_failed_failing_open")
       );
+      // Redis's own error and the client's connection state, so an outage
+      // reads differently from a cold instance's first request.
       expect(warnings.map((call) => call[1])).toEqual([
-        expect.objectContaining({ kind: "write" }),
+        {
+          error:
+            "Stream isn't writeable and enableOfflineQueue options is false",
+          kind: "write",
+          status: "connecting",
+        },
         expect.objectContaining({ kind: "transport:result" }),
       ]);
     } finally {
