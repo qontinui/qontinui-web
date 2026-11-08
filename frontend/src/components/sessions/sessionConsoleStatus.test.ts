@@ -15,16 +15,20 @@ import {
   SESSION_ATTENTION_BY_KIND,
   SESSION_WORK_ATTENTION_BY_KIND,
   agentSessionId,
+  ceilingDisclosure,
   deriveSessionWorkStatus,
   isSessionFinished,
   compareSessionRows,
   deriveSessionStatus,
   deriveSessionsHealth,
+  halfMayBeIncomplete,
   hasAgentHalf,
   hasLifecycleHalf,
   lastHeartbeatAt,
   lifecycleState,
+  rowClassExplanation,
   rowTimestamp,
+  sessionsCeiling,
   type ConsolidatedSessionRow,
 } from "./sessionConsoleStatus";
 
@@ -328,19 +332,95 @@ describe("compareSessionRows", () => {
 
 describe("deriveSessionsHealth", () => {
   it("an unknown READ makes every count null — a dash, never a zero", () => {
-    const h = deriveSessionsHealth([], { readUnknown: true });
+    const h = deriveSessionsHealth([], { readUnknown: true, loaded: false });
     expect(h.attention).toBeNull();
     expect(h.active).toBeNull();
     expect(h.machines).toBeNull();
     expect(h.level).toBe("amber");
   });
 
-  it("a landed read over an empty list gives real zeroes — we looked", () => {
-    const h = deriveSessionsHealth([], { readUnknown: false });
+  // Plan `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+  // U2: before the first answer the console painted a GREEN "No sessions match
+  // this filter" with zero counts over a list nobody had read yet.
+  it("before the first read lands it is amber, says it is reading, and counts nothing", () => {
+    const h = deriveSessionsHealth([], { readUnknown: false, loaded: false });
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe("Reading sessions…");
+    expect(h.detail).toBe(
+      "Nothing has answered yet, so every count is a dash rather than a zero."
+    );
+    expect(h.attention).toBeNull();
+    expect(h.active).toBeNull();
+    expect(h.waiting).toBeNull();
+    expect(h.unknownJoin).toBeNull();
+    expect(h.machines).toBeNull();
+    expect(h.headline).not.toMatch(/No sessions/);
+  });
+
+  it("a landed read over an empty fleet gives real zeroes — we looked", () => {
+    const h = deriveSessionsHealth([], { readUnknown: false, loaded: true });
     expect(h.attention).toBe(0);
     expect(h.machines).toBe(0);
     expect(h.level).toBe("green");
-    expect(h.headline).toContain("No sessions match");
+    // The fleet's referent, never the list's narrowing sentence: that one is
+    // the empty state's, directly below the strip.
+    expect(h.headline).toBe("No sessions on the fleet");
+    expect(h.headline).not.toMatch(/No sessions match/);
+  });
+
+  it("an empty answer to a status tab names the tab's sessions", () => {
+    const h = deriveSessionsHealth([], {
+      readUnknown: false,
+      loaded: true,
+      referent: { status: "live" },
+    });
+    expect(h.headline).toBe("No live sessions on the fleet");
+  });
+
+  it("a `?device=` deep link names its machine, never the fleet", () => {
+    const waiting = linked({ last_heartbeat_at: ago(60_000) });
+    const h = deriveSessionsHealth([waiting], {
+      readUnknown: false,
+      loaded: true,
+      referent: { machine: "alpha" },
+      options: { now: NOW },
+    });
+    expect(h.headline).toBe("1 session waiting on alpha");
+    const none = deriveSessionsHealth([], {
+      readUnknown: false,
+      loaded: true,
+      referent: { status: "stale", machine: "alpha" },
+    });
+    expect(none.headline).toBe("No stale sessions on alpha");
+    expect(`${h.headline} ${none.headline}`).not.toMatch(/on the fleet/);
+  });
+
+  it("a search is the referent — the strip names it and never says 'on the fleet'", () => {
+    const waiting = linked({
+      id: "s-outgoing",
+      last_heartbeat_at: ago(60_000),
+    });
+    const h = deriveSessionsHealth([waiting], {
+      readUnknown: false,
+      loaded: true,
+      referent: { query: "outgoing" },
+      options: { now: NOW },
+    });
+    expect(h.headline).toBe("1 of the sessions matching “outgoing” is waiting");
+    expect(h.detail).toMatch(/^1 row matching “outgoing” across 1 machine — /);
+    expect(`${h.headline} ${h.detail}`).not.toMatch(/on the fleet/);
+  });
+
+  it("an empty answer to a search names the search, not the list's narrowing", () => {
+    const h = deriveSessionsHealth([], {
+      readUnknown: false,
+      loaded: true,
+      referent: { query: "zzz-no-match" },
+    });
+    expect(h.headline).toBe("0 sessions match “zzz-no-match”");
+    expect(`${h.headline} ${h.detail}`).not.toMatch(
+      /No sessions match|on the fleet/
+    );
   });
 
   it("unresolved join halves make the page amber, never green", () => {
@@ -348,6 +428,7 @@ describe("deriveSessionsHealth", () => {
     // failure this plan exists to prevent.
     const h = deriveSessionsHealth([linked(), unresolved()], {
       readUnknown: false,
+      loaded: true,
       options: { now: NOW },
     });
     expect(h.unknownJoin).toBe(1);
@@ -357,6 +438,7 @@ describe("deriveSessionsHealth", () => {
   it("a failed agent half says so in the headline rather than reading green", () => {
     const h = deriveSessionsHealth([linked()], {
       readUnknown: false,
+      loaded: true,
       agentHalfFailed: true,
       options: { now: NOW },
     });
@@ -366,11 +448,126 @@ describe("deriveSessionsHealth", () => {
   });
 
   it("a row needing a person turns the strip red", () => {
-    const h = deriveSessionsHealth(
-      [linked({ state: "pending_resolution" })],
-      { readUnknown: false, options: { now: NOW } }
-    );
+    const h = deriveSessionsHealth([linked({ state: "pending_resolution" })], {
+      readUnknown: false,
+      loaded: true,
+      options: { now: NOW },
+    });
     expect(h.level).toBe("red");
     expect(h.attention).toBe(1);
+  });
+
+  // U4: each half stops at 500 rows. Over a capped read every fleet number is
+  // a floor, and the all-clear is not observed — the unread rows may hold the
+  // session that needs someone.
+  it("over a read that stopped at a ceiling the numbers are floors and the strip is never green", () => {
+    const h = deriveSessionsHealth([linked(), linked({ id: "s-2" })], {
+      readUnknown: false,
+      loaded: true,
+      ceiling: { lifecycle: 500, agent: null },
+      options: { now: NOW },
+    });
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe("At least 2 sessions running cleanly");
+    expect(h.detail).toBe(
+      "at least 2 rows across at least 1 machine — of those read, 2 active, 0 waiting, 0 unresolved"
+    );
+    // The counts themselves stay numbers — the floor is in the words.
+    expect(h.active).toBe(2);
+  });
+
+  it("a red row found in part of the fleet is still red", () => {
+    const h = deriveSessionsHealth([linked({ state: "pending_resolution" })], {
+      readUnknown: false,
+      loaded: true,
+      ceiling: { lifecycle: 500, agent: 500 },
+      options: { now: NOW },
+    });
+    expect(h.level).toBe("red");
+    expect(h.headline).toBe("At least 1 session waiting on a person");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U4 — the two 500-row ceilings
+// ---------------------------------------------------------------------------
+
+/** The backend's envelope for a half, as `bounded_read.complete` / `unknown` serve it. */
+function bound(shown: number, kind: "complete" | "unknown") {
+  return {
+    available: true,
+    bound_kind: kind,
+    count: shown,
+    enumerate_via: null,
+    filter_narrowed: null,
+    limit: 500,
+    next_cursor: null,
+    shown,
+    total: null,
+    truncated: kind === "complete" ? false : null,
+  };
+}
+
+describe("the 500-row ceilings", () => {
+  it("a half is open exactly while its bound does not prove the page is everything", () => {
+    expect(halfMayBeIncomplete(bound(500, "unknown"))).toBe(true);
+    expect(halfMayBeIncomplete(bound(3, "complete"))).toBe(false);
+    // An older backend reports no bound: not reported, never a claim.
+    expect(halfMayBeIncomplete(undefined)).toBe(false);
+  });
+
+  it("names only the halves that reached a ceiling, each by its own ordering", () => {
+    const both = sessionsCeiling({
+      lifecycle_half: { read: "ok", bound: bound(500, "unknown") },
+      agent_half: { read: "ok", bound: bound(500, "unknown") },
+    });
+    expect(ceilingDisclosure(both)).toBe(
+      "Showing the 500 most recently started lifecycle sessions and the 500 most recently seen agent sessions; fleet totals may be higher."
+    );
+    const agentOnlyCapped = sessionsCeiling({
+      lifecycle_half: { read: "ok", bound: bound(31, "complete") },
+      agent_half: { read: "ok", bound: bound(500, "unknown") },
+    });
+    expect(agentOnlyCapped).toEqual({ lifecycle: null, agent: 500 });
+    expect(ceilingDisclosure(agentOnlyCapped)).toBe(
+      "Showing the 500 most recently seen agent sessions; fleet totals may be higher."
+    );
+  });
+
+  it("says nothing for complete halves, a failed agent half, or an older backend", () => {
+    expect(
+      ceilingDisclosure(
+        sessionsCeiling({
+          lifecycle_half: { read: "ok", bound: bound(31, "complete") },
+          agent_half: { read: "ok", bound: bound(12, "complete") },
+        })
+      )
+    ).toBeNull();
+    expect(
+      ceilingDisclosure(
+        sessionsCeiling({
+          lifecycle_half: { read: "ok", bound: bound(31, "complete") },
+          agent_half: { read: "failed", detail: "502: coord is not reachable" },
+        })
+      )
+    ).toBeNull();
+    expect(
+      ceilingDisclosure(sessionsCeiling({ agent_half: { read: "ok" } }))
+    ).toBeNull();
+  });
+
+  it("narrows an agent_only explanation to the rows coord served while the lifecycle half is capped", () => {
+    const qualified = rowClassExplanation(agentOnly(), {
+      lifecycleCeiling: 500,
+    });
+    expect(qualified).toContain(
+      "no coord.sessions row among the 500 most recently started that coord served — one may exist beyond its ceiling"
+    );
+    // The class is kept, never demoted to the unresolved reading.
+    expect(qualified).toMatch(/^Agent only:/);
+    // Below the ceiling the claim is the established one.
+    expect(rowClassExplanation(agentOnly())).toContain(
+      "that no coord.sessions row bridges"
+    );
   });
 });

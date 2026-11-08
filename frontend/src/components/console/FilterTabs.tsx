@@ -44,8 +44,14 @@ export interface FilterTab<Id extends string> {
   /**
    * The tab's live count. `null`/`undefined` means NOT FETCHED / UNKNOWN and
    * renders `–`. Pass `0` only when you actually looked.
+   *
+   * A STRING is a count that is not a plain number and says so in its own
+   * text — `"1000+"` for a read that stopped at its ceiling, so the tab claims
+   * a lower bound rather than an exact total (`StatCluster`'s `value` takes a
+   * string for the same reason). It renders verbatim; `–` stays the only
+   * spelling of unknown.
    */
-  count?: number | null;
+  count?: number | string | null;
   /**
    * Render the count in the attention hue. Reserve it for a count of rows that
    * genuinely need a human (R3) — a red number nobody must act on is the same
@@ -71,7 +77,7 @@ export interface FilterTabsProps<Id extends string> {
 }
 
 /** R6's unfetched-count rule, in one place. */
-function renderCount(count: number | null | undefined): ReactNode {
+function renderCount(count: number | string | null | undefined): ReactNode {
   return count == null ? "–" : count;
 }
 

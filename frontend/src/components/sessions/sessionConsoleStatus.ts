@@ -36,6 +36,7 @@
  * a reclaim engine armed in production.
  */
 
+import type { BoundedReadMeta } from "@/components/admin/coord/cursorPager";
 import {
   escalateAttention,
   type Attention,
@@ -147,8 +148,127 @@ export interface ConsolidatedSessionsResponse {
    * is "not reported", never zero — the console shows nothing rather than `0`.
    */
   withheld_by_filter?: number;
-  /** `{read: "ok"}`, or `{read: "failed", detail}` — the join axis's own read. */
-  agent_half: { read: string; detail?: string };
+  /**
+   * The lifecycle half's read — coord's `GET /sessions`, which stops at its
+   * own hardcoded `LIMIT 500`: the most recently STARTED sessions, closed ones
+   * included. `bound` is the shared bounded-read envelope (`BoundedReadMeta`,
+   * the one frontend spelling of it) over what coord SERVED, before the web
+   * route's own tab / search / machine narrowing.
+   *
+   * Optional, and so is `bound`: absent from a backend that predates them,
+   * which is "not reported" — the console then says nothing about a ceiling,
+   * rather than claiming the read was complete or that it was not.
+   */
+  lifecycle_half?: { read: string; bound?: BoundedReadMeta };
+  /**
+   * `{read: "ok", bound}`, or `{read: "failed", detail}` — the join axis's own
+   * read. Its ceiling is the 500 most recently SEEN agent sessions. A failed
+   * read carries no `bound` (there is no page to bound); an older backend
+   * carries none either.
+   */
+  agent_half: { read: string; detail?: string; bound?: BoundedReadMeta };
+}
+
+// ---------------------------------------------------------------------------
+// The two 500-row ceilings (plan
+// `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+// Phase 3)
+// ---------------------------------------------------------------------------
+
+/**
+ * May this half's read hold fewer rows than coord has?
+ *
+ * `true` when the half's `bound` is present and does not prove the page is
+ * everything — `truncated !== false`, the bounded-read contract's own bit for
+ * it. The web route builds each half with `bounded_read.complete` (below the
+ * ceiling: `bound_kind: "complete"`, `truncated: false`) or
+ * `bounded_read.unknown` (a full page: `truncated: null`, nothing fetched past
+ * it), so on this route it is exactly "the bound is not `complete`".
+ *
+ * An ABSENT bound is `false`: an older backend reported nothing, and nothing
+ * is what the console says about it — absent is "not reported", never a
+ * claim in either direction.
+ */
+export function halfMayBeIncomplete(
+  bound: BoundedReadMeta | null | undefined
+): boolean {
+  return bound != null && bound.truncated !== false;
+}
+
+/**
+ * Each half's ceiling, where that half's read may be incomplete — `null` for
+ * a half that is complete, failed, or did not report a bound.
+ */
+export interface SessionsCeiling {
+  /** The lifecycle half's limit (its most recently STARTED rows), or `null`. */
+  lifecycle: number | null;
+  /** The agent half's limit (its most recently SEEN rows), or `null`. */
+  agent: number | null;
+}
+
+/** Neither half stopped at a ceiling — or neither said so. */
+export const NO_CEILING: SessionsCeiling = { lifecycle: null, agent: null };
+
+/** Read each half's ceiling off the consolidated response's `bound`s. */
+export function sessionsCeiling(
+  payload:
+    | Pick<ConsolidatedSessionsResponse, "lifecycle_half" | "agent_half">
+    | null
+    | undefined
+): SessionsCeiling {
+  const ceilingOf = (bound: BoundedReadMeta | null | undefined) =>
+    bound && halfMayBeIncomplete(bound) ? bound.limit : null;
+  return {
+    lifecycle: ceilingOf(payload?.lifecycle_half?.bound),
+    agent: ceilingOf(payload?.agent_half?.bound),
+  };
+}
+
+/** Did either half stop at its ceiling? Then every fleet count is a floor. */
+export function isCapped(ceiling: SessionsCeiling): boolean {
+  return ceiling.lifecycle !== null || ceiling.agent !== null;
+}
+
+/**
+ * The words that say the read stopped at its ceiling, naming ONLY the halves
+ * that did — or `null` when neither did.
+ *
+ * Each half is named by its own ordering, because that is what decides which
+ * rows fell off: the lifecycle half keeps the most recently STARTED sessions,
+ * the agent half the most recently SEEN.
+ */
+export function ceilingDisclosure(ceiling: SessionsCeiling): string | null {
+  const halves = [
+    ceiling.lifecycle !== null
+      ? `the ${ceiling.lifecycle} most recently started lifecycle sessions`
+      : null,
+    ceiling.agent !== null
+      ? `the ${ceiling.agent} most recently seen agent sessions`
+      : null,
+  ].filter((h): h is string => h !== null);
+  if (halves.length === 0) return null;
+  return `Showing ${halves.join(" and ")}; fleet totals may be higher.`;
+}
+
+/**
+ * What `agent_only` can claim while the lifecycle half may be incomplete.
+ *
+ * The class is a set difference against the lifecycle rows coord SERVED, so
+ * beyond the lifecycle ceiling it no longer says "no coord.sessions row
+ * exists" — the row's lifecycle twin may simply have started before the
+ * newest `limit`. The class and its agent half are kept (they are real); the
+ * claim is narrowed to what was actually compared.
+ */
+export function agentOnlyBeyondCeiling(limit: number): string {
+  return `no coord.sessions row among the ${limit} most recently started that coord served — one may exist beyond its ceiling`;
+}
+
+/**
+ * A fleet count over a read that may have stopped at its ceiling: `≥n` then,
+ * else `n` — a floor, never an exact claim (`StatCluster` takes the string).
+ */
+export function fleetCount(n: number, capped: boolean): number | string {
+  return capped ? `≥${n}` : n;
 }
 
 // ---------------------------------------------------------------------------
@@ -299,14 +419,28 @@ export function agentSessionId(row: ConsolidatedSessionRow): string | null {
   return null;
 }
 
-/** Plain-language explanation of the row's join class, for a title/why slot. */
-export function rowClassExplanation(row: ConsolidatedSessionRow): string {
+/**
+ * Plain-language explanation of the row's join class, for a title/why slot.
+ *
+ * `lifecycleCeiling` is the lifecycle half's limit while that read may be
+ * incomplete ({@link SessionsCeiling}). An `agent_only` row is then qualified
+ * ({@link agentOnlyBeyondCeiling}) rather than reclassified: `row_class: null`
+ * would be false here, because the account cell and the status read null as
+ * "the agent half did not answer", and it did.
+ */
+export function rowClassExplanation(
+  row: ConsolidatedSessionRow,
+  opts: { lifecycleCeiling?: number | null } = {}
+): string {
   switch (row.row_class) {
     case "linked":
       return "Both halves: a coord.sessions lifecycle row bridged to its coord.agent_sessions lineage row.";
     case "lifecycle_only":
       return "Lifecycle only: this session has no Claude Code session id, so no agent-session lineage row can exist. Transcript and lineage are not applicable — not empty.";
     case "agent_only":
+      if (opts.lifecycleCeiling != null) {
+        return `Agent only: coord has an agent-session lineage row with ${agentOnlyBeyondCeiling(opts.lifecycleCeiling)}. Heartbeat and lifecycle state are unknown — not closed.`;
+      }
       return "Agent only: coord has an agent-session lineage row that no coord.sessions row bridges (POST /agents/allocate writes one and never the other). Heartbeat and lifecycle state are unknown — not closed.";
     default:
       return "Unknown: the read landed but the agent half did not answer for this row, so which halves exist has not been established. Every dash below is unknown, not zero.";
@@ -677,23 +811,83 @@ export interface SessionsHealth {
 }
 
 /**
+ * The status filter a tab sends as `?status=` — a SERVER filter on `state`,
+ * so it narrows what coord answered and the strip must say so.
+ */
+export type SessionStatusFilter = "live" | "stale" | "closed";
+
+/**
+ * What coord was asked for: the referent every number on the strip counts.
+ *
+ * Every member is a SERVER filter (`?status=`, `?q=`, `?device=`), so the rows
+ * the strip is derived from are coord's answer to exactly this question —
+ * never the whole fleet once any is set. The client facets (kind, provider,
+ * machine, work, account) are NOT part of it: they narrow the list below the
+ * strip, never the strip, which is why the console derives the strip from
+ * `rows` and not from what the facets left visible.
+ */
+export interface SessionsReferent {
+  /** The status tab, or `null` / absent for the `All` tab. */
+  status?: SessionStatusFilter | null;
+  /** The applied search, or `""` / absent for none. */
+  query?: string;
+  /**
+   * The machine a `?device=` deep link narrowed coord's answer to, as the
+   * console labels it — or `null` / absent for the whole fleet.
+   */
+  machine?: string | null;
+}
+
+/**
  * The page's opening verdict, derived from the rows ALREADY FETCHED (R1) —
  * never a second request.
  *
  * `readUnknown` is the READ axis (`console/readFailure.ts`); every count is
  * then `null`, which `HealthStrip`'s badges and `StatCluster` render as `–`.
+ * `loaded: false` is the same ignorance BEFORE the first answer — the window
+ * in which the console used to paint a green "No sessions match this filter"
+ * over a list nobody had read yet (plan
+ * `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+ * U2). It is amber — `HealthStrip` has no neutral level, and amber is the
+ * ignorance floor — with every count `null`, the arm the sibling derivers
+ * already have (`plansHealth.tsx`, `findingStatus.ts`).
+ *
  * The JOIN axis rides along as `unknownJoin`, a count of rows whose class the
  * agent half could not establish — and it is surfaced rather than folded into
  * the healthy path, because a page that quietly reports a partially-unknown
  * fleet as green is the failure this plan exists to prevent.
+ *
+ * ## The words name the referent (U3)
+ *
+ * `rows` is coord's answer for the {@link SessionsReferent}, so "on the fleet"
+ * is said only while nothing narrowed the question: a status tab names its
+ * sessions ("No live sessions on the fleet"), a `?device=` deep link names
+ * its machine instead of the fleet, and a search becomes the referent itself
+ * ("1 of the sessions matching “outgoing” is waiting") and never says "on the
+ * fleet" — the page holds no unsearched read to say it of, and a second fetch
+ * for the strip is what R1 forbids.
+ *
+ * ## A read that stopped at its ceiling is a floor (U4)
+ *
+ * While either half may be incomplete ({@link SessionsCeiling}) the fleet
+ * numbers read "at least", and the strip cannot be GREEN: the rows past a
+ * ceiling were never read, and an all-clear over them is a claim the page did
+ * not observe — the same rule `derivePlansHealth`'s `incomplete` holds. A red
+ * row still outranks it; one found in part of the fleet is still red.
  */
 export function deriveSessionsHealth(
   rows: ConsolidatedSessionRow[],
   opts: {
     /** The READ axis — `readIsUnknown(loaded, readFailed)`. */
     readUnknown: boolean;
+    /** Has coord answered at least once? Before it has, nothing is counted. */
+    loaded: boolean;
     /** The JOIN axis's own read: coord answered the list but not the agent half. */
     agentHalfFailed?: boolean;
+    /** What coord was asked for. Absent: the whole fleet. */
+    referent?: SessionsReferent;
+    /** Each half's ceiling, where its read may be incomplete. */
+    ceiling?: SessionsCeiling;
     options?: DeriveOptions;
   }
 ): SessionsHealth {
@@ -703,6 +897,20 @@ export function deriveSessionsHealth(
       headline: "Sessions could not be read",
       detail:
         "coord did not answer; these counts are a dash, not a zero — nothing here is a claim that the fleet is idle",
+      attention: null,
+      active: null,
+      waiting: null,
+      unknownJoin: null,
+      machines: null,
+    };
+  }
+
+  if (!opts.loaded) {
+    return {
+      level: "amber",
+      headline: "Reading sessions…",
+      detail:
+        "Nothing has answered yet, so every count is a dash rather than a zero.",
       attention: null,
       active: null,
       waiting: null,
@@ -726,29 +934,39 @@ export function deriveSessionsHealth(
     if (status.kind === "active" || status.kind === "starting") active += 1;
   }
 
+  const capped = isCapped(opts.ceiling ?? NO_CEILING);
   const level: "green" | "amber" | "red" =
     attention > 0
       ? "red"
-      : waiting > 0 || unknownJoin > 0 || opts.agentHalfFailed
+      : waiting > 0 || unknownJoin > 0 || opts.agentHalfFailed || capped
         ? "amber"
         : "green";
 
+  const say = referentPhrasing(opts.referent, capped);
   const headline =
     attention > 0
-      ? `${attention} session${attention === 1 ? "" : "s"} waiting on a person`
+      ? say.attention(attention)
       : opts.agentHalfFailed
         ? "Lifecycle half only — the agent half did not answer"
         : unknownJoin > 0
-          ? `${unknownJoin} session${unknownJoin === 1 ? "" : "s"} with an unresolved join half`
+          ? say.unresolved(unknownJoin)
           : waiting > 0
-            ? `${waiting} session${waiting === 1 ? "" : "s"} waiting on the fleet`
+            ? say.waiting(waiting)
             : rows.length === 0
-              ? "No sessions match this filter"
-              : `${active} session${active === 1 ? "" : "s"} running cleanly`;
+              ? say.none()
+              : active > 0
+                ? say.clean(active)
+                : say.noneRunning(rows.length);
 
   const detail = opts.agentHalfFailed
     ? "Transcript and lineage columns read – for every row: unknown, not absent."
-    : `${rows.length} row${rows.length === 1 ? "" : "s"} across ${machines.size} machine${machines.size === 1 ? "" : "s"} — ${active} active, ${waiting} waiting, ${unknownJoin} unresolved`;
+    : say.detail({
+        rows: rows.length,
+        machines: machines.size,
+        active,
+        waiting,
+        unknownJoin,
+      });
 
   return {
     level,
@@ -760,4 +978,84 @@ export function deriveSessionsHealth(
     unknownJoin,
     machines: machines.size,
   };
+}
+
+/**
+ * The strip's sentences for one referent — every count named against what
+ * coord was asked for, and read as a floor ("at least") over a capped read.
+ *
+ * `unknownJoin` is the one count never floored: it is a property of THIS read
+ * (rows whose other half did not answer), not a fleet total a larger read
+ * could only add to.
+ */
+function referentPhrasing(
+  referent: SessionsReferent | undefined,
+  capped: boolean
+) {
+  const query = referent?.query?.trim() || null;
+  const adj = referent?.status ? `${referent.status} ` : "";
+  // A `?device=` deep link narrows coord's answer to one machine, and then
+  // that machine is where the sessions are — never "the fleet".
+  const onMachine = referent?.machine ? ` on ${referent.machine}` : "";
+  const qty = (n: number) => (capped ? `at least ${n}` : `${n}`);
+  const Qty = (n: number) => capitalize(qty(n));
+  const sessions = (n: number) => `${adj}session${n === 1 ? "" : "s"}`;
+  const plural = (n: number, one: string, many: string) =>
+    n === 1 ? one : many;
+  // The search, as the referent: "the live sessions matching “q”".
+  const matching = query
+    ? `the ${adj}sessions matching “${query}”${onMachine}`
+    : "";
+  // Over a capped read an EMPTY answer is empty only among the rows read.
+  const among = capped ? " among those read" : "";
+
+  return {
+    attention: (n: number) =>
+      query
+        ? `${Qty(n)} of ${matching} ${plural(n, "waits", "wait")} on a person`
+        : `${Qty(n)} ${sessions(n)}${onMachine} waiting on a person`,
+    unresolved: (n: number) =>
+      query
+        ? `${n} of ${matching} ${plural(n, "has", "have")} an unresolved join half`
+        : `${n} ${sessions(n)}${onMachine} with an unresolved join half`,
+    waiting: (n: number) =>
+      query
+        ? `${Qty(n)} of ${matching} ${plural(n, "is", "are")} waiting`
+        : `${Qty(n)} ${sessions(n)} waiting${onMachine || " on the fleet"}`,
+    none: () =>
+      query
+        ? `0 ${adj}sessions match “${query}”${onMachine}${among}`
+        : onMachine || !capped
+          ? `No ${adj}sessions${onMachine || " on the fleet"}${among}`
+          : `No ${adj}sessions${among}`,
+    clean: (n: number) =>
+      query
+        ? `${Qty(n)} of ${matching} ${plural(n, "is", "are")} running cleanly`
+        : `${Qty(n)} ${sessions(n)}${onMachine} running cleanly`,
+    // Rows, none of them waiting and none running: every one has ended.
+    noneRunning: (n: number) =>
+      query
+        ? `${Qty(n)} ${sessions(n)} match “${query}”${onMachine}, none running`
+        : `${Qty(n)} ${sessions(n)}${onMachine}, none running`,
+    detail: (c: {
+      rows: number;
+      machines: number;
+      active: number;
+      waiting: number;
+      unknownJoin: number;
+    }) => {
+      const rowsPhrase = `${qty(c.rows)} ${adj}row${c.rows === 1 ? "" : "s"}${
+        query ? ` matching “${query}”` : ""
+      }`;
+      const machinesPhrase = `${qty(c.machines)} machine${c.machines === 1 ? "" : "s"}`;
+      const classes = `${c.active} active, ${c.waiting} waiting, ${c.unknownJoin} unresolved`;
+      return `${rowsPhrase} across ${machinesPhrase} — ${
+        capped ? `of those read, ${classes}` : classes
+      }`;
+    },
+  };
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
