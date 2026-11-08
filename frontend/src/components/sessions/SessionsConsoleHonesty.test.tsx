@@ -1067,3 +1067,29 @@ describe("a FAILED agent read is not a complete one", () => {
     expect(screen.queryByTestId("sessions-console-truncated")).toBeNull();
   });
 });
+
+describe("lifecycle-only is read off the lifecycle half alone", () => {
+  it("stays exact beside a FULL agent half when every lifecycle row was read", async () => {
+    const shell = (n: number): ConsolidatedSessionRow => ({
+      ...linked(n, "dev-a", `shell ${n}`),
+      row_class: "lifecycle_only",
+      session_kind: "terminal_shell",
+      provider: null,
+      agent_session: null,
+    });
+    mount(async () =>
+      envelope([shell(1), shell(2), linked(3, "dev-b")], {
+        lifecycle_half: { read: "ok", bound: belowCeiling(3) },
+        agent_half: { read: "ok", bound: atCeiling() },
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(3)
+    );
+    // The agent half is full, so fleet counts are floors…
+    expect(statBadge("rows")).toHaveTextContent(/^rows ≥3$/);
+    // …but a shell has no Claude session id, a fact of the lifecycle row,
+    // and every lifecycle row was read: the count is exact.
+    expect(statBadge("lifecycle-only")).toHaveTextContent(/^lifecycle-only 2$/);
+  });
+});

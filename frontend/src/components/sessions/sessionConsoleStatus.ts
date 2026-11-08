@@ -64,11 +64,7 @@ import type { SessionRow } from "./types";
  * row. It is UNKNOWN — never `lifecycle_only`, which is a positive claim that
  * no `coord.agent_sessions` row can exist (`claude_code_session_id IS NULL`).
  */
-export type SessionRowClass =
-  | "linked"
-  | "lifecycle_only"
-  | "agent_only"
-  | null;
+export type SessionRowClass = "linked" | "lifecycle_only" | "agent_only" | null;
 
 /**
  * One `coord.agent_sessions` row as coord's `/coord/agent-sessions` emits it.
@@ -101,8 +97,9 @@ export interface AgentSessionHalf extends SessionAccountStamp {
  * (absence is what we have; a `null` would read as "coord wrote null"). A
  * consumer must render absent and null identically, as unknown.
  */
-export interface ConsolidatedSessionRow
-  extends Partial<Omit<SessionRow, "device_id">> {
+export interface ConsolidatedSessionRow extends Partial<
+  Omit<SessionRow, "device_id">
+> {
   id: string;
   /**
    * Widened to nullable against `SessionRow`'s non-null `device_id`: coord's
@@ -448,7 +445,7 @@ export function fleetCount(
 }
 
 /**
- * A join-class count — `linked`, `lifecycle-only` — as its stat renders it:
+ * The `linked` join-class count as its stat renders it (`lifecycle-only` is {@link lifecycleOnlyCount}):
  * a {@link fleetCount} while the agent half answered, and `–` once it FAILED.
  * The route then withholds EVERY row's class (`row_class: null` for all of
  * them, shells included), so a `0` here would count nothing. `meaning` is the
@@ -463,6 +460,31 @@ export function joinClassCount(
     return { value: null, title: AGENT_HALF_DID_NOT_ANSWER };
   }
   return fleetCount(n, countBasis(ceiling), { title: meaning });
+}
+
+/**
+ * The `lifecycle-only` stat. Unlike `linked`, this class is a fact of the
+ * LIFECYCLE row alone — a session with no Claude Code session id — so how it
+ * may be stated depends on the lifecycle half alone: exact while every
+ * lifecycle row was read (whatever the agent half did), a floor once that
+ * half came back full, `–` when its size is unknown. A FAILED agent read still
+ * dashes it: the route then withholds every row's class, shells included.
+ */
+export function lifecycleOnlyCount(
+  n: number,
+  ceiling: SessionsCeiling,
+  meaning: string
+): CountCell {
+  if (isAgentHalfFailed(ceiling)) {
+    return { value: null, title: AGENT_HALF_DID_NOT_ANSWER };
+  }
+  const basis: CountBasis =
+    ceiling.lifecycle.kind === "unknown"
+      ? "unknown"
+      : ceiling.lifecycle.kind === "capped"
+        ? "floor"
+        : "exact";
+  return fleetCount(n, basis, { title: meaning });
 }
 
 /** The `agent-only` stat's value, and the sentence its `title` carries. */
@@ -674,7 +696,9 @@ export function lastHeartbeatAt(row: ConsolidatedSessionRow): string | null {
  * `lifecycle_only` row has none (`false`); an unknown join axis is `null`.
  * Both render `–`, and the tooltip says which.
  */
-export function lineageAddressable(row: ConsolidatedSessionRow): boolean | null {
+export function lineageAddressable(
+  row: ConsolidatedSessionRow
+): boolean | null {
   return hasAgentHalf(row);
 }
 
@@ -909,10 +933,12 @@ export type SessionWorkKind = "finished";
  * (nothing does — it is already done) and red would claim an operator must act
  * (they need not). Style guide §4.1, "everything else … terminal".
  */
-export const SESSION_WORK_ATTENTION_BY_KIND: Record<SessionWorkKind, Attention> =
-  {
-    finished: "none",
-  };
+export const SESSION_WORK_ATTENTION_BY_KIND: Record<
+  SessionWorkKind,
+  Attention
+> = {
+  finished: "none",
+};
 
 /**
  * Kind → badge classes for the work axis.
