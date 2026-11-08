@@ -1,27 +1,60 @@
 /**
- * Per-user, per-minute rate limit for the UI Bridge relay (§4.8 of the
+ * Per-principal, per-minute rate limit for the UI Bridge relay (§4.8 of the
  * production-safe plan).
  *
- * Two counters per user — reads (GET) and writes (POST/PUT/DELETE) —
- * keyed on the current minute window. Backed by the same Upstash Redis
- * the relay's `UI_BRIDGE_RELAY_REDIS_URL` already uses (one Redis bus,
- * one envelope of trust). When that env var is unset OR Redis is
- * unreachable, the gate fails OPEN — see "Failure mode" below.
+ * # The property
  *
- * The window is per-user, NEVER per-tab. A user with 5 tabs gets one
- * budget, not 5× the budget. This matches the threat model: the limit
- * exists to defang command-flooding (§4.8 threat row), and a flooder
- * with N tabs is the same threat scaled.
+ * The limit exists to defang COMMAND flooding (§4.8 threat row, "DoS via
+ * command flooding"): a principal that sends commands through the relay is
+ * bounded however many tabs it has. A user with 5 tabs gets one command
+ * budget, not 5× the budget — every counter is keyed on the principal, never
+ * on a tab, so N tabs buy no command budget at all.
  *
- * Limits (from the plan §4.8):
- *   - Reads:  60/minute per user
- *   - Writes: 20/minute per user
+ * # The lanes
  *
- * Window: clock-aligned minute. Counter key embeds the minute index so a
- * user can't carry budget across a window boundary, and the keys
- * naturally expire (we set EXPIRE 70s on each INCR — slightly larger
- * than the window so a final INCR near the boundary doesn't lose its
- * TTL).
+ * Every request draws on exactly ONE lane, chosen from its path and method
+ * alone (`laneFor`), before any body is read:
+ *
+ *   - `read`  (GET/HEAD) and `write` (everything else) — the COMMAND lanes,
+ *     60 and 20 per principal per minute.
+ *   - three TRANSPORT sub-lanes for the SDK's own bookkeeping
+ *     (`_transport.ts`): `transport:stream` (`GET /commands/stream`),
+ *     `transport:heartbeat` (`POST /heartbeat`) and `transport:result`
+ *     (`POST /commands`, a tab posting a command's result).
+ *
+ * Transport is not a command. Charged to the command lanes, a principal's own
+ * tabs starved its commands and each other: four tabs heartbeat past 20
+ * writes a minute with no command sent, and every relayed command cost a
+ * second request when the tab answered it (incident 2026-11-08, coord
+ * finding e0735415; plan
+ * 2026-11-08-an-agents-relay-tab-spends-the-operators-ui-bridge-budget). So
+ * transport has its own lanes, and the command lanes measure commands only.
+ *
+ * Transport is still BOUNDED per principal, one sub-lane per route, so
+ * no route's bound is lifted to a pooled total. Each ceiling is computed from
+ * an envelope of `TRANSPORT_ENVELOPE_TABS` live tabs and
+ * `TRANSPORT_ENVELOPE_DRIVERS` principals concurrently driving them, at the
+ * SDK cadences `_transport.ts` restates:
+ *
+ *   - stream:    16 tabs × 6 opens/min (the reconnect cadence)          =  96
+ *   - heartbeat: 16 tabs × (6 timer + 4 ping-driven beats)/min          = 160
+ *   - result:    16 tabs × 2 relay snapshots × 6 opens/min
+ *                + 3 drivers × (60 + 20) commands/min                   = 432
+ *
+ * A refusal on a transport sub-lane is `TRANSPORT_RATE_LIMITED`, naming the
+ * lane — the envelope, not the caller's command budget. The SDK discards the
+ * response to a heartbeat or a result, so `route.ts` also logs every refusal
+ * server-side (`logLaneRefused`).
+ *
+ * Window: clock-aligned minute. Counter key embeds the lane and the minute
+ * index so a principal can't carry budget across a window boundary, and the
+ * keys naturally expire (we set EXPIRE 70s on each INCR — slightly larger
+ * than the window so a final INCR near the boundary doesn't lose its TTL).
+ * One request is one INCR on one key.
+ *
+ * Every response the relay returns after the check carries the budget of
+ * the lane it drew on (`X-RateLimit-Lane`, `-Limit`, `-Remaining`,
+ * `-Reset-After`), so a client can pace itself.
  *
  * # Failure mode (CRITICAL)
  *
@@ -30,7 +63,8 @@
  * error, AUTH error), this module returns `{ok: true, allowed: true,
  * redisOffline: true}` — fail OPEN. Failing closed would tear down the
  * bridge for every user the moment Redis hiccups, which is much worse
- * than briefly disabling rate limits.
+ * than briefly disabling rate limits. The remaining budget is then
+ * unknown, and the `X-RateLimit-Remaining` header says exactly that.
  *
  * The framework's robustness priority says "fail predictably." We pick
  * the failure direction that keeps the system in its more useful state:
@@ -44,6 +78,14 @@ import IORedis, { type Redis } from "ioredis";
 
 import { createLogger } from "@/lib/logger";
 
+import {
+  HEARTBEATS_PER_TAB_PER_MIN,
+  RELAY_RESULTS_PER_TAB_PER_MIN,
+  sdkTransportLane,
+  STREAM_OPENS_PER_TAB_PER_MIN,
+  type SdkTransportLane,
+} from "./_transport";
+
 const log = createLogger("UIBridgeRateLimit");
 
 /* -------------------------------------------------------------------- */
@@ -56,7 +98,53 @@ const WINDOW_MS = 60_000;
 /** TTL on each minute-window counter key (slightly > the window). */
 const COUNTER_TTL_SEC = 70;
 
-export type RateLimitKind = "read" | "write";
+/** Live tabs one principal is sized for, across all its transport sub-lanes. */
+export const TRANSPORT_ENVELOPE_TABS = 16;
+/** Principals sized to be driving one principal's tabs at the same time. */
+export const TRANSPORT_ENVELOPE_DRIVERS = 3;
+
+export const TRANSPORT_STREAM_LIMIT_PER_MIN =
+  TRANSPORT_ENVELOPE_TABS * STREAM_OPENS_PER_TAB_PER_MIN;
+export const TRANSPORT_HEARTBEAT_LIMIT_PER_MIN =
+  TRANSPORT_ENVELOPE_TABS * HEARTBEATS_PER_TAB_PER_MIN;
+/**
+ * The results a principal's tabs post are the relay's own snapshots plus the
+ * commands its drivers send them — each driver bounded by its own command
+ * lanes, read and write.
+ */
+export const TRANSPORT_RESULT_LIMIT_PER_MIN =
+  TRANSPORT_ENVELOPE_TABS * RELAY_RESULTS_PER_TAB_PER_MIN +
+  TRANSPORT_ENVELOPE_DRIVERS * (READ_LIMIT_PER_MIN + WRITE_LIMIT_PER_MIN);
+
+/** The lane a request draws on: a command lane or a transport sub-lane. */
+export type RateLimitKind = "read" | "write" | `transport:${SdkTransportLane}`;
+
+/**
+ * Each lane's ceiling and its counter-key prefix. The prefixes are distinct
+ * (`r`, `w`, `t:s`, `t:h`, `t:c`), so no two lanes ever share a counter.
+ */
+const LANES: Readonly<
+  Record<RateLimitKind, { limit: number; keyPrefix: string }>
+> = {
+  read: { limit: READ_LIMIT_PER_MIN, keyPrefix: "r" },
+  write: { limit: WRITE_LIMIT_PER_MIN, keyPrefix: "w" },
+  "transport:stream": {
+    limit: TRANSPORT_STREAM_LIMIT_PER_MIN,
+    keyPrefix: "t:s",
+  },
+  "transport:heartbeat": {
+    limit: TRANSPORT_HEARTBEAT_LIMIT_PER_MIN,
+    keyPrefix: "t:h",
+  },
+  "transport:result": {
+    limit: TRANSPORT_RESULT_LIMIT_PER_MIN,
+    keyPrefix: "t:c",
+  },
+};
+
+function isTransportLane(kind: RateLimitKind): boolean {
+  return kind.startsWith("transport:");
+}
 
 /* -------------------------------------------------------------------- */
 /* Client singleton                                                     */
@@ -140,6 +228,8 @@ export interface RateLimitResult {
   retryAfterSec: number;
   /** True when Redis was unreachable; the call passed through fail-open. */
   redisOffline: boolean;
+  /** The lane this request drew on. */
+  kind: RateLimitKind;
 }
 
 function currentWindowIndex(now: number = Date.now()): number {
@@ -152,13 +242,12 @@ function secondsUntilNextWindow(now: number = Date.now()): number {
 }
 
 function keyFor(userId: string, kind: RateLimitKind, windowIdx: number): string {
-  // `r` for reads, `w` for writes — short keys keep the Redis bill predictable.
-  const prefix = kind === "read" ? "r" : "w";
-  return `bridge:rl:${prefix}:${userId}:${windowIdx}`;
+  // Short lane prefixes keep the Redis bill predictable.
+  return `bridge:rl:${LANES[kind].keyPrefix}:${userId}:${windowIdx}`;
 }
 
 /**
- * Atomically INCR the per-(user, kind, window) counter. On the first
+ * Atomically INCR the per-(principal, lane, window) counter. On the first
  * INCR of a window the EXPIRE is set so the key self-cleans.
  *
  * Pipeline gives us both ops in one RTT; the INCR result is what we
@@ -177,7 +266,7 @@ async function incrAndGet(key: string, redis: Redis): Promise<number> {
 }
 
 /**
- * Check (and increment) the per-user, per-kind rate counter.
+ * Check (and increment) the per-principal counter of one lane.
  *
  * Result `.allowed` is true when the request is under the limit OR when
  * Redis is unavailable (fail-open). The caller uses `.allowed === false`
@@ -188,7 +277,7 @@ export async function checkRateLimit(
   kind: RateLimitKind,
   now: number = Date.now(),
 ): Promise<RateLimitResult> {
-  const limit = kind === "read" ? READ_LIMIT_PER_MIN : WRITE_LIMIT_PER_MIN;
+  const limit = LANES[kind].limit;
   const retryAfterSec = secondsUntilNextWindow(now);
 
   const redis = getClient();
@@ -199,6 +288,7 @@ export async function checkRateLimit(
       limit,
       retryAfterSec,
       redisOffline: true,
+      kind,
     };
   }
 
@@ -222,6 +312,7 @@ export async function checkRateLimit(
       limit,
       retryAfterSec,
       redisOffline: true,
+      kind,
     };
   }
 
@@ -231,19 +322,73 @@ export async function checkRateLimit(
     limit,
     retryAfterSec,
     redisOffline: false,
+    kind,
   };
 }
 
 /* -------------------------------------------------------------------- */
-/* Response helper                                                      */
+/* Response helpers                                                     */
 /* -------------------------------------------------------------------- */
 
+/**
+ * The budget a response reports for the lane its request drew on. With Redis
+ * offline nothing was counted, so the remaining budget is the literal
+ * `unknown` — never a number that would read as headroom.
+ */
+export function rateLimitHeaders(
+  result: RateLimitResult,
+): Record<string, string> {
+  return {
+    "X-RateLimit-Lane": result.kind,
+    "X-RateLimit-Limit": String(result.limit),
+    "X-RateLimit-Remaining": result.redisOffline
+      ? "unknown"
+      : String(Math.max(0, result.limit - result.count)),
+    "X-RateLimit-Reset-After": String(result.retryAfterSec),
+  };
+}
+
+/**
+ * `response` carrying `rateLimitHeaders(result)`. Headers are set in place;
+ * a response whose headers are immutable (a `fetch()` or `Response.redirect`
+ * response) is rebuilt around the same body, status and headers instead.
+ */
+export function withRateLimitHeaders(
+  response: Response,
+  result: RateLimitResult,
+): Response {
+  const budget = Object.entries(rateLimitHeaders(result));
+  try {
+    for (const [name, value] of budget) {
+      response.headers.set(name, value);
+    }
+    return response;
+  } catch {
+    const headers = new Headers(response.headers);
+    for (const [name, value] of budget) {
+      headers.set(name, value);
+    }
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+}
+
 export function rateLimitedResponse(result: RateLimitResult): Response {
+  const transport = isTransportLane(result.kind);
   return new Response(
     JSON.stringify({
       success: false,
-      code: "RATE_LIMITED",
-      message: `rate limit exceeded; ${result.count} requests in the current minute window`,
+      code: transport ? "TRANSPORT_RATE_LIMITED" : "RATE_LIMITED",
+      lane: result.kind,
+      message: transport
+        ? `SDK transport rate limit exceeded on ${result.kind}; ` +
+          `${result.count} requests in the current minute window, limit ` +
+          `${result.limit} (sized for ${TRANSPORT_ENVELOPE_TABS} live tabs ` +
+          `and ${TRANSPORT_ENVELOPE_DRIVERS} driving principals)`
+        : `rate limit exceeded; ${result.count} requests in the current minute window`,
       retryAfterSec: result.retryAfterSec,
     }),
     {
@@ -251,15 +396,46 @@ export function rateLimitedResponse(result: RateLimitResult): Response {
       headers: {
         "Content-Type": "application/json",
         "Retry-After": String(result.retryAfterSec),
+        ...rateLimitHeaders(result),
       },
     },
   );
 }
 
 /**
- * Map an HTTP method to the rate-limit kind (read vs write). GET and
- * HEAD are reads; everything else is a write.
+ * Log a refusal server-side, naming the lane and the kind of principal it
+ * refused (`user`: an operator's bearer; `device`: a coord device JWT, keyed
+ * `dev:<deviceId>`). The SDK discards a refused heartbeat's and result's
+ * response, so this line is where a transport refusal is visible.
  */
-export function kindForMethod(method: string): RateLimitKind {
+export function logLaneRefused(
+  result: RateLimitResult,
+  principalKind: "user" | "device" | null,
+): void {
+  log.warn("lane_refused", {
+    lane: result.kind,
+    principalKind: principalKind ?? "unknown",
+    count: result.count,
+    limit: result.limit,
+    retryAfterSec: result.retryAfterSec,
+  });
+}
+
+/**
+ * Map an HTTP method to the rate-limit kind (read vs write). GET and
+ * HEAD are reads; everything else is a write. `door-proxy.ts` bills its
+ * runner-door calls this way; the relay uses `laneFor`.
+ */
+export function kindForMethod(method: string): "read" | "write" {
   return method === "GET" || method === "HEAD" ? "read" : "write";
+}
+
+/**
+ * The lane a relay request draws on, from its path and method alone: an SDK
+ * transport route (`_transport.ts`) bills its own sub-lane, anything else the
+ * command lane its method names.
+ */
+export function laneFor(path: string, method: string): RateLimitKind {
+  const transport = sdkTransportLane(path, method);
+  return transport === null ? kindForMethod(method) : `transport:${transport}`;
 }
