@@ -173,8 +173,12 @@ async def _insert_unless_the_registrar_won(
     write, so the INSERT fails on the primary key. It runs inside a SAVEPOINT,
     which keeps the caller's session usable, and the failure is re-read: a row
     that now carries the marker raises :class:`DeviceIsCiRunnerError`, and any
-    other ``IntegrityError`` propagates unchanged.
+    other ``IntegrityError`` propagates unchanged. The caller's own pending
+    changes are flushed first, outside the SAVEPOINT and the ``try``, so a
+    failed SAVEPOINT never discards them and a failure of theirs is never read
+    as this collision.
     """
+    await db.flush()
     try:
         async with db.begin_nested():
             db.add(record)

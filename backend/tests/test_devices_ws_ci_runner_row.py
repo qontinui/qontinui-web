@@ -697,10 +697,15 @@ async def test_a_mark_landing_before_the_primarys_pointer_write_refuses_it(
 def _registrar_inserts(device_id: UUID, *, marked: bool) -> str:
     """Commit, on a connection of its own, the row the registrar inserts for
     ``device_id`` (``marked=False`` stands for any other first writer), and
-    return its image rendered in UTC."""
+    return its image rendered in UTC.
+
+    Synchronous, inside a mapper event on the event loop's thread, so a lock
+    it waits on would stall the whole test run. ``lock_timeout`` turns any such
+    wait into a failure after 2 s instead."""
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     try:
         with conn, conn.cursor() as cur:
+            cur.execute("SET lock_timeout = '2s'")
             cur.execute(
                 "INSERT INTO coord.devices (device_id, name, hostname, state, "
                 "capabilities, ci_runner_status, ci_runner_labels, last_seen_at) "
@@ -820,6 +825,41 @@ async def test_an_insert_collision_is_refused_only_for_a_marked_row(
 
     assert len(inserted) == 1, "the racing insert never landed"
     assert await _row_image_utc(env) == inserted[0], "web wrote the racing row"
+
+
+async def test_an_unrelated_pending_failure_surfaces_as_itself(env) -> None:
+    """The caller's own pending change cannot be written (a user whose primary key
+    already exists). It is flushed before the INSERT's SAVEPOINT and outside its
+    ``try``, so it fails as the ``IntegrityError`` it is. It is never caught as
+    the registrar's collision, nor buried under the session error that catching
+    it would raise. The session does not autoflush, as production's does not, so
+    that change first reaches the database inside the INSERT helper."""
+    async with env.maker(autoflush=False) as db:
+        db.add(
+            User(
+                id=env.user_id,
+                email=f"dup_{uuid4()}@example.com",
+                username=f"dup_{uuid4().hex[:8]}",
+                full_name="Duplicate",
+                is_active=True,
+                is_verified=True,
+            )
+        )
+        with pytest.raises(IntegrityError) as raised:
+            await device_crud.register_device(
+                db,
+                device_id=env.device_id,
+                user_id=env.user_id,
+                name="web-name",
+                hostname="squatter.example",
+                port=9876,
+                capabilities=["gui_automation"],
+                restate_enabled=False,
+                restate_healthy=False,
+            )
+
+    assert "users_pkey" in str(raised.value), "a different failure surfaced"
+    assert await _row_image(env) is None, "the device row was written"
 
 
 async def test_a_non_owner_heartbeat_never_claims_a_marked_rows_pointer(env) -> None:
