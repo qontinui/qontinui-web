@@ -861,6 +861,27 @@ describe("plantFidelity — honesty, from coord's twin self-check", () => {
     }),
   });
 
+  it("dates a report carrying only age_seconds at its read, not at the render", () => {
+    // Read 5 minutes before NOW, 120 s old then: computed at 11:53, whatever
+    // the render time — the Completeness header says the same.
+    const READ_AT = NOW - 5 * 60_000;
+    const f = figures(
+      "environment",
+      probeRead(),
+      reportRead({
+        data: reportOf({
+          observed: true,
+          age_seconds: 120,
+          total: 3,
+          honesty_violations: 0,
+          subspaces: [],
+        }),
+        dataUpdatedAt: READ_AT,
+      })
+    );
+    expect(f.honesty.asOf).toBe(READ_AT - 120_000);
+  });
+
   it("counts the violations among the twin's parts the self-check judged", () => {
     const f = figures("environment", probeRead(), withParts);
     expect(f.honesty).toMatchObject({

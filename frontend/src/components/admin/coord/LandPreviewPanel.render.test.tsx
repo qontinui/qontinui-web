@@ -156,7 +156,8 @@ describe("LandPreviewPanel — honest non-coverage (pending → note, not empty)
         note: "deploy targets undeclared",
       },
     },
-    risk: { risky: false, reasons: [] },
+    // coord sends a null verdict when CI is unpredicted and no reason tripped.
+    risk: { risky: null, reasons: [] },
   };
 
   it("ci.pending renders the note as the explanation, not an empty list", () => {
@@ -520,7 +521,9 @@ describe("LandPreviewPanel — a cascade, CI or deploy coord did not predict is 
           pr_number: 21,
           cascade_note: "cascade prediction unavailable (not found): no such ref",
           predicted: { cascade: EMPTY_CLEAN, ci: KNOWN_CI, deploy: KNOWN_DEPLOY },
-          risk: { risky: false, reasons: [] },
+          // coord sends a null verdict when the cascade is unpredicted and no
+          // reason tripped (land_effects.rs preview_risky).
+          risk: { risky: null, reasons: [] },
         }}
       />
     );

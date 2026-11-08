@@ -225,7 +225,12 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       expect(
         within(row).queryByTestId("coord-home.on-track.group.unnamed")
       ).not.toBeInTheDocument();
-      expect(row).toHaveTextContent("Example unit");
+      // The unit is named under the repository list, visible without opening
+      // a row (q7), and not repeated in the row's detail.
+      expect(
+        screen.getByTestId("coord-home.on-track.no-recorded-change")
+      ).toHaveTextContent(/example-repo.*Example unit/);
+      expect(row).not.toHaveTextContent("Example unit");
     });
   });
 
@@ -366,7 +371,7 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       expect(strip).toHaveAttribute("data-health-level", "amber");
       expect(strip).toHaveTextContent("Something is degrading");
       expect(strip).toHaveTextContent(
-        "2 machines are in a degrading state. 1 machine has no health verdict — unknown."
+        "2 machines are degrading but not in coord's list — see Dev Ops. 1 machine has no health verdict — unknown."
       );
       expect(screen.getByTestId("coord-home.strip.machines")).toHaveTextContent(
         /^machines not healthy 2$/
@@ -392,7 +397,7 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       expect(
         screen.getByTestId("coord-home.degrading.machines")
       ).toHaveTextContent(
-        "Machines: 1 of 3 machines has no health verdict, so its health is unknown."
+        "Machines: 1 of 2 machines has no health verdict, so its health is unknown."
       );
       const deg = screen.getByTestId("coord-home.degrading");
       expect(deg).not.toHaveTextContent("Nothing is degrading");
@@ -421,7 +426,7 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
         screen.getByTestId("coord-home.degrading.empty")
       ).toHaveTextContent("Nothing is degrading");
       expect(screen.getByTestId("coord-home.strip.health")).toHaveTextContent(
-        "1 machine not reporting healthy is not a degradation: 1 abandoned — see Dev Ops."
+        "1 abandoned machine counts as not healthy but is not a degradation — see Dev Ops."
       );
     });
 
@@ -467,9 +472,9 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       expect(strip).toHaveTextContent("Something is degrading");
       // Named once, as listed — the strip's lines add up to its badge.
       expect(strip).toHaveTextContent(
-        "1 machine in a degrading state is among the open degradations."
+        "1 machine is degrading — listed under Degrading."
       );
-      expect(strip).not.toHaveTextContent("1 machine is in a degrading state.");
+      expect(strip).not.toHaveTextContent("not in coord's list");
       expect(screen.getByTestId("coord-home.strip.degraded")).toHaveTextContent(
         /^degraded 1$/
       );
@@ -705,7 +710,7 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       const machines = screen.getByTestId("coord-home.degrading.machines");
       await waitFor(() =>
         expect(machines).toHaveTextContent(
-          "All 2 machines coord grades are abandoned, so no live machine reports — there is no machine this view can call healthy."
+          "All 2 machines coord grades are abandoned, so no listed machine reports — there is no machine this view can call healthy."
         )
       );
       const deg = screen.getByTestId("coord-home.degrading");
@@ -716,7 +721,7 @@ describe("/admin/coord/home — the 2026-10-31 UX pass", () => {
       const strip = screen.getByTestId("coord-home.strip.health");
       expect(strip).toHaveAttribute("data-health-level", "amber");
       expect(strip).not.toHaveTextContent(/nothing is degrading/i);
-      expect(strip).toHaveTextContent("so no live machine reports");
+      expect(strip).toHaveTextContent("so no listed machine reports");
       // The roster was read: the headline says so, never "not read".
       expect(strip).not.toHaveTextContent(/part of this view is not read/);
       // Named once, then pointed back at.

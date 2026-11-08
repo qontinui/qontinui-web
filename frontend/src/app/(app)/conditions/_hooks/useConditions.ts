@@ -255,7 +255,9 @@ export function useConditions() {
   };
 
   const listRuns = useCallback(
-    async (groupId: string): Promise<ConditionRun[]> => {
+    // `null` is a FAILED read, never "no runs": the page must not render a
+    // read it could not make as an empty history.
+    async (groupId: string): Promise<ConditionRun[] | null> => {
       try {
         const data = await httpClient.get<ConditionRun[]>(
           `${API}/groups/${encodeURIComponent(groupId)}/runs`
@@ -263,12 +265,13 @@ export function useConditions() {
         return data ?? [];
       } catch (err) {
         toast.error(errMsg(err, "Failed to load run history"));
-        return [];
+        return null;
       }
     },
     []
   );
 
+  // `null` is a FAILED read of the run, never "no results".
   const getRun = useCallback(
     async (runId: string): Promise<ConditionRun | null> => {
       try {

@@ -125,7 +125,13 @@ concurrency:
 jobs:
   workflow-lint:
     name: workflow-lint
-    runs-on: [self-hosted, public-pool, ram-4g]  # never GitHub-hosted: hosted runners are off
+    # LIGHT LANE (WEB_CI_LANE_WORKFLOW_LINT || WEB_CI_LIGHT_LANE, fork-guarded to
+    # hosted). It used to name `public-pool`, a trust label the 2026-10-04
+    # amendment to decision_record/self-hosted-runners-on-public-repos withdrew
+    # (one host, merytshost-public, still carried it); the 2026-10-05 amendment
+    # also withdrew "hosted runners are off", so hosted is the fallback again.
+    # Plan 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_WORKFLOW_LINT || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     # Backstop only. Step timeouts sum to 27 min (checkout 2 + arch 1 +
     # install 18 + zizmor 3 + actionlint 2 + summary 1); this sits 3 min above
     # that, so a slow step is killed by its own timeout, not by this one.

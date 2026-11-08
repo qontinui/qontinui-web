@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useDragSource } from "@qontinui/ui-bridge";
-import type { TestCase } from "@/services/workflow-testing-service";
+import { useDragSource } from "@qontinui/ui-bridge/react";
+import type { TestCase } from "@/services/workflow-testing";
 
 interface SortableTestCaseItemProps {
   testCase: TestCase;

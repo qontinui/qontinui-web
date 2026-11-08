@@ -234,25 +234,26 @@ Mutation hook to export deficiencies (JSON, CSV).
 
 ## API Endpoints
 
-The testing service expects these endpoints on the backend:
+The testing service (`src/services/testing-service.ts`) reads the execution
+store; no `/api/v1/testing/*` route backs it:
 
 ### Test Runs
 
-- `GET /api/v1/testing/runs` - List test runs (with filters)
-- `GET /api/v1/testing/runs/:id` - Get test run details
-- `GET /api/v1/testing/runs/:id/export` - Export test run
+- `GET /api/v1/execution/runs` - List test runs (with filters)
+- `GET /api/v1/execution/runs/:id` - Get test run details (plus its
+  `/actions` and `/issues`)
+- Export is built client-side from the run detail (`exportTestRun`)
 
 ### Deficiencies
 
-- `GET /api/v1/testing/deficiencies` - List deficiencies (with filters)
-- `PATCH /api/v1/testing/deficiencies/:id` - Update deficiency
-- `GET /api/v1/testing/deficiencies/export` - Export deficiencies
+- `GET /api/v1/execution/issues` - List deficiencies (with filters)
+- `PATCH /api/v1/execution/issues/:id` - Update deficiency
 
 ### Analytics
 
-- `GET /api/v1/testing/coverage-trends` - Get coverage trends
-- `GET /api/v1/testing/reliability-stats` - Get reliability statistics
-- `GET /api/v1/testing/state-graph` - Get state graph data
+- `GET /api/v1/execution/analytics/trends` - Get coverage trends
+- `GET /api/v1/execution/analytics/reliability` - Get reliability statistics
+- The state graph is built client-side from recent runs' actions (`getStateGraph`)
 
 ## Styling
 

@@ -97,15 +97,33 @@ permissions:
 jobs:
   backend-tests:
     name: Backend E2E Tests
-    runs-on: ubuntu-latest
+    # LIGHT LANE (fork-guarded to hosted). The light pool's runners share one
+    # unix user, so this job installs into a venv under $RUNNER_TEMP. Hosted
+    # restores ~/.cache/pip with actions/cache; self-hosted uses one pool-shared,
+    # flock-pruned pip cache at ${XDG_CACHE_HOME:-$HOME/.cache}/qontinui-web-ci/pip
+    # (see `Create a job venv`). Plans
+    # 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools
+    # and 2026-11-08-web-backend-e2e-job-cap-cancels-a-slow-uncached-pip-install-on-the-light-pool.
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     # Job cap. This workflow carried NO `timeout-minutes` at any level, so a
     # hung step fell through to GitHub's DEFAULT 360-minute ceiling — that is
     # how run 32207280679 burned 2h28m and 32216356137 burned 5h59m in
-    # `Install Playwright browsers`. Sized from 7 green runs on `main`
-    # (2026-08-18/19): this job ran 1m54s-2m26s, max 2m26s. 20 min is ~8x the
-    # observed max — deliberately loose, because its purpose is to catch a
-    # hang, not to police normal variance.
-    timeout-minutes: 20
+    # `Install Playwright browsers`. It was first sized at 20 min from 7 green
+    # HOSTED runs on `main` (2026-08-18/19: 1m54s-2m26s).
+    #
+    # Re-sized 2026-11-08 for the self-hosted light pool, where `Install
+    # dependencies` ran with no pip cache at all: 17 jobs measured 1.2-9.2 min,
+    # PR #2136 had an 11.1 min install, and at least three jobs were cancelled
+    # at the 20-min cap mid-install or just after green tests (job 128311913910
+    # was still installing at 17.1 min). A cold cache — new host, prune,
+    # requirements change — is still that uncached case, so the cap is sized
+    # from it: >17.1 install + 2.9 tests (max seen) + 2.5 everything else =
+    # 22.5 min, a lower bound because 17.1 is censored; x1.5 headroom = 33.75,
+    # rounded up to 35. `Install dependencies` carries its own 28-min cap so a
+    # hung install fails NAMING the step instead of cancelling the job.
+    # The purpose is unchanged: catch a hang, not police normal variance.
+    # Plan 2026-11-08-web-backend-e2e-job-cap-cancels-a-slow-uncached-pip-install-on-the-light-pool.
+    timeout-minutes: 35
 
     strategy:
       matrix:
@@ -122,9 +140,11 @@ jobs:
       # fails with ENOENT. qontinui-cloud-control is needed for the test
       # harness's side-effect import (see backend/tests/conftest.py); it is
       # now AGPL/public under qontinui/, cloned the same way as the others.
+      # All three are public, so they are cloned without a token: a token in
+      # the clone URL is written to each clone's .git/config, which on a
+      # self-hosted runner outlives the job. That runner's workspace parent also
+      # persists, so each target is removed before it is cloned.
       - name: Clone backend Python sibling deps
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           for spec in \
@@ -133,9 +153,8 @@ jobs:
             "qontinui/qontinui-cloud-control" \
           ; do
             repo_name="${spec#*/}"
-            git clone --depth 1 \
-              "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
-              "../${repo_name}"
+            rm -rf "../${repo_name}"
+            git clone --depth 1 "https://github.com/${spec}.git" "../${repo_name}"
           done
 
       - name: Set up Python ${{ matrix.python-version }}
@@ -143,7 +162,99 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # A job venv: pip must not write into the setup-python interpreter, which
+      # on the self-hosted pool lives in a tool cache every runner shares.
+      #
+      # Self-hosted pip cache: ONE directory for the whole pool, namespaced to
+      # this repo (not the default ~/.cache/pip every org repo's jobs share) and
+      # kept outside $RUNNER_TEMP so it survives the job. Until 2026-11-08 it
+      # lived under $RUNNER_TEMP (08324f987), so every self-hosted install was
+      # fully uncached and some ran past the job cap. Sharing one dir across
+      # concurrent jobs is safe because pip writes it atomically: its HTTP cache
+      # writes a temp file then replace()s it (pip/_internal/network/cache.py),
+      # and a built wheel is os.replace()d into place
+      # (pip/_internal/wheel_builder.py). A download/wheel cache is not
+      # job-scoped state. One shared dir (not one per $RUNNER_NAME) keeps disk
+      # constant as registrations grow and warms every later job on the host.
+      #
+      # The only deleting action is the prune below, under an EXCLUSIVE flock on
+      # pip.lock; every install holds a SHARED flock for its whole step, so a
+      # prune never runs during an install, and a held lock just skips the prune
+      # for this run. It empties the dir when it is over PIP_CACHE_BOUND_MB, or
+      # when free space on its filesystem is under PIP_CACHE_FLOOR_MB while the
+      # cache itself is over PIP_CACHE_FLOOR_MIN_SIZE_MB; every prune is a
+      # ::warning annotation, so repeated pruning is visible. A size or
+      # free-space read that fails is UNKNOWN: logged, prune skipped, never a
+      # step failure (du exits 1 when a pip temp file vanishes under it). A host
+      # missing flock/du/df, or an unwritable cache dir, falls back to a
+      # job-scoped cache with a warning.
+      # Plan 2026-11-08-web-backend-e2e-job-cap-cancels-a-slow-uncached-pip-install-on-the-light-pool.
+      - name: Create a job venv
+        env:
+          PIP_CACHE_BOUND_MB: '8192'
+          PIP_CACHE_FLOOR_MB: '61440'
+          PIP_CACHE_FLOOR_MIN_SIZE_MB: '1024'
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          # Hosted keeps ~/.cache/pip, which the actions/cache step below restores.
+          if [ "$RUNNER_ENVIRONMENT" != self-hosted ]; then
+            exit 0
+          fi
+          if ! command -v flock >/dev/null 2>&1 || ! command -v du >/dev/null 2>&1 || ! command -v df >/dev/null 2>&1; then
+            echo "::warning title=pip cache not shared::flock, du or df is missing on ${RUNNER_NAME:-this runner}; using a job-scoped pip cache"
+            echo "PIP_CACHE_DIR=$RUNNER_TEMP/pip-cache" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          root="${XDG_CACHE_HOME:-$HOME/.cache}/qontinui-web-ci"
+          # An unwritable cache dir or lock file falls back too: never a failure.
+          if ! mkdir -p "$root/pip" 2>/dev/null || ! { exec 9>"$root/pip.lock"; } 2>/dev/null; then
+            echo "::warning title=pip cache not shared::cannot write $root on ${RUNNER_NAME:-this runner}; using a job-scoped pip cache"
+            echo "PIP_CACHE_DIR=$RUNNER_TEMP/pip-cache" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          size_mb() { du -s --block-size=1M "$1" 2>/dev/null | cut -f1 || true; }
+          avail_mb() { df --output=avail -BM "$1" 2>/dev/null | tail -n 1 | tr -dc '0-9' || true; }
+          prune() {
+            if rm -rf -- "$root/pip" && mkdir -p "$root/pip"; then
+              echo "::warning title=pip cache pruned::$1"
+              size=0
+            else
+              echo "::warning title=pip cache prune failed::$1"
+              size=
+            fi
+          }
+          size=
+          if flock -x -n 9; then
+            size="$(size_mb "$root/pip")"
+            avail="$(avail_mb "$root")"
+            case "$size" in ''|*[!0-9]*) size= ;; esac
+            case "$avail" in ''|*[!0-9]*) avail= ;; esac
+            if [ -z "$size" ] || [ -z "$avail" ]; then
+              echo "pip cache size or free space UNKNOWN (size='${size}' free='${avail}'); prune skipped"
+            elif [ "$size" -gt "$PIP_CACHE_BOUND_MB" ]; then
+              prune "size condition: ${size}MB > ${PIP_CACHE_BOUND_MB}MB"
+            # The free-space arm only fires when the cache is big enough to
+            # matter, so a disk filled by something else does not empty a small
+            # warm cache on every run.
+            elif [ "$avail" -lt "$PIP_CACHE_FLOOR_MB" ] && [ "$size" -gt "$PIP_CACHE_FLOOR_MIN_SIZE_MB" ]; then
+              prune "free condition: ${avail}MB free < ${PIP_CACHE_FLOOR_MB}MB with cache at ${size}MB"
+            fi
+            flock -u 9
+          else
+            echo "::notice title=pip cache prune skipped::pip.lock held by another job (an install or a prune); prune deferred"
+          fi
+          exec 9>&-
+          echo "PIP_CACHE_DIR=$root/pip" >> "$GITHUB_ENV"
+          echo "QONTINUI_PIP_LOCK=$root/pip.lock" >> "$GITHUB_ENV"
+          echo "pip cache: $root/pip ${size:-$(size_mb "$root/pip")}MB before install (free $(avail_mb "$root")MB)"
+
+      # Hosted only: on the self-hosted pool ~/.cache/pip is one directory
+      # shared by every runner, and restoring an archive over it races them.
+      # Self-hosted instead uses the persistent pool dir set up by `Create a
+      # job venv`, which is never restored from an archive.
       - name: Cache pip dependencies
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/pip
@@ -151,9 +262,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
+      # Step cap: a hung install fails here, naming this step, rather than
+      # running into the job cap and concluding the job `cancelled` with no
+      # failed step. 28 min leaves 7 of the 35-min job cap for the rest
+      # (measured max 2.9 min tests + ~2.5 min everything else). The shared
+      # lock below waits at most 5 min for a running prune, inside this cap.
       - name: Install dependencies
         working-directory: ./backend
+        timeout-minutes: 28
         run: |
+          # Self-hosted: hold a SHARED lock on the pool pip cache for this whole
+          # step, so `Create a job venv`'s exclusive-lock prune cannot empty the
+          # cache under a running install.
+          if [ -n "${QONTINUI_PIP_LOCK:-}" ]; then
+            exec 9>"$QONTINUI_PIP_LOCK"
+            if ! flock -s -w 300 9; then
+              echo "::warning title=pip cache lock wait timed out::using a job-scoped pip cache instead of the shared one"
+              export PIP_CACHE_DIR="$RUNNER_TEMP/pip-cache"
+            fi
+          fi
           python -m pip install --upgrade pip
           pip install pytest pytest-cov pytest-asyncio
           # All non-path runtime deps are already pinned in requirements.txt;
@@ -163,7 +290,8 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           # Force fresh editable install of qontinui-schemas before backend itself.
           # Without this, `pip install -e .` resolves the schemas path-dep against
-          # pip's wheel cache (actions/cache@v3 above) and DOWNGRADES schemas to
+          # a warm pip cache (actions/cache on hosted, the persistent pool dir on
+          # self-hosted) and DOWNGRADES schemas to
           # whichever version was cached (e.g., 0.2.1) even though the cloned
           # ../../qontinui-schemas is at HEAD (0.4.0). Surfaces as
           # `ModuleNotFoundError: No module named 'qontinui_schemas.commands'`
@@ -174,6 +302,9 @@ jobs:
           # installed. All backend deps are already satisfied above.
           if [ -f pyproject.toml ]; then pip install -e . --no-deps; fi
           pip install -e ../../qontinui-cloud-control
+          if [ -n "${QONTINUI_PIP_LOCK:-}" ]; then
+            echo "pip cache: $PIP_CACHE_DIR $(du -s --block-size=1M "$PIP_CACHE_DIR" 2>/dev/null | cut -f1 || true)MB after install"
+          fi
 
       - name: Run backend E2E tests
         working-directory: ./backend
@@ -210,17 +341,20 @@ jobs:
           retention-days: 30
 
       # This job has NO apt-dependent step, so it carries no full
-      # infrastructure marker. It does now carry a `timeout-minutes: 20` cap
-      # that did not exist before, and a job cap concludes the job `cancelled`
+      # infrastructure marker. It does now carry a job cap (`timeout-minutes:
+      # 35`, raised from 20 on 2026-11-08) that did not exist before, and a job
+      # cap concludes the job `cancelled`
       # — which `gh pr checks` renders as **fail** with ZERO failing steps.
       # That rendering is the precise defect plan
       # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure
       # removes, so adding the cap without this notice would have reintroduced
-      # it in a job that previously could not produce it.
+      # it in a job that previously could not produce it. A hung `Install
+      # dependencies` now hits that step's own 28-min cap first and concludes
+      # the job `failure` naming the step, so this notice stays silent for it.
       - name: Explain a cancelled job (no apt step here)
         if: cancelled()
         run: |
-          echo "::notice title=Job cancelled - NOT a verdict on this diff::This job was cancelled. Either its 20-minute cap expired (it normally runs 1m54s-2m26s, so that would mean something wedged, not that your tests failed) or the run was cancelled externally - this workflow's 'concurrency: cancel-in-progress' is an expression (first-attempt pull_request runs only), so on such a run a newer push to the same PR supersedes it, and on a push, schedule or re-run only a manual cancel does. Either way a cancelled job reports no test results at all: 'gh pr checks' will render it as 'fail' with zero failing steps, and that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
+          echo "::notice title=Job cancelled - NOT a verdict on this diff::This job was cancelled. Either its 35-minute cap expired (it normally runs under about 17 min uncached on the self-hosted pool, less with a warm cache, and 1m54s-2m26s hosted, so that would mean something wedged, not that your tests failed) or the run was cancelled externally - this workflow's 'concurrency: cancel-in-progress' is an expression (first-attempt pull_request runs only), so on such a run a newer push to the same PR supersedes it, and on a push, schedule or re-run only a manual cancel does. Either way a cancelled job reports no test results at all: 'gh pr checks' will render it as 'fail' with zero failing steps, and that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
 
   # Full 4-shard suite. Runs on pushes to main/develop, on the nightly schedule,
   # and on workflow_dispatch — never on PRs and never on coord's merge-candidate*
@@ -311,7 +445,7 @@ jobs:
   changed-specs:
     name: Changed E2E spec files
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     # Detection only: a checkout, one extra fetch and a stdlib script.
     timeout-minutes: 5
     outputs:
@@ -398,7 +532,7 @@ jobs:
 
   test-summary:
     name: Test Summary
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_E2E_TESTS || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     # Job cap — see `backend-tests` above. This job only downloads artifacts
     # and tallies results: 3-9s across the same 7 green runs. 10 min is ~65x
     # the observed max and exists purely so a wedged download cannot inherit
@@ -408,8 +542,17 @@ jobs:
     if: always()
 
     steps:
+      # This job has no checkout, so on a persistent self-hosted runner nothing
+      # else ever cleans its workspace. Clear what an earlier run left there,
+      # and download into runner.temp, which the runner empties after every job.
+      - name: Clean the workspace
+        shell: bash
+        run: find "$GITHUB_WORKSPACE" -mindepth 1 -delete
+
       - name: Download all artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/artifacts
 
       - name: Generate test summary
         run: |
