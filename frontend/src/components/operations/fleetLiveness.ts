@@ -60,6 +60,7 @@ import {
   readRosterCut,
   rosterCutHidesHealth,
   rosterDisclosures,
+  retiredRowsSentence,
   rosterIncompleteSentence,
   type RosterCompletenessRef,
   type RosterCut,
@@ -233,8 +234,13 @@ export function summarizeFleetLiveness(input: {
       headline: "No devices reporting health",
       detail: isRosterComplete(roster.exclusions)
         ? withLeft(
-            "Coord's device list is empty. That is an absence of telemetry, " +
-              "not an all-clear."
+            [
+              "Coord's device list is empty. That is an absence of telemetry, " +
+                "not an all-clear.",
+              retiredRowsSentence(roster.exclusions),
+            ]
+              .filter(Boolean)
+              .join(" ")
           )
         : // Coord withheld machines: a binding fault, not an empty fleet.
           withLeft(
