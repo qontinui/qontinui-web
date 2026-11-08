@@ -83,7 +83,8 @@ export const HEARTBEAT_INTERVAL_MS = 10_000;
 /**
  * ui-bridge `packages/ui-bridge/src/relay/relay-client.ts`
  * `SSE_RECONNECT_DELAY_MS`: a refused or dropped command stream is reopened
- * after this delay (`scheduleReconnect`); a healthy stream opens once.
+ * after this delay (`scheduleReconnect`); a healthy stream opens once. Two
+ * other paths reopen it AT ONCE (see `STREAM_OPENS_PER_TAB_PER_MIN`).
  */
 export const SSE_RECONNECT_DELAY_MS = 10_000;
 
@@ -115,10 +116,19 @@ export const RELAY_SNAPSHOTS_PER_STREAM_OPEN = 2;
 const MINUTE_MS = 60_000;
 
 /**
- * Stream opens per live tab per minute: a failing stream's reconnect
- * cadence. A heartbeat answered `tabRegistered: false` reopens the stream at
- * once (`relay-client.ts` `forceReconnect`); a storm of those is a defect the
- * envelope deliberately does not absorb, so it surfaces as a refusal.
+ * Stream opens per live tab per minute: a failing stream's reconnect cadence.
+ *
+ * Two paths in `relay-client.ts` reopen a stream AT ONCE, and the envelope
+ * deliberately does not absorb either (an envelope sized to absorb a defect
+ * hides it, so an overflow surfaces as a typed, logged refusal):
+ *   - `forceReconnect`, after a heartbeat answered `tabRegistered: false`. The
+ *     relay answers that from the instance's open stream listeners, so it is
+ *     what every tab whose stream is down — including a stream this lane just
+ *     refused — gets. It also clears the pending reconnect, so the steady
+ *     state stays one open per heartbeat; the excess is one open in the
+ *     window where the outage starts (the plan's Phase 7 (f)).
+ *   - `handleVisibility`, reconnecting a dropped stream the moment the tab
+ *     becomes visible again.
  */
 export const STREAM_OPENS_PER_TAB_PER_MIN = MINUTE_MS / SSE_RECONNECT_DELAY_MS;
 

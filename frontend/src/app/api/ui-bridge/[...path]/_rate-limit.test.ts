@@ -26,6 +26,7 @@ import {
   checkRateLimit,
   kindForMethod,
   laneFor,
+  logLaneRefused,
   rateLimitedResponse,
   rateLimitHeaders,
   READ_LIMIT_PER_MIN,
@@ -82,6 +83,35 @@ function makeMockRedis(failOn?: string): {
     on: () => undefined,
   } as unknown as Parameters<typeof __setRedisClientForTest>[0];
   return { client, store };
+}
+
+/**
+ * An ioredis client whose connection is not ready yet. With the limiter's
+ * `enableOfflineQueue: false`, ioredis 5 does not reject such a pipeline: it
+ * RESOLVES it with an error per command (measured against the installed
+ * ioredis, statuses `connecting` and `reconnecting`).
+ */
+function notReadyRedis(
+  results: Array<[Error | null, unknown]> = [
+    [new Error("Stream isn't writeable and enableOfflineQueue options is false"), null],
+    [new Error("Stream isn't writeable and enableOfflineQueue options is false"), null],
+  ]
+): Parameters<typeof __setRedisClientForTest>[0] {
+  const pipeline = {
+    incr() {
+      return pipeline;
+    },
+    expire() {
+      return pipeline;
+    },
+    async exec() {
+      return results;
+    },
+  };
+  return {
+    pipeline: () => pipeline,
+    on: () => undefined,
+  } as unknown as Parameters<typeof __setRedisClientForTest>[0];
 }
 
 describe("kindForMethod", () => {
@@ -184,6 +214,57 @@ describe("checkRateLimit", () => {
     const r = await checkRateLimit("u1", "write");
     expect(r.allowed).toBe(true);
     expect(r.redisOffline).toBe(true);
+  });
+
+  it("fails open, saying the count is unknown, when the pipeline resolves an error per command", async () => {
+    __setRedisClientForTest(notReadyRedis());
+    const r = await checkRateLimit("u1", "transport:heartbeat");
+    expect(r).toMatchObject({
+      allowed: true,
+      count: 0,
+      limit: 160,
+      redisOffline: true,
+      kind: "transport:heartbeat",
+    });
+    expect(rateLimitHeaders(r)["X-RateLimit-Remaining"]).toBe("unknown");
+  });
+
+  it("fails open when the INCR answers something that is not a count", async () => {
+    for (const value of [null, "OK", 0, Number.NaN]) {
+      __setRedisClientForTest(
+        notReadyRedis([
+          [null, value],
+          [null, 1],
+        ])
+      );
+      const r = await checkRateLimit("u1", "write");
+      expect(r, String(value)).toMatchObject({
+        allowed: true,
+        count: 0,
+        redisOffline: true,
+      });
+    }
+  });
+
+  it("warns about failing open at most once per minute window", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      __setRedisClientForTest(notReadyRedis());
+      // A window no other test touches, so the throttle starts fresh.
+      const now = Date.UTC(2031, 0, 1, 0, 0, 30);
+      await checkRateLimit("u1", "write", now);
+      await checkRateLimit("u1", "read", now + 1_000);
+      await checkRateLimit("u1", "transport:result", now + 60_000);
+      const warnings = warn.mock.calls.filter((call) =>
+        String(call[0]).includes("rate_limit_redis_op_failed_failing_open")
+      );
+      expect(warnings.map((call) => call[1])).toEqual([
+        expect.objectContaining({ kind: "write" }),
+        expect.objectContaining({ kind: "transport:result" }),
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
@@ -361,6 +442,64 @@ describe("transport lanes", () => {
         count: 0,
         kind,
       });
+    }
+  });
+});
+
+describe("logLaneRefused", () => {
+  it("logs the 1st, 2nd, 4th and 8th refusal of a lane in a window, naming the lane and principal kind", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      for (let count = 161; count <= 170; count++) {
+        logLaneRefused(
+          {
+            allowed: false,
+            count,
+            limit: 160,
+            retryAfterSec: 9,
+            redisOffline: false,
+            kind: "transport:heartbeat",
+          },
+          "device"
+        );
+      }
+      const lines = warn.mock.calls
+        .filter((call) => String(call[0]).includes("lane_refused"))
+        .map((call) => call[1]);
+      expect(lines).toEqual(
+        [161, 162, 164, 168].map((count) =>
+          expect.objectContaining({
+            lane: "transport:heartbeat",
+            principalKind: "device",
+            count,
+            limit: 160,
+          })
+        )
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("names a principal it was not told as unknown, never as a default", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      logLaneRefused(
+        {
+          allowed: false,
+          count: 21,
+          limit: 20,
+          retryAfterSec: 9,
+          redisOffline: false,
+          kind: "write",
+        },
+        null
+      );
+      expect(warn.mock.calls.map((call) => call[1])).toEqual([
+        expect.objectContaining({ lane: "write", principalKind: "unknown" }),
+      ]);
+    } finally {
+      warn.mockRestore();
     }
   });
 });
