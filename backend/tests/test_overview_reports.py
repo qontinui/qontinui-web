@@ -1859,7 +1859,7 @@ class TestScanners:
         _plant(doc, slot, text)
         response = await _post(admin, report["id"], doc)
         assert {"slot": slot, "kind": kind} in _violations(response)
-        assert text not in response.text
+        assert text not in response.text and not _names_term(response.text)
         listed = (
             await admin.get(
                 f"{API}/report-snapshots", params={"report_id": report["id"]}
@@ -2153,9 +2153,9 @@ class TestReadTimeChecks:
             ("label", "confidential_term"),
             ("items[0].status_note", "confidential_term"),
         }
-        assert TERM not in json.dumps(view)
+        assert not _names_term(view)
         got = (await admin.get(f"{API}/report-snapshots/{item['id']}")).json()["item"]
-        assert got["label"] == "[withheld]" and TERM not in json.dumps(got)
+        assert got["label"] == "[withheld]" and not _names_term(got)
         listed = (await admin.get(f"{API}/report-snapshots")).json()["items"]
         assert [i["label"] for i in listed] == ["[withheld]"]
 
@@ -2206,7 +2206,7 @@ class TestReadTimeChecks:
             ("[withheld]", [{"slot": "label", "reason": "confidential_term"}])
         ]
         for served in (view, got, listed):
-            assert TERM not in json.dumps(served)
+            assert not _names_term(served)
 
     async def test_a_term_added_after_the_write_withholds_a_path_and_a_reason(
         self, admin: httpx.AsyncClient, async_db_session: AsyncSession
@@ -2380,7 +2380,7 @@ class TestNarrativeAtRead:
         fine = (await admin.get(f"{API}/reports/{tidy['id']}")).json()["item"]
         assert {k: fine[k] for k in clean} == clean and fine["withheld"] == []
         for served in (got, view, v1, stale.json(), same.json(), listing, versions):
-            assert TERM not in json.dumps(served)
+            assert not _names_term(served)
         # What is stored is unchanged.
         stored = (
             await async_db_session.execute(
