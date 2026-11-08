@@ -236,6 +236,19 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
     body: { identities: [] },
     note: "{identities: LinkedIdentity[]} (lib/api/identities.ts:38) — Cognito admin API absent in CI",
   },
+  {
+    // `/sessions`' "Saved tab lists" panel reads this on every page load for
+    // its header count (plan
+    // 2026-11-08-save-per-tab-runner-session-lists-on-sessions-page-kept-14-days
+    // Phase 3). The route scopes the lists to coord's
+    // `/coord/devices/by-user` read, so with no coord in CI it 502s. Prod
+    // parity: ci-bot owns no devices, so the route answers an empty list.
+    // Anchored to the collection, and GET only: the capture (POST) and the
+    // one-list read/delete (`/saved-session-lists/{id}`) fall through.
+    pattern: /\/api\/v1\/saved-session-lists(\?|$)/,
+    body: [],
+    note: "list[SavedSessionListSummary] (endpoints/saved_session_lists.py list_saved_session_lists; lib/api/savedSessionLists.ts listSavedSessionLists) — coord device-ownership read; ci-bot owned no devices on prod",
+  },
 ];
 
 /**
