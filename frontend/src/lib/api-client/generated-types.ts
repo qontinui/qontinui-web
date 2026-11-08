@@ -18502,23 +18502,42 @@ export interface paths {
          *     edge list, so the trail from "this plan surfaced it" to "that plan owns it"
          *     survives.
          *
-         *     Failure modes, each distinguished on purpose:
+         *     **One owner may claim any number of a source's follow-ups.** A follow-up is
+         *     identified by the finding it records (its note), not by the pair of
+         *     artifacts it connects, so a plan that writes the work for several
+         *     follow-ups one earlier plan surfaced claims each in turn. What an owner may
+         *     not hold twice is the same finding.
+         *
+         *     Failure modes, each distinguished on purpose — every error names the
+         *     condition that actually held:
          *
          *     * **404** — no such edge in the caller's organization scope. Edges carry no
          *       org of their own; the scope is inherited from the originating artifact,
-         *       so an edge id is not a global handle.
+         *       so an edge id is not a global handle. Also the answer when the edge was
+         *       deleted between that read and the row lock.
          *     * **422 (relation)** — the edge is not a ``spawned_followup``. The other
          *       relations are two-ended already and there is nothing to claim.
          *     * **422 (target)** — ``to_id`` names no artifact the caller can see.
          *       Checked here so the message is actionable; the FK would otherwise
          *       surface it as a 500.
-         *     * **409** — already claimed. Claiming is NOT idempotent across different
-         *       targets: silently re-pointing the edge would erase the first claim with
-         *       no trace and leave two callers each believing they own the work. The
-         *       response names the current owner.
-         *     * **409** — already resolved (``fixing``, ``fixed``, ``already_fixed``,
-         *       ``dismissed``): it left the open queue through its resolution, and a row
-         *       holds at most one way out. The response names the resolution; reopen it
+         *     * **409 ``followup_already_claimed``** — the edge row already has an owner
+         *       and it is a DIFFERENT artifact. Claiming is NOT idempotent across
+         *       different targets: silently re-pointing the edge would erase the first
+         *       claim with no trace and leave two callers each believing they own the
+         *       work. The response names the CURRENT owner (``to_id``). Claiming the edge
+         *       for the owner it ALREADY has is not an error: it is an idempotent replay
+         *       and answers **200** with the stored edge.
+         *     * **409 ``followup_duplicate_owned``** — the requested owner already owns
+         *       ANOTHER edge from the same source with the same note, so this row would
+         *       be a second copy of it. The response names both edges (``edge_id``,
+         *       ``existing_edge_id``) and the remedy: dismiss this edge as a duplicate
+         *       (``POST /plan-library/edges/{edge_id}/resolution`` with ``dismissed`` and
+         *       a ``resolution_note`` naming the edge it repeats) instead of claiming it.
+         *       The edge stays open.
+         *     * **409 ``followup_resolved``** — already resolved (``fixing``, ``fixed``,
+         *       ``already_fixed``, ``dismissed``): it left the open queue through its
+         *       resolution, and a row holds at most one way out. The response names the
+         *       resolution; reopen it
          *       (``POST /plan-library/edges/{edge_id}/resolution``) first if an
          *       artifact should own it instead.
          */
@@ -19126,7 +19145,9 @@ export interface paths {
          *
          *     Supply exactly one of ``to_id`` (this artifact → that one, an OUTGOING
          *     edge) or ``from_id`` (that artifact → this one, an INCOMING edge).
-         *     Re-posting an identical triple is idempotent and returns 200.
+         *     Re-posting an identical ``(from, to, relation)`` triple is idempotent and
+         *     returns 200 for every relation except ``spawned_followup``, which is
+         *     identified by its note (below).
          *
          *     **``spawned_followup`` is the exception, and the only one.** It records
          *     work this artifact SURFACED and deliberately did not do, which by
@@ -19140,8 +19161,22 @@ export interface paths {
          *     the open-follow-ups queue forever. Supplying ``to_id`` is still allowed and
          *     records a follow-up that already has an owner; ``from_id`` is not, because
          *     the relation is inherently outgoing (this artifact surfaced that work).
-         *     Re-posting the same note is idempotent on ``(from_id, relation, note)``,
-         *     while a DIFFERENT note is a second follow-up — a plan may surface several.
+         *
+         *     **A follow-up is identified by its note, in every state — not by the pair
+         *     of artifacts it connects.** Re-posting the same note is idempotent on
+         *     ``(from_id, relation, note)`` whether the stored follow-up is open, owned
+         *     by an artifact or resolved, and returns THAT row (its ``to_id``, ``peer_*``
+         *     and ``followup.state`` as stored); a DIFFERENT note is a second follow-up —
+         *     a plan may surface several, and one owner may hold any number of a source's.
+         *     A one-ended post never inserts an open copy beside an owned row.
+         *
+         *     A post that names an owner (``to_id``) must agree with the stored row's
+         *     owner. The same finding already owned by that artifact is idempotent (200).
+         *     Otherwise the answer is a **409** that names the condition that held:
+         *     ``followup_already_claimed`` (owned by ANOTHER artifact — ``to_id`` is the
+         *     stored owner), ``followup_exists_unowned`` (still open — claim it with
+         *     ``PATCH /plan-library/edges/{existing_edge_id}`` instead; this door never
+         *     moves ownership of an existing row) or ``followup_resolved``.
          *
          *     A ``spawned_followup`` may also carry ``anchors`` (the files it is about:
          *     ``{repo: "owner/name", path, line_start?, line_end?, symbol?}``),
