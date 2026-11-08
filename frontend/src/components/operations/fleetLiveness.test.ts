@@ -59,6 +59,19 @@ const summarize = (
   });
 
 describe("summarizeFleetLiveness", () => {
+  it("explains an empty roster by its retired rows, still amber", () => {
+    const s = summarize([], {
+      completeness: {
+        ...whole(0),
+        excluded: { unbound: 0, bound_to_other_tenant: 0, retired: 5700 },
+      },
+    });
+    // Retired rows are not a binding fault: still the complete-roster branch.
+    expect(s.level).toBe("amber");
+    expect(s.detail).toContain("not an all-clear");
+    expect(s.detail).toContain("5700 devices were retired");
+  });
+
   it("is green only when every device reports healthy", () => {
     const s = summarize([device("a", "healthy"), device("b", "healthy")]);
     expect(s.level).toBe("green");
