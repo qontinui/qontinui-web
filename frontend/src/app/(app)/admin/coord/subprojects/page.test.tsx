@@ -202,6 +202,11 @@ function noteOf(tab: string): string | null {
   return tabCount(tab).querySelector("[title]")?.getAttribute("title") ?? null;
 }
 
+/** The wait for a fallback that takes several reads in a row (the refused or
+ *  ignored parameter, then five per-headline reads): the default 1 s budget
+ *  is tight on a loaded worker. */
+const MULTI_READ = { timeout: 5_000 };
+
 const CALM = {
   needs_you: 0,
   stalled: 0,
@@ -280,7 +285,9 @@ describe("/admin/coord/subprojects", () => {
         { refuseExclude: shape }
       );
       render(<CoordSubprojectsPage />);
-      expect(await screen.findByText("a-stalled-one")).toBeInTheDocument();
+      expect(
+        await screen.findByText("a-stalled-one", undefined, MULTI_READ)
+      ).toBeInTheDocument();
       expect(screen.getByText("a-waiting-one")).toBeInTheDocument();
       // The refused parameter is not a failure of the view.
       expect(
@@ -318,7 +325,9 @@ describe("/admin/coord/subprojects", () => {
       stalled: [summary({ title: "still-open" })],
     });
     render(<CoordSubprojectsPage />);
-    expect(await screen.findByText("still-open")).toBeInTheDocument();
+    expect(
+      await screen.findByText("still-open", undefined, MULTI_READ)
+    ).toBeInTheDocument();
     expect(screen.queryByText("already-done")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(queries()).toContain("status=open&headline=stalled&limit=100")
@@ -355,7 +364,9 @@ describe("/admin/coord/subprojects", () => {
       ],
     });
     render(<CoordSubprojectsPage />);
-    expect(await screen.findByText("an-open-one")).toBeInTheDocument();
+    expect(
+      await screen.findByText("an-open-one", undefined, MULTI_READ)
+    ).toBeInTheDocument();
     expect(screen.queryByText("done-one")).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("coord-subprojects-empty")
@@ -383,7 +394,9 @@ describe("/admin/coord/subprojects", () => {
     fireEvent.click(screen.getByTestId("coord-subprojects-load-more"));
     // The pages read through the ignored parameter are no view of Open:
     // it starts again, per headline, from the first page.
-    expect(await screen.findByText("per-headline-row")).toBeInTheDocument();
+    expect(
+      await screen.findByText("per-headline-row", undefined, MULTI_READ)
+    ).toBeInTheDocument();
     expect(screen.queryByText("a-done-one")).not.toBeInTheDocument();
     expect(screen.queryByText("page-one")).not.toBeInTheDocument();
     expect(
@@ -441,9 +454,16 @@ describe("/admin/coord/subprojects", () => {
     await act(async () => {
       answerPageTwo?.();
     });
-    await waitFor(() =>
-      expect(queries()).toContain("status=open&headline=stalled&limit=100")
+    await waitFor(
+      () =>
+        expect(queries()).toContain("status=open&headline=stalled&limit=100"),
+      MULTI_READ
     );
+    // Let those reads answer and settle before looking: the claim is about
+    // what their settling does (nothing, here), not about a moment before it.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
     expect(screen.getByText("a-waiting-row")).toBeInTheDocument();
     expect(screen.queryByText("per-headline-open-row")).not.toBeInTheDocument();
     expect(screen.queryByText("a-done-row")).not.toBeInTheDocument();

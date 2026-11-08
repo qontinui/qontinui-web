@@ -44,6 +44,7 @@ import {
   mergeStreamRows,
   nextStepWords,
   ofCountWords,
+  otherSubprojectOf,
   openFromParts,
   phasesRemainingWords,
   predicateKindWords,
@@ -203,6 +204,44 @@ describe("headlines", () => {
       reason: "Waiting on your answer",
     });
     expect(deriveVerdictStatus(null).kind).toBe("unknown");
+  });
+});
+
+describe("a reason caused in another subproject (D6)", () => {
+  const OTHER = "0b1c2d3e-4f50-4617-8899-aabbccddeeff";
+
+  it("names that subproject and its headline, worded with its attention", () => {
+    const other = otherSubprojectOf({
+      detail: { other_subproject: OTHER, other_headline: "stalled" },
+    });
+    expect(other).toEqual({
+      id: OTHER,
+      status: {
+        kind: "stalled",
+        label: "Stalled",
+        reason: "That subproject's own headline: stalled",
+        attention: "author",
+      },
+    });
+    expect(
+      otherSubprojectOf({
+        detail: { other_subproject: OTHER, other_headline: "working" },
+      })?.status.attention
+    ).toBe("none");
+  });
+
+  it("shows nothing extra — never a guess — without a known headline or an id", () => {
+    for (const detail of [
+      null,
+      {},
+      { other_subproject: OTHER },
+      { other_subproject: OTHER, other_headline: "half_stalled" },
+      { other_subproject: OTHER, other_headline: null },
+      { other_headline: "stalled" },
+      { other_subproject: "", other_headline: "stalled" },
+      { other_subproject: 42, other_headline: "stalled" },
+    ])
+      expect(otherSubprojectOf({ detail }), JSON.stringify(detail)).toBeNull();
   });
 });
 

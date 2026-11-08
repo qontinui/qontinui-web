@@ -17047,6 +17047,197 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/subprojects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Subprojects
+         * @description List the tenant's subprojects — proxy coord's ``GET /coord/subprojects``.
+         *
+         *     Each item is a ``SubprojectSummary`` whose ``headline`` and ``top_reason``
+         *     come from the verdict coord's reconciler tick cached, with its
+         *     ``verdict_as_of``; the envelope carries ``next_cursor``, ``truncated``,
+         *     ``total``, ``unattached_units`` and ``counts`` — every headline's count and
+         *     the folded one-off / scheduled / merged counts over the same status and
+         *     origin filter, or ``null`` when coord could not take them. The filters
+         *     (``status``, ``headline``, ``exclude_headline``, ``origin``, ``limit``,
+         *     ``cursor``) are forwarded only when set, as sent: coord owns the
+         *     vocabulary and refuses a value — or a parameter — it does not know, so this
+         *     route does not keep a second copy of it to drift. Every filter coord takes
+         *     has to be declared here: this router does not refuse an undeclared query
+         *     parameter, it drops it, so an undeclared filter would never reach coord.
+         *     A coord whose migration has not applied answers ``503 {"error":
+         *     "schema_migration_pending"}``, which reaches the browser as that object.
+         */
+        get: operations["api_v1_operations_subprojects_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/subprojects/by-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Subprojects By Sessions
+         * @description Which subproject each session belongs to — proxy coord's
+         *     ``GET /coord/subprojects/by-sessions``.
+         *
+         *     One batched read per page of session rows (the sessions console's
+         *     subproject chip). coord answers ``{"items": {<session id>: {"id",
+         *     "title", "headline"}}, "missing": [<ids with no live membership>]}``,
+         *     verbatim; a pending membership is reported under ``missing``. The ids are
+         *     forwarded as sent; only their COUNT is checked here, so a page that would
+         *     exceed coord's bound is refused before the call rather than after it.
+         */
+        get: operations["api_v1_operations_subprojects_by_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/subprojects/{subproject_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Subproject
+         * @description One subproject with its verdict computed live — proxy coord's
+         *     ``GET /coord/subprojects/{id}``.
+         *
+         *     The body is coord's verbatim: the summary plus the note fields, the LIVE
+         *     ``verdict`` (headline, reasons and per-source read states), ``next_steps``,
+         *     the member ``sessions`` (open AND closed), ``work_units``, ``gates`` (each
+         *     with its mover), ``prs`` and ``history``. A merged id resolves to the
+         *     subproject it was merged into, and the body then carries ``resolved_from``.
+         *     coord answers 404 for an id that is unknown in the caller's tenant.
+         */
+        get: operations["api_v1_operations_subprojects_subproject_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Subproject
+         * @description Rename a subproject, set its goal or next-steps note, or mark it done /
+         *     reopen it — proxy coord's ``PATCH /coord/subprojects/{id}``.
+         *
+         *     The body (``{"title"?, "goal"?, "next_steps_note"?, "status"?}``) is
+         *     forwarded verbatim; coord answers the updated ``SubprojectSummary``. Coord
+         *     tenant admin, like every subproject write (D11).
+         */
+        patch: operations["api_v1_operations_subprojects_subproject_id_patch"];
+        trace?: never;
+    };
+    "/api/v1/operations/subprojects/{subproject_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Subproject Members
+         * @description Attach, move or remove one member session or work unit — proxy coord's
+         *     ``POST /coord/subprojects/{id}/members``.
+         *
+         *     The body (``{"action", "member_kind", "agent_session_id"?,
+         *     "work_unit_id"?, "work_unit_slug"?}``) is forwarded verbatim; coord
+         *     resolves a harness session id through its identity card in the caller's
+         *     tenant and answers ``{"member": {...}}`` (D11).
+         */
+        post: operations["api_v1_operations_subprojects_subproject_id_members_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/subprojects/{subproject_id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Subproject Merge
+         * @description Merge this subproject INTO another — proxy coord's
+         *     ``POST /coord/subprojects/{id}/merge``.
+         *
+         *     The body (``{"into_id": <uuid>}``) is forwarded verbatim. coord moves the
+         *     members, records ``merged_into`` and answers
+         *     ``{"merged_into", "moved_members"}``; the merged id resolves to its target
+         *     from then on (D11).
+         */
+        post: operations["api_v1_operations_subprojects_subproject_id_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/subprojects/{subproject_id}/spawn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Subproject Spawn
+         * @description Continue a subproject: spawn a session to work on it — proxy coord's
+         *     ``POST /coord/subprojects/{id}/spawn`` (D8).
+         *
+         *     The body (``{"effort", "ultracode"?, "prompt_addendum"?,
+         *     "target_device_id"?, "account"?, "repos"?}``) is forwarded verbatim. coord
+         *     derives the repos when none are sent, composes the brief from the
+         *     subproject's next steps, writes the pending allocation membership and
+         *     places the session through ``/agents/spawn``'s placement: a hard pin on a
+         *     named device, coord's pool otherwise. It answers the allocation id, where
+         *     the session went (``placement``) and the effort it was ASKED for — never the
+         *     effort applied, which no runner reports yet.
+         *
+         *     Mirrors ``post_agents_spawn``: coord's refusals pass through as objects
+         *     (``structured_errors=True``) — the capacity and pin 409s ``/agents/spawn``
+         *     already returns, ``422 {"error": "subproject_has_no_repo"}`` and
+         *     ``422 {"error": "invalid_effort"}`` — because the Continue dialog branches
+         *     on them. It uses ``_COORD_SUBPROJECTS_TIMEOUT``, not ``_COORD_TIMEOUT``:
+         *     the brief is built from the verdict the detail door computes, and a spawn
+         *     that times out here is one whose outcome is unknown, so the timeout must
+         *     outlast coord's own work rather than cut it off.
+         */
+        post: operations["api_v1_operations_subprojects_subproject_id_spawn_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/symbol-claims": {
         parameters: {
             query?: never;
@@ -81270,6 +81461,258 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_subprojects_get: {
+        parameters: {
+            query?: {
+                /** @description Lifecycle filter, forwarded as sent: `open` (coord's default), `done`, `archived` or `all`. */
+                status?: string | null;
+                /** @description Verdict filter, forwarded as sent: one of `needs_you`, `stalled`, `working`, `waiting`, `done` or `unknown` (coord's vocabulary), or several comma-separated (`needs_you,stalled`). */
+                headline?: string | null;
+                /** @description Verdicts to leave out, forwarded as sent, comma-separated like `headline` — `done` lists every subproject that is not done in one read. A coord that predates the parameter refuses it (400 `unknown_query_parameter`, passed through) or ignores it (its answer then still holds done subprojects); a caller tells which. */
+                exclude_headline?: string | null;
+                /** @description Origin filter, forwarded as sent (`operator_prompt`, `autonomous`, `scheduled`, ...). */
+                origin?: string | null;
+                limit?: number | null;
+                /** @description coord's opaque `next_cursor` from the previous page. */
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_subprojects_by_sessions_get: {
+        parameters: {
+            query: {
+                /** @description Comma-separated harness (Claude Code) session ids, at most 200 — one page of session rows. */
+                ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_subprojects_subproject_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subproject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_subprojects_subproject_id_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subproject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_subprojects_subproject_id_members_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subproject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_subprojects_subproject_id_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subproject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_subprojects_subproject_id_spawn_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subproject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
