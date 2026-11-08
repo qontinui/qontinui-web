@@ -132,9 +132,13 @@ class InitiativeRead(BaseModel):
 
 class CheckpointDeclRead(BaseModel):
     id: str
-    #: ISO date, as declared.
+    #: ISO date, as declared. Null when none is declared — or when the one
+    #: declared is not a date, which ``due_error`` then says.
     due: str | None
     label: str | None
+    #: Why the declared ``due`` can't be read (it is not a date): this
+    #: checkpoint's due date is unknown, never "not declared".
+    due_error: str | None = None
 
 
 class CriterionDeclRead(BaseModel):
@@ -366,6 +370,13 @@ class MetricRead(BaseModel):
     checkpoints: list[CheckpointDeclRead] = Field(default_factory=list)
     #: A legacy free-string ``checkpoints:``, shown as text.
     checkpoints_text: str | None = None
+    #: True only when the document's ``checkpoints:`` was read in full — none
+    #: declared, or a list whose every item has a quoted id — so a checkpoint
+    #: ``checkpoints`` does not hold is one the document does not declare.
+    #: False when the definition or the list could not be fully read (not a
+    #: list, an item with no quoted id, free text): whether the document
+    #: declares a checkpoint only a report names is then unknown.
+    checkpoint_list_complete: bool
     criteria: list[CriterionDeclRead] = Field(default_factory=list)
     results: list[ResultEntryRead] = Field(default_factory=list)
     extra_fields: list[ExtraFieldRead] = Field(default_factory=list)
@@ -397,6 +408,11 @@ class ObjectivesRead(BaseModel):
     #: False: "The project's objectives can't be read" (reason in
     #: ``sources.intent_documents``) — never an empty objectives list.
     objectives_readable: bool
+    #: False when coord's intent-document list was not read, or came back
+    #: incomplete (a degraded listing; reason in ``sources.intent_documents``):
+    #: a document this read did not return may still exist, so that no shown
+    #: measure declares an objective is unknown, never "none declared".
+    document_list_complete: bool
     metrics: list[MetricRead]
     #: Metrics a live initiative's ``success_metrics`` names that serve none
     #: of its objectives.

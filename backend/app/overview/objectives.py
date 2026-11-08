@@ -224,6 +224,7 @@ async def build_objectives(
             initiatives=[],
             earlier_initiatives_count=0,
             objectives_readable=False,
+            document_list_complete=False,
             metrics=[],
             initiative_named_metrics=[],
             other_metrics=[],
@@ -339,6 +340,7 @@ async def build_objectives(
             1 for i in initiatives if not i.live and _readable(i)
         ),
         objectives_readable=not problems,
+        document_list_complete=not listing.degraded,
         metrics=metrics,
         initiative_named_metrics=initiative_named,
         other_metrics=other,

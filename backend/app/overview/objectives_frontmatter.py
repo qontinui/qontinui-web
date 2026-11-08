@@ -355,42 +355,63 @@ def _string_list(value: Any, key: str, errors: dict[str, str]) -> list[str]:
     return []
 
 
+def _due(value: Any) -> tuple[str | None, str | None]:
+    """A checkpoint's ``due``: ``(date, error)``. None declared is neither.
+    One that is not a date — text that does not parse as one, or a list or a
+    mapping — is the error, never "no due date": the date is unknown."""
+    if value is None:
+        return None, None
+    text = _text(value)
+    if text is not None and parse_date(text) is not None:
+        return text, None
+    return None, f"the due {value!r} is not a date"
+
+
 def _parse_checkpoints(
     value: Any, errors: dict[str, str], warnings: list[str]
-) -> tuple[list[CheckpointDeclRead], str | None]:
+) -> tuple[list[CheckpointDeclRead], str | None, bool]:
+    """``(declared, free text, complete)``. ``complete``: the list was read in
+    full — none declared, or every item has a quoted id — so a checkpoint
+    ``declared`` lacks is one the document does not declare. A duplicate id or
+    a due that is not a date leaves it complete: every id was read, and a bad
+    due is named on its own checkpoint (``due_error``)."""
     if value is None:
-        return [], None
+        return [], None, True
     if isinstance(value, str | int | float):
         warnings.append(
             "checkpoints is free text, not a list, so no checkpoint can be "
             "matched to a report."
         )
-        return [], str(value)
+        return [], str(value), False
     if not isinstance(value, list):
         errors["checkpoints"] = "checkpoints must be a list of {id, due, label}."
-        return [], None
+        return [], None, False
     out: list[CheckpointDeclRead] = []
     seen: set[str] = set()
     problems: list[str] = []
+    complete = True
     for i, item in enumerate(value):
         ident = item.get("id") if isinstance(item, dict) else None
         if not isinstance(ident, str) or not ident.strip():
             problems.append(f"item {i + 1} has no quoted id")
+            complete = False
             continue
         if ident in seen:
             problems.append(f"{ident!r} is declared twice")
             continue
         seen.add(ident)
-        due = _text(item.get("due"))
-        if due is not None and parse_date(due) is None:
-            problems.append(f"{ident!r} has a due that is not a date ({due!r})")
-            due = None
+        raw_due = item.get("due")
+        due, due_error = _due(raw_due)
+        if due_error:
+            problems.append(f"{ident!r} has a due that is not a date ({raw_due!r})")
         out.append(
-            CheckpointDeclRead(id=ident, due=due, label=_text(item.get("label")))
+            CheckpointDeclRead(
+                id=ident, due=due, label=_text(item.get("label")), due_error=due_error
+            )
         )
     if problems:
         errors["checkpoints"] = "; ".join(problems)
-    return out, None
+    return out, None, complete
 
 
 def _parse_criteria(value: Any, errors: dict[str, str]) -> list[CriterionDeclRead]:
@@ -503,9 +524,11 @@ def build_metric(doc: IntentDocumentRead) -> tuple[MetricRead, bool]:
         overview_order=doc.overview_order,
         body=doc.body,
         error=doc.error,
-        # Until the frontmatter is read below, where the value comes from is
-        # unknown — the reason an unreadable or unparseable document keeps.
+        # Until the frontmatter is read below, where the value comes from and
+        # which checkpoints it declares are unknown — what an unreadable or
+        # unparseable document keeps.
         current_value=_current_value_unknown(),
+        checkpoint_list_complete=False,
     )
     if doc.state == "unreadable":
         return base, False
@@ -546,8 +569,8 @@ def build_metric(doc: IntentDocumentRead) -> tuple[MetricRead, bool]:
     base.structured_reporting_since = _text(fm.get("structured_reporting_since"))
     base.source_query_type = source_query_type(fm.get("source_query"))
     base.current_value = _current_value(base.source_query_type)
-    base.checkpoints, base.checkpoints_text = _parse_checkpoints(
-        fm.get("checkpoints"), errors, warnings
+    base.checkpoints, base.checkpoints_text, base.checkpoint_list_complete = (
+        _parse_checkpoints(fm.get("checkpoints"), errors, warnings)
     )
     base.criteria = _parse_criteria(fm.get("criteria"), errors)
     base.results = _parse_results(fm.get("results"), errors)
@@ -640,6 +663,7 @@ def metric_read_failed(doc: IntentDocumentRead, exc: Exception) -> MetricRead:
         error=doc.error,
         frontmatter_error=_read_failed(exc),
         current_value=_current_value_unknown(),
+        checkpoint_list_complete=False,
     )
 
 

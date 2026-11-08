@@ -8907,6 +8907,17 @@
             ],
             "title": "Due"
           },
+          "due_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Error"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -34847,6 +34858,10 @@
             ],
             "title": "Ceiling Text"
           },
+          "checkpoint_list_complete": {
+            "title": "Checkpoint List Complete",
+            "type": "boolean"
+          },
           "checkpoint_results": {
             "items": {
               "$ref": "#/components/schemas/CheckpointResultRead"
@@ -35191,6 +35206,7 @@
           "updated_by",
           "overview_order",
           "body",
+          "checkpoint_list_complete",
           "current_value"
         ],
         "title": "MetricRead",
@@ -36813,6 +36829,10 @@
       },
       "ObjectivesRead": {
         "properties": {
+          "document_list_complete": {
+            "title": "Document List Complete",
+            "type": "boolean"
+          },
           "earlier_initiatives_count": {
             "title": "Earlier Initiatives Count",
             "type": "integer"
@@ -36887,6 +36907,7 @@
           "initiatives",
           "earlier_initiatives_count",
           "objectives_readable",
+          "document_list_complete",
           "metrics",
           "initiative_named_metrics",
           "other_metrics",
