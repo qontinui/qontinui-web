@@ -28,9 +28,13 @@
  * say "nothing stalled" about every stall past it.
  *
  * **The rows.** The active tab's first page, then Load more through coord's
- * cursor. Open is ONE read (`exclude_headline=done`); a coord that answers
- * 400/422 to that parameter gets the per-headline fallback — the five
- * not-done headlines read one by one and merged most-recently-active first.
+ * cursor. Open is ONE read (`exclude_headline=done`, which the backend proxy
+ * forwards). A coord that predates the parameter gets the per-headline
+ * fallback — the five not-done headlines read one by one and merged
+ * most-recently-active first — whether it refuses the parameter
+ * (`400 unknown_query_parameter` naming it) or ignores it (a done row in the
+ * answer, first page or later, proves that). Once fallen back, Open stays per
+ * headline for the life of the page.
  * Rows are stored STAMPED with the tab that produced them and derived from
  * whether the stamp matches the tab selected now, so a read for the previous
  * tab never renders under this one, and a read that failed under a new tab is
@@ -54,7 +58,8 @@ import {
   type ReadSequence,
 } from "@/components/console";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
-import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { extractCoordRefusal } from "@/components/admin/coord/spawnPlacement";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
 import {
   fetchSubprojects,
@@ -142,24 +147,36 @@ function totalOf(body: SubprojectListResponse): number | null {
   return typeof body.total === "number" ? body.total : null;
 }
 
-/** coord refused `exclude_headline` itself: a coord that predates it. */
+/**
+ * coord refused `exclude_headline` itself — its refusal of a parameter it does
+ * not know: `400 {"error": "unknown_query_parameter", "unknown": [...]}`
+ * naming it. Any other refusal is a failure of the read, not this.
+ */
 function refusedTheParameter(err: unknown): boolean {
-  const status = httpStatusOf(err);
-  return status === 400 || status === 422;
+  if (httpStatusOf(err) !== 400) return false;
+  const body = extractCoordRefusal(httpBodyOf(err) ?? "");
+  const unknown = body?.unknown;
+  return (
+    body?.error === "unknown_query_parameter" &&
+    Array.isArray(unknown) &&
+    unknown.includes("exclude_headline")
+  );
 }
 
 /**
- * The rows a stream answered with. Open's one read drops a `done` row: coord
- * excludes them by `exclude_headline=done`, so one in the answer means that
- * coord ignored the parameter — and a done row does not belong in Open either
- * way.
+ * Did coord ignore `exclude_headline=done`? A coord that applied it can
+ * return no done row, so one in the answer proves it did not — and the rest
+ * of that page is then NOT "every open subproject that is not done", just
+ * whatever was not done on a page of everything.
  */
-function streamItems(
-  view: StreamView,
-  body: SubprojectListResponse
-): SubprojectSummary[] {
-  const items = Array.isArray(body.items) ? body.items : [];
-  return view === "open" ? items.filter((s) => s.headline !== "done") : items;
+function ignoredTheExclusion(body: SubprojectListResponse): boolean {
+  return (
+    Array.isArray(body.items) && body.items.some((s) => s.headline === "done")
+  );
+}
+
+function streamItems(body: SubprojectListResponse): SubprojectSummary[] {
+  return Array.isArray(body.items) ? body.items : [];
 }
 
 // ─── one count's bookkeeping ───
@@ -411,12 +428,14 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
         if (
           streams.length === 1 &&
           streams[0] === "open" &&
-          only?.status === "rejected" &&
-          refusedTheParameter(only.reason)
+          ((only?.status === "rejected" && refusedTheParameter(only.reason)) ||
+            (only?.status === "fulfilled" && ignoredTheExclusion(only.value)))
         ) {
-          // This coord does not take `exclude_headline`: read Open the way it
-          // can be read, under the same ticket. That refusal is not a failure
-          // of the view, so it settles nothing.
+          // This coord does not take `exclude_headline` — it refused it, or
+          // answered as if it were not there. Read Open the way it can be
+          // read, per headline, under the same ticket: never render what is
+          // left of a page of everything as "the open subprojects". That is
+          // not a failure of the view, so it settles nothing.
           openPerHeadline.current = true;
           continue;
         }
@@ -440,7 +459,7 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
         answers.forEach((a, i) => {
           const view = streams[i];
           if (view === undefined || a.status !== "fulfilled") return;
-          value.perStream[view] = streamItems(view, a.value);
+          value.perStream[view] = streamItems(a.value);
           value.cursors[view] = a.value.next_cursor ?? null;
           value.truncated ||= a.value.truncated === true;
           value.asOf = latest(
@@ -506,6 +525,21 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
     );
     if (cancelled.current) return;
     setLoadingMoreTab((prev) => (prev === forTab ? null : prev));
+    if (
+      answers.some(
+        (a, i) =>
+          streams[i] === "open" &&
+          a.status === "fulfilled" &&
+          ignoredTheExclusion(a.value)
+      )
+    ) {
+      // A later page proves coord ignored `exclude_headline`: the cursor walks
+      // every open subproject, so the pages above are no view of Open either.
+      // Start Open again, per headline, from its first page.
+      openPerHeadline.current = true;
+      await readRows(forTab);
+      return;
+    }
     const rejected = answers.find((a) => a.status === "rejected");
     if (rejected && rejected.status === "rejected") {
       // A failed page leaves the rows above it as they were: it is not a
@@ -532,13 +566,13 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
       const seen = new Set((next.perStream[view] ?? []).map((s) => s.id));
       next.perStream[view] = [
         ...(next.perStream[view] ?? []),
-        ...streamItems(view, a.value).filter((s) => !seen.has(s.id)),
+        ...streamItems(a.value).filter((s) => !seen.has(s.id)),
       ];
       next.cursors[view] = a.value.next_cursor ?? null;
       next.truncated ||= a.value.truncated === true;
     });
     settleRows(seq, { value: next });
-  }, [issueRows, settleRows]);
+  }, [issueRows, settleRows, readRows]);
 
   const rowsValue = rowsAxis.value;
   const sameTab = rowsValue !== null && rowsValue.tab === tab;
