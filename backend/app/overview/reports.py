@@ -1230,7 +1230,15 @@ class ReportSnapshotStore:
         stored = await _stored_scope(ctx)
         scope = _read_scope(stored, stored.owners)
         matcher = TermMatcher(scope.terms)
-        return ListResult(items=[_row_read(row, scope, matcher) for row in rows])
+
+        # Off the event loop, as the report list and the change log are: at
+        # the 500-row cap with terms set, the labels', paths' and reasons'
+        # term pass takes tens to hundreds of milliseconds.
+        def read_all() -> list[BaseModel]:
+            return [_row_read(row, scope, matcher) for row in rows]
+
+        items: list[BaseModel] = await scan_off_loop(read_all)
+        return ListResult(items=items)
 
     async def get(self, ctx: StoreContext, record_id: str) -> ReportSnapshotRead:
         row = await self._load(ctx, record_id, with_data=True)
