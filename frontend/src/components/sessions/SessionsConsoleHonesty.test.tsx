@@ -1109,3 +1109,42 @@ describe("linked is exact when no bridged row could hide past a ceiling", () => 
     expect(statBadge("linked")).toHaveTextContent(/^linked 2$/);
   });
 });
+
+describe("a count is floored only where an unread or unresolved row could raise it", () => {
+  it("needs-a-person stays exact beside a FULL agent half when nothing is unresolved", async () => {
+    mount(async () =>
+      envelope([linked(1, "dev-a"), linked(2, "dev-b")], {
+        lifecycle_half: { read: "ok", bound: belowCeiling(2) },
+        agent_half: { read: "ok", bound: atCeiling() },
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(2)
+    );
+    // Needs-a-person comes only from a lifecycle state, and every lifecycle
+    // row was read and resolved: exact, though the agent half is full.
+    expect(stripBadge("needs a person")).toHaveTextContent(
+      /^needs a person 0$/
+    );
+    // Active can be an agent-only session past the agent ceiling: a floor.
+    expect(stripBadge("active")).toHaveTextContent(/^active ≥2$/);
+  });
+
+  it("an unresolved row floors linked and needs-a-person even when neither half is full", async () => {
+    mount(async () =>
+      envelope([linked(1, "dev-a"), unclassified(2, "dev-b")], {
+        lifecycle_half: { read: "ok", bound: belowCeiling(2) },
+        agent_half: { read: "ok", bound: belowCeiling(1) },
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(2)
+    );
+    // The unresolved row's twin may have been filtered out coord-side: it may
+    // be linked, and its masked status may need a person.
+    expect(statBadge("linked")).toHaveTextContent(/^linked ≥1$/);
+    expect(stripBadge("needs a person")).toHaveTextContent(
+      /^needs a person 0 among rows read$/
+    );
+  });
+});

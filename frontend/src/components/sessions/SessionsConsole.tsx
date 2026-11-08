@@ -133,6 +133,7 @@ import {
   isSessionFinished,
   isSizeUnknown,
   linkedCount,
+  statusCountBasis,
   lifecycleOnlyCount,
   rowTimestamp,
   sessionsCeiling,
@@ -682,8 +683,23 @@ export function SessionsConsole({
   // status counts are `–` (`deriveSessionsHealth` returns them null) and say
   // why.
   const statusTitle = agentHalfFailed ? STATUSES_UNESTABLISHED : undefined;
-  const attentionCount = fleet(health.attention, { title: statusTitle });
-  const activeCount = fleet(health.active, { title: statusTitle });
+  // Each status count has its own basis: an unresolved row may hide either,
+  // a full lifecycle half may hide either, and only active can also be an
+  // agent-only session past a full agent half (`statusCountBasis`).
+  const unresolvedRows = countClass(rows, null);
+  const statusCount = (
+    n: number | null,
+    which: "attention" | "active"
+  ): CountCell =>
+    n === null
+      ? { value: null, title: statusTitle }
+      : unread(
+          fleetCount(n, statusCountBasis(ceiling, unresolvedRows, which), {
+            title: statusTitle,
+          })
+        );
+  const attentionCount = statusCount(health.attention, "attention");
+  const activeCount = statusCount(health.active, "active");
 
   const stats: Stat[] = [
     { key: "rows", label: "rows ", ...fleet(rows.length) },
