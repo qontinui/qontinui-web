@@ -35,8 +35,9 @@ never read as the runner's answer. The runner's answers map as follows:
 * 409 ``egress_off``: 409 ``runner_egress_off``;
 * any other non-2xx: 502 ``runner_error``;
 * no answer in time: 504 ``runner_relay_timeout``;
-* a body that is not a valid ``TerminalLayout``, is not decodable, or holds
-  a NUL character (which Postgres cannot store): 502 ``runner_layout_invalid``;
+* a body that is not a valid ``TerminalLayout`` or is not decodable, holds a
+  NUL character or an unpaired surrogate (which Postgres cannot store), or
+  nests deeper than :data:`MAX_LAYOUT_DEPTH`: 502 ``runner_layout_invalid``;
 * a body over the relay's 8 MiB cap: 413 ``runner_layout_too_large``. The
   runner enforces the same cap on its side and answers 413 ("response body
   exceeds relay size limit"); this backend's relay checks it again.
@@ -122,6 +123,17 @@ _NOT_FOUND_SENTENCE = (
     "belongs to a device you do not own"
 )
 
+#: How deeply a relayed layout may nest (an object or array inside another
+#: counts one level). ``TerminalLayout`` itself is five levels deep; the
+#: headroom is for fields a newer runner adds. A deeper body is refused before
+#: it can recurse past the interpreter's limit when it is serialised for the
+#: insert.
+MAX_LAYOUT_DEPTH = 64
+
+_UNSTORABLE_TEXT = (
+    "holds a NUL character or an unpaired surrogate, which cannot be stored"
+)
+
 
 def utc_now() -> datetime:
     """This backend's clock. One seam, so tests can move it."""
@@ -146,6 +158,20 @@ def utc_now() -> datetime:
             )
         },
         413: {"description": "The runner's layout is over the relay's 8 MiB cap."},
+        422: {
+            "description": (
+                "A malformed request: device_id is not a UUID, an unknown field "
+                "(such as runner_port), or a title that is too long or holds "
+                "control characters."
+            )
+        },
+        500: {
+            "description": (
+                "This backend's own fault: the device lookup failed "
+                "(device_lookup_failed), or the relay refused the capture's own "
+                "request (relay_request_rejected)."
+            )
+        },
         502: {"description": "The runner answered an error or an invalid layout."},
         503: {"description": "The device's runner is not connected to the relay."},
         504: {"description": "The runner did not answer in time."},
@@ -160,8 +186,41 @@ async def capture_saved_session_list(
     """Save the runner's current per-tab session list for ``device_id``."""
     user_id = str(user.id)
     bearer = coord_device.extract_bearer(request)
-    outcome = await runner_relay.relay_http(
-        body.device_id,
+    outcome = await _relay_terminal_layout(
+        body.device_id, user_id=user_id, bearer=bearer
+    )
+    if isinstance(
+        outcome,
+        runner_relay.NotOwned | runner_relay.NotConnected | runner_relay.LookupFailed,
+    ):
+        return _device_refusal(
+            outcome, request, device_id=body.device_id, user_id=user_id
+        )
+    if not isinstance(outcome, runner_relay.Reply):
+        raise _relay_failure_refusal(outcome, body.device_id)
+
+    raw_layout, layout = _validated_layout(outcome, body.device_id)
+    _note_device_mismatch(layout, body.device_id)
+    statuses = await coord_session_status.read_work_status(
+        _claude_session_ids(layout), bearer=bearer, user_id=user_id
+    )
+    row = _new_row(body, user, raw_layout, layout, statuses)
+    db.add(row)
+    await db.flush()
+    trimmed = await _trim_device(db, body.device_id)
+    await db.commit()
+
+    _log_captured(row, user_id=user_id, statuses=statuses, trimmed=trimmed)
+    return _detail(row, created_by_name=_display_name(user.full_name, user.username))
+
+
+async def _relay_terminal_layout(
+    device_id: UUID, *, user_id: str, bearer: str | None
+) -> runner_relay.RelayOutcome:
+    """One ``GET /terminal-layout`` to the runner owning ``device_id``'s relay
+    socket. Nothing of the caller's request is forwarded."""
+    return await runner_relay.relay_http(
+        device_id,
         user_id=user_id,
         bearer=bearer,
         method="GET",
@@ -172,38 +231,48 @@ async def capture_saved_session_list(
         timeout_s=CAPTURE_RELAY_TIMEOUT_S,
         caller="saved_session_lists",
     )
-    if isinstance(
-        outcome,
-        runner_relay.NotOwned | runner_relay.NotConnected | runner_relay.LookupFailed,
-    ):
-        request_id = runner_relay.relay_request_id(request)
-        logger.warning(
-            "saved_session_list_capture_refused",
-            outcome=type(outcome).__name__,
-            device_id=str(body.device_id),
-            user_id=user_id,
-            request_id=request_id,
-        )
-        return runner_relay.relay_refusal_response(outcome, request_id=request_id)
-    if not isinstance(outcome, runner_relay.Reply):
-        raise _relay_failure_refusal(outcome, body.device_id)
 
-    raw_layout, layout = _validated_layout(outcome, body.device_id)
-    _note_device_mismatch(layout, body.device_id)
 
-    claude_ids = [
+def _device_refusal(
+    outcome: runner_relay.DeviceRefusal,
+    request: Request,
+    *,
+    device_id: UUID,
+    user_id: str,
+) -> JSONResponse:
+    """The relay's own device refusal, served unchanged, and logged."""
+    request_id = runner_relay.relay_request_id(request)
+    logger.warning(
+        "saved_session_list_capture_refused",
+        outcome=type(outcome).__name__,
+        device_id=str(device_id),
+        user_id=user_id,
+        request_id=request_id,
+    )
+    return runner_relay.relay_refusal_response(outcome, request_id=request_id)
+
+
+def _claude_session_ids(layout: TerminalLayout) -> list[str]:
+    """The confirmed sessions' ids, the ones coord can be asked about."""
+    return [
         session.claudeSessionId
         for page in layout.pages
         for session in page.sessions
         if session.claudeSessionId
     ]
-    statuses = await coord_session_status.read_work_status(
-        claude_ids, bearer=bearer, user_id=user_id
-    )
-    coord_status = {cid: answer.as_json() for cid, answer in statuses.items()}
 
+
+def _new_row(
+    body: SavedSessionListCreate,
+    user: User,
+    raw_layout: dict[str, Any],
+    layout: TerminalLayout,
+    statuses: dict[str, coord_session_status.CoordWorkStatus],
+) -> SavedSessionList:
+    """The row a capture stores, captured now on this backend's clock."""
     captured_at = utc_now()
-    row = SavedSessionList(
+    coord_status = {cid: answer.as_json() for cid, answer in statuses.items()}
+    return SavedSessionList(
         id=uuid.uuid4(),
         device_id=body.device_id,
         runner_instance=layout.runner.instanceName,
@@ -219,25 +288,30 @@ async def capture_saved_session_list(
         # field a newer runner adds is kept (D9), plus coord's answers.
         layout={**raw_layout, COORD_STATUS_KEY: coord_status},
     )
-    db.add(row)
-    await db.flush()
-    trimmed = await _trim_device(db, body.device_id)
-    await db.commit()
 
+
+def _log_captured(
+    row: SavedSessionList,
+    *,
+    user_id: str,
+    statuses: dict[str, coord_session_status.CoordWorkStatus],
+    trimmed: int,
+) -> None:
+    # Log keys avoid "session": app/core/log_sanitizer.py masks any key
+    # containing it, which would hide the list id and the count.
     logger.info(
         "saved_session_list_captured",
-        saved_session_list_id=str(row.id),
-        device_id=str(body.device_id),
+        saved_list_id=str(row.id),
+        device_id=str(row.device_id),
         user_id=user_id,
         tab_count=row.tab_count,
-        session_count=row.session_count,
+        terminal_count=row.session_count,
         coord_status_reads={
             read: sum(1 for a in statuses.values() if a.read == read)
             for read in ("ok", "unknown", "failed")
         },
         trimmed=trimmed,
     )
-    return _detail(row, created_by_name=_display_name(user.full_name, user.username))
 
 
 def _relay_failure_refusal(
@@ -327,18 +401,7 @@ def _reply_refusal(reply: runner_relay.Reply, device_id: UUID) -> RefusalHTTPExc
         and runner_error.startswith(RELAY_PATH_NOT_CARRIED)
     )
     if predates:
-        return refusal_error(
-            409,
-            RefusalCode.conflict,
-            NextActionKind.open_page,
-            "this runner's build predates saved tab lists: install the current "
-            "runner (or rebuild it from source) to enable saving",
-            discriminator="runner_predates_terminal_layout",
-            target=_RUNNER_DOWNLOAD_PAGE,
-            glossary_terms=[GlossaryTerm.runner],
-            metadata=metadata,
-        )
-
+        return _predates_refusal(metadata)
     if reply.status == 413:
         # The runner's own copy of the relay cap: the layout it built is over
         # 8 MiB. Retrying cannot help.
@@ -347,24 +410,51 @@ def _reply_refusal(reply: runner_relay.Reply, device_id: UUID) -> RefusalHTTPExc
             + (f" ({runner_error[:300]})" if runner_error else ""),
             metadata,
         )
-
     if reply.status == 409 and runner_error == _EGRESS_OFF:
-        flow = error_body.get("flow")
-        message = error_body.get("message")
-        return refusal_error(
-            409,
-            RefusalCode.permission_denied,
-            NextActionKind.set_setting,
-            message
-            if isinstance(message, str) and message
-            else "the runner's egress gate refused the terminal-layout read",
-            discriminator="runner_egress_off",
-            target=_TERMINAL_STREAMING_SETTING,
-            glossary_terms=[GlossaryTerm.runner],
-            metadata={**metadata, "flow": flow if isinstance(flow, str) else None},
-        )
+        return _egress_off_refusal(error_body, metadata)
+    return _runner_error_refusal(reply.status, runner_error, metadata)
 
-    sentence = f"the runner answered {reply.status} for its terminal layout"
+
+def _predates_refusal(metadata: dict[str, Any]) -> RefusalHTTPException:
+    """The runner's build has no ``/terminal-layout`` (D7)."""
+    return refusal_error(
+        409,
+        RefusalCode.conflict,
+        NextActionKind.open_page,
+        "this runner's build predates saved tab lists: install the current "
+        "runner (or rebuild it from source) to enable saving",
+        discriminator="runner_predates_terminal_layout",
+        target=_RUNNER_DOWNLOAD_PAGE,
+        glossary_terms=[GlossaryTerm.runner],
+        metadata=metadata,
+    )
+
+
+def _egress_off_refusal(
+    error_body: dict[str, Any], metadata: dict[str, Any]
+) -> RefusalHTTPException:
+    """The runner's egress gate refused the read; its own sentence is kept."""
+    flow = error_body.get("flow")
+    message = error_body.get("message")
+    return refusal_error(
+        409,
+        RefusalCode.permission_denied,
+        NextActionKind.set_setting,
+        message
+        if isinstance(message, str) and message
+        else "the runner's egress gate refused the terminal-layout read",
+        discriminator="runner_egress_off",
+        target=_TERMINAL_STREAMING_SETTING,
+        glossary_terms=[GlossaryTerm.runner],
+        metadata={**metadata, "flow": flow if isinstance(flow, str) else None},
+    )
+
+
+def _runner_error_refusal(
+    status_code: int, runner_error: str | None, metadata: dict[str, Any]
+) -> RefusalHTTPException:
+    """Any other runner non-2xx: the runner answered, with an error."""
+    sentence = f"the runner answered {status_code} for its terminal layout"
     if runner_error:
         sentence = f"{sentence}: {runner_error[:300]}"
     return refusal_error(
@@ -390,6 +480,12 @@ def _validated_layout(
         raise _reply_refusal(reply, device_id)
     try:
         raw = json.loads(reply.body)
+    except RecursionError:
+        # The parser recurses per nesting level; a body nested past the
+        # interpreter's recursion limit cannot be read.
+        raise _layout_invalid(
+            "the runner's terminal layout nests too deeply to read", device_id
+        ) from None
     except (ValueError, UnicodeDecodeError):
         raise _layout_invalid(
             "the runner's terminal layout is not JSON", device_id
@@ -398,14 +494,9 @@ def _validated_layout(
         raise _layout_invalid(
             "the runner's terminal layout is not a JSON object", device_id
         )
-    if _holds_unstorable_text(raw):
-        # Postgres jsonb cannot store U+0000 or an unpaired UTF-16 surrogate;
-        # storing either would fail as a 500.
-        raise _layout_invalid(
-            "the runner's terminal layout holds a NUL character or an unpaired "
-            "surrogate, which cannot be stored",
-            device_id,
-        )
+    problem = _storage_problem(raw)
+    if problem is not None:
+        raise _layout_invalid(f"the runner's terminal layout {problem}", device_id)
     try:
         layout = TerminalLayout.model_validate(raw)
     except ValidationError as exc:
@@ -428,18 +519,31 @@ def _is_unstorable(text: str) -> bool:
     return any(ch == "\x00" or "\ud800" <= ch <= "\udfff" for ch in text)
 
 
-def _holds_unstorable_text(value: Any) -> bool:
-    """True when any string in the JSON value, key or value, is unstorable."""
-    if isinstance(value, str):
-        return _is_unstorable(value)
-    if isinstance(value, dict):
-        return any(
-            _holds_unstorable_text(k) or _holds_unstorable_text(v)
-            for k, v in value.items()
-        )
-    if isinstance(value, list):
-        return any(_holds_unstorable_text(item) for item in value)
-    return False
+def _storage_problem(value: Any) -> str | None:
+    """Why the parsed body cannot be stored, or ``None`` when it can.
+
+    Two things fail the insert as a 500 if they reach it: a string (key or
+    value) Postgres jsonb cannot hold (:func:`_is_unstorable`), and nesting
+    deep enough that serialising the body for the insert recurses past the
+    interpreter's limit. The walk is iterative, so the check itself cannot
+    exhaust the stack, and it stops at :data:`MAX_LAYOUT_DEPTH`.
+    """
+    stack: list[tuple[Any, int]] = [(value, 1)]
+    while stack:
+        item, depth = stack.pop()
+        if depth > MAX_LAYOUT_DEPTH:
+            return f"nests deeper than {MAX_LAYOUT_DEPTH} levels"
+        if isinstance(item, str):
+            if _is_unstorable(item):
+                return _UNSTORABLE_TEXT
+        elif isinstance(item, dict):
+            for key, child in item.items():
+                if _is_unstorable(key):
+                    return _UNSTORABLE_TEXT
+                stack.append((child, depth + 1))
+        elif isinstance(item, list):
+            stack.extend((child, depth + 1) for child in item)
+    return None
 
 
 def _note_device_mismatch(layout: TerminalLayout, device_id: UUID) -> None:
@@ -501,21 +605,8 @@ async def list_saved_session_lists(
     if not owned:
         return []
 
-    columns = [
-        SavedSessionList.id,
-        SavedSessionList.device_id,
-        SavedSessionList.runner_instance,
-        SavedSessionList.runner_port,
-        SavedSessionList.runner_build_id,
-        SavedSessionList.title,
-        SavedSessionList.created_by_user_id,
-        SavedSessionList.captured_at,
-        SavedSessionList.expires_at,
-        SavedSessionList.tab_count,
-        SavedSessionList.session_count,
-    ]
     stmt = (
-        select(*columns, User.full_name, User.username)
+        select(*_SUMMARY_COLUMNS, User.full_name, User.username)
         .outerjoin(User, User.id == SavedSessionList.created_by_user_id)
         .where(
             SavedSessionList.device_id.in_(sorted(owned)),
@@ -523,24 +614,42 @@ async def list_saved_session_lists(
         )
         .order_by(SavedSessionList.captured_at.desc(), SavedSessionList.id.desc())
     )
-    rows = (await db.execute(stmt)).all()
-    return [
-        SavedSessionListSummary(
-            id=r.id,
-            device_id=r.device_id,
-            runner_instance=r.runner_instance,
-            runner_port=r.runner_port,
-            runner_build_id=r.runner_build_id,
-            title=r.title,
-            created_by_user_id=r.created_by_user_id,
-            created_by_name=_display_name(r.full_name, r.username),
-            captured_at=r.captured_at,
-            expires_at=r.expires_at,
-            tab_count=r.tab_count,
-            session_count=r.session_count,
-        )
-        for r in rows
-    ]
+    return [_summary(r) for r in (await db.execute(stmt)).all()]
+
+
+#: Every column the list route reads: all but ``layout``, which a summary
+#: never carries and which can be megabytes.
+_SUMMARY_COLUMNS = (
+    SavedSessionList.id,
+    SavedSessionList.device_id,
+    SavedSessionList.runner_instance,
+    SavedSessionList.runner_port,
+    SavedSessionList.runner_build_id,
+    SavedSessionList.title,
+    SavedSessionList.created_by_user_id,
+    SavedSessionList.captured_at,
+    SavedSessionList.expires_at,
+    SavedSessionList.tab_count,
+    SavedSessionList.session_count,
+)
+
+
+def _summary(r: Any) -> SavedSessionListSummary:
+    """One list-route row (the summary columns plus the creator's names)."""
+    return SavedSessionListSummary(
+        id=r.id,
+        device_id=r.device_id,
+        runner_instance=r.runner_instance,
+        runner_port=r.runner_port,
+        runner_build_id=r.runner_build_id,
+        title=r.title,
+        created_by_user_id=r.created_by_user_id,
+        created_by_name=_display_name(r.full_name, r.username),
+        captured_at=r.captured_at,
+        expires_at=r.expires_at,
+        tab_count=r.tab_count,
+        session_count=r.session_count,
+    )
 
 
 @router.get(
@@ -577,7 +686,7 @@ async def delete_saved_session_list(
     await db.commit()
     logger.info(
         "saved_session_list_deleted",
-        saved_session_list_id=str(list_id),
+        saved_list_id=str(list_id),
         device_id=str(row.device_id),
         user_id=str(user.id),
     )
@@ -654,7 +763,7 @@ def _detail(
     except (ValidationError, AttributeError):
         logger.exception(
             "saved_session_list_stored_layout_unreadable",
-            saved_session_list_id=str(row.id),
+            saved_list_id=str(row.id),
         )
         raise refusal_error(
             500,
