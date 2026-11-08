@@ -44,13 +44,25 @@ class StaleVersion(Exception):
 
 class StoreRefused(Exception):
     """The store declined the write for a reason the caller can act on (a
-    name already taken, content its own rules reject)."""
+    name already taken, content its own rules reject).
 
-    def __init__(self, status_code: int, error: str, message: str) -> None:
+    ``extra`` carries structured detail beside ``error`` and ``message`` in
+    the refusal body — a report snapshot's slot-named ``violations``, so a
+    publisher can say which slot failed without parsing prose."""
+
+    def __init__(
+        self,
+        status_code: int,
+        error: str,
+        message: str,
+        *,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.error = error
         self.message = message
+        self.extra = extra or {}
 
 
 @dataclass
@@ -104,6 +116,12 @@ class ResourceStore(Protocol):
     # (the first answer lost in transit) implements it to say which record
     # that was; the router calls it only for a keyed create refused as
     # ``name_taken``. See ``IntentDocumentStore.adopt_existing``.
+    #
+    # Optional: ``adopts_without_key = True``. A store whose create body
+    # carries its own identity (a report snapshot's ``source_path``) makes a
+    # re-post of the same body the same create whether or not it names an
+    # Idempotency-Key, so the router offers an UNKEYED ``name_taken`` to
+    # ``adopt_existing`` too. See ``ReportSnapshotStore``.
 
 
 @dataclass(frozen=True)

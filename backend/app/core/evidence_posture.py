@@ -241,6 +241,14 @@ STORES: Final[dict[str, Store]] = {
         states=("live", "deleted"),
         terminal=("live", "deleted"),
     ),
+    # A stakeholder report's snapshot (plan 2026-11-07-interactive-stakeholder-
+    # reports-in-the-project-overview D1). Never edited or deleted: it is
+    # published, or withdrawn (hidden from readers, kept as history). Nothing
+    # automatic moves either state.
+    "report_snapshots": Store(
+        states=("published", "withdrawn"),
+        terminal=("published", "withdrawn"),
+    ),
 }
 
 
@@ -309,6 +317,10 @@ _OVERVIEW = f"{_V1}/overview"
 #: documents; every overview write admits a coord device JWT since).
 OVERVIEW_PUBLISHING_PLAN: Final = (
     "2026-10-07-agents-publish-documents-to-the-project-overview"
+)
+#: Owns the stakeholder reports and their snapshots.
+OVERVIEW_REPORTS_PLAN: Final = (
+    "2026-11-07-interactive-stakeholder-reports-in-the-project-overview"
 )
 
 
@@ -864,6 +876,62 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
         correction=Verb(
             verb=f"POST {_OVERVIEW}/pages/{{page_id}}/versions/{{version}}/revert",
             admits=("live",),
+        ),
+    ),
+    # Stakeholder reports: the narrative is versioned like a page.
+    **_overview_record_rows(
+        f"{_OVERVIEW}/reports",
+        create=(),
+        update=(),
+        deletion=Gap(
+            tracked_by=OVERVIEW_REPORTS_PLAN,
+            what=(
+                "a wrongly deleted report's history. Its report_versions and "
+                "report_snapshots rows cascade with it; the change log keeps "
+                "every version's metadata but not its body, and every "
+                "snapshot's row but not its document, so re-creating restores "
+                "the narrative's last version under a new id and no snapshot"
+            ),
+        ),
+    ),
+    (
+        "POST",
+        f"{_OVERVIEW}/reports/{{report_id}}/versions/{{version}}/revert",
+    ): Evidence(
+        closed_fields=(),
+        store="overview_records",
+        # A revert writes a NEW version; a wrong one is reverted again.
+        correction=Verb(
+            verb=f"POST {_OVERVIEW}/reports/{{report_id}}/versions/{{version}}/revert",
+            admits=("live",),
+        ),
+    ),
+    # A snapshot is immutable: a wrong one is withdrawn (hidden from readers,
+    # kept as history) and its correction published as a new snapshot. The
+    # document's closed sets are served by the contract's schema.
+    ("POST", f"{_OVERVIEW}/report-snapshots"): Evidence(
+        closed_fields=(
+            "data.figures[].better",
+            "data.figures[].verdict",
+            "data.items[].status",
+            "data.method.kind",
+            "data.schema",
+            "data.tables[].scale.better",
+        ),
+        store="report_snapshots",
+        correction=Verb(
+            verb=f"POST {_OVERVIEW}/report-snapshots",
+            first=f"PATCH {_OVERVIEW}/report-snapshots/{{record_id}}",
+            admits=("published",),
+        ),
+    ),
+    ("PATCH", f"{_OVERVIEW}/report-snapshots/{{record_id}}"): Evidence(
+        closed_fields=(),
+        store="report_snapshots",
+        # A wrong withdrawal is restored; a wrong restore is withdrawn again.
+        correction=Verb(
+            verb=f"PATCH {_OVERVIEW}/report-snapshots/{{record_id}}",
+            admits=("published", "withdrawn"),
         ),
     ),
     **_overview_record_rows(

@@ -60,6 +60,7 @@ from app.overview.permissions import (
 )
 from app.overview.phase_progress import router as timeline_routes
 from app.overview.registry import REGISTRY
+from app.overview.reports import router as reports_routes
 from app.overview.resource import (
     RecordNotFound,
     ResourceSpec,
@@ -372,8 +373,12 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                 # A keyed create refused as a duplicate may be refusing its OWN
                 # earlier attempt, whose answer (and so its change-log row) was
                 # lost. The store decides whether the record there is that one.
+                # A store whose body carries its own identity says so
+                # (``adopts_without_key``): there, an unkeyed re-post is that
+                # create arriving again too.
                 adopt = getattr(store, "adopt_existing", None)
-                if key is None or exc.error != "name_taken" or adopt is None:
+                keyed = key is not None or getattr(store, "adopts_without_key", False)
+                if not keyed or exc.error != "name_taken" or adopt is None:
                     return _refused(exc)
 
                 async def created_through_overview(record_id: str) -> bool:
@@ -573,10 +578,11 @@ for _spec in REGISTRY.values():
         _mount(_spec)
 
 # The routes beyond the generic contract, on the same prefix: the estimate's
-# rollup and forecast; page versions, revert and backlinks; file upload and
-# download.
+# rollup and forecast; page versions, revert and backlinks; a report's view,
+# versions and revert; file upload and download.
 router.include_router(estimates_routes)
 router.include_router(costs_routes)
 router.include_router(timeline_routes)
 router.include_router(pages_routes)
+router.include_router(reports_routes)
 router.include_router(files_routes)

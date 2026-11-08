@@ -31,6 +31,16 @@ from app.overview.intent_documents import (
 from app.overview.milestones import milestone_store
 from app.overview.pages import PageCreate, PageRead, PageUpdate, page_store
 from app.overview.phase_progress import phase_progress_store
+from app.overview.reports import (
+    ReportCreate,
+    ReportRead,
+    ReportSnapshotCreate,
+    ReportSnapshotRead,
+    ReportSnapshotUpdate,
+    ReportUpdate,
+    report_snapshot_store,
+    report_store,
+)
 from app.overview.resource import ResourceSpec
 from app.schemas.overview import (
     EstimateCreate,
@@ -246,6 +256,63 @@ REGISTRY: dict[str, ResourceSpec] = {
             store=page_store,
             tables=("pages", "page_versions", "page_links"),
             audit_exclude=frozenset({"body_md"}),
+        ),
+        ResourceSpec(
+            name="reports",
+            path="reports",
+            title="Reports",
+            description=(
+                "Progress reports for stakeholders: a slug, a title, a "
+                "plain-language summary and a markdown body, with full version "
+                "history (GET /reports/{id}/versions, POST "
+                "…/versions/{n}/revert). GET /reports/{id}/view serves the "
+                "report with its stops in time order and what changed between "
+                "them. Filters: slug, source_repo + source_path (exact: the "
+                "repository file a published report mirrors, with the same "
+                "source rules as pages — 409 source_mismatch, keyed creates "
+                "converge only on identical content). A list read carries no "
+                "bodies. The narrative is refused (422 report_rejected) when it "
+                "names one of the project's confidential terms, an email "
+                "address or an IP address."
+            ),
+            permission="editing_roles",
+            read_model=ReportRead,
+            create_model=ReportCreate,
+            update_model=ReportUpdate,
+            operations=frozenset({"list", "get", "create", "update", "delete"}),
+            list_filters=("slug", "source_repo", "source_path"),
+            store=report_store,
+            tables=("reports", "report_versions"),
+            audit_exclude=frozenset({"body_md"}),
+        ),
+        ResourceSpec(
+            name="report_snapshots",
+            path="report-snapshots",
+            title="Report snapshots",
+            description=(
+                "The dated stops on a report's timeline. Each carries a "
+                "report-snapshot/v1 document checked against the report "
+                "contract; a refusal is 422 snapshot_rejected listing each "
+                "failing slot and rule, never a value, and a document with a "
+                "GitHub link is 503 presentation_scope_unknown while the "
+                "project's first-party owners cannot be read. Snapshots are "
+                "never changed or deleted: PATCH withdraws one (withdrawn: true "
+                "with a withdrawn_reason) or restores it. Re-posting the same "
+                "source_path with the same content answers the stored snapshot; "
+                "other content there is 409 snapshot_changed_at_source. A list "
+                "read carries no documents (data is null); a single read serves "
+                "the document under today's checks. Filters: report_id, "
+                "source_path, withdrawn (true / false)."
+            ),
+            permission="editing_roles",
+            read_model=ReportSnapshotRead,
+            create_model=ReportSnapshotCreate,
+            update_model=ReportSnapshotUpdate,
+            operations=frozenset({"list", "get", "create", "update"}),
+            list_filters=("report_id", "source_path", "withdrawn"),
+            store=report_snapshot_store,
+            tables=("report_snapshots",),
+            audit_exclude=frozenset({"data"}),
         ),
         ResourceSpec(
             name="files",
