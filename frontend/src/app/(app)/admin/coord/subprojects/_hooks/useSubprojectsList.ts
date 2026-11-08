@@ -410,9 +410,15 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
 
   const { issue: issueRows, settle: settleRows } = rowsAxis;
 
+  /**
+   * Read a tab's first page. `ticket` is a read already issued — Load more's,
+   * when its page proved coord ignored `exclude_headline` — so the re-read
+   * settles as that (older) read: a tab chosen since, whose own read is newer,
+   * is never overwritten by it.
+   */
   const readRows = useCallback(
-    async (forTab: SubprojectTab): Promise<void> => {
-      const seq = issueRows();
+    async (forTab: SubprojectTab, ticket?: number): Promise<void> => {
+      const seq = ticket ?? issueRows();
       for (;;) {
         const streams = viewStreams(forTab, openPerHeadline.current);
         const answers = await Promise.allSettled(
@@ -537,7 +543,7 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
       // every open subproject, so the pages above are no view of Open either.
       // Start Open again, per headline, from its first page.
       openPerHeadline.current = true;
-      await readRows(forTab);
+      await readRows(forTab, seq);
       return;
     }
     const rejected = answers.find((a) => a.status === "rejected");
