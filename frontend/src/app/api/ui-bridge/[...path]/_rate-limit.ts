@@ -291,10 +291,13 @@ let lastFailOpenLogWindow: number | null = null;
  * per minute window per process, because during an outage EVERY request
  * takes this path.
  *
- * `status` is the client's connection state (ioredis `Redis.status`). It is
- * what tells an outage (`reconnecting`, `end`) from a cold instance whose
- * first request ran before its connection was ready (`connecting`): both
- * fail with the same error message.
+ * `status` is the client's connection state (ioredis `Redis.status`); the
+ * error message alone is the same for a cold start and an outage.
+ * `reconnecting` or `end` means an outage. `connecting` is EITHER case: a
+ * cold instance's first request ran before its connection was ready, or an
+ * outage is between retries (ioredis passes back through `connecting` on
+ * every reconnect attempt). Repetition settles it: a cold start warns once
+ * per instance, an outage warns again every minute window.
  */
 function logFailingOpen(
   err: unknown,

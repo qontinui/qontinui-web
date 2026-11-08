@@ -259,8 +259,8 @@ describe("checkRateLimit", () => {
       const warnings = warn.mock.calls.filter((call) =>
         String(call[0]).includes("rate_limit_redis_op_failed_failing_open")
       );
-      // Redis's own error and the client's connection state, so an outage
-      // reads differently from a cold instance's first request.
+      // Redis's own error, and the client's connection state beside it
+      // (`_rate-limit.ts` `logFailingOpen` says what each state can mean).
       expect(warnings.map((call) => call[1])).toEqual([
         {
           error:
