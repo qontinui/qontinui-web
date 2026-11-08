@@ -1,0 +1,21 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`MarkdownView code that is not a block > renders exactly as it did before blocks existed > non-block code 1`] = `
+"<div class="prose prose-invert max-w-none prose-p:text-[15px] prose-p:leading-[1.7] prose-li:text-[15px] prose-li:leading-[1.7] prose-headings:font-[family-name:var(--font-overview-serif)] prose-headings:font-medium prose-headings:tracking-[-0.005em] prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-h4:text-[1.05rem] prose-h5:text-base prose-h6:text-base prose-h4:mt-6 prose-h4:mb-1.5 prose-h5:mt-5 prose-h5:mb-1 prose-h6:mt-4 prose-h6:mb-1 prose-h5:text-foreground prose-h6:text-foreground prose-a:text-primary prose-a:no-underline hover:prose-a:underline [&amp;_[data-wiki-link=missing]]:underline [&amp;_[data-wiki-link=missing]]:decoration-dashed [&amp;_[data-wiki-link=missing]]:underline-offset-4 prose-table:text-sm prose-th:text-left prose-th:font-medium prose-strong:text-foreground prose-code:before:content-none prose-code:after:content-none"><h1>Notes</h1>
+<pre><code>a bare fence
+</code></pre>
+<pre><code class="language-ts">const answer = 42;
+</code></pre>
+<pre><code class="language-js">console.log(1);
+</code></pre>
+<pre><code class="language-mermaid">gantt
+  title Plan
+</code></pre>
+<pre><code class="language-reports-timeline">not a block: the prefix is report-, not reports-
+</code></pre>
+<pre><code class="language-overviewkpi">not a block either
+</code></pre>
+<pre><code>an indented block
+</code></pre>
+<p>Inline <code>code</code> stays inline.</p></div>"
+`;
