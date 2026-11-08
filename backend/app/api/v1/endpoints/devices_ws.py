@@ -58,7 +58,11 @@ from starlette.websockets import WebSocketState
 from app.config.redis_config import get_redis
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
-from app.crud.device_crud import DEVICE_IS_CI_RUNNER, DeviceIsCiRunnerError
+from app.crud.device_crud import (
+    DEVICE_IS_CI_RUNNER,
+    DeviceIsCiRunnerError,
+    drop_ci_runner_capability,
+)
 from app.db.session import AsyncSessionLocal
 from app.services import devenv_auto_enroll
 from app.services.coord_jwks import (
@@ -538,14 +542,16 @@ async def _register_socket(
     # in flight: ahead of the pending-key check, a concurrent same-key
     # handshake cannot turn this refusal into a duplicate-instance one.
     #
-    # This read is an early answer for a row ALREADY marked. For a mark that
-    # lands after it, ``register_device``'s UPDATE still refuses the identity
-    # write a primary makes, so no handshake re-owns a marked row or strips
-    # its marker. The pointer writes are not guarded, though: a secondary's
-    # claim, or a primary's ``take_ws_session`` after its UPDATE, can land on
-    # a row marked in that window. Such a socket is in the position of one
-    # admitted just before the mark: it writes liveness and pointer columns,
-    # never an identity column, until it disconnects.
+    # This read is an early answer for a row ALREADY marked. A mark that lands
+    # after it is refused by whichever device-row write meets it first, each
+    # deciding against the committed row:
+    #   * ``register_device``'s UPDATE, or its INSERT's primary-key collision;
+    #   * ``ensure_device_for_secondary``'s INSERT collision;
+    #   * ``claim_ws_session_if_unheld``, under its row lock;
+    #   * ``take_ws_session``'s UPDATE.
+    # A refusal after the connection insert closes that row again. A socket
+    # admitted BEFORE the mark keeps heartbeating (liveness columns and the
+    # owner's pointer heal), which is the documented residual.
     if await device_crud.carries_ci_runner_marker(db, token_device_id):
         raise DeviceIsCiRunnerError(token_device_id)
     pending = (token_device_id, claim.key) if claim.key is not None else None
@@ -599,9 +605,10 @@ async def _register_socket_unguarded(
 ) -> tuple[UUID, int, bool]:
     """Body of :func:`_register_socket`, run under its pending-key guard.
 
-    A device upsert refused for a CI-registrar mark that landed after the
-    caller's early read raises :class:`DeviceIsCiRunnerError`, with this
-    socket's connection row closed again (:func:`_close_connection_of_marked_row`).
+    A device-row write refused for a CI-registrar mark that landed after the
+    caller's early read raises :class:`DeviceIsCiRunnerError`. If this socket's
+    connection row was already open, it is closed again
+    (:func:`_close_connection_of_marked_row`).
     """
     await _resolve_instance_key_conflict(db, device_id=token_device_id, claim=claim)
 
@@ -722,9 +729,11 @@ async def _close_connection_of_marked_row(
     """Close the connection row of a handshake whose device was marked under it.
 
     The early read in :func:`_register_socket` saw no marker, a mark landed
-    before this handshake's device upsert, and ``register_device`` refused,
-    leaving the device row untouched. The mark is the registrar's: web's
-    writers drop a client-supplied one before writing
+    after it, and one of the device-row writes that follow the connection
+    insert refused, leaving the device row as the mark left it. That write
+    is a primary's ``register_device`` or ``take_ws_session``, or a
+    secondary's ``claim_ws_session_if_unheld``. The mark is the registrar's:
+    web's writers drop a client-supplied one before writing
     (:func:`device_crud.drop_ci_runner_capability`). This handshake's
     connection row is closed rather than left open for a socket that is
     about to be refused. Best effort: a failed close is logged and must not
@@ -905,10 +914,14 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         return
     os_name = info_msg.get("os")
     os_version = info_msg.get("os_version") or info_msg.get("osVersion")
-    # Client-asserted. A ``ci_runner`` element is registrar-only and never
-    # stored: every device_crud writer drops it first
-    # (``device_crud.drop_ci_runner_capability``).
-    capabilities = info_msg.get("capabilities") or []
+    # Client-asserted. A ``ci_runner`` element is registrar-only, so it is
+    # dropped here, once per handshake, and the drop is logged once however
+    # many writers this handshake calls (a new primary calls
+    # ``register_device`` twice). The writers drop it again, which finds
+    # nothing left to drop.
+    capabilities = drop_ci_runner_capability(
+        info_msg.get("capabilities") or [], device_id=token_device_id
+    )
 
     # Client-asserted devenv block (plan 2026-08-05, decision 2):
     # ``{enrolled, machine_id, environment_id, instance_role}``. Parsed here and
@@ -980,13 +993,14 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         return
     except DeviceIsCiRunnerError:
         # The device row was not written, and normally nothing else was
-        # either. A mark that landed after the early read is refused at the
-        # device upsert instead, and by then two things have run: the
-        # duplicate-key arbitration, which may have closed superseded
-        # connection rows, and this handshake's own connection insert, whose
-        # row is closed again (``_close_connection_of_marked_row``). The close
-        # reason is the refusal's code as coord's own doors spell it, since the
-        # reason is what the runner reliably records as ``last_error``.
+        # either. A mark that landed after the early read is refused instead by
+        # whichever device-row write meets it first. By then the duplicate-key
+        # arbitration has run, and it may have closed superseded connection
+        # rows. If the refusal came after this handshake's own connection
+        # insert, that row is closed again (``_close_connection_of_marked_row``).
+        # The close reason is the refusal's code as coord's own doors spell
+        # it, since the reason is what the runner reliably records as
+        # ``last_error``.
         logger.warning(
             "devices_ws_ci_runner_row_refused",
             device_id=str(token_device_id),
@@ -1786,6 +1800,17 @@ async def _handle_non_owner_heartbeat(
             claimed = await device_crud.claim_ws_session_if_unheld(
                 db, device_id=device_id, connection_pk=connection_pk
             )
+        except DeviceIsCiRunnerError:
+            # A marked row's pointer is never claimed. This socket was admitted
+            # before the mark (a handshake now refuses one), so its heartbeats
+            # are the documented residual. Declining the claim is the expected
+            # outcome every heartbeat while the row stays marked, not a failure.
+            logger.debug(
+                "devices_ws_secondary_claim_refused_ci_runner_row",
+                device_id=str(device_id),
+                connection_pk=connection_pk,
+            )
+            return
         except Exception as e:
             logger.error(
                 "devices_ws_secondary_claim_failed",

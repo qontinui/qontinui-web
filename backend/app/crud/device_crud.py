@@ -10,12 +10,14 @@ status, heartbeat).
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 import structlog
 from fastapi import HTTPException, status
 from qontinui_schemas.common import utc_now
 from sqlalchemy import ColumnElement, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
 
@@ -64,11 +66,16 @@ __all__ = [
 # squatters-owner-and-home``, vet correction V1; coord finding ``3fc1ddb1``.
 #
 # Two halves keep the marker the registrar's alone. A marked row is never
-# REWRITTEN (``register_device``'s guarded UPDATE, and the WS handshake's early
-# read). And no row is MARKED from the wire: every writer here passes the
-# client's ``capabilities`` list through :func:`drop_ci_runner_capability`
-# first, as coord's register door drops the marker at ingest (coord finding
-# ``cde2133b``).
+# REWRITTEN by a handshake: the WS handshake's early read refuses a row
+# already marked, and each device-row write it makes refuses a row marked
+# since. Those writes are ``register_device`` (its guarded UPDATE, and a
+# primary-key collision on its INSERT re-read), ``ensure_device_for_secondary``
+# (the same INSERT re-read), ``claim_ws_session_if_unheld`` (checked under its
+# row lock) and ``take_ws_session`` (its guarded UPDATE). And no row is MARKED
+# from the wire: every writer here passes the client's ``capabilities`` list
+# through :func:`drop_ci_runner_capability` first, as coord's register door
+# drops the marker at ingest (coord finding ``cde2133b``). Heartbeat writes on
+# a socket admitted before a mark are the documented residual.
 #
 # NOT :attr:`Device.is_ci_runner`. That property answers a display question
 # ("infrastructure or workstation?") from ``capability_user_paired`` and the
@@ -127,8 +134,8 @@ async def carries_ci_runner_marker(db: AsyncSession, device_id: UUID) -> bool:
 
 
 def drop_ci_runner_capability(
-    capabilities: list[str], *, device_id: UUID | None
-) -> list[str]:
+    capabilities: list[Any], *, device_id: UUID | None
+) -> list[Any]:
     """A wire-supplied capability list with every ``ci_runner`` element dropped.
 
     Web's counterpart of the marker half of coord's register ingest drop
@@ -154,6 +161,28 @@ def drop_ci_runner_capability(
             families=[CI_RUNNER_CAPABILITY],
         )
     return kept
+
+
+async def _insert_unless_the_registrar_won(
+    db: AsyncSession, record: Device, device_id: UUID | None
+) -> None:
+    """Insert ``record``, refusing if coord's registrar inserted it marked first.
+
+    The caller's SELECT saw no row, but the registrar can insert the same
+    device id, marked, before this INSERT runs. Each is then a first-sight
+    write, so the INSERT fails on the primary key. It runs inside a SAVEPOINT,
+    which keeps the caller's session usable, and the failure is re-read: a row
+    that now carries the marker raises :class:`DeviceIsCiRunnerError`, and any
+    other ``IntegrityError`` propagates unchanged.
+    """
+    try:
+        async with db.begin_nested():
+            db.add(record)
+            await db.flush()
+    except IntegrityError as exc:
+        if device_id is not None and await carries_ci_runner_marker(db, device_id):
+            raise DeviceIsCiRunnerError(device_id) from exc
+        raise
 
 
 async def register_device(
@@ -201,7 +230,10 @@ async def register_device(
     and writes nothing. The UPDATE decides it, not the SELECT that found the
     row, because the registrar can mark a row between the two and only the
     statement re-evaluates its ``WHERE`` against the committed row. A caller's
-    earlier read is therefore an early answer, never the guard. The refusal
+    earlier read is therefore an early answer, never the guard. On the INSERT
+    arm, a registrar that inserted the same id first, marked, makes the INSERT
+    collide, and the collision raises the same error
+    (:func:`_insert_unless_the_registrar_won`). The UPDATE arm's refusal
     leaves the session's transaction to the caller and rolls nothing back:
     nothing was written, a 0-row UPDATE holds no row lock, and a rollback
     would expire every object in the caller's session, which a caller that
@@ -281,7 +313,7 @@ async def register_device(
     if device_id is not None:
         record_kwargs["device_id"] = device_id
     record = Device(**record_kwargs)
-    db.add(record)
+    await _insert_unless_the_registrar_won(db, record, device_id)
     await db.commit()
     await db.refresh(record)
     return record
@@ -313,7 +345,14 @@ async def ensure_device_for_secondary(
     a parent. It is created with ``port = NULL`` and ``derived_status =
     'offline'``: no primary is connected, and the primary's own registration
     fills both when it arrives. Its ``capabilities`` pass through
-    :func:`drop_ci_runner_capability`, so the row is never created marked.
+    :func:`drop_ci_runner_capability`, so the row is never created marked. If
+    coord's registrar inserts the same id first, marked, the INSERT's
+    collision raises :class:`DeviceIsCiRunnerError`
+    (:func:`_insert_unless_the_registrar_won`).
+
+    An existing row is returned unchecked, and that is safe: this function
+    writes nothing to it, and the secondary's one write to the device row,
+    :func:`claim_ws_session_if_unheld`, refuses a marked row under its lock.
     """
     existing = await get_device(db, device_id)
     if existing is not None:
@@ -340,7 +379,7 @@ async def ensure_device_for_secondary(
         os=os,
         os_version=os_version,
     )
-    db.add(record)
+    await _insert_unless_the_registrar_won(db, record, device_id)
     await db.commit()
     await db.refresh(record)
     return record
@@ -491,13 +530,29 @@ async def claim_ws_session_if_unheld(
     commits first (and the predicate sees its live pointer) or waits for this
     commit (and then overwrites the claim, as a primary always may).
     Returns ``True`` if claimed.
+
+    A row carrying the CI-registrar marker raises :class:`DeviceIsCiRunnerError`
+    before anything else is decided, the lock released and nothing written.
+    The marker is read under the same lock, so the row cannot be marked between
+    the check and the write, and it is read from the statement rather than the
+    ORM object, which may be one an earlier read loaded and this select does not
+    refresh.
     """
-    device = (
+    row = (
         await db.execute(
-            select(Device).where(Device.device_id == device_id).with_for_update()
+            select(Device, _ci_runner_marker())
+            .where(Device.device_id == device_id)
+            .with_for_update()
         )
-    ).scalar_one_or_none()
-    if device is None or device.ws_session_id == connection_pk:
+    ).one_or_none()
+    if row is None:
+        await db.rollback()
+        return False
+    device, marked = row
+    if marked:
+        await db.rollback()
+        raise DeviceIsCiRunnerError(device_id)
+    if device.ws_session_id == connection_pk:
         await db.rollback()
         return False
     if device.ws_session_id is not None:
@@ -549,13 +604,25 @@ async def take_ws_session(
     port write and a pointer write and leave them naming different sockets.
     An explicit UPDATE, not ORM attribute assignment: the ORM would skip an
     unchanged-looking ``port`` and the pair would no longer be written together.
+
+    A row carrying the CI-registrar marker is not written: the UPDATE's
+    ``WHERE`` excludes it, decided against the committed row, and the refusal
+    raises :class:`DeviceIsCiRunnerError` with nothing rolled back (a 0-row
+    UPDATE holds no row lock). A row that is gone is still a silent no-op.
     """
-    await db.execute(
-        update(Device)
-        .where(Device.device_id == device_id)
-        .values(ws_session_id=connection_pk, ws_connected_at=connected_at, port=port)
-        .execution_options(synchronize_session=False)
-    )
+    written = (
+        await db.execute(
+            update(Device)
+            .where(Device.device_id == device_id, _not_a_ci_runner())
+            .values(
+                ws_session_id=connection_pk, ws_connected_at=connected_at, port=port
+            )
+            .returning(Device.device_id)
+            .execution_options(synchronize_session=False)
+        )
+    ).scalar_one_or_none()
+    if written is None and await carries_ci_runner_marker(db, device_id):
+        raise DeviceIsCiRunnerError(device_id)
     await db.commit()
 
 

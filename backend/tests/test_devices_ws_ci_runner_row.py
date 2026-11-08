@@ -48,18 +48,21 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from collections.abc import AsyncGenerator
+import os
+from collections.abc import AsyncGenerator, Iterator
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
+import psycopg2
 import pytest
 import pytest_asyncio
 import structlog
 from fastapi import WebSocketDisconnect
 from qontinui_schemas.common import utc_now
-from sqlalchemy import Update, text
+from sqlalchemy import Update, event, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.websockets import WebSocketState
 
@@ -127,6 +130,9 @@ class _Socket:
         self.closed: tuple[int, str | None] | None = None
         # Set on the ``connected`` ack or on a close, whichever comes first.
         self.settled = asyncio.Event()
+        # Set while the handler is parked in receive_json, i.e. it has finished
+        # every frame delivered so far.
+        self.idle = asyncio.Event()
 
     @property
     def acked(self) -> bool:
@@ -143,7 +149,9 @@ class _Socket:
             self.settled.set()
 
     async def receive_json(self) -> Any:
+        self.idle.set()
         item = await self.inbox.get()
+        self.idle.clear()
         if item is _DISCONNECT:
             self.client_state = WebSocketState.DISCONNECTED
             raise WebSocketDisconnect(code=1000)
@@ -411,6 +419,26 @@ async def _handshake(env: SimpleNamespace, info: dict[str, Any]) -> _Socket:
     return sock
 
 
+async def _send(sock: _Socket, frame: dict[str, Any]) -> None:
+    """Deliver one frame and return once the handler has fully processed it:
+    it is parked in ``receive_json`` again with nothing queued."""
+    sock.idle.clear()
+    sock.inbox.put_nowait(frame)
+    for _ in range(500):
+        await asyncio.sleep(0.01)
+        if (sock.inbox.empty() and sock.idle.is_set()) or sock.closed is not None:
+            return
+    raise AssertionError("the handler did not finish processing the frame")
+
+
+async def _disconnect(env: SimpleNamespace, sock: _Socket) -> None:
+    """End one socket and wait for its handler, cleanup included, to return."""
+    sock.inbox.put_nowait(_DISCONNECT)
+    for s, task in env.tasks:
+        if s is sock:
+            await asyncio.wait_for(task, timeout=5)
+
+
 def _events(logs: list[dict[str, Any]], name: str) -> list[dict[str, Any]]:
     return [entry for entry in logs if entry.get("event") == name]
 
@@ -580,13 +608,16 @@ async def test_the_same_row_without_the_marker_still_registers(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("role", _PRIMARY_FIELD_WRITERS)
+@pytest.mark.parametrize("role", _ROLES)
 async def test_a_mark_landing_mid_handshake_is_refused_by_the_write(
     env, role: str
 ) -> None:
-    """The early read saw an unmarked row; the registrar marks it while the
-    handshake opens its connection row; the device upsert that follows must
-    refuse rather than strip the marker the early read never saw."""
+    """The early read saw an unmarked row, and the registrar marks it while the
+    handshake opens its connection row. The device-row write that follows
+    must refuse rather than write a row the early read never saw marked. For
+    a primary that write is its upsert, which would strip the marker. For a
+    secondary it is the pointer claim, which would write ``ws_session_id``,
+    ``ws_connected_at`` and ``port``."""
     await _seed(env, _CLAIMED_ROW, marked=False)
     real_create = device_connection_crud.create_connection_record
     marked: list[str | None] = []
@@ -621,6 +652,196 @@ async def test_a_mark_landing_mid_handshake_is_refused_by_the_write(
     assert devices_ws._LIVE_SOCKETS == {}
     assert len(_events(logs, "devices_ws_ci_runner_row_marked_mid_handshake")) == 1
     assert len(_events(logs, "devices_ws_ci_runner_row_refused")) == 1
+
+
+@pytest.mark.parametrize("role", _PRIMARY_FIELD_WRITERS)
+async def test_a_mark_landing_before_the_primarys_pointer_write_refuses_it(
+    env, role: str
+) -> None:
+    """The mark lands after the primary's upsert succeeded (the row was still
+    unmarked then) and before ``take_ws_session``. That write refuses too:
+    pointer and port never land on the marked row, and the socket is not
+    admitted."""
+    await _seed(env, _CLAIMED_ROW, marked=False)
+    real_register = device_crud.register_device
+    marked: list[str | None] = []
+
+    async def register_then_the_registrar_marks(*args: Any, **kwargs: Any) -> Any:
+        record = await real_register(*args, **kwargs)
+        await _registrar_marks(env)
+        marked.append(await _row_image(env))
+        return record
+
+    with (
+        patch.object(device_crud, "register_device", register_then_the_registrar_marks),
+        structlog.testing.capture_logs() as logs,
+    ):
+        sock = await _handshake(env, _info(role))
+
+    assert len(marked) == 1, "the mark never landed before take_ws_session"
+    _assert_refused(sock)
+    image = await _row_image(env)
+    assert image == marked[0], "take_ws_session wrote the marked row"
+    assert json.loads(image or "{}")["ws_session_id"] is None
+    (row,) = await _connection_rows(env)
+    assert row["disconnected_at"] is not None, (
+        "the connection row the handshake opened was left open"
+    )
+    assert env.manager.untouched
+    assert len(_events(logs, "devices_ws_ci_runner_row_marked_mid_handshake")) == 1
+
+
+def _registrar_inserts(device_id: UUID, *, marked: bool) -> str:
+    """Commit, on a connection of its own, the row the registrar inserts for
+    ``device_id`` (``marked=False`` stands for any other first writer), and
+    return its image rendered in UTC."""
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO coord.devices (device_id, name, hostname, state, "
+                "capabilities, ci_runner_status, ci_runner_labels, last_seen_at) "
+                "VALUES (%s, %s, %s, 'healthy', %s::jsonb, 'idle', "
+                "ARRAY['self-hosted', 'linux', 'x64'], now())",
+                (
+                    str(device_id),
+                    _SEEDED_NAME,
+                    _SEEDED_HOSTNAME,
+                    json.dumps(["ci_runner"] if marked else []),
+                ),
+            )
+            cur.execute("SET LOCAL TIME ZONE 'UTC'")
+            cur.execute(
+                "SELECT to_jsonb(d.*)::text FROM coord.devices d "
+                "WHERE d.device_id = %s",
+                (str(device_id),),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    assert row is not None
+    return str(row[0])
+
+
+async def _row_image_utc(env: SimpleNamespace) -> str | None:
+    """:func:`_row_image` with timestamps rendered in UTC, to compare with an
+    image another driver rendered."""
+    async with env.maker() as db:
+        await db.execute(text("SET LOCAL TIME ZONE 'UTC'"))
+        return (
+            await db.execute(
+                text(
+                    "SELECT to_jsonb(d.*)::text FROM coord.devices d "
+                    "WHERE d.device_id = :d"
+                ),
+                {"d": str(env.device_id)},
+            )
+        ).scalar_one_or_none()
+
+
+@contextlib.contextmanager
+def _registrar_inserts_first(
+    env: SimpleNamespace, *, marked: bool
+) -> Iterator[list[str]]:
+    """Just before web's INSERT of ``env.device_id`` runs, the registrar commits
+    its own row for the same id: the first-sight race on a new device. Yields
+    the list that receives that row's image."""
+    images: list[str] = []
+
+    def before_insert(mapper: Any, connection: Any, target: Device) -> None:
+        if target.device_id == env.device_id and not images:
+            images.append(_registrar_inserts(env.device_id, marked=marked))
+
+    event.listen(Device, "before_insert", before_insert)
+    try:
+        yield images
+    finally:
+        event.remove(Device, "before_insert", before_insert)
+
+
+@pytest.mark.parametrize("role", _ROLES)
+async def test_an_insert_race_with_the_registrar_is_refused_not_failed(
+    env, role: str
+) -> None:
+    """A new device id: the early read and the writer's SELECT both see no row,
+    and the registrar inserts it, marked, just before the writer's INSERT (a
+    primary's ``register_device``, a secondary's ``ensure_device_for_secondary``).
+    The INSERT's collision is a refusal, 1008 ``device_is_ci_runner``, not a
+    1011 internal error, and nothing of web's lands."""
+    with (
+        _registrar_inserts_first(env, marked=True) as inserted,
+        structlog.testing.capture_logs() as logs,
+    ):
+        sock = await _handshake(env, _info(role))
+
+    assert len(inserted) == 1, "the registrar's insert never raced the handshake"
+    _assert_refused(sock)
+    assert await _row_image_utc(env) == inserted[0], "web wrote the registrar's row"
+    assert await _connection_images(env) == [], "a connection row was opened"
+    assert env.manager.untouched
+    assert len(_events(logs, "devices_ws_ci_runner_row_refused")) == 1
+
+
+@pytest.mark.parametrize("racer", ["marked", "unmarked"])
+@pytest.mark.parametrize("writer", ["register_device", "ensure_device_for_secondary"])
+async def test_an_insert_collision_is_refused_only_for_a_marked_row(
+    env, writer: str, racer: str
+) -> None:
+    """The same race at each INSERT, called directly. A collision with a marked
+    row is the registrar's and raises ``DeviceIsCiRunnerError``. A collision
+    with an unmarked row is not this guard's business and propagates as the
+    ``IntegrityError`` it is."""
+    fields: dict[str, Any] = {
+        "device_id": env.device_id,
+        "user_id": env.user_id,
+        "name": "web-name",
+        "hostname": "squatter.example",
+        "capabilities": ["gui_automation"],
+    }
+    expected: type[Exception] = (
+        device_crud.DeviceIsCiRunnerError if racer == "marked" else IntegrityError
+    )
+    with _registrar_inserts_first(env, marked=racer == "marked") as inserted:
+        async with env.maker() as db:
+            with pytest.raises(expected):
+                if writer == "ensure_device_for_secondary":
+                    await device_crud.ensure_device_for_secondary(db, **fields)
+                else:
+                    await device_crud.register_device(
+                        db,
+                        port=9876,
+                        restate_enabled=False,
+                        restate_healthy=False,
+                        **fields,
+                    )
+
+    assert len(inserted) == 1, "the racing insert never landed"
+    assert await _row_image_utc(env) == inserted[0], "web wrote the racing row"
+
+
+async def test_a_non_owner_heartbeat_never_claims_a_marked_rows_pointer(env) -> None:
+    """A secondary admitted BEFORE the mark (the documented residual) keeps its
+    socket. Its heartbeat's pointer claim declines the marked row quietly: no
+    claim, no error, the socket left open."""
+    await _seed(env, _CLAIMED_ROW, marked=False)
+    primary = await _handshake(env, _info("primary"))
+    secondary = await _handshake(env, _info("secondary"))
+    assert primary.acked and secondary.acked
+    assert env.manager.get_websocket(env.device_id) is primary
+    await _registrar_marks(env)
+    await _disconnect(env, primary)  # its cleanup clears the pointer
+    assert json.loads(await _row_image(env) or "{}")["ws_session_id"] is None
+
+    with structlog.testing.capture_logs() as logs:
+        await _send(secondary, {"type": "heartbeat", "status": "healthy"})
+
+    assert secondary.closed is None, "the residual socket was closed"
+    image = json.loads(await _row_image(env) or "{}")
+    assert image["ws_session_id"] is None, "the secondary claimed the pointer"
+    assert image["capabilities"] == ["ci_runner"]
+    assert env.manager.get_websocket(env.device_id) is None
+    assert _events(logs, "devices_ws_secondary_claim_failed") == []
+    assert _events(logs, "devices_ws_secondary_claimed_unheld_pointer") == []
 
 
 # ---------------------------------------------------------------------------
@@ -813,10 +1034,12 @@ async def test_a_forged_marker_never_reaches_a_new_row(env, role: str) -> None:
     assert sock.acked
     assert await _stored_capabilities(env) == _FORGED_KEPT
     assert await _is_marked(env) is False
-    drops = _events(logs, _DROPPED)
-    assert drops, "the drop was not logged"
-    assert {entry["device_id"] for entry in drops} == {str(env.device_id)}
-    assert all(e["log_level"] == "warning" and e["dropped"] == 2 for e in drops)
+    # Once per handshake, however many writers ran: a new primary calls
+    # register_device twice, and only the handshake's own drop finds anything.
+    (drop,) = _events(logs, _DROPPED)
+    assert drop["device_id"] == str(env.device_id)
+    assert drop["log_level"] == "warning"
+    assert drop["dropped"] == 2
 
 
 @pytest.mark.parametrize("role", _PRIMARY_FIELD_WRITERS)
