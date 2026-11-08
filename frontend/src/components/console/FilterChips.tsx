@@ -68,6 +68,20 @@
  * click would trade one usability problem for another. Omit `maxVisible` for a
  * vocabulary you author and can count.
  *
+ * ## No options and no selection renders NOTHING
+ *
+ * A strip whose only chip would be `all` is a control that can never narrow
+ * anything — `/sessions` rendered `provider: all` on every visit, for a
+ * vocabulary no row carried (`ux-priorities`
+ * `repeated-chrome-must-earn-its-space-by-varying`; plan
+ * `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+ * U5). So it renders nothing, and the rule lives HERE rather than in each
+ * caller, as R6's dash does.
+ *
+ * A strip that carries a SELECTION always renders, options or not: when the
+ * vocabulary empties under a live selection, the filter is still hiding rows,
+ * and the `all` chip is the only visible way to clear it.
+ *
  * **Navigation-only by construction**, like `FilterTabs`: every chip narrows a
  * view, so each carries `NAVIGATION_ONLY_PROPS` and stays live in presentation
  * mode (plan `2026-10-23-console-presentation-spaces` D3.2).
@@ -154,6 +168,10 @@ export function FilterChips<V extends string>({
   className,
 }: FilterChipsProps<V>) {
   const [expanded, setExpanded] = useState(false);
+  // Nothing to choose and nothing chosen: the strip would be a lone `all` chip
+  // that can never narrow anything, so it renders nothing (see the module doc).
+  // AFTER the hook, so the hook order is the same on every render.
+  if (options.length === 0 && selected.length === 0) return null;
   const none = selected.length === 0;
   // Counts are a group decision, so that an absent `count` and an explicit
   // `null` keep meaning the same thing INSIDE a counted strip — the reading

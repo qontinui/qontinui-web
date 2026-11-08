@@ -10,7 +10,7 @@
  *
  * | slot | what this surface puts in it |
  * |---|---|
- * | `why` | the row class, in the operator's words — which halves of the join exist |
+ * | `why` | the row class, in the operator's words — which halves of the join exist — and the row's identity: machine, Claude account, kind, heartbeat |
  * | `problems` | the coordination answer: claims held, agent status, what is blocked |
  * | `actions` | Open full view ↗, and the two transcript stores |
  * | `history` | the coord lineage timeline (worktree / claim / build / merge) |
@@ -56,6 +56,7 @@ import {
   foldRevalidation,
   type HalfResult,
 } from "./sessionKeyResolution";
+import type { AccountCell } from "./sessionAccount";
 import {
   agentSessionId,
   hasAgentHalf,
@@ -63,6 +64,15 @@ import {
   rowClassExplanation,
   type ConsolidatedSessionRow,
 } from "./sessionConsoleStatus";
+import {
+  AccountValue,
+  HeartbeatValue,
+  KindValue,
+  MachineValue,
+  accountState,
+  machineTitle,
+  type MachineLabel,
+} from "./SessionRowIdentity";
 import { TranscriptStoresPanel } from "./TranscriptStoresPanel";
 import type { TranscriptStoresState } from "./TranscriptStoresPanel";
 import type { AgentStatus, LineageAction, SessionClaim } from "./types";
@@ -213,6 +223,14 @@ export function useSessionCoordination(
 
 export interface SessionRowExpansionProps {
   row: ConsolidatedSessionRow;
+  /**
+   * The row's Account cell, as its column renders it. Required rather than
+   * re-derived here: the console derives it once per row (it also feeds the
+   * account facet), and a second derivation could disagree with the column.
+   */
+  account: AccountCell;
+  /** device_id → the console's machine label, the one the column renders. */
+  machineLabel: MachineLabel;
   coordination: SessionCoordination;
   stores: TranscriptStoresState;
   /** Injected for tests so relative timestamps are deterministic. */
@@ -221,6 +239,8 @@ export interface SessionRowExpansionProps {
 
 export function SessionRowExpansion({
   row,
+  account,
+  machineLabel,
   coordination,
   stores,
   now,
@@ -230,7 +250,17 @@ export function SessionRowExpansion({
   return (
     <RecordDetail
       data-testid="sessions-console-detail"
-      why={<p className="text-muted-foreground">{rowClassExplanation(row)}</p>}
+      why={
+        <div className="space-y-2">
+          <p className="text-muted-foreground">{rowClassExplanation(row)}</p>
+          <IdentityList
+            row={row}
+            account={account}
+            machineLabel={machineLabel}
+            now={now}
+          />
+        </div>
+      }
       problems={
         <div className="space-y-2" data-testid="sessions-console-detail-coordination">
           <p className="text-xs font-medium text-muted-foreground">
@@ -366,6 +396,68 @@ export function SessionRowExpansion({
         </dl>
       }
     />
+  );
+}
+
+/**
+ * The row's identity, ALWAYS rendered: machine, Claude account, session kind
+ * and last heartbeat.
+ *
+ * A console narrower than the row's budget hides these as columns
+ * (`SessionsConsole.tsx`), and `no-widget-may-hide-identifying-text` allows
+ * that only because they are named here. Every value goes through the same
+ * renderer as its column (`SessionRowIdentity.tsx`), so it dashes here for
+ * exactly the reason the cell does, with the same sentence in the title. The
+ * values wrap rather than truncate: this is where the full text lives.
+ */
+function IdentityList({
+  row,
+  account,
+  machineLabel,
+  now,
+}: {
+  row: ConsolidatedSessionRow;
+  account: AccountCell;
+  machineLabel: MachineLabel;
+  now?: number;
+}) {
+  return (
+    <dl
+      className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-xs"
+      data-testid="sessions-console-expansion-identity"
+    >
+      <dt className="text-muted-foreground">machine</dt>
+      <dd
+        className="min-w-0 break-words"
+        title={machineTitle(row)}
+        data-testid="sessions-console-expansion-identity-machine"
+      >
+        <MachineValue row={row} machineLabel={machineLabel} />
+      </dd>
+      <dt className="text-muted-foreground">Claude account</dt>
+      <dd
+        className="min-w-0 break-words"
+        title={account.title}
+        data-account-state={accountState(account)}
+        data-testid="sessions-console-expansion-identity-account"
+      >
+        <AccountValue account={account} />
+      </dd>
+      <dt className="text-muted-foreground">kind</dt>
+      <dd
+        className="min-w-0 break-words"
+        data-testid="sessions-console-expansion-identity-kind"
+      >
+        <KindValue row={row} />
+      </dd>
+      <dt className="text-muted-foreground">last heartbeat</dt>
+      <dd
+        className="min-w-0 tabular-nums"
+        data-testid="sessions-console-expansion-identity-heartbeat"
+      >
+        <HeartbeatValue row={row} now={now} />
+      </dd>
+    </dl>
   );
 }
 
