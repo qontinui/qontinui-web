@@ -41,7 +41,6 @@ from uuid import UUID
 # --lock` and `poetry install` fail with "pyproject.toml changed significantly
 # since poetry.lock was last generated", which would red every backend CI job.
 # Declaring it directly needs a companion `poetry lock` in a separate change.
-# Same precedent as app/services/frame_extraction.py.
 import numpy as np
 import structlog
 
