@@ -3,7 +3,7 @@ import type { WorkflowMetrics } from "@/services/workflow-analytics-service";
 import type { AggregatedStats } from "@/services/workflow-analytics-service";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import type { ComplexityAnalysis } from "@/services/workflow-complexity-analyzer";
-import type { TestResult } from "@/services/workflow-testing-service";
+import type { TestResult } from "@/services/workflow-testing";
 
 export type TimeRangePreset =
   | "today"
