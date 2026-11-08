@@ -451,10 +451,13 @@ export function fleetCount(
  *
  * - the lifecycle half came back full — a bridged session may have started
  *   before its ceiling: a floor;
- * - some row is unresolved — its agent twin was not in coord's answer, either
- *   past the agent ceiling or excluded by coord's own status/device/search
- *   filter (the backend's "capped or filtered out"), so it may be linked: a
- *   floor. With nothing unresolved and the lifecycle half complete, the count
+ * - some row is unresolved — either its agent twin was not in coord's answer
+ *   (past the agent ceiling, or excluded by coord's own status/device/search
+ *   filter: the backend's "capped or filtered out"), so it may be linked; or
+ *   it is an OLDER coord.sessions row sharing a newer row's bridge, which can
+ *   never be linked. The two are not told apart here, so any unresolved row
+ *   floors the count — a floor the second cause can never exceed, which
+ *   errs safe. With nothing unresolved and the lifecycle half complete, the count
  *   is exact whatever the agent half did;
  * - a half of unknown size: nothing established (`–`);
  * - a FAILED agent read: `–` — the route withholds EVERY row's class
