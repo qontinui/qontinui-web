@@ -508,6 +508,17 @@ class TestReports:
             ),
             ({"title": "Review", "summary": "Ask ops@example.com"}, "summary", "email"),
             ({"title": "Review at 192.0.2.40"}, "title", "ip_address"),
+            ({"title": "Billing 123456789012"}, "title", "account_id"),
+            (
+                {"title": "Review", "summary": "In my-bucket-123456789012-logs."},
+                "summary",
+                "account_id",
+            ),
+            (
+                {"title": "Review", "body_md": "Account 1234-5678-9012."},
+                "body_md",
+                "account_id",
+            ),
         ]
         for body, slot, kind in cases:
             response = await admin.post(f"{API}/reports", json=body)
@@ -515,9 +526,16 @@ class TestReports:
             refused = response.json()
             assert refused["error"] == "report_rejected"
             assert {"slot": slot, "kind": kind} in refused["violations"]
-            for value in (TERM, "ops@example.com", "192.0.2.40"):
+            for value in (
+                TERM,
+                "ops@example.com",
+                "192.0.2.40",
+                "123456789012",
+                "1234-5678-9012",
+            ):
                 assert value not in response.text
-        # A UUID in a body is allowed: block arguments are slugs, not ids.
+        # A UUID in a body is allowed: block arguments are slugs, not ids. One
+        # whose last group is twelve digits is a UUID, not an account id.
         await _report(admin, body_md="Ref aaaaaaaa-0000-4000-8000-000000000123.")
         # An edit is scanned too, as the whole version it writes.
         report = await _report(admin, title="Clean")
@@ -741,6 +759,83 @@ class TestSnapshots:
             rows[1].before["withdrawn"] is False and rows[1].after["withdrawn"] is True
         )
         assert "data" not in rows[1].after
+
+    async def test_a_withdrawal_reason_is_scanned_naming_the_field(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The reason is served on every read and kept in the change log, so
+        it gets the narrative's scans: refused naming the field, never the
+        value, and nothing is written."""
+        await _set_scope(async_db_session, terms=[TERM])
+        report = await _report(admin)
+        snap = await _snapshot(admin, report["id"], _doc())
+        url = f"{API}/report-snapshots/{snap['id']}"
+        for value, kind in (
+            ("NORTHWIND-mutual", "confidential_term"),
+            ("ops@example.com", "email"),
+            ("192.0.2.7", "ip_address"),
+            ("123456789012", "account_id"),
+        ):
+            refused = await admin.patch(
+                url,
+                json={"withdrawn": True, "withdrawn_reason": f"Wrong: {value}"},
+                headers={"If-Match": '"1"'},
+            )
+            assert refused.status_code == 422, refused.text
+            body = refused.json()
+            assert body["error"] == "snapshot_rejected"
+            assert body["violations"] == [{"slot": "withdrawn_reason", "kind": kind}]
+            assert value not in refused.text
+        got = (await admin.get(url)).json()["item"]
+        assert (got["withdrawn"], got["version"]) == (False, 1)
+        assert [r.action for r in await _log(async_db_session, "report_snapshots")] == [
+            "create"
+        ]
+        # A UUID is allowed, as in a narrative.
+        done = await admin.patch(
+            url,
+            json={
+                "withdrawn": True,
+                "withdrawn_reason": "See aaaaaaaa-0000-4000-8000-000000000123",
+            },
+            headers={"If-Match": '"1"'},
+        )
+        assert done.status_code == 200, done.text
+
+    async def test_a_source_path_is_scanned_naming_the_field(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The file's path is served on every read, so it gets the narrative's
+        scans: refused naming the field, never the value, nothing stored."""
+        await _set_scope(async_db_session, terms=[TERM])
+        report = await _report(admin)
+        for path, value, kind in (
+            (
+                "reports/northwind-mutual/1.json",
+                "northwind-mutual",
+                "confidential_term",
+            ),
+            ("reports/ops@example.com/1.json", "ops@example.com", "email"),
+            ("reports/192.0.2.7/1.json", "192.0.2.7", "ip_address"),
+            ("reports/123456789012/1.json", "123456789012", "account_id"),
+        ):
+            refused = await _post(admin, report["id"], _doc(), source_path=path)
+            assert {"slot": "source_path", "kind": kind} in _violations(refused)
+            assert value not in refused.text
+        listed = (
+            await admin.get(
+                f"{API}/report-snapshots", params={"report_id": report["id"]}
+            )
+        ).json()
+        assert listed["items"] == []
+        assert await _log(async_db_session, "report_snapshots") == []
+        # A UUID is allowed, as in a narrative.
+        await _snapshot(
+            admin,
+            report["id"],
+            _doc(),
+            source_path="snapshots/aaaaaaaa-0000-4000-8000-000000000123.json",
+        )
 
     async def test_a_snapshot_is_never_deleted_or_edited(
         self, admin: httpx.AsyncClient

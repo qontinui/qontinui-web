@@ -84,8 +84,10 @@ owner check runs on every read, with every link withheld while the owners are
 UNKNOWN.
 
 Report narratives (the report's own title, summary and body) get the
-confidential-term, email and IP scans at write (:func:`narrative_violations`);
-a UUID there is allowed, since block arguments are slugs, not ids.
+confidential-term, email, IP and account-id scans at write
+(:func:`narrative_violations`), and so do a snapshot's file path and a
+withdrawal's reason; a UUID there is allowed, since block arguments are slugs,
+not ids.
 """
 
 from __future__ import annotations
@@ -757,11 +759,25 @@ def check_snapshot(data: Any, *, terms: Iterable[str]) -> Checked:
     return Checked(doc, violations, github_links(data))
 
 
+def _account_id_outside_uuids(normalized: str) -> bool:
+    """An account id that is not part of a UUID. Where UUIDs are allowed, a
+    UUID whose last group happens to be twelve digits
+    (``…-8000-000000000123``) is still a UUID, not an account id."""
+    uuids = [match.span() for match in UUID_RE.finditer(normalized)]
+    return any(
+        not any(start <= found.start() and found.end() <= end for start, end in uuids)
+        for found in ACCOUNT_ID_RE.finditer(normalized)
+    )
+
+
 def narrative_violations(
     fields: dict[str, str], *, terms: Iterable[str]
 ) -> list[Violation]:
-    """The scans a report's own narrative gets at write: confidential terms,
-    email-shaped identities and IP addresses. A UUID is allowed there."""
+    """The scans free text beside the contract gets at write — a report's own
+    narrative, a snapshot's file path, a withdrawal's reason: confidential
+    terms, email-shaped identities, IP addresses and account ids. A UUID is
+    allowed there (block arguments are slugs, not ids), so twelve digits that
+    are a UUID's last group are not an account id."""
     matcher = TermMatcher(terms)
     out: list[Violation] = []
     for slot, text in fields.items():
@@ -772,6 +788,8 @@ def narrative_violations(
             out.append(Violation(slot, "email"))
         if contains_ip_address(normalized):
             out.append(Violation(slot, "ip_address"))
+        if _account_id_outside_uuids(normalized):
+            out.append(Violation(slot, "account_id"))
     return out
 
 

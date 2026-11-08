@@ -17,16 +17,18 @@ UI and an unattended agent write them through the same doors.
     mirrors another (409 ``source_mismatch``), the sha follows the content, an
     unchanged write is no write, and a keyed create colliding on the source
     converges only on identical content. The narrative is scanned at write for
-    the tenant's confidential terms, email-shaped identities and IP addresses
-    (422 ``report_rejected``, naming the field).
+    the tenant's confidential terms, email-shaped identities, IP addresses and
+    account ids (422 ``report_rejected``, naming the field).
 
 ``report_snapshots`` (:class:`ReportSnapshotStore`)
     One dated stop: a ``report-snapshot/v1`` document checked against the
     allowlist contract (:mod:`app.overview.report_snapshot_contract`, D4) —
     any failure is 422 ``snapshot_rejected`` with every violation's slot and
-    kind, never its value. A snapshot is never edited or deleted: the only
-    update withdraws it (with a reason) or restores it, under ``If-Match``. A
-    snapshot published from a file names it (``source_path``, unique per
+    kind, never its value; the snapshot's ``source_path`` and a withdrawal's
+    ``withdrawn_reason`` get the narrative's scans, refused the same way. A
+    snapshot is never edited or deleted: the only update withdraws it (with a
+    reason) or restores it, under ``If-Match``. A snapshot published from a
+    file names it (``source_path``, unique per
     report): re-posting the same file with the same content is a no-op that
     answers the stored snapshot, key or not; the same file with other content
     is 409 ``snapshot_changed_at_source`` (snapshots are immutable — publish a
@@ -938,8 +940,21 @@ class ReportSnapshotStore:
         checked = await scan_off_loop(
             functools.partial(check_snapshot, terms=stored.terms), payload.document
         )
-        if checked.violations:
-            raise _rejected("snapshot_rejected", checked.violations, "snapshot")
+        # The file's path is served on every read of the snapshot, and a
+        # publisher names files after what they hold: it gets the narrative
+        # scans. Listed first, so a long refusal never cuts it from the list.
+        violations = [
+            *(
+                narrative_violations(
+                    {"source_path": payload.source_path}, terms=stored.terms
+                )
+                if payload.source_path is not None
+                else []
+            ),
+            *checked.violations,
+        ]
+        if violations:
+            raise _rejected("snapshot_rejected", violations, "snapshot")
         if checked.links:
             owners = await _first_party_owners(ctx, stored)
             if owners is None:
@@ -1032,6 +1047,18 @@ class ReportSnapshotStore:
         await ctx.db.refresh(row)
         return _snapshot_read(row, label=doc.label, method_label=doc.method.label)
 
+    async def _refuse_reason(self, ctx: StoreContext, reason: str) -> None:
+        """422 ``snapshot_rejected`` when a withdrawal's reason names a
+        confidential term, an email-shaped identity, an IP address or an
+        account id: the reason is served on every read of the snapshot and
+        kept in the change log, so it gets the narrative scans."""
+        stored = await _stored_scope(ctx)
+        violations = narrative_violations(
+            {"withdrawn_reason": reason}, terms=stored.terms
+        )
+        if violations:
+            raise _rejected("snapshot_rejected", violations, "withdrawal")
+
     def _path_taken(self, source_path: str) -> StoreRefused:
         return StoreRefused(
             409,
@@ -1082,6 +1109,8 @@ class ReportSnapshotStore:
         if payload.withdrawn:
             if row.withdrawn_reason == payload.withdrawn_reason:
                 return before, before
+            assert payload.withdrawn_reason is not None  # the model requires one
+            await self._refuse_reason(ctx, payload.withdrawn_reason)
             row.withdrawn_at = row.withdrawn_at or datetime.now(UTC)
             row.withdrawn_reason = payload.withdrawn_reason
         else:

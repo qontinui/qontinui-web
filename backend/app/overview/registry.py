@@ -273,7 +273,7 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "converge only on identical content). A list read carries no "
                 "bodies. The narrative is refused (422 report_rejected) when it "
                 "names one of the project's confidential terms, an email "
-                "address or an IP address."
+                "address, an IP address or an AWS account id."
             ),
             permission="editing_roles",
             read_model=ReportRead,
@@ -295,7 +295,10 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "contract; a refusal is 422 snapshot_rejected listing each "
                 "failing slot and rule, never a value, and a document with a "
                 "GitHub link is 503 presentation_scope_unknown while the "
-                "project's first-party owners cannot be read. Snapshots are "
+                "project's first-party owners cannot be read. A source_path "
+                "or a withdrawn_reason naming a confidential term, an email "
+                "address, an IP address or an account id is refused the same "
+                "way, naming that field. Snapshots are "
                 "never changed or deleted: PATCH withdraws one (withdrawn: true "
                 "with a withdrawn_reason) or restores it. Re-posting the same "
                 "source_path with the same content answers the stored snapshot; "
