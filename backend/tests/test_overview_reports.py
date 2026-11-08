@@ -574,6 +574,24 @@ class TestReports:
             ),
             ({"title": "Host ip-192-0-2-40.ec2.internal"}, "title", "ip_address"),
             (
+                {
+                    "title": "Review",
+                    "summary": "Host ec2-198-51-100-7.compute-1.amazonaws.com",
+                },
+                "summary",
+                "ip_address",
+            ),
+            (
+                {"title": "Review", "body_md": "Listen on 2001:db8::5%eth0."},
+                "body_md",
+                "ip_address",
+            ),
+            (
+                {"title": "Review", "summary": "Bound to ::1 only."},
+                "summary",
+                "ip_address",
+            ),
+            (
                 {"title": "Review", "body_md": "Billed acct-1234-5678-9012."},
                 "body_md",
                 "account_id",
@@ -598,6 +616,7 @@ class TestReports:
                 "1234-5678-9012",
                 "2001:db8::5",
                 "ip-192-0-2-40",
+                "198-51-100-7",
             ):
                 assert value not in response.text
         # A UUID in a body is allowed: block arguments are slugs, not ids. One
@@ -1737,8 +1756,12 @@ PLANTS: list[tuple[str, str, str]] = [
     # Behind a label: the colon before the address is no guard.
     ("ip_address", "IPv6:2001:db8::5", "method.note"),
     ("ip_address", "IP:2001:db8::1", "tables[0].columns[0].help"),
-    # The IPv4 address an EC2 host name carries.
+    # The IPv4 address an EC2 host name carries, private and public.
     ("ip_address", "ip-192-0-2-40.ec2.internal", "groups[0].label"),
+    ("ip_address", "ec2-198-51-100-7.compute-1.amazonaws.com", "groups[0].help"),
+    # An interface's zone id after the address, and the loopback.
+    ("ip_address", "Listen on 2001:db8::5%eth0", "items[0].help"),
+    ("ip_address", "Bound to ::1 only", "tables[0].caption"),
     ("account_id", "Billed to 123456789012", "items[0].label"),
     ("account_id", "Billed to 1234-5678-9012", "figures[0].source"),
     # Between dashes, as bucket names carry them.
@@ -1783,6 +1806,13 @@ ORDINARY_TEXT: list[str] = [
     "ip-address",
     "zip-1-2-3-4-5",
     "ip-300-1-1-1",
+    "spec2-1-2-3-4",
+    "ec2-instance",
+    # Code text: an address carries a decimal digit, a path segment does not.
+    "the db::add helper",
+    "use db::fee;",
+    "abc::def()",
+    "E::A",
 ]
 
 

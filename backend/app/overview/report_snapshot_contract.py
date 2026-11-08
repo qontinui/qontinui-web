@@ -353,11 +353,13 @@ REPORT_SNAPSHOT_PATHS: Final[frozenset[str]] = frozenset(_paths(ReportSnapshotDo
 _OCTET = r"(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])"
 #: A dotted-quad IPv4 address, not inside a longer run of digits.
 IPV4_RE: Final = re.compile(rf"(?<![0-9])(?:{_OCTET}\.){{3}}{_OCTET}(?![0-9])")
-#: The IPv4 address an EC2 host name carries (``ip-192-0-2-40.ec2.internal``):
-#: ``ip-`` and four dash-joined octets, not inside a longer word
-#: (``zip-1-2-3-4-5``) and never an octet past 255 (``ip-300-1-1-1``).
+#: The IPv4 address an EC2 host name carries — the private
+#: ``ip-192-0-2-40.ec2.internal`` and the public
+#: ``ec2-198-51-100-7.compute-1.amazonaws.com``: ``ip-`` or ``ec2-`` and four
+#: dash-joined octets, not inside a longer word (``zip-1-2-3-4-5``,
+#: ``spec2-1-2-3-4``) and never an octet past 255 (``ip-300-1-1-1``).
 EC2_HOST_IP_RE: Final = re.compile(
-    rf"(?<![0-9A-Za-z])(?i:ip)-(?:{_OCTET}-){{3}}{_OCTET}(?![0-9])"
+    rf"(?<![0-9A-Za-z])(?i:ip|ec2)-(?:{_OCTET}-){{3}}{_OCTET}(?![0-9])"
 )
 _H16 = r"[0-9A-Fa-f]{1,4}"
 #: An IPv6 address: eight groups, or a ``::`` compression with at least one
@@ -365,9 +367,12 @@ _H16 = r"[0-9A-Fa-f]{1,4}"
 #: (``12:30:45``) or a MAC address (six groups) are not addresses. One colon
 #: BEFORE it is no guard — ``IPv6:2001:db8::5`` is an address behind a label —
 #: but two are: a path segment after ``::`` (``crate::db::add``,
-#: ``Foo::A::B``) is not an address.
+#: ``Foo::A::B``) is not an address. The address must carry a decimal digit,
+#: so code text (``the db::add helper``, ``abc::def()``, ``E::A``) is not one.
+#: The trade, accepted and recorded by the plan's author: an all-letter
+#: address such as ``dead::beef`` is no longer caught.
 IPV6_RE: Final = re.compile(
-    r"(?<![0-9A-Za-z.])(?<!::)"
+    r"(?<![0-9A-Za-z.])(?<!::)(?=[0-9A-Fa-f:]*[0-9])"
     rf"(?:(?:{_H16}:){{7}}{_H16}"
     rf"|(?:{_H16}:){{1,7}}:(?:{_H16}(?::{_H16}){{0,5}})?"
     rf"|::{_H16}(?::{_H16}){{0,6}})"
