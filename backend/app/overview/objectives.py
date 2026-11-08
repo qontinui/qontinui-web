@@ -151,12 +151,6 @@ def _group(
     return initiative_named, other
 
 
-#: The initiative fields the grouping reads. An error in either leaves what
-#: the initiative declares — its objectives, or the measures it names — not
-#: fully known, however readable the rest of its frontmatter is.
-_OBJECTIVE_FIELDS = ("in_scope", "success_metrics")
-
-
 def _initiative_problems(
     initiatives: list[InitiativeRead],
     skeletons: int,
@@ -168,8 +162,13 @@ def _initiative_problems(
     No initiative document at all is NOT a problem — the project simply has
     none written yet, and the page says so. But a degraded listing cannot
     vouch for that absence, so it is one. Neither is an initiative whose
-    ``in_scope`` or ``success_metrics`` could not be read an empty one: that
-    is a problem too, so no ``serves:`` id is said to be declared by none."""
+    ``in_scope`` could not be read an empty one: that is a problem too, so no
+    ``serves:`` id is said to be declared by none.
+
+    A ``success_metrics`` error is not one. The ``serves:`` check reads only
+    ``in_scope`` ids, so it still stands; the error is served on the
+    initiative (``field_errors``) and the page says there which measures it
+    names can't be read."""
     problems: list[str] = []
     for i in initiatives:
         if i.state == "unreadable":
@@ -178,12 +177,10 @@ def _initiative_problems(
             )
         elif i.frontmatter_error:
             problems.append(f"initiative/{i.name}: {i.frontmatter_error}")
-        else:
-            problems.extend(
-                f"initiative/{i.name}: its {field} could not be read "
-                f"({i.field_errors[field].rstrip('.')})"
-                for field in _OBJECTIVE_FIELDS
-                if field in i.field_errors
+        elif "in_scope" in i.field_errors:
+            problems.append(
+                f"initiative/{i.name}: its in_scope could not be read "
+                f"({i.field_errors['in_scope'].rstrip('.')})"
             )
     written = [i for i in initiatives if i.state in ("authored", "unknown")]
     if not written:
