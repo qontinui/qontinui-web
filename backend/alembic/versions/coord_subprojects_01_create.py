@@ -2,8 +2,9 @@
 
 Phase 1 (the qontinui-web half, which lands FIRST) of plan
 ``2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled``.
-Creates two new, empty tables, seven indexes beside their primary keys (one of
-them the slug UNIQUE constraint's own) and two table comments::
+Creates two new, empty tables, eight indexes beside their primary keys (one of
+them the slug UNIQUE constraint's own) and two table comments, all in ONE
+transaction::
 
     coord.subprojects (id, tenant_id, slug, title, title_source, goal, origin,
                        status, root_agent_session_id, next_steps_note,
@@ -18,6 +19,9 @@ them the slug UNIQUE constraint's own) and two table comments::
                               allocation_agent_id, work_unit_id, joined_via,
                               via_ref, via_session, snapshot, snapshot_at,
                               added_at, added_by, removed_at)
+        idx_subproject_members_live_subproject            (tenant_id, subproject_id)
+            WHERE removed_at IS NULL
+        idx_subproject_members_subproject_history         (tenant_id, subproject_id, removed_at)
         uq_subproject_members_live_agent_session          UNIQUE (tenant_id, agent_session_id)
             WHERE removed_at IS NULL AND agent_session_id IS NOT NULL
         uq_subproject_members_live_work_unit              UNIQUE (tenant_id, work_unit_id)
@@ -27,8 +31,6 @@ them the slug UNIQUE constraint's own) and two table comments::
         uq_subproject_members_live_pending_coord_session  UNIQUE (tenant_id, coord_session_id)
             WHERE removed_at IS NULL AND agent_session_id IS NULL
               AND coord_session_id IS NOT NULL
-        idx_subproject_members_live_subproject            (tenant_id, subproject_id)
-            WHERE removed_at IS NULL
 
 Every name, type, default, key and index is the one the plan's wire contract
 fixes ("Schema (Phase 1, qontinui-web alembic revision ``coord_subprojects_01``,
@@ -121,10 +123,17 @@ Constraints
   ``ck_subprojects_status``, ``ck_subproject_members_member_kind`` and
   ``ck_subproject_members_joined_via`` pin each contract vocabulary, so a value
   outside it is refused by name rather than stored.
-* Member keys: ``ck_subproject_members_work_unit_key`` (a ``work_unit`` member
-  names its ``work_unit_id``) and ``ck_subproject_members_session_key`` (a
-  ``session`` member names at least one of ``agent_session_id``,
-  ``coord_session_id``, ``allocation_agent_id``).
+* Each member kind names its own key: ``ck_subproject_members_work_unit_key``
+  (a ``work_unit`` member names its ``work_unit_id``) and
+  ``ck_subproject_members_session_key`` (a ``session`` member names at least
+  one of ``agent_session_id``, ``coord_session_id``, ``allocation_agent_id``).
+* ... and only its own keys: ``ck_subproject_members_no_work_unit_on_session``
+  (a ``session`` member carries no ``work_unit_id``) and
+  ``ck_subproject_members_no_session_key_on_work_unit`` (a ``work_unit`` member
+  carries none of the three session keys). Without them a session row carrying
+  a ``work_unit_id`` would hold that unit's tenant-wide live slot in
+  ``uq_subproject_members_live_work_unit``, and a work-unit row carrying a
+  session key would hold that session's.
 * Foreign keys: ``fk_subprojects_merged_into`` and
   ``fk_subproject_members_subproject``. Neither cascades — NO ACTION, the
   PostgreSQL default. A subproject is never deleted (it is archived, or merged
@@ -147,40 +156,47 @@ Indexes
   open subprojects of a tenant, most recently changed first.
 * ``(tenant_id, subproject_id) WHERE removed_at IS NULL`` — a subproject's live
   members, which every detail read and every verdict walks.
+* ``(tenant_id, subproject_id, removed_at)`` — NOT partial: the detail page's
+  history read of a subproject's removed members, which the live index cannot
+  serve.
 * The four live-membership uniques above.
 
-All six standalone indexes are built ``CONCURRENTLY`` inside ONE
-``autocommit_block()`` though both tables are new and empty. coord's migration
-classifier (the gate that lets a migration PR auto-land) admits a
-non-concurrent ``CREATE INDEX`` on a table the same file creates only as a
-new-table claim, discharged by proving trunk has never named the table — a
-case-insensitive substring search over the whole tree, which this plan's own
-later web phases (the ``/admin/coord/subprojects`` pages and the
-``/operations/subprojects`` proxies) would refute if they landed first. A
-guarded ``CONCURRENTLY`` build in an ``autocommit_block`` is admitted outright,
-and on an empty table it is instant. The classifier also rejects
-``op.get_bind()`` reads, so the revision carries no ``indisvalid`` check; the
-companion test reads ``indisvalid`` instead. The ``UNIQUE (tenant_id, slug)``
-constraint is built inside ``CREATE TABLE`` with the table it belongs to.
+Every index is built in the SAME transaction as the tables — a plain
+``CREATE [UNIQUE] INDEX IF NOT EXISTS``, never ``CONCURRENTLY`` — so the tables
+and every unique that guards them become visible in one commit. A
+``CONCURRENTLY`` build runs outside the transaction: a cancelled or timed-out
+one leaves an INVALID index (``indisvalid = false``) that an ``IF NOT EXISTS``
+retry silently keeps, after which every coord upsert naming that unique as its
+``ON CONFLICT`` arbiter fails 42P10; and coord's schema readiness and the
+plan's ``schema_object_exists`` gate would both read the tables as applied
+before their indexes existed. coord's migration classifier admits a
+non-concurrent ``CREATE INDEX`` on a table the same file creates earlier as a
+new-table CLAIM, which the merge engine discharges by proving trunk has never
+named the table (``pr_merge::migration_new_table_proof``: a case-insensitive
+search of the tree and of the migration directory's history). Trunk named
+neither table when this was authored, so the revision must land before any
+other trunk file names either; the plan orders it first. The ``UNIQUE
+(tenant_id, slug)`` constraint is built inside ``CREATE TABLE`` itself.
 
 Lock posture
 ============
 
 Nothing here touches an existing table. Both foreign keys point at
-``coord.subprojects``, which this revision creates in the same transaction, and
-``tenant_id`` carries no key, so the upgrade requests no lock on any table a
-live reader or writer holds and needs no ``lock_timeout``. The downgrade drops
-only these two tables.
+``coord.subprojects``, which this revision creates in the same transaction,
+``tenant_id`` carries no key, and every index is built on a table this
+transaction created, which no other session can see until it commits. So the
+upgrade requests no lock on any table a live reader or writer holds and needs
+no ``lock_timeout``. The downgrade drops only these two tables.
 
 Idempotency / authorship posture
 ================================
 
-* ``CREATE TABLE IF NOT EXISTS`` / ``CREATE [UNIQUE] INDEX CONCURRENTLY IF NOT
-  EXISTS`` / ``COMMENT ON``, and a symmetric ``downgrade()`` that drops the
-  indexes and then the tables (members first, since it references
-  ``coord.subprojects``). ``IF NOT EXISTS`` matches on NAME only; acceptable
-  because no earlier revision spells either table (trunk named neither at
-  authoring time).
+* ``CREATE TABLE IF NOT EXISTS`` / ``CREATE [UNIQUE] INDEX IF NOT EXISTS`` /
+  ``COMMENT ON``, all in one transaction, so a failed apply rolls back whole;
+  and a symmetric ``downgrade()`` that drops the indexes and then the tables
+  (members first, since it references ``coord.subprojects``). ``IF NOT EXISTS``
+  matches on NAME only; acceptable because no earlier revision spells either
+  table (trunk named neither at authoring time).
 * **alembic is the SOLE author of the ``coord.*`` schema** (served policy
   ``production-and-cost`` ``alembic-sole-authorship``). coord only INSERTs,
   UPDATEs and SELECTs these tables, and this revision must be APPLIED in
@@ -229,7 +245,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create both tables, their comments and their six indexes. Idempotent."""
+    """Create both tables, their comments and their seven indexes in ONE transaction."""
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS coord.subprojects (
@@ -296,13 +312,23 @@ def upgrade() -> None:
                 ('root', 'parent', 'gate_continuation', 'work_unit_dispatch',
                  'spawn', 'declared', 'operator_move', 'auto_attach',
                  'followup_edge', 'split', 'backfill', 'merge')),
+            -- each member kind names its own key ...
             CONSTRAINT ck_subproject_members_work_unit_key CHECK (
                 member_kind <> 'work_unit' OR work_unit_id IS NOT NULL),
             CONSTRAINT ck_subproject_members_session_key CHECK (
                 member_kind <> 'session'
                 OR agent_session_id IS NOT NULL
                 OR coord_session_id IS NOT NULL
-                OR allocation_agent_id IS NOT NULL)
+                OR allocation_agent_id IS NOT NULL),
+            -- ... and only its own keys, so a session row cannot hold the
+            -- live slot of a work unit, nor a work-unit row that of a session
+            CONSTRAINT ck_subproject_members_no_work_unit_on_session CHECK (
+                member_kind = 'work_unit' OR work_unit_id IS NULL),
+            CONSTRAINT ck_subproject_members_no_session_key_on_work_unit CHECK (
+                member_kind = 'session'
+                OR (agent_session_id IS NULL
+                    AND coord_session_id IS NULL
+                    AND allocation_agent_id IS NULL))
         )
         """
     )
@@ -333,63 +359,70 @@ def upgrade() -> None:
             'Gates and PRs are derived at read time, never stored here.'
         """
     )
-    # CONCURRENTLY although both tables are new and empty: coord's migration
-    # classifier (the auto-land gate) admits a non-concurrent CREATE INDEX on a
-    # new table only as a claim that trunk has never named it, which this
-    # plan's later web phases would refute; a guarded concurrent build inside
-    # an autocommit_block is admitted outright and is instant on an empty
-    # table. No indisvalid read -- the classifier rejects op.get_bind() reads.
-    with op.get_context().autocommit_block():
-        # The list door's default read: a tenant's subprojects by status,
-        # most recently changed first.
-        op.execute(
-            """
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_subprojects_tenant_status_updated
-                ON coord.subprojects (tenant_id, status, updated_at DESC)
-            """
-        )
-        # A subproject's live members, walked by every detail read and verdict.
-        op.execute(
-            """
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_subproject_members_live_subproject
-                ON coord.subproject_members (tenant_id, subproject_id)
-                WHERE removed_at IS NULL
-            """
-        )
-        # An agent session is a live member of at most one subproject.
-        op.execute(
-            """
-            CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_subproject_members_live_agent_session
-                ON coord.subproject_members (tenant_id, agent_session_id)
-                WHERE removed_at IS NULL AND agent_session_id IS NOT NULL
-            """
-        )
-        # A work unit is a live member of at most one subproject.
-        op.execute(
-            """
-            CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_subproject_members_live_work_unit
-                ON coord.subproject_members (tenant_id, work_unit_id)
-                WHERE removed_at IS NULL AND work_unit_id IS NOT NULL
-            """
-        )
-        # A spawn allocation keys at most one live (pending, then bound) row.
-        op.execute(
-            """
-            CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_subproject_members_live_allocation
-                ON coord.subproject_members (tenant_id, allocation_agent_id)
-                WHERE removed_at IS NULL AND allocation_agent_id IS NOT NULL
-            """
-        )
-        # A placeholder coord.sessions id keys at most one live PENDING row;
-        # binding the harness id onto the row releases it.
-        op.execute(
-            """
-            CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_subproject_members_live_pending_coord_session
-                ON coord.subproject_members (tenant_id, coord_session_id)
-                WHERE removed_at IS NULL AND agent_session_id IS NULL
-                  AND coord_session_id IS NOT NULL
-            """
-        )
+    # Every index is built here, in the transaction that created its table, so
+    # the tables and every unique that guards them commit together. Never
+    # CONCURRENTLY: a cancelled concurrent build leaves an INVALID unique that
+    # an IF NOT EXISTS retry keeps, and coord upserts then fail 42P10. coord's
+    # migration classifier admits these builds as new-table claims.
+    #
+    # The list door's default read: a tenant's subprojects by status, most
+    # recently changed first.
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_subprojects_tenant_status_updated
+            ON coord.subprojects (tenant_id, status, updated_at DESC)
+        """
+    )
+    # A subproject's live members, walked by every detail read and verdict.
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_subproject_members_live_subproject
+            ON coord.subproject_members (tenant_id, subproject_id)
+            WHERE removed_at IS NULL
+        """
+    )
+    # A subproject's whole ledger, removed members included: the detail page's
+    # history read, which the live index above cannot serve.
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_subproject_members_subproject_history
+            ON coord.subproject_members (tenant_id, subproject_id, removed_at)
+        """
+    )
+    # An agent session is a live member of at most one subproject.
+    op.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_subproject_members_live_agent_session
+            ON coord.subproject_members (tenant_id, agent_session_id)
+            WHERE removed_at IS NULL AND agent_session_id IS NOT NULL
+        """
+    )
+    # A work unit is a live member of at most one subproject.
+    op.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_subproject_members_live_work_unit
+            ON coord.subproject_members (tenant_id, work_unit_id)
+            WHERE removed_at IS NULL AND work_unit_id IS NOT NULL
+        """
+    )
+    # A spawn allocation keys at most one live (pending, then bound) row.
+    op.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_subproject_members_live_allocation
+            ON coord.subproject_members (tenant_id, allocation_agent_id)
+            WHERE removed_at IS NULL AND allocation_agent_id IS NOT NULL
+        """
+    )
+    # A placeholder coord.sessions id keys at most one live PENDING row;
+    # binding the harness id onto the row releases it.
+    op.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_subproject_members_live_pending_coord_session
+            ON coord.subproject_members (tenant_id, coord_session_id)
+            WHERE removed_at IS NULL AND agent_session_id IS NULL
+              AND coord_session_id IS NOT NULL
+        """
+    )
 
 
 def downgrade() -> None:
@@ -400,6 +433,7 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS coord.uq_subproject_members_live_allocation")
     op.execute("DROP INDEX IF EXISTS coord.uq_subproject_members_live_work_unit")
     op.execute("DROP INDEX IF EXISTS coord.uq_subproject_members_live_agent_session")
+    op.execute("DROP INDEX IF EXISTS coord.idx_subproject_members_subproject_history")
     op.execute("DROP INDEX IF EXISTS coord.idx_subproject_members_live_subproject")
     op.execute("DROP INDEX IF EXISTS coord.idx_subprojects_tenant_status_updated")
     op.execute("DROP TABLE IF EXISTS coord.subproject_members")

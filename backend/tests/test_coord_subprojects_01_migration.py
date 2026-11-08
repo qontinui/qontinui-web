@@ -20,24 +20,27 @@ Without a database (always runs):
 2. **Every statement is ONE static, ``coord.``-qualified SQL literal, and the
    only DROPs are in ``downgrade()``** — the upgrade path is also checked with
    ``check_coord_column_drops``'s own scanner.
-3. **Both tables and their comments are written in the transaction and every
-   index CONCURRENTLY inside ONE ``autocommit_block()``**, in the declared
-   order, with no ``op.get_bind()`` read: the shape coord's migration
-   classifier admits outright.
+3. **The tables, their comments and every index are built in ONE transaction**,
+   in the declared order: no ``autocommit_block()``, no ``CONCURRENTLY``, and
+   no ``op.get_bind()`` read. A non-concurrent index on a table the same file
+   creates is what coord's migration classifier admits as a new-table claim.
 
 Against a real Postgres (skipped when none is reachable):
 
 4. **Upgrade from the parent creates the declared shape**: every column's name,
    order, type, nullability and default; the defaults a minimal insert gets;
-   the primary, unique and foreign keys by definition (both foreign keys NO
-   ACTION) and the CHECKs by name; every index by table, uniqueness, key
-   columns, predicate and validity; both table comments.
+   every key and every CHECK by its exact definition (so a vocabulary widened
+   on either side fails here), both foreign keys NO ACTION; every index by
+   table, uniqueness, key columns, predicate and validity; both table
+   comments.
 5. **Each vocabulary CHECK** (``title_source``, ``origin``, ``status``,
    ``member_kind``, ``joined_via``) accepts every one of its tokens and refuses
    a token outside it, naming its own constraint.
 6. **The member-key CHECKs**: a ``work_unit`` member must name its unit, and a
    ``session`` member must name at least one of its three keys — any one of
-   them suffices.
+   them suffices. Each kind carries ONLY its own keys: a ``session`` member
+   with a ``work_unit_id``, or a ``work_unit`` member with any session key, is
+   refused by name.
 7. **The uniques**: a second LIVE membership of the same key in the same
    tenant is refused by name, stamping ``removed_at`` releases the key (the
    ledger keeps both rows), and another tenant is another key space. The
@@ -159,15 +162,56 @@ _KEYS: dict[str, tuple[str, str]] = {
     ),
 }
 
-# Every CHECK, by name -> table. Their behaviour is asserted in 5 and 6.
-_CHECKS: dict[str, str] = {
-    "ck_subprojects_title_source": _SUBPROJECTS,
-    "ck_subprojects_origin": _SUBPROJECTS,
-    "ck_subprojects_status": _SUBPROJECTS,
-    "ck_subproject_members_member_kind": _MEMBERS,
-    "ck_subproject_members_joined_via": _MEMBERS,
-    "ck_subproject_members_work_unit_key": _MEMBERS,
-    "ck_subproject_members_session_key": _MEMBERS,
+# Every CHECK, by name -> (table, pg_get_constraintdef), pinned EXACTLY so that
+# a vocabulary widened (or narrowed) in the revision fails here even when the
+# behaviour tests in 5 and 6 still pass.
+_CHECKS: dict[str, tuple[str, str]] = {
+    "ck_subprojects_title_source": (
+        _SUBPROJECTS,
+        "CHECK ((title_source = ANY (ARRAY['root_session'::text, 'explicit'::text])))",
+    ),
+    "ck_subprojects_origin": (
+        _SUBPROJECTS,
+        "CHECK ((origin = ANY (ARRAY['operator_prompt'::text, 'autonomous'::text, "
+        "'scheduled'::text, 'orphan_continuation'::text, 'operator_created'::text, "
+        "'backfill'::text])))",
+    ),
+    "ck_subprojects_status": (
+        _SUBPROJECTS,
+        "CHECK ((status = ANY (ARRAY['open'::text, 'done'::text, 'archived'::text])))",
+    ),
+    "ck_subproject_members_member_kind": (
+        _MEMBERS,
+        "CHECK ((member_kind = ANY (ARRAY['session'::text, 'work_unit'::text])))",
+    ),
+    "ck_subproject_members_joined_via": (
+        _MEMBERS,
+        "CHECK ((joined_via = ANY (ARRAY['root'::text, 'parent'::text, "
+        "'gate_continuation'::text, 'work_unit_dispatch'::text, 'spawn'::text, "
+        "'declared'::text, 'operator_move'::text, 'auto_attach'::text, "
+        "'followup_edge'::text, 'split'::text, 'backfill'::text, "
+        "'merge'::text])))",
+    ),
+    "ck_subproject_members_work_unit_key": (
+        _MEMBERS,
+        "CHECK (((member_kind <> 'work_unit'::text) OR (work_unit_id IS NOT NULL)))",
+    ),
+    "ck_subproject_members_session_key": (
+        _MEMBERS,
+        "CHECK (((member_kind <> 'session'::text) OR "
+        "(agent_session_id IS NOT NULL) OR (coord_session_id IS NOT NULL) OR "
+        "(allocation_agent_id IS NOT NULL)))",
+    ),
+    "ck_subproject_members_no_work_unit_on_session": (
+        _MEMBERS,
+        "CHECK (((member_kind = 'work_unit'::text) OR (work_unit_id IS NULL)))",
+    ),
+    "ck_subproject_members_no_session_key_on_work_unit": (
+        _MEMBERS,
+        "CHECK (((member_kind = 'session'::text) OR "
+        "((agent_session_id IS NULL) AND (coord_session_id IS NULL) AND "
+        "(allocation_agent_id IS NULL))))",
+    ),
 }
 
 # Every standalone index -> (table, unique, key columns as pg_get_indexdef
@@ -184,6 +228,12 @@ _INDEXES: dict[str, tuple[str, bool, str, str | None]] = {
         False,
         "(tenant_id, subproject_id)",
         "(removed_at IS NULL)",
+    ),
+    "idx_subproject_members_subproject_history": (
+        _MEMBERS,
+        False,
+        "(tenant_id, subproject_id, removed_at)",
+        None,
     ),
     "uq_subproject_members_live_agent_session": (
         _MEMBERS,
@@ -219,43 +269,30 @@ _KEY_INDEXES = (
     "subproject_members_pkey",
 )
 
-# Every ``op.execute`` in ``upgrade()``, in order: its leading words, and
-# whether it runs inside the autocommit_block.
-_UPGRADE_STATEMENTS: tuple[tuple[str, bool], ...] = (
-    ("CREATE TABLE IF NOT EXISTS coord.subprojects (", False),
-    ("CREATE TABLE IF NOT EXISTS coord.subproject_members (", False),
-    ("COMMENT ON TABLE coord.subprojects IS", False),
-    ("COMMENT ON TABLE coord.subproject_members IS", False),
-    (
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS "
-        "idx_subprojects_tenant_status_updated ON coord.subprojects",
-        True,
-    ),
-    (
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS "
-        "idx_subproject_members_live_subproject ON coord.subproject_members",
-        True,
-    ),
-    (
-        "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "
-        "uq_subproject_members_live_agent_session ON coord.subproject_members",
-        True,
-    ),
-    (
-        "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "
-        "uq_subproject_members_live_work_unit ON coord.subproject_members",
-        True,
-    ),
-    (
-        "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "
-        "uq_subproject_members_live_allocation ON coord.subproject_members",
-        True,
-    ),
-    (
-        "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "
-        "uq_subproject_members_live_pending_coord_session ON coord.subproject_members",
-        True,
-    ),
+# Every ``op.execute`` in ``upgrade()``, in order, by its leading words. Each
+# index statement is ``CREATE [UNIQUE] INDEX IF NOT EXISTS <name> ON <table>``
+# on a table created above it: the exact shape coord's migration classifier
+# admits as a new-table claim.
+_UPGRADE_STATEMENTS: tuple[str, ...] = (
+    "CREATE TABLE IF NOT EXISTS coord.subprojects (",
+    "CREATE TABLE IF NOT EXISTS coord.subproject_members (",
+    "COMMENT ON TABLE coord.subprojects IS",
+    "COMMENT ON TABLE coord.subproject_members IS",
+    "CREATE INDEX IF NOT EXISTS idx_subprojects_tenant_status_updated "
+    "ON coord.subprojects (",
+    "CREATE INDEX IF NOT EXISTS idx_subproject_members_live_subproject "
+    "ON coord.subproject_members (",
+    "CREATE INDEX IF NOT EXISTS idx_subproject_members_subproject_history "
+    "ON coord.subproject_members (",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_subproject_members_live_agent_session "
+    "ON coord.subproject_members (",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_subproject_members_live_work_unit "
+    "ON coord.subproject_members (",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_subproject_members_live_allocation "
+    "ON coord.subproject_members (",
+    "CREATE UNIQUE INDEX IF NOT EXISTS "
+    "uq_subproject_members_live_pending_coord_session "
+    "ON coord.subproject_members (",
 )
 
 # Every ``op.execute`` in ``downgrade()``, exactly: the indexes, then the
@@ -265,6 +302,7 @@ _DOWNGRADE_STATEMENTS: tuple[str, ...] = (
     "DROP INDEX IF EXISTS coord.uq_subproject_members_live_allocation",
     "DROP INDEX IF EXISTS coord.uq_subproject_members_live_work_unit",
     "DROP INDEX IF EXISTS coord.uq_subproject_members_live_agent_session",
+    "DROP INDEX IF EXISTS coord.idx_subproject_members_subproject_history",
     "DROP INDEX IF EXISTS coord.idx_subproject_members_live_subproject",
     "DROP INDEX IF EXISTS coord.idx_subprojects_tenant_status_updated",
     "DROP TABLE IF EXISTS coord.subproject_members",
@@ -441,16 +479,21 @@ def test_every_statement_is_static_coord_sql_and_drops_live_in_downgrade() -> No
     assert not scan.violations, scan.violations
 
 
-def test_tables_in_the_transaction_and_indexes_concurrently_in_one_block() -> None:
+def test_tables_comments_and_indexes_are_built_in_one_transaction() -> None:
     calls = upgrade_execute_calls(_revision_path())
     assert len(calls) == len(_UPGRADE_STATEMENTS), [_collapsed(c.sql) for c in calls]
-    for call, (head, in_block) in zip(calls, _UPGRADE_STATEMENTS, strict=True):
-        assert _collapsed(call.sql).startswith(head), (head, call.sql)
-        assert call.in_autocommit_block is in_block, (
-            f"{head!r} must run {'inside' if in_block else 'outside'} the "
-            "autocommit_block: coord's migration classifier rejects a "
-            "non-concurrent CREATE INDEX, and a CONCURRENTLY build cannot run "
-            "in a transaction"
+    for call, head in zip(calls, _UPGRADE_STATEMENTS, strict=True):
+        sql = _collapsed(call.sql)
+        assert sql.startswith(head), (head, call.sql)
+        assert "CONCURRENTLY" not in sql.upper(), (
+            "a concurrent build runs outside the transaction: a cancelled one "
+            "leaves an INVALID unique that an IF NOT EXISTS retry keeps"
+        )
+        assert call.in_autocommit_block is False, (
+            f"{head!r} must run in the transaction that creates its table, so "
+            "the tables and their uniques commit together; coord's migration "
+            "classifier admits a non-concurrent CREATE INDEX on a table the "
+            "same file creates as a new-table claim"
         )
 
     tree = ast.parse(_revision_source())
@@ -458,7 +501,7 @@ def test_tables_in_the_transaction_and_indexes_concurrently_in_one_block() -> No
         n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "upgrade"
     )
     blocks = [n for n in ast.walk(upgrade) if isinstance(n, ast.With)]
-    assert len(blocks) == 1, "ONE autocommit_block holds every index build"
+    assert not blocks, "no autocommit_block: one transaction holds every statement"
     attrs = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
     assert "get_bind" not in attrs, "coord's migration classifier rejects bind reads"
 
@@ -508,6 +551,17 @@ def _member_row(
     }
     row.update(overrides)
     return row
+
+
+def _kind_keys(kind: str) -> dict[str, object]:
+    """The keys a member of ``kind`` carries, and only those: a session member
+    its harness id, a work-unit member its unit, and a kind outside the
+    vocabulary none at all (so only the ``member_kind`` CHECK can refuse it)."""
+    if kind == "session":
+        return {"agent_session_id": _uid()}
+    if kind == "work_unit":
+        return {"agent_session_id": None, "work_unit_id": _uid()}
+    return {"agent_session_id": None}
 
 
 def _refusal(engine: Engine, write: Callable[[Connection], object]) -> tuple[str, str]:
@@ -603,7 +657,11 @@ def test_a_minimal_insert_gets_the_declared_defaults(subprojects_db: Engine) -> 
 
 
 @_needs_pg
-def test_upgrade_creates_the_keys_and_checks_by_name(subprojects_db: Engine) -> None:
+def test_upgrade_creates_every_key_and_check_by_its_exact_definition(
+    subprojects_db: Engine,
+) -> None:
+    # Keys and CHECKs only: PostgreSQL 18 also lists every NOT NULL column in
+    # pg_constraint (contype 'n'), which this contract does not pin.
     with subprojects_db.connect() as conn:
         rows = conn.execute(
             text(
@@ -616,6 +674,7 @@ def test_upgrade_creates_the_keys_and_checks_by_name(subprojects_db: Engine) -> 
                   JOIN pg_namespace n ON n.oid = rel.relnamespace
                  WHERE n.nspname = 'coord'
                    AND rel.relname IN ('subprojects', 'subproject_members')
+                   AND c.contype IN ('p', 'u', 'f', 'c')
                 """
             )
         ).all()
@@ -628,8 +687,9 @@ def test_upgrade_creates_the_keys_and_checks_by_name(subprojects_db: Engine) -> 
         # 'a' = NO ACTION: a subproject is archived or merged, never deleted,
         # so a delete that would orphan the ledger is refused, not cascaded.
         assert (by_name[name].confdeltype, by_name[name].confupdtype) == ("a", "a")
-    for name, table in _CHECKS.items():
+    for name, (table, definition) in _CHECKS.items():
         assert (by_name[name].relname, by_name[name].contype) == (table, "c"), name
+        assert by_name[name].definition == definition, by_name[name]
 
 
 @_needs_pg
@@ -696,9 +756,11 @@ def test_each_vocabulary_accepts_its_tokens_and_refuses_another(
     def row(token: str) -> dict[str, object]:
         if table == _SUBPROJECTS:
             return _subproject_row(tenant, **{column: token})
-        # Both member keys set, so either member_kind satisfies its key CHECK
-        # and only the vocabulary can refuse.
-        return _member_row(tenant, parent, work_unit_id=_uid(), **{column: token})
+        if column == "member_kind":
+            # Each kind carries exactly its own keys (a kind outside the
+            # vocabulary carries none), so only the vocabulary can refuse.
+            return _member_row(tenant, parent, member_kind=token, **_kind_keys(token))
+        return _member_row(tenant, parent, **{column: token})
 
     with subprojects_db.begin() as conn:
         for token in accepted:
@@ -716,7 +778,11 @@ def test_each_vocabulary_accepts_its_tokens_and_refuses_another(
     ("overrides", "constraint"),
     [
         (
-            {"member_kind": "work_unit", "work_unit_id": None},
+            {
+                "member_kind": "work_unit",
+                "agent_session_id": None,
+                "work_unit_id": None,
+            },
             "ck_subproject_members_work_unit_key",
         ),
         (
@@ -736,6 +802,45 @@ def test_a_member_without_the_key_its_kind_needs_is_refused(
     assert _refusal(subprojects_db, lambda conn: _insert(conn, _MEMBERS, member)) == (
         "23514",
         constraint,
+    )
+
+
+@_needs_pg
+def test_a_session_member_carrying_a_work_unit_is_refused(
+    subprojects_db: Engine,
+) -> None:
+    # Admitted, it would hold the unit's tenant-wide live slot in
+    # uq_subproject_members_live_work_unit and lock the unit's own row out.
+    tenant = _uid()
+    with subprojects_db.begin() as conn:
+        parent = _insert(conn, _SUBPROJECTS, _subproject_row(tenant))
+    member = _member_row(tenant, parent, work_unit_id=_uid())
+    assert _refusal(subprojects_db, lambda conn: _insert(conn, _MEMBERS, member)) == (
+        "23514",
+        "ck_subproject_members_no_work_unit_on_session",
+    )
+
+
+@_needs_pg
+@pytest.mark.parametrize(
+    "key", ["agent_session_id", "coord_session_id", "allocation_agent_id"]
+)
+def test_a_work_unit_member_carrying_any_session_key_is_refused(
+    subprojects_db: Engine, key: str
+) -> None:
+    tenant = _uid()
+    with subprojects_db.begin() as conn:
+        parent = _insert(conn, _SUBPROJECTS, _subproject_row(tenant))
+    overrides: dict[str, object] = {
+        "member_kind": "work_unit",
+        "agent_session_id": None,
+        "work_unit_id": _uid(),
+        key: _uid(),
+    }
+    member = _member_row(tenant, parent, **overrides)
+    assert _refusal(subprojects_db, lambda conn: _insert(conn, _MEMBERS, member)) == (
+        "23514",
+        "ck_subproject_members_no_session_key_on_work_unit",
     )
 
 
