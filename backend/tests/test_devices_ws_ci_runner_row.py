@@ -37,7 +37,10 @@ Pinned here, driving the real endpoint against the test Postgres:
   ``ci_runner`` element in ``runner_info.capabilities`` is dropped before any
   web writer stores the list, on a new row under every role and on an
   existing row, exactly as coord's register door drops it at ingest, while
-  every other token is kept verbatim and in order.
+  every other token is kept verbatim and in order;
+* a secondary's pointer claim decides "unheld" from the row it locked, not
+  the session's cached copy, so a primary that took the pointer meanwhile is
+  never displaced (coord finding ``5f52242e``).
 
 DB-backed on purpose: the guard is a statement's interaction with a row other
 connections commit, which a mocked session cannot exercise.
@@ -842,6 +845,97 @@ async def test_a_non_owner_heartbeat_never_claims_a_marked_rows_pointer(env) -> 
     assert env.manager.get_websocket(env.device_id) is None
     assert _events(logs, "devices_ws_secondary_claim_failed") == []
     assert _events(logs, "devices_ws_secondary_claimed_unheld_pointer") == []
+
+
+# ---------------------------------------------------------------------------
+# The pointer decision reads the locked row, not the session cache
+# (coord finding 5f52242e)
+# ---------------------------------------------------------------------------
+
+
+async def _a_primary_takes_the_pointer(
+    env: SimpleNamespace, create: Any = device_connection_crud.create_connection_record
+) -> int:
+    """On a session of its own, a primary opens its connection row and takes the
+    device's pointer. Returns that connection's pk."""
+    async with env.maker() as other:
+        conn = await create(
+            other,
+            device_id=env.device_id,
+            user_id=env.user_id,
+            instance_key="primary",
+            instance_role="primary",
+            port=9876,
+        )
+        await device_crud.take_ws_session(
+            other,
+            device_id=env.device_id,
+            connection_pk=conn.id,
+            connected_at=conn.connected_at,
+            port=9876,
+        )
+        return int(conn.id)
+
+
+async def test_a_pointer_claim_reads_the_locked_row_not_the_session_cache(
+    env,
+) -> None:
+    """This session loads the device while the pointer is unheld, as the
+    handshake's ``get_device`` does. A primary then takes the pointer on another
+    session. The secondary's claim, made on the first session, must see that
+    pointer under its lock and decline, not displace it."""
+    await _seed(env, _CLAIMED_ROW, marked=False)
+    async with env.maker() as db:
+        loaded = await device_crud.get_device(db, env.device_id)
+        assert loaded is not None and loaded.ws_session_id is None
+        secondary = await device_connection_crud.create_connection_record(
+            db,
+            device_id=env.device_id,
+            user_id=env.user_id,
+            instance_key="runner:temp-1",
+            instance_role="secondary",
+            port=9877,
+        )
+        secondary_pk = secondary.id
+        primary_pk = await _a_primary_takes_the_pointer(env)
+        claimed = await device_crud.claim_ws_session_if_unheld(
+            db, device_id=env.device_id, connection_pk=secondary_pk
+        )
+
+    assert claimed is False, "the claim displaced a live primary"
+    image = json.loads(await _row_image(env) or "{}")
+    assert image["ws_session_id"] == primary_pk
+    assert image["port"] == 9876
+
+
+async def test_a_secondary_does_not_displace_a_primary_that_took_the_pointer_meanwhile(
+    env,
+) -> None:
+    """The same race through the served endpoint: a primary takes the pointer
+    while the secondary's handshake opens its connection row. The secondary is
+    admitted as a non-owner and never becomes the relay socket."""
+    await _seed(env, _CLAIMED_ROW, marked=False)
+    real_create = device_connection_crud.create_connection_record
+    primary_pks: list[int] = []
+
+    async def create_then_a_primary_takes_the_pointer(db: Any, **kwargs: Any) -> Any:
+        record = await real_create(db, **kwargs)
+        primary_pks.append(await _a_primary_takes_the_pointer(env, create=real_create))
+        return record
+
+    with patch.object(
+        device_connection_crud,
+        "create_connection_record",
+        create_then_a_primary_takes_the_pointer,
+    ):
+        sock = await _handshake(env, _info("secondary"))
+
+    assert len(primary_pks) == 1, "the primary never took the pointer mid-handshake"
+    assert sock.closed is None and sock.acked
+    image = json.loads(await _row_image(env) or "{}")
+    assert image["ws_session_id"] == primary_pks[0], "the secondary displaced it"
+    assert image["port"] == 9876
+    assert env.manager.get_websocket(env.device_id) is None
 
 
 # ---------------------------------------------------------------------------
