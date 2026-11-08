@@ -1,11 +1,13 @@
-"""coord.repo_identities — GitHub's stable repo id to the name coord last saw
+"""coord.repo_identities, and canonical_repos.bare_dir -- following a repo rename
 
 Revision ID: coord_repo_identities_01
 Revises: outbound_budget_windows_01
 Create Date: 2026-11-08
 
-Phase 4a (qontinui-web half) of plan
-``2026-11-02-coord-follows-a-repository-rename-or-transfer``.
+Phases 3 and 4a (qontinui-web half) of plan
+``2026-11-02-coord-follows-a-repository-rename-or-transfer``: the
+``coord.repo_identities`` table (below), and the nullable
+``coord.canonical_repos.bare_dir`` column (section "bare_dir").
 
 ## Why
 
@@ -56,6 +58,38 @@ revokes both roles here, exactly as ``ingcred_01`` does for its cross-tenant
 ledger. A tenant role that could write a row could spoof a rename. coord itself
 connects as the owning migrator role, so its reads and writes are unaffected.
 
+## bare_dir -- a rename never moves a bare
+
+Every coord replica keeps its own copy of each repo's canonical bare under
+``<COORD_GIT_ROOT>/<owner>/<name>.git``, derived from ``canonical_repos.repo``.
+Moving those copies on every replica in lockstep with a database rename is a
+distributed-consistency problem, so coord does not: a rename re-keys
+``repo`` and sets ``bare_dir`` to the directory the bare is actually in
+(``COALESCE(bare_dir, <old repo>)``). NULL -- every existing row, and every row
+never renamed -- means "derive it from ``repo``", so there is nothing to
+backfill.
+
+* ``ck_canonical_repos_bare_dir_safe`` -- NULL, or exactly two non-empty
+  segments ``owner/name`` with no ``/``, ``\\`` or ``:`` inside a segment, no
+  segment starting with ``.`` and no ``..`` anywhere: coord's own per-segment
+  path validation (``git_origin::validate_segment``), so a stored value can
+  never escape the git root.
+* ``ux_canonical_repos_effective_dir`` -- UNIQUE on
+  ``COALESCE(bare_dir, repo)``: two rows can never resolve to one directory
+  (after ``a`` is renamed to ``b`` keeping ``bare_dir = a``, a new repo
+  registered as ``a`` must get a directory of its own; coord picks
+  ``a.<tag>``). It is case-SENSITIVE on purpose: it is sound on existing data
+  only because ``repo`` is already UNIQUE case-sensitively and every
+  ``bare_dir`` starts NULL, whereas a ``lower(...)`` index would fail to build
+  on any pair of case-variant registry rows (the re-key code documents that
+  such pairs can exist). The deployed git roots are case-sensitive file
+  systems, so this is the property that keeps two rows off one directory;
+  coord's registration screen additionally avoids a case-variant of a taken
+  directory.
+
+``canonical_repos`` is small (one row per registered repo), so the column add,
+the CHECK (validated in place) and the index build hold their locks briefly.
+
 ## Head choice
 
 ``down_revision`` is the repo's single alembic head at authoring time
@@ -75,10 +109,13 @@ in production, and must degrade on a missing table
 ## Safety
 
 Additive: one ``CREATE TABLE IF NOT EXISTS`` on a new name, a ``REVOKE`` on
-that new table, one index on it, and ``COMMENT ON``. No existing table is touched, so
-there is no lock on a hot table and nothing to backfill. Every SQL string is a
+that new table, one index on it, and ``COMMENT ON``; on ``canonical_repos`` one
+nullable column with no default (no rewrite), one CHECK and one unique index
+on a small table, all guarded so a re-run is a no-op. Nothing to backfill. Every SQL string is a
 static literal with no ``:word`` sequence, so the revision renders unchanged in
-offline ``--sql`` mode. ``downgrade`` drops only what ``upgrade`` created.
+offline ``--sql`` mode. ``downgrade`` drops only what ``upgrade`` created (dropping ``bare_dir``
+loses where a renamed repo's bare lives, so downgrade only before any rename
+was followed).
 """
 
 from collections.abc import Sequence
@@ -146,7 +183,50 @@ def upgrade() -> None:
         """
     )
 
+    # canonical_repos.bare_dir (module docs, "bare_dir").
+    op.execute(
+        "ALTER TABLE coord.canonical_repos ADD COLUMN IF NOT EXISTS bare_dir TEXT"
+    )
+    op.execute(
+        r"""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                 WHERE conname = 'ck_canonical_repos_bare_dir_safe'
+                   AND conrelid = to_regclass('coord.canonical_repos')
+            ) THEN
+                ALTER TABLE coord.canonical_repos
+                    ADD CONSTRAINT ck_canonical_repos_bare_dir_safe CHECK (
+                        bare_dir IS NULL
+                        OR (bare_dir ~ '^[^/\\:.][^/\\:]*/[^/\\:.][^/\\:]*$'
+                            AND strpos(bare_dir, '..') = 0)
+                    );
+            END IF;
+        END
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_canonical_repos_effective_dir
+            ON coord.canonical_repos ((COALESCE(bare_dir, repo)))
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.canonical_repos.bare_dir IS
+            'Where this repo''s canonical bare lives under the coord git root (owner/name, no .git), when that is not the directory repo derives. Set by the repository rename re-key to the directory the bare already occupies (a rename never moves a bare), and by registration when the derived directory is another row''s. NULL means derive it from repo. Plan 2026-11-02-coord-follows-a-repository-rename-or-transfer.'
+        """
+    )
+
 
 def downgrade() -> None:
-    """Drop the table; its index and constraints go with it."""
+    """Drop bare_dir (with its CHECK and index) and the table."""
+    op.execute("DROP INDEX IF EXISTS coord.ux_canonical_repos_effective_dir")
+    op.execute(
+        "ALTER TABLE coord.canonical_repos "
+        "DROP CONSTRAINT IF EXISTS ck_canonical_repos_bare_dir_safe"
+    )
+    op.execute("ALTER TABLE coord.canonical_repos DROP COLUMN IF EXISTS bare_dir")
     op.execute("DROP TABLE IF EXISTS coord.repo_identities")
