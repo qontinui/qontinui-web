@@ -678,8 +678,10 @@ class ReportStore:
     async def _refuse_narrative(
         self, ctx: StoreContext, fields: dict[str, str]
     ) -> None:
-        """422 ``report_rejected`` when the narrative names a confidential
-        term, an email-shaped identity, an IP address or an account id."""
+        """422 ``report_rejected`` when the narrative (or, at create, the
+        slug or the source) names a confidential term, an email-shaped
+        identity, an IP address or an account id, or is the ``[withheld]``
+        marker a read serves."""
         stored = await _stored_scope(ctx)
         violations: list[Violation] = await scan_off_loop(
             functools.partial(narrative_violations, terms=stored.terms), fields
@@ -768,8 +770,20 @@ class ReportStore:
 
     async def create(self, ctx: StoreContext, payload: ReportCreate) -> ReportRead:
         assert payload.slug is not None  # set by the model validator
+        # The slug and the source are served on every read and the slug is
+        # fixed for good, so they get the narrative's scans too.
+        source = {
+            name: value
+            for name in ("source_repo", "source_path")
+            if (value := getattr(payload, name)) is not None
+        }
         await self._refuse_narrative(
-            ctx, {name: getattr(payload, name) for name in _NARRATIVE}
+            ctx,
+            {
+                **{name: getattr(payload, name) for name in _NARRATIVE},
+                "slug": payload.slug,
+                **source,
+            },
         )
         report = Report(
             tenant_id=ctx.access.tenant_id,
@@ -860,6 +874,15 @@ class ReportStore:
         if report.current_version != expected_version:
             raise StaleVersion(await self._read(ctx, report))
         changes = content_changes(report, payload)
+        marked = {name for name in _NARRATIVE if changes.get(name) == WITHHELD}
+        if marked:
+            # A field sent back as the [withheld] marker a read served it as
+            # stands for the stored value, left alone, while that value is
+            # withheld; a marker anywhere else is refused by the scan below.
+            for name in await self._withheld_now(ctx, report, marked):
+                del changes[name]
+                if name == "body_md" and "source_sha" not in payload.model_fields_set:
+                    changes.pop("source_sha", None)  # the body did not change
         if not changes_anything(report, changes):
             served = await self._read(ctx, report)
             return served, served

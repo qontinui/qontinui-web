@@ -794,13 +794,17 @@ def narrative_violations(
     fields: dict[str, str], *, terms: Iterable[str]
 ) -> list[Violation]:
     """The scans free text beside the contract gets at write — a report's own
-    narrative, a snapshot's file path, a withdrawal's reason: confidential
-    terms, email-shaped identities, IP addresses and account ids. A UUID is
-    allowed there (block arguments are slugs, not ids), so twelve digits that
-    are a UUID's last group are not an account id."""
+    narrative, slug and source, a snapshot's file path, a withdrawal's reason:
+    confidential terms, email-shaped identities, IP addresses and account ids.
+    A UUID is allowed there (block arguments are slugs, not ids), so an
+    account id lying inside a UUID is not one. The exact :data:`WITHHELD`
+    marker a read serves is never written back as a value
+    (``withheld_marker``)."""
     matcher = TermMatcher(terms)
     out: list[Violation] = []
     for slot, text in fields.items():
+        if text == WITHHELD:
+            out.append(Violation(slot, "withheld_marker"))
         normalized = normalize_for_scan(text)
         if matcher.matches(text, normalized):
             out.append(Violation(slot, "confidential_term"))

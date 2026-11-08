@@ -615,6 +615,135 @@ class TestReports:
             "violations"
         ]
 
+    async def test_the_slug_and_the_source_are_scanned_at_create(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The slug is fixed for good and the source is served on every read,
+        so both get the narrative's scans at create: refused 422
+        report_rejected naming the slot, never the value. (An update never
+        sets them: it may only name the source the report already mirrors.)"""
+        await _set_scope(async_db_session, terms=[TERM])
+        cases = [
+            (
+                {"title": "Review", "slug": "northwind-mutual-review"},
+                "slug",
+                "confidential_term",
+            ),
+            ({"title": "Review", "slug": "host-ip-192-0-2-40"}, "slug", "ip_address"),
+            (
+                {
+                    "title": "Review",
+                    "source_repo": f"{OWNER}/northwind-mutual-notes",
+                    "source_path": "reports/review.md",
+                },
+                "source_repo",
+                "confidential_term",
+            ),
+            (
+                {
+                    "title": "Review",
+                    "source_repo": f"{OWNER}/notes",
+                    "source_path": "reports/123456789012/report.md",
+                },
+                "source_path",
+                "account_id",
+            ),
+            (
+                {
+                    "title": "Review",
+                    "source_repo": f"{OWNER}/notes",
+                    "source_path": "reports/ops@example.com.md",
+                },
+                "source_path",
+                "email",
+            ),
+        ]
+        for body, slot, kind in cases:
+            response = await admin.post(f"{API}/reports", json=body)
+            assert response.status_code == 422, response.text
+            refused = response.json()
+            assert refused["error"] == "report_rejected"
+            assert {"slot": slot, "kind": kind} in refused["violations"]
+            assert not _names_term(response.text)
+            for value in ("192-0-2-40", "123456789012", "ops@example.com"):
+                assert value not in response.text
+        assert (await admin.get(f"{API}/reports")).json()["items"] == []
+
+    async def test_the_withheld_marker_is_never_written_back(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """A read serves a withheld field as the [withheld] marker; a client
+        that sends it back must never store it in place of the value."""
+        from app.models.overview import Report
+
+        marker = "[withheld]"
+        # At create the marker is always refused.
+        for name in ("title", "summary", "body_md"):
+            refused = await admin.post(
+                f"{API}/reports", json={"title": "Review", name: marker}
+            )
+            assert refused.status_code == 422, refused.text
+            assert refused.json()["error"] == "report_rejected"
+            assert {"slot": name, "kind": "withheld_marker"} in refused.json()[
+                "violations"
+            ]
+        await _set_scope(async_db_session, terms=[])
+        body = f"# Progress\n\nThe migration for {TERM}."
+        report = await _report(admin, body_md=body)
+        url = f"{API}/reports/{report['id']}"
+        # A field reads do not withhold: the marker would replace it, refused.
+        refused = await admin.patch(
+            url, json={"summary": marker}, headers={"If-Match": '"1"'}
+        )
+        assert refused.status_code == 422, refused.text
+        assert {"slot": "summary", "kind": "withheld_marker"} in refused.json()[
+            "violations"
+        ]
+        # The body is withheld once the term is added: sent back as the
+        # marker, it stands for the stored body, which is left alone.
+        await _set_scope(async_db_session, terms=[TERM])
+        same = await admin.patch(
+            url, json={"body_md": marker}, headers={"If-Match": '"1"'}
+        )
+        assert same.status_code == 200, same.text
+        assert same.json()["item"]["version"] == 1
+        # With another change the version written still holds that body, which
+        # names the term: refused naming body_md, and nothing is written.
+        edited = await admin.patch(
+            url,
+            json={"title": "Renamed", "body_md": marker},
+            headers={"If-Match": '"1"'},
+        )
+        assert edited.status_code == 422, edited.text
+        assert {"slot": "body_md", "kind": "confidential_term"} in edited.json()[
+            "violations"
+        ]
+        stored = (
+            await async_db_session.execute(
+                select(Report.body_md, Report.current_version).where(
+                    Report.id == UUID(report["id"])
+                )
+            )
+        ).one()
+        assert tuple(stored) == (body, 1)
+        # A withdrawal's reason is never the marker either.
+        snap = await _snapshot(admin, report["id"], _doc())
+        refused = await admin.patch(
+            f"{API}/report-snapshots/{snap['id']}",
+            json={"withdrawn": True, "withdrawn_reason": marker},
+            headers={"If-Match": '"1"'},
+        )
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["error"] == "snapshot_rejected"
+        assert refused.json()["violations"] == [
+            {"slot": "withdrawn_reason", "kind": "withheld_marker"}
+        ]
+        # Nor is a snapshot's file path, which gets the same scans.
+        refused = await _post(admin, report["id"], _doc(), source_path=marker)
+        assert {"slot": "source_path", "kind": "withheld_marker"} in _violations(
+            refused
+        )
+
     async def test_a_published_report_follows_the_pages_source_rules(
         self, admin: httpx.AsyncClient
     ) -> None:
