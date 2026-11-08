@@ -447,14 +447,15 @@ export function fleetCount(
 /**
  * The `linked` stat. A row is linked when a lifecycle row READ bridges an
  * agent row READ, so the count can be higher than shown only through a
- * session one half did not reach:
+ * session this read could not link:
  *
  * - the lifecycle half came back full — a bridged session may have started
  *   before its ceiling: a floor;
- * - the agent half came back full AND some row is unresolved — a bridged row
- *   whose agent twin lies past the agent ceiling reads unresolved (D2), so
- *   those rows may be linked: a floor. With nothing unresolved no row can be
- *   hiding that way, and the count is exact;
+ * - some row is unresolved — its agent twin was not in coord's answer, either
+ *   past the agent ceiling or excluded by coord's own status/device/search
+ *   filter (the backend's "capped or filtered out"), so it may be linked: a
+ *   floor. With nothing unresolved and the lifecycle half complete, the count
+ *   is exact whatever the agent half did;
  * - a half of unknown size: nothing established (`–`);
  * - a FAILED agent read: `–` — the route withholds EVERY row's class
  *   (`row_class: null` for all of them, shells included).
@@ -473,11 +474,39 @@ export function linkedCount(
   }
   const basis: CountBasis = isSizeUnknown(ceiling)
     ? "unknown"
-    : ceiling.lifecycle.kind === "capped" ||
-        (ceiling.agent.kind === "capped" && unresolved > 0)
+    : ceiling.lifecycle.kind === "capped" || unresolved > 0
       ? "floor"
       : "exact";
   return fleetCount(n, basis, { title: meaning });
+}
+
+/**
+ * How a STATUS count — the strip's "needs a person" and "active" — may be
+ * stated. A row whose join is unresolved has its status masked as unknown,
+ * so ANY unresolved row may hide either status. Beyond that:
+ *
+ * - needs a person comes only from a LIFECYCLE state, so only a full
+ *   lifecycle half can hide one — a full agent half cannot;
+ * - active can also be an agent-only session past a full (or failed) agent
+ *   half.
+ *
+ * A half of unknown size establishes nothing. On a failed agent read both
+ * counts are `–` anyway (`deriveSessionsHealth` returns them null).
+ */
+export function statusCountBasis(
+  ceiling: SessionsCeiling,
+  unresolved: number,
+  which: "attention" | "active"
+): CountBasis {
+  if (isSizeUnknown(ceiling)) return "unknown";
+  if (ceiling.lifecycle.kind === "capped" || unresolved > 0) return "floor";
+  if (
+    which === "active" &&
+    (ceiling.agent.kind === "capped" || isAgentHalfFailed(ceiling))
+  ) {
+    return "floor";
+  }
+  return "exact";
 }
 
 /**
@@ -1289,7 +1318,11 @@ export function deriveSessionsHealth(
         ? "amber"
         : "green";
 
-  const say = referentPhrasing(opts.referent, basis);
+  const say = referentPhrasing(
+    opts.referent,
+    basis,
+    statusCountBasis(ceiling, unknownJoin, "attention")
+  );
   // Whether the headline already names the hidden matches — then the detail
   // does not repeat them.
   let hiddenNamed = false;
@@ -1346,7 +1379,8 @@ export function deriveSessionsHealth(
  */
 function referentPhrasing(
   referent: SessionsReferent | undefined,
-  basis: CountBasis
+  basis: CountBasis,
+  attentionBasis: CountBasis = basis
 ) {
   const query = referent?.query?.trim() || null;
   const adj = referent?.status ? `${referent.status} ` : "";
@@ -1357,6 +1391,10 @@ function referentPhrasing(
   const qty = (n: number) =>
     basis === "floor" && n > 0 ? `at least ${n}` : `${n}`;
   const Qty = (n: number) => capitalize(qty(n));
+  // Needs-a-person has its own basis ({@link statusCountBasis}): only a full
+  // lifecycle half or an unresolved row can hide one.
+  const QtyA = (n: number) =>
+    capitalize(attentionBasis === "floor" && n > 0 ? `at least ${n}` : `${n}`);
   const sessions = (n: number) => `${adj}session${n === 1 ? "" : "s"}`;
   const plural = (n: number, one: string, many: string) =>
     n === 1 ? one : many;
@@ -1378,8 +1416,8 @@ function referentPhrasing(
   return {
     attention: (n: number) =>
       query
-        ? `${Qty(n)} of ${matching} ${plural(n, "waits", "wait")} on a person${ofRead}`
-        : `${Qty(n)} ${sessions(n)}${onMachine} waiting on a person${ofRead}`,
+        ? `${QtyA(n)} of ${matching} ${plural(n, "waits", "wait")} on a person${ofRead}`
+        : `${QtyA(n)} ${sessions(n)}${onMachine} waiting on a person${ofRead}`,
     unresolved: (n: number) =>
       query
         ? `${n} of ${matching} ${plural(n, "has", "have")} an unresolved join half`

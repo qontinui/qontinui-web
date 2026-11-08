@@ -31,6 +31,7 @@ import {
   hasLifecycleHalf,
   isCapped,
   linkedCount,
+  statusCountBasis,
   lifecycleOnlyCount,
   lastHeartbeatAt,
   lifecycleState,
@@ -1014,6 +1015,50 @@ describe("a FAILED agent read", () => {
         0
       ).value
     ).toBeNull();
+  });
+
+  it("floors a status count only where an unread or unresolved row could raise it", () => {
+    const complete = bound(31, "complete");
+    const full = bound(500, "unknown");
+    const agentFull = ceilingOf({ lifecycle: complete, agent: full });
+    expect(statusCountBasis(agentFull, 0, "attention")).toBe("exact");
+    expect(statusCountBasis(agentFull, 0, "active")).toBe("floor");
+    const bothComplete = ceilingOf({
+      lifecycle: complete,
+      agent: bound(3, "complete"),
+    });
+    expect(statusCountBasis(bothComplete, 1, "attention")).toBe("floor");
+    expect(statusCountBasis(bothComplete, 1, "active")).toBe("floor");
+    expect(statusCountBasis(bothComplete, 0, "attention")).toBe("exact");
+    expect(
+      statusCountBasis(
+        ceilingOf({ lifecycle: full, agent: bound(3, "complete") }),
+        0,
+        "attention"
+      )
+    ).toBe("floor");
+    expect(
+      statusCountBasis(
+        ceilingOf({
+          lifecycle: bound(0, "unknown"),
+          agent: bound(3, "complete"),
+        }),
+        0,
+        "active"
+      )
+    ).toBe("unknown");
+  });
+
+  it("floors linked on any unresolved row — its twin may have been filtered out, not only cut off", () => {
+    const bothComplete = ceilingOf({
+      lifecycle: bound(31, "complete"),
+      agent: bound(3, "complete"),
+    });
+    expect(linkedCount(1, bothComplete, "own", 1).value).toBe("≥1");
+    expect(linkedCount(1, bothComplete, "own", 0)).toEqual({
+      value: 1,
+      title: "own",
+    });
   });
 
   it("bases lifecycle-only on the lifecycle half alone: a full AGENT half does not make it a floor", () => {
