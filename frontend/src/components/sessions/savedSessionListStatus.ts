@@ -272,6 +272,69 @@ export function tabHeadings(
   });
 }
 
+/**
+ * One block of the snapshot view: a tab holding terminals, or a run of
+ * CONSECUTIVE tabs holding none. A runner's tab list carries every registered
+ * tab, terminal or not, and a box with many stale pages would otherwise list
+ * each empty one at full height. A run stays in the runner's order and names
+ * every tab in it, so nothing is hidden and the count is still on the page.
+ */
+export type TabBlock =
+  | { kind: "tab"; heading: TabHeading }
+  | {
+      kind: "empty";
+      headings: [TabHeading, ...TabHeading[]];
+      /** The run's lead-in: `"3 tabs with no terminals: "` (none for one tab). */
+      lead: string;
+      /** What follows the names: `": no terminals."` for one tab, else `"."`. */
+      tail: string;
+      /** The whole line as text: what Copy as Markdown writes. */
+      text: string;
+    };
+
+/** A tab's terminal count, as its heading shows it. */
+export function terminalCount(n: number): string {
+  return plural(n, "terminal");
+}
+
+/** Beside a terminal no confirmed lifecycle record names. */
+export const NO_CONFIRMED_SESSION = "no confirmed session";
+
+/** Pure: the snapshot's tabs as blocks, empty tabs collapsed per run. */
+export function tabBlocks(pages: readonly TerminalLayoutPage[]): TabBlock[] {
+  const blocks: TabBlock[] = [];
+  let run: TabHeading[] = [];
+  const flush = () => {
+    const [first, ...rest] = run;
+    if (first === undefined) return;
+    const headings: [TabHeading, ...TabHeading[]] = [first, ...rest];
+    blocks.push({ kind: "empty", headings, ...emptyTabsWords(headings) });
+    run = [];
+  };
+  for (const heading of tabHeadings(pages)) {
+    if (heading.page.sessions.length === 0) {
+      run.push(heading);
+    } else {
+      flush();
+      blocks.push({ kind: "tab", heading });
+    }
+  }
+  flush();
+  return blocks;
+}
+
+/** Pure: the words around a run's names, and the whole line. */
+function emptyTabsWords(run: readonly [TabHeading, ...TabHeading[]]): {
+  lead: string;
+  tail: string;
+  text: string;
+} {
+  const names = run.map((h) => h.text).join(", ");
+  const lead = run.length === 1 ? "" : `${run.length} tabs with no terminals: `;
+  const tail = run.length === 1 ? ": no terminals." : ".";
+  return { lead, tail, text: `${lead}${names}${tail}` };
+}
+
 // ---------------------------------------------------------------------------
 // One terminal of a saved tab
 // ---------------------------------------------------------------------------
@@ -659,8 +722,9 @@ function finishedMarkdown(finished: SavedSessionFinished): string | null {
 
 /**
  * The whole saved list as Markdown: a header naming the runner, the save time
- * and the deletion time, then one section per tab in the runner's order and
- * one bullet per terminal, in the same words the panel shows.
+ * and the deletion time, then the panel's own blocks in the runner's order — a
+ * section per tab that held terminals, one bullet per terminal, and one line
+ * per run of empty tabs (`tabBlocks`) — in the same words the panel shows.
  */
 export function savedListMarkdown(
   detail: SavedSessionListDetail,
@@ -682,12 +746,16 @@ export function savedListMarkdown(
       "- The runner had not reported its tab names, so tabs are shown by id."
     );
   }
-  for (const { page, text } of tabHeadings(detail.layout.pages)) {
-    lines.push("", `## ${md(text)}`, "");
-    if (page.sessions.length === 0) {
-      lines.push("- (no terminals)");
+  for (const block of tabBlocks(detail.layout.pages)) {
+    if (block.kind === "empty") {
+      // Its own heading, as in the panel it is its own block: a run never
+      // reads as part of the tab above it, and a name starting "1." or "-"
+      // cannot turn the line into a list item.
+      lines.push("", `## ${md(block.text)}`);
       continue;
     }
+    const { page, text } = block.heading;
+    lines.push("", `## ${md(text)}`, "");
     for (const session of page.sessions) {
       const line = sessionLine(session, detail.coord_status);
       const parts = [
@@ -695,7 +763,7 @@ export function savedListMarkdown(
           ? line.name.known
             ? `**${md(line.name.text)}**`
             : md(line.name.text)
-          : `${md(line.name.text)} (no confirmed session)`,
+          : `${md(line.name.text)} (${NO_CONFIRMED_SESSION})`,
       ];
       if (line.confirmed) parts.push(`account: ${md(line.account.text)}`);
       const finished = finishedMarkdown(line.finished);
