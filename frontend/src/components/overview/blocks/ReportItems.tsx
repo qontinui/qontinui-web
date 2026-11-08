@@ -20,9 +20,12 @@
  * it. A snapshot published without links (a device with no first-party owners
  * configured publishes link-free) simply has no disclosure.
  *
- * A link is rendered only in one of the two forms the server's link rule
- * accepts (a GitHub pull request or commit, or an in-app `/overview/` path);
- * anything else is shown as its label, never followed.
+ * A link is followed only when its URL is in one of the two forms the
+ * server's link rule accepts — a GitHub pull request or commit, or an in-app
+ * `/overview/` path — checked with the server's own two patterns
+ * ({@link GITHUB_LINK}, {@link IN_APP_LINK}). Anything else, such as a
+ * `javascript:` URL, a `//host` URL, a look-alike host, or a path with a `..`
+ * segment, a `%`-escape or a `\`, is shown as its label and never followed.
  */
 
 import Link from "next/link";
@@ -51,16 +54,34 @@ type Item = Schemas["SnapshotItem"];
 type Group = Schemas["SnapshotGroup"];
 type ItemLink = Schemas["SnapshotLink"];
 
+/**
+ * The server's two link forms, exactly: `_GITHUB_LINK` and `_IN_APP_LINK` in
+ * `backend/app/overview/report_snapshot_contract.py`, anchored at both ends as
+ * its `fullmatch` anchors them.
+ */
 const GITHUB_LINK =
-  /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+\/(?:pull\/[0-9]+|commit\/[0-9a-f]{7,40})$/;
+  /^https:\/\/github\.com\/([A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38})\/([A-Za-z0-9._-]{1,100})\/(?:pull\/[1-9][0-9]{0,9}|commit\/[0-9a-f]{7,64})$/;
+const SEGMENT = "[A-Za-z0-9_~-][A-Za-z0-9._~-]*";
+const IN_APP_LINK = new RegExp(
+  `^/overview/(?:${SEGMENT}(?:/${SEGMENT})*/?)?` +
+    "(?:\\?[A-Za-z0-9._~=&+-]*)?" +
+    "(?:#[A-Za-z0-9._~-]*)?$"
+);
 
-function isInAppPath(url: string): boolean {
-  return url.startsWith("/overview/") && !url.includes("//");
+/** A GitHub pull request or commit. Like the server's `github_link_owner`,
+ *  the repository may not be `.` or `..`. */
+function isGitHubLink(url: string): boolean {
+  const match = GITHUB_LINK.exec(url);
+  return match !== null && match[2] !== "." && match[2] !== "..";
+}
+
+function isInAppLink(url: string): boolean {
+  return IN_APP_LINK.test(url);
 }
 
 function TechnicalLink({ link }: { link: ItemLink }) {
   const label = <Served text={link.label} />;
-  if (GITHUB_LINK.test(link.url)) {
+  if (isGitHubLink(link.url)) {
     return (
       <a
         href={link.url}
@@ -72,7 +93,7 @@ function TechnicalLink({ link }: { link: ItemLink }) {
       </a>
     );
   }
-  if (isInAppPath(link.url)) {
+  if (isInAppLink(link.url)) {
     return (
       <Link
         href={link.url}

@@ -146,14 +146,31 @@ describe("report-items", () => {
   });
 
   it("never follows a link in a form the server's link rule does not allow", async () => {
+    // Each is refused by the server's own two patterns
+    // (report_snapshot_contract.py `_GITHUB_LINK`, `_IN_APP_LINK`).
+    const refused = [
+      "https://tracker.example/x",
+      "javascript:alert(1)",
+      "//evil.example/x",
+      "https://github.com.evil.example/o/r/pull/1",
+      "/overview/../admin",
+      "/overview/%2e%2e/x",
+      "/overview/..\\admin",
+    ];
+    // And each of these is one of the two forms, so it stays a link.
+    const followed = [
+      "https://github.com/example-org/platform/commit/abc1234",
+      "/overview/documents/plan?tab=history#phase-2",
+    ];
     const odd = docAt(2);
     odd.items = odd.items.map((i) =>
       i.id === "r01"
         ? {
             ...i,
-            links: [
-              { label: "Somewhere else", url: "https://tracker.example/x" },
-            ],
+            links: [...refused, ...followed].map((url, n) => ({
+              label: `Reference ${n + 1}`,
+              url,
+            })),
           }
         : i
     );
@@ -165,9 +182,21 @@ describe("report-items", () => {
     fireEvent.click(
       within(item("r01")!).getByRole("button", { name: "Technical details" })
     );
-    expect(
-      within(item("r01")!).getByText("Somewhere else").closest("a")
-    ).toBeNull();
+    const r01 = item("r01")!;
+    refused.forEach((url, n) => {
+      const label = within(r01).getByText(`Reference ${n + 1}`);
+      expect(label.closest("a"), url).toBeNull();
+    });
+    const hrefs = [...document.querySelectorAll("[href]")].map((el) =>
+      el.getAttribute("href")
+    );
+    for (const url of refused) expect(hrefs, url).not.toContain(url);
+    followed.forEach((url, n) => {
+      const label = within(r01).getByText(
+        `Reference ${refused.length + n + 1}`
+      );
+      expect(label.closest("a")?.getAttribute("href"), url).toBe(url);
+    });
   });
 
   it("shows one group when the block names it, and says so when the stop has no such group", async () => {
