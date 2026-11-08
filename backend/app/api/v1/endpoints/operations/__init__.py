@@ -7858,7 +7858,8 @@ async def get_subprojects(
         description="Verdicts to leave out, forwarded as sent, comma-separated "
         "like `headline` — `done` lists every subproject that is not done in "
         "one read. A coord that predates the parameter refuses it (400 "
-        "`unknown_query_parameter`), which reaches the browser as that object.",
+        "`unknown_query_parameter`, passed through) or ignores it (its answer "
+        "then still holds done subprojects); a caller tells which.",
     ),
     origin: str | None = Query(
         default=None,

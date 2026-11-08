@@ -377,8 +377,9 @@ export function nextStepWords(
 
 /**
  * Words for each group the gates console reads a verdict into
- * (`gateStatus.ts` `gateVerdictGroupOf` — the one reading of coord's verdict
- * strings, so this console cannot drift from it).
+ * (`gateStatus.ts` `gateVerdictGroupOf`, which that console's row, progress
+ * bar and terminal test also read through) — so a member gate's verdict is
+ * worded here the way the gates console shows it.
  */
 const GATE_VERDICT_GROUP_WORDS: Record<GateVerdictGroup, string> = {
   cleared: "cleared",
@@ -1575,6 +1576,9 @@ export interface SubprojectChipWords {
   /** The SHORT accessible name, read in place of `text` (a dash says
    *  nothing to a screen reader, and the title is too long to hear per row). */
   label: string;
+  /** A kept answer whose re-ask failed: the cell marks it with a visible `*`
+   *  (the title and `label` already say why). */
+  stale: boolean;
 }
 
 export function subprojectChipWords(chip: SubprojectChip): SubprojectChipWords {
@@ -1589,10 +1593,15 @@ export function subprojectChipWords(chip: SubprojectChip): SubprojectChipWords {
     ...words,
     title: `${words.title} — as of the last lookup that answered; the latest failed (${readFailureWords(stale)})`,
     label: `${words.label}, not current`,
+    stale: true,
   };
 }
 
 function currentChipWords(chip: SubprojectChip): SubprojectChipWords {
+  return { ...chipWordsOf(chip), stale: false };
+}
+
+function chipWordsOf(chip: SubprojectChip): Omit<SubprojectChipWords, "stale"> {
   switch (chip.kind) {
     case "member": {
       const kind = headlineKindOf(chip.headline);

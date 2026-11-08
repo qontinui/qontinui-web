@@ -110,8 +110,10 @@ export const GATE_STATUS_PALETTE: StatusPalette<GateKind> = {
  * coord's verdict words, lower-cased, grouped by what they mean. coord's own
  * vocabulary is five — `open`, `cleared`, `failed`, `misconfigured`,
  * `withdrawn`; the other spellings are older writers' and other sources'.
- * This is the ONE reading of a verdict string: the subprojects console words
- * a member gate's verdict from the same groups (`gateVerdictGroupOf`).
+ * Read only through `gateVerdictGroupOf` (trimmed, case-folded): the gates
+ * console's row (`deriveGateStatus`), its progress bar (`GatesTable`) and its
+ * terminal test (`isTerminalGateVerdict`) do, and so does the subprojects
+ * console's member-gate wording — so those cannot disagree about a verdict.
  */
 const CLEARED_WORDS = new Set(["pass", "passed", "cleared", "ready", "ok"]);
 const FAILED_WORDS = new Set([
@@ -239,14 +241,16 @@ export function deriveGateStatus(
   g: GateStatusInput,
   now: number = Date.now()
 ): RowStatus<GateKind> {
-  const v = (g.verdict ?? "").toLowerCase();
+  // Read through `gateVerdictGroupOf`, so the row, the progress bar and the
+  // terminal test cannot read one verdict string two ways. Staleness sits
+  // between the terminal groups and the open ones: a gate whose story is over
+  // is not stale, and an open one the sweep has stopped re-evaluating is.
+  const group = gateVerdictGroupOf(g.verdict ?? "");
   let kind: GateKind;
-  if (CLEARED_WORDS.has(v)) kind = "cleared";
-  else if (FAILED_WORDS.has(v)) kind = "failed";
-  else if (WITHDRAWN_WORDS.has(v)) kind = "withdrawn";
+  if (group === "cleared" || group === "failed" || group === "withdrawn")
+    kind = group;
   else if (isSweepOverdue(g, now)) kind = "stale";
-  else if (EVALUATING_WORDS.has(v)) kind = "evaluating";
-  else if (PENDING_WORDS.has(v)) kind = "pending";
+  else if (group === "evaluating" || group === "pending") kind = group;
   else kind = "unknown";
 
   return {

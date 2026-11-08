@@ -111104,7 +111104,7 @@
             }
           },
           {
-            "description": "Verdicts to leave out, forwarded as sent, comma-separated like `headline` \u2014 `done` lists every subproject that is not done in one read. A coord that predates the parameter refuses it (400 `unknown_query_parameter`), which reaches the browser as that object.",
+            "description": "Verdicts to leave out, forwarded as sent, comma-separated like `headline` \u2014 `done` lists every subproject that is not done in one read. A coord that predates the parameter refuses it (400 `unknown_query_parameter`, passed through) or ignores it (its answer then still holds done subprojects); a caller tells which.",
             "in": "query",
             "name": "exclude_headline",
             "required": false,
@@ -111117,7 +111117,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Verdicts to leave out, forwarded as sent, comma-separated like `headline` \u2014 `done` lists every subproject that is not done in one read. A coord that predates the parameter refuses it (400 `unknown_query_parameter`), which reaches the browser as that object.",
+              "description": "Verdicts to leave out, forwarded as sent, comma-separated like `headline` \u2014 `done` lists every subproject that is not done in one read. A coord that predates the parameter refuses it (400 `unknown_query_parameter`, passed through) or ignores it (its answer then still holds done subprojects); a caller tells which.",
               "title": "Exclude Headline"
             }
           },

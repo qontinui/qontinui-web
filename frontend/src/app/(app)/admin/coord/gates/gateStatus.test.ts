@@ -191,6 +191,26 @@ describe("verdict normalisation", () => {
     expect(gateVerdictGroupOf("quorum_split")).toBeNull();
   });
 
+  it("reads a padded verdict the same way everywhere, and checks staleness only for an open gate", () => {
+    // Trimmed like the group reading, so the row and the terminal test agree.
+    expect(deriveGateStatus(gate({ verdict: " Cleared " })).kind).toBe(
+      "cleared"
+    );
+    expect(isTerminalGateVerdict(" Cleared ")).toBe(true);
+    // A terminal verdict is never stale; an open one the sweep has stopped
+    // re-evaluating is; an unreadable one is too — the sweep is the fact.
+    const overdue = { stale: true };
+    expect(
+      deriveGateStatus(gate({ verdict: "misconfigured", ...overdue })).kind
+    ).toBe("failed");
+    expect(deriveGateStatus(gate({ verdict: "open", ...overdue })).kind).toBe(
+      "stale"
+    );
+    expect(
+      deriveGateStatus(gate({ verdict: "quorum_split", ...overdue })).kind
+    ).toBe("stale");
+  });
+
   it("names the terminal set the same way the derivation does", () => {
     expect(isTerminalGateVerdict("Cleared")).toBe(true);
     expect(isTerminalGateVerdict("withdrawn")).toBe(true);

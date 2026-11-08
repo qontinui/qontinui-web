@@ -57,7 +57,9 @@ import {
 export const SUBPROJECT_CHIP_POLL_MS = 60_000;
 /** How old a failed lookup gets before it is retried. */
 export const SUBPROJECT_CHIP_RETRY_MS = 60_000;
-/** How old a "no subproject" (or unnamed) answer gets before it is re-asked. */
+/** How old ANY answer gets before it is re-asked — a membership included (a
+ *  session can be moved, a headline changes), as well as "no subproject" and
+ *  an id coord did not name. */
 export const SUBPROJECT_CHIP_REASK_MS = 180_000;
 
 /** The lookup a surface uses; injectable for tests. */
@@ -267,6 +269,7 @@ export function SubprojectChipCell({
         data-chip={chip.kind}
       >
         {words.text}
+        <StaleMark stale={words.stale} />
       </Link>
     );
   }
@@ -277,10 +280,24 @@ export function SubprojectChipCell({
       data-testid={testId}
       data-chip={chip.kind}
     >
-      <span aria-hidden="true">{words.text}</span>
+      <span aria-hidden="true">
+        {words.text}
+        <StaleMark stale={words.stale} />
+      </span>
       <span className="sr-only">{words.label}</span>
     </span>
   );
+}
+
+/** The visible mark of a kept answer whose re-ask failed — the same `*` a
+ *  stale count carries on a tab. Screen readers hear "not current" in the
+ *  chip's accessible name instead. */
+function StaleMark({ stale }: { stale: boolean }) {
+  return stale ? (
+    <span aria-hidden="true" className="text-muted-foreground">
+      *
+    </span>
+  ) : null;
 }
 
 /**
@@ -293,7 +310,10 @@ export function SubprojectChipText({ chip }: { chip: SubprojectChip }) {
   const words = subprojectChipWords(chip);
   return (
     <span title={words.title} data-chip={chip.kind}>
-      <span aria-hidden="true">{words.text}</span>
+      <span aria-hidden="true">
+        {words.text}
+        <StaleMark stale={words.stale} />
+      </span>
       <span className="sr-only">{words.label}</span>
     </span>
   );

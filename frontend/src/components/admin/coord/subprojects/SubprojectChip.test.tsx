@@ -241,6 +241,45 @@ describe("the chip's accessible names are short", () => {
     expect(cell.getAttribute("title")).toMatch(/coord lists no subproject/);
   });
 
+  it("marks a kept-but-not-current answer with a visible `*`, which a screen reader hears as words", () => {
+    const stale = { kind: "migration_pending" } as const;
+    render(
+      <SubprojectChipCell
+        chip={{ kind: "member", ...MEMBER, stale }}
+        data-testid="chip"
+      />
+    );
+    const link = screen.getByTestId("chip");
+    expect(link.textContent).toBe("console work*");
+    expect(link).toHaveAccessibleName(
+      "subproject: console work, working, not current"
+    );
+    // The mark itself is not read: the name already says it.
+    expect(link.querySelector('[aria-hidden="true"]')).toHaveTextContent("*");
+  });
+
+  it("marks a kept dash the same way, on a row's line too", () => {
+    const stale = { kind: "migration_pending" } as const;
+    render(
+      <button type="button" data-testid="row">
+        <SubprojectChipText chip={{ kind: "none", stale }} />
+      </button>
+    );
+    const row = screen.getByTestId("row");
+    expect(row.querySelector('[aria-hidden="true"]')?.textContent).toBe("–*");
+    expect(row).toHaveAccessibleName("subproject: none, not current");
+  });
+
+  it("carries no mark for a current answer", () => {
+    render(
+      <SubprojectChipCell
+        chip={{ kind: "member", ...MEMBER, stale: null }}
+        data-testid="chip"
+      />
+    );
+    expect(screen.getByTestId("chip").textContent).toBe("console work");
+  });
+
   it("says the same short phrase inside a row's button", () => {
     render(
       <button type="button" data-testid="row">

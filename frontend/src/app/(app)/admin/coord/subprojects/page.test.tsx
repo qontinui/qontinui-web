@@ -130,9 +130,12 @@ function facetOf(totals: Partial<Record<string, number | null>>) {
  * other read is rows — `rows[view]` for the first page, with
  * `cursors[view]` as its next cursor, and `rows["<view>@<cursor>"]` for the
  * page after it. Open's one read (`exclude_headline=done`) is the `open`
- * view; `refuseExclude` answers it as a coord without the parameter does:
- * `400 {"error": "unknown_query_parameter", "unknown": ["exclude_headline"]}`,
- * which the backend passes through as `{"detail": <that object>}`.
+ * view; `refuseExclude` answers it as a coord without the parameter does —
+ * `400 {"error": "unknown_query_parameter", "unknown": ["exclude_headline"]}` —
+ * in the shape the browser receives it. In production that is `"flat"`: the
+ * backend's `error_handler` spreads coord's fields onto the top level of its
+ * envelope, beside its own `message`, `timestamp` and `path`. `"nested"` is
+ * the same object under `detail`, as an app without that handler serves it.
  */
 function route(
   totals: Partial<Record<string, number | null>>,
@@ -140,16 +143,30 @@ function route(
   opts: {
     facet?: boolean;
     cursors?: Partial<Record<string, string>>;
-    refuseExclude?: boolean;
+    refuseExclude?: "flat" | "nested";
   } = {}
 ) {
   fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
     const headline = query.get("headline");
     const excludesDone = query.get("exclude_headline") === "done";
-    if (excludesDone && opts.refuseExclude)
+    if (excludesDone && opts.refuseExclude) {
+      const refusal = {
+        error: "unknown_query_parameter",
+        unknown: ["exclude_headline"],
+      };
+      const body =
+        opts.refuseExclude === "flat"
+          ? {
+              ...refusal,
+              message: "unknown_query_parameter",
+              timestamp: 1_799_000_000,
+              path: `http://localhost/api/v1/operations/subprojects?${query.toString()}`,
+            }
+          : { detail: refusal };
       throw new Error(
-        `GET /api/v1/operations/subprojects?${query.toString()} failed: 400 - {"detail":{"error":"unknown_query_parameter","unknown":["exclude_headline"]}}`
+        `GET /api/v1/operations/subprojects?${query.toString()} failed: 400 - ${JSON.stringify(body)}`
       );
+    }
     if (query.get("limit") === "1") {
       if (headline !== null) return page([], totals[headline] ?? 0);
       const scopeTotal =
@@ -245,42 +262,47 @@ describe("/admin/coord/subprojects", () => {
     expect(within(tabCount("all")).getByText("8")).toBeInTheDocument();
   });
 
-  it("reads Open per headline when coord refuses exclude_headline as unknown — and keeps doing so", async () => {
-    route(
-      CALM,
-      {
-        stalled: [summary({ title: "a-stalled-one" })],
-        waiting: [
-          summary({
-            id: "22222222-2222-4222-8222-222222222222",
-            headline: "waiting",
-            title: "a-waiting-one",
-          }),
-        ],
-      },
-      { refuseExclude: true }
-    );
-    render(<CoordSubprojectsPage />);
-    expect(await screen.findByText("a-stalled-one")).toBeInTheDocument();
-    expect(screen.getByText("a-waiting-one")).toBeInTheDocument();
-    // The refused parameter is not a failure of the view.
-    expect(
-      screen.queryByTestId("coord-subprojects-rows-stale")
-    ).not.toBeInTheDocument();
-    const before = queries().filter((q) =>
-      q.includes("exclude_headline")
-    ).length;
-    expect(before).toBe(1);
-    fireEvent.click(screen.getByTestId("coord-subprojects-refresh"));
-    await waitFor(() =>
+  it.each(["flat", "nested"] as const)(
+    "reads Open per headline when coord refuses exclude_headline as unknown (%s body) — and keeps doing so",
+    async (shape) => {
+      route(
+        CALM,
+        {
+          stalled: [summary({ title: "a-stalled-one" })],
+          waiting: [
+            summary({
+              id: "22222222-2222-4222-8222-222222222222",
+              headline: "waiting",
+              title: "a-waiting-one",
+            }),
+          ],
+        },
+        { refuseExclude: shape }
+      );
+      render(<CoordSubprojectsPage />);
+      expect(await screen.findByText("a-stalled-one")).toBeInTheDocument();
+      expect(screen.getByText("a-waiting-one")).toBeInTheDocument();
+      // The refused parameter is not a failure of the view.
       expect(
-        queries().filter((q) => q === "status=open&headline=stalled&limit=100")
-      ).toHaveLength(2)
-    );
-    expect(
-      queries().filter((q) => q.includes("exclude_headline"))
-    ).toHaveLength(before);
-  });
+        screen.queryByTestId("coord-subprojects-rows-stale")
+      ).not.toBeInTheDocument();
+      const before = queries().filter((q) =>
+        q.includes("exclude_headline")
+      ).length;
+      expect(before).toBe(1);
+      fireEvent.click(screen.getByTestId("coord-subprojects-refresh"));
+      await waitFor(() =>
+        expect(
+          queries().filter(
+            (q) => q === "status=open&headline=stalled&limit=100"
+          )
+        ).toHaveLength(2)
+      );
+      expect(
+        queries().filter((q) => q.includes("exclude_headline"))
+      ).toHaveLength(before);
+    }
+  );
 
   it("reads Open per headline when coord IGNORED exclude_headline — a done row in its answer proves it", async () => {
     route(CALM, {
@@ -367,6 +389,64 @@ describe("/admin/coord/subprojects", () => {
     expect(
       screen.queryByTestId("coord-subprojects-rows-paused")
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps a tab chosen since when Open's later page proves the parameter was ignored", async () => {
+    route(
+      CALM,
+      {
+        open: [summary({ title: "open-page-one" })],
+        stalled: [summary({ title: "per-headline-open-row" })],
+        waiting: [
+          summary({
+            id: "66666666-6666-4666-8666-666666666666",
+            headline: "waiting",
+            title: "a-waiting-row",
+          }),
+        ],
+      },
+      { cursors: { open: "c2" } }
+    );
+    const answered = fetchSubprojects.getMockImplementation();
+    let answerPageTwo: (() => void) | undefined;
+    fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
+      if (query.get("cursor") === "c2")
+        return new Promise((resolve) => {
+          answerPageTwo = () =>
+            resolve(
+              page(
+                [
+                  summary({
+                    id: "77777777-7777-4777-8777-777777777777",
+                    headline: "done",
+                    title: "a-done-row",
+                  }),
+                ],
+                0
+              )
+            );
+        });
+      return answered?.(query);
+    });
+    const { rerender } = render(<CoordSubprojectsPage />);
+    await screen.findByText("open-page-one");
+    fireEvent.click(screen.getByTestId("coord-subprojects-load-more"));
+    await waitFor(() => expect(answerPageTwo).toBeDefined());
+    // The operator moves to Waiting while Open's next page is out.
+    mockTab = "waiting";
+    rerender(<CoordSubprojectsPage />);
+    expect(await screen.findByText("a-waiting-row")).toBeInTheDocument();
+    // Open's page answers with a done row: Open is re-read per headline — as
+    // Load more's own, older read, so it cannot replace Waiting's rows.
+    await act(async () => {
+      answerPageTwo?.();
+    });
+    await waitFor(() =>
+      expect(queries()).toContain("status=open&headline=stalled&limit=100")
+    );
+    expect(screen.getByText("a-waiting-row")).toBeInTheDocument();
+    expect(screen.queryByText("per-headline-open-row")).not.toBeInTheDocument();
+    expect(screen.queryByText("a-done-row")).not.toBeInTheDocument();
   });
 
   it("calls a refusal of some OTHER parameter a failed read, not a reason to fall back", async () => {
