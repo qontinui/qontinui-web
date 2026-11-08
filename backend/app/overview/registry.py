@@ -273,7 +273,9 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "converge only on identical content). A list read carries no "
                 "bodies. The narrative is refused (422 report_rejected) when it "
                 "names one of the project's confidential terms, an email "
-                "address, an IP address or an AWS account id."
+                "address, an IP address or an AWS account id; a field naming a "
+                "term added after the write reads [withheld] in every read "
+                "(withheld names the field)."
             ),
             permission="editing_roles",
             read_model=ReportRead,
@@ -304,8 +306,10 @@ REGISTRY: dict[str, ResourceSpec] = {
                 "source_path with the same content answers the stored snapshot; "
                 "other content there is 409 snapshot_changed_at_source. A list "
                 "read carries no documents (data is null); a single read serves "
-                "the document under today's checks. Filters: report_id, "
-                "source_path, withdrawn (true / false)."
+                "the document under today's checks, except a withdrawn "
+                "snapshot's, which no read serves (data is null and withheld "
+                "names data, withdrawn). Filters: report_id, source_path, "
+                "withdrawn (true / false)."
             ),
             permission="editing_roles",
             read_model=ReportSnapshotRead,

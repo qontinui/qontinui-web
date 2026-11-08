@@ -77,11 +77,13 @@ Reading a stored snapshot again
 
 :func:`treat_for_read` serves a stored snapshot under today's rules: one stored
 under another :data:`REPORT_ALLOWLIST_VERSION` is checked again and withheld
-WHOLE when it no longer passes — never served half-trusted; one checked against
-an older presentation scope has its strings scanned for the current terms, and
-a newly matching string is replaced by :data:`WITHHELD`; and the link rule's
-owner check runs on every read, with every link withheld while the owners are
-UNKNOWN.
+WHOLE when it no longer passes — never served half-trusted; one stored under
+another allowlist version, or checked against another presentation scope
+version, has its strings scanned for the current terms, and a newly matching
+string is replaced by :data:`WITHHELD`; and the link rule's owner check runs on
+every read, with every link withheld while the owners are UNKNOWN. A report's
+own narrative is served the same way (:func:`treat_narrative`): a field naming
+a current confidential term reads :data:`WITHHELD`.
 
 Report narratives (the report's own title, summary and body) get the
 confidential-term, email, IP and account-id scans at write
@@ -397,6 +399,12 @@ class TermMatcher:
             if needles
             else None
         )
+
+    @property
+    def active(self) -> bool:
+        """Whether there is any term to match (a tenant with none matches
+        nothing, and a read need not scan at all)."""
+        return self._pattern is not None
 
     def matches(self, text: str, normalized: str | None = None) -> bool:
         if self._pattern is None:
@@ -882,21 +890,24 @@ def treat_for_read(
 
     * Stored under another :data:`REPORT_ALLOWLIST_VERSION`: checked again
       (everything but the scope); any failure withholds it WHOLE.
-    * Checked against another scope version: every string is scanned for the
-      current confidential terms. A match in free text
+    * Stored under another allowlist version, OR checked against another
+      scope version (D4: strings are scanned again "when the allowlist
+      version or the tenant's confidential terms changed"): every string is
+      scanned for the current confidential terms. A match in free text
       (:data:`FREE_TEXT_KEYS`) is replaced by :data:`WITHHELD`; a match in
       structure (an id, a group reference, a date, an enum value) withholds
       the snapshot whole, since it cannot be served without that value.
     * Every read: a link is withheld when its owner is not first-party, and
       EVERY link is withheld while the owners are UNKNOWN (fail closed).
     """
-    if allowlist_version != REPORT_ALLOWLIST_VERSION:
+    revalidate = allowlist_version != REPORT_ALLOWLIST_VERSION
+    if revalidate:
         checked = check_snapshot(data, terms=())
         if checked.violations:
             return Treated(None, checked.violations)
     served = copy.deepcopy(data)
     withheld: list[Violation] = []
-    if scope_version != scope.version:
+    if revalidate or scope_version != scope.version:
         terms = matcher if matcher is not None else TermMatcher(scope.terms)
         matched = [
             (slot, container, key)
@@ -946,10 +957,31 @@ def treat_label(
     """A string a snapshot ROW copies out of its document (the label, the
     method's label), treated as :func:`treat_for_read` would treat it inside
     the document — for the reads that serve the row without the document."""
-    if allowlist_version != REPORT_ALLOWLIST_VERSION:
+    revalidate = allowlist_version != REPORT_ALLOWLIST_VERSION
+    if revalidate:
         kinds = _scan(text, TermMatcher(()))
         if kinds:
             return WITHHELD, [Violation(slot, kind) for kind in kinds]
-    if scope_version != scope.version and matcher.matches(text):
+    if (revalidate or scope_version != scope.version) and matcher.matches(text):
         return WITHHELD, [Violation(slot, "confidential_term")]
     return text, []
+
+
+def treat_narrative(
+    fields: dict[str, str], matcher: TermMatcher
+) -> tuple[dict[str, str], list[Violation]]:
+    """A report's narrative (its title, summary and body, as stored in the
+    report or in one of its versions) served under the tenant's CURRENT
+    confidential terms: a field that names one is served as :data:`WITHHELD`
+    — the whole field, since over-withholding is the safer error — and listed
+    by its name, never its value. The narrative was scanned at write, so this
+    catches a term added since; what is stored is never changed."""
+    served: dict[str, str] = {}
+    withheld: list[Violation] = []
+    for slot, text in fields.items():
+        if matcher.matches(text):
+            served[slot] = WITHHELD
+            withheld.append(Violation(slot, "confidential_term"))
+        else:
+            served[slot] = text
+    return served, withheld

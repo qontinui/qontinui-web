@@ -18218,7 +18218,8 @@ export interface paths {
         };
         /**
          * List Report Versions
-         * @description Every version of a report's narrative, newest first.
+         * @description Every version of a report's narrative, newest first. A title naming
+         *     one of the project's current confidential terms reads ``[withheld]``.
          */
         get: operations["api_v1_overview_reports_report_id_versions_get"];
         put?: never;
@@ -18236,7 +18237,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read Report Version */
+        /**
+         * Read Report Version
+         * @description One version of a report's narrative. A field naming one of the
+         *     project's current confidential terms reads ``[withheld]``.
+         */
         get: operations["api_v1_overview_reports_report_id_versions_version_get"];
         put?: never;
         post?: never;
@@ -48455,6 +48460,8 @@ export interface components {
             via_device: string | null;
             /** Via Session */
             via_session: string | null;
+            /** Withheld */
+            withheld: components["schemas"]["WithheldSlot"][];
         };
         /** ReportSnapshotCreate */
         ReportSnapshotCreate: {
@@ -48669,6 +48676,8 @@ export interface components {
             via_device: string | null;
             /** Via Session */
             via_session: string | null;
+            /** Withheld */
+            withheld: components["schemas"]["WithheldSlot"][];
         };
         /** ReportVersionSummary */
         ReportVersionSummary: {
@@ -48689,6 +48698,8 @@ export interface components {
             via_device: string | null;
             /** Via Session */
             via_session: string | null;
+            /** Withheld */
+            withheld: components["schemas"]["WithheldSlot"][];
         };
         /**
          * ReportView
@@ -57322,8 +57333,11 @@ export interface components {
         };
         /**
          * WithheldSlot
-         * @description A slot a read did not serve, and why (a contract violation kind, or a
-         *     link's ``link_owner_not_first_party`` / ``presentation_scope_unknown``).
+         * @description A slot a read did not serve, and why: a contract violation kind
+         *     (``confidential_term`` for a string, or a narrative field, naming one of
+         *     the project's current confidential terms), a link's
+         *     ``link_owner_not_first_party`` / ``presentation_scope_unknown``, or
+         *     ``withdrawn`` for a withdrawn snapshot's ``data``.
          */
         WithheldSlot: {
             /** Reason */

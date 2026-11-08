@@ -46719,6 +46719,13 @@
               }
             ],
             "title": "Via Session"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/WithheldSlot"
+            },
+            "title": "Withheld",
+            "type": "array"
           }
         },
         "required": [
@@ -46736,7 +46743,8 @@
           "source_path",
           "source_sha",
           "via_device",
-          "via_session"
+          "via_session",
+          "withheld"
         ],
         "title": "ReportRead",
         "type": "object"
@@ -47375,6 +47383,13 @@
               }
             ],
             "title": "Via Session"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/WithheldSlot"
+            },
+            "title": "Withheld",
+            "type": "array"
           }
         },
         "required": [
@@ -47385,6 +47400,7 @@
           "source_sha",
           "via_device",
           "via_session",
+          "withheld",
           "summary",
           "body_md"
         ],
@@ -47450,6 +47466,13 @@
               }
             ],
             "title": "Via Session"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/WithheldSlot"
+            },
+            "title": "Withheld",
+            "type": "array"
           }
         },
         "required": [
@@ -47459,7 +47482,8 @@
           "created_by",
           "source_sha",
           "via_device",
-          "via_session"
+          "via_session",
+          "withheld"
         ],
         "title": "ReportVersionSummary",
         "type": "object"
@@ -67493,7 +67517,7 @@
         "type": "object"
       },
       "WithheldSlot": {
-        "description": "A slot a read did not serve, and why (a contract violation kind, or a\nlink's ``link_owner_not_first_party`` / ``presentation_scope_unknown``).",
+        "description": "A slot a read did not serve, and why: a contract violation kind\n(``confidential_term`` for a string, or a narrative field, naming one of\nthe project's current confidential terms), a link's\n``link_owner_not_first_party`` / ``presentation_scope_unknown``, or\n``withdrawn`` for a withdrawn snapshot's ``data``.",
         "properties": {
           "reason": {
             "title": "Reason",
@@ -115594,7 +115618,7 @@
     },
     "/api/v1/overview/reports/{report_id}/versions": {
       "get": {
-        "description": "Every version of a report's narrative, newest first.",
+        "description": "Every version of a report's narrative, newest first. A title naming\none of the project's current confidential terms reads ``[withheld]``.",
         "operationId": "api_v1_overview_reports_report_id_versions_get",
         "parameters": [
           {
@@ -115645,6 +115669,7 @@
     },
     "/api/v1/overview/reports/{report_id}/versions/{version}": {
       "get": {
+        "description": "One version of a report's narrative. A field naming one of the\nproject's current confidential terms reads ``[withheld]``.",
         "operationId": "api_v1_overview_reports_report_id_versions_version_get",
         "parameters": [
           {

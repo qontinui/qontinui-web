@@ -1750,6 +1750,55 @@ class TestReadTimeChecks:
         listed = (await admin.get(f"{API}/report-snapshots")).json()["items"]
         assert [i["label"] for i in listed] == ["[withheld]"]
 
+    async def test_an_allowlist_change_alone_scans_for_the_terms_again(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """D4: strings are scanned again at read "when the allowlist version
+        or the tenant's confidential terms changed" — either one. A snapshot
+        stored under an older allowlist, checked against the scope version
+        that is still current, has its strings checked for the terms too."""
+        from app.models.overview import ReportSnapshot
+
+        version = await _set_scope(async_db_session, terms=[TERM])
+        report = await _report(admin)
+        item = await _snapshot(admin, report["id"], _stop(1))
+        assert item["scope_version"] == version
+
+        def leak(d: dict[str, Any]) -> None:
+            d["label"] = f"{TERM} checkpoint"
+            d["items"][0]["status_note"] = f"Waiting on {TERM}"
+
+        # As stored by an older contract whose term scan missed both.
+        leaked = _with(_stop(1), leak)
+        await async_db_session.execute(
+            update(ReportSnapshot)
+            .where(ReportSnapshot.id == UUID(item["id"]))
+            .values(allowlist_version=0, data=leaked, label=leaked["label"])
+        )
+        await async_db_session.commit()
+        expected = {
+            ("label", "confidential_term"),
+            ("items[0].status_note", "confidential_term"),
+        }
+        view = await _view(admin, report["id"])
+        (stop,) = view["snapshots"]
+        assert stop["label"] == "[withheld]"
+        assert stop["data"]["items"][0]["status_note"] == "[withheld]"
+        assert {(w["slot"], w["reason"]) for w in view["withheld"]} == expected
+        got = (await admin.get(f"{API}/report-snapshots/{item['id']}")).json()["item"]
+        assert got["label"] == "[withheld]"
+        assert {(w["slot"], w["reason"]) for w in got["withheld"]} == expected
+        listed = (
+            await admin.get(
+                f"{API}/report-snapshots", params={"report_id": report["id"]}
+            )
+        ).json()
+        assert [(i["label"], i["withheld"]) for i in listed["items"]] == [
+            ("[withheld]", [{"slot": "label", "reason": "confidential_term"}])
+        ]
+        for served in (view, got, listed):
+            assert TERM not in json.dumps(served)
+
     async def test_a_new_term_matching_structure_withholds_the_whole_stop(
         self, admin: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
@@ -1764,6 +1813,90 @@ class TestReadTimeChecks:
         assert view["withheld"] == [
             {"seq": item["seq"], "slot": "items[0].id", "reason": "confidential_term"}
         ]
+
+
+class TestNarrativeAtRead:
+    async def test_a_term_added_after_the_write_withholds_the_field_in_every_read(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Departure extending D4 (the plan author's decision): a report's
+        title, summary and body are served under the CURRENT confidential
+        terms. A field naming a term added after the write reads [withheld]
+        — the whole field — and withheld names it, never the value. The
+        stored row is unchanged, and a field with no match is served byte
+        for byte."""
+        from app.models.overview import Report
+
+        await _set_scope(async_db_session, terms=[])
+        body = f"# Progress\n\nThe migration for {TERM} is on track."
+        report = await _report(admin, body_md=body)
+        titled = await _report(
+            admin, title=f"{TERM} rollout", slug="rollout", summary=f"For {TERM}."
+        )
+        clean = {
+            "title": "Clean report",
+            "summary": "Nothing to hide.",
+            "body_md": "# Fine\n\nAll clear.",
+        }
+        tidy = await _report(admin, **clean)
+        await _set_scope(async_db_session, terms=[TERM])
+        hidden_body = [{"slot": "body_md", "reason": "confidential_term"}]
+        url = f"{API}/reports/{report['id']}"
+
+        got = (await admin.get(url)).json()["item"]
+        assert (got["body_md"], got["withheld"]) == ("[withheld]", hidden_body)
+        assert (got["title"], got["summary"]) == (report["title"], report["summary"])
+        view = await _view(admin, report["id"])
+        assert (view["report"]["body_md"], view["report"]["withheld"]) == (
+            "[withheld]",
+            hidden_body,
+        )
+        v1 = (await admin.get(f"{url}/versions/1")).json()
+        assert (v1["body_md"], v1["withheld"]) == ("[withheld]", hidden_body)
+        assert v1["summary"] == report["summary"]
+        # A stale write's server copy and a no-op write's answer serve it too.
+        stale = await admin.patch(
+            url, json={"title": "Other"}, headers={"If-Match": '"9"'}
+        )
+        assert stale.status_code == 409
+        assert stale.json()["current"]["body_md"] == "[withheld]"
+        same = await admin.patch(
+            url, json={"title": report["title"]}, headers={"If-Match": '"1"'}
+        )
+        assert same.status_code == 200
+        assert same.json()["item"]["body_md"] == "[withheld]"
+
+        listing = (await admin.get(f"{API}/reports")).json()
+        listed = {item["id"]: item for item in listing["items"]}
+        assert (listed[titled["id"]]["title"], listed[titled["id"]]["summary"]) == (
+            "[withheld]",
+            "[withheld]",
+        )
+        assert {(w["slot"], w["reason"]) for w in listed[titled["id"]]["withheld"]} == {
+            ("title", "confidential_term"),
+            ("summary", "confidential_term"),
+        }
+        versions = (await admin.get(f"{API}/reports/{titled['id']}/versions")).json()
+        assert [(v["title"], v["withheld"]) for v in versions["versions"]] == [
+            ("[withheld]", [{"slot": "title", "reason": "confidential_term"}])
+        ]
+        # No match: served byte for byte, with nothing withheld.
+        assert listed[tidy["id"]]["withheld"] == []
+        assert (listed[tidy["id"]]["title"], listed[tidy["id"]]["summary"]) == (
+            clean["title"],
+            clean["summary"],
+        )
+        fine = (await admin.get(f"{API}/reports/{tidy['id']}")).json()["item"]
+        assert {k: fine[k] for k in clean} == clean and fine["withheld"] == []
+        for served in (got, view, v1, stale.json(), same.json(), listing, versions):
+            assert TERM not in json.dumps(served)
+        # What is stored is unchanged.
+        stored = (
+            await async_db_session.execute(
+                select(Report.body_md).where(Report.id == UUID(report["id"]))
+            )
+        ).scalar_one()
+        assert stored == body
 
 
 # ===========================================================================
@@ -1800,6 +1933,45 @@ class TestView:
             wrong["seq"],
             third["seq"],
         ]
+
+    async def test_a_withdrawn_snapshot_serves_no_document_until_restored(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        """A withdrawn snapshot is history: its row is listed and read, so it
+        can be restored, but no read serves its document — data is null and
+        withheld names data, withdrawn. The database keeps the document, so a
+        restore serves it again, unchanged."""
+        report = await _report(admin)
+        doc = _doc()
+        snap = await _snapshot(admin, report["id"], doc)
+        url = f"{API}/report-snapshots/{snap['id']}"
+        hidden = [{"slot": "data", "reason": "withdrawn"}]
+        done = await admin.patch(
+            url,
+            json={"withdrawn": True, "withdrawn_reason": "The numbers were wrong."},
+            headers={"If-Match": '"1"'},
+        )
+        assert done.status_code == 200, done.text
+        assert done.json()["item"]["withheld"] == hidden
+        got = (await admin.get(url)).json()["item"]
+        assert (got["withdrawn"], got["data"], got["withheld"]) == (True, None, hidden)
+        assert got["label"] == "Baseline review"  # the row stays readable
+        listed = (
+            await admin.get(
+                f"{API}/report-snapshots", params={"report_id": report["id"]}
+            )
+        ).json()["items"]
+        assert [(i["id"], i["data"], i["withheld"]) for i in listed] == [
+            (snap["id"], None, hidden)
+        ]
+        restored = await admin.patch(
+            url, json={"withdrawn": False}, headers={"If-Match": '"2"'}
+        )
+        assert restored.status_code == 200, restored.text
+        assert restored.json()["item"]["withheld"] == []
+        got = (await admin.get(url)).json()["item"]
+        assert got["data"] == doc and got["withheld"] == []
+        assert _canonical_sha(got["data"]) == snap["content_sha256"]
 
     async def test_changes_since_previous_name_every_move_in_plain_terms(
         self, admin: httpx.AsyncClient
