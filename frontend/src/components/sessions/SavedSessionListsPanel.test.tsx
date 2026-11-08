@@ -28,6 +28,7 @@ import {
   createFakeNetwork,
   detail,
   iso,
+  layoutPages,
   runner,
   seedList,
   type FakeNetwork,
@@ -504,6 +505,57 @@ describe("a saved list's detail", () => {
       ["term-shell-1"],
     ]);
     expect(el).toHaveTextContent(/in the runner's own order/);
+  });
+
+  it("collapses a run of empty tabs into one line, in the runner's order", async () => {
+    const user = userEvent.setup();
+    const pages = layoutPages();
+    const [build, ...rest] = pages;
+    if (!build) throw new Error("fixture");
+    const empty = (pageId: string, label: string) => ({
+      pageId,
+      label,
+      order: 0,
+      sessions: [],
+    });
+    seedList(
+      net,
+      detail({
+        id: "l1",
+        layout: {
+          ...detail({ id: "l1" }).layout,
+          pages: [
+            build,
+            empty("e1e1e1e1-0", "Old 1"),
+            empty("e2e2e2e2-0", "Old 2"),
+            ...rest,
+          ],
+        },
+      })
+    );
+    const el = await openDetail(user);
+    await within(el).findAllByTestId("saved-tab-list-tab");
+    const collapsed = within(el).getAllByTestId("saved-tab-list-empty-tabs");
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0]).toHaveTextContent(
+      "2 tabs with no terminals: Old 1, Old 2."
+    );
+    expect(collapsed[0]?.getAttribute("data-page-ids")).toBe(
+      "e1e1e1e1-0 e2e2e2e2-0"
+    );
+    // Each tab keeps its own tooltip inside the line.
+    expect(
+      within(collapsed[0] as HTMLElement)
+        .getAllByTestId("saved-tab-list-empty-tab")
+        .map((t) => [t.textContent, t.getAttribute("title")])
+    ).toEqual([
+      ["Old 1", 'Tab "Old 1"'],
+      ["Old 2", 'Tab "Old 2"'],
+    ]);
+    // It sits where those tabs sat: after Build, before the first Review.
+    const blocks = within(el).getByTestId("saved-tab-list-tabs").children;
+    expect(blocks[1]).toBe(collapsed[0]);
+    expect(within(el).getAllByTestId("saved-tab-list-tab")).toHaveLength(4);
   });
 
   it("paints the /sessions finished badge per D3, naming its source", async () => {

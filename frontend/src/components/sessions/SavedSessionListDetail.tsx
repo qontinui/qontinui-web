@@ -44,10 +44,13 @@ import {
   byWhom,
   deletionCountdown,
   runnerProvenance,
+  NO_CONFIRMED_SESSION,
   savedListMarkdown,
   sessionLine,
-  tabHeadings,
+  tabBlocks,
+  terminalCount,
   unknownFinishedCount,
+  type TabHeading,
 } from "./savedSessionListStatus";
 
 type DetailRead =
@@ -313,7 +316,11 @@ export function SavedSessionListDetail({
   );
 }
 
-/** The snapshot: one section per tab, in the runner's order. */
+/**
+ * The snapshot, in the runner's order: a section per tab that held terminals,
+ * and one line per run of consecutive empty tabs (`tabBlocks`), each tab in
+ * it named with its own tooltip.
+ */
 function TabGroups({ detail }: { detail: Detail }) {
   const pages = detail.layout.pages;
   if (pages.length === 0) {
@@ -328,98 +335,126 @@ function TabGroups({ detail }: { detail: Detail }) {
   }
   return (
     <div className="space-y-3" data-testid="saved-tab-list-tabs">
-      {tabHeadings(pages).map(({ page, text, title }) => (
-        <section
-          key={page.pageId}
-          aria-label={text}
-          data-testid="saved-tab-list-tab"
-          data-page-id={page.pageId}
-        >
-          <h3
-            className="m-0 mb-1 flex items-baseline gap-2 text-xs font-semibold text-foreground/90"
-            title={title}
-            data-testid="saved-tab-list-tab-heading"
+      {tabBlocks(pages).map((block) =>
+        block.kind === "empty" ? (
+          <p
+            key={block.headings[0].page.pageId}
+            className="m-0 break-words text-xs text-muted-foreground"
+            data-testid="saved-tab-list-empty-tabs"
+            data-page-ids={block.headings.map((h) => h.page.pageId).join(" ")}
           >
-            <span className="truncate">{text}</span>
-            <span className="font-mono text-[11px] font-normal text-muted-foreground">
-              {page.sessions.length === 1
-                ? "1 terminal"
-                : `${page.sessions.length} terminals`}
-            </span>
-          </h3>
-          {page.sessions.length === 0 ? (
-            <p className="m-0 text-xs text-muted-foreground">
-              No terminals in this tab.
-            </p>
-          ) : (
-            <ul className="m-0 list-none space-y-1 p-0">
-              {page.sessions.map((session) => {
-                const line = sessionLine(session, detail.coord_status);
-                return (
-                  <li
-                    key={line.key}
-                    className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-card/30 px-2 py-1 text-xs"
-                    data-testid="saved-tab-list-session"
-                    data-terminal-id={line.key}
-                    data-ui-bridge-id={`sessions.saved-tab-lists.session.${line.key}`}
-                  >
-                    <span
-                      className={`min-w-0 flex-1 truncate ${
-                        line.name.known
-                          ? "font-medium"
-                          : "italic text-muted-foreground"
-                      }`}
-                      title={line.name.title}
-                      data-testid="saved-tab-list-session-name"
-                    >
-                      {line.name.text}
-                      {!line.confirmed && (
-                        <>
-                          {" "}
-                          <span className="not-italic text-muted-foreground">
-                            · no confirmed session
-                          </span>
-                        </>
-                      )}
-                    </span>
-                    <span
-                      className={`max-w-[18ch] truncate ${
-                        line.account.known ? "" : "italic"
-                      } text-muted-foreground`}
-                      title={line.account.title}
-                      data-testid="saved-tab-list-session-account"
-                    >
-                      {line.account.text}
-                    </span>
-                    {line.finished.status && (
-                      <StatusBadge
-                        status={line.finished.status}
-                        palette={SAVED_SESSION_FINISHED_PALETTE}
-                      />
-                    )}
-                    <span
-                      className={`hidden max-w-[28ch] truncate sm:inline ${
-                        line.title.known ? "" : "italic"
-                      } text-muted-foreground`}
-                      title={line.title.tooltip}
-                      data-testid="saved-tab-list-session-title"
-                    >
-                      {line.title.text}
-                    </span>
-                    <span
-                      className="shrink-0 font-mono text-[11px] text-muted-foreground"
-                      title={line.process.tooltip}
-                      data-testid="saved-tab-list-session-process"
-                    >
-                      {line.process.text}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ))}
+            {block.lead}
+            {block.headings.map((h, i) => (
+              <span key={h.page.pageId}>
+                {i > 0 && ", "}
+                <span title={h.title} data-testid="saved-tab-list-empty-tab">
+                  {h.text}
+                </span>
+              </span>
+            ))}
+            {block.tail}
+          </p>
+        ) : (
+          <TabSection
+            key={block.heading.page.pageId}
+            heading={block.heading}
+            detail={detail}
+          />
+        )
+      )}
     </div>
+  );
+}
+
+/** One tab that held terminals: its heading, then each terminal. */
+function TabSection({
+  heading: { page, text, title },
+  detail,
+}: {
+  heading: TabHeading;
+  detail: Detail;
+}) {
+  return (
+    <section
+      aria-label={text}
+      data-testid="saved-tab-list-tab"
+      data-page-id={page.pageId}
+    >
+      <h3
+        className="m-0 mb-1 flex items-baseline gap-2 text-xs font-semibold text-foreground/90"
+        title={title}
+        data-testid="saved-tab-list-tab-heading"
+      >
+        <span className="truncate">{text}</span>
+        <span className="font-mono text-[11px] font-normal text-muted-foreground">
+          {terminalCount(page.sessions.length)}
+        </span>
+      </h3>
+      <ul className="m-0 list-none space-y-1 p-0">
+        {page.sessions.map((session) => {
+          const line = sessionLine(session, detail.coord_status);
+          return (
+            <li
+              key={line.key}
+              className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-card/30 px-2 py-1 text-xs"
+              data-testid="saved-tab-list-session"
+              data-terminal-id={line.key}
+              data-ui-bridge-id={`sessions.saved-tab-lists.session.${line.key}`}
+            >
+              <span
+                className={`min-w-0 flex-1 truncate ${
+                  line.name.known
+                    ? "font-medium"
+                    : "italic text-muted-foreground"
+                }`}
+                title={line.name.title}
+                data-testid="saved-tab-list-session-name"
+              >
+                {line.name.text}
+                {!line.confirmed && (
+                  <>
+                    {" "}
+                    <span className="not-italic text-muted-foreground">
+                      · {NO_CONFIRMED_SESSION}
+                    </span>
+                  </>
+                )}
+              </span>
+              <span
+                className={`max-w-[18ch] truncate ${
+                  line.account.known ? "" : "italic"
+                } text-muted-foreground`}
+                title={line.account.title}
+                data-testid="saved-tab-list-session-account"
+              >
+                {line.account.text}
+              </span>
+              {line.finished.status && (
+                <StatusBadge
+                  status={line.finished.status}
+                  palette={SAVED_SESSION_FINISHED_PALETTE}
+                />
+              )}
+              <span
+                className={`hidden max-w-[28ch] truncate sm:inline ${
+                  line.title.known ? "" : "italic"
+                } text-muted-foreground`}
+                title={line.title.tooltip}
+                data-testid="saved-tab-list-session-title"
+              >
+                {line.title.text}
+              </span>
+              <span
+                className="shrink-0 font-mono text-[11px] text-muted-foreground"
+                title={line.process.tooltip}
+                data-testid="saved-tab-list-session-process"
+              >
+                {line.process.text}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
