@@ -408,8 +408,9 @@ export function nextStepWords(
  * Words for each group the gates console reads a verdict into
  * (`gateStatus.ts` `gateVerdictGroupOf`, which that console's row, progress
  * bar and terminal test also read through) — so a member gate's verdict falls
- * in the group (and colour) the gates console gives it; coord's own word is on
- * the raw line.
+ * in the group the gates console gives it. That console colours by the group;
+ * here a member gate's badge is its mover, and a terminal gate is `closed`
+ * (calm). Coord's own word is on the raw line.
  */
 const GATE_VERDICT_GROUP_WORDS: Record<GateVerdictGroup, string> = {
   cleared: "cleared",
