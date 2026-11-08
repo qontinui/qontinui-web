@@ -264,9 +264,27 @@ UNCLAIMED_FOLLOWUP_SQL = "relation = 'spawned_followup' AND to_id IS NULL"
 #:
 #: Composition with qontinui-web#1459 (edge correction, ``retracted_at``): that
 #: PR is not on ``main``. Whichever of the two lands second chains on the
-#: other's revision and adds ``AND retracted_at IS NULL`` here and to the
-#: rebuilt partial index, and ``transition_followup`` refuses a retracted row.
+#: other's revision and adds ``AND retracted_at IS NULL`` here, to
+#: :data:`NON_FOLLOWUP_PAIR_SQL` and :data:`OWNED_FOLLOWUP_SQL` below, and to the
+#: rebuilt partial indexes, and ``transition_followup`` refuses a retracted row.
 OPEN_FOLLOWUP_SQL = f"{UNCLAIMED_FOLLOWUP_SQL} AND resolution IS NULL"
+
+#: The rows whose ``(from_id, to_id, relation)`` triple is their IDENTITY: every
+#: relation but the follow-up. ``uq_work_artifact_edges_from_to_relation_non_followup``
+#: is unique over exactly these, so a ``depends_on`` or ``supersedes`` edge still
+#: cannot be recorded twice. A follow-up is NOT identified by the pair it connects
+#: - one plan may own many of a source's follow-ups - so it is outside this index
+#: (``plan_library_12_followup_identity_is_the_note``). The migration spells this
+#: as a static literal; its test pins the two equal.
+NON_FOLLOWUP_PAIR_SQL = "relation <> 'spawned_followup'"
+
+#: An OWNED follow-up: ``to_id`` names the artifact that holds the work.
+#: ``uq_work_artifact_edges_owned_followup`` keys these by
+#: ``(from_id, to_id, relation, btrim(note))`` - the finding itself, not just
+#: whom it connects. Its complement among follow-ups is the unowned population
+#: :data:`UNCLAIMED_FOLLOWUP_SQL` selects, which ``uq_work_artifact_edges_open_followup``
+#: keys by note alone.
+OWNED_FOLLOWUP_SQL = "relation = 'spawned_followup' AND to_id IS NOT NULL"
 
 #: An anchor's / a resolution PR's repository: ``owner/name``.
 FOLLOWUP_REPO_PATTERN = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
@@ -809,12 +827,22 @@ class WorkArtifactEdge(Base):
 
     __tablename__ = "work_artifact_edges"
     __table_args__ = (
+        # The pair is the identity of every relation but the follow-up, so a
+        # ``depends_on`` / ``supersedes`` / ... edge cannot be recorded twice. A
+        # follow-up is its own row, identified by its note
+        # (``uq_work_artifact_edges_owned_followup`` below), so it is outside
+        # this index: one plan may own many of a source's follow-ups. Replaces
+        # the full ``uq_work_artifact_edges_from_to_relation``
+        # (``plan_library_12_followup_identity_is_the_note``), under a NEW name
+        # because ``CREATE ... IF NOT EXISTS`` under the old one is a silent
+        # no-op while the old index exists.
         Index(
-            "uq_work_artifact_edges_from_to_relation",
+            "uq_work_artifact_edges_from_to_relation_non_followup",
             "from_id",
             "to_id",
             "relation",
             unique=True,
+            postgresql_where=text(NON_FOLLOWUP_PAIR_SQL),
         ),
         Index("ix_work_artifact_edges_from_id", "from_id"),
         Index("ix_work_artifact_edges_to_id", "to_id"),
@@ -840,13 +868,13 @@ class WorkArtifactEdge(Base):
             "id",
             postgresql_where=text(OPEN_FOLLOWUP_SQL),
         ),
-        # The duplicate guard for OPEN follow-ups. The unique index above
-        # cannot constrain them — SQL NULLs are distinct, so every null-target
-        # row is unique to it regardless of content. Two DIFFERENT follow-ups
-        # off one plan must stay legal (a plan can surface several); an
-        # identical re-post must not become a second queue entry. Keyed on the
-        # note, therefore, and PARTIAL so it can never touch the four shipped
-        # relations. Mirrors ``uq_work_artifact_edges_open_followup``.
+        # The duplicate guard for OPEN follow-ups. The pair index above does
+        # not constrain them at all — it excludes the follow-up relation, and
+        # SQL NULLs are distinct besides. Two DIFFERENT follow-ups off one plan
+        # must stay legal (a plan can surface several); an identical re-post
+        # must not become a second queue entry. Keyed on the note, therefore,
+        # and PARTIAL so it can never touch the shipped relations. Mirrors
+        # ``uq_work_artifact_edges_open_followup``.
         Index(
             "uq_work_artifact_edges_open_followup",
             "from_id",
@@ -854,6 +882,23 @@ class WorkArtifactEdge(Base):
             text(NOTE_TRIM_SQL),
             unique=True,
             postgresql_where=text("to_id IS NULL AND relation = 'spawned_followup'"),
+        ),
+        # The same guard once the follow-up has an OWNER
+        # (``plan_library_12_followup_identity_is_the_note``). A follow-up's
+        # identity inside its source is what it says, in every state, so an
+        # owner may hold any number of a source's follow-ups but never the
+        # same finding twice. The claim route and ``create_edge`` look the twin
+        # up first and report it by name; this index is the backstop for the
+        # race between that lookup and the write. Mirrors
+        # ``uq_work_artifact_edges_owned_followup``.
+        Index(
+            "uq_work_artifact_edges_owned_followup",
+            "from_id",
+            "to_id",
+            "relation",
+            text(NOTE_TRIM_SQL),
+            unique=True,
+            postgresql_where=text(OWNED_FOLLOWUP_SQL),
         ),
         # Mirrors ``ck_work_artifact_edges_open_target``. The four shipped
         # relations keep the target guarantee they had before this revision:
