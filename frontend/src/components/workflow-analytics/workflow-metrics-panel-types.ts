@@ -1,13 +1,15 @@
 import { Workflow } from "@/lib/action-schema/action-types";
-import { WorkflowMetrics } from "@/services/workflow-analytics-service";
+import {
+  ExecutionRecord,
+  WorkflowMetrics,
+} from "@/services/workflow-analytics-service";
 import { ComplexityAnalysis } from "@/services/workflow-complexity-analyzer";
-import { TestResult } from "@/services/workflow-testing";
 
 export interface WorkflowMetricsPanelProps {
   workflow: Workflow;
   metrics: WorkflowMetrics;
   complexityMetrics: ComplexityAnalysis;
-  executionHistory: TestResult[];
+  executionHistory: ExecutionRecord[];
   className?: string;
 }
 
