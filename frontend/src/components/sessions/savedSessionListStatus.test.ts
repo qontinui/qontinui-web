@@ -42,6 +42,7 @@ import {
   saveRefusalLead,
   savedListMarkdown,
   sessionLine,
+  tabBlocks,
   tabHeadings,
   unknownFinishedCount,
 } from "./savedSessionListStatus";
@@ -200,6 +201,100 @@ describe("D2 — tab headings", () => {
       { pageId: "abcdef0123", label: "  ", sessions: [] },
     ]);
     expect(blank?.text).toBe("Tab abcdef01 (empty name)");
+  });
+});
+
+describe("tab blocks — empty tabs collapse per run, in the runner's order", () => {
+  const [build, review1, review2, unnamed] = layoutPages();
+  const empty = (pageId: string, label: string | null) => ({
+    pageId,
+    label,
+    sessions: [],
+  });
+
+  it("leaves a snapshot with no empty tab as one block per tab", () => {
+    expect(tabBlocks(layoutPages()).map((b) => b.kind)).toEqual([
+      "tab",
+      "tab",
+      "tab",
+      "tab",
+    ]);
+  });
+
+  it("collapses each run of consecutive empty tabs into one block, in place", () => {
+    if (!build || !review1 || !review2 || !unnamed) throw new Error("fixture");
+    const blocks = tabBlocks([
+      empty("e1e1e1e1-0", "Scratch"),
+      build,
+      empty("e2e2e2e2-0", "Old 1"),
+      empty("e3e3e3e3-0", null),
+      empty("e4e4e4e4-0", "Old 2"),
+      review1,
+      review2,
+      unnamed,
+      empty("e5e5e5e5-0", "Last"),
+    ]);
+    expect(
+      blocks.map((b) =>
+        b.kind === "tab" ? `tab:${b.heading.text}` : `empty:${b.text}`
+      )
+    ).toEqual([
+      "empty:Scratch: no terminals.",
+      "tab:Build",
+      "empty:3 tabs with no terminals: Old 1, Tab e3e3e3e3 (name not reported), Old 2.",
+      "tab:Review (1b1b1b1b)",
+      "tab:Review (2c2c2c2c)",
+      "tab:Tab 3d3d3d3d (name not reported)",
+      "empty:Last: no terminals.",
+    ]);
+    // Every tab is still on the page, counted once.
+    const counted = blocks.reduce(
+      (n, b) => n + (b.kind === "tab" ? 1 : b.headings.length),
+      0
+    );
+    expect(counted).toBe(9);
+  });
+
+  it("makes one block of a snapshot whose every tab is empty", () => {
+    const blocks = tabBlocks([
+      empty("e1e1e1e1-0", "A"),
+      empty("e2e2e2e2-0", "B"),
+    ]);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.kind === "empty" && blocks[0].text).toBe(
+      "2 tabs with no terminals: A, B."
+    );
+  });
+
+  it("keeps each empty tab's own heading and tooltip inside its run", () => {
+    const [block] = tabBlocks([empty("abcdef0123", "  ")]);
+    if (block?.kind !== "empty") throw new Error("expected an empty block");
+    expect(block.text).toBe("Tab abcdef01 (empty name): no terminals.");
+    expect(block.headings[0].title).toBe(
+      "The runner reported this tab with an empty name."
+    );
+  });
+
+  it("exports the same runs to Markdown as the panel shows", () => {
+    if (!build) throw new Error("fixture");
+    const md = savedListMarkdown(
+      detail({
+        id: "l",
+        layout: {
+          ...detail({ id: "l" }).layout,
+          pages: [
+            build,
+            empty("e1e1e1e1-0", "Old 1"),
+            empty("e2e2e2e2-0", "Old 2"),
+          ],
+        },
+      }),
+      "merytshost"
+    );
+    expect(md).toContain("\n## 2 tabs with no terminals: Old 1, Old 2.\n");
+    expect(md).not.toContain("(no terminals)");
+    expect(md).not.toContain("## Old 1");
+    expect(md).toContain("## Build");
   });
 });
 
