@@ -55,6 +55,7 @@ function InitiativeBlock({
   editing,
   noMeasure,
   voidMetricNames,
+  documentListComplete,
 }: {
   group: InitiativeGroupModel;
   metrics: ReadonlyMap<string, MetricRead>;
@@ -63,12 +64,18 @@ function InitiativeBlock({
   noMeasure: string;
   /** The measures hidden as published to the wrong project. */
   voidMetricNames: readonly string[];
+  /** coord's document list came back whole (`document_list_complete`). */
+  documentListComplete: boolean;
 }) {
   const { initiative } = group;
   const base = `overview.objectives.initiative.${bridgeSafe(initiative.name)}`;
   const when = period(group);
   const problems = initiativeFieldProblems(initiative);
-  const missing = missingMeasureLines(initiative, voidMetricNames);
+  const missing = missingMeasureLines(
+    initiative,
+    voidMetricNames,
+    documentListComplete
+  );
   return (
     <section className="space-y-8" data-ui-bridge-id={base}>
       <div>
@@ -222,7 +229,9 @@ function Objectives({
 }) {
   const model = groupObjectives(read);
   const metrics = new Map(read.metrics.map((m) => [m.name, m]));
-  const documentsUnknown = read.sources.intent_documents.status !== "ok";
+  // Only an incomplete list leaves the measures unknown: one that came back
+  // whole and held none is "none written", whatever else failed to read.
+  const documentsUnknown = !read.document_list_complete;
   const noMeasure = noMeasureText(read);
   return (
     <div className="space-y-12">
@@ -249,6 +258,7 @@ function Objectives({
           editing={editing}
           noMeasure={noMeasure}
           voidMetricNames={read.void_metric_names}
+          documentListComplete={read.document_list_complete}
         />
       ))}
       {model.earlier.length > 0 && (
@@ -265,6 +275,7 @@ function Objectives({
                 editing={editing}
                 noMeasure={noMeasure}
                 voidMetricNames={read.void_metric_names}
+                documentListComplete={read.document_list_complete}
               />
             ))}
           </div>

@@ -14,10 +14,12 @@
 
 import { Fragment } from "react";
 import {
+  checkpointDeclarationUnknowns,
   checkpointStatusCopy,
   DEFINITION_UNKNOWN,
   dueWords,
   howCheckedCount,
+  howCheckedWhy,
   placementDisagreement,
   shortDay,
   unresolvedResultLine,
@@ -96,10 +98,14 @@ function CheckpointBlock({
   cp: CheckpointResultRead;
   uiBridgeId: string;
 }) {
-  // The definition can't be read, so nothing it declares is known: not this
-  // checkpoint's due date, nor whether it declares the checkpoint at all.
+  // The definition can't be read, so nothing it declares is known: its
+  // criteria, nor whether its results list records a report.
   const definitionUnreadable = !!metric.frontmatter_error;
-  const copy = checkpointStatusCopy(cp, { definitionUnreadable });
+  // This checkpoint's due date, and whether the document declares it, are
+  // unknown when the definition, its checkpoint list, or this checkpoint's
+  // own due could not be read — never "not declared".
+  const unknowns = checkpointDeclarationUnknowns(metric, cp);
+  const copy = checkpointStatusCopy(cp, { dueUnknownWhy: unknowns.due });
   const undeclared = (cp.report?.rows ?? []).filter((r) => !r.declared);
   const disagreement = placementDisagreement(cp);
   return (
@@ -110,7 +116,7 @@ function CheckpointBlock({
             ? `${cp.label[0]!.toUpperCase()}${cp.label.slice(1)}`
             : cp.id}
           <span className="font-normal text-muted-foreground">
-            {` · ${dueWords(cp, definitionUnreadable)}`}
+            {` · ${dueWords(cp, unknowns.due)}`}
           </span>
         </p>
         {definitionUnreadable ? (
@@ -126,8 +132,8 @@ function CheckpointBlock({
       </div>
       {!cp.declared && (
         <p className={MUTED} data-ui-bridge-id={`${uiBridgeId}.undeclared`}>
-          {definitionUnreadable
-            ? "Whether the document declares this checkpoint is unknown (the definition can't be read)."
+          {unknowns.declared
+            ? `Whether the document declares this checkpoint is unknown (${unknowns.declared}).`
             : "This checkpoint is named by a report, not by the document."}
         </p>
       )}
@@ -141,12 +147,12 @@ function CheckpointBlock({
         {copy.text}
       </p>
       <HowChecked
-        // With no report, the status's reason IS the unresolved entries
-        // (the read joins their details into it), so they are listed and
-        // the reason is not said twice.
-        why={
-          cp.report || cp.unresolved_results.length === 0 ? copy.detail : null
-        }
+        // The reason, unless it is only the unresolved entries' details
+        // joined — the read sends that when no report was found and some
+        // entry was more than superseded — since those entries are listed
+        // here. When every entry was superseded the reason is a sentence of
+        // its own, and it is said.
+        why={howCheckedWhy(copy.detail, cp.unresolved_results)}
         unresolved={cp.unresolved_results}
         notes={cp.report?.block_warnings ?? []}
         uiBridgeId={`${uiBridgeId}.checked`}
