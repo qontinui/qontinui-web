@@ -377,10 +377,14 @@ def _layout_invalid(sentence: str, device_id: UUID) -> RefusalHTTPException:
 
 
 def _runner_error_body(body: bytes) -> dict[str, Any]:
-    """The runner's JSON error body, or ``{}`` when it is not a JSON object."""
+    """The runner's JSON error body, or ``{}`` when it is not a JSON object.
+
+    A body nested past the parser's recursion limit is unreadable too, so it
+    reads as ``{}`` (a plain ``runner_error``) rather than escaping as a 500.
+    """
     try:
         parsed = json.loads(body)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
