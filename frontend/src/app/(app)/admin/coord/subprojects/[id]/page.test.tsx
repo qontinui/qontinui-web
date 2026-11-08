@@ -282,6 +282,75 @@ describe("/admin/coord/subprojects/[id]", () => {
     ]);
   });
 
+  it("shows the OTHER subproject's headline beside its ref when the cause lies there — and never a guessed one", async () => {
+    const base = detail();
+    const UNKNOWN_OTHER = "0c1c2d3e-4f50-4617-8899-aabbccddeeff";
+    fetchSubproject.mockResolvedValue(
+      detail({
+        verdict: {
+          ...base.verdict,
+          reasons: [
+            {
+              kind: "gate_dependency_unowned",
+              summary: "Waiting on effort profiles, which is stalled",
+              refs: [
+                { type: "gate", id: "132fc978", label: "resume gate" },
+                {
+                  type: "subproject",
+                  id: OTHER_SUBPROJECT,
+                  label: "effort profiles",
+                },
+              ],
+              detail: {
+                other_subproject: OTHER_SUBPROJECT,
+                other_headline: "stalled",
+              },
+            },
+            {
+              kind: "gate_dependency_unowned",
+              summary:
+                "Waiting on a subproject with a headline this build does not know",
+              refs: [
+                {
+                  type: "subproject",
+                  id: UNKNOWN_OTHER,
+                  label: "something newer",
+                },
+              ],
+              detail: {
+                other_subproject: UNKNOWN_OTHER,
+                other_headline: "half_stalled",
+              },
+            },
+          ],
+        },
+      })
+    );
+    render(<SubprojectDetailPage />);
+    const why = await screen.findByTestId("coord-subproject-why");
+    const badges = within(why).getAllByTestId(
+      "coord-subproject-other-headline"
+    );
+    // Only the known headline is shown.
+    expect(badges).toHaveLength(1);
+    const badge = badges[0]!;
+    expect(badge).toHaveTextContent("Stalled");
+    expect(badge.querySelector("[data-status-kind]")).toHaveAttribute(
+      "data-status-kind",
+      "stalled"
+    );
+    // ...beside that subproject's own link, not the gate's.
+    const link = within(why).getByRole("link", { name: "effort profiles" });
+    expect(link).toHaveAttribute(
+      "href",
+      `/admin/coord/subprojects/${OTHER_SUBPROJECT}`
+    );
+    expect(link.parentElement).toContainElement(badge);
+    expect(
+      within(why).getByRole("link", { name: "resume gate" }).parentElement
+    ).not.toContainElement(badge);
+  });
+
   it("names every source the live verdict could not read", async () => {
     fetchSubproject.mockResolvedValue(detail());
     render(<SubprojectDetailPage />);

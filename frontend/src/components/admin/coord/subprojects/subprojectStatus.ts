@@ -205,6 +205,35 @@ export function deriveVerdictStatus(
 
 // ─────────────────────────────── reasons ───────────────────────────────
 
+/**
+ * A reason whose cause lies in ANOTHER subproject (D6: "reported with the
+ * OTHER subproject's id and headline, so the page links straight to where
+ * the stall actually is"). coord names that subproject in
+ * `detail.other_subproject`, its headline in `detail.other_headline`, and
+ * puts a `subproject` ref to it in `refs`; the page shows the headline beside
+ * that ref. `null` unless both are there and the headline is one this build
+ * knows — an absent or unknown headline shows nothing extra, never a guessed
+ * one.
+ */
+export function otherSubprojectOf(
+  reason: Pick<SubprojectReason, "detail">
+): { id: string; status: RowStatus<SubprojectHeadlineKind> } | null {
+  const detail = reason.detail;
+  if (typeof detail !== "object" || detail === null) return null;
+  const id = detail.other_subproject;
+  const kind = headlineKindOf(detail.other_headline);
+  if (typeof id !== "string" || id === "" || kind === null) return null;
+  return {
+    id,
+    status: {
+      kind,
+      label: SUBPROJECT_HEADLINE_LABEL[kind],
+      reason: `That subproject's own headline: ${HEADLINE_PHRASE[kind][0]}`,
+      attention: SUBPROJECT_ATTENTION_BY_HEADLINE[kind],
+    },
+  };
+}
+
 const REASON_LABEL: Readonly<Record<string, string>> = {
   gate_dependency_unowned: "Waiting on work nobody is doing",
   gate_unsatisfiable: "A gate can never clear",
@@ -378,8 +407,9 @@ export function nextStepWords(
 /**
  * Words for each group the gates console reads a verdict into
  * (`gateStatus.ts` `gateVerdictGroupOf`, which that console's row, progress
- * bar and terminal test also read through) — so a member gate's verdict is
- * worded here the way the gates console shows it.
+ * bar and terminal test also read through) — so a member gate's verdict falls
+ * in the group (and colour) the gates console gives it; coord's own word is on
+ * the raw line.
  */
 const GATE_VERDICT_GROUP_WORDS: Record<GateVerdictGroup, string> = {
   cleared: "cleared",
