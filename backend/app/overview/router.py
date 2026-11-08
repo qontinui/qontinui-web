@@ -61,12 +61,14 @@ from app.overview.permissions import (
 from app.overview.phase_progress import router as timeline_routes
 from app.overview.registry import REGISTRY
 from app.overview.reports import router as reports_routes
+from app.overview.reports import withhold_logged_text
 from app.overview.resource import (
     RecordNotFound,
     ResourceSpec,
     StaleVersion,
     StoreContext,
     StoreRefused,
+    WithheldSlot,
 )
 
 logger = structlog.get_logger(__name__)
@@ -165,6 +167,11 @@ class ChangeLogEntry(BaseModel):
     #: The session the client reported (``X-Overview-Session``) — a label,
     #: never proof.
     via_session: str | None
+    #: The fields of ``before`` / ``after`` this read did not serve
+    #: (``after.title``): for a resource whose reads withhold text naming
+    #: the project's current confidential terms (``ResourceSpec.served_text``),
+    #: each such field reads ``[withheld]``. The logged row is unchanged.
+    withheld: list[WithheldSlot]
 
 
 class ChangeLogPage(BaseModel):
@@ -203,7 +210,11 @@ async def read_change_log(
     access: OverviewAccess = Depends(get_overview_access),
     db: AsyncSession = Depends(get_async_db),
 ) -> ChangeLogPage:
-    """Newest first. Readable by any member, like the records it describes."""
+    """Newest first. Readable by any member, like the records it describes,
+    and served as their reads are: a resource whose reads withhold text
+    naming the project's current confidential terms (``served_text``) has the
+    same fields withheld from the copies here, which were logged before a
+    term may have been added."""
     if resource not in REGISTRY:
         raise HTTPException(status_code=404, detail="unknown_resource")
     rows = await change_log.history(
@@ -213,6 +224,13 @@ async def read_change_log(
         record_id=record_id,
         limit=limit,
         source=source,
+    )
+    page = rows[:limit]
+    served = await withhold_logged_text(
+        db,
+        access.tenant_id,
+        REGISTRY[resource].served_text,
+        [(r.before, r.after) for r in page],
     )
     return ChangeLogPage(
         entries=[
@@ -226,12 +244,13 @@ async def read_change_log(
                 created_at=r.created_at,
                 version_before=r.version_before,
                 version_after=r.version_after,
-                before=r.before,
-                after=r.after,
+                before=before,
+                after=after,
                 via_device=r.via_device,
                 via_session=r.via_session,
+                withheld=withheld,
             )
-            for r in rows[:limit]
+            for r, (before, after, withheld) in zip(page, served, strict=True)
         ],
         truncated=len(rows) > limit,
     )

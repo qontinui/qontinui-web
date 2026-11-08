@@ -7770,6 +7770,13 @@
               }
             ],
             "title": "Via Session"
+          },
+          "withheld": {
+            "items": {
+              "$ref": "#/components/schemas/WithheldSlot"
+            },
+            "title": "Withheld",
+            "type": "array"
           }
         },
         "required": [
@@ -7785,7 +7792,8 @@
           "before",
           "after",
           "via_device",
-          "via_session"
+          "via_session",
+          "withheld"
         ],
         "title": "ChangeLogEntry",
         "type": "object"
@@ -67517,7 +67525,7 @@
         "type": "object"
       },
       "WithheldSlot": {
-        "description": "A slot a read did not serve, and why: a contract violation kind\n(``confidential_term`` for a string, or a narrative field, naming one of\nthe project's current confidential terms), a link's\n``link_owner_not_first_party`` / ``presentation_scope_unknown``, or\n``withdrawn`` for a withdrawn snapshot's ``data``.",
+        "description": "A slot a read did not serve, and why: a contract violation kind\n(``confidential_term`` for a string or a field naming one of the\nproject's current confidential terms), a link's\n``link_owner_not_first_party`` / ``presentation_scope_unknown``, or\n``withdrawn`` for a withdrawn snapshot's ``data``. A change-log entry\nnames the copy too (``after.title``).",
         "properties": {
           "reason": {
             "title": "Reason",
@@ -112319,7 +112327,7 @@
     },
     "/api/v1/overview/change-log": {
       "get": {
-        "description": "Newest first. Readable by any member, like the records it describes.",
+        "description": "Newest first. Readable by any member, like the records it describes,\nand served as their reads are: a resource whose reads withhold text\nnaming the project's current confidential terms (``served_text``) has the\nsame fields withheld from the copies here, which were logged before a\nterm may have been added.",
         "operationId": "api_v1_overview_change_log_get",
         "parameters": [
           {

@@ -2003,6 +2003,88 @@ class TestReadTimeChecks:
         for served in (view, got, listed):
             assert TERM not in json.dumps(served)
 
+    async def test_a_term_added_after_the_write_withholds_a_path_and_a_reason(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """A snapshot's file path and withdrawal reason are served under the
+        CURRENT terms in every read — a single read, the list, the view and a
+        write's answer — while the stored path stays the snapshot's identity:
+        the filter matches it."""
+        from app.models.overview import ReportSnapshot
+
+        await _set_scope(async_db_session, terms=[])
+        report = await _report(admin)
+        path = "snapshots/northwind-mutual-checkpoint.json"
+        named = await _snapshot(admin, report["id"], _stop(1), source_path=path)
+        reasoned = await _snapshot(
+            admin, report["id"], _stop(2), source_path="snapshots/second.json"
+        )
+        gone_url = f"{API}/report-snapshots/{reasoned['id']}"
+        reason = f"Superseded: {TERM} sent new numbers."
+        withdrawn = await admin.patch(
+            gone_url,
+            json={"withdrawn": True, "withdrawn_reason": reason},
+            headers={"If-Match": '"1"'},
+        )
+        assert withdrawn.status_code == 200, withdrawn.text
+        plain = await _snapshot(
+            admin, report["id"], _stop(3), source_path="snapshots/third.json"
+        )
+        await _set_scope(async_db_session, terms=[TERM])
+        path_hidden = {"slot": "source_path", "reason": "confidential_term"}
+        reason_hidden = {"slot": "withdrawn_reason", "reason": "confidential_term"}
+
+        got = (await admin.get(f"{API}/report-snapshots/{named['id']}")).json()["item"]
+        assert got["source_path"] == "[withheld]" and path_hidden in got["withheld"]
+        gone = (await admin.get(gone_url)).json()["item"]
+        assert gone["withdrawn_reason"] == "[withheld]"
+        assert reason_hidden in gone["withheld"]
+        assert gone["source_path"] == "snapshots/second.json"
+        listing = (
+            await admin.get(
+                f"{API}/report-snapshots", params={"report_id": report["id"]}
+            )
+        ).json()
+        listed = {item["id"]: item for item in listing["items"]}
+        assert listed[named["id"]]["source_path"] == "[withheld]"
+        assert listed[reasoned["id"]]["withdrawn_reason"] == "[withheld]"
+        filtered = (
+            await admin.get(f"{API}/report-snapshots", params={"source_path": path})
+        ).json()
+        assert [item["id"] for item in filtered["items"]] == [named["id"]]
+        view = await _view(admin, report["id"])
+        stops = {stop["id"]: stop for stop in view["snapshots"]}
+        assert stops[named["id"]]["source_path"] == "[withheld]"
+        assert {
+            "seq": named["seq"],
+            "slot": "source_path",
+            "reason": "confidential_term",
+        } in view["withheld"]
+        answer = await admin.patch(
+            f"{API}/report-snapshots/{named['id']}",
+            json={"withdrawn": True, "withdrawn_reason": "Replaced."},
+            headers={"If-Match": '"1"'},
+        )
+        assert answer.status_code == 200, answer.text
+        assert answer.json()["item"]["source_path"] == "[withheld]"
+        # No match: served byte for byte.
+        clean = (await admin.get(f"{API}/report-snapshots/{plain['id']}")).json()[
+            "item"
+        ]
+        assert (clean["source_path"], clean["withheld"]) == ("snapshots/third.json", [])
+        for served in (got, gone, listing, filtered, view, answer.json()):
+            assert not _names_term(served)
+        stored = dict(
+            (
+                await async_db_session.execute(
+                    select(ReportSnapshot.id, ReportSnapshot.withdrawn_reason).where(
+                        ReportSnapshot.id == UUID(reasoned["id"])
+                    )
+                )
+            ).all()
+        )
+        assert stored == {UUID(reasoned["id"]): reason}
+
     async def test_a_new_term_matching_structure_withholds_the_whole_stop(
         self, admin: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
@@ -2101,6 +2183,251 @@ class TestNarrativeAtRead:
             )
         ).scalar_one()
         assert stored == body
+
+    async def test_a_term_added_after_the_write_withholds_the_source_in_every_read(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """A report's source_repo and source_path are served under the
+        CURRENT terms too — in a read, the list, the view, a write's answer, a
+        stale write's server copy and a source_mismatch refusal — while the
+        stored source stays the report's identity: the filter matches it."""
+        from app.models.overview import Report
+
+        await _set_scope(async_db_session, terms=[])
+        sourced = {
+            "source_repo": f"{OWNER}/northwind-mutual-notes",
+            "source_path": "reports/northwind-mutual/report.md",
+            "source_sha": "c" * 40,
+        }
+        report = await _report(admin, title="Progress", slug="progress", **sourced)
+        plain = {
+            "source_repo": f"{OWNER}/progress-notes",
+            "source_path": "reports/progress/report.md",
+        }
+        tidy = await _report(admin, title="Tidy", **plain)
+        await _set_scope(async_db_session, terms=[TERM])
+        hidden = [
+            {"slot": "source_repo", "reason": "confidential_term"},
+            {"slot": "source_path", "reason": "confidential_term"},
+        ]
+
+        def withheld_source(item: dict[str, Any]) -> bool:
+            served = (item["source_repo"], item["source_path"], item["withheld"])
+            return served == ("[withheld]", "[withheld]", hidden)
+
+        url = f"{API}/reports/{report['id']}"
+        got = (await admin.get(url)).json()["item"]
+        assert withheld_source(got)
+        view = await _view(admin, report["id"])
+        assert withheld_source(view["report"])
+        listing = (await admin.get(f"{API}/reports")).json()
+        listed = {item["id"]: item for item in listing["items"]}
+        assert withheld_source(listed[report["id"]])
+        filtered = (
+            await admin.get(
+                f"{API}/reports",
+                params={
+                    "source_repo": sourced["source_repo"],
+                    "source_path": sourced["source_path"],
+                },
+            )
+        ).json()
+        assert [item["id"] for item in filtered["items"]] == [report["id"]]
+        assert withheld_source(filtered["items"][0])
+        edited = await admin.patch(
+            url, json={"body_md": "# Revised"}, headers={"If-Match": '"1"'}
+        )
+        assert edited.status_code == 200, edited.text
+        assert withheld_source(edited.json()["item"])
+        stale = await admin.patch(
+            url, json={"body_md": "# Again"}, headers={"If-Match": '"1"'}
+        )
+        assert stale.status_code == 409 and withheld_source(stale.json()["current"])
+        mismatch = await admin.patch(
+            url,
+            json={
+                "body_md": "# Elsewhere",
+                "source_repo": f"{OWNER}/other-notes",
+                "source_path": "reports/other.md",
+            },
+            headers={"If-Match": '"2"'},
+        )
+        assert mismatch.status_code == 409, mismatch.text
+        assert mismatch.json()["error"] == "source_mismatch"
+        # No match: served byte for byte.
+        clean = (await admin.get(f"{API}/reports/{tidy['id']}")).json()["item"]
+        assert (clean["source_repo"], clean["source_path"], clean["withheld"]) == (
+            plain["source_repo"],
+            plain["source_path"],
+            [],
+        )
+        for served in (got, view, listing, filtered, edited.json(), stale.json()):
+            assert not _names_term(served)
+        assert not _names_term(mismatch.text)
+        stored = (
+            await async_db_session.execute(
+                select(Report.source_repo, Report.source_path).where(
+                    Report.id == UUID(report["id"])
+                )
+            )
+        ).one()
+        assert tuple(stored) == (sourced["source_repo"], sourced["source_path"])
+
+    async def test_replay_and_adopt_answers_are_served_under_the_current_terms(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """A replayed create and an adopted re-post answer with the stored
+        record as a read serves it, under the terms as they stand now."""
+        await _set_scope(async_db_session, terms=[])
+        body = {"title": "Progress", "body_md": f"Work for {TERM}."}
+        first = await admin.post(
+            f"{API}/reports", json=body, headers={"Idempotency-Key": "report-1"}
+        )
+        assert first.status_code == 201, first.text
+        report = first.json()["item"]
+        sourced = {
+            "title": "Sourced",
+            "body_md": f"Also for {TERM}.",
+            "source_repo": f"{OWNER}/notes",
+            "source_path": "reports/sourced.md",
+        }
+        assert (await admin.post(f"{API}/reports", json=sourced)).status_code == 201
+        path = "snapshots/northwind-mutual.json"
+        keyed = await _post(
+            admin, report["id"], _stop(1), source_path=path, key="snap-1"
+        )
+        assert keyed.status_code == 201, keyed.text
+        filed = await _snapshot(
+            admin, report["id"], _stop(2), source_path="snapshots/two.json"
+        )
+        withdrawn = await admin.patch(
+            f"{API}/report-snapshots/{filed['id']}",
+            json={"withdrawn": True, "withdrawn_reason": f"Wrong for {TERM}."},
+            headers={"If-Match": '"1"'},
+        )
+        assert withdrawn.status_code == 200, withdrawn.text
+        await _set_scope(async_db_session, terms=[TERM])
+
+        replay = await admin.post(
+            f"{API}/reports", json=body, headers={"Idempotency-Key": "report-1"}
+        )
+        assert replay.status_code == 200 and replay.headers["Idempotent-Replayed"]
+        assert replay.json()["item"]["body_md"] == "[withheld]"
+        snap_replay = await _post(
+            admin, report["id"], _stop(1), source_path=path, key="snap-1"
+        )
+        assert snap_replay.status_code == 200, snap_replay.text
+        assert snap_replay.json()["item"]["source_path"] == "[withheld]"
+        adopted = await _post(
+            admin, report["id"], _stop(2), source_path="snapshots/two.json"
+        )
+        assert adopted.status_code == 200, adopted.text
+        assert adopted.headers["Idempotent-Replayed"] == "true"
+        assert adopted.json()["item"]["withdrawn_reason"] == "[withheld]"
+        for answer in (replay, snap_replay, adopted):
+            assert not _names_term(answer.text)
+        # A report's adopt answer is the payload's own content, which the
+        # create scans first: an identical keyed create is refused instead.
+        again = await admin.post(
+            f"{API}/reports", json=sourced, headers={"Idempotency-Key": "report-2"}
+        )
+        assert again.status_code == 422, again.text
+        assert again.json()["error"] == "report_rejected"
+
+
+class TestChangeLogAtRead:
+    async def test_report_and_snapshot_rows_are_served_under_the_current_terms(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Any member reads the change log, so its copies are served as the
+        records' own reads serve them: a field naming a term added after the
+        write reads [withheld] in ``before`` and ``after``, withheld names
+        the copy and the field, and the logged rows are unchanged."""
+        await _set_scope(async_db_session, terms=[])
+        report = await _report(
+            admin, title=f"{TERM} rollout", slug="rollout", summary=f"For {TERM}."
+        )
+        url = f"{API}/reports/{report['id']}"
+        renamed = await admin.patch(
+            url,
+            json={"title": "Rollout", "summary": "Plain."},
+            headers={"If-Match": '"1"'},
+        )
+        assert renamed.status_code == 200, renamed.text
+        doomed = await _report(admin, title="Doomed", body_md=f"Body for {TERM}.")
+        deleted = await admin.delete(
+            f"{API}/reports/{doomed['id']}", headers={"If-Match": '"1"'}
+        )
+        assert deleted.status_code == 204, deleted.text
+        snap = await _snapshot(
+            admin,
+            report["id"],
+            _doc(label=f"{TERM} checkpoint"),
+            source_path="snapshots/northwind-mutual.json",
+        )
+        withdrawn = await admin.patch(
+            f"{API}/report-snapshots/{snap['id']}",
+            json={"withdrawn": True, "withdrawn_reason": f"Wrong numbers from {TERM}"},
+            headers={"If-Match": '"1"'},
+        )
+        assert withdrawn.status_code == 200, withdrawn.text
+        await _set_scope(async_db_session, terms=[TERM])
+
+        def entries(resource: str) -> Any:
+            return admin.get(
+                f"{API}/change-log", params={"resource": resource, "limit": 100}
+            )
+
+        reports_log = (await entries("reports")).json()
+        rows = {(e["record_id"], e["action"]): e for e in reports_log["entries"]}
+
+        def slots(entry: dict[str, Any]) -> set[tuple[str, str]]:
+            return {(w["slot"], w["reason"]) for w in entry["withheld"]}
+
+        created = rows[(report["id"], "create")]
+        assert (created["after"]["title"], created["after"]["summary"]) == (
+            "[withheld]",
+            "[withheld]",
+        )
+        assert created["after"]["slug"] == "rollout"
+        assert slots(created) == {
+            ("after.title", "confidential_term"),
+            ("after.summary", "confidential_term"),
+        }
+        updated = rows[(report["id"], "update")]
+        assert updated["before"]["title"] == "[withheld]"
+        assert (updated["after"]["title"], updated["after"]["summary"]) == (
+            "Rollout",
+            "Plain.",
+        )
+        assert {slot for slot, _ in slots(updated)} == {
+            "before.title",
+            "before.summary",
+        }
+        removed = rows[(doomed["id"], "delete")]
+        assert removed["before"]["body_md"] == "[withheld]"
+        assert removed["before"]["title"] == "Doomed"
+        assert slots(removed) == {("before.body_md", "confidential_term")}
+
+        snaps_log = (await entries("report_snapshots")).json()
+        logged = {e["action"]: e for e in snaps_log["entries"]}
+        made = logged["create"]
+        assert (made["after"]["label"], made["after"]["source_path"]) == (
+            "[withheld]",
+            "[withheld]",
+        )
+        assert {slot for slot, _ in slots(made)} == {"after.label", "after.source_path"}
+        pulled = logged["update"]
+        assert pulled["after"]["withdrawn_reason"] == "[withheld]"
+        assert pulled["before"]["withdrawn_reason"] is None
+        assert ("after.withdrawn_reason", "confidential_term") in slots(pulled)
+        for page in (reports_log, snaps_log):
+            assert not _names_term(page)
+        # The logged rows themselves are unchanged.
+        assert any(
+            (row.after or {}).get("title") == f"{TERM} rollout"
+            for row in await _log(async_db_session, "reports")
+        )
 
 
 # ===========================================================================

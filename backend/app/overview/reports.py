@@ -108,6 +108,7 @@ from app.overview.report_snapshot_contract import (
     narrative_violations,
     treat_for_read,
     treat_label,
+    treat_logged,
     treat_narrative,
 )
 from app.overview.report_view import (
@@ -125,6 +126,7 @@ from app.overview.resource import (
     StaleVersion,
     StoreContext,
     StoreRefused,
+    WithheldSlot,
 )
 from app.overview.sourced import (
     MAX_SOURCE_PATH,
@@ -170,15 +172,20 @@ MethodKind = Literal["full_review", "light_check", "measured", "manual"]
 # ---------------------------------------------------------------------------
 
 
-class WithheldSlot(BaseModel):
-    """A slot a read did not serve, and why: a contract violation kind
-    (``confidential_term`` for a string, or a narrative field, naming one of
-    the project's current confidential terms), a link's
-    ``link_owner_not_first_party`` / ``presentation_scope_unknown``, or
-    ``withdrawn`` for a withdrawn snapshot's ``data``."""
-
-    slot: str
-    reason: str
+#: The text fields of a report every read serves under the project's CURRENT
+#: confidential terms (the narrative and the source it mirrors). The slug is
+#: not among them: blocks in other pages name the report by it, so it is
+#: fixed and always served (a term added after creation that matches it is a
+#: known limit).
+REPORT_SERVED_TEXT: frozenset[str] = frozenset(
+    {"title", "summary", "body_md", "source_repo", "source_path"}
+)
+#: The text fields of a snapshot row every read serves under the project's
+#: current confidential terms: the labels copied out of the document (which
+#: :func:`treat_label` serves) and the file path and withdrawal reason.
+SNAPSHOT_SERVED_TEXT: frozenset[str] = frozenset(
+    {"label", "method_label", "source_path", "withdrawn_reason"}
+)
 
 
 class ReportRead(BaseModel):
@@ -203,9 +210,10 @@ class ReportRead(BaseModel):
     via_device: UUID | None
     #: The session the client reported for the CURRENT version — a label.
     via_session: str | None
-    #: The narrative fields this read did not serve: each names one of the
-    #: project's CURRENT confidential terms (one added after the write) and
-    #: reads ``[withheld]``. What is stored is unchanged.
+    #: The text fields this read did not serve (title, summary, body_md,
+    #: source_repo, source_path): each names one of the project's CURRENT
+    #: confidential terms (one added after the write) and reads
+    #: ``[withheld]``. What is stored is unchanged.
     withheld: list[WithheldSlot]
 
 
@@ -419,6 +427,50 @@ async def _stored_scope(ctx: StoreContext) -> _StoredScope:
     )
 
 
+async def current_terms(db: AsyncSession, tenant_id: UUID) -> tuple[str, ...]:
+    """The project's configured confidential terms, as every report read
+    applies them (:func:`_stored_scope`'s ``terms``)."""
+    stored = await scope_crud.get_scope(db, tenant_id)
+    return () if stored is None else tuple(stored.confidential_terms)
+
+
+#: A change-log entry's two copies, as logged.
+LoggedPair = tuple[dict[str, Any] | None, dict[str, Any] | None]
+#: The two copies as served, and what was withheld from them.
+ServedLog = tuple[dict[str, Any] | None, dict[str, Any] | None, list[WithheldSlot]]
+
+
+async def withhold_logged_text(
+    db: AsyncSession,
+    tenant_id: UUID,
+    fields: frozenset[str],
+    logged: list[LoggedPair],
+) -> list[ServedLog]:
+    """Change-log copies (``before``, ``after``) as ``GET /change-log`` serves
+    them for a resource whose reads withhold ``fields``: each field naming one
+    of the project's CURRENT confidential terms reads ``[withheld]``, with a
+    withheld entry naming the copy and the field (``after.title``). Off the
+    event loop: a deleted report's ``before`` carries its whole body."""
+    if not fields:
+        return [(before, after, []) for before, after in logged]
+    matcher = TermMatcher(await current_terms(db, tenant_id))
+    if not matcher.active:
+        return [(before, after, []) for before, after in logged]
+
+    def treat_all() -> list[ServedLog]:
+        out: list[ServedLog] = []
+        for before, after in logged:
+            served_before, held_before = treat_logged(before, fields, matcher, "before")
+            served_after, held_after = treat_logged(after, fields, matcher, "after")
+            out.append(
+                (served_before, served_after, _withheld([*held_before, *held_after]))
+            )
+        return out
+
+    served: list[ServedLog] = await scan_off_loop(treat_all)
+    return served
+
+
 async def _first_party_owners(
     ctx: StoreContext, stored: _StoredScope
 ) -> frozenset[str] | None:
@@ -499,37 +551,43 @@ async def _provenance_of(
     )
 
 
-#: A narrative as a reader is served it: its fields, and the ones withheld.
-_ServedNarrative = tuple[dict[str, str], list[Violation]]
+#: Text fields as a reader is served them, and the ones withheld.
+_ServedText = tuple[dict[str, str], list[Violation]]
 
 
-def _narrative(
+def _text_fields(
     record: Report | ReportVersion, *, with_body: bool = True
 ) -> dict[str, str]:
-    """The narrative fields of a report or of one of its versions (no body
-    on a list read)."""
+    """The served text fields (:data:`REPORT_SERVED_TEXT`) of a report, or of
+    one of its versions: the narrative (no body on a list read) and, for a
+    report, the source it mirrors when it has one."""
     fields = {"title": record.title, "summary": record.summary}
     if with_body:
         fields["body_md"] = record.body_md
+    if isinstance(record, Report):
+        for name in ("source_repo", "source_path"):
+            value = getattr(record, name)
+            if value is not None:
+                fields[name] = value
     return fields
 
 
-async def _served_narratives(
-    ctx: StoreContext, narratives: list[dict[str, str]]
-) -> list[_ServedNarrative]:
-    """Each narrative as a reader is served it: under the project's CURRENT
-    confidential terms, so a term added after the write withholds the field
-    that names it (:func:`treat_narrative`). Off the event loop, since a body
-    runs to :data:`MAX_BODY_CHARS`; no scan at all for a project with no
-    terms."""
+async def _served_texts(
+    ctx: StoreContext, texts: list[dict[str, str]]
+) -> list[_ServedText]:
+    """Each set of text fields as a reader is served it: under the project's
+    CURRENT confidential terms, so a term added after the write withholds the
+    field that names it (:func:`treat_narrative`). Off the event loop, since
+    a body runs to :data:`MAX_BODY_CHARS`; no scan at all for a project with
+    no terms."""
     matcher = TermMatcher((await _stored_scope(ctx)).terms)
     if not matcher.active:
-        return [(fields, []) for fields in narratives]
+        return [(fields, []) for fields in texts]
 
-    def treat_all() -> list[_ServedNarrative]:
-        return [treat_narrative(fields, matcher) for fields in narratives]
+    def treat_all() -> list[_ServedText]:
+        return [treat_narrative(fields, matcher) for fields in texts]
 
-    served: list[_ServedNarrative] = await scan_off_loop(treat_all)
+    served: list[_ServedText] = await scan_off_loop(treat_all)
     return served
 
 
@@ -538,13 +596,15 @@ def _report_read(
     *,
     with_body: bool,
     provenance: Provenance = NO_PROVENANCE,
-    served: _ServedNarrative | None = None,
+    served: _ServedText | None = None,
 ) -> ReportRead:
-    """``served`` is the narrative as a reader is served it. Without it the
-    stored narrative is used: a write's answer (scanned at write, under the
-    same terms) and the copy the change log keeps."""
+    """``served`` is the text as a reader is served it. Without it the stored
+    text is used: the copy the change log keeps of an update's or a delete's
+    ``before`` (``GET /change-log`` withholds from it as it serves it)."""
     fields, withheld = (
-        served if served is not None else (_narrative(report, with_body=with_body), [])
+        served
+        if served is not None
+        else (_text_fields(report, with_body=with_body), [])
     )
     return ReportRead(
         id=str(report.id),
@@ -557,8 +617,8 @@ def _report_read(
         updated_at=report.updated_at,
         created_by=report.created_by,
         updated_by=report.updated_by,
-        source_repo=report.source_repo,
-        source_path=report.source_path,
+        source_repo=fields.get("source_repo"),
+        source_path=fields.get("source_path"),
         source_sha=report.source_sha,
         via_device=provenance[0],
         via_session=provenance[1],
@@ -649,8 +709,8 @@ class ReportStore:
             .all()
         )
         provenance = await _provenance_of(ctx.db, reports)
-        served = await _served_narratives(
-            ctx, [_narrative(r, with_body=False) for r in reports]
+        served = await _served_texts(
+            ctx, [_text_fields(r, with_body=False) for r in reports]
         )
         return ListResult(
             items=[
@@ -667,19 +727,33 @@ class ReportStore:
     async def get(self, ctx: StoreContext, record_id: str) -> ReportRead:
         return await self._read(ctx, await self._load(ctx, record_id))
 
-    async def _read(self, ctx: StoreContext, report: Report) -> ReportRead:
-        """The report as a reader is served it: the narrative under the
-        project's CURRENT confidential terms. Every answer that serves a
-        stored report goes through here — a read, the view, a stale write's
-        server copy, a no-op write, a replayed create."""
-        provenance = await _provenance_of(ctx.db, [report])
-        (served,) = await _served_narratives(ctx, [_narrative(report)])
+    async def _read(
+        self, ctx: StoreContext, report: Report, provenance: Provenance | None = None
+    ) -> ReportRead:
+        """The report as a reader is served it: its text
+        (:data:`REPORT_SERVED_TEXT`) under the project's CURRENT confidential
+        terms. Every answer that serves a report goes through here — a read,
+        the view, a write's answer, a stale write's server copy, a no-op
+        write, a replayed or adopted create."""
+        if provenance is None:
+            provenance = (await _provenance_of(ctx.db, [report])).get(
+                report.id, NO_PROVENANCE
+            )
+        (served,) = await _served_texts(ctx, [_text_fields(report)])
         return _report_read(
-            report,
-            with_body=True,
-            provenance=provenance.get(report.id, NO_PROVENANCE),
-            served=served,
+            report, with_body=True, provenance=provenance, served=served
         )
+
+    async def _withheld_now(
+        self, ctx: StoreContext, report: Report, names: set[str]
+    ) -> set[str]:
+        """Which of ``names`` (served text fields) a read of ``report``
+        withholds right now."""
+        fields = {n: t for n, t in _text_fields(report).items() if n in names}
+        if not fields:
+            return set()
+        ((_served, withheld),) = await _served_texts(ctx, [fields])
+        return {v.slot for v in withheld}
 
     async def _stored_read(self, ctx: StoreContext, report: Report) -> ReportRead:
         """The report exactly as stored, never served: the ``before`` the
@@ -735,7 +809,7 @@ class ReportStore:
         provenance = self._snapshot(ctx, report)
         await ctx.db.flush()
         await ctx.db.refresh(report)
-        return _report_read(report, with_body=True, provenance=provenance)
+        return await self._read(ctx, report, provenance)
 
     async def adopt_existing(
         self,
@@ -768,7 +842,21 @@ class ReportStore:
         expected_version: int,
     ) -> tuple[ReportRead, ReportRead]:
         report = await self._load(ctx, record_id, lock=True)
-        refuse_source_mismatch(report, payload, noun="report")
+        try:
+            refuse_source_mismatch(report, payload, noun="report")
+        except StoreRefused as refused:
+            if not await self._withheld_now(
+                ctx, report, {"source_repo", "source_path"}
+            ):
+                raise
+            # The refusal would name the source the report mirrors, which
+            # reads withhold right now: say so without naming it.
+            raise StoreRefused(
+                409,
+                "source_mismatch",
+                f"This report mirrors another source ({WITHHELD}); a publish of "
+                f"{payload.source_repo}/{payload.source_path} may not overwrite it.",
+            ) from refused
         if report.current_version != expected_version:
             raise StaleVersion(await self._read(ctx, report))
         changes = content_changes(report, payload)
@@ -786,7 +874,7 @@ class ReportStore:
         provenance = self._snapshot(ctx, report)
         await ctx.db.flush()
         await ctx.db.refresh(report)
-        return before, _report_read(report, with_body=True, provenance=provenance)
+        return before, await self._read(ctx, report, provenance)
 
     async def delete(
         self, ctx: StoreContext, record_id: str, expected_version: int
@@ -816,14 +904,40 @@ def _withheld(violations: list[Violation]) -> list[WithheldSlot]:
     return [WithheldSlot(slot=v.slot, reason=v.kind) for v in violations]
 
 
+def _served_identity(
+    row: ReportSnapshot, matcher: TermMatcher
+) -> tuple[str | None, str | None, list[Violation]]:
+    """A snapshot row's file path and withdrawal reason as a reader is served
+    them: under the project's CURRENT confidential terms, a value naming one
+    reading ``[withheld]`` whole. The stored values are unchanged (the path
+    stays the snapshot's identity, and the ``source_path`` filter matches
+    it)."""
+    served: list[str | None] = []
+    withheld: list[Violation] = []
+    for slot, text in (
+        ("source_path", row.source_path),
+        ("withdrawn_reason", row.withdrawn_reason),
+    ):
+        if text is not None and matcher.matches(text):
+            served.append(WITHHELD)
+            withheld.append(Violation(slot, "confidential_term"))
+        else:
+            served.append(text)
+    return served[0], served[1], withheld
+
+
 def _snapshot_read(
     row: ReportSnapshot,
     *,
     label: str,
     method_label: str,
+    matcher: TermMatcher,
     data: dict[str, Any] | None = None,
     withheld: list[Violation] | None = None,
 ) -> ReportSnapshotRead:
+    """Every snapshot answer is built here, so none serves the file path or
+    the withdrawal reason without the current terms' pass (``matcher``)."""
+    source_path, withdrawn_reason, held = _served_identity(row, matcher)
     return ReportSnapshotRead(
         id=str(row.id),
         report_id=row.report_id,
@@ -833,19 +947,19 @@ def _snapshot_read(
         as_of=row.as_of,
         method_kind=row.method_kind,  # type: ignore[arg-type]
         method_label=method_label,
-        source_path=row.source_path,
+        source_path=source_path,
         content_sha256=row.content_sha256,
         allowlist_version=row.allowlist_version,
         scope_version=row.scope_version,
         withdrawn=row.withdrawn_at is not None,
         withdrawn_at=row.withdrawn_at,
-        withdrawn_reason=row.withdrawn_reason,
+        withdrawn_reason=withdrawn_reason,
         created_at=row.created_at,
         created_by=row.created_by,
         via_device=row.via_device,
         via_session=row.via_session,
         data=data,
-        withheld=_withheld(withheld or []),
+        withheld=_withheld([*(withheld or []), *held]),
     )
 
 
@@ -872,7 +986,9 @@ def _row_read(
         withheld.extend(slots)
     if row.withdrawn_at is not None:
         withheld.append(Violation("data", "withdrawn"))
-    return _snapshot_read(row, label=texts[0], method_label=texts[1], withheld=withheld)
+    return _snapshot_read(
+        row, label=texts[0], method_label=texts[1], matcher=matcher, withheld=withheld
+    )
 
 
 @dataclass
@@ -916,7 +1032,7 @@ async def _treat(rows: list[ReportSnapshot], scope: ReadScope) -> list[_Served]:
     return served
 
 
-def _served_read(served: _Served) -> ReportSnapshotRead:
+def _served_read(served: _Served, matcher: TermMatcher) -> ReportSnapshotRead:
     """A single read: the document as served, and the labels taken from it
     (a withheld document's labels read ``[withheld]`` too)."""
     if served.data is None:
@@ -924,12 +1040,14 @@ def _served_read(served: _Served) -> ReportSnapshotRead:
             served.row,
             label=WITHHELD,
             method_label=WITHHELD,
+            matcher=matcher,
             withheld=served.withheld,
         )
     return _snapshot_read(
         served.row,
         label=served.data["label"],
         method_label=served.data["method"]["label"],
+        matcher=matcher,
         data=served.data,
         withheld=served.withheld,
     )
@@ -1029,8 +1147,9 @@ class ReportSnapshotStore:
             # Withdrawn: the row is served as history, its document is not
             # (``withheld`` names ``data``). A restore needs no document.
             return await self._bare_read(ctx, row)
-        (served,) = await _treat([row], await _scope_for(ctx, [row]))
-        return _served_read(served)
+        scope = await _scope_for(ctx, [row])
+        (served,) = await _treat([row], scope)
+        return _served_read(served, TermMatcher(scope.terms))
 
     async def create(
         self, ctx: StoreContext, payload: ReportSnapshotCreate
@@ -1144,7 +1263,12 @@ class ReportSnapshotStore:
                 raise
             raise self._path_taken(payload.source_path) from exc
         await ctx.db.refresh(row)
-        return _snapshot_read(row, label=doc.label, method_label=doc.method.label)
+        return _snapshot_read(
+            row,
+            label=doc.label,
+            method_label=doc.method.label,
+            matcher=TermMatcher(stored.terms),
+        )
 
     async def _refuse_reason(self, ctx: StoreContext, reason: str) -> None:
         """422 ``snapshot_rejected`` when a withdrawal's reason names a
@@ -1265,7 +1389,10 @@ class ReportView(BaseModel):
     truncated: bool
 
 
-def _view_snapshot(served: _Served, changes: SnapshotChanges | None) -> ViewSnapshot:
+def _view_snapshot(
+    served: _Served, changes: SnapshotChanges | None, source_path: str | None
+) -> ViewSnapshot:
+    """``source_path`` is the file path as served (:func:`_served_identity`)."""
     row, data = served.row, served.data
     assert data is not None
     return ViewSnapshot(
@@ -1276,7 +1403,7 @@ def _view_snapshot(served: _Served, changes: SnapshotChanges | None) -> ViewSnap
         as_of=row.as_of,
         method_kind=row.method_kind,
         method_label=data["method"]["label"],
-        source_path=row.source_path,
+        source_path=source_path,
         content_sha256=row.content_sha256,
         allowlist_version=row.allowlist_version,
         scope_version=row.scope_version,
@@ -1367,6 +1494,7 @@ async def read_report_view(
         if treated.data is not None:
             previous = Stop(treated.row.seq, treated.row.as_of, treated.data)
             break
+    matcher = TermMatcher(scope.terms)
     snapshots: list[ViewSnapshot] = []
     withheld: list[WithheldEntry] = []
     for entry in served:
@@ -1376,11 +1504,16 @@ async def read_report_view(
         )
         if entry.data is None:
             continue
+        source_path, _reason, held = _served_identity(entry.row, matcher)
+        withheld.extend(
+            WithheldEntry(seq=entry.row.seq, slot=v.slot, reason=v.kind) for v in held
+        )
         current = Stop(entry.row.seq, entry.row.as_of, entry.data)
         snapshots.append(
             _view_snapshot(
                 entry,
                 None if previous is None else changes_between(previous, current),
+                source_path,
             )
         )
         previous = current
@@ -1412,7 +1545,7 @@ async def list_report_versions(
         record_fk=ReportVersion.report_id,
         record_id=report.id,
     )
-    served = await _served_narratives(ctx, [{"title": v.title} for v in rows])
+    served = await _served_texts(ctx, [{"title": v.title} for v in rows])
     return ReportVersionList(
         versions=[
             ReportVersionSummary(
@@ -1458,7 +1591,7 @@ async def read_report_version(
     ctx = _ctx(access, db, request)
     report = await _report_or_404(ctx, report_id)
     v = await _report_version(db, access.tenant_id, report, version)
-    ((fields, withheld),) = await _served_narratives(ctx, [_narrative(v)])
+    ((fields, withheld),) = await _served_texts(ctx, [_text_fields(v)])
     return ReportVersionRead(
         version=v.version,
         title=fields["title"],

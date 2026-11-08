@@ -32,6 +32,8 @@ from app.overview.milestones import milestone_store
 from app.overview.pages import PageCreate, PageRead, PageUpdate, page_store
 from app.overview.phase_progress import phase_progress_store
 from app.overview.reports import (
+    REPORT_SERVED_TEXT,
+    SNAPSHOT_SERVED_TEXT,
     ReportCreate,
     ReportRead,
     ReportSnapshotCreate,
@@ -286,6 +288,7 @@ REGISTRY: dict[str, ResourceSpec] = {
             store=report_store,
             tables=("reports", "report_versions"),
             audit_exclude=frozenset({"body_md"}),
+            served_text=REPORT_SERVED_TEXT,
         ),
         ResourceSpec(
             name="report_snapshots",
@@ -320,6 +323,7 @@ REGISTRY: dict[str, ResourceSpec] = {
             store=report_snapshot_store,
             tables=("report_snapshots",),
             audit_exclude=frozenset({"data"}),
+            served_text=SNAPSHOT_SERVED_TEXT,
         ),
         ResourceSpec(
             name="files",

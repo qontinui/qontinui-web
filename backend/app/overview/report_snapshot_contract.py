@@ -1033,3 +1033,25 @@ def treat_narrative(
         else:
             served[slot] = text
     return served, withheld
+
+
+def treat_logged(
+    record: dict[str, Any] | None,
+    fields: frozenset[str],
+    matcher: TermMatcher,
+    prefix: str,
+) -> tuple[dict[str, Any] | None, list[Violation]]:
+    """A change-log copy (``before`` / ``after``) served under the tenant's
+    CURRENT confidential terms: each of ``fields`` holding text that names one
+    is served whole as :data:`WITHHELD` and listed as ``<prefix>.<field>``,
+    never by its value. The copy was logged before a term may have been added;
+    the stored row is never changed."""
+    if record is None:
+        return None, []
+    served = dict(record)
+    withheld: list[Violation] = []
+    for key, value in record.items():
+        if key in fields and isinstance(value, str) and matcher.matches(value):
+            served[key] = WITHHELD
+            withheld.append(Violation(f"{prefix}.{key}", "confidential_term"))
+    return served, withheld

@@ -17617,7 +17617,11 @@ export interface paths {
         };
         /**
          * Read Change Log
-         * @description Newest first. Readable by any member, like the records it describes.
+         * @description Newest first. Readable by any member, like the records it describes,
+         *     and served as their reads are: a resource whose reads withhold text
+         *     naming the project's current confidential terms (``served_text``) has the
+         *     same fields withheld from the copies here, which were logged before a
+         *     term may have been added.
          */
         get: operations["api_v1_overview_change_log_get"];
         put?: never;
@@ -30294,6 +30298,8 @@ export interface components {
             via_device: string | null;
             /** Via Session */
             via_session: string | null;
+            /** Withheld */
+            withheld: components["schemas"]["WithheldSlot"][];
         };
         /** ChangeLogPage */
         ChangeLogPage: {
@@ -57334,10 +57340,11 @@ export interface components {
         /**
          * WithheldSlot
          * @description A slot a read did not serve, and why: a contract violation kind
-         *     (``confidential_term`` for a string, or a narrative field, naming one of
-         *     the project's current confidential terms), a link's
+         *     (``confidential_term`` for a string or a field naming one of the
+         *     project's current confidential terms), a link's
          *     ``link_owner_not_first_party`` / ``presentation_scope_unknown``, or
-         *     ``withdrawn`` for a withdrawn snapshot's ``data``.
+         *     ``withdrawn`` for a withdrawn snapshot's ``data``. A change-log entry
+         *     names the copy too (``after.title``).
          */
         WithheldSlot: {
             /** Reason */

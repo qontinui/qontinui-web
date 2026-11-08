@@ -154,3 +154,21 @@ class ResourceSpec:
     #: (a page's body is in ``page_versions``). A DELETE snapshot keeps every
     #: field, because the record and whatever kept its history go with it.
     audit_exclude: frozenset[str] = frozenset()
+    #: Read-model text fields served under the project's CURRENT confidential
+    #: terms: a value naming one is served whole as ``[withheld]``. The
+    #: resource's own reads apply this; ``GET /change-log`` applies it to the
+    #: ``before`` / ``after`` copies it serves for the resource, which were
+    #: logged before a term may have been added (the rows are not rewritten).
+    served_text: frozenset[str] = frozenset()
+
+
+class WithheldSlot(BaseModel):
+    """A slot a read did not serve, and why: a contract violation kind
+    (``confidential_term`` for a string or a field naming one of the
+    project's current confidential terms), a link's
+    ``link_owner_not_first_party`` / ``presentation_scope_unknown``, or
+    ``withdrawn`` for a withdrawn snapshot's ``data``. A change-log entry
+    names the copy too (``after.title``)."""
+
+    slot: str
+    reason: str
