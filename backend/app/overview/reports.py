@@ -81,6 +81,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, R
 from pydantic import (
     BaseModel,
     Field,
+    PrivateAttr,
     SkipValidation,
     field_validator,
     model_validator,
@@ -232,14 +233,23 @@ class ReportCreate(SourceFields):
     slug: str | None = Field(default=None, max_length=120)
     summary: str = Field(default="", max_length=MAX_SUMMARY)
     body_md: str = Field(default="", max_length=MAX_BODY_CHARS)
+    #: The slug exactly as the writer sent it, before :func:`slugify` rewrote
+    #: it (``192.0.2.40`` becomes ``192-0-2-40``, which no scanner reads as an
+    #: address): the store scans it as well as the slug it stores.
+    _slug_as_sent: str | None = PrivateAttr(default=None)
 
     @field_validator("title")
     @classmethod
     def _clean_title(cls, v: str) -> str:
         return _title(v)
 
+    @property
+    def slug_as_sent(self) -> str | None:
+        return self._slug_as_sent
+
     @model_validator(mode="after")
     def _slug(self) -> ReportCreate:
+        self._slug_as_sent = self.slug
         slug = slugify(self.slug) if self.slug else slugify(self.title)
         if not slug:
             raise ValueError(
@@ -678,16 +688,28 @@ class ReportStore:
         return (await ctx.db.execute(stmt)).scalars().first()
 
     async def _refuse_narrative(
-        self, ctx: StoreContext, fields: dict[str, str]
+        self,
+        ctx: StoreContext,
+        fields: dict[str, str],
+        *,
+        slug_as_sent: str | None = None,
     ) -> None:
         """422 ``report_rejected`` when the narrative (or, at create, the
         slug or the source) names a confidential term, an email-shaped
         identity, an IP address or an account id, or is the ``[withheld]``
         marker a read serves."""
         stored = await _stored_scope(ctx)
-        violations: list[Violation] = await scan_off_loop(
-            functools.partial(narrative_violations, terms=stored.terms), fields
-        )
+
+        def scan() -> list[Violation]:
+            found = narrative_violations(fields, terms=stored.terms)
+            if slug_as_sent is not None:
+                # The slug as the writer sent it, before slugify: a hit there
+                # names the same slot.
+                sent = narrative_violations({"slug": slug_as_sent}, terms=stored.terms)
+                found += [v for v in sent if v not in found]
+            return found
+
+        violations: list[Violation] = await scan_off_loop(scan)
         if violations:
             raise _rejected("report_rejected", violations, "report")
 
@@ -791,6 +813,7 @@ class ReportStore:
                 "slug": payload.slug,
                 **source,
             },
+            slug_as_sent=payload.slug_as_sent,
         )
         report = Report(
             tenant_id=ctx.access.tenant_id,

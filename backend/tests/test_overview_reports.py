@@ -688,6 +688,31 @@ class TestReports:
                 assert value not in response.text
         assert (await admin.get(f"{API}/reports")).json()["items"] == []
 
+    async def test_the_slug_is_scanned_as_sent_as_well_as_stored(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        """slugify rewrites a slug before it is stored (192.0.2.40 becomes
+        192-0-2-40, which no scanner reads as an address), so the slug is
+        scanned as the writer sent it too: a hit on either is 422
+        report_rejected naming the slug, never the value."""
+        for slug, kind, stored in (
+            ("192.0.2.40", "ip_address", "192-0-2-40"),
+            ("ops@example.com", "email", "ops-example-com"),
+            ("2001:db8::5", "ip_address", "2001-db8-5"),
+        ):
+            response = await admin.post(
+                f"{API}/reports", json={"title": "Review", "slug": slug}
+            )
+            assert response.status_code == 422, response.text
+            refused = response.json()
+            assert refused["error"] == "report_rejected"
+            assert {"slot": "slug", "kind": kind} in refused["violations"]
+            assert slug not in response.text and stored not in response.text
+        assert (await admin.get(f"{API}/reports")).json()["items"] == []
+        # An ordinary slug passes, stored as sent.
+        report = await _report(admin, title="Review", slug="q3-progress")
+        assert report["slug"] == "q3-progress"
+
     async def test_the_withheld_marker_is_never_written_back(
         self, admin: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
