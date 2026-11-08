@@ -1495,12 +1495,16 @@ async def read_report_view(
         rows = await db.execute(
             select(ReportSnapshot)
             .options(undefer(ReportSnapshot.data))
-            .where(ReportSnapshot.id.in_(ids))
+            .where(
+                ReportSnapshot.id.in_(ids),
+                ReportSnapshot.withdrawn_at.is_(None),
+            )
         )
         return {row.id: row for row in rows.scalars().all()}
 
-    # A stop whose row is gone by the time it is loaded (its report deleted
-    # between the two reads) is skipped, never a KeyError.
+    # A stop whose row is gone, or withdrawn, by the time it is loaded (its
+    # report deleted, or the stop withdrawn, between the two reads) is
+    # skipped, never a KeyError and never a withdrawn document served.
     loaded = await load([keys[i].id for i in page.page])
     page_rows = [loaded[keys[i].id] for i in page.page if keys[i].id in loaded]
     scope = await _scope_for(ctx, page_rows)

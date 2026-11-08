@@ -1214,14 +1214,17 @@ class TestCardinality:
         assert leanness(stops[2]) == (3, 4, second["seq"])
 
 
-class _GoneAfterKeys:
+class _ChangedAfterKeys:
     """The test session, except that right after the view reads its stops'
-    keys the given snapshots are deleted — another request deleting their
-    report between the view's reads."""
+    keys, ``change`` runs on the given snapshots — another request acting on
+    them between the view's reads."""
 
-    def __init__(self, session: AsyncSession, gone: list[UUID]) -> None:
+    def __init__(
+        self, session: AsyncSession, ids: list[UUID], change: Callable[[Any], Any]
+    ) -> None:
         self._session = session
-        self._gone = gone
+        self._ids = ids
+        self._change = change
         self.fired = False
 
     def __getattr__(self, name: str) -> Any:
@@ -1237,27 +1240,45 @@ class _GoneAfterKeys:
         self.fired = True
         keys = result.all()
         await self._session.execute(
-            delete(ReportSnapshot).where(ReportSnapshot.id.in_(self._gone))
+            self._change(ReportSnapshot).where(ReportSnapshot.id.in_(self._ids))
         )
         return types.SimpleNamespace(all=lambda: keys)
 
 
+def _gone(model: Any) -> Any:
+    """Their report deleted: the rows are gone."""
+    return delete(model)
+
+
+def _withdrawn(model: Any) -> Any:
+    """Withdrawn: the rows stay, hidden from readers."""
+    return update(model).values(
+        withdrawn_at=datetime.now(UTC), withdrawn_reason="Withdrawn meanwhile."
+    )
+
+
 class TestRowsGoneMidRead:
-    async def test_a_stop_gone_between_the_views_reads_is_skipped(
-        self, admin: httpx.AsyncClient, async_db_session: AsyncSession, api_user
+    @pytest.mark.parametrize("change", [_gone, _withdrawn], ids=["gone", "withdrawn"])
+    async def test_a_stop_gone_or_withdrawn_between_the_views_reads_is_skipped(
+        self,
+        admin: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        api_user,
+        change: Callable[[Any], Any],
     ) -> None:
         """The view reads its stops' keys, then loads the page and the stop
-        before it. A row gone in between is skipped, never a server error."""
+        before it. A row gone — or withdrawn — in between is skipped, never a
+        server error and never a withdrawn document served."""
         report = await _report(admin)
         stops = [await _snapshot(admin, report["id"], _stop(day)) for day in range(49)]
-        # Gone: the stop just before the page (the first stop's comparison)
-        # and one on the page.
-        gone = _GoneAfterKeys(
-            async_db_session, [UUID(stops[0]["id"]), UUID(stops[10]["id"])]
+        # The stop just before the page (the first stop's comparison), and one
+        # on the page.
+        proxy = _ChangedAfterKeys(
+            async_db_session, [UUID(stops[0]["id"]), UUID(stops[10]["id"])], change
         )
-        async with _client(_app(gone, api_user, TENANT_A, ("admin",))) as client:
+        async with _client(_app(proxy, api_user, TENANT_A, ("admin",))) as client:
             view = await _view(client, report["id"])
-        assert gone.fired
+        assert proxy.fired
         assert [s["seq"] for s in view["snapshots"]] == [
             s["seq"] for index, s in enumerate(stops) if index not in (0, 10)
         ]
