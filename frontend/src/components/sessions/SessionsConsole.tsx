@@ -557,14 +557,31 @@ export function SessionsConsole({
     return [...filtered].sort((a, b) => compareSessionRows(a, b, { now }));
   }, [rows, kinds, providers, machines, work, accounts, accountCells, now]);
 
-  // Each row's subproject, from ONE lookup per page of rows (at most 200
-  // harness ids, the rows on screen first) that is re-asked only when that
-  // set of sessions changes — not on every poll, not per row.
+  // Each row's subproject, looked up in batches of at most 200 Claude Code
+  // session ids (the rows on screen first): asked when a session appears, and
+  // re-asked only when its answer comes due. Each list poll hands the lookup a
+  // new array, so the console's one poll is also its slow poll — no timer of
+  // its own, and no read per row.
   const sessionKeys = useMemo(
-    () => [...visible, ...rows].map(agentSessionId),
+    () => [...visible, ...rows].map(subprojectKeyOf),
     [visible, rows]
   );
-  const subprojectOf = useSubprojectsBySessions(sessionKeys, lookupSubprojects);
+  const { chipOf: subprojectOf } = useSubprojectsBySessions(
+    sessionKeys,
+    lookupSubprojects
+  );
+  const chipOf = useCallback(
+    (row: ConsolidatedSessionRow): SubprojectChip => {
+      const key = subprojectKeyOf(row);
+      if (key !== null) return subprojectOf(key);
+      // No id at all, and the agent half did not answer: whether this row
+      // HAS a Claude Code session id is itself unknown — not "no subproject".
+      return row.row_class === null
+        ? { kind: "agent_unknown" }
+        : { kind: "not_applicable" };
+    },
+    [subprojectOf]
+  );
 
   const health = useMemo(
     () =>
@@ -798,7 +815,7 @@ export function SessionsConsole({
           <SessionConsoleRow
             row={row}
             account={accountCells.of(row)}
-            subproject={subprojectOf(agentSessionId(row))}
+            subproject={chipOf(row)}
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
             rowKey={ctx.rowKey}
@@ -836,7 +853,7 @@ function SessionConsoleRow({
   row: ConsolidatedSessionRow;
   /** The row's Account cell — derived once in the console, shared with the facet. */
   account: AccountCell;
-  /** The row's subproject, from the page's one lookup. */
+  /** The row's subproject, from the page's batched lookup. */
   subproject: SubprojectChip;
   expanded: boolean;
   onToggle: () => void;
@@ -901,15 +918,6 @@ function SessionConsoleRow({
         <span className="flex items-baseline gap-3 min-w-0">
           <span className="truncate min-w-0 flex-1" title={purpose}>
             {purpose}
-          </span>
-          {/* The session's subproject (plan 2026-11-08 subprojects, Phase 6).
-              Text on the line, which is one button; it opens from the
-              expanded row. A dash names why there is none to show. */}
-          <span
-            className="hidden md:inline shrink-0 w-36 truncate text-xs text-muted-foreground"
-            data-testid="sessions-console-row-subproject"
-          >
-            <SubprojectChipText chip={subproject} />
           </span>
           {/* Machine is a COLUMN, not a grouping container (§4.1). */}
           <span
@@ -1008,6 +1016,19 @@ function SessionConsoleRow({
               relativeTime(beat, { absent: "–", now })
             )}
           </span>
+          {/* The session's subproject (plan 2026-11-08 subprojects, Phase 6).
+              The LAST column, from xl only: the line's fixed columns already
+              fill it at md and lg, where another would squeeze the purpose
+              and the account off it — and last, so on a narrow xl it is the
+              one clipped. Text, because the line is one button; it opens from
+              the expanded row, which shows it at every width. A dash names
+              why there is none to show. */}
+          <span
+            className="hidden xl:inline shrink-0 w-32 truncate text-xs text-muted-foreground"
+            data-testid="sessions-console-row-subproject"
+          >
+            <SubprojectChipText chip={subproject} />
+          </span>
         </span>
       }
       status={
@@ -1054,6 +1075,16 @@ function SessionConsoleRow({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * The Claude Code session id a row's subproject is looked up by: the agent
+ * half's id, else the lifecycle half's bridge column — so a row whose agent
+ * half did not answer is still looked up when its lifecycle half names the
+ * session. `null` when neither does.
+ */
+function subprojectKeyOf(row: ConsolidatedSessionRow): string | null {
+  return agentSessionId(row) ?? row.claude_code_session_id ?? null;
+}
 
 /**
  * The honest empty state — it has to name WHICH question came back empty,

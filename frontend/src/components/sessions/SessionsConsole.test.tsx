@@ -1024,6 +1024,47 @@ describe("the subproject chip (plan 2026-11-08 subprojects, Phase 6)", () => {
     ).toHaveAttribute("data-chip", "none");
   });
 
+  it("looks a row up by its bridge column when the agent half did not answer, and says unknown when there is no id at all", async () => {
+    const bridged: ConsolidatedSessionRow = {
+      ...LIFECYCLE_ONLY,
+      id: "dddddddd-0000-0000-0000-000000000004",
+      row_class: null,
+      session_kind: "terminal_claude",
+      claude_code_session_id: "agent-9",
+    };
+    const unknown: ConsolidatedSessionRow = {
+      ...LIFECYCLE_ONLY,
+      id: "eeeeeeee-0000-0000-0000-000000000005",
+      row_class: null,
+      session_kind: "terminal_claude",
+      claude_code_session_id: null,
+    };
+    const lookupSubprojects = vi.fn(async (_ids: readonly string[]) => ({
+      items: {
+        "agent-9": { id: "sp-9", title: "bridged work", headline: "waiting" },
+      },
+      missing: [],
+    }));
+    mount(envelope([bridged, unknown]), {
+      lookupSubprojects: lookupSubprojects as never,
+    });
+    const bridgedRow = await rowFor(bridged.id);
+    await waitFor(() =>
+      expect(
+        within(bridgedRow).getByTestId("sessions-console-row-subproject")
+      ).toHaveTextContent("bridged work")
+    );
+    expect(lookupSubprojects.mock.calls[0]?.[0]).toEqual(["agent-9"]);
+    // No id at all and an agent half that did not answer: unknown — not
+    // "no session id", which would be a positive claim.
+    const unknownRow = await rowFor(unknown.id);
+    expect(
+      within(unknownRow)
+        .getByTestId("sessions-console-row-subproject")
+        .querySelector("[data-chip]")
+    ).toHaveAttribute("data-chip", "agent_unknown");
+  });
+
   it("links the subproject from the expanded row, never from inside the row's button", async () => {
     const lookupSubprojects = vi.fn(async () => ({
       items: {

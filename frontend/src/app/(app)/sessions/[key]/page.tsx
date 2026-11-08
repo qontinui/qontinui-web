@@ -60,9 +60,11 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConsolidatedSessionDetail } from "@/components/sessions/ConsolidatedSessionDetail";
 import {
+  SUBPROJECT_CHIP_POLL_MS,
   SubprojectChipCell,
   useSubprojectsBySessions,
 } from "@/components/admin/coord/subprojects/SubprojectChip";
+import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
 import { getSession } from "@/lib/api/operations/sessions";
 import {
   classifyAgentError,
@@ -163,13 +165,17 @@ export default function SessionKeyPage() {
 
   // Each matched session's subproject (plan
   // 2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled
-  // Phase 6), in ONE lookup for every card on the page. A card's id is the
-  // Claude Code session id — the key a membership is recorded under.
+  // Phase 6), looked up in one batch for every card on the page. A card's id
+  // is the Claude Code session id — the key a membership is recorded under.
   const cardIds = useMemo(
     () => (verdict.kind === "matches" ? verdict.cards.map((c) => c.id) : []),
     [verdict]
   );
-  const subprojectOf = useSubprojectsBySessions(cardIds);
+  const { chipOf: subprojectOf, recheck: recheckSubprojects } =
+    useSubprojectsBySessions(cardIds);
+  // This page has no list poll to piggyback on, so the lookup's slow poll is
+  // its own: it asks again only for an answer that has come due.
+  useVisiblePoll(recheckSubprojects, SUBPROJECT_CHIP_POLL_MS);
 
   if (!user) return null;
 

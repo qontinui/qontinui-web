@@ -270,12 +270,20 @@ describe("ContinueDialog", () => {
       screen.getByTestId("subproject-continue-effort-source")
     ).toHaveTextContent(/^Reading the effort profiles/);
     expect(screen.getByTestId("subproject-continue-submit")).toBeDisabled();
-    // An explicit choice is an effort somebody chose: Continue may go.
+    // No effort is shown as chosen while nothing has settled one.
+    expect(screen.getByTestId("subproject-continue-effort")).toHaveTextContent(
+      "Choose…"
+    );
+    expect(screen.getByTestId("subproject-continue-submit")).toHaveTextContent(
+      /^Continue$/
+    );
+    // An explicit choice is an effort somebody chose — the fallback's own
+    // "high" included, which a select pre-set to it could not register.
     await user.click(screen.getByTestId("subproject-continue-effort"));
-    await user.click(await screen.findByRole("option", { name: "medium" }));
+    await user.click(await screen.findByRole("option", { name: "high" }));
     expect(screen.getByTestId("subproject-continue-submit")).toBeEnabled();
     expect(screen.getByTestId("subproject-continue-submit")).toHaveTextContent(
-      "Continue at medium"
+      "Continue at high"
     );
   });
 
