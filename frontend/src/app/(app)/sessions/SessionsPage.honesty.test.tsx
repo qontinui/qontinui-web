@@ -55,7 +55,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import SessionsPage from "./page";
-import { cappedLifecycleEnvelope } from "./sessionsPageFixtures";
+import { cappedLifecycleEnvelope } from "./__tests__/sessionsPageFixtures";
 
 beforeEach(() => {
   listConsolidatedSessions.mockReset();
