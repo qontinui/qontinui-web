@@ -280,8 +280,8 @@ NON_FOLLOWUP_PAIR_SQL = "relation <> 'spawned_followup'"
 
 #: An OWNED follow-up: ``to_id`` names the artifact that holds the work.
 #: ``uq_work_artifact_edges_owned_followup`` keys these by
-#: ``(from_id, to_id, relation, btrim(note))`` - the finding itself, not just
-#: whom it connects. Its complement among follow-ups is the unowned population
+#: ``(from_id, to_id, relation, btrim(note))`` - what it says, not just whom it
+#: connects. Its complement among follow-ups is the unowned population
 #: :data:`UNCLAIMED_FOLLOWUP_SQL` selects, which ``uq_work_artifact_edges_open_followup``
 #: keys by note alone.
 OWNED_FOLLOWUP_SQL = "relation = 'spawned_followup' AND to_id IS NOT NULL"
@@ -884,12 +884,14 @@ class WorkArtifactEdge(Base):
             postgresql_where=text("to_id IS NULL AND relation = 'spawned_followup'"),
         ),
         # The same guard once the follow-up has an OWNER
-        # (``plan_library_12_followup_identity_is_the_note``). A follow-up's
-        # identity inside its source is what it says, in every state, so an
-        # owner may hold any number of a source's follow-ups but never the
-        # same finding twice. The claim route and ``create_edge`` look the twin
-        # up first and report it by name; this index is the backstop for the
-        # race between that lookup and the write. Mirrors
+        # (``plan_library_12_followup_identity_is_the_note``): an owner may hold
+        # any number of a source's follow-ups but never the same finding twice.
+        # Keyed by OWNER, so it is the database's answer for the SAME-OWNER twin
+        # only - the claim route's check, and the race between a lookup and a
+        # write. It relates neither an open row to an owned one nor two owned
+        # rows with different owners; across those, ``(source, note)`` is the
+        # identity because the write doors' lookups say so, serialized per
+        # (source, note) by ``create_edge``'s advisory lock. Mirrors
         # ``uq_work_artifact_edges_owned_followup``.
         Index(
             "uq_work_artifact_edges_owned_followup",

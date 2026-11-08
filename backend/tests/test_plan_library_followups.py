@@ -34,6 +34,7 @@ Layering mirrors ``tests/test_plan_library_api.py``: ``httpx.AsyncClient`` over
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from uuid import UUID, uuid4
 
@@ -41,9 +42,14 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from sqlalchemy import text
+from pydantic import BaseModel
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+)
 
 from app.crud import work_artifact as crud
 from app.models.work_artifact import (
@@ -51,6 +57,11 @@ from app.models.work_artifact import (
     WORK_ARTIFACT_RELATIONS,
     WorkArtifact,
     WorkArtifactEdge,
+)
+from app.schemas.plan_library_followups import (
+    FollowupClaimConflict,
+    FollowupEdgeConflict,
+    PlanLibraryNotFound,
 )
 
 API_PREFIX = "/api/v1/plan-library"
@@ -572,7 +583,7 @@ class TestClaim:
             f"{API_PREFIX}/edges/{edge_id}", json={"to_id": second_owner}
         )
         assert conflict.status_code == 409, conflict.text
-        detail = conflict.json()["detail"]
+        detail = _declared(conflict, FollowupClaimConflict)
         assert detail["error"] == "followup_already_claimed"
         assert detail["to_id"] == first_owner
 
@@ -788,8 +799,11 @@ class TestCrudLayer:
             created_by="test",
         )
 
-        claimed = await crud.claim_followup(async_db_session, edge.id, first.id)
+        claimed, changed = await crud.claim_followup(
+            async_db_session, edge.id, first.id
+        )
         assert claimed.to_id == first.id
+        assert changed is True
 
         with pytest.raises(crud.FollowupAlreadyClaimed) as excinfo:
             await crud.claim_followup(async_db_session, edge.id, second.id)
@@ -1265,7 +1279,7 @@ class TestTransitions:
             f"{API_PREFIX}/edges/{edge_id}", json={"to_id": owner}
         )
         assert resp.status_code == 409, resp.text
-        detail = resp.json()["detail"]
+        detail = _declared(resp, FollowupClaimConflict)
         assert detail["error"] == "followup_resolved"
         assert detail["resolution"] == state
         # Still unclaimed.
@@ -1787,14 +1801,16 @@ class TestClosureMetadataMirrorsTheMigration:
 # A follow-up is identified by the edge itself and by its note — never by the
 # pair of artifacts it connects.
 #
-# Plan 2026-11-08-a-plan-can-own-many-followups-from-one-source-plan. Measured
-# on production 2026-11-08: one source plan surfaced nine follow-ups and one new
-# plan owned all nine; the first claim answered 200 and the other eight 409 —
+# Plan 2026-11-08-a-plan-can-own-many-followups-from-one-source-plan; the defect
+# is coord finding 10df5763-550d-493b-b44d-ab93955c9c2b (topic ``plan-library``),
+# which reports one source plan that surfaced nine follow-ups and one new plan
+# that owned all nine: the first claim answered 200 and the other eight 409,
 # with a message saying the edge was "already claimed by <the new owner>" while
-# it was still open. ``uq_work_artifact_edges_from_to_relation`` was written for
-# two-ended relations and refused the second row of any ``(source, owner,
-# 'spawned_followup')`` pair; ``claim_followup`` then named the REQUESTED owner
-# as the claimant.
+# it was still open. Its cause, read from the code: the old pair index
+# (``uq_work_artifact_edges_from_to_relation``) was written for two-ended
+# relations and refused the second row of any ``(source, owner,
+# 'spawned_followup')`` pair, and ``claim_followup`` then named the REQUESTED
+# owner as the claimant.
 #
 # ``conftest`` builds this database from ``Base.metadata``, so these tests
 # exercise the MODEL's indexes. That the migration declares the same ones is
@@ -1820,6 +1836,16 @@ def _constraint_of(exc: IntegrityError) -> str | None:
     return getattr(cause, "constraint_name", None) or getattr(
         orig, "constraint_name", None
     )
+
+
+def _declared(resp: httpx.Response, model: type[BaseModel]) -> dict[str, object]:
+    """The 409 ``detail`` of ``resp``, after proving the BODY is exactly what the
+    route's ``responses=`` documents: ``model`` forbids unknown keys and
+    discriminates on ``detail.error``, so a served body that drifts from the
+    published contract fails here."""
+    model.model_validate(resp.json())
+    detail: dict[str, object] = resp.json()["detail"]
+    return detail
 
 
 async def _claim(client: httpx.AsyncClient, edge_id: str, owner: str) -> httpx.Response:
@@ -1934,7 +1960,7 @@ class TestAFollowupIsIdentifiedByItsNote:
 
         conflict = await _claim(client, ghost, owner)
         assert conflict.status_code == 409, conflict.text
-        detail = conflict.json()["detail"]
+        detail = _declared(conflict, FollowupClaimConflict)
         assert not (
             detail["error"] == "followup_already_claimed" and detail["to_id"] == owner
         ), (
@@ -2050,7 +2076,7 @@ class TestAFollowupIsIdentifiedByItsNote:
 
         conflict = await _claim(client, edge_id, second_owner)
         assert conflict.status_code == 409, conflict.text
-        detail = conflict.json()["detail"]
+        detail = _declared(conflict, FollowupClaimConflict)
         assert detail["error"] == "followup_already_claimed"
         assert detail["edge_id"] == edge_id
         # The owner the row HAS — never the one that was asked for.
@@ -2097,7 +2123,7 @@ class TestAFollowupIsIdentifiedByItsNote:
 
         conflict = await _claim(client, ghost, owner)
         assert conflict.status_code == 409, conflict.text
-        detail = conflict.json()["detail"]
+        detail = _declared(conflict, FollowupClaimConflict)
         assert detail["error"] == "followup_duplicate_owned", detail
         assert detail["existing_edge_id"] == owned.json()["id"]
 
@@ -2133,10 +2159,13 @@ class TestAFollowupIsIdentifiedByItsNote:
 
         refused = await _post_owned(client, source, owner, f"  {note}\n")
         assert refused.status_code == 409, refused.text
-        detail = refused.json()["detail"]
+        detail = _declared(refused, FollowupEdgeConflict)
         assert detail["error"] == "followup_exists_unowned"
         assert detail["existing_edge_id"] == open_id
-        assert detail["to_id"] == owner
+        # The owner the POST asked for. It is NOT called ``to_id``: in
+        # ``followup_already_claimed`` that name means the CURRENT owner.
+        assert detail["requested_to_id"] == owner
+        assert "to_id" not in detail
         assert f"PATCH /plan-library/edges/{open_id}" in detail["message"]
 
         # The row is still open and unowned: the POST moved nothing.
@@ -2155,7 +2184,7 @@ class TestAFollowupIsIdentifiedByItsNote:
 
         refused = await _post_owned(client, source, other, note)
         assert refused.status_code == 409, refused.text
-        detail = refused.json()["detail"]
+        detail = _declared(refused, FollowupEdgeConflict)
         assert detail["error"] == "followup_already_claimed"
         assert detail["edge_id"] == owned.json()["id"]
         # The STORED owner, not the one this post asked for.
@@ -2172,7 +2201,7 @@ class TestAFollowupIsIdentifiedByItsNote:
 
         refused = await _post_owned(client, source, owner, note)
         assert refused.status_code == 409, refused.text
-        detail = refused.json()["detail"]
+        detail = _declared(refused, FollowupEdgeConflict)
         assert detail["error"] == "followup_resolved"
         assert detail["edge_id"] == edge_id
         assert detail["resolution"] == "dismissed"
@@ -2205,8 +2234,9 @@ class TestAFollowupIsIdentifiedByItsNote:
 
         refused = await _post_owned(client, source, other, note)
         assert refused.status_code == 409, refused.text
-        assert refused.json()["detail"]["error"] == "followup_already_claimed"
-        assert refused.json()["detail"]["to_id"] == owner
+        detail = _declared(refused, FollowupEdgeConflict)
+        assert detail["error"] == "followup_already_claimed"
+        assert detail["to_id"] == owner
 
     async def test_an_edge_deleted_before_the_lock_is_a_404_not_a_claim_conflict(
         self,
@@ -2519,3 +2549,454 @@ class TestFollowupIdentityUnderRaces:
         assert crud._violated_constraint(excinfo.value) == (
             "uq_work_artifact_edges_from_to_relation_non_followup"
         )
+
+
+class TestClaimReplay:
+    """An idempotent replay writes nothing, and says so."""
+
+    async def test_claim_reports_whether_it_changed_anything(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        db = async_db_session
+        source = await _crud_artifact(db, "replay-source")
+        owner = await _crud_artifact(db, "replay-owner")
+        edge, _ = await crud.create_edge(
+            db,
+            from_artifact=source,
+            to_artifact=None,
+            relation="spawned_followup",
+            note="claimed twice by one owner",
+            created_by="test",
+        )
+
+        claimed, changed = await crud.claim_followup(db, edge.id, owner.id)
+        assert changed is True and claimed.to_id == owner.id
+
+        again, changed_again = await crud.claim_followup(db, edge.id, owner.id)
+        assert changed_again is False
+        assert again.id == edge.id and again.to_id == owner.id
+
+    async def test_a_replay_is_logged_as_a_replay_not_as_a_claim(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.api.v1.endpoints import plan_library as route
+
+        events: list[str] = []
+
+        class _Recorder:
+            def __getattr__(self, level: str):
+                def record(event: str, **fields: object) -> None:
+                    events.append(event)
+
+                return record
+
+        monkeypatch.setattr(route, "logger", _Recorder())
+
+        source = await _make_artifact(client, stem="replaylog-source")
+        owner = await _make_artifact(client, stem="replaylog-owner")
+        edge_id = (await _spawn(client, source, "a finding claimed twice")).json()["id"]
+        assert (await _claim(client, edge_id, owner)).status_code == 200
+        assert (await _claim(client, edge_id, owner)).status_code == 200
+
+        claim_events = [
+            e for e in events if e.startswith("plan_library.followup_claim")
+        ]
+        assert claim_events == [
+            "plan_library.followup_claimed",
+            "plan_library.followup_claim_replayed",
+        ]
+
+
+class TestConflictBodiesAreDeclared:
+    """``responses=`` puts the 404 and 409 bodies - ``detail.error`` included - in
+    the OpenAPI snapshot and the generated client."""
+
+    @staticmethod
+    def _spec() -> dict:
+        # OpenAPI generation resolves no dependency, so none is supplied.
+        return _build_app(db_session=None, user=None).openapi()  # type: ignore[arg-type]
+
+    @staticmethod
+    def _declared_codes(spec: dict, operation: dict) -> set[str]:
+        ref = operation["responses"]["409"]["content"]["application/json"]["schema"]
+        wrapper = spec["components"]["schemas"][ref["$ref"].rsplit("/", 1)[1]]
+        return set(wrapper["properties"]["detail"]["discriminator"]["mapping"])
+
+    async def test_the_claim_door_declares_its_404_and_its_three_409s(self) -> None:
+        spec = self._spec()
+        operation = spec["paths"][f"{API_PREFIX}/edges/{{edge_id}}"]["patch"]
+        assert {"404", "409"} <= set(operation["responses"])
+        assert self._declared_codes(spec, operation) == {
+            "followup_already_claimed",
+            "followup_duplicate_owned",
+            "followup_resolved",
+        }
+        not_found = operation["responses"]["404"]["content"]["application/json"]
+        assert not_found["schema"]["$ref"].endswith("/PlanLibraryNotFound")
+
+    async def test_the_edge_create_door_declares_its_404_and_its_three_409s(
+        self,
+    ) -> None:
+        spec = self._spec()
+        operation = spec["paths"][f"{API_PREFIX}/{{artifact_id}}/edges"]["post"]
+        assert {"404", "409"} <= set(operation["responses"])
+        assert self._declared_codes(spec, operation) == {
+            "followup_already_claimed",
+            "followup_exists_unowned",
+            "followup_resolved",
+        }
+
+    async def test_the_declared_bodies_name_what_each_to_id_means(self) -> None:
+        schemas = self._spec()["components"]["schemas"]
+        assert (
+            "CURRENT owner"
+            in schemas["FollowupAlreadyClaimedBody"]["properties"]["to_id"][
+                "description"
+            ]
+        )
+        assert "requested_to_id" in schemas["FollowupExistsUnownedBody"]["properties"]
+        assert "to_id" not in schemas["FollowupExistsUnownedBody"]["properties"]
+
+    async def test_every_conflict_the_crud_raises_is_declared_by_a_door_that_can_raise_it(
+        self,
+    ) -> None:
+        """The route maps a crud exception to a body through ``_followup_conflict``.
+        Each must produce a body the documented models accept, and one of the two
+        doors must declare it."""
+        from app.api.v1.endpoints.plan_library import _followup_conflict
+
+        a, b, c = uuid4(), uuid4(), uuid4()
+        raised = {
+            "claim": [
+                crud.FollowupAlreadyClaimed(edge_id=a, to_id=b),
+                crud.FollowupDuplicateOwned(edge_id=a, existing_edge_id=b, to_id=c),
+                crud.FollowupResolved(edge_id=a, resolution="dismissed"),
+            ],
+            "create": [
+                crud.FollowupAlreadyClaimed(edge_id=a, to_id=b),
+                crud.FollowupExistsUnowned(existing_edge_id=a, requested_to_id=c),
+                crud.FollowupResolved(edge_id=a, resolution="fixing"),
+            ],
+        }
+        models = {"claim": FollowupClaimConflict, "create": FollowupEdgeConflict}
+        for door, excs in raised.items():
+            for exc in excs:
+                response = _followup_conflict(exc)
+                assert response.status_code == 409
+                models[door].model_validate({"detail": response.detail})
+
+    async def test_a_404_is_declared_as_a_plain_detail_string(self) -> None:
+        PlanLibraryNotFound.model_validate(
+            {"detail": "Work artifact edge not found: x"}
+        )
+
+
+# ===========================================================================
+# REAL concurrency: separate sessions, separate connections, transactions that
+# COMMIT. The tests above simulate a lost race by patching a lookup inside ONE
+# session bound to an outer transaction; they cannot show that the database
+# actually serializes anything, which is what the advisory lock is for.
+# ===========================================================================
+
+
+class _Rendezvous:
+    """Hold the first writer at the door until BOTH have done their lookup.
+
+    Forces the interleaving that makes a lookup-only identity unsound: two
+    writers each look a finding up, each find nothing, and only then write. When
+    the code under test serializes them the second writer cannot reach its lookup
+    while the first holds the lock, so the first is released as soon as a writer
+    is SEEN blocked on an advisory lock (``pg_locks``), not after a timeout for a
+    partner that cannot arrive. ``released_by`` records which way the door opened;
+    ``"cap"`` means neither happened, and the test then proved nothing.
+    """
+
+    CAP_SECONDS = 20.0
+    BOTH = "both writers reached the door"
+    BLOCKED = "a writer is blocked on an advisory lock"
+    CAP = "cap"
+
+    def __init__(self, engine: AsyncEngine, parties: int = 2) -> None:
+        self.engine = engine
+        self.parties = parties
+        self.arrived = 0
+        self.released = asyncio.Event()
+        self.released_by: str | None = None
+
+    def _open(self, how: str) -> None:
+        if self.released_by is None:
+            self.released_by = how
+        self.released.set()
+
+    async def arrive(self) -> None:
+        self.arrived += 1
+        if self.arrived >= self.parties:
+            self._open(self.BOTH)
+            return
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.CAP_SECONDS
+        async with self.engine.connect() as probe:
+            while not self.released.is_set():
+                blocked = (
+                    await probe.execute(
+                        text(
+                            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' "
+                            "AND NOT granted AND database = (SELECT oid FROM "
+                            "pg_database WHERE datname = current_database())"
+                        )
+                    )
+                ).scalar_one()
+                if blocked:
+                    self._open(self.BLOCKED)
+                    return
+                if loop.time() > deadline:
+                    self._open(self.CAP)
+                    return
+                await asyncio.sleep(0.02)
+
+    def proved_something(self) -> bool:
+        return self.released_by in {self.BOTH, self.BLOCKED}
+
+
+class _CommittingWorld:
+    """Sessions whose transactions really commit, in an organization bucket of
+    their own (``organization_id`` has no FK), so that nothing a test leaves
+    behind - even when interrupted - is visible to any other test's queue."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self.engine = engine
+        self.org_id = uuid4()
+        self.sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def artifact(self, stem: str) -> WorkArtifact:
+        async with self.sessions() as session:
+            artifact, _, _ = await crud.upsert_artifact(
+                session,
+                org_id=self.org_id,
+                user_id=None,
+                kind="plan",
+                slug=_slug(stem),
+                title=stem,
+                status="VETTED",
+                body=f"# {stem}\n{uuid4().hex}",
+                source_path=None,
+                source_repo=None,
+                work_unit_slug=None,
+                repos=[],
+                authored_at=None,
+                captured_by="agent",
+                change_description=None,
+                created_by="test",
+            )
+            return artifact
+
+    async def raw_open_followup(self, source: WorkArtifact, note: str) -> UUID:
+        """An OPEN follow-up inserted raw and COMMITTED - the open twin an earlier
+        build left, which the door no longer writes."""
+        edge_id = uuid4()
+        async with self.sessions() as session:
+            await session.execute(
+                text(
+                    "INSERT INTO agent.work_artifact_edges "
+                    "(id, from_id, to_id, relation, note) "
+                    "VALUES (:id, :source, NULL, 'spawned_followup', :note)"
+                ),
+                {"id": edge_id, "source": source.id, "note": note},
+            )
+            await session.commit()
+        return edge_id
+
+    async def edges_of(self, source: WorkArtifact) -> list[WorkArtifactEdge]:
+        async with self.sessions() as session:
+            rows = await session.execute(
+                select(WorkArtifactEdge).where(WorkArtifactEdge.from_id == source.id)
+            )
+            return list(rows.scalars())
+
+    async def cleanup(self) -> None:
+        async with self.engine.begin() as conn:
+            await conn.execute(
+                text("DELETE FROM agent.work_artifacts WHERE organization_id = :org"),
+                {"org": self.org_id},
+            )
+
+
+@pytest_asyncio.fixture()
+async def committing_world(test_engine: AsyncEngine):
+    world = _CommittingWorld(test_engine)
+    try:
+        yield world
+    finally:
+        await world.cleanup()
+
+
+class TestRealConcurrentWriters:
+    """Each test runs two writers on two real connections and forces the
+    interleaving that a lookup-only identity cannot survive."""
+
+    @staticmethod
+    def _gate_lookup(
+        monkeypatch: pytest.MonkeyPatch, engine: AsyncEngine, attribute: str
+    ) -> _Rendezvous:
+        """Make ``crud.<attribute>`` hold each writer after its lookup."""
+        gate = _Rendezvous(engine)
+        real = getattr(crud, attribute)
+
+        async def gated(*args, **kwargs):
+            found = await real(*args, **kwargs)
+            await gate.arrive()
+            return found
+
+        monkeypatch.setattr(crud, attribute, gated)
+        return gate
+
+    async def test_two_owners_posting_one_finding_at_once_cannot_both_win(
+        self,
+        committing_world: _CommittingWorld,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """C6 - ``(S, A, note)`` and ``(S, B, note)``: the database keys owned
+        rows by owner, so it refuses neither; only the lock can."""
+        world = committing_world
+        source = await world.artifact("c6-source")
+        owner_a = await world.artifact("c6-owner-a")
+        owner_b = await world.artifact("c6-owner-b")
+        note = "a finding two plans post at the same moment"
+        gate = self._gate_lookup(monkeypatch, test_engine, "_find_existing_edge")
+
+        async def post(owner: WorkArtifact, spelling: str):
+            async with world.sessions() as session:
+                return await crud.create_edge(
+                    session,
+                    from_artifact=source,
+                    to_artifact=owner,
+                    relation="spawned_followup",
+                    note=spelling,
+                    created_by="test",
+                )
+
+        # The second writer pads the same words with whitespace: the lookup and
+        # both guard indexes read that as the SAME finding, so the lock must too.
+        results = await asyncio.gather(
+            post(owner_a, note),
+            post(owner_b, f"\t{note} \n"),
+            return_exceptions=True,
+        )
+
+        assert gate.proved_something(), f"released by {gate.released_by!r}"
+        wins = [r for r in results if isinstance(r, tuple)]
+        losses = [r for r in results if isinstance(r, BaseException)]
+        assert len(wins) == 1 and wins[0][1] is True, results
+        assert len(losses) == 1, results
+        assert isinstance(losses[0], crud.FollowupAlreadyClaimed), results
+        # The loser is told who owns the finding: the winner's owner.
+        assert losses[0].to_id == wins[0][0].to_id
+        assert [e.id for e in await world.edges_of(source)] == [wins[0][0].id]
+
+    async def test_an_open_and_an_owned_post_of_one_finding_at_once_cannot_both_insert(
+        self,
+        committing_world: _CommittingWorld,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """C7 - a one-ended and a two-ended post of one note: the open guard and
+        the owned guard cover disjoint populations, so only the lock stops both."""
+        world = committing_world
+        source = await world.artifact("c7-source")
+        owner = await world.artifact("c7-owner")
+        note = "a finding posted open and owned at the same moment"
+        gate = self._gate_lookup(monkeypatch, test_engine, "_find_existing_edge")
+
+        async def post(to_artifact: WorkArtifact | None):
+            async with world.sessions() as session:
+                return await crud.create_edge(
+                    session,
+                    from_artifact=source,
+                    to_artifact=to_artifact,
+                    relation="spawned_followup",
+                    note=note,
+                    created_by="test",
+                )
+
+        results = await asyncio.gather(post(None), post(owner), return_exceptions=True)
+
+        assert gate.proved_something(), f"released by {gate.released_by!r}"
+        created = [
+            i for i, r in enumerate(results) if isinstance(r, tuple) and r[1] is True
+        ]
+        assert len(created) == 1, results
+        winner = results[created[0]][0]
+        other = results[1 - created[0]]
+        if isinstance(other, tuple):
+            # The one-ended post that came second is answered with the owned row.
+            assert other[1] is False and other[0].id == winner.id
+        else:
+            # The owned post that came second is told to claim the open one.
+            assert isinstance(other, crud.FollowupExistsUnowned), other
+            assert other.existing_edge_id == winner.id
+        assert [e.id for e in await world.edges_of(source)] == [winner.id]
+
+    async def test_a_claim_and_a_repost_of_the_same_finding_do_not_deadlock(
+        self,
+        committing_world: _CommittingWorld,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Why ``claim_followup`` takes NO advisory lock. ``create_edge`` holds the
+        advisory lock and then needs the edge's ROW lock to fill a re-post's
+        facts; the claim holds the row lock. A claim that also took the advisory
+        lock (after its row lock, the only place it can know the key) would wait
+        for the first while the first waits for it. The hazardous order is
+        FORCED, not left to scheduling: the re-post takes the advisory lock
+        first and the claim only starts once it has, then each holds its lock
+        until both are in place - and both must finish."""
+        world = committing_world
+        source = await world.artifact("deadlock-source")
+        owner = await world.artifact("deadlock-owner")
+        note = "a finding claimed while it is re-posted"
+        edge_id = await world.raw_open_followup(source, note)
+        gate = _Rendezvous(test_engine)
+        repost_holds_the_advisory_lock = asyncio.Event()
+
+        real_twin = crud._owned_twin
+
+        async def positioned_claim(*args, **kwargs):
+            await gate.arrive()  # the claim holds the edge's ROW lock here
+            return await real_twin(*args, **kwargs)
+
+        monkeypatch.setattr(crud, "_owned_twin", positioned_claim)
+
+        async def fill_a_fact(edge: WorkArtifactEdge, created: bool) -> bool:
+            repost_holds_the_advisory_lock.set()
+            await gate.arrive()  # the re-post holds the ADVISORY lock here
+            edge.size_class = "small"
+            edge.size_class_source = "declared"
+            return True
+
+        async def repost():
+            async with world.sessions() as session:
+                return await crud.create_edge(
+                    session,
+                    from_artifact=source,
+                    to_artifact=None,
+                    relation="spawned_followup",
+                    note=note,
+                    created_by="test",
+                    on_write=fill_a_fact,
+                )
+
+        async def claim():
+            # Only now can the claim's row lock meet an advisory lock already held.
+            await asyncio.wait_for(repost_holds_the_advisory_lock.wait(), timeout=20)
+            async with world.sessions() as session:
+                return await crud.claim_followup(session, edge_id, owner.id)
+
+        results = await asyncio.gather(repost(), claim(), return_exceptions=True)
+
+        assert gate.proved_something(), f"released by {gate.released_by!r}"
+        errors = [r for r in results if isinstance(r, BaseException)]
+        assert not errors, errors
+        stored = [e for e in await world.edges_of(source) if e.id == edge_id]
+        assert len(stored) == 1
+        assert stored[0].to_id == owner.id and stored[0].size_class == "small"

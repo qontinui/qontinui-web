@@ -26328,6 +26328,41 @@
         "title": "FolderCreateResponse",
         "type": "object"
       },
+      "FollowupAlreadyClaimedBody": {
+        "additionalProperties": false,
+        "description": "The edge row already has an owner, and it is not the one asked for.",
+        "properties": {
+          "edge_id": {
+            "description": "The edge that already has an owner.",
+            "format": "uuid",
+            "title": "Edge Id",
+            "type": "string"
+          },
+          "error": {
+            "const": "followup_already_claimed",
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "to_id": {
+            "description": "The edge's CURRENT owner, as stored - never the artifact the caller asked for.",
+            "format": "uuid",
+            "title": "To Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "edge_id",
+          "to_id"
+        ],
+        "title": "FollowupAlreadyClaimedBody",
+        "type": "object"
+      },
       "FollowupAnchor": {
         "description": "One stored anchor.",
         "properties": {
@@ -26500,6 +26535,147 @@
           "anchors"
         ],
         "title": "FollowupAnchorsReplace",
+        "type": "object"
+      },
+      "FollowupClaimConflict": {
+        "description": "The body of a 409 from ``PATCH /plan-library/edges/{edge_id}``.",
+        "properties": {
+          "detail": {
+            "discriminator": {
+              "mapping": {
+                "followup_already_claimed": "#/components/schemas/FollowupAlreadyClaimedBody",
+                "followup_duplicate_owned": "#/components/schemas/FollowupDuplicateOwnedBody",
+                "followup_resolved": "#/components/schemas/FollowupResolvedBody"
+              },
+              "propertyName": "error"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FollowupAlreadyClaimedBody"
+              },
+              {
+                "$ref": "#/components/schemas/FollowupDuplicateOwnedBody"
+              },
+              {
+                "$ref": "#/components/schemas/FollowupResolvedBody"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "FollowupClaimConflict",
+        "type": "object"
+      },
+      "FollowupDuplicateOwnedBody": {
+        "additionalProperties": false,
+        "description": "The requested owner already owns this finding under another edge.",
+        "properties": {
+          "edge_id": {
+            "description": "The edge the claim named; it stays open.",
+            "format": "uuid",
+            "title": "Edge Id",
+            "type": "string"
+          },
+          "error": {
+            "const": "followup_duplicate_owned",
+            "title": "Error",
+            "type": "string"
+          },
+          "existing_edge_id": {
+            "description": "The edge the requested owner already holds for this finding.",
+            "format": "uuid",
+            "title": "Existing Edge Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "to_id": {
+            "description": "The owner the claim asked for, who is also the owner of ``existing_edge_id``.",
+            "format": "uuid",
+            "title": "To Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "edge_id",
+          "existing_edge_id",
+          "to_id"
+        ],
+        "title": "FollowupDuplicateOwnedBody",
+        "type": "object"
+      },
+      "FollowupEdgeConflict": {
+        "description": "The body of a 409 from ``POST /plan-library/{artifact_id}/edges``.",
+        "properties": {
+          "detail": {
+            "discriminator": {
+              "mapping": {
+                "followup_already_claimed": "#/components/schemas/FollowupAlreadyClaimedBody",
+                "followup_exists_unowned": "#/components/schemas/FollowupExistsUnownedBody",
+                "followup_resolved": "#/components/schemas/FollowupResolvedBody"
+              },
+              "propertyName": "error"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FollowupAlreadyClaimedBody"
+              },
+              {
+                "$ref": "#/components/schemas/FollowupExistsUnownedBody"
+              },
+              {
+                "$ref": "#/components/schemas/FollowupResolvedBody"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "FollowupEdgeConflict",
+        "type": "object"
+      },
+      "FollowupExistsUnownedBody": {
+        "additionalProperties": false,
+        "description": "The follow-up posted with an owner already exists, and is still open.",
+        "properties": {
+          "error": {
+            "const": "followup_exists_unowned",
+            "title": "Error",
+            "type": "string"
+          },
+          "existing_edge_id": {
+            "description": "The open follow-up; claim it with ``PATCH /edges/{id}``.",
+            "format": "uuid",
+            "title": "Existing Edge Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "requested_to_id": {
+            "description": "The owner the post asked for. It owns nothing yet.",
+            "format": "uuid",
+            "title": "Requested To Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "existing_edge_id",
+          "requested_to_id"
+        ],
+        "title": "FollowupExistsUnownedBody",
         "type": "object"
       },
       "FollowupFacts": {
@@ -27196,6 +27372,45 @@
           "resolution"
         ],
         "title": "FollowupResolutionRequest",
+        "type": "object"
+      },
+      "FollowupResolvedBody": {
+        "additionalProperties": false,
+        "description": "A resolution already closed the follow-up.",
+        "properties": {
+          "edge_id": {
+            "format": "uuid",
+            "title": "Edge Id",
+            "type": "string"
+          },
+          "error": {
+            "const": "followup_resolved",
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "resolution": {
+            "description": "How it was closed.",
+            "enum": [
+              "fixing",
+              "fixed",
+              "already_fixed",
+              "dismissed"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "edge_id",
+          "resolution"
+        ],
+        "title": "FollowupResolvedBody",
         "type": "object"
       },
       "FollowupWriteResponse": {
@@ -40901,6 +41116,20 @@
           "model_selector_vocabulary"
         ],
         "title": "PlanDifficultyResponse",
+        "type": "object"
+      },
+      "PlanLibraryNotFound": {
+        "description": "The body of a 404: ``{\"detail\": \"<what was not found>\"}``.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "PlanLibraryNotFound",
         "type": "object"
       },
       "PlanLibraryVocabularyResponse": {
@@ -116084,7 +116313,7 @@
     },
     "/api/v1/plan-library/edges/{edge_id}": {
       "patch": {
-        "description": "Turn an open ``spawned_followup`` into a two-ended provenance edge.\n\nPhase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. When\nsomebody finally writes the plan (or report, or prompt) that owns work an\nearlier plan surfaced, this is how the two get connected. The ORIGINAL edge\nrow is updated rather than replaced: the follow-up drops out of\n``GET /plan-library/followups`` but stays on the originating artifact's\nedge list, so the trail from \"this plan surfaced it\" to \"that plan owns it\"\nsurvives.\n\n**One owner may claim any number of a source's follow-ups.** A follow-up is\nidentified by the finding it records (its note), not by the pair of\nartifacts it connects, so a plan that writes the work for several\nfollow-ups one earlier plan surfaced claims each in turn. What an owner may\nnot hold twice is the same finding.\n\nFailure modes, each distinguished on purpose \u2014 every error names the\ncondition that actually held:\n\n* **404** \u2014 no such edge in the caller's organization scope. Edges carry no\n  org of their own; the scope is inherited from the originating artifact,\n  so an edge id is not a global handle. Also the answer when the edge was\n  deleted between that read and the row lock.\n* **422 (relation)** \u2014 the edge is not a ``spawned_followup``. The other\n  relations are two-ended already and there is nothing to claim.\n* **422 (target)** \u2014 ``to_id`` names no artifact the caller can see.\n  Checked here so the message is actionable; the FK would otherwise\n  surface it as a 500.\n* **409 ``followup_already_claimed``** \u2014 the edge row already has an owner\n  and it is a DIFFERENT artifact. Claiming is NOT idempotent across\n  different targets: silently re-pointing the edge would erase the first\n  claim with no trace and leave two callers each believing they own the\n  work. The response names the CURRENT owner (``to_id``). Claiming the edge\n  for the owner it ALREADY has is not an error: it is an idempotent replay\n  and answers **200** with the stored edge.\n* **409 ``followup_duplicate_owned``** \u2014 the requested owner already owns\n  ANOTHER edge from the same source with the same note, so this row would\n  be a second copy of it. The response names both edges (``edge_id``,\n  ``existing_edge_id``) and the remedy: dismiss this edge as a duplicate\n  (``POST /plan-library/edges/{edge_id}/resolution`` with ``dismissed`` and\n  a ``resolution_note`` naming the edge it repeats) instead of claiming it.\n  The edge stays open.\n* **409 ``followup_resolved``** \u2014 already resolved (``fixing``, ``fixed``,\n  ``already_fixed``, ``dismissed``): it left the open queue through its\n  resolution, and a row holds at most one way out. The response names the\n  resolution; reopen it\n  (``POST /plan-library/edges/{edge_id}/resolution``) first if an\n  artifact should own it instead.",
+        "description": "Turn an open ``spawned_followup`` into a two-ended provenance edge.\n\nPhase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. When\nsomebody finally writes the plan (or report, or prompt) that owns work an\nearlier plan surfaced, this is how the two get connected. The ORIGINAL edge\nrow is updated rather than replaced: the follow-up drops out of\n``GET /plan-library/followups`` but stays on the originating artifact's\nedge list, so the trail from \"this plan surfaced it\" to \"that plan owns it\"\nsurvives.\n\n**One owner may claim any number of a source's follow-ups.** A follow-up is\nidentified by the finding it records (its note), not by the pair of\nartifacts it connects, so a plan that writes the work for several\nfollow-ups one earlier plan surfaced claims each in turn. What an owner may\nnot hold twice is the same finding: the database refuses a second copy under\none owner, and this door names it.\n\n**This door's duplicate check is per owner; ``POST /{artifact_id}/edges`` is\nper note.** Here the refusals are an edge that already has an owner and a\nsecond copy of a finding under the SAME owner. An open copy of a note that\nANOTHER artifact owns, under a different edge, is not refused: a third\nartifact may claim it. The POST door, which writes the owner itself, names\nthat other owner instead. Dismiss open copies nobody means to claim.\n\nFailure modes, each distinguished on purpose \u2014 every error names the\ncondition that actually held:\n\n* **404** \u2014 no such edge in the caller's organization scope. Edges carry no\n  org of their own; the scope is inherited from the originating artifact,\n  so an edge id is not a global handle. Also the answer when the edge was\n  deleted between that read and the row lock.\n* **422 (relation)** \u2014 the edge is not a ``spawned_followup``. The other\n  relations are two-ended already and there is nothing to claim.\n* **422 (target)** \u2014 ``to_id`` names no artifact the caller can see.\n  Checked here so the message is actionable; the FK would otherwise\n  surface it as a 500.\n* **409 ``followup_already_claimed``** \u2014 the edge row already has an owner\n  and it is a DIFFERENT artifact. Claiming is NOT idempotent across\n  different targets: silently re-pointing the edge would erase the first\n  claim with no trace and leave two callers each believing they own the\n  work. The response names the CURRENT owner (``to_id``). Claiming the edge\n  for the owner it ALREADY has is not an error: it is an idempotent replay\n  and answers **200** with the stored edge.\n* **409 ``followup_duplicate_owned``** \u2014 the requested owner already owns\n  ANOTHER edge from the same source with the same note, so this row would\n  be a second copy of it. The response names both edges (``edge_id``,\n  ``existing_edge_id``), the owner (``to_id``: the requested owner, who also\n  owns ``existing_edge_id``) and the remedy: dismiss this edge as a duplicate\n  (``POST /plan-library/edges/{edge_id}/resolution`` with ``dismissed`` and\n  a ``resolution_note`` naming the edge it repeats) instead of claiming it.\n  The edge stays open.\n* **409 ``followup_resolved``** \u2014 already resolved (``fixing``, ``fixed``,\n  ``already_fixed``, ``dismissed``): it left the open queue through its\n  resolution, and a row holds at most one way out. The response names the\n  resolution; reopen it\n  (``POST /plan-library/edges/{edge_id}/resolution``) first if an\n  artifact should own it instead.",
         "operationId": "api_v1_plan_library_edges_edge_id_patch",
         "parameters": [
           {
@@ -116118,6 +116347,26 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLibraryNotFound"
+                }
+              }
+            },
+            "description": "No such edge in the caller's organization scope (also the answer when the edge was deleted between the read and the row lock)."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowupClaimConflict"
+                }
+              }
+            },
+            "description": "The claim was refused. ``detail.error`` names the condition that held: ``followup_already_claimed`` (the edge has ANOTHER owner, named in ``to_id``), ``followup_duplicate_owned`` (the requested owner already holds this finding under ``existing_edge_id``) or ``followup_resolved``."
           },
           "422": {
             "content": {
@@ -117105,7 +117354,7 @@
     },
     "/api/v1/plan-library/{artifact_id}/edges": {
       "post": {
-        "description": "Create one provenance edge.\n\nSupply exactly one of ``to_id`` (this artifact \u2192 that one, an OUTGOING\nedge) or ``from_id`` (that artifact \u2192 this one, an INCOMING edge).\nRe-posting an identical ``(from, to, relation)`` triple is idempotent and\nreturns 200 for every relation except ``spawned_followup``, which is\nidentified by its note (below).\n\n**``spawned_followup`` is the exception, and the only one.** It records\nwork this artifact SURFACED and deliberately did not do, which by\ndefinition has no artifact to point at yet, so it may be posted with BOTH\nendpoints omitted::\n\n    {\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}\n\n``note`` is then required and must not be blank \u2014 with no far end it is the\nentire content of the row, and an empty one puts an unactionable entry in\nthe open-follow-ups queue forever. Supplying ``to_id`` is still allowed and\nrecords a follow-up that already has an owner; ``from_id`` is not, because\nthe relation is inherently outgoing (this artifact surfaced that work).\n\n**A follow-up is identified by its note, in every state \u2014 not by the pair\nof artifacts it connects.** Re-posting the same note is idempotent on\n``(from_id, relation, note)`` whether the stored follow-up is open, owned\nby an artifact or resolved, and returns THAT row (its ``to_id``, ``peer_*``\nand ``followup.state`` as stored); a DIFFERENT note is a second follow-up \u2014\na plan may surface several, and one owner may hold any number of a source's.\nA one-ended post never inserts an open copy beside an owned row.\n\nA post that names an owner (``to_id``) must agree with the stored row's\nowner. The same finding already owned by that artifact is idempotent (200).\nOtherwise the answer is a **409** that names the condition that held:\n``followup_already_claimed`` (owned by ANOTHER artifact \u2014 ``to_id`` is the\nstored owner), ``followup_exists_unowned`` (still open \u2014 claim it with\n``PATCH /plan-library/edges/{existing_edge_id}`` instead; this door never\nmoves ownership of an existing row) or ``followup_resolved``.\n\nA ``spawned_followup`` may also carry ``anchors`` (the files it is about:\n``{repo: \"owner/name\", path, line_start?, line_end?, symbol?}``),\n``size_class`` (``trivial`` | ``small`` | ``plan_sized``) and \u2014 when it names\nno file \u2014 ``unanchored_reason``. All OPTIONAL for now (plan\n``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down`` D3:\nthe refusal of the note-only shape lands after every writer sends the new\none). They are stored atomically with a new follow-up; a re-post that lands\non an existing one fills only what it lacks (anchors when it has none, a\nclass when it is unclassified) and never overwrites \u2014\n``PUT /plan-library/edges/{edge_id}/anchors`` replaces. The response's\n``followup`` block is the row as stored, including its ``state``: a\nre-post of a RESOLVED follow-up's note returns that resolved row.\n\nEvery other relation still REJECTS a null target here, with a 422 rather\nthan a database error. That is deliberate belt and braces:\n``ck_work_artifact_edges_open_target`` would refuse the row anyway, but\n``/candidates`` computes unmet dependencies by joining ``depends_on``\nthrough ``to_id``, so a null target slipping in would make a blocked plan\nread as ready \u2014 the failure is quiet enough to be worth two guards.\n\nA self-edge is refused. ``/candidates`` walks ``depends_on`` to compute\nunmet dependencies, so an artifact pointing at itself becomes its own\npermanently-unmet blocker and can never be reported as ready \u2014 and the\nprompt-chain walk would have to defend against the same cycle. There is\nno provenance relation an artifact can meaningfully hold with itself.",
+        "description": "Create one provenance edge.\n\nSupply exactly one of ``to_id`` (this artifact \u2192 that one, an OUTGOING\nedge) or ``from_id`` (that artifact \u2192 this one, an INCOMING edge).\nRe-posting an identical ``(from, to, relation)`` triple is idempotent and\nreturns 200 for every relation except ``spawned_followup``, which is\nidentified by its note (below).\n\n**``spawned_followup`` is the exception, and the only one.** It records\nwork this artifact SURFACED and deliberately did not do, which by\ndefinition has no artifact to point at yet, so it may be posted with BOTH\nendpoints omitted::\n\n    {\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}\n\n``note`` is then required and must not be blank \u2014 with no far end it is the\nentire content of the row, and an empty one puts an unactionable entry in\nthe open-follow-ups queue forever. Supplying ``to_id`` is still allowed and\nrecords a follow-up that already has an owner; ``from_id`` is not, because\nthe relation is inherently outgoing (this artifact surfaced that work).\n\n**A follow-up is identified by its note, not by the pair of artifacts it\nconnects.** The database keys OPEN follow-ups by ``(source, note)`` and OWNED\nones by ``(source, owner, note)``; it relates neither an open row to an owned\none nor two owners of one note. Across them ``(source, note)`` is the\nidentity because THIS door looks the note up whatever its state or owner and\nserializes that lookup with the insert per ``(source, note)``: two concurrent\nposts of one finding cannot both insert. Re-posting the same note is\nidempotent on ``(from_id, relation, note)`` whether the stored follow-up is\nopen, owned by an artifact or resolved, and returns THAT row (its ``to_id``,\n``peer_*`` and ``followup.state`` as stored); a DIFFERENT note is a second\nfollow-up \u2014 a plan may surface several, and one owner may hold any number of\na source's. A one-ended post never inserts an open copy beside an owned row\n(open copies an earlier build left are not touched).\n\nA post that names an owner (``to_id``) must agree with the stored row's\nowner. The same finding already owned by that artifact is idempotent (200).\nOtherwise the answer is a **409** that names the condition that held:\n``followup_already_claimed`` (owned by ANOTHER artifact \u2014 ``to_id`` is the\nSTORED owner), ``followup_exists_unowned`` (still open \u2014 claim\n``existing_edge_id`` with ``PATCH /plan-library/edges/{existing_edge_id}``\ninstead; ``requested_to_id`` is the owner this post asked for; this door\nnever moves ownership of an existing row) or ``followup_resolved``. The claim\ndoor is looser in one case: it does not refuse an open copy of a note that\nanother artifact owns (see ``PATCH /plan-library/edges/{edge_id}``).\n\nA ``spawned_followup`` may also carry ``anchors`` (the files it is about:\n``{repo: \"owner/name\", path, line_start?, line_end?, symbol?}``),\n``size_class`` (``trivial`` | ``small`` | ``plan_sized``) and \u2014 when it names\nno file \u2014 ``unanchored_reason``. All OPTIONAL for now (plan\n``2026-10-10-small-followups-are-recorded-but-nothing-burns-them-down`` D3:\nthe refusal of the note-only shape lands after every writer sends the new\none). They are stored atomically with a new follow-up; a re-post that lands\non an existing one fills only what it lacks (anchors when it has none, a\nclass when it is unclassified) and never overwrites \u2014\n``PUT /plan-library/edges/{edge_id}/anchors`` replaces. The response's\n``followup`` block is the row as stored, including its ``state``: a\nre-post of a RESOLVED follow-up's note returns that resolved row.\n\nEvery other relation still REJECTS a null target here, with a 422 rather\nthan a database error. That is deliberate belt and braces:\n``ck_work_artifact_edges_open_target`` would refuse the row anyway, but\n``/candidates`` computes unmet dependencies by joining ``depends_on``\nthrough ``to_id``, so a null target slipping in would make a blocked plan\nread as ready \u2014 the failure is quiet enough to be worth two guards.\n\nA self-edge is refused. ``/candidates`` walks ``depends_on`` to compute\nunmet dependencies, so an artifact pointing at itself becomes its own\npermanently-unmet blocker and can never be reported as ready \u2014 and the\nprompt-chain walk would have to defend against the same cycle. There is\nno provenance relation an artifact can meaningfully hold with itself.",
         "operationId": "api_v1_plan_library_artifact_id_edges_post",
         "parameters": [
           {
@@ -117139,6 +117388,26 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLibraryNotFound"
+                }
+              }
+            },
+            "description": "The artifact in the path, or the artifact at the other end of the edge, is not in the caller's organization scope."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowupEdgeConflict"
+                }
+              }
+            },
+            "description": "A ``spawned_followup`` posted with an owner met the stored row for the same finding. ``detail.error`` names the condition that held: ``followup_already_claimed`` (owned by ANOTHER artifact, named in ``to_id``), ``followup_exists_unowned`` (still open: claim ``existing_edge_id``; ``requested_to_id`` is the owner this post asked for) or ``followup_resolved``."
           },
           "422": {
             "content": {

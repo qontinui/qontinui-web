@@ -1654,6 +1654,42 @@ def _violated_constraint(exc: IntegrityError) -> str | None:
     return match.group(1) if match else None
 
 
+#: Serializes the writers of ONE follow-up finding: ``(source, trimmed note)``,
+#: the grain :func:`_find_existing_edge` looks up by. The note is trimmed IN SQL
+#: with the same ``btrim(note, NOTE_TRIM_CHARS)`` as the lookup and both guard
+#: indexes, so every spelling the lookup reads as one finding takes the same lock.
+_FOLLOWUP_IDENTITY_LOCK = text(
+    "SELECT pg_advisory_xact_lock(hashtextextended("
+    "'plan_library.spawned_followup:' || CAST(:from_id AS text) || ':' "
+    "|| btrim(CAST(:note AS text), CAST(:chars AS text)), 0))"
+)
+
+
+async def _lock_followup_identity(
+    db: AsyncSession, *, from_id: UUID, note: str | None
+) -> None:
+    """Take the transaction-scoped advisory lock for one follow-up finding.
+
+    The database cannot make a follow-up's note its identity on its own. It keys
+    OPEN follow-ups by ``(source, note)`` and OWNED ones by ``(source, owner,
+    note)`` - a unique ``(source, note)`` over every state could fail on rows an
+    earlier build left behind - and relates nothing across them. So two writers
+    posting one finding for DIFFERENT owners, or once open and once owned, both
+    miss in :func:`_find_existing_edge` and both insert, and no constraint
+    refuses either. Taking this lock before the lookup makes the second writer
+    wait for the first to commit or roll back; its lookup then finds the row.
+
+    Released by the commit or rollback that ends the writer's transaction, never
+    by hand. The 64-bit hash can collide, which only serializes two unrelated
+    notes. It covers writers that come through :func:`create_edge`; raw SQL, and
+    the open copies an earlier build left beside owned rows, are outside it.
+    """
+    await db.execute(
+        _FOLLOWUP_IDENTITY_LOCK,
+        {"from_id": str(from_id), "note": note or "", "chars": NOTE_TRIM_CHARS},
+    )
+
+
 async def _find_existing_edge(
     db: AsyncSession,
     *,
@@ -1664,11 +1700,18 @@ async def _find_existing_edge(
 ) -> WorkArtifactEdge | None:
     """The stored edge a write of ``(from_id, to_id, relation, note)`` repeats.
 
-    **A follow-up's identity is its NOTE, in every state.** For
+    **A follow-up is looked up by its NOTE, whatever its state or owner.** For
     :data:`SPAWNED_FOLLOWUP_RELATION` the key is ``(from_id, relation,
     btrim(note))`` with NO ``to_id`` predicate, so an open row, a claimed row
     and a resolved one are all found by what they say, for the one-ended post
-    and the two-ended post alike. BOTH sides are trimmed in SQL with
+    and the two-ended post alike. That is wider than anything the database
+    enforces: it keys OPEN rows by ``(source, note)``
+    (``uq_work_artifact_edges_open_followup``) and OWNED rows by ``(source,
+    owner, note)`` (``uq_work_artifact_edges_owned_followup``), and relates
+    neither an open row to an owned one nor two owned rows with different
+    owners. Across those populations the note is the identity only because every
+    writer comes through here, under :func:`_lock_followup_identity`. BOTH sides
+    are trimmed in SQL with
     :data:`NOTE_TRIM_CHARS` - the exact expression the two follow-up guard
     indexes (``uq_work_artifact_edges_open_followup``,
     ``uq_work_artifact_edges_owned_followup``) index - rather than trimming the
@@ -1727,11 +1770,22 @@ async def create_edge(
     depends on the relation (:func:`_find_existing_edge`):
 
     * every relation but the follow-up: the ``(from, to, relation)`` triple;
-    * ``spawned_followup``: ``(from, relation, note)`` - the finding itself,
-      whoever owns it, in every state. A source may therefore have several
-      follow-ups with ONE owner (different notes), and re-posting the note of a
-      CLAIMED follow-up returns the claimed row instead of inserting an open
-      copy beside it.
+    * ``spawned_followup``: ``(from, relation, note)`` - looked up whoever owns
+      it and whatever its state. A source may therefore have several follow-ups
+      with ONE owner (different notes), and re-posting the note of a CLAIMED
+      follow-up returns the claimed row instead of inserting an open copy
+      beside it.
+
+    **The lookup and the insert of a follow-up are serialized per ``(source,
+    note)``.** The first thing a follow-up post does is take
+    :func:`_lock_followup_identity`, and it holds it until its transaction ends.
+    The database keys open follow-ups by ``(source, note)`` and owned ones by
+    ``(source, owner, note)`` and relates nothing across them, so without the
+    lock two posts of one finding - for different owners, or one one-ended and
+    one owned - would both miss in the lookup and both insert. With it the
+    second waits for the first to commit and its lookup finds the row. Writers
+    that bypass this function (raw SQL) and open copies an earlier build left
+    beside owned rows are outside it.
 
     ``on_write(edge, created)``, when given, runs INSIDE the same transaction,
     after the new row is flushed (``created``) or the existing one found, and
@@ -1764,14 +1818,18 @@ async def create_edge(
     ownership beside the one-way claim route.
 
     The write runs under a SAVEPOINT. A racing writer that recorded the same
-    edge between the lookup and the INSERT trips one of the identity indexes
-    (:data:`_EDGE_IDENTITY_INDEXES`); only the savepoint rolls back - a plain
+    edge between the lookup and the INSERT - another relation's duplicate triple,
+    or a follow-up written outside this function - trips one of the identity
+    indexes (:data:`_EDGE_IDENTITY_INDEXES`); only the savepoint rolls back - a plain
     ``rollback()`` would also discard everything the caller's transaction
     already held - and the lookup runs again. Any other ``IntegrityError``, or
     one whose edge cannot then be found, is re-raised as it is.
     """
     from_id = from_artifact.id
     to_id = to_artifact.id if to_artifact is not None else None
+
+    if relation == SPAWNED_FOLLOWUP_RELATION:
+        await _lock_followup_identity(db, from_id=from_id, note=note)
 
     found = await _find_existing_edge(
         db, from_id=from_id, to_id=to_id, relation=relation, note=note
@@ -1820,7 +1878,7 @@ def _refuse_other_owner(found: WorkArtifactEdge, to_id: UUID) -> None:
         raise FollowupAlreadyClaimed(edge_id=found.id, to_id=found.to_id)
     if found.resolution is not None:
         raise FollowupResolved(edge_id=found.id, resolution=found.resolution)
-    raise FollowupExistsUnowned(existing_edge_id=found.id, to_id=to_id)
+    raise FollowupExistsUnowned(existing_edge_id=found.id, requested_to_id=to_id)
 
 
 async def _settle_found_edge(
@@ -1876,7 +1934,8 @@ class FollowupDuplicateOwned(Exception):
     """The requested owner already owns this finding, under another edge.
 
     A source may have many follow-ups with one owner, but never the same note
-    twice (``uq_work_artifact_edges_owned_followup``). Claiming ``edge_id`` for
+    twice (``uq_work_artifact_edges_owned_followup``, which is keyed by owner:
+    ANOTHER artifact owning the same note is not this error). Claiming ``edge_id`` for
     ``to_id`` would make it a second copy of ``existing_edge_id``, which ``to_id``
     already owns off the same source - so the claim is refused and the row stays
     open. The remedy is to dismiss this edge as a duplicate
@@ -1906,17 +1965,19 @@ class FollowupExistsUnowned(Exception):
     owner would be a second owner-moving door beside the one-way claim, so the
     post is refused and names the row to claim instead:
     ``PATCH /plan-library/edges/{existing_edge_id}`` with ``{"to_id": ...}``.
-    Surfaced as a 409.
+    Surfaced as a 409. ``requested_to_id`` is the owner the POST asked for - not
+    an owner of anything, and so not called ``to_id`` as it is in
+    :class:`FollowupAlreadyClaimed`, where it is the CURRENT owner.
     """
 
-    def __init__(self, *, existing_edge_id: UUID, to_id: UUID) -> None:
+    def __init__(self, *, existing_edge_id: UUID, requested_to_id: UUID) -> None:
         self.existing_edge_id = existing_edge_id
-        self.to_id = to_id
+        self.requested_to_id = requested_to_id
         super().__init__(
             f"follow-up edge {existing_edge_id} already records this finding and "
             "has no owner yet; claim it with "
             f"PATCH /plan-library/edges/{existing_edge_id} "
-            f'{{"to_id": "{to_id}"}} instead of posting it again'
+            f'{{"to_id": "{requested_to_id}"}} instead of posting it again'
         )
 
 
@@ -2155,8 +2216,12 @@ async def _owned_twin(
 
 async def claim_followup(
     db: AsyncSession, edge_id: UUID, to_id: UUID
-) -> WorkArtifactEdge:
+) -> tuple[WorkArtifactEdge, bool]:
     """Name the artifact that owns an open follow-up.
+
+    Returns ``(edge, changed)``: ``changed`` is ``False`` for an idempotent
+    replay (the edge already belongs to ``to_id``; nothing was written) and
+    ``True`` when this call moved it from open to owned.
 
     The edge stops being open and becomes an ordinary two-ended provenance
     link. Nothing is created and nothing is deleted - the ORIGINAL row is
@@ -2175,13 +2240,33 @@ async def claim_followup(
     * ``to_id`` already owns another edge from the same source with the same
       note - :class:`FollowupDuplicateOwned`, naming that edge.
 
+    **This door's duplicate check is per OWNER; ``POST /{artifact_id}/edges`` is
+    per NOTE.** Here the refusal is for the SAME owner holding the finding (the
+    database guards exactly that) or for an edge that already has an owner. An
+    open copy of a note that ANOTHER artifact owns under a different edge is NOT
+    refused: it can be claimed by a third artifact. The POST door, which writes
+    the owner itself, names that other owner instead. Open copies that nobody
+    means to claim should be dismissed as duplicates.
+
+    **No advisory lock here, deliberately.** :func:`create_edge` serializes a
+    follow-up's writers per ``(source, note)`` with one; this function is not one
+    of them. It creates nothing - it can only move an open row to owned - and the
+    one duplicate it refuses is guarded by the owned-note index, so the twin
+    lookup is a faster route to the database's own answer, not the only one.
+    Taking the lock here would also be unsound where it matters: the key needs
+    the row's ``(from_id, note)``, which only the row lock below hands over, and
+    :func:`create_edge` takes the advisory lock BEFORE the row lock it needs to
+    fill anchors on a re-post. The opposite order here would deadlock a claim
+    against a re-post of the same finding.
+
     The checks run against the row AS LOCKED (``populate_existing``), not the
     caller's earlier read: two agents claiming the same follow-up concurrently
     would otherwise both see ``to_id IS NULL``, both write, and the second would
     overwrite the first with no record.
 
-    The UPDATE runs under a SAVEPOINT. The database is the backstop for the race
-    between the twin lookup and the write: when ``uq_work_artifact_edges_owned_followup``
+    The UPDATE runs under a SAVEPOINT. The database backstops the SAME-OWNER
+    twin only (the index is keyed by owner), and the race between the twin
+    lookup and the write: when ``uq_work_artifact_edges_owned_followup``
     refuses the claim, only the savepoint rolls back (a plain ``rollback()`` would
     also discard everything the caller's transaction held), the twin lookup runs
     again, and :class:`FollowupDuplicateOwned` is raised if it finds one. Any
@@ -2216,7 +2301,7 @@ async def claim_followup(
 
     if edge.to_id is not None:
         if edge.to_id == to_id:
-            return edge
+            return edge, False
         raise FollowupAlreadyClaimed(edge_id=edge_id, to_id=edge.to_id)
 
     if edge.resolution is not None:
@@ -2255,7 +2340,7 @@ async def claim_followup(
         raise
     await db.commit()
     await db.refresh(edge)
-    return edge
+    return edge, True
 
 
 @dataclass(frozen=True)

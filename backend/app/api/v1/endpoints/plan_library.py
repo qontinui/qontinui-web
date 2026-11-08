@@ -223,7 +223,13 @@ from app.schemas.plan_library import (
     WorkUnitPopulationState,
 )
 from app.schemas.plan_library_followups import (
+    CLAIM_FOLLOWUP_RESPONSES,
+    CREATE_EDGE_RESPONSES,
+    FollowupAlreadyClaimedBody,
+    FollowupDuplicateOwnedBody,
+    FollowupExistsUnownedBody,
     FollowupFilters,
+    FollowupResolvedBody,
     FollowupSizeClassFilter,
     FollowupStateFilter,
     OpenFollowupResponse,
@@ -4910,37 +4916,56 @@ def _followup_conflict(
     """The 409 for each way a follow-up write meets the row that already
     records the finding. Every ``error`` names the condition that HELD, derived
     from that row - ``followup_already_claimed`` always names its CURRENT owner.
+
+    The body is built FROM the models ``responses=`` documents
+    (``app.schemas.plan_library_followups``), so what OpenAPI says and what is
+    served are one definition.
     """
     if isinstance(exc, crud.FollowupAlreadyClaimed):
-        detail: dict[str, object] = {
-            "error": "followup_already_claimed",
-            "message": str(exc),
-            "edge_id": str(exc.edge_id),
-            "to_id": str(exc.to_id),
-        }
+        body: (
+            FollowupAlreadyClaimedBody
+            | FollowupDuplicateOwnedBody
+            | FollowupExistsUnownedBody
+            | FollowupResolvedBody
+        ) = FollowupAlreadyClaimedBody.model_validate(
+            {
+                "error": "followup_already_claimed",
+                "message": str(exc),
+                "edge_id": exc.edge_id,
+                "to_id": exc.to_id,
+            }
+        )
     elif isinstance(exc, crud.FollowupDuplicateOwned):
-        detail = {
-            "error": "followup_duplicate_owned",
-            "message": str(exc),
-            "edge_id": str(exc.edge_id),
-            "existing_edge_id": str(exc.existing_edge_id),
-            "to_id": str(exc.to_id),
-        }
+        body = FollowupDuplicateOwnedBody.model_validate(
+            {
+                "error": "followup_duplicate_owned",
+                "message": str(exc),
+                "edge_id": exc.edge_id,
+                "existing_edge_id": exc.existing_edge_id,
+                "to_id": exc.to_id,
+            }
+        )
     elif isinstance(exc, crud.FollowupExistsUnowned):
-        detail = {
-            "error": "followup_exists_unowned",
-            "message": str(exc),
-            "existing_edge_id": str(exc.existing_edge_id),
-            "to_id": str(exc.to_id),
-        }
+        body = FollowupExistsUnownedBody.model_validate(
+            {
+                "error": "followup_exists_unowned",
+                "message": str(exc),
+                "existing_edge_id": exc.existing_edge_id,
+                "requested_to_id": exc.requested_to_id,
+            }
+        )
     else:
-        detail = {
-            "error": "followup_resolved",
-            "message": str(exc),
-            "edge_id": str(exc.edge_id),
-            "resolution": exc.resolution,
-        }
-    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+        body = FollowupResolvedBody.model_validate(
+            {
+                "error": "followup_resolved",
+                "message": str(exc),
+                "edge_id": exc.edge_id,
+                "resolution": exc.resolution,
+            }
+        )
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT, detail=body.model_dump(mode="json")
+    )
 
 
 # NOTE: declared BEFORE ``/{artifact_id}/kind`` so the literal ``edges``
@@ -4949,6 +4974,7 @@ def _followup_conflict(
     "/edges/{edge_id}",
     response_model=WorkArtifactEdgeRead,
     summary="Claim an open follow-up by naming the artifact that owns it",
+    responses=CLAIM_FOLLOWUP_RESPONSES,
 )
 async def claim_followup_edge(
     edge_id: UUID,
@@ -4970,7 +4996,15 @@ async def claim_followup_edge(
     identified by the finding it records (its note), not by the pair of
     artifacts it connects, so a plan that writes the work for several
     follow-ups one earlier plan surfaced claims each in turn. What an owner may
-    not hold twice is the same finding.
+    not hold twice is the same finding: the database refuses a second copy under
+    one owner, and this door names it.
+
+    **This door's duplicate check is per owner; ``POST /{artifact_id}/edges`` is
+    per note.** Here the refusals are an edge that already has an owner and a
+    second copy of a finding under the SAME owner. An open copy of a note that
+    ANOTHER artifact owns, under a different edge, is not refused: a third
+    artifact may claim it. The POST door, which writes the owner itself, names
+    that other owner instead. Dismiss open copies nobody means to claim.
 
     Failure modes, each distinguished on purpose — every error names the
     condition that actually held:
@@ -4994,7 +5028,8 @@ async def claim_followup_edge(
     * **409 ``followup_duplicate_owned``** — the requested owner already owns
       ANOTHER edge from the same source with the same note, so this row would
       be a second copy of it. The response names both edges (``edge_id``,
-      ``existing_edge_id``) and the remedy: dismiss this edge as a duplicate
+      ``existing_edge_id``), the owner (``to_id``: the requested owner, who also
+      owns ``existing_edge_id``) and the remedy: dismiss this edge as a duplicate
       (``POST /plan-library/edges/{edge_id}/resolution`` with ``dismissed`` and
       a ``resolution_note`` naming the edge it repeats) instead of claiming it.
       The edge stays open.
@@ -5041,7 +5076,7 @@ async def claim_followup_edge(
         )
 
     try:
-        claimed = await crud.claim_followup(db, edge_id, payload.to_id)
+        claimed, changed = await crud.claim_followup(db, edge_id, payload.to_id)
     except crud.FollowupVanished as exc:
         # Deleted between the read above and the row lock: the same answer an
         # unknown edge id gets, and never a claim conflict.
@@ -5056,8 +5091,12 @@ async def claim_followup_edge(
     ) as exc:
         raise _followup_conflict(exc) from exc
 
+    # A replay wrote nothing: say so, so the audit trail does not count a second
+    # claim of an edge that was already the owner's.
     logger.info(
-        "plan_library.followup_claimed",
+        "plan_library.followup_claimed"
+        if changed
+        else "plan_library.followup_claim_replayed",
         edge_id=str(claimed.id),
         from_id=str(claimed.from_id),
         from_slug=origin.slug,
@@ -5165,6 +5204,7 @@ async def patch_work_artifact_kind(
     "/{artifact_id}/edges",
     response_model=WorkArtifactEdgeRead,
     summary="Link this artifact to another (outgoing or incoming)",
+    responses=CREATE_EDGE_RESPONSES,
 )
 async def create_work_artifact_edge(
     artifact_id: UUID,
@@ -5194,21 +5234,30 @@ async def create_work_artifact_edge(
     records a follow-up that already has an owner; ``from_id`` is not, because
     the relation is inherently outgoing (this artifact surfaced that work).
 
-    **A follow-up is identified by its note, in every state — not by the pair
-    of artifacts it connects.** Re-posting the same note is idempotent on
-    ``(from_id, relation, note)`` whether the stored follow-up is open, owned
-    by an artifact or resolved, and returns THAT row (its ``to_id``, ``peer_*``
-    and ``followup.state`` as stored); a DIFFERENT note is a second follow-up —
-    a plan may surface several, and one owner may hold any number of a source's.
-    A one-ended post never inserts an open copy beside an owned row.
+    **A follow-up is identified by its note, not by the pair of artifacts it
+    connects.** The database keys OPEN follow-ups by ``(source, note)`` and OWNED
+    ones by ``(source, owner, note)``; it relates neither an open row to an owned
+    one nor two owners of one note. Across them ``(source, note)`` is the
+    identity because THIS door looks the note up whatever its state or owner and
+    serializes that lookup with the insert per ``(source, note)``: two concurrent
+    posts of one finding cannot both insert. Re-posting the same note is
+    idempotent on ``(from_id, relation, note)`` whether the stored follow-up is
+    open, owned by an artifact or resolved, and returns THAT row (its ``to_id``,
+    ``peer_*`` and ``followup.state`` as stored); a DIFFERENT note is a second
+    follow-up — a plan may surface several, and one owner may hold any number of
+    a source's. A one-ended post never inserts an open copy beside an owned row
+    (open copies an earlier build left are not touched).
 
     A post that names an owner (``to_id``) must agree with the stored row's
     owner. The same finding already owned by that artifact is idempotent (200).
     Otherwise the answer is a **409** that names the condition that held:
     ``followup_already_claimed`` (owned by ANOTHER artifact — ``to_id`` is the
-    stored owner), ``followup_exists_unowned`` (still open — claim it with
-    ``PATCH /plan-library/edges/{existing_edge_id}`` instead; this door never
-    moves ownership of an existing row) or ``followup_resolved``.
+    STORED owner), ``followup_exists_unowned`` (still open — claim
+    ``existing_edge_id`` with ``PATCH /plan-library/edges/{existing_edge_id}``
+    instead; ``requested_to_id`` is the owner this post asked for; this door
+    never moves ownership of an existing row) or ``followup_resolved``. The claim
+    door is looser in one case: it does not refuse an open copy of a note that
+    another artifact owns (see ``PATCH /plan-library/edges/{edge_id}``).
 
     A ``spawned_followup`` may also carry ``anchors`` (the files it is about:
     ``{repo: "owner/name", path, line_start?, line_end?, symbol?}``),

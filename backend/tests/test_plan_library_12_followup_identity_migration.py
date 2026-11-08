@@ -268,9 +268,9 @@ def test_the_assertion_names_both_new_indexes_and_the_recovery() -> None:
 
 def test_the_predicates_are_the_models() -> None:
     """The model's constants are the ONE spelling; the revision cannot import
-    them (no revision imports ``app``) or interpolate them (the classifier
-    refuses an f-string), so they are pinned equal here instead - and the
-    owned-note index carries ``NOTE_TRIM_SQL`` verbatim, backslash escapes
+    them (no revision imports ``app`` at module scope) or interpolate them (the
+    classifier refuses an f-string), so they are pinned equal here instead - and
+    the owned-note index carries ``NOTE_TRIM_SQL`` verbatim, backslash escapes
     included (a Python ``"\\t"`` would hand PostgreSQL a literal tab)."""
     sql = {
         kind_sql

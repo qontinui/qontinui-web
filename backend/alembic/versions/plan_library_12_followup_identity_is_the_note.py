@@ -23,9 +23,17 @@ source gets the same owner, both rows read ``(source, owner,
 one of a source plan's follow-ups, and the claim route reported the refusal as
 "already claimed by <the REQUESTED owner>" while the edge stayed open.
 
-A follow-up's identity is the finding it records. Inside a source plan that is
-its NOTE (in every state), and an owned follow-up is therefore keyed by what it
-says as well as by whom it connects.
+A follow-up's identity is the finding it records, which inside a source plan is
+its NOTE. The database can state that only per population. It already keys OPEN
+follow-ups by ``(source, note)`` (``uq_work_artifact_edges_open_followup``); this
+revision keys OWNED ones by ``(source, owner, note)``, so an owned follow-up is
+identified by what it says as well as by whom it connects. It relates neither an
+open row to an owned one nor two owners of one note: a unique ``(source, note)``
+over every state could fail on rows earlier builds left behind, so that is the
+follow-up once a census of them reads zero. Until then identity ACROSS states
+and owners is enforced by the write doors' lookups, which ``create_edge``
+serializes per ``(source, note)`` with a transaction-scoped advisory lock - two
+concurrent posts of one finding cannot both insert.
 
 What this revision does
 =======================
@@ -79,9 +87,11 @@ Anything that restores a pair index covering ``spawned_followup`` reddens
 ratchet in its own PR.
 
 The predicates are those two constants spelled out: this revision imports
-nothing from ``app`` (no revision in this tree does) and coord's migration
-classifier refuses an interpolated ``op.execute``, so the test pins the two
-equal, and equal through PostgreSQL's own normalisation of the model's DDL.
+nothing from ``app`` (no revision in this tree imports it at module scope; the
+one guarded import, in ``github_id_01_add_github_identity``, sits inside a
+function) and coord's migration classifier refuses an interpolated
+``op.execute``, so the test pins the two equal, and equal through PostgreSQL's
+own normalisation of the model's DDL.
 
 coord's classifier
 ------------------
