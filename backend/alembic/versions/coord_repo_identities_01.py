@@ -1,7 +1,7 @@
 """coord.repo_identities, and canonical_repos.bare_dir -- following a repo rename
 
 Revision ID: coord_repo_identities_01
-Revises: outbound_budget_windows_01
+Revises: coord_test_result_runs_01
 Create Date: 2026-11-08
 
 Phases 3 and 4a (qontinui-web half) of plan
@@ -114,8 +114,9 @@ un-enrollment that writes it can run on a tenant-scoped connection.
 
 ``down_revision`` is the repo's single alembic head at authoring time
 (``scripts/ci/count_alembic_heads.py``: ``HEAD_COUNT=1``,
-``HEAD=outbound_budget_windows_01``, 2026-11-08). coord re-points it at land
-time if a sibling lands first; the companion test reads the parent from this
+``HEAD=coord_test_result_runs_01``, re-pointed 2026-11-08 after that sibling
+landed on ``main`` with the same parent). coord re-points it at land time if
+another sibling lands first; the companion test reads the parent from this
 file, so it moves with it.
 
 ## Two-repo ordering -- this schema half lands FIRST
@@ -143,7 +144,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "coord_repo_identities_01"
-down_revision: str | Sequence[str] | None = "outbound_budget_windows_01"
+down_revision: str | Sequence[str] | None = "coord_test_result_runs_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
