@@ -6,7 +6,6 @@
  * - /projects/[projectId]/testing/coverage (project coverage analysis)
  * - /projects/[projectId]/testing/deficiencies (project deficiency tracking)
  * - /projects/[projectId]/testing/integration (integration testing hub)
- * - /projects/[projectId]/testing/live (live testing with tabbed history)
  * - /projects/[projectId]/testing/runs/[runId] (run detail with timeline)
  */
 
@@ -31,16 +30,13 @@ test.describe("Project Testing Dashboard", () => {
     await expect(page.locator("h1")).toContainText("Testing Dashboard");
   });
 
-  test("should display 4-view selector buttons", async ({ page }) => {
+  test("should display 3-view selector buttons", async ({ page }) => {
     await page.goto(`/projects/${TEST_PROJECT_ID}/testing`);
     await page.waitForLoadState("domcontentloaded");
 
-    // View selector buttons: Test Runs, Live Execution, Coverage Trends, Reliability
+    // View selector buttons: Test Runs, Coverage Trends, Reliability
     await expect(
       page.getByRole("button", { name: /Test Runs/i }).first()
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /Live Execution/i })
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: /Coverage Trends/i })
@@ -267,64 +263,6 @@ test.describe("Project Testing - Integration Page", () => {
         { timeout: 15000 }
       )
       .toBeTruthy();
-  });
-});
-
-test.describe("Project Testing - Live Page", () => {
-  test("should load without errors and display heading", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
-    await page.waitForLoadState("domcontentloaded");
-
-    await page.screenshot({
-      path: "test-results/pages-testing-project-live.png",
-      fullPage: true,
-    });
-
-    const pageContent = await page.content();
-    expect(pageContent).not.toContain("Internal Server Error");
-
-    await expect(page.locator("h1")).toContainText("Live Testing Dashboard");
-  });
-
-  test("should display tabs for Live Execution and Test History", async ({
-    page,
-  }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
-    await page.waitForLoadState("domcontentloaded");
-
-    // Tabs: Live Execution and Test History
-    await expect(
-      page.getByRole("tab", { name: /Live Execution/i })
-    ).toBeVisible();
-    await expect(
-      page.getByRole("tab", { name: /Test History/i })
-    ).toBeVisible();
-  });
-
-  test("should show no-active-test message on Live tab", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
-    await page.waitForLoadState("domcontentloaded");
-
-    // When no test run is selected, shows "No Active Test" message
-    await expect(page.getByText("No Active Test").first()).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /Start New Test/i }).first()
-    ).toBeVisible();
-  });
-
-  test("should switch to Test History tab and show filters", async ({
-    page,
-  }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
-    await page.waitForLoadState("domcontentloaded");
-
-    // Click Test History tab
-    await page.getByRole("tab", { name: /Test History/i }).click();
-
-    // Verify filters section appears (auto-waits)
-    await expect(page.getByText("Test History").first()).toBeVisible();
-    await expect(page.getByText("Filters").first()).toBeVisible();
-    await expect(page.getByPlaceholder("Search test runs...")).toBeVisible();
   });
 });
 
