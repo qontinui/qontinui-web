@@ -715,17 +715,57 @@ async def delete_device(
     device_id: UUID,
     user_id: UUID,
 ) -> None:
-    """Delete a device registration owned by ``user_id``."""
-    record = await get_device(db, device_id)
-    if record is None:
+    """Delete a device registration owned by ``user_id``.
+
+    EXCEPT a row carrying the CI-registrar marker (see
+    :data:`CI_RUNNER_CAPABILITY`): that is refused with 409
+    ``device_is_ci_runner`` and nothing is deleted. Coord's registrar owns
+    those rows. Deleting one would also cascade away every
+    ``coord.tenant_devices`` edge on it, the registrar's owner edge included,
+    until the registrar's next tick re-creates the row (coord finding
+    ``98118771``). A marked row has an owner only once it has been squatted and
+    claimed, so in practice the refusal reaches the squatter.
+
+    The row is locked (``SELECT … FOR UPDATE``) and the decision read from
+    the locked row, the marker from the statement itself. A registrar's mark
+    therefore either commits before the lock and is seen, or waits for this
+    delete. A caller who does not own the row gets the same answers as before
+    (404 for no row, then 403). The marker is checked only for the owner, so
+    the 409 tells no one else that an id is a registrar row.
+    """
+    row = (
+        await db.execute(
+            select(Device, _ci_runner_marker())
+            .where(Device.device_id == device_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).one_or_none()
+    if row is None:
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Device not found",
         )
+    record, marked = row
     if record.user_id != user_id:
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not own this device",
+        )
+    if marked:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": DEVICE_IS_CI_RUNNER,
+                "code": DEVICE_IS_CI_RUNNER,
+                "message": (
+                    "This device id is a CI runner row, which only coord's CI "
+                    "runner registrar may write or remove; nothing was deleted."
+                ),
+            },
         )
 
     await db.delete(record)
