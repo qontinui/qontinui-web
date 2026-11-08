@@ -40,11 +40,22 @@
  * withheld otherwise — and answering a decision is the operator's alone.
  * Nothing new is fetched. Style guide §3.14 records it; in operator mode the
  * page is unchanged.
+ *
+ * ## Subprojects (plan `2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled` F3)
+ *
+ * One operator-only line under the strip: how many subprojects have nothing
+ * moving them, linking to the list (`_components/StalledSubprojectsLine`). It
+ * reads coord's count itself, on this page's cadence, and mounts inside
+ * `OperatorOnly`, so presentation mode neither shows it nor reads it.
  */
 
 import { useCallback, useMemo, useState } from "react";
 import { useTenant } from "@/contexts/tenant-context";
-import { Caption, usePresentationMode } from "@/components/presentation";
+import {
+  Caption,
+  OperatorOnly,
+  usePresentationMode,
+} from "@/components/presentation";
 import {
   NOTHING_READ,
   deriveHomeStrip,
@@ -66,6 +77,7 @@ import {
   supplementSource,
 } from "./_lib/homeSupplements";
 import { KeptReadingNotice, PageProvenance } from "./_components/HomeLens";
+import { StalledSubprojectsLine } from "./_components/StalledSubprojectsLine";
 import {
   CorrectSection,
   DegradingSection,
@@ -227,6 +239,13 @@ export default function CoordHomePage() {
             : "Reading coord's project state…"}
         </p>
       )}
+      {/* Operator mode only, with its own read (plan
+          2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled
+          F3): the subprojects page is not presentation-ready, so while
+          presenting neither the line nor its read exists. */}
+      <OperatorOnly>
+        <StalledSubprojectsLine />
+      </OperatorOnly>
       <NeedsYouSection
         needs={shown.needsMe}
         gates={supplements.gates}

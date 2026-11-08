@@ -338,6 +338,21 @@ import {
   ACTION_ITEM_AUTHOR_GLYPH_KINDS,
   ACTION_ITEM_BADGE_CLASS,
 } from "@/components/admin/coord/actionItemStatus";
+// Subprojects — plan
+// `2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled`
+// Phase 6. One module, three orthogonal tables: a subproject's headline, a
+// member session's liveness and a member gate's mover.
+import {
+  SUBPROJECT_ATTENTION_BY_HEADLINE,
+  SUBPROJECT_AUTHOR_GLYPH_HEADLINES,
+  SUBPROJECT_GATE_ATTENTION_BY_KIND,
+  SUBPROJECT_GATE_AUTHOR_GLYPH_KINDS,
+  SUBPROJECT_GATE_CLASS,
+  SUBPROJECT_HEADLINE_CLASS,
+  SUBPROJECT_SESSION_ATTENTION_BY_KIND,
+  SUBPROJECT_SESSION_AUTHOR_GLYPH_KINDS,
+  SUBPROJECT_SESSION_CLASS,
+} from "@/components/admin/coord/subprojects/subprojectStatus";
 
 export interface ConsoleSurface {
   /** Human-readable name + route, for the test's `it(...)` title. */
@@ -916,6 +931,42 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: ACTION_ITEM_BADGE_CLASS,
       authorGlyphKinds: ACTION_ITEM_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- subprojects ------------------------------------------------------------
+  {
+    // needs_you and stalled are red: a stalled subproject has nothing alive
+    // moving it and the plan does not auto-continue it (F2), so nothing but a
+    // person resolves it. waiting names its mover; unknown is the ignorance
+    // floor. working and done are calm.
+    surface:
+      "subprojects (/admin/coord/subprojects, /admin/coord/subprojects/[id])",
+    module: "components/admin/coord/subprojects/subprojectStatus.ts",
+    attentionByKind: SUBPROJECT_ATTENTION_BY_HEADLINE,
+    palette: {
+      badgeClass: SUBPROJECT_HEADLINE_CLASS,
+      authorGlyphKinds:
+        SUBPROJECT_AUTHOR_GLYPH_HEADLINES as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "subproject member sessions (/admin/coord/subprojects/[id])",
+    module: "components/admin/coord/subprojects/subprojectStatus.ts",
+    attentionByKind: SUBPROJECT_SESSION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SUBPROJECT_SESSION_CLASS,
+      authorGlyphKinds:
+        SUBPROJECT_SESSION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "subproject member gates (/admin/coord/subprojects/[id])",
+    module: "components/admin/coord/subprojects/subprojectStatus.ts",
+    attentionByKind: SUBPROJECT_GATE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SUBPROJECT_GATE_CLASS,
+      authorGlyphKinds:
+        SUBPROJECT_GATE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
 ];
