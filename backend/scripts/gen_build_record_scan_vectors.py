@@ -6,9 +6,10 @@
 
 Writes ``backend/tests/fixtures/build_record_scan_vectors.json``. Every
 expected value in it is computed HERE, by calling
-``app.services.build_record_allowlist`` (``build_record_violations``,
-``normalize_for_scan``) — nothing is hand-written — so the fixture is web's
-scanner, frozen. qontinui-coord's port of the scanner copies the fixture
+``app.services.build_record_allowlist`` (``build_record_violations``) and
+``app.services.text_scan`` (``normalize_for_scan`` and the character tables
+the scanner reads strings with) — nothing is hand-written — so the fixture is
+web's scanner, frozen. qontinui-coord's port of the scanner copies the fixture
 verbatim and must reproduce every vector;
 ``tests/test_build_records.py::test_the_scan_vector_fixture_is_current``
 regenerates it and fails CI when the committed copy is stale, so a web
@@ -53,6 +54,7 @@ sys.path.insert(0, str(BACKEND))
 
 from app.services import build_record_allowlist as al  # noqa: E402
 from app.services import build_record_slash_confusables as tr39  # noqa: E402
+from app.services import text_scan as ts  # noqa: E402
 
 GENERATOR = "backend/scripts/gen_build_record_scan_vectors.py"
 FIXTURE = BACKEND / "tests" / "fixtures" / "build_record_scan_vectors.json"
@@ -274,7 +276,7 @@ def build() -> dict[str, Any]:
             }
         )
     normalize = [
-        {"id": case_id, "input": text, "normalized": al.normalize_for_scan(text)}
+        {"id": case_id, "input": text, "normalized": ts.normalize_for_scan(text)}
         for case_id, text in NORMALIZE_CASES
     ]
     return {
@@ -286,21 +288,21 @@ def build() -> dict[str, Any]:
         "max_scanned_string_chars": al.MAX_SCANNED_STRING_CHARS,
         "max_nfkd_expansion": al.MAX_NFKD_EXPANSION,
         "max_document_bytes": al.MAX_DOCUMENT_BYTES,
-        "refused_categories": sorted(al._REFUSED_CATEGORIES),
-        "stripped_categories": sorted(al._STRIPPED_CATEGORIES),
-        "default_ignorable_ranges": [list(r) for r in al.DEFAULT_IGNORABLE_RANGES],
-        "overlay_marks": sorted(ord(c) for c in al._OVERLAY_MARKS),
-        "blank_rendering_glyphs": sorted(ord(c) for c in al.BLANK_RENDERING_GLYPHS),
-        "slash_transparent_categories": sorted(al.SLASH_TRANSPARENT_CATEGORIES),
+        "refused_categories": sorted(ts.REFUSED_CATEGORIES),
+        "stripped_categories": sorted(ts.STRIPPED_CATEGORIES),
+        "default_ignorable_ranges": [list(r) for r in ts.DEFAULT_IGNORABLE_RANGES],
+        "overlay_marks": sorted(ord(c) for c in ts.OVERLAY_MARKS),
+        "blank_rendering_glyphs": sorted(ord(c) for c in ts.BLANK_RENDERING_GLYPHS),
+        "slash_transparent_categories": sorted(ts.SLASH_TRANSPARENT_CATEGORIES),
         "slash_transparent_non_ascii_categories": sorted(
-            al.SLASH_TRANSPARENT_NON_ASCII_CATEGORIES
+            ts.SLASH_TRANSPARENT_NON_ASCII_CATEGORIES
         ),
-        "lookalike_slashes": sorted(al._LOOKALIKE_SLASHES),
+        "lookalike_slashes": sorted(ts.LOOKALIKE_SLASHES),
         "lookalike_slashes_provenance": {
             "tr39_confusables_version": tr39.CONFUSABLES_VERSION,
             "tr39_confusables_date": tr39.CONFUSABLES_DATE,
             "vendoring_script": "backend/scripts/vendor_slash_confusables.py",
-            "supplement": list(al.SLASH_LOOKALIKE_SUPPLEMENT),
+            "supplement": list(ts.SLASH_LOOKALIKE_SUPPLEMENT),
         },
         "category_overrides": {
             "method": (

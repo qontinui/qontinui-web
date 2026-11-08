@@ -57,7 +57,10 @@ U+20D2/3, U+20E5/6) is refused outright. (2) Every check runs on a STRIPPED
 form anyway (:func:`normalize_for_scan`: NFKD, drop marks and invisibles,
 NFKC, lookalike and infix-symbol slashes), so a character outside the refusal
 set still cannot split a token. Neither layer is claimed complete; together
-they close every probe in ``tests/test_build_records.py``.
+they close every probe in ``tests/test_build_records.py``. Both layers, and
+the UUID and email patterns, live in :mod:`app.services.text_scan`, which the
+stakeholder report contract reads strings with too; a change there is a
+change here, and needs an :data:`ALLOWLIST_VERSION` bump.
 
 :func:`names_token` is the token-bounded check the publish route also runs
 for the NAMES of repos coord excluded (defined but not in the document) —
@@ -94,8 +97,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Final
 
-from app.services.build_record_slash_confusables import (
-    TR39_SLASH_CONFUSABLES,
+from app.services.text_scan import (
+    EMAIL_RE,
+    UUID_RE,
+    has_hidden_characters,
+    normalize_for_scan,
 )
 
 #: The one schema id this allowlist describes.
@@ -153,171 +159,6 @@ WORK_UNIT_SLUG_RE: Final = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,254}$")
 REPO_RE: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$")
 RFC3339_RE: Final = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$"
-)
-#: A dashed UUID, or the same 128 bits as a bare 32-hex run. A 40-hex commit
-#: sha is NOT matched (the run must be exactly 32 hex characters long).
-_UUID_RE: Final = re.compile(
-    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
-    r"|(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])"
-)
-#: ``user@host`` is enough — an internal host needs no dot to identify a person.
-#: Starts only at the beginning of a local-part run (lookbehind) and never
-#: backtracks into it (possessive), so a long run with no ``@`` is O(n), not
-#: O(n²) — every regex in this module is written to stay linear; see the
-#: adversarial timing test in ``tests/test_build_records.py``.
-_EMAIL_RE: Final = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]++@[A-Za-z0-9-]")
-#: Lookalikes TR39 does not list as slash confusables but that render as a
-#: slash in common fonts, found in review: U+141F CANADIAN SYLLABICS FINAL
-#: ACUTE (not in confusables.txt at all).
-SLASH_LOOKALIKE_SUPPLEMENT: Final[tuple[int, ...]] = (0x141F,)
-#: Characters that render as ``/`` but are not it, folded to ``/``: every code
-#: point Unicode TR39 ``confusables.txt`` maps to U+002F (vendored, with its
-#: version and date, in :mod:`app.services.build_record_slash_confusables` by
-#: ``backend/scripts/vendor_slash_confusables.py`` — no hand-picking), plus
-#: :data:`SLASH_LOOKALIKE_SUPPLEMENT`. Any OTHER non-ASCII math symbol or
-#: "other punctuation" sitting between two ASCII alphanumerics is treated as a
-#: slash too (:data:`_INFIX_SYMBOL_RE`).
-_LOOKALIKE_SLASHES: Final = dict.fromkeys(
-    sorted({*TR39_SLASH_CONFUSABLES, *SLASH_LOOKALIKE_SUPPLEMENT}), "/"
-)
-#: A non-ASCII character between two ASCII alphanumerics (spaces allowed);
-#: :func:`_infix_to_slash` keeps it only when it is ``Sm`` or ``Po``.
-_INFIX_SYMBOL_RE: Final = re.compile(
-    r"(?<=[A-Za-z0-9])\s*+([^\x00-\x7f])\s*+(?=[A-Za-z0-9])"
-)
-
-#: A compact confusable skeleton (in the spirit of Unicode TR39) for the
-#: scripts whose letters are drawn like Latin ones: Cyrillic and Greek
-#: lookalikes → the Latin letter they render as. No confusables library is a
-#: dependency of this backend; this table covers the letters an attacker can
-#: actually type to make ``acme/secret`` scan as something else. Applied to the
-#: scan form only — the stored document is never rewritten.
-_CONFUSABLES: Final = str.maketrans(
-    {
-        # Cyrillic lower
-        "\u0430": "a",
-        "\u0432": "b",
-        "\u0435": "e",
-        "\u043a": "k",
-        "\u043c": "m",
-        "\u043d": "h",
-        "\u043e": "o",
-        "\u0440": "p",
-        "\u0441": "c",
-        "\u0442": "t",
-        "\u0443": "y",
-        "\u0445": "x",
-        "\u0455": "s",
-        "\u0456": "i",
-        "\u0458": "j",
-        "\u0491": "r",
-        "\u04bb": "h",
-        "\u0501": "d",
-        "\u051b": "q",
-        "\u051d": "w",
-        "\u0475": "v",
-        "\u04cf": "l",
-        "\u0261": "g",
-        # Cyrillic upper
-        "\u0410": "A",
-        "\u0412": "B",
-        "\u0415": "E",
-        "\u041a": "K",
-        "\u041c": "M",
-        "\u041d": "H",
-        "\u041e": "O",
-        "\u0420": "P",
-        "\u0421": "C",
-        "\u0422": "T",
-        "\u0423": "Y",
-        "\u0425": "X",
-        "\u0405": "S",
-        "\u0406": "I",
-        "\u0408": "J",
-        "\u04c0": "I",
-        "\u051a": "Q",
-        "\u051c": "W",
-        # Greek lower
-        "\u03b1": "a",
-        "\u03b2": "b",
-        "\u03b5": "e",
-        "\u03b9": "i",
-        "\u03ba": "k",
-        "\u03bd": "v",
-        "\u03bf": "o",
-        "\u03c1": "p",
-        "\u03c4": "t",
-        "\u03c5": "u",
-        "\u03c7": "x",
-        "\u03b3": "y",
-        # Greek upper
-        "\u0391": "A",
-        "\u0392": "B",
-        "\u0395": "E",
-        "\u0396": "Z",
-        "\u0397": "H",
-        "\u0399": "I",
-        "\u039a": "K",
-        "\u039c": "M",
-        "\u039d": "N",
-        "\u039f": "O",
-        "\u03a1": "P",
-        "\u03a4": "T",
-        "\u03a5": "Y",
-        "\u03a7": "X",
-        # Latin-script lookalikes outside ASCII
-        "\u0131": "i",
-        "\u0269": "i",
-        "\u01c0": "l",
-    }
-)
-#: Every dash-punctuation (``Pd``) character, and U+2212 MINUS SIGN, scans as
-#: ``-`` — so a UUID or repo name written with en dashes is still seen.
-_EXTRA_DASHES: Final = frozenset("\u2212")
-
-#: Unicode ``Default_Ignorable_Code_Point`` — characters that render as
-#: NOTHING, whatever their general category (U+3164 is ``Lo``, the variation
-#: selectors are ``Mn``). As (first, last) inclusive ranges.
-DEFAULT_IGNORABLE_RANGES: Final[tuple[tuple[int, int], ...]] = (
-    (0x00AD, 0x00AD),
-    (0x034F, 0x034F),
-    (0x061C, 0x061C),
-    (0x115F, 0x1160),
-    (0x17B4, 0x17B5),
-    (0x180B, 0x180F),
-    (0x200B, 0x200F),
-    (0x202A, 0x202E),
-    (0x2060, 0x206F),
-    (0x3164, 0x3164),
-    (0xFE00, 0xFE0F),
-    (0xFEFF, 0xFEFF),
-    (0xFFA0, 0xFFA0),
-    (0xFFF0, 0xFFF8),
-    (0x1BCA0, 0x1BCA3),
-    (0x1D173, 0x1D17A),
-    (0xE0000, 0xE0FFF),
-)
-#: Categories a string is REFUSED for carrying (with the default-ignorables
-#: and the overlays): format, control, unassigned, private use, surrogate.
-_REFUSED_CATEGORIES: Final = frozenset({"Cf", "Cc", "Cn", "Co", "Cs"})
-#: Categories dropped from the STRIPPED scan form (adds the combining marks,
-#: which are not refused — an accent is legitimate — but must not split a
-#: token: ``secre\u0301t`` scans as ``secret``).
-_STRIPPED_CATEGORIES: Final = frozenset({"Mn", "Me", "Cf", "Cc", "Cn", "Co", "Cs"})
-#: Glyphs that render as blank space but are neither whitespace nor
-#: default-ignorable, so they survive normalisation and split a token:
-#: ``acme\u2800/\u2800secret`` (U+2800 BRAILLE PATTERN BLANK, category So)
-#: renders as "acme / secret"; U+1D159 MUSICAL SYMBOL NULL NOTEHEAD likewise.
-#: Refused as hidden characters — belt and braces: the structural fix is
-#: :data:`SLASH_TRANSPARENT_CATEGORIES`, which makes ANY ``So``/``Sk`` symbol
-#: or separator next to a slash unable to split a token. The other blank
-#: fillers (U+115F, U+1160, U+17B4, U+17B5, U+3164, U+FFA0) are already
-#: default-ignorable (:data:`DEFAULT_IGNORABLE_RANGES`), so are not repeated.
-BLANK_RENDERING_GLYPHS: Final = frozenset("\u2800\U0001d159")
-#: Combining marks that draw a stroke THROUGH the previous character, so
-#: ``a\u0338b`` can render like ``a/b`` while scanning as two letters.
-_OVERLAY_MARKS: Final = frozenset(
-    "\u0334\u0335\u0336\u0337\u0338\u20d2\u20d3\u20e5\u20e6"
 )
 _PATH_RUN_RE: Final = re.compile(r"[A-Za-z0-9._/-]+")
 _UNKNOWN_RE: Final = re.compile(r"^([a-z_][a-z0-9_.\[\]]*+): ([a-z_]++)$")
@@ -570,107 +411,6 @@ def _too_long(value: str) -> bool:
     )
 
 
-def is_default_ignorable(ch: str) -> bool:
-    code = ord(ch)
-    return any(lo <= code <= hi for lo, hi in DEFAULT_IGNORABLE_RANGES)
-
-
-def _infix_to_slash(match: re.Match[str]) -> str:
-    ch = match.group(1)
-    if ch == "/" or unicodedata.category(ch) in ("Sm", "Po"):
-        return "/"
-    return match.group(0)
-
-
-#: Character categories that are TRANSPARENT at a slash: stripped from the
-#: slash-adjacent edge of each piece by :func:`_collapse_spaced_slashes`.
-#: Separators (``Zs Zl Zp``), the symbol classes ``So`` (other symbol) and
-#: ``Sk`` (modifier symbol), modifier letters ``Lm`` (``ʼ`` U+02BC, ``ː``
-#: U+02D0) and spacing marks ``Mc`` (U+1D165), plus non-ASCII ``Po``
-#: (:data:`SLASH_TRANSPARENT_NON_ASCII_CATEGORIES`) — none can be part of a
-#: repo name, and some render as blank space in common fonts (U+2800, U+1D159). A
-#: symbol next to a slash therefore cannot keep an ``owner / name`` apart:
-#: the scan sees exactly what it would see had the symbol not been typed.
-#: Letters, digits and punctuation (``(``, ``)``, ``,`` …) are NOT transparent:
-#: they are what a reader sees ending a token, so ``(lint)/(test)`` stays two
-#: bracketed words. Python whitespace (``str.isspace``) is transparent too.
-SLASH_TRANSPARENT_CATEGORIES: Final = frozenset(
-    {"Lm", "Mc", "Sk", "So", "Zl", "Zp", "Zs"}
-)
-#: Transparent at a slash only when NON-ASCII: ``Po`` (other punctuation) —
-#: ``·`` U+00B7, ``‧`` U+2027 … — while ASCII ``Po`` (``. , : ; ! ? ' "`` …)
-#: stays a visible token end.
-SLASH_TRANSPARENT_NON_ASCII_CATEGORIES: Final = frozenset({"Po"})
-
-
-def _slash_transparent(ch: str) -> bool:
-    category = unicodedata.category(ch)
-    return (
-        ch.isspace()
-        or category in SLASH_TRANSPARENT_CATEGORIES
-        or (category in SLASH_TRANSPARENT_NON_ASCII_CATEGORIES and ord(ch) > 0x7F)
-    )
-
-
-def _strip_edge(piece: str, *, left: bool, right: bool) -> str:
-    start, end = 0, len(piece)
-    if left:
-        while start < end and _slash_transparent(piece[start]):
-            start += 1
-    if right:
-        while end > start and _slash_transparent(piece[end - 1]):
-            end -= 1
-    return piece[start:end]
-
-
-def _collapse_spaced_slashes(text: str) -> str:
-    """Remove every slash-transparent character (whitespace and the
-    :data:`SLASH_TRANSPARENT_CATEGORIES` symbols) on both sides of EVERY
-    ``/`` — and nothing else.
-
-    A split, not a regex: linear by construction, and each slash is handled on
-    its own, so ``a / / b`` becomes ``a//b`` and ``acme\U0001d159/\U0001d159secret``
-    becomes ``acme/secret``. This is the structural fix for blank-rendering
-    symbols splitting an owner/name token: no list of individual glyphs.
-    """
-    pieces = text.split("/")
-    if len(pieces) == 1:
-        return text
-    last = len(pieces) - 1
-    return "/".join(
-        _strip_edge(piece, left=i > 0, right=i < last) for i, piece in enumerate(pieces)
-    )
-
-
-def normalize_for_scan(text: str) -> str:
-    """The STRIPPED form every content check reads.
-
-    NFKD, then every combining mark (``Mn``/``Me``), format, control,
-    unassigned, private-use and surrogate character and every
-    default-ignorable code point is DROPPED, then NFKC (folds fullwidth and
-    other compatibility forms to ASCII), then the confusable skeleton
-    (Cyrillic/Greek lookalikes → Latin) and every ``Pd`` dash → ``-``.
-    Lookalike slashes, and any non-ASCII
-    ``Sm``/``Po`` between two ASCII alphanumerics, become ``/``; whitespace
-    around ``/`` is removed. So ``acme ∕ secret``, ``acme⟋secret`` and
-    ``secre\u0301t`` all scan as what they render as.
-    """
-    decomposed = unicodedata.normalize("NFKD", text)
-    kept = "".join(
-        ch
-        for ch in decomposed
-        if unicodedata.category(ch) not in _STRIPPED_CATEGORIES
-        and not is_default_ignorable(ch)
-    )
-    folded = unicodedata.normalize("NFKC", kept).translate(_CONFUSABLES)
-    folded = "".join(
-        "-" if unicodedata.category(ch) == "Pd" or ch in _EXTRA_DASHES else ch
-        for ch in folded
-    ).translate(_LOOKALIKE_SLASHES)
-    folded = _INFIX_SYMBOL_RE.sub(_infix_to_slash, folded)
-    return _collapse_spaced_slashes(folded)
-
-
 def _repo_tokens(normalized: str) -> list[str]:
     """Every ``a/b`` pair in an ALREADY-normalised string, lowercased (GitHub
     names are case-blind)."""
@@ -685,23 +425,6 @@ def _repo_tokens(normalized: str) -> list[str]:
                 continue
             pairs.append(f"{left}/{right}".lower())
     return pairs
-
-
-def _has_hidden_characters(text: str) -> bool:
-    """Characters that render as nothing (format ``Cf``, control ``Cc``, every
-    default-ignorable code point whatever its category), that have no agreed
-    rendering at all (unassigned ``Cn``, private use ``Co``, surrogates
-    ``Cs``), or that draw a slash which is not one (overlay marks). A scanned
-    string carrying any of them is refused outright. The scans ALSO run on the
-    stripped form (:func:`normalize_for_scan`), so this refusal is one layer,
-    not the only one."""
-    return any(
-        unicodedata.category(ch) in _REFUSED_CATEGORIES
-        or is_default_ignorable(ch)
-        or ch in _OVERLAY_MARKS
-        or ch in BLANK_RENDERING_GLYPHS
-        for ch in text
-    )
 
 
 def scanned_strings(document: Any) -> list[tuple[str, str]]:
@@ -771,7 +494,7 @@ def build_record_violations(
 
     excluded = names_pattern(excluded_names)
     for where, text in strings:
-        if _has_hidden_characters(text):
+        if has_hidden_characters(text):
             out.append(f"{where}: contains an invisible, control or overlay character")
             continue
         normalized = normalize_for_scan(text)
@@ -783,9 +506,9 @@ def build_record_violations(
             out.append(f"{where}: names a repo excluded as not known public")
         if any(token not in public_repos for token in _repo_tokens(normalized)):
             out.append(f"{where}: names an owner/name not in product.repos")
-        if _UUID_RE.search(normalized):
+        if UUID_RE.search(normalized):
             out.append(f"{where}: contains a UUID-shaped identifier")
-        if _EMAIL_RE.search(normalized):
+        if EMAIL_RE.search(normalized):
             out.append(f"{where}: contains an email-shaped identity")
 
     prs = document.get("prs")

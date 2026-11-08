@@ -3710,12 +3710,16 @@ class TestRedos:
     @pytest.mark.parametrize(
         ("pattern", "make", "full"),
         [
-            ("_EMAIL_RE", lambda n: "a." * (n // 2), False),
-            ("_EMAIL_RE", lambda n: "a" * n, False),
-            ("_INFIX_SYMBOL_RE", lambda n: "a" + " " * n + "b", False),
-            ("_INFIX_SYMBOL_RE", lambda n: "a" + " " * n + "\u00b7" + " " * n, False),
-            ("_UUID_RE", lambda n: "a" * n, False),
-            ("_UUID_RE", lambda n: "0123456789abcdef-" * (n // 17), False),
+            ("text_scan.EMAIL_RE", lambda n: "a." * (n // 2), False),
+            ("text_scan.EMAIL_RE", lambda n: "a" * n, False),
+            ("text_scan._INFIX_SYMBOL_RE", lambda n: "a" + " " * n + "b", False),
+            (
+                "text_scan._INFIX_SYMBOL_RE",
+                lambda n: "a" + " " * n + "\u00b7" + " " * n,
+                False,
+            ),
+            ("text_scan.UUID_RE", lambda n: "a" * n, False),
+            ("text_scan.UUID_RE", lambda n: "0123456789abcdef-" * (n // 17), False),
             ("_PATH_RUN_RE", lambda n: "a." * (n // 2), False),
             ("_INDEX_RE", lambda n: "[" + "1" * n, False),
             ("_UNKNOWN_RE", lambda n: "a" * n, True),
@@ -3729,10 +3733,14 @@ class TestRedos:
     def test_every_regex_scales_linearly(
         self, pattern: str, make: Any, full: bool
     ) -> None:
-        """Doubling an adversarial input must not quadruple the cost."""
+        """Doubling an adversarial input must not quadruple the cost. A
+        ``text_scan.`` name is read from the shared scanner module, every
+        other from the build-record allowlist."""
         from app.services import build_record_allowlist as allowlist
+        from app.services import text_scan
 
-        compiled = getattr(allowlist, pattern)
+        module, _, name = pattern.rpartition(".")
+        compiled = getattr(text_scan if module == "text_scan" else allowlist, name)
 
         def run(n: int) -> None:
             text = make(n)
@@ -4061,8 +4069,8 @@ class TestRevalidationHerd:
 
 
 def test_spaced_slash_collapse_is_linear_and_per_slash() -> None:
-    from app.services.build_record_allowlist import (
-        _collapse_spaced_slashes,
+    from app.services.text_scan import (
+        collapse_spaced_slashes,
         normalize_for_scan,
     )
 
@@ -4070,8 +4078,8 @@ def test_spaced_slash_collapse_is_linear_and_per_slash() -> None:
     assert normalize_for_scan(" a / b ") == " a/b "
 
     def run(n: int) -> None:
-        _collapse_spaced_slashes(" " * n + "/" + " " * n)
-        _collapse_spaced_slashes("/ " * n)
+        collapse_spaced_slashes(" " * n + "/" + " " * n)
+        collapse_spaced_slashes("/ " * n)
 
     assert _scaling_ratio(run, 20_000, 40_000) < 3.0
 
@@ -4167,18 +4175,18 @@ class TestExcludedNameExemptions:
         ]
 
     def test_the_lookalike_table_is_tr39_plus_the_supplement(self) -> None:
-        from app.services import build_record_allowlist as al
         from app.services import build_record_slash_confusables as tr39
+        from app.services import text_scan as ts
 
-        assert set(al._LOOKALIKE_SLASHES) == {
+        assert set(ts.LOOKALIKE_SLASHES) == {
             *tr39.TR39_SLASH_CONFUSABLES,
-            *al.SLASH_LOOKALIKE_SUPPLEMENT,
+            *ts.SLASH_LOOKALIKE_SUPPLEMENT,
         }
         # Every entry the hand-picked table used to carry is still folded.
         for (
             ch
         ) in "\u2215\u2044\u29f8\u2571\u1735\u27cb\u2afb\u2afd\u30ce\uff89\u4e3f\u2f03":
-            assert ord(ch) in al._LOOKALIKE_SLASHES, hex(ord(ch))
+            assert ord(ch) in ts.LOOKALIKE_SLASHES, hex(ord(ch))
         assert tr39.CONFUSABLES_VERSION and tr39.CONFUSABLES_DATE
 
     @pytest.mark.parametrize("title", ["50/50", "50 / 50", "(lint)/(test)"])
