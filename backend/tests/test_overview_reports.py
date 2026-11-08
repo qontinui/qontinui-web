@@ -345,6 +345,18 @@ def _violations(response: httpx.Response) -> list[dict[str, str]]:
     return body["violations"]
 
 
+def _names_term(payload: Any) -> bool:
+    """Whether ``payload`` (a body, or its text) names the confidential term
+    in ANY spelling the scan folds together: compared on ``match_key``-folded
+    text, so ``northwind-mutual`` or ``NORTHWIND_mutual`` is a leak of it."""
+    from app.services.presentation_scope import match_key
+
+    text = (
+        payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+    )
+    return match_key(TERM) in match_key(text)
+
+
 def _stop(day: int, **top: Any) -> dict[str, Any]:
     """A valid stop measured ``day`` days after 2026-01-01."""
     moment = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day)
@@ -448,7 +460,7 @@ class TestReports:
         body = refused.json()
         assert body["error"] == "report_rejected"
         assert {"slot": "body_md", "kind": "confidential_term"} in body["violations"]
-        assert TERM not in refused.text
+        assert not _names_term(refused.text)
         got = (await admin.get(url)).json()["item"]
         assert (got["version"], got["body_md"]) == (2, rewritten)
         assert [r.action for r in await _log(async_db_session, "reports")] == [
@@ -550,6 +562,27 @@ class TestReports:
                 "body_md",
                 "account_id",
             ),
+            (
+                {"title": "Review", "body_md": "Work for northwind-mutual."},
+                "body_md",
+                "confidential_term",
+            ),
+            (
+                {"title": "Review", "summary": "Only IPv6:2001:db8::5"},
+                "summary",
+                "ip_address",
+            ),
+            ({"title": "Host ip-192-0-2-40.ec2.internal"}, "title", "ip_address"),
+            (
+                {"title": "Review", "body_md": "Billed acct-1234-5678-9012."},
+                "body_md",
+                "account_id",
+            ),
+            (
+                {"title": "Review", "summary": "In 1234-5678-9012-logs."},
+                "summary",
+                "account_id",
+            ),
         ]
         for body, slot, kind in cases:
             response = await admin.post(f"{API}/reports", json=body)
@@ -557,12 +590,14 @@ class TestReports:
             refused = response.json()
             assert refused["error"] == "report_rejected"
             assert {"slot": slot, "kind": kind} in refused["violations"]
+            assert not _names_term(response.text)
             for value in (
-                TERM,
                 "ops@example.com",
                 "192.0.2.40",
                 "123456789012",
                 "1234-5678-9012",
+                "2001:db8::5",
+                "ip-192-0-2-40",
             ):
                 assert value not in response.text
         # A UUID in a body is allowed: block arguments are slugs, not ids. One
@@ -816,7 +851,7 @@ class TestSnapshots:
             body = refused.json()
             assert body["error"] == "snapshot_rejected"
             assert body["violations"] == [{"slot": "withdrawn_reason", "kind": kind}]
-            assert value not in refused.text
+            assert value not in refused.text and not _names_term(refused.text)
         got = (await admin.get(url)).json()["item"]
         assert (got["withdrawn"], got["version"]) == (False, 1)
         assert [r.action for r in await _log(async_db_session, "report_snapshots")] == [
@@ -852,7 +887,7 @@ class TestSnapshots:
         ):
             refused = await _post(admin, report["id"], _doc(), source_path=path)
             assert {"slot": "source_path", "kind": kind} in _violations(refused)
-            assert value not in refused.text
+            assert value not in refused.text and not _names_term(refused.text)
         listed = (
             await admin.get(
                 f"{API}/report-snapshots", params={"report_id": report["id"]}
@@ -1552,11 +1587,15 @@ PLANTS: list[tuple[str, str, str]] = [
     # Behind a label: the colon before the address is no guard.
     ("ip_address", "IPv6:2001:db8::5", "method.note"),
     ("ip_address", "IP:2001:db8::1", "tables[0].columns[0].help"),
+    # The IPv4 address an EC2 host name carries.
+    ("ip_address", "ip-192-0-2-40.ec2.internal", "groups[0].label"),
     ("account_id", "Billed to 123456789012", "items[0].label"),
     ("account_id", "Billed to 1234-5678-9012", "figures[0].source"),
     # Between dashes, as bucket names carry them.
     ("account_id", "cdk-hnb659fds-assets-123456789012-us-east-1", "groups[0].help"),
     ("account_id", "my-bucket-123456789012-logs", "tables[0].title"),
+    ("account_id", "acct-1234-5678-9012", "items[0].status_note"),
+    ("account_id", "1234-5678-9012-logs", "notes[0].title"),
     ("confidential_term", f"Migration for {TERM}", "items[0].label"),
     ("confidential_term", "Migration for NORTHWIND-mutual", "notes[0].title"),
     ("confidential_term", "Migration for Nörthwind  Mutual", "summary"),
@@ -1571,6 +1610,30 @@ def _plant(doc: dict[str, Any], slot: str, text: str) -> None:
     for part in parts[:-1]:
         target = target[int(part)] if part.isdigit() else target[part]
     target[parts[-1]] = text
+
+
+#: Ordinary text no scanner may refuse — in a snapshot string, or where the
+#: narrative's scans read: times, durations and versions; Rust paths, whose
+#: ``::`` joins no IPv6 address; words around ``ip-`` that name no EC2 host;
+#: and digits in fours that are no account id.
+ORDINARY_TEXT: list[str] = [
+    "CI/CD for the 12:30:45 build, std::vector, MAC 00:1a:2b:3c:4d:5e",
+    "Version 1.2.3, 2026-10-13, 12345678901 and 1234567890123",
+    "North wind and a mutual friend",
+    "Measured at 2026-10-13T01:20:00Z, as of 2026-10-13T12:00:00+00:00",
+    "Read at 2026-10-13T12:00:00.123456-05:00 and 2026-10-13T12:00:00.123+05:30",
+    "Lead time 85.8 h, standup at 10:30, build at 12:30:45",
+    "Released v1.2.3, then v1.2.3-rc.1 and 1.2.3+build.5",
+    # Sixteen digits in fours: no twelve-digit form fits inside it.
+    "Order 1234-5678-9012-3456",
+    "crate::abc::def",
+    "self::db::add",
+    "Foo::A::B",
+    "use crate::db::fee;",
+    "ip-address",
+    "zip-1-2-3-4-5",
+    "ip-300-1-1-1",
+]
 
 
 class TestScanners:
@@ -1614,21 +1677,7 @@ class TestScanners:
             "kind": "email",
         } in _violations(await _post(admin, report["id"], doc))
 
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "CI/CD for the 12:30:45 build, std::vector, MAC 00:1a:2b:3c:4d:5e",
-            "Version 1.2.3, 2026-10-13, 12345678901 and 1234567890123",
-            "North wind and a mutual friend",
-            # Timestamps, durations and versions a snapshot's prose carries.
-            "Measured at 2026-10-13T01:20:00Z, as of 2026-10-13T12:00:00+00:00",
-            "Read at 2026-10-13T12:00:00.123456-05:00 and 2026-10-13T12:00:00.123+05:30",
-            "Lead time 85.8 h, standup at 10:30, build at 12:30:45",
-            "Released v1.2.3, then v1.2.3-rc.1 and 1.2.3+build.5",
-            # Sixteen digits in fours: no twelve-digit form fits inside it.
-            "Order 1234-5678-9012-3456",
-        ],
-    )
+    @pytest.mark.parametrize("text", ORDINARY_TEXT)
     async def test_ordinary_text_passes(
         self, admin: httpx.AsyncClient, async_db_session: AsyncSession, text: str
     ) -> None:
@@ -1637,6 +1686,27 @@ class TestScanners:
         doc = _doc()
         doc["notes"][0]["body_md"] = text
         await _snapshot(admin, report["id"], doc)
+
+    @pytest.mark.parametrize(
+        "text", [*ORDINARY_TEXT, "Ref aaaaaaaa-1234-5678-9012-bbbbbbbbbbbb"]
+    )
+    async def test_ordinary_text_passes_where_the_narrative_scans_read(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession, text: str
+    ) -> None:
+        """The narrative's scans read a report's title, summary and body (and
+        the slug its title gives), a snapshot's file path and a withdrawal's
+        reason; none of them refuses ordinary text either. A UUID is allowed
+        there, so a dashed account id lying inside one (middle groups all
+        digits, first group ending in a letter) is allowed with it."""
+        await _set_scope(async_db_session, terms=[TERM])
+        report = await _report(admin, title=text, summary=text, body_md=text)
+        snap = await _snapshot(admin, report["id"], _doc(), source_path=text)
+        withdrawn = await admin.patch(
+            f"{API}/report-snapshots/{snap['id']}",
+            json={"withdrawn": True, "withdrawn_reason": text},
+            headers={"If-Match": '"1"'},
+        )
+        assert withdrawn.status_code == 200, withdrawn.text
 
     @pytest.mark.parametrize(
         "moment",

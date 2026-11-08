@@ -60,7 +60,8 @@ Every string is scanned (:func:`check_snapshot`), on the stripped form
 * a hidden, control or overlay character (newlines and tabs excepted);
 * a UUID and an email-shaped identity (the build record's scanners, shared
   through :mod:`app.services.text_scan`);
-* an IPv4 or IPv6 address (:data:`IPV4_RE`, :data:`IPV6_RE`);
+* an IPv4 or IPv6 address (:data:`IPV4_RE`, :data:`IPV6_RE`), including the
+  IPv4 form an EC2 host name carries (:data:`EC2_HOST_IP_RE`);
 * a 12-digit AWS account id, bare or written ``1234-5678-9012``
   (:data:`ACCOUNT_ID_RE`);
 * any of the tenant's configured confidential terms, folded with the
@@ -352,14 +353,21 @@ REPORT_SNAPSHOT_PATHS: Final[frozenset[str]] = frozenset(_paths(ReportSnapshotDo
 _OCTET = r"(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])"
 #: A dotted-quad IPv4 address, not inside a longer run of digits.
 IPV4_RE: Final = re.compile(rf"(?<![0-9])(?:{_OCTET}\.){{3}}{_OCTET}(?![0-9])")
+#: The IPv4 address an EC2 host name carries (``ip-192-0-2-40.ec2.internal``):
+#: ``ip-`` and four dash-joined octets, not inside a longer word
+#: (``zip-1-2-3-4-5``) and never an octet past 255 (``ip-300-1-1-1``).
+EC2_HOST_IP_RE: Final = re.compile(
+    rf"(?<![0-9A-Za-z])(?i:ip)-(?:{_OCTET}-){{3}}{_OCTET}(?![0-9])"
+)
 _H16 = r"[0-9A-Fa-f]{1,4}"
 #: An IPv6 address: eight groups, or a ``::`` compression with at least one
 #: group beside it. Not inside a longer word, so ``std::vector`` and a time
-#: (``12:30:45``) or a MAC address (six groups) are not addresses. A colon
-#: BEFORE it is no guard: ``IPv6:2001:db8::5`` and ``IP:2001:db8::1`` are
-#: addresses behind a label.
+#: (``12:30:45``) or a MAC address (six groups) are not addresses. One colon
+#: BEFORE it is no guard — ``IPv6:2001:db8::5`` is an address behind a label —
+#: but two are: a path segment after ``::`` (``crate::db::add``,
+#: ``Foo::A::B``) is not an address.
 IPV6_RE: Final = re.compile(
-    r"(?<![0-9A-Za-z.])"
+    r"(?<![0-9A-Za-z.])(?<!::)"
     rf"(?:(?:{_H16}:){{7}}{_H16}"
     rf"|(?:{_H16}:){{1,7}}:(?:{_H16}(?::{_H16}){{0,5}})?"
     rf"|::{_H16}(?::{_H16}){{0,6}})"
@@ -369,11 +377,13 @@ IPV6_RE: Final = re.compile(
 #: (``1234-5678-9012``), each form with its own guards. The bare form is not
 #: inside a longer word or run of digits, but a dash beside it is no guard:
 #: account ids sit between dashes in bucket names
-#: (``cdk-hnb659fds-assets-123456789012-us-east-1``). The dashed form is not
-#: inside a longer dash-joined run, so ``1234-5678-9012-3456`` is not one.
+#: (``cdk-hnb659fds-assets-123456789012-us-east-1``). The dashed form's guards
+#: are digit-aware: a dash beside it is no guard either (``acct-1234-5678-9012``,
+#: ``1234-5678-9012-logs``), unless digits continue past that dash, so
+#: ``1234-5678-9012-3456`` is not one.
 ACCOUNT_ID_RE: Final = re.compile(
     r"(?<![0-9A-Za-z])[0-9]{12}(?![0-9A-Za-z])"
-    r"|(?<![0-9A-Za-z-])[0-9]{4}-[0-9]{4}-[0-9]{4}(?![0-9A-Za-z-])"
+    r"|(?<![0-9A-Za-z])(?<![0-9]-)[0-9]{4}-[0-9]{4}-[0-9]{4}(?![0-9A-Za-z])(?!-[0-9])"
 )
 
 
@@ -418,7 +428,9 @@ class TermMatcher:
 
 def contains_ip_address(normalized: str) -> bool:
     return (
-        IPV4_RE.search(normalized) is not None or IPV6_RE.search(normalized) is not None
+        IPV4_RE.search(normalized) is not None
+        or IPV6_RE.search(normalized) is not None
+        or EC2_HOST_IP_RE.search(normalized) is not None
     )
 
 
