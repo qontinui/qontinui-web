@@ -667,6 +667,20 @@ function statBadge(label: string): HTMLElement {
   return badge;
 }
 
+/** One badge of the health strip, by the words it opens with. */
+function stripBadge(prefix: string): HTMLElement {
+  const badge = [
+    ...screen
+      .getByTestId("sessions-console-health")
+      .querySelectorAll<HTMLElement>("[data-slot=badge]"),
+  ].find((b) => b.textContent?.startsWith(prefix));
+  if (!badge) throw new Error(`no strip badge "${prefix}"`);
+  return badge;
+}
+
+/** What every floor of zero says in its title, whatever its slot. */
+const COUNTS_ONLY_ROWS_READ = "counts only the rows read";
+
 describe("U4 — the 500-row ceiling is disclosed, never presented as the fleet", () => {
   it("says both halves stopped at their ceiling and reads every fleet number as a floor", async () => {
     // The Live tab over a full read: coord served its 500 most recently
@@ -706,12 +720,56 @@ describe("U4 — the 500-row ceiling is disclosed, never presented as the fleet"
       screen.getByTestId("sessions-console-status-live")
     ).toHaveTextContent(/^Live≥31$/);
     // A floor of zero is true of every count and says nothing: it reads as
-    // the count of the rows read instead.
-    expect(health).toHaveTextContent("needs a person 0 of those read");
-    expect(statBadge("lifecycle-only")).toHaveTextContent(
-      /^lifecycle-only 0 of those read$/
+    // the count of the rows read instead — named for the ROWS, and said again
+    // in the slot's title.
+    expect(health).toHaveTextContent("needs a person 0 among rows read");
+    expect(stripBadge("needs a person").getAttribute("title")).toContain(
+      COUNTS_ONLY_ROWS_READ
     );
-    expect(document.body.textContent).not.toMatch(/≥0|\d\+|at least 0/);
+    expect(statBadge("lifecycle-only")).toHaveTextContent(
+      /^lifecycle-only 0 among rows read$/
+    );
+    expect(statBadge("lifecycle-only").getAttribute("title")).toContain(
+      COUNTS_ONLY_ROWS_READ
+    );
+    // (The strip's PROSE may say "— of those read, 31 active …": that is a
+    // sentence about the rows read. No count slot says "0 of those read".)
+    expect(document.body.textContent).not.toMatch(
+      /≥0|\d\+|at least 0|0 of those read/
+    );
+  });
+
+  it("a floor of zero in a count slot: a bare 0 in the tab, words where there is room — and each says in its title that it counts only the rows read", async () => {
+    // The Live tab over a FULL lifecycle half: coord served its 500 most
+    // recently started sessions and none of them is live. More may be, past
+    // the ceiling — so this zero is a count of the rows read, nothing more.
+    mount(
+      async () =>
+        envelope([], {
+          lifecycle_half: { read: "ok", bound: atCeiling() },
+          agent_half: { read: "ok", bound: belowCeiling(0) },
+        }),
+      { initialStatus: "live" }
+    );
+    await screen.findByTestId("sessions-console-empty");
+
+    // The tab's monospace count slot has no room for words.
+    const tab = screen.getByTestId("sessions-console-status-live");
+    expect(tab).toHaveTextContent(/^Live0$/);
+    expect(tab.getAttribute("title")).toContain(COUNTS_ONLY_ROWS_READ);
+
+    // Where there is room, the words are in the slot — about ROWS, never
+    // "0 of those read" under a label that counts machines.
+    expect(statBadge("machines")).toHaveTextContent(
+      /^machines 0 among rows read$/
+    );
+    expect(statBadge("machines").getAttribute("title")).toContain(
+      COUNTS_ONLY_ROWS_READ
+    );
+    expect(stripBadge("needs a person")).toHaveTextContent(
+      /^needs a person 0 among rows read$/
+    );
+    expect(document.body.textContent).not.toMatch(/0 of those read|≥0/);
   });
 
   it("names the rows a full half actually served — `shown`, not the limit it asked for", async () => {
@@ -902,5 +960,110 @@ describe("U4 — the 500-row ceiling is disclosed, never presented as the fleet"
       ).toHaveTextContent(/^All31$/);
     }
     expect(call).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A FAILED agent read is not a complete one
+// ---------------------------------------------------------------------------
+
+/**
+ * A lifecycle row as the route serves it once the agent read FAILED: every
+ * row's class is withheld (`row_class: null`) — bridged rows and shells alike,
+ * because with no agent payload the route classifies nothing.
+ */
+function unclassified(
+  n: number,
+  device: string,
+  bridged = true
+): ConsolidatedSessionRow {
+  return {
+    ...linked(n, device),
+    row_class: null,
+    agent_session: null,
+    claude_code_session_id: bridged ? `bridge-${n}` : null,
+    ...(bridged ? {} : { session_kind: "terminal_shell", provider: null }),
+  };
+}
+
+const FAILED_AGENT_HALF = {
+  read: "failed",
+  detail: "502: coord is not reachable",
+} as const;
+
+const AGENT_HALF_DID_NOT_ANSWER =
+  "the agent half did not answer — unknown, not zero";
+
+describe("a FAILED agent read is not a complete one", () => {
+  /** Every join-class count is unknown — its dash says why, never a zero. */
+  function expectJoinClassesUnknown() {
+    for (const label of ["linked", "lifecycle-only", "agent-only"]) {
+      const stat = statBadge(label);
+      expect(stat, label).toHaveTextContent(new RegExp(`^${label} –$`));
+      expect(stat.getAttribute("title"), label).toBe(AGENT_HALF_DID_NOT_ANSWER);
+    }
+    // No row's status is established, so no one is counted as needing a
+    // person or as active — unknown, not zero.
+    expect(stripBadge("needs a person")).toHaveTextContent(
+      /^needs a person –$/
+    );
+    expect(stripBadge("active")).toHaveTextContent(/^active –$/);
+  }
+
+  it("beside a FULL lifecycle half: agent-only is unknown, never 'every agent session was read'", async () => {
+    mount(async () =>
+      envelope(
+        [
+          unclassified(1, "dev-a"),
+          unclassified(2, "dev-a"),
+          unclassified(3, "dev-b", false),
+        ],
+        {
+          lifecycle_half: { read: "ok", bound: atCeiling() },
+          agent_half: FAILED_AGENT_HALF,
+        }
+      )
+    );
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(3)
+    );
+    const health = screen.getByTestId("sessions-console-health");
+    expect(health).toHaveTextContent(
+      "Lifecycle half only — the agent half did not answer"
+    );
+    expectJoinClassesUnknown();
+    expect(statBadge("agent-only").getAttribute("title")).not.toMatch(
+      /every agent session was read/
+    );
+    // The rows the lifecycle half served are real: floors, never totals.
+    expect(statBadge("rows")).toHaveTextContent(/^rows ≥3$/);
+    expect(statBadge("machines")).toHaveTextContent(/^machines ≥2$/);
+    // Exact: these are the rows of THIS read whose class was withheld.
+    expect(statBadge("unresolved")).toHaveTextContent(/^unresolved 3$/);
+  });
+
+  it("beside a COMPLETE lifecycle half: rows and machines are floors — sessions only the agent half holds were not read", async () => {
+    mount(async () =>
+      envelope([unclassified(1, "dev-a"), unclassified(2, "dev-b", false)], {
+        lifecycle_half: { read: "ok", bound: belowCeiling(2) },
+        agent_half: FAILED_AGENT_HALF,
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(2)
+    );
+    expect(statBadge("rows")).toHaveTextContent(/^rows ≥2$/);
+    expect(statBadge("machines")).toHaveTextContent(/^machines ≥2$/);
+    expect(screen.getByTestId("sessions-console-status-all")).toHaveTextContent(
+      /^All≥2$/
+    );
+    expectJoinClassesUnknown();
+    expect(statBadge("unresolved")).toHaveTextContent(/^unresolved 2$/);
+    // No half reached a ceiling: the strip names the failure, and there is
+    // no ceiling sentence to add.
+    expect(screen.getByTestId("sessions-console-health")).toHaveTextContent(
+      "Lifecycle half only — the agent half did not answer"
+    );
+    expect(screen.queryByTestId("sessions-console-truncated")).toBeNull();
   });
 });

@@ -53,6 +53,12 @@ export interface FilterTab<Id extends string> {
    */
   count?: number | string | null;
   /**
+   * The sentence the count slot has no room for, as the tab's `title` — e.g.
+   * a floor of zero, which the slot shows as a bare `0` and whose title says
+   * it counts only the rows read.
+   */
+  title?: string;
+  /**
    * Render the count in the attention hue. Reserve it for a count of rows that
    * genuinely need a human (R3) — a red number nobody must act on is the same
    * bug as a red badge nobody must act on.
@@ -103,6 +109,7 @@ export function FilterTabs<Id extends string>({
           size="sm"
           variant={active === tab.id ? "secondary" : "ghost"}
           onClick={() => onChange(tab.id)}
+          title={tab.title}
           data-testid={
             tab.testId ??
             (testIdPrefix ? `${testIdPrefix}-${tab.id}` : undefined)

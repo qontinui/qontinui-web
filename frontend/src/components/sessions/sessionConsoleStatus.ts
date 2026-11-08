@@ -200,8 +200,9 @@ export interface ConsolidatedSessionsResponse {
  * half as complete and paints exact counts over it, which is what it showed
  * before the route served a bound at all. It is kept for deploy skew only — a
  * frontend ahead of a backend that predates the field — since the route this
- * console ships with bounds every half it read. (A failed agent read carries
- * no bound either; that failure is the strip's own `agentHalfFailed` arm.)
+ * console ships with bounds every half it read. A FAILED agent read carries no
+ * bound either and is never read that way: {@link sessionsCeiling} gives it
+ * its own `failed` extent, because no page arrived to be complete.
  */
 export function halfMayBeIncomplete(
   bound: BoundedReadMeta | null | undefined
@@ -210,23 +211,28 @@ export function halfMayBeIncomplete(
 }
 
 /**
- * How much of coord one half of the consolidated read holds, read off its
- * `bound` — the four answers the console renders differently:
+ * How much of coord one half of the consolidated read holds — the five
+ * answers the console renders differently:
  *
  * | `kind` | when | the counts over it |
  * |---|---|---|
  * | `complete` | `truncated: false` — below its ceiling | exact |
  * | `capped` | not complete, `shown >= limit` — the page came back FULL | floors; the disclosure names `shown` |
  * | `unknown` | any OTHER bound that is not complete — the route's `unknown(0, limit)` for a body with no list | no number at all: dashes, and words saying the half's size is unknown |
- * | `unreported` | no bound — a backend predating it, or a failed agent read | exact ({@link halfMayBeIncomplete} says why) |
+ * | `failed` | the AGENT half's read failed (`agent_half.read: "failed"`) — no page arrived | floors for rows and machines (the lifecycle rows were read; sessions only the agent half holds were not), and dashes for the join classes and the status counts: the route withholds every row's class |
+ * | `unreported` | an ANSWERED half with no bound — a backend predating it | exact ({@link halfMayBeIncomplete} says why) |
  *
- * `shown` is what coord SERVED, which can pass the limit the route asked for,
- * so it — not `limit` — is the number a full half is named by.
+ * The first three are read off the half's `bound` ({@link halfExtent});
+ * `failed` off the agent half's `read`, which only the agent half can fail —
+ * a failed lifecycle read fails the whole request. `shown` is what coord
+ * SERVED, which can pass the limit the route asked for, so it — not `limit` —
+ * is the number a full half is named by.
  */
 export type HalfExtent =
   | { kind: "complete" }
   | { kind: "capped"; shown: number }
   | { kind: "unknown" }
+  | { kind: "failed" }
   | { kind: "unreported" };
 
 /** Read one half's {@link HalfExtent} off its `bound`. */
@@ -254,7 +260,7 @@ export const NO_CEILING: SessionsCeiling = {
   agent: { kind: "unreported" },
 };
 
-/** Read each half's extent off the consolidated response's `bound`s. */
+/** Read each half's extent off the consolidated response. */
 export function sessionsCeiling(
   payload:
     | Pick<ConsolidatedSessionsResponse, "lifecycle_half" | "agent_half">
@@ -263,8 +269,19 @@ export function sessionsCeiling(
 ): SessionsCeiling {
   return {
     lifecycle: halfExtent(payload?.lifecycle_half?.bound),
-    agent: halfExtent(payload?.agent_half?.bound),
+    // A failed agent read carries no bound, exactly as an older backend's
+    // answer does — and it must not READ as one: that would paint the
+    // failure as a complete read.
+    agent:
+      payload?.agent_half?.read === "failed"
+        ? { kind: "failed" }
+        : halfExtent(payload?.agent_half?.bound),
   };
+}
+
+/** Did the agent half's read fail outright? */
+export function isAgentHalfFailed(ceiling: SessionsCeiling): boolean {
+  return ceiling.agent.kind === "failed";
 }
 
 /** Did either half come back FULL? Then a fleet count is at best a floor. */
@@ -280,22 +297,25 @@ export function isSizeUnknown(ceiling: SessionsCeiling): boolean {
 }
 
 /**
- * How a fleet count over this read may be stated: `exact`, a `floor` (a half
- * came back full), or not at all — `unknown` (a half's size is unknown). The
- * unknown arm outranks the floor: a floor is a claim about a read whose size
- * is known, and one half's is not.
+ * How a fleet count over this read may be stated: `exact`; a `floor` — a half
+ * came back full, or the agent half FAILED (the lifecycle rows were read, but
+ * sessions only the agent half holds were not); or not at all — `unknown`, a
+ * half's size is unknown. The unknown arm outranks the floor: a floor is a
+ * claim about a read whose size is known, and one half's is not.
  */
 export type CountBasis = "exact" | "floor" | "unknown";
 
 export function countBasis(ceiling: SessionsCeiling): CountBasis {
   if (isSizeUnknown(ceiling)) return "unknown";
-  if (isCapped(ceiling)) return "floor";
+  if (isCapped(ceiling) || isAgentHalfFailed(ceiling)) return "floor";
   return "exact";
 }
 
 /**
  * The words under the stats that say what this read could not count — or
- * `null` when every half is complete (or reported no bound).
+ * `null` when no half is full or of unknown size. A FAILED agent half is the
+ * strip's to name ("Lifecycle half only — the agent half did not answer"),
+ * directly above; its counts' own titles say the rest.
  *
  * A FULL half is named by its own ordering and by the rows it SERVED, because
  * that is what decides which rows fell off: the lifecycle half keeps the most
@@ -360,37 +380,93 @@ export function agentOnlyQualifier(lifecycle: HalfExtent): string | null {
   }
 }
 
-/** A floor of zero, said as what it counted — `≥0` is true of every count. */
-export const ZERO_OF_THOSE_READ = "0 of those read";
+/**
+ * One count as a count slot renders it — a tab's count, a stat, a strip
+ * badge: its text, and the sentence its `title` carries beside it.
+ */
+export interface CountCell {
+  /** `null` renders `–`: unknown, never zero. */
+  value: number | string | null;
+  title?: string;
+}
 
 /**
- * A fleet count as the stats, the strip's badges and the answered tab render
- * it — ONE spelling per {@link CountBasis}, the same in all three:
+ * A floor of zero where the slot has room for words. Named for the ROWS — a
+ * floor counts only the rows read — so it reads true under any label
+ * ("machines 0 among rows read"), never "0 of those [machines] read".
+ */
+export const ZERO_AMONG_ROWS_READ = "0 among rows read";
+
+/** The sentence every floor carries in its `title`. */
+const FLOOR_TITLE =
+  "a floor: it counts only the rows read, and this read did not reach every session";
+
+/** …and a floor of zero, which says what it counted rather than "none". */
+const FLOOR_ZERO_TITLE =
+  "0 among the rows read: it counts only the rows read, and this read did not reach every session, so the true count may be higher";
+
+/**
+ * The `title` of a count the failed agent half left unestablished — the join
+ * classes, and agent-only — once its read failed.
+ */
+export const AGENT_HALF_DID_NOT_ANSWER =
+  "the agent half did not answer — unknown, not zero";
+
+/** …and of the status counts, which no row's class could establish. */
+export const STATUSES_UNESTABLISHED =
+  "the agent half did not answer, so no row's status is established — unknown, not zero";
+
+/**
+ * A fleet count — rows, machines, a join class, a strip badge, the answered
+ * tab — as one count slot renders it. ONE spelling per {@link CountBasis}:
  *
  * - `exact`   → `n`
- * - `floor`   → `≥n`, and {@link ZERO_OF_THOSE_READ} for zero
+ * - `floor`   → `≥n`. A floor of ZERO is never `≥0` (true of every count, it
+ *   says nothing): it is {@link ZERO_AMONG_ROWS_READ} where the slot has room
+ *   for words, and a bare `0` in a `compact` one — a tab's monospace count.
  * - `unknown` → `null`, which every console primitive renders `–`
  *
- * "at least" is the PROSE spelling of the same floor, kept to the strip's
+ * Every floor carries its sentence in `title` — a bare `0` above all, whose
+ * title is the only place left to say it counts only the rows read. `title`
+ * is the slot's own sentence, kept, with the floor's added after it. "at
+ * least" is the PROSE spelling of the same floor, kept to the strip's
  * sentences. `agent-only` is not a fleet count (see {@link agentOnlyStat}).
  */
 export function fleetCount(
   n: number,
-  basis: CountBasis
-): number | string | null {
-  switch (basis) {
-    case "exact":
-      return n;
-    case "floor":
-      return n === 0 ? ZERO_OF_THOSE_READ : `≥${n}`;
-    case "unknown":
-      return null;
+  basis: CountBasis,
+  opts: { compact?: boolean; title?: string } = {}
+): CountCell {
+  if (basis !== "floor") {
+    return { value: basis === "exact" ? n : null, title: opts.title };
   }
+  const floor = n === 0 ? FLOOR_ZERO_TITLE : FLOOR_TITLE;
+  return {
+    value: n > 0 ? `≥${n}` : opts.compact ? 0 : ZERO_AMONG_ROWS_READ,
+    title: opts.title ? `${opts.title} — ${floor}` : floor,
+  };
+}
+
+/**
+ * A join-class count — `linked`, `lifecycle-only` — as its stat renders it:
+ * a {@link fleetCount} while the agent half answered, and `–` once it FAILED.
+ * The route then withholds EVERY row's class (`row_class: null` for all of
+ * them, shells included), so a `0` here would count nothing. `meaning` is the
+ * stat's own sentence.
+ */
+export function joinClassCount(
+  n: number,
+  ceiling: SessionsCeiling,
+  meaning: string
+): CountCell {
+  if (isAgentHalfFailed(ceiling)) {
+    return { value: null, title: AGENT_HALF_DID_NOT_ANSWER };
+  }
+  return fleetCount(n, countBasis(ceiling), { title: meaning });
 }
 
 /** The `agent-only` stat's value, and the sentence its `title` carries. */
-export interface AgentOnlyStat {
-  value: number | string | null;
+export interface AgentOnlyStat extends CountCell {
   title: string;
 }
 
@@ -409,14 +485,20 @@ const AGENT_ONLY_MEANING =
  * | full | complete | a CEILING — a row's lifecycle twin may lie past the lifecycle ceiling | `≤n`; `0` is exact |
  * | full | full | neither — both errors at once | `n unmatched among rows read` |
  * | either of unknown size | | nothing established | `–` |
+ * | any | FAILED | nothing established — no agent row was read | `–` |
  *
- * An `unreported` half reads as complete, as it does for every count.
+ * An `unreported` half reads as complete, as it does for every count. A
+ * FAILED agent half never does: "every agent session was read" would be the
+ * one thing that read did not do.
  */
 export function agentOnlyStat(
   n: number,
   ceiling: SessionsCeiling
 ): AgentOnlyStat {
   const { lifecycle, agent } = ceiling;
+  if (agent.kind === "failed") {
+    return { value: null, title: AGENT_HALF_DID_NOT_ANSWER };
+  }
   if (lifecycle.kind === "unknown" || agent.kind === "unknown") {
     return {
       value: null,
@@ -446,8 +528,10 @@ export function agentOnlyStat(
   }
   if (agent.kind === "capped") {
     return {
-      value: fleetCount(n, "floor"),
-      title: `${AGENT_ONLY_MEANING} — at least this many: the agent half stopped at its ceiling, and agent sessions past it were not read`,
+      value: n > 0 ? `≥${n}` : ZERO_AMONG_ROWS_READ,
+      title: `${AGENT_ONLY_MEANING} — ${
+        n > 0 ? "at least this many" : "0 among the rows read"
+      }: it counts only the rows read, and the agent half stopped at its ceiling, so agent sessions past it were not read`,
     };
   }
   return { value: n, title: AGENT_ONLY_MEANING };
@@ -988,7 +1072,10 @@ export interface SessionsHealth {
   level: "green" | "amber" | "red";
   headline: string;
   detail: string;
-  /** Rows needing a person now. `null` while nothing is known. */
+  /**
+   * Rows needing a person now. `null` while nothing is known — and over a
+   * FAILED agent read, which establishes no row's status (so `active` too).
+   */
   attention: number | null;
   active: number | null;
   waiting: number | null;
@@ -1064,6 +1151,11 @@ export interface SessionsReferent {
  * not observe — the same rule `derivePlansHealth`'s `incomplete` holds. A red
  * row still outranks both; one found in part of the fleet is still red.
  *
+ * A FAILED agent read ({@link HalfExtent} `failed`, or `agentHalfFailed`) is
+ * not a complete one: the route withholds every row's class, so no row's
+ * status is established and `attention` / `active` are `null` — unknown, not
+ * zero — under the "Lifecycle half only" headline.
+ *
  * ## Matches the filter hid are never a green empty tab
  *
  * `withheld` counts sessions the status / machine SERVER filter hid although
@@ -1136,14 +1228,18 @@ export function deriveSessionsHealth(
     if (status.kind === "active" || status.kind === "starting") active += 1;
   }
 
-  const basis = countBasis(opts.ceiling ?? NO_CEILING);
+  const ceiling = opts.ceiling ?? NO_CEILING;
+  const basis = countBasis(ceiling);
   const withheld = opts.withheld ?? 0;
+  // The flag and the ceiling's `failed` extent are the same fact, read off
+  // the same answer; either is enough.
+  const agentFailed = opts.agentHalfFailed || isAgentHalfFailed(ceiling);
   const level: "green" | "amber" | "red" =
     attention > 0
       ? "red"
       : waiting > 0 ||
           unknownJoin > 0 ||
-          opts.agentHalfFailed ||
+          agentFailed ||
           basis !== "exact" ||
           withheld > 0
         ? "amber"
@@ -1156,7 +1252,7 @@ export function deriveSessionsHealth(
   let headline: string;
   if (attention > 0) headline = say.attention(attention);
   else if (basis === "unknown") headline = say.sizeUnknown(rows.length);
-  else if (opts.agentHalfFailed)
+  else if (agentFailed)
     headline = "Lifecycle half only — the agent half did not answer";
   else if (unknownJoin > 0) headline = say.unresolved(unknownJoin);
   else if (waiting > 0) headline = say.waiting(waiting);
@@ -1166,7 +1262,7 @@ export function deriveSessionsHealth(
   } else if (active > 0) headline = say.clean(active);
   else headline = say.noneRunning(rows.length);
 
-  const base = opts.agentHalfFailed
+  const base = agentFailed
     ? "Transcript and lineage columns read – for every row: unknown, not absent."
     : say.detail({
         rows: rows.length,
@@ -1184,8 +1280,11 @@ export function deriveSessionsHealth(
     level,
     headline,
     detail,
-    attention,
-    active,
+    // A failed agent read withholds every row's class, so no row's status is
+    // established (D2): "0 need a person" and "0 active" would be counts of
+    // nothing. Unknown, not zero.
+    attention: agentFailed ? null : attention,
+    active: agentFailed ? null : active,
     waiting,
     unknownJoin,
     machines: machines.size,
