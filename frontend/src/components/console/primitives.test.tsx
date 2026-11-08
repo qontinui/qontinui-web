@@ -77,6 +77,34 @@ describe("FilterTabs (R6)", () => {
     expect(screen.getByTestId("t-all")).not.toHaveTextContent("–");
   });
 
+  it("carries a tab's title — the sentence its count slot has no room for", () => {
+    // A floor of zero renders a bare `0` in the monospace count slot; the
+    // words that say it counts only the rows read live in the title.
+    render(
+      <FilterTabs
+        tabs={[
+          {
+            id: "live",
+            label: "Live",
+            count: 0,
+            title: "0 among the rows read: it counts only the rows read",
+          },
+          { id: "stale", label: "Stale" },
+        ]}
+        active="live"
+        onChange={() => {}}
+        testIdPrefix="t"
+      />
+    );
+    expect(screen.getByTestId("t-live")).toHaveTextContent("Live0");
+    expect(screen.getByTestId("t-live")).toHaveAttribute(
+      "title",
+      "0 among the rows read: it counts only the rows read"
+    );
+    // No sentence, no attribute.
+    expect(screen.getByTestId("t-stale")).not.toHaveAttribute("title");
+  });
+
   it("marks the active tab and reports a change", () => {
     const onChange = vi.fn();
     render(

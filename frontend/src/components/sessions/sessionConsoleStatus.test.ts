@@ -30,6 +30,7 @@ import {
   hasAgentHalf,
   hasLifecycleHalf,
   isCapped,
+  joinClassCount,
   lastHeartbeatAt,
   lifecycleState,
   rowClassExplanation,
@@ -799,13 +800,33 @@ describe("the 500-row ceilings", () => {
 // ---------------------------------------------------------------------------
 
 describe("fleet counts", () => {
-  it("are exact, a floor, or unstated — one spelling each, and a floor of zero says what it counted", () => {
-    expect(fleetCount(31, "exact")).toBe(31);
-    expect(fleetCount(0, "exact")).toBe(0);
-    expect(fleetCount(31, "floor")).toBe("≥31");
-    expect(fleetCount(0, "floor")).toBe("0 of those read");
-    expect(fleetCount(31, "unknown")).toBeNull();
-    expect(fleetCount(0, "unknown")).toBeNull();
+  it("are exact, a floor, or unstated — one spelling each", () => {
+    expect(fleetCount(31, "exact").value).toBe(31);
+    expect(fleetCount(0, "exact").value).toBe(0);
+    expect(fleetCount(31, "floor").value).toBe("≥31");
+    expect(fleetCount(31, "unknown").value).toBeNull();
+    expect(fleetCount(0, "unknown").value).toBeNull();
+    // An exact count needs no sentence beside it; a slot keeps its own.
+    expect(fleetCount(31, "exact").title).toBeUndefined();
+    expect(fleetCount(31, "exact", { title: "own" }).title).toBe("own");
+  });
+
+  it("a floor of zero is never ≥0 nor 'of those read': words where there is room, a bare 0 in a compact slot — titled either way", () => {
+    const roomy = fleetCount(0, "floor");
+    expect(roomy.value).toBe("0 among rows read");
+    expect(roomy.title).toContain("counts only the rows read");
+    // A tab's monospace count slot has no room for words.
+    const compact = fleetCount(0, "floor", { compact: true });
+    expect(compact.value).toBe(0);
+    expect(compact.title).toContain("counts only the rows read");
+    // A slot's own sentence is kept, the floor's added to it.
+    const own = fleetCount(0, "floor", { title: "own sentence" });
+    expect(own.title).toMatch(/^own sentence — /);
+    expect(own.title).toContain("counts only the rows read");
+    // Every floor says it is one in its title, not only the zero.
+    expect(fleetCount(31, "floor").title).toContain(
+      "counts only the rows read"
+    );
   });
 
   it("read the basis off both halves: an unknown size outranks a ceiling", () => {
@@ -850,9 +871,9 @@ describe("the agent-only stat follows the direction of its set difference", () =
     const s = stat(3, { lifecycle: COMPLETE, agent: FULL });
     expect(s.value).toBe("≥3");
     expect(s.title).toContain("at least");
-    expect(stat(0, { lifecycle: COMPLETE, agent: FULL }).value).toBe(
-      "0 of those read"
-    );
+    const zero = stat(0, { lifecycle: COMPLETE, agent: FULL });
+    expect(zero.value).toBe("0 among rows read");
+    expect(zero.title).toContain("counts only the rows read");
   });
 
   it("is a CEILING when only the lifecycle half stopped: a row's twin may lie past it", () => {
@@ -880,5 +901,81 @@ describe("the agent-only stat follows the direction of its set difference", () =
     expect(
       stat(3, { lifecycle: COMPLETE, agent: bound(0, "unknown") }).value
     ).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A FAILED agent read is its own extent — never a complete one
+// ---------------------------------------------------------------------------
+
+describe("a FAILED agent read", () => {
+  const FAILED = { read: "failed", detail: "502: coord is not reachable" };
+  const withFailedAgent = (lifecycle: BoundedReadMeta) =>
+    sessionsCeiling({
+      lifecycle_half: { read: "ok", bound: lifecycle },
+      agent_half: FAILED,
+    });
+  const DID_NOT_ANSWER = "the agent half did not answer — unknown, not zero";
+
+  it("is its own extent — not an older backend's silence, which reads as complete", () => {
+    expect(withFailedAgent(bound(3, "complete")).agent).toEqual({
+      kind: "failed",
+    });
+    // An ANSWERED agent half with no bound is still the older backend.
+    expect(sessionsCeiling({ agent_half: { read: "ok" } }).agent).toEqual({
+      kind: "unreported",
+    });
+  });
+
+  it("makes the fleet counts floors: sessions only the agent half holds were not read", () => {
+    expect(countBasis(withFailedAgent(bound(3, "complete")))).toBe("floor");
+    // A half of unknown size still outranks it.
+    expect(countBasis(withFailedAgent(bound(0, "unknown")))).toBe("unknown");
+  });
+
+  it("leaves agent-only unknown beside a FULL lifecycle half — never 'every agent session was read'", () => {
+    const s = agentOnlyStat(0, withFailedAgent(bound(500, "unknown")));
+    expect(s.value).toBeNull();
+    expect(s.title).toBe(DID_NOT_ANSWER);
+    expect(agentOnlyStat(0, withFailedAgent(bound(3, "complete")))).toEqual({
+      value: null,
+      title: DID_NOT_ANSWER,
+    });
+  });
+
+  it("leaves the join-class counts unknown: the route withholds every row's class", () => {
+    for (const lifecycle of [bound(500, "unknown"), bound(3, "complete")]) {
+      expect(joinClassCount(0, withFailedAgent(lifecycle), "own")).toEqual({
+        value: null,
+        title: DID_NOT_ANSWER,
+      });
+    }
+    // While the agent half answered, a join class is a fleet count.
+    expect(joinClassCount(4, ceilingOf({}), "own")).toEqual({
+      value: 4,
+      title: "own",
+    });
+  });
+
+  it("establishes no row's status, so the strip counts no one as needing a person or active", () => {
+    const h = deriveSessionsHealth(
+      [linked({ row_class: null, agent_session: null })],
+      {
+        readUnknown: false,
+        loaded: true,
+        agentHalfFailed: true,
+        ceiling: withFailedAgent(bound(1, "complete")),
+        options: { now: NOW },
+      }
+    );
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe(
+      "Lifecycle half only — the agent half did not answer"
+    );
+    expect(h.attention).toBeNull();
+    expect(h.active).toBeNull();
+    // Exact: rows of THIS read whose class was withheld.
+    expect(h.unknownJoin).toBe(1);
+    expect(h.machines).toBe(1);
   });
 });

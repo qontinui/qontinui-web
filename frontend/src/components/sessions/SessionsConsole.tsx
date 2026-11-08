@@ -69,7 +69,9 @@
  * stopped at its 500-row ceiling the counts are floors (`≥n`, one spelling),
  * while either half's size is unknown they are dashes, and a line under the
  * stats names the half and says which. `agent-only` is a set difference, so
- * its bound follows WHICH half stopped (`agentOnlyStat`).
+ * its bound follows WHICH half stopped (`agentOnlyStat`). A FAILED agent read
+ * is not a complete one: rows and machines are floors, and the join classes
+ * and the status counts are dashes that say the agent half did not answer.
  *
  * ## Finding a session by name, id or commit trailer — and its account
  *
@@ -116,6 +118,7 @@ import { listConsolidatedSessions } from "@/lib/api/operations/sessions";
 import {
   SESSION_STATUS_PALETTE,
   SESSION_WORK_PALETTE,
+  STATUSES_UNESTABLISHED,
   agentOnlyStat,
   agentSessionId,
   ceilingDisclosure,
@@ -129,10 +132,12 @@ import {
   hasLifecycleHalf,
   isSessionFinished,
   isSizeUnknown,
+  joinClassCount,
   rowTimestamp,
   sessionsCeiling,
   type ConsolidatedSessionRow,
   type ConsolidatedSessionsResponse,
+  type CountCell,
   type HalfExtent,
 } from "./sessionConsoleStatus";
 import {
@@ -631,48 +636,74 @@ export function SessionsConsole({
   //
   // Keyed on `loaded`, not on `unknown`: before the FIRST answer nothing is
   // known either, and a `0` then is the `silent-empty-is-unknown` mistake with
-  // a number attached (`unknown` is the failed half of the same window).
-  //
+  // a number attached (`unknown` is the failed half of the same window). So
+  // every count slot is `–` until coord answers, keeping its own title; after
+  // that it reads its `CountCell` — exact; a floor (`≥n`, and a floor of zero
+  // as words where the slot has room, a bare `0` in a tab, titled either way);
+  // `–` over a half of unknown size.
+  const unread = (cell: CountCell): CountCell =>
+    loaded ? cell : { value: null, title: cell.title };
+  const fleet = (
+    n: number | null,
+    opts: { compact?: boolean; title?: string } = {}
+  ): CountCell =>
+    n === null
+      ? { value: null, title: opts.title }
+      : unread(fleetCount(n, basis, opts));
+
   // The status tabs are a SERVER filter, so only the answered tab's count is
   // measured; the others have not been fetched and a `0` on them would be the
   // same mistake. `FilterTabs` renders `null` as `–`. The answered tab shows
   // coord's count for it (`rows`), never what the facets left — that is the
-  // scoped line's number — spelled like every other fleet count: `≥1000` over
-  // a full half, `–` over a half of unknown size.
-  const tabs = STATUS_TABS.map((t) => ({
-    id: t.id,
-    label: t.label,
-    count:
-      !loaded || t.id !== answered.status
-        ? null
-        : fleetCount(rows.length, basis),
-    attention: t.id === answered.status && (health.attention ?? 0) > 0,
-  }));
+  // scoped line's number — spelled like every other fleet count, in the
+  // slot's compact form: a floor of zero is a bare `0` whose title says what
+  // it counted.
+  const answeredCount = fleet(rows.length, { compact: true });
+  const tabs = STATUS_TABS.map((t) => {
+    const answeredTab = loaded && t.id === answered.status;
+    return {
+      id: t.id,
+      label: t.label,
+      count: answeredTab ? answeredCount.value : null,
+      title: answeredTab ? answeredCount.title : undefined,
+      attention: t.id === answered.status && (health.attention ?? 0) > 0,
+    };
+  });
 
-  /**
-   * A fleet count: `–` until coord answers, then exact, `≥n` (a floor of zero
-   * reads "0 of those read") over a full half, `–` over one of unknown size.
-   */
-  const fleet = (n: number | null): number | string | null =>
-    !loaded || n === null ? null : fleetCount(n, basis);
-  // A set difference, so its bound follows WHICH half stopped.
+  // A set difference, so its bound follows WHICH half stopped — and a FAILED
+  // agent half establishes no class at all.
   const agentOnly = agentOnlyStat(countClass(rows, "agent_only"), ceiling);
+  // A failed agent read establishes no row's status, so the strip's two
+  // status counts are `–` (`deriveSessionsHealth` returns them null) and say
+  // why.
+  const statusTitle = agentHalfFailed ? STATUSES_UNESTABLISHED : undefined;
+  const attentionCount = fleet(health.attention, { title: statusTitle });
+  const activeCount = fleet(health.active, { title: statusTitle });
 
   const stats: Stat[] = [
-    { key: "rows", label: "rows ", value: fleet(rows.length) },
-    { key: "machines", label: "machines ", value: fleet(health.machines) },
+    { key: "rows", label: "rows ", ...fleet(rows.length) },
+    { key: "machines", label: "machines ", ...fleet(health.machines) },
     {
       key: "linked",
       label: "linked ",
-      value: fleet(countClass(rows, "linked")),
-      title: "coord.sessions row bridged to its coord.agent_sessions row",
+      ...unread(
+        joinClassCount(
+          countClass(rows, "linked"),
+          ceiling,
+          "coord.sessions row bridged to its coord.agent_sessions row"
+        )
+      ),
     },
     {
       key: "lifecycle",
       label: "lifecycle-only ",
-      value: fleet(countClass(rows, "lifecycle_only")),
-      title:
-        "no Claude Code session id, so no agent-session row can exist — transcript and lineage are not applicable",
+      ...unread(
+        joinClassCount(
+          countClass(rows, "lifecycle_only"),
+          ceiling,
+          "no Claude Code session id, so no agent-session row can exist — transcript and lineage are not applicable"
+        )
+      ),
       tone: "muted",
     },
     {
@@ -682,8 +713,7 @@ export function SessionsConsole({
       // lifecycle row READ bridges, so a full lifecycle half can only have
       // made it too big (`≤n`), a full agent half too small (`≥n`), and both
       // at once leaves a count of rows read that is neither.
-      value: loaded ? agentOnly.value : null,
-      title: agentOnly.title,
+      ...unread(agentOnly),
       tone: "muted",
     },
     {
@@ -701,12 +731,14 @@ export function SessionsConsole({
   const badges: HealthBadge[] = [
     {
       key: "attention",
-      label: `needs a person ${fleet(health.attention) ?? "–"}`,
+      label: `needs a person ${attentionCount.value ?? "–"}`,
+      title: attentionCount.title,
       tone: (health.attention ?? 0) > 0 ? "attention" : "muted",
     },
     {
       key: "active",
-      label: `active ${fleet(health.active) ?? "–"}`,
+      label: `active ${activeCount.value ?? "–"}`,
+      title: activeCount.title,
       tone: "muted",
     },
     {
