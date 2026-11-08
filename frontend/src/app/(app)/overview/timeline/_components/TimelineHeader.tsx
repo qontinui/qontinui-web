@@ -54,7 +54,12 @@ const TONE: Record<string, string> = {
   on_plan: "border-border text-muted-foreground",
 };
 
-function where(forecast: TimelineForecast): { value: string; detail: string } {
+/** Where the delivery stands, in words: the phase under way, between phases,
+ *  not started, finished — or no phases at all. */
+export function positionWords(forecast: TimelineForecast): {
+  value: string;
+  detail: string;
+} {
   const named = (p: { code: string; name: string }) => `${p.code} ${p.name}`;
   switch (forecast.position) {
     case "in_progress":
@@ -98,7 +103,7 @@ export function TimelineHeader({ forecast }: { forecast: TimelineForecast }) {
   ]
     .filter(Boolean)
     .join(", ");
-  const now = where(forecast);
+  const now = positionWords(forecast);
   const slip = describeSlip(forecast.slip_days);
 
   return (

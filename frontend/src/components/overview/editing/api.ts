@@ -435,6 +435,38 @@ export async function fetchPageBacklinks<T>(pageId: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * A report's timeline (plan
+ * `2026-11-07-interactive-stakeholder-reports-in-the-project-overview` D10):
+ * the report, its stops in time order, what changed at each, and what the
+ * server withheld. Report blocks read it only through `ReportContext`.
+ */
+export async function fetchReportView<T>(reportId: string): Promise<T> {
+  const response = await send(
+    "GET",
+    `${OVERVIEW_API}/reports/${encodeURIComponent(reportId)}/view`
+  );
+  if (!response.ok) throw await readError(response);
+  return (await response.json()) as T;
+}
+
+/**
+ * The project's success measures with their checkpoint results — the read of
+ * plan `2026-11-07-overview-objectives-view-web-half-lands-by-successor`. A
+ * backend that predates that plan answers 404, which the
+ * `objective-checkpoints` block says as "not available yet"; any other
+ * failure is a {@link ResourceError} it says as "can't be read right now".
+ *
+ * The route is not in this snapshot yet, so the route walker carries it in its
+ * baseline as `dead`; the entry goes stale — and that test red — the moment
+ * the successor's backend route lands, which is the cue to drop the entry.
+ */
+export async function fetchObjectives<T>(): Promise<T> {
+  const response = await send("GET", `${OVERVIEW_API}/objectives`);
+  if (!response.ok) throw await readError(response);
+  return (await response.json()) as T;
+}
+
 /** Restore `version` of a page, written on `current` (the version on
  *  screen). Answers the page as the restore left it. */
 export async function revertPage<T>(

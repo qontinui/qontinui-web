@@ -27,77 +27,30 @@
  */
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LoadFailure } from "@/components/overview/LoadFailure";
 import { useCanEdit } from "@/components/overview/editing/permissions";
-import {
-  useResourceList,
-  useResourceRecord,
-} from "@/components/overview/editing/useResource";
 import { cn } from "@/lib/utils";
 import { useOverviewProject } from "../_hooks/useOverviewProject";
-import {
-  ESTIMATES,
-  pickBaseline,
-  type EstimateRecord,
-  type PhaseTaskRead,
-} from "../_lib/estimate-api";
+import { useTimelineData } from "../_hooks/useTimelineData";
+import { ESTIMATES, type EstimateRecord } from "../_lib/estimate-api";
 import type { PhaseChoice } from "../_lib/milestones";
 import {
   MILESTONES,
-  MILESTONES_PATH,
   PHASE_PROGRESS,
-  PHASE_PROGRESS_PATH,
-  fetchForecast,
   type Milestone,
   type PhaseProgress,
   type PhaseProgressPatch,
-  type TimelineForecast,
 } from "../_lib/timeline-api";
-import {
-  ZOOMS,
-  projectWindow,
-  toDay,
-  toMermaidGantt,
-  zoomWindow,
-  type Zoom,
-} from "../_lib/timeline";
+import { ZOOMS, toMermaidGantt, zoomWindow, type Zoom } from "../_lib/timeline";
 import { MilestonesSection } from "./_components/MilestonesSection";
-import { assemblePhases, phaseKey } from "./_components/model";
+import { phaseKey } from "./_components/model";
 import { PhaseDetails } from "./_components/PhaseDetails";
 import { PhaseList } from "./_components/PhaseList";
 import { TimelineChart } from "./_components/TimelineChart";
 import { TimelineHeader } from "./_components/TimelineHeader";
-
-type ForecastState =
-  | { state: "loading" }
-  | { state: "error"; message: string }
-  | { state: "ready"; forecast: TimelineForecast };
-
-/** The forecast for `estimateId`, re-read whenever `token` moves (after a
- *  progress write, which is what changes it). */
-function useForecast(estimateId: string | null, hold: boolean, token: number) {
-  const [value, setValue] = useState<ForecastState>({ state: "loading" });
-  useEffect(() => {
-    if (hold || estimateId === null) return;
-    let live = true;
-    fetchForecast(estimateId).then(
-      (forecast) => live && setValue({ state: "ready", forecast }),
-      (err: unknown) =>
-        live &&
-        setValue({
-          state: "error",
-          message: err instanceof Error ? err.message : String(err),
-        })
-    );
-    return () => {
-      live = false;
-    };
-  }, [estimateId, hold, token]);
-  return value;
-}
 
 function Section({
   id,
@@ -240,30 +193,20 @@ export default function TimelinePage() {
   const canEditMilestones = useCanEdit(MILESTONES);
   const canEditEstimate = useCanEdit(ESTIMATES);
 
-  const estimates = useResourceList<EstimateRecord>(ESTIMATES, {
-    hold,
-    reloadKey: projectId,
-  });
-  const estimate =
-    estimates.list.state === "ready"
-      ? pickBaseline(estimates.list.items)
-      : null;
-  const estimateId = estimate?.id ?? null;
-  const record = useResourceRecord<EstimateRecord>(ESTIMATES, estimateId, {
-    hold,
-    reloadKey: projectId,
-  });
-  const progress = useResourceList<PhaseProgress>(PHASE_PROGRESS_PATH, {
-    params: estimateId ? { estimate_id: estimateId } : {},
-    hold: hold || estimateId === null,
-    reloadKey: projectId,
-  });
-  const milestones = useResourceList<Milestone>(MILESTONES_PATH, {
-    hold,
-    reloadKey: projectId,
-  });
-  const [forecastToken, setForecastToken] = useState(0);
-  const forecast = useForecast(estimateId, hold, forecastToken);
+  const {
+    estimates,
+    estimate,
+    record,
+    progress,
+    milestones,
+    forecast,
+    refreshForecast,
+    breaks,
+    phases,
+    milestoneItems,
+    today,
+    projectSpan,
+  } = useTimelineData(projectId, hold);
 
   const [view, setView] = useState<"calendar" | "list">("calendar");
   const [zoom, setZoom] = useState<Zoom>("project");
@@ -274,32 +217,12 @@ export default function TimelinePage() {
     async (current: PhaseProgress, patch: PhaseProgressPatch) => {
       const result = await updateProgress(current, patch);
       // Progress is what the forecast is computed from.
-      if (result.ok) setForecastToken((n) => n + 1);
+      if (result.ok) refreshForecast();
       return result;
     },
-    [updateProgress]
+    [updateProgress, refreshForecast]
   );
 
-  const content =
-    record.record.state === "ready" ? record.record.item.content : null;
-  const tasks = useMemo(() => {
-    const byPhase = new Map<string, PhaseTaskRead[]>();
-    for (const phase of content?.phases ?? [])
-      byPhase.set(phase.id, phase.tasks);
-    return byPhase;
-  }, [content]);
-  const breaks = content?.calendar_breaks ?? [];
-  const phases = useMemo(
-    () =>
-      progress.list.state === "ready"
-        ? assemblePhases(
-            progress.list.items,
-            tasks,
-            forecast.state === "ready" ? forecast.forecast.phases : null
-          )
-        : [],
-    [progress.list, tasks, forecast]
-  );
   const phaseChoices: PhaseChoice[] = useMemo(
     () =>
       phases.map((p) => ({
@@ -309,23 +232,6 @@ export default function TimelinePage() {
       })),
     [phases]
   );
-  const milestoneItems =
-    milestones.list.state === "ready" ? milestones.list.items : [];
-
-  const today =
-    toDay(forecast.state === "ready" ? forecast.forecast.today : null) ??
-    new Date();
-  const projectSpan = projectWindow([
-    ...phases.flatMap((p) => [
-      p.progress.planned_start,
-      p.progress.planned_end,
-      p.progress.actual_start,
-      p.progress.actual_end,
-      p.forecast?.forecast_end,
-    ]),
-    ...milestoneItems.map((m) => m.target_date),
-    ...breaks.flatMap((b) => [b.start_date, b.end_date]),
-  ]);
   const axis = projectSpan ? zoomWindow(projectSpan, zoom, today) : null;
   const selectedPhase = phases.find((p) => phaseKey(p) === selected) ?? null;
 

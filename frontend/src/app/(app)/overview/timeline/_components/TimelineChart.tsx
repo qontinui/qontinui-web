@@ -115,13 +115,18 @@ function PhaseLane({
   today,
   selected,
   onSelect,
+  base,
 }: {
   phase: TimelinePhase;
   window: AxisWindow;
   breaks: CalendarBreakRead[];
   today: Date;
   selected: boolean;
-  onSelect: () => void;
+  /** Absent on a read-only chart: the gate marker is then a mark, not a
+   *  control. */
+  onSelect?: () => void;
+  /** The chart's UI Bridge id, which every id in the lane extends. */
+  base: string;
 }) {
   const p = phase.progress;
   const f = phase.forecast;
@@ -146,7 +151,7 @@ function PhaseLane({
     <>
       <div
         className={cn(LABEL_COLUMN, "border-b border-border/60")}
-        data-ui-bridge-id={`overview.timeline.chart.phase.${key}`}
+        data-ui-bridge-id={`${base}.phase.${key}`}
       >
         <div className="flex min-h-12 flex-col justify-center py-1 pr-2">
           <span className="truncate text-sm text-foreground" title={p.name}>
@@ -161,7 +166,7 @@ function PhaseLane({
               onClick={() => setShowTasks((v) => !v)}
               aria-expanded={showTasks}
               className="self-start text-xs text-muted-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              data-ui-bridge-id={`overview.timeline.chart.phase.${key}.tasks-toggle`}
+              data-ui-bridge-id={`${base}.phase.${key}.tasks-toggle`}
             >
               {showTasks ? "Hide tasks" : `${phase.tasks.length} tasks`}
             </button>
@@ -206,7 +211,7 @@ function PhaseLane({
               />
             )}
           </div>
-          {gateAt !== null && (
+          {gateAt !== null && onSelect && (
             <button
               type="button"
               onClick={onSelect}
@@ -218,7 +223,7 @@ function PhaseLane({
                 selected && "ring-2 ring-ring"
               )}
               style={{ left: `${gateAt}%` }}
-              data-ui-bridge-id={`overview.timeline.chart.phase.${key}.gate`}
+              data-ui-bridge-id={`${base}.phase.${key}.gate`}
               data-gate-status={p.gate_status}
             >
               <span
@@ -227,6 +232,22 @@ function PhaseLane({
               />
             </button>
           )}
+          {gateAt !== null && !onSelect && (
+            <span
+              role="img"
+              aria-label={`Gate ${p.code}: ${gate.label}`}
+              title={`Gate ${p.code}: ${gate.label}`}
+              className="absolute top-1/2 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center"
+              style={{ left: `${gateAt}%` }}
+              data-ui-bridge-id={`${base}.phase.${key}.gate`}
+              data-gate-status={p.gate_status}
+            >
+              <span
+                aria-hidden
+                className={cn("size-3 rotate-45 border-2", gate.marker)}
+              />
+            </span>
+          )}
         </div>
       </div>
       {showTasks &&
@@ -234,7 +255,7 @@ function PhaseLane({
           <div
             key={task.id}
             className={cn(LABEL_COLUMN, "border-b border-border/40")}
-            data-ui-bridge-id={`overview.timeline.chart.phase.${key}.task.${task.number}`}
+            data-ui-bridge-id={`${base}.phase.${key}.task.${task.number}`}
           >
             <div className="truncate py-1 pl-3 pr-2 text-xs text-muted-foreground">
               {task.is_critical && (
@@ -282,27 +303,35 @@ export function TimelineChart({
   breaks,
   window,
   today,
-  selected,
+  selected = null,
   onSelect,
+  uiBridgeId = "overview.timeline.chart",
 }: {
   phases: TimelinePhase[];
   milestones: Milestone[];
   breaks: CalendarBreakRead[];
   window: AxisWindow;
   today: Date;
-  selected: string | null;
-  onSelect: (code: string | null) => void;
+  selected?: string | null;
+  /**
+   * Choose a phase's gate. Absent, the chart is read-only (a live block
+   * showing the Timeline elsewhere): each gate is drawn as a mark, not a
+   * control.
+   */
+  onSelect?: (code: string | null) => void;
+  /** Every UI Bridge id in the chart extends this one. */
+  uiBridgeId?: string;
 }) {
   const months = axisMonths(window);
   const now = dayOffset(today, window);
   return (
     <div
       className="rounded-md border border-border"
-      data-ui-bridge-id="overview.timeline.chart"
+      data-ui-bridge-id={uiBridgeId}
     >
       <div
         className={cn(LABEL_COLUMN, "border-b border-border")}
-        data-ui-bridge-id="overview.timeline.chart.axis"
+        data-ui-bridge-id={`${uiBridgeId}.axis`}
       >
         <div className="px-2 py-1.5 text-xs text-muted-foreground">Phase</div>
         <div className="relative h-8 overflow-hidden">
@@ -319,7 +348,7 @@ export function TimelineChart({
             <span
               className="absolute bottom-0 -translate-x-1/2 rounded-sm bg-primary px-1 text-[10px] leading-4 text-primary-foreground"
               style={{ left: `${now}%` }}
-              data-ui-bridge-id="overview.timeline.chart.today"
+              data-ui-bridge-id={`${uiBridgeId}.today`}
             >
               Today
             </span>
@@ -334,14 +363,20 @@ export function TimelineChart({
           breaks={breaks}
           today={today}
           selected={selected === phaseKey(phase)}
-          onSelect={() =>
-            onSelect(selected === phaseKey(phase) ? null : phaseKey(phase))
+          onSelect={
+            onSelect
+              ? () =>
+                  onSelect(
+                    selected === phaseKey(phase) ? null : phaseKey(phase)
+                  )
+              : undefined
           }
+          base={uiBridgeId}
         />
       ))}
       <div
         className={LABEL_COLUMN}
-        data-ui-bridge-id="overview.timeline.chart.milestones"
+        data-ui-bridge-id={`${uiBridgeId}.milestones`}
       >
         <div className="flex min-h-10 items-center pr-2 text-sm text-foreground">
           Milestones
@@ -361,7 +396,7 @@ export function TimelineChart({
                   MILESTONE_MARK[m.status]
                 )}
                 style={{ left: `${at}%` }}
-                data-ui-bridge-id={`overview.timeline.chart.milestone.${m.id}`}
+                data-ui-bridge-id={`${uiBridgeId}.milestone.${m.id}`}
               >
                 <span className="sr-only">
                   {m.title}, {formatDay(m.target_date)},{" "}
@@ -372,16 +407,16 @@ export function TimelineChart({
           })}
         </div>
       </div>
-      <Legend />
+      <Legend uiBridgeId={`${uiBridgeId}.legend`} />
     </div>
   );
 }
 
-function Legend() {
+function Legend({ uiBridgeId }: { uiBridgeId: string }) {
   return (
     <div
       className="flex flex-wrap gap-x-5 gap-y-1 border-t border-border px-2 py-2 text-xs text-muted-foreground"
-      data-ui-bridge-id="overview.timeline.chart.legend"
+      data-ui-bridge-id={uiBridgeId}
     >
       <span className="inline-flex items-center gap-1.5">
         <span className="h-2.5 w-6 rounded-sm border border-primary/50 bg-primary/15" />

@@ -37,7 +37,10 @@ import {
   type IntentEntry,
   type SummaryIntentKind,
 } from "../_lib/intent";
-import { parseProjectState } from "@/components/admin/coord/coordHomeStatus";
+import {
+  parseProjectState,
+  type ProjectStateView,
+} from "@/components/admin/coord/coordHomeStatus";
 import {
   progressFromOnTrack,
   recentlyFinishedFrom,
@@ -103,14 +106,38 @@ async function loadRecentlyFinished(): Promise<RecentlyFinished | null> {
  * here is never retried — `httpClient`'s default would ask a coord that is
  * already slow up to four more times (see `projectState.ts`).
  */
+async function readProjectState(): Promise<ProjectStateView> {
+  const view = parseProjectState(
+    await fetchProjectState(PROJECT_STATE_ONE_SHOT_OPTIONS)
+  );
+  if (!view) throw new Error("the progress answer was not readable");
+  return view;
+}
+
 async function loadProgress(): Promise<ProgressReading> {
-  const [stateBody, finished] = await Promise.all([
-    fetchProjectState(PROJECT_STATE_ONE_SHOT_OPTIONS),
+  const [view, finished] = await Promise.all([
+    readProjectState(),
     loadRecentlyFinished(),
   ]);
-  const view = parseProjectState(stateBody);
-  if (!view) throw new Error("the progress answer was not readable");
   return progressFromOnTrack(view.onTrack, finished);
+}
+
+/**
+ * The work counts alone — the same read, the same buckets — with when coord
+ * produced them. The `overview-kpi` work figures read through this, so a
+ * figure on a document and the Summary's panel can never count differently
+ * (plan `2026-11-07-interactive-stakeholder-reports-in-the-project-overview`
+ * D3).
+ */
+export async function loadWorkCounts(): Promise<{
+  reading: ProgressReading;
+  asOf: string | null;
+}> {
+  const view = await readProjectState();
+  return {
+    reading: progressFromOnTrack(view.onTrack, null),
+    asOf: view.generatedAt,
+  };
 }
 
 /** Kind order is the page's section order; within a kind, reading order.
