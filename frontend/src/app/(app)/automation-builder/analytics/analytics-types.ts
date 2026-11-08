@@ -3,7 +3,6 @@ import type { WorkflowMetrics } from "@/services/workflow-analytics-service";
 import type { AggregatedStats } from "@/services/workflow-analytics-service";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import type { ComplexityAnalysis } from "@/services/workflow-complexity-analyzer";
-import type { TestResult } from "@/services/workflow-testing";
 
 export type TimeRangePreset =
   | "today"
@@ -33,7 +32,7 @@ export interface SelectedWorkflowData {
   workflow: Workflow;
   metrics: WorkflowMetrics;
   complexityMetrics: ComplexityAnalysis;
-  executionHistory: TestResult[];
+  executionHistory: ExecutionRecord[];
 }
 
 export type {
@@ -42,5 +41,4 @@ export type {
   AggregatedStats,
   Workflow,
   ComplexityAnalysis,
-  TestResult,
 };

@@ -82,7 +82,7 @@ interface WorkflowMetricsPanelProps {
   workflow: Workflow;
   metrics: WorkflowMetrics;
   complexityMetrics: ComplexityAnalysis;
-  executionHistory: TestResult[];
+  executionHistory: ExecutionRecord[];
   className?: string;
 }
 ```
@@ -178,7 +178,6 @@ The components use types from:
 - `@/lib/action-schema/action-types` - Workflow and Action types
 - `@/services/workflow-analytics-service` - WorkflowMetrics, ExecutionRecord
 - `@/services/workflow-complexity-analyzer` - ComplexityAnalysis
-- `@/services/workflow-testing` - TestResult
 
 ## Features
 
