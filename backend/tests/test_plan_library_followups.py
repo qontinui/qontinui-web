@@ -226,8 +226,9 @@ class TestOneEndedWrite:
     ) -> None:
         """The corpus is fed by repeatable writers; a re-post is not a row.
 
-        Keyed on ``(from_id, relation, btrim(note))`` — the same grain as the
-        partial unique index — so a whitespace-only difference folds too.
+        Keyed on ``(from_id, relation, btrim(note))`` — the grain of the partial
+        unique index, up to the trim-set difference documented at
+        ``NOTE_TRIM_CHARS`` — so a difference in space, tab or newline folds too.
         """
         plan = await _make_artifact(client, stem="repost")
 
@@ -2117,6 +2118,9 @@ class TestAFollowupIsIdentifiedByItsNote:
         owner = await _make_artifact(client, stem="ws-owner")
         owned = await _post_owned(client, source, owner, "a spaced finding")
         assert owned.status_code == 201, owned.text
+        # Tab, space and newline: in the trim set of the twin lookup AND of the
+        # owned-note index. (A vertical tab or a letter v would not be - the two
+        # sets differ on those; see NOTE_TRIM_CHARS.)
         ghost = await _ghost_open_twin(
             async_db_session, source=source, note="\t a spaced finding \n"
         )
@@ -2876,8 +2880,9 @@ class TestRealConcurrentWriters:
                     created_by="test",
                 )
 
-        # The second writer pads the same words with whitespace: the lookup and
-        # both guard indexes read that as the SAME finding, so the lock must too.
+        # The second writer pads the same words with tab, space and newline -
+        # characters in the trim set of the lookup, of the lock key AND of both
+        # guard indexes - so each of them reads it as the SAME finding.
         results = await asyncio.gather(
             post(owner_a, note),
             post(owner_b, f"\t{note} \n"),

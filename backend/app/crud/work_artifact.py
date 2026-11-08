@@ -1656,8 +1656,13 @@ def _violated_constraint(exc: IntegrityError) -> str | None:
 
 #: Serializes the writers of ONE follow-up finding: ``(source, trimmed note)``,
 #: the grain :func:`_find_existing_edge` looks up by. The note is trimmed IN SQL
-#: with the same ``btrim(note, NOTE_TRIM_CHARS)`` as the lookup and both guard
-#: indexes, so every spelling the lookup reads as one finding takes the same lock.
+#: with ``btrim(note, NOTE_TRIM_CHARS)``, the set bound exactly as the lookup
+#: binds it, so every spelling the lookup reads as one finding takes the same
+#: lock. That is the LOOKUP's grain, not the guard indexes': their SQL literal
+#: differs from it on a vertical tab and a letter ``v`` (see
+#: :data:`app.models.work_artifact.NOTE_TRIM_CHARS`), so two notes that differ
+#: only by a leading or trailing ``v`` take different locks although the guard
+#: indexes read them as one finding.
 _FOLLOWUP_IDENTITY_LOCK = text(
     "SELECT pg_advisory_xact_lock(hashtextextended("
     "'plan_library.spawned_followup:' || CAST(:from_id AS text) || ':' "
@@ -1682,7 +1687,10 @@ async def _lock_followup_identity(
     Released by the commit or rollback that ends the writer's transaction, never
     by hand. The 64-bit hash can collide, which only serializes two unrelated
     notes. It covers writers that come through :func:`create_edge`; raw SQL, and
-    the open copies an earlier build left beside owned rows, are outside it.
+    the open copies an earlier build left beside owned rows, are outside it - and
+    so are notes the guard indexes fold together but the lookup does not (see the
+    comment above :data:`_FOLLOWUP_IDENTITY_LOCK`): for those the index, not this
+    lock, decides the race, and the loser gets its ``IntegrityError``.
     """
     await db.execute(
         _FOLLOWUP_IDENTITY_LOCK,
@@ -1710,15 +1718,26 @@ async def _find_existing_edge(
     owner, note)`` (``uq_work_artifact_edges_owned_followup``), and relates
     neither an open row to an owned one nor two owned rows with different
     owners. Across those populations the note is the identity only because every
-    writer comes through here, under :func:`_lock_followup_identity`. BOTH sides
-    are trimmed in SQL with
-    :data:`NOTE_TRIM_CHARS` - the exact expression the two follow-up guard
-    indexes (``uq_work_artifact_edges_open_followup``,
-    ``uq_work_artifact_edges_owned_followup``) index - rather than trimming the
-    incoming note in Python. Two trims that disagree (Python's ``str.strip()``
-    also eats unicode whitespace; one-argument ``btrim`` eats only spaces)
-    would let the lookup miss a row the index then refuses to insert, turning
-    an idempotent re-post into a 500.
+    writer comes through here, under :func:`_lock_followup_identity`.
+
+    BOTH sides are trimmed in SQL, with :data:`NOTE_TRIM_CHARS` bound as a
+    parameter, rather than trimming the incoming note in Python: Python's
+    ``str.strip()`` also eats unicode whitespace and one-argument ``btrim`` eats
+    only spaces, and a lookup that disagrees with the guard indexes about what
+    counts as the same note misses a row the index then refuses to insert,
+    turning an idempotent re-post into a 500.
+
+    **The set bound here is the intended one, not exactly the one the guard
+    indexes trim with** - and the residual disagreement does just that. Their SQL
+    literal (``NOTE_TRIM_SQL``) writes the vertical tab as an escape PostgreSQL
+    does not have, so it trims a letter ``v`` and not a vertical tab, and this
+    lookup the reverse (see :data:`app.models.work_artifact.NOTE_TRIM_CHARS`). A
+    note that differs from a stored one only by a leading or trailing ``v``
+    misses this lookup and then trips the guard index; :func:`create_edge`
+    re-raises that ``IntegrityError`` (a 500), because the retried lookup finds
+    nothing either. A note that differs only by a vertical tab is folded onto the
+    stored row here, which the indexes alone would not do. Known, pre-existing,
+    and tracked as a follow-up; not changed here.
 
     Ordered ``(to_id IS NULL), created_at, id``: an OWNED row first. A corpus
     can hold an open copy beside the owned row it duplicates (re-posting a
@@ -2189,10 +2208,16 @@ async def _owned_twin(
 ) -> WorkArtifactEdge | None:
     """The follow-up ``to_id`` already OWNS off ``from_id`` with ``note``, if any.
 
-    The grain of ``uq_work_artifact_edges_owned_followup``: same source, same
-    owner, same relation, equal ``btrim(note)`` - both sides trimmed in SQL with
-    :data:`NOTE_TRIM_CHARS`, as in :func:`_find_existing_edge`. ``exclude_id``
-    is the edge being claimed, which can never be its own twin.
+    The grain of ``uq_work_artifact_edges_owned_followup`` - same source, same
+    owner, same relation, equal ``btrim(note)`` - with one difference: both sides
+    are trimmed in SQL with :data:`NOTE_TRIM_CHARS` (as in
+    :func:`_find_existing_edge`), while the index trims with its own SQL literal,
+    which differs on a vertical tab and a letter ``v``. A note that differs only
+    by a leading or trailing ``v`` is therefore a twin to the index and not to
+    this lookup, and :func:`claim_followup` then meets the index's
+    ``IntegrityError`` with no twin to name and re-raises it (see
+    :data:`app.models.work_artifact.NOTE_TRIM_CHARS`). ``exclude_id`` is the edge
+    being claimed, which can never be its own twin.
     """
     return (
         (

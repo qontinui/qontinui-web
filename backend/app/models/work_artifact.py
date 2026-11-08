@@ -197,19 +197,51 @@ SPAWNED_FOLLOWUP_RELATION = "spawned_followup"
 #: than a bare IntegrityError 500.
 RELATIONS_ALLOWING_OPEN_TARGET: frozenset[str] = frozenset({SPAWNED_FOLLOWUP_RELATION})
 
-#: Whitespace stripped from a follow-up ``note`` before it is compared —
-#: by the blank-note CHECK, by the duplicate-guard index, and by the CRUD
-#: dedup lookup, all three of which MUST agree.
+#: Whitespace stripped from a follow-up ``note`` before it is compared. The
+#: INTENDED set is six ASCII characters: space, tab, newline, carriage return,
+#: form feed and vertical tab. It is spelled out because one-argument ``btrim``
+#: strips **spaces only**: ``btrim(E'\n\t ')`` is ``E'\n\t'``, not ``''``, so the
+#: obvious spelling of "must not be blank" admits a tab-and-newline note. The
+#: API's blank-note check is Python's ``str.strip()``, which strips a SUPERSET of
+#: it (U+001C-U+001F, U+0085, U+00A0 and the other Unicode spaces as well).
 #:
-#: ⚠️ Spelled out because one-argument ``btrim`` strips **spaces only**:
-#: ``btrim(E'\n\t ')`` is ``E'\n\t'``, not ``''``, so the obvious spelling of
-#: "must not be blank" admits a tab-and-newline note. The set matches what
-#: Python's ``str.strip()`` removes for ASCII, which is what the API check uses.
+#: ⚠️ The set is spelled in TWO ways, and they are NOT the same set:
+#:
+#: * ``NOTE_TRIM_CHARS`` (this constant) holds the intended six, bytes
+#:   ``20 09 0a 0d 0c 0b``. The CRUD lookups (``_find_existing_edge``,
+#:   ``_owned_twin``) BIND it as a parameter, and so does the advisory-lock key
+#:   (``_lock_followup_identity``).
+#: * :data:`NOTE_TRIM_SQL` (below) spells it as a PostgreSQL ``E'...'`` literal,
+#:   and PostgreSQL's escape syntax has no ``\v``: a backslash before a character
+#:   it does not define stands for that character, so ``\v`` is the LETTER ``v``.
+#:   The literal is bytes ``20 09 0a 0d 0c 76``. It is what the blank-note CHECK,
+#:   ``uq_work_artifact_edges_open_followup`` and
+#:   ``uq_work_artifact_edges_owned_followup`` trim with, and the blank-text
+#:   CHECKs further down (:data:`_TRIM_SET_SQL`) use the same literal.
+#:
+#: So the CHECK and the two guard indexes agree with one another and differ from
+#: the lookups and the lock key on exactly two characters: the database trims a
+#: letter ``v`` and not a vertical tab, the application the reverse. Measured on
+#: PostgreSQL 16: a note that differs from a stored one only by a leading or
+#: trailing letter ``v`` is the same finding to the guard index and a different
+#: one to the lookup, so the lookup misses, the INSERT trips the index and the
+#: write fails with an ``IntegrityError`` (a 500); a note that differs only by a
+#: vertical tab is the reverse, folded onto the stored row by the lookup, which
+#: the indexes alone would not do.
+#:
+#: Pre-existing: ``plan_library_03_spawned_followup`` spelled the literal this
+#: way, and ``plan_library_12_followup_identity_is_the_note`` reuses it verbatim
+#: for the owned-note index, so that the three guards agree with one another. It
+#: is NOT corrected there: correcting the literal rebuilds the CHECK and both
+#: indexes, a separate (destructive) migration, tracked as a follow-up.
 NOTE_TRIM_CHARS = " \t\n\r\f\v"
 
-#: The SQL trim expression over ``note``, spelled once. Mirrors
-#: ``uq_work_artifact_edges_open_followup``'s indexed expression exactly, so the
-#: CRUD dedup lookup can be served by that index and shares its grain.
+#: The SQL trim expression over ``note``, spelled once: the expression the
+#: blank-note CHECK, ``uq_work_artifact_edges_open_followup`` and
+#: ``uq_work_artifact_edges_owned_followup`` use, so those three agree with one
+#: another. It is NOT :data:`NOTE_TRIM_CHARS` written in SQL - its ``\v`` is the
+#: letter ``v``, see above - and the CRUD lookups do not use it: they bind
+#: :data:`NOTE_TRIM_CHARS`.
 NOTE_TRIM_SQL = r"btrim(note, E' \t\n\r\f\v')"
 
 # ── follow-up closure and anchors (``plan_library_11_followup_anchors_and_closure``)
@@ -296,7 +328,10 @@ FOLLOWUP_PR_PATTERN = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$"
 FOLLOWUP_COMMIT_PATTERN = "^[0-9a-f]{7,64}$"
 
 #: The whitespace set every blank-text CHECK here strips — :data:`NOTE_TRIM_SQL`'s
-#: set, for the same reason (one-argument ``btrim`` strips spaces only).
+#: set, for the same reason (one-argument ``btrim`` strips spaces only). The same
+#: literal, so also the same quirk: its ``\v`` is the letter ``v``, not a vertical
+#: tab (see :data:`NOTE_TRIM_CHARS`). The follow-up that corrects the literal
+#: covers these CHECKs too.
 _TRIM_SET_SQL = r"E' \t\n\r\f\v'"
 
 #: The longest anchor path the store accepts (the API refuses longer first).

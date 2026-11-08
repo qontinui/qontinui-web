@@ -271,7 +271,10 @@ def test_the_predicates_are_the_models() -> None:
     them (no revision imports ``app`` at module scope) or interpolate them (the
     classifier refuses an f-string), so they are pinned equal here instead - and
     the owned-note index carries ``NOTE_TRIM_SQL`` verbatim, backslash escapes
-    included (a Python ``"\\t"`` would hand PostgreSQL a literal tab)."""
+    included (a Python ``"\\t"`` would hand PostgreSQL a literal tab). Verbatim
+    includes the literal's ``\\v``, which PostgreSQL reads as the letter ``v``: the
+    quirk the CHECK and the open-follow-up guard already have, and a known
+    mismatch with ``NOTE_TRIM_CHARS`` (see its comment)."""
     sql = {
         kind_sql
         for kind, kind_sql in _events("upgrade")
@@ -517,8 +520,10 @@ def test_the_same_note_twice_under_one_owner_is_refused(conn: Connection) -> Non
     follow = SPAWNED_FOLLOWUP_RELATION
     _edge(conn, source=source, owner=owner, relation=follow, note="one finding")
 
-    # The same finding, however its whitespace is spelled: the guard trims with
-    # the SAME explicit character set as the CHECK and the open-follow-up guard.
+    # The same finding padded with space, tab or newline: the guard trims with
+    # the SAME SQL literal as the CHECK and the open-follow-up guard. That
+    # literal's \v is the letter v, so a vertical tab is NOT among the characters
+    # it trims (see NOTE_TRIM_CHARS); none is used here.
     for note in ("one finding", "  one finding  ", "\tone finding\n"):
         _refused_by(
             conn,

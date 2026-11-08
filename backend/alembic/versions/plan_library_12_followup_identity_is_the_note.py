@@ -93,6 +93,29 @@ function) and coord's migration classifier refuses an interpolated
 ``op.execute``, so the test pins the two equal, and equal through PostgreSQL's
 own normalisation of the model's DDL.
 
+The whitespace set (a known, pre-existing mismatch)
+---------------------------------------------------
+
+``uq_work_artifact_edges_owned_followup`` trims ``note`` with the SAME SQL
+literal as ``ck_work_artifact_edges_followup_note`` and
+``uq_work_artifact_edges_open_followup`` (``plan_library_03_spawned_followup``),
+reused verbatim so the three guards agree with one another. The literal is meant
+to be the six ASCII whitespace characters (space, tab, newline, carriage return,
+form feed, vertical tab), but PostgreSQL's ``E'...'`` strings have no ``\\v``
+escape - a backslash before a character it does not define stands for that
+character - so ``\\v`` is the LETTER ``v``. The literal trims bytes ``20 09 0a 0d
+0c 76``; ``app.models.work_artifact.NOTE_TRIM_CHARS``, which the application's
+lookups and the advisory-lock key bind, is ``20 09 0a 0d 0c 0b``. The two differ
+on exactly the vertical tab and the letter ``v``.
+
+Measured on PostgreSQL 16: a note that differs from a stored one only by a
+trailing ``v`` misses the lookup and trips the guard index (an IntegrityError,
+so a 500); one that differs only by a vertical tab is folded onto the stored row
+by the lookup. This revision does not change the set. Correcting the literal
+means rebuilding the CHECK and both guard indexes, a separate and destructive
+migration, tracked as a follow-up; the new index deliberately matches its
+neighbours until then.
+
 coord's classifier
 ------------------
 
