@@ -14,8 +14,8 @@ Phase 1: three nullable columns on ``coord.agent_sessions`` --
    those columns. ``NULL`` is the "no declared plan" arm the reader treats as
    NO context, so a default or a backfill would forge a session's plan -- the
    literal-shape assertions refuse it;
-3. both directions bound the DDL's lock wait and restore the default, because
-   env.py runs the batch in one transaction;
+3. both directions bound the DDL's lock wait and restore the default (belt
+   and braces beside env.py's per-revision ``RESET lock_timeout``);
 4. every SQL string is one static literal (offline ``--sql`` mode renders it);
 5. live: the columns exist nullable with no default and carry the comments the
    source authors, and up/down/up leaves no residue.
@@ -199,8 +199,8 @@ def test_both_directions_bound_the_lock_wait_and_restore_it() -> None:
     """``SET LOCAL lock_timeout`` first, ``DEFAULT`` last, in both directions.
 
     coord writes ``coord.agent_sessions`` on every session heartbeat, so an
-    unbounded ACCESS EXCLUSIVE wait queues in front of it. The restore matters
-    because env.py runs the batch in ONE transaction.
+    unbounded ACCESS EXCLUSIVE wait queues in front of it. The restore is belt
+    and braces beside env.py's per-revision ``RESET lock_timeout``.
     """
     for name in ("upgrade", "downgrade"):
         literals = _execute_literals(_function(name))
@@ -215,7 +215,7 @@ def test_comments_name_the_writer_the_reader_and_the_unknown_arm() -> None:
     for col, _, _ in _COLUMNS:
         body = comment_body_from_source(src, f"{_SCHEMA}.{_TABLE}.{col}")
         assert "record_work_unit_context" in body, col
-        assert "work_unit_context" in body, col
+        assert "agent_sessions::work_unit_context" in body, col
         assert _PLAN_STEM in body, col
         assert "NULL = no declared plan; read as NO context." in body, col
         # No doubled apostrophe: the comment bodies stay plain literals.

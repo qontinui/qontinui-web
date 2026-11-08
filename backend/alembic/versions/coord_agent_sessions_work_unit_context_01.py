@@ -67,21 +67,13 @@ Safety
 All three columns are nullable with no default, so the ADD is catalogue-only
 and rewrites no row. ``coord.agent_sessions`` is written by coord on every
 session heartbeat, so the ACCESS EXCLUSIVE wait is bounded with
-``SET LOCAL lock_timeout = '3s'`` and restored afterwards -- env.py runs the
-whole upgrade batch in one transaction, so an unrestored ``SET LOCAL`` would
-impose the ceiling on every later revision. Every SQL string is a static
-literal, so the revision renders unchanged in offline ``--sql`` mode. Downgrade
-drops the columns ``IF EXISTS``; the data does not return.
+``SET LOCAL lock_timeout = '3s'`` and restored to ``DEFAULT`` afterwards. The
+restore is belt and braces: env.py also runs ``RESET lock_timeout`` after every
+applied revision (``on_version_apply``). Every SQL string is a static literal,
+so the revision renders unchanged in offline ``--sql`` mode. Downgrade drops the
+columns ``IF EXISTS``; the data does not return.
 
 No index: the reader looks a row up by its primary key.
-
-Merge-train classifier disposition
-==================================
-
-The lock bracket makes ``upgrade()`` unclassifiable to coord's migration
-classifier, so an ``auto_if_provably_safe`` escalate policy covering this glob
-returns Blocked rather than clearing -- the known price of the guard, as
-``coord_agent_sessions_context_01`` documents.
 """
 
 from collections.abc import Sequence
@@ -143,8 +135,7 @@ def upgrade() -> None:
         """
     )
 
-    # env.py runs the whole batch in one transaction, so leaving this set would
-    # silently impose a 3 s ceiling on the next revision's DDL too.
+    # Belt and braces: env.py also RESETs lock_timeout after every revision.
     op.execute("SET LOCAL lock_timeout = DEFAULT")
 
 
