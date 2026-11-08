@@ -17,7 +17,8 @@
  * component (`blocks/registry.ts`) in place of the code. Every other fence
  * renders exactly as it always has. A block takes only its own validated
  * settings from the document, never a URL, HTML or script, so blocks add no
- * raw HTML path either.
+ * raw HTML path either. Page history turns blocks off (`liveBlocks={false}`),
+ * so a past version shows its block fences as the source that was written.
  */
 
 import React, { useMemo } from "react";
@@ -74,6 +75,8 @@ export function isLocalImageSrc(src: string | undefined): boolean {
   return !/^[a-z][a-z0-9+.-]*:/i.test(src) && !src.startsWith("//");
 }
 
+/** The overview's own links, tables and images. With no `pre` here,
+ *  react-markdown renders every fence as the code it is. */
 const components: Components = {
   // An in-app link (a wiki link, or one a writer typed as `/overview/...`)
   // navigates within the app instead of reloading it.
@@ -103,13 +106,6 @@ const components: Components = {
       <table {...rest} />
     </div>
   ),
-  // A fence naming a live block renders the block; any other `<pre>` renders
-  // as react-markdown's own would.
-  pre: ({ node, ...rest }) => {
-    const block = blockInPre(node);
-    if (block) return <LiveBlock {...block} />;
-    return <pre {...rest} />;
-  },
   img: ({ src, alt }) => {
     const href = typeof src === "string" ? src : undefined;
     // react-markdown's URL filter has already emptied unsafe sources
@@ -124,6 +120,18 @@ const components: Components = {
         {alt ? `Image: ${alt}` : "External image"}
       </a>
     );
+  },
+};
+
+/** The same, with live blocks on. */
+const componentsWithBlocks: Components = {
+  ...components,
+  // A fence naming a live block renders the block; any other `<pre>` renders
+  // as react-markdown's own would.
+  pre: ({ node, ...rest }) => {
+    const block = blockInPre(node);
+    if (block) return <LiveBlock {...block} />;
+    return <pre {...rest} />;
   },
 };
 
@@ -156,9 +164,17 @@ export function MarkdownView({
   className,
   headingOffset = 0,
   wikiLinks,
+  liveBlocks = true,
 }: {
   children: string;
   className?: string;
+  /**
+   * Render a fence that names a live block as that block (the default).
+   * False renders every fence as the code it is: page history shows a past
+   * version as it was written, and a live block there would show today's
+   * data inside it, and repeat the UI Bridge ids of the page's own blocks.
+   */
+  liveBlocks?: boolean;
   /**
    * Render `[[Page Title]]` as links to wiki pages: to the page when it
    * exists, and otherwise to write it (or as plain text for a reader who
@@ -202,7 +218,10 @@ export function MarkdownView({
       <ReportSourceBoundary>
         <ReactMarkdown
           remarkPlugins={remarkPlugins}
-          components={{ ...components, ...shifted }}
+          components={{
+            ...(liveBlocks ? componentsWithBlocks : components),
+            ...shifted,
+          }}
         >
           {children}
         </ReactMarkdown>

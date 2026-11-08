@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageRecord } from "../_lib/pages";
 
@@ -185,6 +185,69 @@ describe("PageHistory", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(screen.queryByText("first, but late")).toBeNull();
     expect(screen.getByText("second")).toBeTruthy();
+  });
+
+  it("shows a past version's block fence as its source — never as a live block", async () => {
+    // A live block in a past version would show today's data inside it, and
+    // repeat the UI Bridge ids of the page's own blocks.
+    const written = [
+      "Where the review stood.",
+      "",
+      "```report-scorecard",
+      "report: platform-review",
+      "table: scorecard",
+      "```",
+    ].join("\n");
+    api.read.mockImplementation(async (path: string) =>
+      path.endsWith("/versions")
+        ? {
+            current_version: 2,
+            versions: [2, 1].map((version) => ({
+              version,
+              title: "Budget",
+              created_at: page.created_at,
+              created_by: null,
+            })),
+          }
+        : {
+            version: 1,
+            title: "Budget",
+            body_md: written,
+            created_at: page.created_at,
+            created_by: null,
+            doc_number: null,
+            doc_status: null,
+            owner: null,
+          }
+    );
+    render(
+      <PageHistory
+        page={page}
+        canEdit={false}
+        onRestored={vi.fn()}
+        uiBridgeId="t.h"
+      />
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Version history (2)" })
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Read version 1" })
+    );
+    await screen.findByText("Where the review stood.");
+    // Let anything the version mounted settle before looking for it.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const code = document.querySelector("pre > code.language-report-scorecard");
+    expect(code?.textContent).toBe(
+      "report: platform-review\ntable: scorecard\n"
+    );
+    expect(
+      document.querySelector(
+        "[data-overview-block], [data-overview-block-loading]"
+      )
+    ).toBeNull();
   });
 
   it("restores nothing over a newer save, and shows theirs", async () => {

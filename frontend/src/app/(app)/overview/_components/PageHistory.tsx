@@ -244,7 +244,9 @@ export function PageHistory({
                 </Button>
               </div>
               {shown.value.body_md.trim() ? (
-                <MarkdownView headingOffset={2}>
+                // A past version as it was written: a block fence shows its
+                // source, never today's data under an old version's name.
+                <MarkdownView headingOffset={2} liveBlocks={false}>
                   {shown.value.body_md}
                 </MarkdownView>
               ) : (
