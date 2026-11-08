@@ -291,6 +291,18 @@ async def _run_after_commit(context: StoreContext) -> None:
     context.after_commit.clear()
 
 
+async def _served(store: Any, context: StoreContext, record: BaseModel) -> BaseModel:
+    """A write's answer. A store whose reads withhold part of a record returns
+    the STORED copy from create, update and adopt (the copy the change log
+    keeps) and serves it through its ``served`` hook; any other store's
+    record is answered as it was returned."""
+    serve = getattr(store, "served", None)
+    if serve is None:
+        return record
+    answer: BaseModel = await serve(context, record)
+    return answer
+
+
 def _audit(spec: ResourceSpec, record: BaseModel | None) -> dict[str, Any] | None:
     """A record as the change log keeps it on create/update: without the
     fields another table already holds in full (``ResourceSpec.audit_exclude``)."""
@@ -455,7 +467,9 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
             if adopted:
                 response.headers["Idempotent-Replayed"] = "true"
             response.headers["ETag"] = _etag(created.version)
-            return item_model(item=created, can_edit=True)
+            return item_model(
+                item=await _served(store, context, created), can_edit=True
+            )
 
         async def _replay(
             record_id: str, context: StoreContext, store: Any, response: Response
@@ -532,7 +546,7 @@ def _mount(spec: ResourceSpec) -> None:  # noqa: C901 — one closure per verb
                 await db.commit()
                 await _run_after_commit(context)
             response.headers["ETag"] = _etag(after.version)
-            return item_model(item=after, can_edit=True)
+            return item_model(item=await _served(store, context, after), can_edit=True)
 
         router.add_api_route(
             f"{base}/{{record_id}}",

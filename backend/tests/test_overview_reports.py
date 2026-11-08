@@ -2609,6 +2609,67 @@ class TestChangeLogAtRead:
             for row in await _log(async_db_session, "reports")
         )
 
+    async def test_an_update_made_under_a_term_logs_the_stored_copy(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Every row keeps the STORED copy, before and after alike, and only
+        GET /change-log treats it: an update made while a term stands logs
+        the stored values, so a field naming the term reads [withheld] (named
+        in withheld) while the term stands, and reads again once it goes."""
+        await _set_scope(async_db_session, terms=[])
+        sourced = {
+            "source_repo": f"{OWNER}/northwind-mutual-notes",
+            "source_path": "reports/northwind-mutual/report.md",
+        }
+        report = await _report(admin, title="Progress", slug="progress", **sourced)
+        path = "snapshots/northwind-mutual.json"
+        snap = await _snapshot(admin, report["id"], _doc(), source_path=path)
+        await _set_scope(async_db_session, terms=[TERM])
+        edited = await admin.patch(
+            f"{API}/reports/{report['id']}",
+            json={"body_md": "# Revised"},
+            headers={"If-Match": '"1"'},
+        )
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["item"]["source_repo"] == "[withheld]"  # served
+        pulled = await admin.patch(
+            f"{API}/report-snapshots/{snap['id']}",
+            json={"withdrawn": True, "withdrawn_reason": "Replaced."},
+            headers={"If-Match": '"1"'},
+        )
+        assert pulled.status_code == 200, pulled.text
+
+        async def update_row(resource: str, record_id: str) -> dict[str, Any]:
+            page = (
+                await admin.get(
+                    f"{API}/change-log",
+                    params={"resource": resource, "record_id": record_id},
+                )
+            ).json()
+            (row,) = [e for e in page["entries"] if e["action"] == "update"]
+            return row
+
+        def slots(row: dict[str, Any]) -> set[str]:
+            return {w["slot"] for w in row["withheld"]}
+
+        logged = await update_row("reports", report["id"])
+        assert logged["after"]["source_repo"] == "[withheld]"
+        assert {"after.source_repo", "after.source_path"} <= slots(logged)
+        logged_snap = await update_row("report_snapshots", snap["id"])
+        assert logged_snap["after"]["source_path"] == "[withheld]"
+        assert "after.source_path" in slots(logged_snap)
+        # The term goes: the stored values read again.
+        await _set_scope(async_db_session, terms=[])
+        logged = await update_row("reports", report["id"])
+        assert (logged["after"]["source_repo"], logged["after"]["source_path"]) == (
+            sourced["source_repo"],
+            sourced["source_path"],
+        )
+        assert logged["withheld"] == []
+        logged_snap = await update_row("report_snapshots", snap["id"])
+        assert logged_snap["after"]["source_path"] == path
+        assert logged_snap["withheld"] == []
+
 
 # ===========================================================================
 # The view: withdrawn stops and the changes between stops

@@ -122,6 +122,14 @@ class ResourceStore(Protocol):
     # re-post of the same body the same create whether or not it names an
     # Idempotency-Key, so the router offers an UNKEYED ``name_taken`` to
     # ``adopt_existing`` too. See ``ReportSnapshotStore``.
+    #
+    # Optional: ``served(ctx, record) -> BaseModel``. A store whose reads
+    # withhold part of a record (a report's text under the project's current
+    # confidential terms) returns the STORED copy from ``create``, ``update``
+    # and ``adopt_existing`` — the copy ``overview.change_log`` keeps, before
+    # and after alike — and the router answers each write through this hook.
+    # ``get``, ``list`` and a ``StaleVersion``'s server copy are served copies
+    # already. See ``ReportStore.served``.
 
 
 @dataclass(frozen=True)

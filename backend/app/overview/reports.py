@@ -48,7 +48,9 @@ the CURRENT confidential terms too
 (:func:`~app.overview.report_snapshot_contract.treat_narrative`): a title,
 summary or body naming a term added since the write reads ``[withheld]``, in
 every read that serves it — the report, the list, the view and the versions.
-The change log's copies are not rewritten.
+Every change-log row keeps the STORED copy (a write returns it, and the
+router serves it through the store's ``served``); ``GET /change-log``
+alone treats it, so a term removed later lets the value read again.
 
 ``GET /reports/{id}/view`` (D10) serves the report and its stops in time order
 with the changes between them (:mod:`app.overview.report_view`).
@@ -599,8 +601,8 @@ def _report_read(
     served: _ServedText | None = None,
 ) -> ReportRead:
     """``served`` is the text as a reader is served it. Without it the stored
-    text is used: the copy the change log keeps of an update's or a delete's
-    ``before`` (``GET /change-log`` withholds from it as it serves it)."""
+    text is used: the copy every change-log row keeps (``GET /change-log``
+    withholds from it as it serves it)."""
     fields, withheld = (
         served
         if served is not None
@@ -732,19 +734,22 @@ class ReportStore:
     async def _read(
         self, ctx: StoreContext, report: Report, provenance: Provenance | None = None
     ) -> ReportRead:
-        """The report as a reader is served it: its text
+        """The report as a reader is served it (:meth:`served` over the
+        stored copy): a read, the view, a stale write's server copy."""
+        return await self.served(ctx, await self._stored_read(ctx, report, provenance))
+
+    async def served(self, ctx: StoreContext, record: ReportRead) -> ReportRead:
+        """A STORED copy — what create, update and adopt return, and what the
+        change log keeps — as a reader is served it: its text
         (:data:`REPORT_SERVED_TEXT`) under the project's CURRENT confidential
-        terms. Every answer that serves a report goes through here — a read,
-        the view, a write's answer, a stale write's server copy, a no-op
-        write, a replayed or adopted create."""
-        if provenance is None:
-            provenance = (await _provenance_of(ctx.db, [report])).get(
-                report.id, NO_PROVENANCE
-            )
-        (served,) = await _served_texts(ctx, [_text_fields(report)])
-        return _report_read(
-            report, with_body=True, provenance=provenance, served=served
-        )
+        terms. The router answers every write through this."""
+        fields = {"title": record.title, "summary": record.summary}
+        for name in ("body_md", "source_repo", "source_path"):
+            value = getattr(record, name)
+            if value is not None:
+                fields[name] = value
+        ((served, withheld),) = await _served_texts(ctx, [fields])
+        return record.model_copy(update={**served, "withheld": _withheld(withheld)})
 
     async def _withheld_now(
         self, ctx: StoreContext, report: Report, names: set[str]
@@ -757,16 +762,18 @@ class ReportStore:
         ((_served, withheld),) = await _served_texts(ctx, [fields])
         return {v.slot for v in withheld}
 
-    async def _stored_read(self, ctx: StoreContext, report: Report) -> ReportRead:
-        """The report exactly as stored, never served: the ``before`` the
-        change log keeps of an update or a delete (a deleted report's only
-        remaining copy)."""
-        provenance = await _provenance_of(ctx.db, [report])
-        return _report_read(
-            report,
-            with_body=True,
-            provenance=provenance.get(report.id, NO_PROVENANCE),
-        )
+    async def _stored_read(
+        self, ctx: StoreContext, report: Report, provenance: Provenance | None = None
+    ) -> ReportRead:
+        """The report exactly as stored: the copy every change-log row keeps
+        (``before`` and ``after`` alike; a deleted report's only remaining
+        copy). Never served as it is — :meth:`served` treats it first, and
+        ``GET /change-log`` treats the logged copy as it serves it."""
+        if provenance is None:
+            provenance = (await _provenance_of(ctx.db, [report])).get(
+                report.id, NO_PROVENANCE
+            )
+        return _report_read(report, with_body=True, provenance=provenance)
 
     async def create(self, ctx: StoreContext, payload: ReportCreate) -> ReportRead:
         assert payload.slug is not None  # set by the model validator
@@ -823,7 +830,7 @@ class ReportStore:
         provenance = self._snapshot(ctx, report)
         await ctx.db.flush()
         await ctx.db.refresh(report)
-        return await self._read(ctx, report, provenance)
+        return await self._stored_read(ctx, report, provenance)
 
     async def adopt_existing(
         self,
@@ -846,7 +853,7 @@ class ReportStore:
             report, payload, ("slug", *_NARRATIVE, "source_sha")
         ):
             return None
-        return await self._read(ctx, report)
+        return await self._stored_read(ctx, report)
 
     async def update(
         self,
@@ -884,8 +891,8 @@ class ReportStore:
                 if name == "body_md" and "source_sha" not in payload.model_fields_set:
                     changes.pop("source_sha", None)  # the body did not change
         if not changes_anything(report, changes):
-            served = await self._read(ctx, report)
-            return served, served
+            stored = await self._stored_read(ctx, report)
+            return stored, stored
         # The version being written is scanned whole: a term added since the
         # last write refuses an edit until the narrative no longer names it.
         await self._refuse_narrative(
@@ -897,7 +904,7 @@ class ReportStore:
         provenance = self._snapshot(ctx, report)
         await ctx.db.flush()
         await ctx.db.refresh(report)
-        return before, await self._read(ctx, report, provenance)
+        return before, await self._stored_read(ctx, report, provenance)
 
     async def delete(
         self, ctx: StoreContext, record_id: str, expected_version: int
@@ -928,9 +935,9 @@ def _withheld(violations: list[Violation]) -> list[WithheldSlot]:
 
 
 def _served_identity(
-    row: ReportSnapshot, matcher: TermMatcher
+    source_path: str | None, withdrawn_reason: str | None, matcher: TermMatcher
 ) -> tuple[str | None, str | None, list[Violation]]:
-    """A snapshot row's file path and withdrawal reason as a reader is served
+    """A snapshot's file path and withdrawal reason as a reader is served
     them: under the project's CURRENT confidential terms, a value naming one
     reading ``[withheld]`` whole. The stored values are unchanged (the path
     stays the snapshot's identity, and the ``source_path`` filter matches
@@ -938,8 +945,8 @@ def _served_identity(
     served: list[str | None] = []
     withheld: list[Violation] = []
     for slot, text in (
-        ("source_path", row.source_path),
-        ("withdrawn_reason", row.withdrawn_reason),
+        ("source_path", source_path),
+        ("withdrawn_reason", withdrawn_reason),
     ):
         if text is not None and matcher.matches(text):
             served.append(WITHHELD)
@@ -960,7 +967,9 @@ def _snapshot_read(
 ) -> ReportSnapshotRead:
     """Every snapshot answer is built here, so none serves the file path or
     the withdrawal reason without the current terms' pass (``matcher``)."""
-    source_path, withdrawn_reason, held = _served_identity(row, matcher)
+    source_path, withdrawn_reason, held = _served_identity(
+        row.source_path, row.withdrawn_reason, matcher
+    )
     return ReportSnapshotRead(
         id=str(row.id),
         report_id=row.report_id,
@@ -986,32 +995,59 @@ def _snapshot_read(
     )
 
 
-def _row_read(
-    row: ReportSnapshot, scope: ReadScope, matcher: TermMatcher
+def _stored_snapshot_read(row: ReportSnapshot) -> ReportSnapshotRead:
+    """A snapshot ROW exactly as stored, without its document: the copy every
+    change-log row keeps (``before`` and ``after`` alike). Never served as it
+    is — :func:`_serve_row` treats it first, and ``GET /change-log`` treats
+    the logged copy as it serves it."""
+    return _snapshot_read(
+        row, label=row.label, method_label=row.method_label, matcher=TermMatcher(())
+    )
+
+
+def _serve_row(
+    record: ReportSnapshotRead, scope: ReadScope, matcher: TermMatcher
 ) -> ReportSnapshotRead:
-    """A snapshot ROW without its document: the label and method label it
-    copies out of the document are treated as the document's would be. A
-    withdrawn snapshot's row names its document as withheld: it is kept as
-    history and never served (D1), to a list, a single read or a write's
-    answer alike."""
+    """A stored snapshot row as a reader is served it: the label and method
+    label it copies out of the document treated as the document's would be;
+    a withdrawn snapshot's document named as withheld (it is kept as history
+    and never served, D1, to a list, a single read or a write's answer
+    alike); and the file path and withdrawal reason under the CURRENT
+    terms."""
     withheld: list[Violation] = []
     texts: list[str] = []
-    for slot, text in (("label", row.label), ("method.label", row.method_label)):
+    for slot, text in (("label", record.label), ("method.label", record.method_label)):
         served, slots = treat_label(
             text,
             slot=slot,
-            allowlist_version=row.allowlist_version,
-            scope_version=row.scope_version,
+            allowlist_version=record.allowlist_version,
+            scope_version=record.scope_version,
             scope=scope,
             matcher=matcher,
         )
         texts.append(served)
         withheld.extend(slots)
-    if row.withdrawn_at is not None:
+    if record.withdrawn:
         withheld.append(Violation("data", "withdrawn"))
-    return _snapshot_read(
-        row, label=texts[0], method_label=texts[1], matcher=matcher, withheld=withheld
+    source_path, withdrawn_reason, held = _served_identity(
+        record.source_path, record.withdrawn_reason, matcher
     )
+    return record.model_copy(
+        update={
+            "label": texts[0],
+            "method_label": texts[1],
+            "source_path": source_path,
+            "withdrawn_reason": withdrawn_reason,
+            "withheld": _withheld([*withheld, *held]),
+        }
+    )
+
+
+def _row_read(
+    row: ReportSnapshot, scope: ReadScope, matcher: TermMatcher
+) -> ReportSnapshotRead:
+    """A snapshot ROW, without its document, as a reader is served it."""
+    return _serve_row(_stored_snapshot_read(row), scope, matcher)
 
 
 @dataclass
@@ -1115,9 +1151,18 @@ class ReportSnapshotStore:
     async def _bare_read(
         self, ctx: StoreContext, row: ReportSnapshot
     ) -> ReportSnapshotRead:
+        """The row, without its document, as a reader is served it."""
+        return await self.served(ctx, _stored_snapshot_read(row))
+
+    async def served(
+        self, ctx: StoreContext, record: ReportSnapshotRead
+    ) -> ReportSnapshotRead:
+        """A STORED copy — what create, update and adopt return, and what the
+        change log keeps — as a reader is served it (:func:`_serve_row`).
+        The router answers every write through this."""
         stored = await _stored_scope(ctx)
         scope = _read_scope(stored, stored.owners)
-        return _row_read(row, scope, TermMatcher(scope.terms))
+        return _serve_row(record, scope, TermMatcher(scope.terms))
 
     async def list(
         self, ctx: StoreContext, filters: dict[str, list[str]]
@@ -1286,12 +1331,7 @@ class ReportSnapshotStore:
                 raise
             raise self._path_taken(payload.source_path) from exc
         await ctx.db.refresh(row)
-        return _snapshot_read(
-            row,
-            label=doc.label,
-            method_label=doc.method.label,
-            matcher=TermMatcher(stored.terms),
-        )
+        return _stored_snapshot_read(row)
 
     async def _refuse_reason(self, ctx: StoreContext, reason: str) -> None:
         """422 ``snapshot_rejected`` when a withdrawal's reason names a
@@ -1339,7 +1379,7 @@ class ReportSnapshotStore:
                 "content. Snapshots are never changed: publish the correction "
                 "as a new file, and withdraw the old snapshot.",
             )
-        return await self._bare_read(ctx, row)
+        return _stored_snapshot_read(row)
 
     async def update(
         self,
@@ -1349,9 +1389,9 @@ class ReportSnapshotStore:
         expected_version: int,
     ) -> tuple[ReportSnapshotRead, ReportSnapshotRead]:
         row = await self._load(ctx, record_id, lock=True)
-        before = await self._bare_read(ctx, row)
         if row.version != expected_version:
-            raise StaleVersion(before)
+            raise StaleVersion(await self._bare_read(ctx, row))
+        before = _stored_snapshot_read(row)
         if payload.withdrawn:
             if row.withdrawn_reason == payload.withdrawn_reason:
                 return before, before
@@ -1367,7 +1407,7 @@ class ReportSnapshotStore:
         row.version += 1
         await ctx.db.flush()
         await ctx.db.refresh(row)
-        return before, await self._bare_read(ctx, row)
+        return before, _stored_snapshot_read(row)
 
 
 def report_snapshot_store() -> ReportSnapshotStore:
@@ -1531,7 +1571,9 @@ async def read_report_view(
         )
         if entry.data is None:
             continue
-        source_path, _reason, held = _served_identity(entry.row, matcher)
+        source_path, _reason, held = _served_identity(
+            entry.row.source_path, entry.row.withdrawn_reason, matcher
+        )
         withheld.extend(
             WithheldEntry(seq=entry.row.seq, slot=v.slot, reason=v.kind) for v in held
         )
@@ -1680,7 +1722,7 @@ async def revert_report(
         audit_exclude=frozenset({"body_md"}),
     )
     response.headers["ETag"] = contract_http.etag(after.version)
-    return ReportItem(item=after, can_edit=True)
+    return ReportItem(item=await store.served(ctx, after), can_edit=True)
 
 
 __all__ = [
