@@ -363,9 +363,6 @@ async def _other_project_conflict(
     return HTTPException(status_code=409, detail=detail)
 
 
-# The two failures ``operations``' proxy helpers raise themselves (not coord's
-# body), safe to show verbatim. Shared constants, so a reworded helper message
-# cannot silently turn them into a generic ``coord_failed``.
 def _reraise_coord_refusal(exc: HTTPException) -> HTTPException:
     """Normalize a coord failure for the error envelope.
 

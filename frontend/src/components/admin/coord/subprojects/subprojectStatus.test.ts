@@ -584,7 +584,7 @@ describe("list views", () => {
     expect(viewQuery("open", 100, "c2").toString()).toBe(
       "status=open&exclude_headline=done&limit=100&cursor=c2"
     );
-    // A coord that answers 400/422 to `exclude_headline` gets five reads.
+    // A coord that refuses or ignores `exclude_headline` gets five reads.
     expect(viewStreams("open", true)).toEqual([...OPEN_HEADLINES]);
     // The flag means nothing for any other tab.
     expect(viewStreams("stalled", true)).toEqual(["stalled"]);
@@ -698,10 +698,12 @@ describe("list views", () => {
         })
       )
     ).toMatch(/one-off/);
-    // A null flag is coord not knowing: the row's own rule decides.
-    expect(foldedReason(summary({ ...looksLikeOne, one_off: null }))).toMatch(
-      /one-off/
-    );
+    // A null flag is coord not knowing: unknown is never folded away.
+    expect(
+      foldedReason(summary({ ...looksLikeOne, one_off: null }))
+    ).toBeNull();
+    // Absent — a coord that predates the field — the row's own rule decides.
+    expect(foldedReason(summary(looksLikeOne))).toMatch(/one-off/);
   });
 
   it("renders an uncounted number as a dash, never a zero", () => {
@@ -842,6 +844,31 @@ describe("the session chip", () => {
     });
   });
 
+  it("says a kept answer whose re-read failed is not current — in the title and the name", () => {
+    const failure: SubprojectReadFailure = { kind: "migration_pending" };
+    const words = subprojectChipWords({
+      kind: "member",
+      id: "sp-1",
+      title: "dashboards",
+      headline: "stalled",
+      stale: failure,
+    });
+    // Still the member, still linked: the last answer is real.
+    expect(words.href).toBe("/admin/coord/subprojects/sp-1");
+    expect(words.text).toBe("dashboards");
+    expect(words.title).toBe(
+      "Subproject: dashboards — Stalled — as of the last lookup that answered; the latest failed (coord's subproject tables are not migrated yet (schema_migration_pending))"
+    );
+    expect(words.label).toBe("subproject: dashboards, stalled, not current");
+    expect(subprojectChipWords({ kind: "none", stale: failure }).label).toBe(
+      "subproject: none, not current"
+    );
+    // A current answer carries no qualification.
+    expect(subprojectChipWords({ kind: "none", stale: null }).label).toBe(
+      "subproject: none"
+    );
+  });
+
   it("is a dash that says which, never a guess, for every other state", () => {
     const failure: SubprojectReadFailure = {
       kind: "unreachable",
@@ -874,10 +901,24 @@ describe("the session chip", () => {
 });
 
 describe("a member gate's verdict, in words (R8)", () => {
-  it("words coord's verdicts and says when it has no reading for one", () => {
+  it("words each of coord's five verdicts by the gates console's own reading", () => {
+    expect(
+      ["open", "cleared", "failed", "misconfigured", "withdrawn"].map(
+        gateVerdictWords
+      )
+    ).toEqual([
+      "not cleared yet",
+      "cleared",
+      "failed",
+      "failed — misconfigured",
+      "withdrawn",
+    ]);
+  });
+
+  it("reads other writers' spellings the same way, and says when it has no reading", () => {
     expect(gateVerdictWords("passed")).toBe("cleared");
     expect(gateVerdictWords("PENDING")).toBe("not cleared yet");
-    expect(gateVerdictWords("veto")).toBe("vetoed");
+    expect(gateVerdictWords("veto")).toBe("failed — veto");
     expect(gateVerdictWords("in_progress")).toBe("being evaluated");
     expect(gateVerdictWords("")).toBe("not reported");
     expect(gateVerdictWords(null)).toBe("not reported");

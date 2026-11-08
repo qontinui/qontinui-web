@@ -7849,8 +7849,16 @@ async def get_subprojects(
     ),
     headline: str | None = Query(
         default=None,
-        description="Verdict filter, forwarded as sent: `needs_you`, `stalled`, "
-        "`working`, `waiting`, `done` or `unknown` (coord's vocabulary).",
+        description="Verdict filter, forwarded as sent: one of `needs_you`, "
+        "`stalled`, `working`, `waiting`, `done` or `unknown` (coord's "
+        "vocabulary), or several comma-separated (`needs_you,stalled`).",
+    ),
+    exclude_headline: str | None = Query(
+        default=None,
+        description="Verdicts to leave out, forwarded as sent, comma-separated "
+        "like `headline` — `done` lists every subproject that is not done in "
+        "one read. A coord that predates the parameter refuses it (400 "
+        "`unknown_query_parameter`), which reaches the browser as that object.",
     ),
     origin: str | None = Query(
         default=None,
@@ -7871,17 +7879,21 @@ async def get_subprojects(
     ``verdict_as_of``; the envelope carries ``next_cursor``, ``truncated``,
     ``total``, ``unattached_units`` and ``counts`` — every headline's count and
     the folded one-off / scheduled / merged counts over the same status and
-    origin filter, or ``null`` when coord could not take them. The filters are
-    forwarded only when set,
-    as sent: coord owns the vocabulary and refuses a value it does not know, so
-    this route does not keep a second copy of it to drift. A coord whose
-    migration has not applied answers ``503 {"error":
+    origin filter, or ``null`` when coord could not take them. The filters
+    (``status``, ``headline``, ``exclude_headline``, ``origin``, ``limit``,
+    ``cursor``) are forwarded only when set, as sent: coord owns the
+    vocabulary and refuses a value — or a parameter — it does not know, so this
+    route does not keep a second copy of it to drift. Every filter coord takes
+    has to be declared here: this router does not refuse an undeclared query
+    parameter, it drops it, so an undeclared filter would never reach coord.
+    A coord whose migration has not applied answers ``503 {"error":
     "schema_migration_pending"}``, which reaches the browser as that object.
     """
     params: dict[str, Any] = {}
     for key, value in (
         ("status", status),
         ("headline", headline),
+        ("exclude_headline", exclude_headline),
         ("origin", origin),
         ("limit", limit),
         ("cursor", cursor),

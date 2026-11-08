@@ -33,7 +33,11 @@ import {
 } from "@/components/console/statusRow";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { extractCoordRefusal } from "@/components/admin/coord/spawnPlacement";
-import { isTerminalGateVerdict } from "@/app/(app)/admin/coord/gates/gateStatus";
+import {
+  gateVerdictGroupOf,
+  isTerminalGateVerdict,
+  type GateVerdictGroup,
+} from "@/app/(app)/admin/coord/gates/gateStatus";
 import type {
   SubprojectCountsFacet,
   SubprojectMemberGate,
@@ -371,39 +375,35 @@ export function nextStepWords(
   };
 }
 
-/** coord's gate verdict words, grouped as the gates console reads them. */
-const GATE_VERDICT_WORDS: Readonly<Record<string, string>> = {
-  pass: "cleared",
-  passed: "cleared",
+/**
+ * Words for each group the gates console reads a verdict into
+ * (`gateStatus.ts` `gateVerdictGroupOf` — the one reading of coord's verdict
+ * strings, so this console cannot drift from it).
+ */
+const GATE_VERDICT_GROUP_WORDS: Record<GateVerdictGroup, string> = {
   cleared: "cleared",
-  ready: "cleared",
-  ok: "cleared",
-  fail: "failed",
   failed: "failed",
-  error: "failed",
-  veto: "vetoed",
-  rejected: "rejected",
   withdrawn: "withdrawn",
-  cancelled: "cancelled",
-  canceled: "cancelled",
   evaluating: "being evaluated",
-  running: "being evaluated",
-  in_progress: "being evaluated",
   pending: "not cleared yet",
-  queued: "not cleared yet",
-  open: "not cleared yet",
-  registered: "not cleared yet",
 };
 
-/** A member gate's verdict in words (R8); coord's own word is on the raw
- *  line. A word this console has no reading for is said to be one. */
+/**
+ * A member gate's verdict in words (R8); coord's own word is on the raw line.
+ * A failure says which failure when coord's word says more than "failed" — a
+ * `misconfigured` gate is fixed in its registration, not by waiting — and a
+ * word this console has no reading for is said to be one.
+ */
 export function gateVerdictWords(verdict: string | null | undefined): string {
   const v = (verdict ?? "").trim().toLowerCase();
   if (v === "") return "not reported";
-  return (
-    own(GATE_VERDICT_WORDS, v) ??
-    `"${v.replace(/_/g, " ")}", a verdict this console has no reading for`
-  );
+  const group = gateVerdictGroupOf(v);
+  if (group === null)
+    return `"${v.replace(/_/g, " ")}", a verdict this console has no reading for`;
+  const words = GATE_VERDICT_GROUP_WORDS[group];
+  return group === "failed" && v !== "failed"
+    ? `${words} — ${v.replace(/_/g, " ")}`
+    : words;
 }
 
 /** The phases a member unit has left (D7 c). `null` is UNKNOWN, never none. */
@@ -931,8 +931,9 @@ export function viewQuery(
 
 /**
  * The streams a tab reads: one each. Open's `perHeadline` arm is the fallback
- * for a coord that answers 400/422 to `exclude_headline` — then Open is the
- * union of the five not-done headlines, one read each, merged.
+ * for a coord that predates `exclude_headline` — one that refuses it or
+ * ignores it — and then Open is the union of the five not-done headlines, one
+ * read each, merged.
  */
 export function viewStreams(
   tab: SubprojectTab,
@@ -964,15 +965,18 @@ export function mergeStreamRows(
 /**
  * Is this row a one-off? coord's own answer when it sent one (`one_off`, the
  * rule its `counts.folded.one_off` counts by: exactly one member session
- * whose work is `finished`, no work unit, and a `done` headline). A row from
- * a coord that does not send it is judged by the same rule as far as a row
- * can show it: a done headline, one member session no longer live, no work
- * unit. An uncounted half is not evidence of a one-off.
+ * whose work is `finished`, no work unit, and a `done` headline). `null` is
+ * coord saying it could not tell — unknown, so the row stays in its view. A
+ * row from a coord that predates the field (it is absent) is judged by the
+ * same rule as far as a row can show it: a done headline, one member session
+ * no longer live, no work unit. An uncounted half is not evidence of a
+ * one-off.
  */
 function isOneOff(
   s: Pick<SubprojectSummary, "headline" | "sessions" | "work_units" | "one_off">
 ): boolean {
   if (typeof s.one_off === "boolean") return s.one_off;
+  if (s.one_off === null) return false;
   return (
     s.headline === "done" &&
     s.sessions.total === 1 &&
@@ -1548,11 +1552,18 @@ export type SubprojectChip =
   | { kind: "looking_up" }
   /** The latest lookup for this session failed. */
   | { kind: "failed"; failure: SubprojectReadFailure }
-  /** coord lists no live membership (a pending one included). */
-  | { kind: "none" }
+  /** coord lists no live membership (a pending one included). `stale`:
+   *  the latest re-ask failed, so this is the last answer, not a current one. */
+  | { kind: "none"; stale?: SubprojectReadFailure | null }
   /** coord answered without naming this session either way. */
-  | { kind: "unanswered" }
-  | { kind: "member"; id: string; title: string; headline: string };
+  | { kind: "unanswered"; stale?: SubprojectReadFailure | null }
+  | {
+      kind: "member";
+      id: string;
+      title: string;
+      headline: string;
+      stale?: SubprojectReadFailure | null;
+    };
 
 export interface SubprojectChipWords {
   /** What the cell shows: the subproject's title, or a dash. */
@@ -1567,6 +1578,21 @@ export interface SubprojectChipWords {
 }
 
 export function subprojectChipWords(chip: SubprojectChip): SubprojectChipWords {
+  const words = currentChipWords(chip);
+  const stale =
+    chip.kind === "member" || chip.kind === "none" || chip.kind === "unanswered"
+      ? (chip.stale ?? null)
+      : null;
+  if (stale === null) return words;
+  // A kept answer whose re-ask failed: still shown, said to be not current.
+  return {
+    ...words,
+    title: `${words.title} — as of the last lookup that answered; the latest failed (${readFailureWords(stale)})`,
+    label: `${words.label}, not current`,
+  };
+}
+
+function currentChipWords(chip: SubprojectChip): SubprojectChipWords {
   switch (chip.kind) {
     case "member": {
       const kind = headlineKindOf(chip.headline);

@@ -310,6 +310,7 @@ class TestGetSubprojects:
                 params={
                     "status": "all",
                     "headline": "stalled",
+                    "exclude_headline": "done",
                     "origin": "operator_prompt",
                     "limit": 25,
                     "cursor": "opaque-cursor",
@@ -320,10 +321,79 @@ class TestGetSubprojects:
         assert instance.get.call_args.kwargs["params"] == {
             "status": "all",
             "headline": "stalled",
+            "exclude_headline": "done",
             "origin": "operator_prompt",
             "limit": 25,
             "cursor": "opaque-cursor",
         }
+
+    def test_open_is_one_read_that_excludes_done(self, client: TestClient) -> None:
+        """The list page reads Open as ``status=open&exclude_headline=done``.
+        This router DROPS an undeclared query parameter rather than refusing
+        it, so the filter reaches coord only because it is declared — the
+        page's per-headline fallback depends on coord seeing it."""
+        with _patch_httpx() as mock_client_cls:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=LIST_BODY)
+            _configure_mock_client(mock_client_cls, instance)
+            resp = client.get(
+                f"{API_PREFIX}/subprojects",
+                params={"status": "open", "exclude_headline": "done", "limit": 100},
+            )
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.kwargs["params"] == {
+            "status": "open",
+            "exclude_headline": "done",
+            "limit": 100,
+        }
+
+    def test_a_multi_value_headline_is_forwarded_as_one_value(
+        self, client: TestClient
+    ) -> None:
+        """coord takes ``headline=a,b``; the comma-separated value is coord's
+        to split, so it is forwarded verbatim, not split or vetted here."""
+        with _patch_httpx() as mock_client_cls:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=LIST_BODY)
+            _configure_mock_client(mock_client_cls, instance)
+            resp = client.get(
+                f"{API_PREFIX}/subprojects",
+                params={
+                    "headline": "needs_you,stalled",
+                    "exclude_headline": "done,unknown",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.kwargs["params"] == {
+            "headline": "needs_you,stalled",
+            "exclude_headline": "done,unknown",
+        }
+
+    def test_a_coord_that_does_not_know_a_parameter_says_which_as_an_object(
+        self, client: TestClient
+    ) -> None:
+        """The page falls back to per-headline reads on exactly this answer,
+        so it must reach the browser whole — the code AND the parameters
+        coord named."""
+        coord_body = {
+            "error": "unknown_query_parameter",
+            "unknown": ["exclude_headline"],
+        }
+        with _patch_httpx() as mock_client_cls:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                status_code=400, json_data=coord_body
+            )
+            _configure_mock_client(mock_client_cls, instance)
+            resp = client.get(
+                f"{API_PREFIX}/subprojects",
+                params={"status": "open", "exclude_headline": "done"},
+            )
+
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": coord_body}
 
     def test_a_filter_value_is_forwarded_as_sent_not_vetted_here(
         self, client: TestClient

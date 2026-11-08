@@ -31,10 +31,10 @@
  * **A count that is not CURRENT says so** (`countNote`): a number kept from
  * the last good read across a failed one is still real, but it is not this
  * poll's, and a bare number cannot tell the two apart. With a note, a number
- * carries a visible `*`, and the note itself is the tab's title and its
- * screen-reader text — so the qualification reaches a sighted operator, a
- * hover and a screen reader alike. A dash with a note says WHY it is a dash
- * the same way.
+ * carries a visible `*`; the note is the COUNT's hover title, and it is part
+ * of the tab's accessible name as screen-reader text — said once. (A title on
+ * the tab itself would be announced again as its description.) A dash with a
+ * note says WHY it is a dash the same way.
  *
  * **Navigation-only by construction.** A filter tab narrows a VIEW (§3.3: a
  * control that changes a write target is deliberately a different control),
@@ -57,8 +57,8 @@ export interface FilterTab<Id extends string> {
   /**
    * Why the count is not a CURRENT number — kept from the last good read, a
    * read that failed, an answer that did not take it — or `null`/absent for a
-   * current one. Rendered as a `*` beside a number, and as the tab's title and
-   * screen-reader text.
+   * current one. Rendered as a `*` beside a number, as the count's hover
+   * title, and once in the tab's accessible name.
    */
   countNote?: string | null;
   /**
@@ -110,7 +110,6 @@ export function FilterTabs<Id extends string>({
           size="sm"
           variant={active === tab.id ? "secondary" : "ghost"}
           onClick={() => onChange(tab.id)}
-          title={tab.countNote ?? undefined}
           data-count-note={tab.countNote ? "" : undefined}
           data-testid={
             tab.testId ??
@@ -122,6 +121,7 @@ export function FilterTabs<Id extends string>({
             className={`font-mono text-[11px] ${
               tab.attention ? "text-red-300" : "text-muted-foreground"
             }`}
+            title={tab.countNote ?? undefined}
           >
             {renderCount(tab.count)}
             {tab.countNote && tab.count != null ? (

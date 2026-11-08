@@ -242,10 +242,12 @@ export interface SessionsConsoleProps {
    */
   revalidation?: SessionRevalidationOptions;
   /**
-   * Injected for tests — the ONE subproject lookup a page of rows makes
+   * Injected for tests — the subproject lookup the rows' chips are read with
    * (`GET /operations/subprojects/by-sessions`, plan
    * `2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled`
-   * Phase 6). The default is the shipped client.
+   * Phase 6): batches of at most 200 session ids, asked when a session appears
+   * and again when its answer comes due, on this console's own list poll. The
+   * default is the shipped client.
    */
   lookupSubprojects?: SubprojectLookup;
 }

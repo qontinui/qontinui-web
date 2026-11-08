@@ -96,7 +96,7 @@ describe("FilterTabs (R6)", () => {
     ).toContain("text-muted-foreground");
   });
 
-  it("says a count is not current: a `*`, the note as title and as screen-reader text", () => {
+  it("says a count is not current: a `*`, the note on the count's hover, and ONCE to a screen reader", () => {
     render(
       <FilterTabs
         tabs={[
@@ -121,21 +121,26 @@ describe("FilterTabs (R6)", () => {
     );
     // A current number carries nothing.
     expect(screen.getByTestId("t-fresh")).toHaveTextContent(/^Fresh3$/);
-    expect(screen.getByTestId("t-fresh")).not.toHaveAttribute("title");
-    // A kept number is marked, and says why to a hover and a screen reader.
+    expect(screen.getByTestId("t-fresh").querySelector("[title]")).toBeNull();
+    // A kept number is marked, and says why — on the count's hover, and once
+    // in the tab's name: the tab carries no title of its own, which would be
+    // read again as its description.
     const kept = screen.getByTestId("t-kept");
-    expect(kept).toHaveAttribute(
+    expect(kept.textContent).toContain("3*");
+    expect(kept).not.toHaveAttribute("title");
+    expect(kept.querySelector("[title]")).toHaveAttribute(
       "title",
       "the last good count; the latest read failed"
     );
     expect(kept).toHaveAccessibleName(
       /\(the last good count; the latest read failed\)$/
     );
-    expect(kept.textContent).toContain("3*");
+    expect(kept).toHaveAccessibleDescription("");
     // A dash is not starred — it already says unknown — but still says why.
     const lost = screen.getByTestId("t-lost");
     expect(lost.textContent).not.toContain("*");
     expect(lost).toHaveAccessibleName(/\(could not be read\)$/);
+    expect(lost).toHaveAccessibleDescription("");
   });
 
   it("omits the filter input entirely when no handler is supplied", () => {

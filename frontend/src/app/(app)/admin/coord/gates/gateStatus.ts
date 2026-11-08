@@ -59,7 +59,7 @@ export type GateKind =
  * | kind | attention | why |
  * |---|---|---|
  * | `cleared` | `none` | The gate passed. Terminal and finished — nobody's move. |
- * | `failed` | `author` | The gate's predicate came back negative, or coord errored evaluating it. Nothing re-opens a failed gate on its own; a human decides what happens next. |
+ * | `failed` | `author` | The gate's predicate came back negative, coord errored evaluating it, or coord found it `misconfigured` (it cannot clear as registered). Nothing re-opens a failed gate on its own; a human decides what happens next. |
  * | `withdrawn` | `none` | The registrant cancelled its own request. **Was red.** A withdrawal is a CHOICE, terminal, and costs nobody anything. |
  * | `evaluating` | `none` | coord's sweep is computing the predicate right now. In flight; nobody is blocked. |
  * | `pending` | `none` | Registered and waiting for its predicate to become true. This is the NORMAL state of a healthy gate and by far the most common row — painting it amber would put most of the page in the "waiting on something" hue and destroy amber's signal. |
@@ -106,19 +106,56 @@ export const GATE_STATUS_PALETTE: StatusPalette<GateKind> = {
   doneGlyphKinds: new Set<GateKind>(["cleared"]),
 };
 
-/** coord's terminal verdict words, lower-cased, grouped by what they mean. */
+/**
+ * coord's verdict words, lower-cased, grouped by what they mean. coord's own
+ * vocabulary is five — `open`, `cleared`, `failed`, `misconfigured`,
+ * `withdrawn`; the other spellings are older writers' and other sources'.
+ * This is the ONE reading of a verdict string: the subprojects console words
+ * a member gate's verdict from the same groups (`gateVerdictGroupOf`).
+ */
 const CLEARED_WORDS = new Set(["pass", "passed", "cleared", "ready", "ok"]);
-const FAILED_WORDS = new Set(["fail", "failed", "error", "veto", "rejected"]);
+const FAILED_WORDS = new Set([
+  "fail",
+  "failed",
+  "error",
+  "veto",
+  "rejected",
+  "misconfigured",
+]);
 const WITHDRAWN_WORDS = new Set(["withdrawn", "cancelled", "canceled"]);
 const EVALUATING_WORDS = new Set(["evaluating", "running", "in_progress"]);
 const PENDING_WORDS = new Set(["pending", "queued", "open", "registered"]);
 
+/** What a verdict string means, before staleness is considered. */
+export type GateVerdictGroup =
+  | "cleared"
+  | "failed"
+  | "withdrawn"
+  | "evaluating"
+  | "pending";
+
+const VERDICT_GROUPS: ReadonlyArray<
+  readonly [GateVerdictGroup, ReadonlySet<string>]
+> = [
+  ["cleared", CLEARED_WORDS],
+  ["failed", FAILED_WORDS],
+  ["withdrawn", WITHDRAWN_WORDS],
+  ["evaluating", EVALUATING_WORDS],
+  ["pending", PENDING_WORDS],
+];
+
+/** The group a verdict string reads as, or `null` for one this build has no
+ *  reading for. */
+export function gateVerdictGroupOf(verdict: string): GateVerdictGroup | null {
+  const v = verdict.trim().toLowerCase();
+  for (const [group, words] of VERDICT_GROUPS) if (words.has(v)) return group;
+  return null;
+}
+
 /** Is this verdict terminal — i.e. is the gate's story over? */
 export function isTerminalGateVerdict(verdict: string): boolean {
-  const v = verdict.toLowerCase();
-  return (
-    CLEARED_WORDS.has(v) || FAILED_WORDS.has(v) || WITHDRAWN_WORDS.has(v)
-  );
+  const group = gateVerdictGroupOf(verdict);
+  return group === "cleared" || group === "failed" || group === "withdrawn";
 }
 
 const LABEL_BY_KIND: Record<GateKind, string> = {

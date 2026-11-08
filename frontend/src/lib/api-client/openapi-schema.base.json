@@ -108900,7 +108900,7 @@
     },
     "/api/v1/operations/subprojects": {
       "get": {
-        "description": "List the tenant's subprojects \u2014 proxy coord's ``GET /coord/subprojects``.\n\nEach item is a ``SubprojectSummary`` whose ``headline`` and ``top_reason``\ncome from the verdict coord's reconciler tick cached, with its\n``verdict_as_of``; the envelope carries ``next_cursor``, ``truncated``,\n``total``, ``unattached_units`` and ``counts`` \u2014 every headline's count and\nthe folded one-off / scheduled / merged counts over the same status and\norigin filter, or ``null`` when coord could not take them. The filters are\nforwarded only when set,\nas sent: coord owns the vocabulary and refuses a value it does not know, so\nthis route does not keep a second copy of it to drift. A coord whose\nmigration has not applied answers ``503 {\"error\":\n\"schema_migration_pending\"}``, which reaches the browser as that object.",
+        "description": "List the tenant's subprojects \u2014 proxy coord's ``GET /coord/subprojects``.\n\nEach item is a ``SubprojectSummary`` whose ``headline`` and ``top_reason``\ncome from the verdict coord's reconciler tick cached, with its\n``verdict_as_of``; the envelope carries ``next_cursor``, ``truncated``,\n``total``, ``unattached_units`` and ``counts`` \u2014 every headline's count and\nthe folded one-off / scheduled / merged counts over the same status and\norigin filter, or ``null`` when coord could not take them. The filters\n(``status``, ``headline``, ``exclude_headline``, ``origin``, ``limit``,\n``cursor``) are forwarded only when set, as sent: coord owns the\nvocabulary and refuses a value \u2014 or a parameter \u2014 it does not know, so this\nroute does not keep a second copy of it to drift. Every filter coord takes\nhas to be declared here: this router does not refuse an undeclared query\nparameter, it drops it, so an undeclared filter would never reach coord.\nA coord whose migration has not applied answers ``503 {\"error\":\n\"schema_migration_pending\"}``, which reaches the browser as that object.",
         "operationId": "api_v1_operations_subprojects_get",
         "parameters": [
           {
@@ -108922,7 +108922,7 @@
             }
           },
           {
-            "description": "Verdict filter, forwarded as sent: `needs_you`, `stalled`, `working`, `waiting`, `done` or `unknown` (coord's vocabulary).",
+            "description": "Verdict filter, forwarded as sent: one of `needs_you`, `stalled`, `working`, `waiting`, `done` or `unknown` (coord's vocabulary), or several comma-separated (`needs_you,stalled`).",
             "in": "query",
             "name": "headline",
             "required": false,
@@ -108935,8 +108935,26 @@
                   "type": "null"
                 }
               ],
-              "description": "Verdict filter, forwarded as sent: `needs_you`, `stalled`, `working`, `waiting`, `done` or `unknown` (coord's vocabulary).",
+              "description": "Verdict filter, forwarded as sent: one of `needs_you`, `stalled`, `working`, `waiting`, `done` or `unknown` (coord's vocabulary), or several comma-separated (`needs_you,stalled`).",
               "title": "Headline"
+            }
+          },
+          {
+            "description": "Verdicts to leave out, forwarded as sent, comma-separated like `headline` \u2014 `done` lists every subproject that is not done in one read. A coord that predates the parameter refuses it (400 `unknown_query_parameter`), which reaches the browser as that object.",
+            "in": "query",
+            "name": "exclude_headline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Verdicts to leave out, forwarded as sent, comma-separated like `headline` \u2014 `done` lists every subproject that is not done in one read. A coord that predates the parameter refuses it (400 `unknown_query_parameter`), which reaches the browser as that object.",
+              "title": "Exclude Headline"
             }
           },
           {

@@ -43,6 +43,13 @@ function mount(lookup: ReturnType<typeof lookupOf>, ids: Array<string | null>) {
   );
 }
 
+const member = (over: object = {}) => ({
+  kind: "member",
+  ...MEMBER,
+  stale: null,
+  ...over,
+});
+
 describe("useSubprojectsBySessions", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -52,7 +59,7 @@ describe("useSubprojectsBySessions", () => {
     vi.useRealTimers();
   });
 
-  it("asks once for new sessions, and never again for a member", async () => {
+  it("asks once for new sessions, and not again for an answer that is not yet due", async () => {
     const lookup = lookupOf(async () => ({
       items: { a: MEMBER },
       missing: ["b"],
@@ -60,8 +67,8 @@ describe("useSubprojectsBySessions", () => {
     const { result, rerender } = mount(lookup, ["b", null, "a", "b"]);
     expect(result.current.chipOf("a")).toEqual({ kind: "looking_up" });
     await settle();
-    expect(result.current.chipOf("a")).toEqual({ kind: "member", ...MEMBER });
-    expect(result.current.chipOf("b")).toEqual({ kind: "none" });
+    expect(result.current.chipOf("a")).toEqual(member());
+    expect(result.current.chipOf("b")).toEqual({ kind: "none", stale: null });
     expect(result.current.chipOf(null)).toEqual({ kind: "not_applicable" });
     expect(lookup).toHaveBeenCalledTimes(1);
     // In the caller's order — the rows on screen first.
@@ -78,10 +85,10 @@ describe("useSubprojectsBySessions", () => {
     expect(lookup).toHaveBeenCalledTimes(2);
     expect(lookup.mock.calls[1]?.[0]).toEqual(["c"]);
     // The known answers stay on screen meanwhile.
-    expect(result.current.chipOf("a")).toEqual({ kind: "member", ...MEMBER });
+    expect(result.current.chipOf("a")).toEqual(member());
   });
 
-  it("re-asks a 'none' only once it is ~3 minutes old — a member never", async () => {
+  it("re-reads every answer — a membership included — once it is ~3 minutes old, keeping it on screen meanwhile", async () => {
     const lookup = lookupOf(async () => ({
       items: { a: MEMBER },
       missing: ["b"],
@@ -90,22 +97,44 @@ describe("useSubprojectsBySessions", () => {
     await settle();
     expect(lookup).toHaveBeenCalledTimes(1);
 
+    // Not due yet: nothing is asked.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(SUBPROJECT_CHIP_REASK_MS - 1_000);
       await result.current.recheck();
     });
     expect(lookup).toHaveBeenCalledTimes(1);
 
+    // Due: the member AND the "none" are asked again, in one batch — and this
+    // read is held open, to see what the page shows meanwhile.
+    let release: ((b: Body) => void) | undefined;
+    lookup.mockImplementationOnce(
+      () =>
+        new Promise<Body>((resolve) => {
+          release = resolve;
+        })
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_000);
-      await result.current.recheck();
+      void result.current.recheck();
     });
     expect(lookup).toHaveBeenCalledTimes(2);
-    expect(lookup.mock.calls[1]?.[0]).toEqual(["b"]);
+    expect(lookup.mock.calls[1]?.[0]).toEqual(["a", "b"]);
+    // The member stays on screen while it is re-read: no flicker.
+    expect(result.current.chipOf("a")).toEqual(member());
+
+    // The answer lands: the subproject's headline moved since.
+    await act(async () => {
+      release?.({
+        items: { a: { ...MEMBER, headline: "stalled" } },
+        missing: ["b"],
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.chipOf("a")).toEqual(member({ headline: "stalled" }));
   });
 
-  it("retries a failed lookup once the failure is a minute old, and says failed meanwhile", async () => {
-    let fail = true;
+  it("keeps the last answer when a re-read fails — said to be not current — and retries after a minute", async () => {
+    let fail = false;
     const lookup = lookupOf(async (ids) => {
       if (fail)
         throw new Error(
@@ -115,23 +144,45 @@ describe("useSubprojectsBySessions", () => {
     });
     const { result } = mount(lookup, ["a"]);
     await settle();
-    expect(result.current.chipOf("a")).toEqual({
-      kind: "failed",
-      failure: { kind: "migration_pending" },
-    });
+    expect(result.current.chipOf("a")).toEqual(member());
 
+    fail = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SUBPROJECT_CHIP_REASK_MS);
+      await result.current.recheck();
+    });
+    expect(lookup).toHaveBeenCalledTimes(2);
+    expect(result.current.chipOf("a")).toEqual(
+      member({ stale: { kind: "migration_pending" } })
+    );
+
+    // Not due again until the failure is a minute old.
     await act(async () => {
       await result.current.recheck();
     });
-    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(lookup).toHaveBeenCalledTimes(2);
 
     fail = false;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(SUBPROJECT_CHIP_RETRY_MS);
       await result.current.recheck();
     });
-    expect(lookup).toHaveBeenCalledTimes(2);
-    expect(result.current.chipOf("a")).toEqual({ kind: "member", ...MEMBER });
+    expect(lookup).toHaveBeenCalledTimes(3);
+    expect(result.current.chipOf("a")).toEqual(member());
+  });
+
+  it("says failed — a dash, not none — when no answer was ever had", async () => {
+    const lookup = lookupOf(async (ids) => {
+      throw new Error(
+        `GET /api/v1/operations/subprojects/by-sessions?ids=${ids.join(",")} failed: 503 - {"error":"schema_migration_pending"}`
+      );
+    });
+    const { result } = mount(lookup, ["a"]);
+    await settle();
+    expect(result.current.chipOf("a")).toEqual({
+      kind: "failed",
+      failure: { kind: "migration_pending" },
+    });
   });
 
   it("asks about every session, in batches of at most 200", async () => {
@@ -144,14 +195,20 @@ describe("useSubprojectsBySessions", () => {
     await settle();
     expect(lookup.mock.calls.map((c) => c[0].length)).toEqual([200, 200, 50]);
     expect(lookup.mock.calls[0]?.[0][0]).toBe("s-000");
-    expect(result.current.chipOf("s-449")).toEqual({ kind: "none" });
+    expect(result.current.chipOf("s-449")).toEqual({
+      kind: "none",
+      stale: null,
+    });
   });
 
   it("calls a session coord did not name either way unanswered, not none", async () => {
     const lookup = lookupOf(async () => ({ items: {}, missing: [] }));
     const { result } = mount(lookup, ["a"]);
     await settle();
-    expect(result.current.chipOf("a")).toEqual({ kind: "unanswered" });
+    expect(result.current.chipOf("a")).toEqual({
+      kind: "unanswered",
+      stale: null,
+    });
   });
 
   it("asks nothing for a page with no session ids", async () => {
