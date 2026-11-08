@@ -987,3 +987,53 @@ describe("GithubHostedCiPanel — coord's named write refusals", () => {
     expect(err).toHaveTextContent(/502/);
   });
 });
+
+/**
+ * Plan `2026-11-08-consoles-paint-zeros-before-the-first-read-and-the-row-reason-cap-reads-the-viewport`
+ * Phase 1 (F2). Before the first aggregate read lands, `readIsUnknown` is
+ * false by contract, so the collapsed header used to read
+ * `repos on 0 · off 0` in neutral styling — a measured-looking zero over a
+ * read that had not answered.
+ */
+describe("GithubHostedCiPanel — before the first read answers", () => {
+  it("the repos badge is an amber dash, never `repos on 0 · off 0`", async () => {
+    const ci = deferred<Record<string, unknown>>();
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (u.includes("/fleet-policy")) {
+        return Promise.resolve(tenantPolicy("on", "none"));
+      }
+      if (u.includes("/ci-hosting")) return ci.promise;
+      return Promise.reject(new Error(`unexpected GET ${u}`));
+    });
+
+    render(<GithubHostedCiPanel isAdmin />);
+    await waitFor(() =>
+      expect(
+        httpGet.mock.calls.some((c) => String(c[0]).includes("/ci-hosting"))
+      ).toBe(true)
+    );
+
+    const badge = screen.getByTestId("github-hosted-ci-summary-repos");
+    expect(badge.textContent).toContain("repos –");
+    expect(badge.textContent).not.toContain("on 0");
+    expect(badge).toHaveAttribute(
+      "title",
+      "nothing has answered yet; this is a dash, not a zero"
+    );
+    expect(badge.className).toContain("amber");
+
+    // The answer lands with zero repos: now the zero is MEASURED, and says so.
+    await act(async () => {
+      ci.resolve(ciView("on", "none", { repos: [] }));
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("github-hosted-ci-summary-repos").textContent
+      ).toContain("repos on 0 · off 0")
+    );
+    expect(
+      screen.getByTestId("github-hosted-ci-summary-repos")
+    ).not.toHaveAttribute("title");
+  });
+});
