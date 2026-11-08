@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { TestResult } from "@/services/workflow-testing";
+import type { ExecutionRecord } from "@/services/workflow-analytics-service";
 import {
   CHART_COLORS,
   formatDuration,
@@ -29,7 +29,7 @@ import type { TimelineDataPoint } from "../workflow-metrics-panel-types";
 
 interface ExecutionHistoryTabProps {
   timelineData: TimelineDataPoint[];
-  recentRuns: TestResult[];
+  recentRuns: ExecutionRecord[];
   executionHistoryLength: number;
 }
 
@@ -95,7 +95,7 @@ export function ExecutionHistoryTab({
                   className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent"
                 >
                   <div className="flex items-center gap-3 flex-1">
-                    {result.passed ? (
+                    {result.success ? (
                       <CheckCircle className="h-4 w-4 text-green-500" />
                     ) : (
                       <XCircle className="h-4 w-4 text-red-500" />
@@ -106,10 +106,10 @@ export function ExecutionHistoryTab({
                           Run #{executionHistoryLength - index}
                         </span>
                         <Badge
-                          variant={result.passed ? "default" : "destructive"}
+                          variant={result.success ? "default" : "destructive"}
                           className="text-xs"
                         >
-                          {result.passed ? "Success" : "Failed"}
+                          {result.success ? "Success" : "Failed"}
                         </Badge>
                       </div>
                       <div className="text-xs text-muted-foreground">
