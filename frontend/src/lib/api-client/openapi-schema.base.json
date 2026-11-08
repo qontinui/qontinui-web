@@ -47843,6 +47843,315 @@
         "title": "SavedApiRequestUpdate",
         "type": "object"
       },
+      "SavedSessionListCoordStatus": {
+        "description": "coord's work-axis status for one session, read at capture time.\n\n``read`` says what kind of answer ``value`` is:\n\n* ``ok``: coord answered for this session. ``value`` is its\n  ``session_status`` (``finished``, another work-axis word, or ``null``\n  when the session exists and its work axis is unset).\n* ``unknown``: coord answered, but not for this session. It has no such\n  session in the caller's tenant, which is also how a session of another\n  tenant on a shared device reads. ``value`` is ``null``.\n* ``failed``: coord could not be read. ``value`` is ``null``.\n\n``unknown`` and ``failed`` never mean \"not finished\".",
+        "properties": {
+          "read": {
+            "enum": [
+              "ok",
+              "unknown",
+              "failed"
+            ],
+            "title": "Read",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "read"
+        ],
+        "title": "SavedSessionListCoordStatus",
+        "type": "object"
+      },
+      "SavedSessionListCreate": {
+        "additionalProperties": false,
+        "description": "``POST /api/v1/saved-session-lists``: which runner to capture, and a title.\n\nThere is no port or instance to choose: the capture reads the runner that\nowns the device's relay socket (the primary whenever it is connected),\nand records the instance, port and build that runner reports. Unknown\nfields are refused, so a client that sends ``runner_port`` learns it is\nnot honoured instead of having it silently ignored.",
+        "properties": {
+          "device_id": {
+            "description": "The device whose runner to capture.",
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional label for the saved list. Blank is stored as null.",
+            "title": "Title"
+          }
+        },
+        "required": [
+          "device_id"
+        ],
+        "title": "SavedSessionListCreate",
+        "type": "object"
+      },
+      "SavedSessionListDetail": {
+        "description": "One saved list with its layout: the capture's and the get route's body.",
+        "properties": {
+          "captured_at": {
+            "description": "When this backend captured the list (its own clock).",
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "coord_status": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SavedSessionListCoordStatus"
+            },
+            "description": "coord's work-axis status at capture time, keyed by a session's claudeSessionId. A terminal with no claudeSessionId has no entry.",
+            "title": "Coord Status",
+            "type": "object"
+          },
+          "created_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The creator's full name, else username; null when neither is set.",
+            "title": "Created By Name"
+          },
+          "created_by_user_id": {
+            "format": "uuid",
+            "title": "Created By User Id",
+            "type": "string"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When the list is deleted: captured_at plus 14 days.",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/TerminalLayout",
+            "description": "The runner's GET /terminal-layout body as captured: tabs in the runner's order, each with its terminals and their sessions."
+          },
+          "runner_build_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner build that answered, as the runner reported it.",
+            "title": "Runner Build Id"
+          },
+          "runner_instance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner instance's name, as the runner reported it.",
+            "title": "Runner Instance"
+          },
+          "runner_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner instance's API port, as the runner reported it.",
+            "title": "Runner Port"
+          },
+          "session_count": {
+            "description": "Terminals across all pages.",
+            "title": "Session Count",
+            "type": "integer"
+          },
+          "tab_count": {
+            "description": "Terminal pages (tabs) in the layout.",
+            "title": "Tab Count",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "device_id",
+          "runner_instance",
+          "runner_port",
+          "runner_build_id",
+          "title",
+          "created_by_user_id",
+          "created_by_name",
+          "captured_at",
+          "expires_at",
+          "tab_count",
+          "session_count",
+          "layout",
+          "coord_status"
+        ],
+        "title": "SavedSessionListDetail",
+        "type": "object"
+      },
+      "SavedSessionListSummary": {
+        "description": "One saved list without its layout: the list route's row.",
+        "properties": {
+          "captured_at": {
+            "description": "When this backend captured the list (its own clock).",
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "created_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The creator's full name, else username; null when neither is set.",
+            "title": "Created By Name"
+          },
+          "created_by_user_id": {
+            "format": "uuid",
+            "title": "Created By User Id",
+            "type": "string"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When the list is deleted: captured_at plus 14 days.",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "runner_build_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner build that answered, as the runner reported it.",
+            "title": "Runner Build Id"
+          },
+          "runner_instance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner instance's name, as the runner reported it.",
+            "title": "Runner Instance"
+          },
+          "runner_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner instance's API port, as the runner reported it.",
+            "title": "Runner Port"
+          },
+          "session_count": {
+            "description": "Terminals across all pages.",
+            "title": "Session Count",
+            "type": "integer"
+          },
+          "tab_count": {
+            "description": "Terminal pages (tabs) in the layout.",
+            "title": "Tab Count",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "device_id",
+          "runner_instance",
+          "runner_port",
+          "runner_build_id",
+          "title",
+          "created_by_user_id",
+          "created_by_name",
+          "captured_at",
+          "expires_at",
+          "tab_count",
+          "session_count"
+        ],
+        "title": "SavedSessionListSummary",
+        "type": "object"
+      },
       "ScanRootListResponse": {
         "description": "Every device's latest reading for the caller's organization.\n\nServed by ``GET /plan-library/scan-roots`` and, through the same builder,\nas ``corpus_health.scan_roots`` on every plan-library list page and on\n``/candidates`` \u2014 where a failed read degrades to ``read_failed`` instead\nof an error.",
         "properties": {
@@ -58926,6 +59235,283 @@
           "written"
         ],
         "title": "TenantResumeUnfinishedWriteResult",
+        "type": "object"
+      },
+      "TerminalLayout": {
+        "description": "One runner's terminal tabs and the sessions open in each, read at one\ninstant: the body of the runner's `GET /terminal-layout`.\n\nqontinui-runner serializes it. qontinui-web relays one GET to the runner,\nvalidates the body with the generated Python model and keeps it as a saved\ntab list on the `/sessions` page for 14 days (plan\n`2026-11-08-save-per-tab-runner-session-lists-on-sessions-page-kept-14-days`).\nOne definition, here, serves both sides.\n\nTwo wire rules hold for this type and the three it contains\n([`TerminalLayoutRunner`], [`TerminalLayoutPage`],\n[`TerminalLayoutSession`]):\n\n- **null means unknown or not applicable, as each field says, and is never\n  a stand-in such as `false`, `\"\"` or `-1`.** An unknown finished state is\n  `null`, not `false`; an unknown account is `null`, not `\"\"`; an unzoned\n  tile is `null`, not `-1`. The optional fields are always serialized,\n  `null` included, so the wire states the null instead of leaving the key\n  out, and a missing key also reads as `null`.\n- **No `deny_unknown_fields`**, neither serde's nor schemars', on purpose.\n  The generated models then ignore keys they do not know, so a newer runner\n  that adds a field never makes an older web refuse a capture. Do not add\n  it.",
+        "properties": {
+          "capturedAt": {
+            "description": "When the runner built this snapshot: an RFC 3339 timestamp on the\nrunner's own clock.",
+            "title": "Capturedat",
+            "type": "string"
+          },
+          "labelsRegistered": {
+            "description": "Whether the runner's webview has registered its tab list (labels and\nleft-to-right order) with the runner backend since this runner process\nstarted.\n\n`false` means every page's `label` and `order` is `null` because nothing\nwas registered yet, not because the tabs have no names.",
+            "title": "Labelsregistered",
+            "type": "boolean"
+          },
+          "pages": {
+            "description": "The runner's terminal pages (tabs): registered pages first, in their\nregistered order, then any page the webview never registered.",
+            "items": {
+              "$ref": "#/components/schemas/TerminalLayoutPage"
+            },
+            "title": "Pages",
+            "type": "array"
+          },
+          "runner": {
+            "$ref": "#/components/schemas/TerminalLayoutRunner",
+            "description": "The runner instance that answered, as it reports itself."
+          }
+        },
+        "required": [
+          "capturedAt",
+          "labelsRegistered",
+          "pages",
+          "runner"
+        ],
+        "title": "TerminalLayout",
+        "type": "object"
+      },
+      "TerminalLayoutPage": {
+        "description": "One terminal page (a tab of the runner's terminal view) and the sessions\nin it.\n\nSee [`TerminalLayout`] for the null and forward-compatibility rules.",
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The tab label the webview registered for this page; `null` when no\nlabel was registered for it.",
+            "title": "Label"
+          },
+          "order": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The page's left-to-right position as registered by the webview; `null`\nwhen the page was never registered.",
+            "title": "Order"
+          },
+          "pageId": {
+            "description": "The page id, the same value as [`TerminalInfo::page_id`].",
+            "title": "Pageid",
+            "type": "string"
+          },
+          "sessions": {
+            "description": "The terminals on this page.",
+            "items": {
+              "$ref": "#/components/schemas/TerminalLayoutSession"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "pageId",
+          "sessions"
+        ],
+        "title": "TerminalLayoutPage",
+        "type": "object"
+      },
+      "TerminalLayoutRunner": {
+        "description": "Which runner instance answered a [`TerminalLayout`] read, as the runner\nreports itself.\n\nEach field is `null` when the runner does not know or report it. See\n[`TerminalLayout`] for the null and forward-compatibility rules.",
+        "properties": {
+          "buildId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner build that answered (the same value as `buildId` on the\nrunner's `GET /health`).",
+            "title": "Buildid"
+          },
+          "deviceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The device id the runner reports for itself.",
+            "title": "Deviceid"
+          },
+          "instanceName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner instance's name.",
+            "title": "Instancename"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The port the runner instance's HTTP API listens on.",
+            "title": "Port"
+          }
+        },
+        "title": "TerminalLayoutRunner",
+        "type": "object"
+      },
+      "TerminalLayoutSession": {
+        "description": "One terminal on a [`TerminalLayoutPage`], joined to the session running in\nit.\n\nThe session fields (`claudeSessionId`, `accountLabel`, `sessionName`,\n`zoneIndex`, `finished`, `finishedAt`, `finishReason`) come from the\nterminal's CONFIRMED open session record only. A terminal with none, such\nas a plain shell, is still listed, with all of them `null`. `finished` is\nthe runner's own finished marker; coord's view of the session is not part\nof this type.\n\nSee [`TerminalLayout`] for the null and forward-compatibility rules.",
+        "properties": {
+          "accountLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Claude account the session runs under; `null` when unknown (the\nrunner's own `\"unknown\"` label is served as `null`).",
+            "title": "Accountlabel"
+          },
+          "claudeSessionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of the terminal's confirmed session (the runner's\n`claude_session_id`; a UUID for a Claude Code session).",
+            "title": "Claudesessionid"
+          },
+          "finishReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the session was marked finished, as recorded with the mark.",
+            "title": "Finishreason"
+          },
+          "finished": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The runner's finished marker for the session: `true` when it was\nmarked finished, `false` when its confirmed record carries no finished\nmark, `null` when unknown.",
+            "title": "Finished"
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the session was marked finished, as an RFC 3339 timestamp; `null`\nwhen it was not marked finished or the time is unknown.",
+            "title": "Finishedat"
+          },
+          "isAlive": {
+            "description": "Whether the terminal's process is still running.",
+            "title": "Isalive",
+            "type": "boolean"
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The session's display name.",
+            "title": "Sessionname"
+          },
+          "spawnName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The name the runner spawned the terminal under, where it has one.",
+            "title": "Spawnname"
+          },
+          "terminalId": {
+            "description": "The runner terminal id, the same value as [`TerminalInfo::id`].",
+            "title": "Terminalid",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The terminal's title. It is set by the program in the terminal (OSC 0/2\nescapes in its output), so it is session content. `null` when the\nterminal has no title, or when it was withheld (`titleWithheld`).",
+            "title": "Title"
+          },
+          "titleWithheld": {
+            "description": "`true` when the runner's egress gate withheld `title` because the\nsession's tenant does not let terminal content leave the machine (its\nterminal-stream switch is off); `title` is then `null`. `false` when\nnothing was withheld.",
+            "title": "Titlewithheld",
+            "type": "boolean"
+          },
+          "zoneIndex": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The grid zone the session's tile occupies; `null` when the tile is\nunzoned or its zone is unknown. Unsigned, so the runner's `-1` sentinel\ncannot reach the wire: it is served as `null`.",
+            "title": "Zoneindex"
+          }
+        },
+        "required": [
+          "isAlive",
+          "terminalId",
+          "titleWithheld"
+        ],
+        "title": "TerminalLayoutSession",
         "type": "object"
       },
       "TestRunComplete": {
@@ -125892,6 +126478,226 @@
         "summary": "Get a single drift entry",
         "tags": [
           "runs-drift"
+        ]
+      }
+    },
+    "/api/v1/saved-session-lists": {
+      "get": {
+        "description": "The caller's unexpired saved lists, newest first, without layouts.",
+        "operationId": "api_v1_saved_session_lists_get",
+        "parameters": [
+          {
+            "description": "Only this device's lists.",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this device's lists.",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SavedSessionListSummary"
+                  },
+                  "title": "Response List Saved Session Lists Api V1 Saved Session Lists Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Saved Session Lists",
+        "tags": [
+          "saved-session-lists"
+        ]
+      },
+      "post": {
+        "description": "Save the runner's current per-tab session list for ``device_id``.",
+        "operationId": "api_v1_saved_session_lists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedSessionListCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedSessionListDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "The device is not paired to the caller."
+          },
+          "409": {
+            "description": "The runner's build predates /terminal-layout, or its egress gate refused the read."
+          },
+          "413": {
+            "description": "The runner's layout is over the relay's 8 MiB cap."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "The runner answered an error or an invalid layout."
+          },
+          "503": {
+            "description": "The device's runner is not connected to the relay."
+          },
+          "504": {
+            "description": "The runner did not answer in time."
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Capture Saved Session List",
+        "tags": [
+          "saved-session-lists"
+        ]
+      }
+    },
+    "/api/v1/saved-session-lists/{list_id}": {
+      "delete": {
+        "description": "Delete one saved list.",
+        "operationId": "api_v1_saved_session_lists_list_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "List Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Missing, expired, or not the caller's."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Saved Session List",
+        "tags": [
+          "saved-session-lists"
+        ]
+      },
+      "get": {
+        "description": "One unexpired saved list, with its layout.",
+        "operationId": "api_v1_saved_session_lists_list_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "List Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedSessionListDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Missing, expired, or not the caller's."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Saved Session List",
+        "tags": [
+          "saved-session-lists"
         ]
       }
     },
