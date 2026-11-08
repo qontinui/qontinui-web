@@ -1093,3 +1093,19 @@ describe("lifecycle-only is read off the lifecycle half alone", () => {
     expect(statBadge("lifecycle-only")).toHaveTextContent(/^lifecycle-only 2$/);
   });
 });
+
+describe("linked is exact when no bridged row could hide past a ceiling", () => {
+  it("stays exact beside a FULL agent half when every lifecycle row was read and none is unresolved", async () => {
+    mount(async () =>
+      envelope([linked(1, "dev-a"), linked(2, "dev-b")], {
+        lifecycle_half: { read: "ok", bound: belowCeiling(2) },
+        agent_half: { read: "ok", bound: atCeiling() },
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(2)
+    );
+    expect(statBadge("rows")).toHaveTextContent(/^rows ≥2$/);
+    expect(statBadge("linked")).toHaveTextContent(/^linked 2$/);
+  });
+});

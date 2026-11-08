@@ -445,21 +445,39 @@ export function fleetCount(
 }
 
 /**
- * The `linked` join-class count as its stat renders it (`lifecycle-only` is {@link lifecycleOnlyCount}):
- * a {@link fleetCount} while the agent half answered, and `–` once it FAILED.
- * The route then withholds EVERY row's class (`row_class: null` for all of
- * them, shells included), so a `0` here would count nothing. `meaning` is the
- * stat's own sentence.
+ * The `linked` stat. A row is linked when a lifecycle row READ bridges an
+ * agent row READ, so the count can be higher than shown only through a
+ * session one half did not reach:
+ *
+ * - the lifecycle half came back full — a bridged session may have started
+ *   before its ceiling: a floor;
+ * - the agent half came back full AND some row is unresolved — a bridged row
+ *   whose agent twin lies past the agent ceiling reads unresolved (D2), so
+ *   those rows may be linked: a floor. With nothing unresolved no row can be
+ *   hiding that way, and the count is exact;
+ * - a half of unknown size: nothing established (`–`);
+ * - a FAILED agent read: `–` — the route withholds EVERY row's class
+ *   (`row_class: null` for all of them, shells included).
+ *
+ * `meaning` is the stat's own sentence; `unresolved` the rows of this read
+ * whose class is null.
  */
-export function joinClassCount(
+export function linkedCount(
   n: number,
   ceiling: SessionsCeiling,
-  meaning: string
+  meaning: string,
+  unresolved: number
 ): CountCell {
   if (isAgentHalfFailed(ceiling)) {
     return { value: null, title: AGENT_HALF_DID_NOT_ANSWER };
   }
-  return fleetCount(n, countBasis(ceiling), { title: meaning });
+  const basis: CountBasis = isSizeUnknown(ceiling)
+    ? "unknown"
+    : ceiling.lifecycle.kind === "capped" ||
+        (ceiling.agent.kind === "capped" && unresolved > 0)
+      ? "floor"
+      : "exact";
+  return fleetCount(n, basis, { title: meaning });
 }
 
 /**
