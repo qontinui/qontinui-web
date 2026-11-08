@@ -93,28 +93,50 @@ function) and coord's migration classifier refuses an interpolated
 ``op.execute``, so the test pins the two equal, and equal through PostgreSQL's
 own normalisation of the model's DDL.
 
-The whitespace set (a known, pre-existing mismatch)
----------------------------------------------------
+The whitespace set (a known, pre-existing mismatch on PostgreSQL 16)
+--------------------------------------------------------------------
 
 ``uq_work_artifact_edges_owned_followup`` trims ``note`` with the SAME SQL
 literal as ``ck_work_artifact_edges_followup_note`` and
 ``uq_work_artifact_edges_open_followup`` (``plan_library_03_spawned_followup``),
-reused verbatim so the three guards agree with one another. The literal is meant
-to be the six ASCII whitespace characters (space, tab, newline, carriage return,
-form feed, vertical tab), but PostgreSQL's ``E'...'`` strings have no ``\\v``
-escape - a backslash before a character it does not define stands for that
-character - so ``\\v`` is the LETTER ``v``. The literal trims bytes ``20 09 0a 0d
-0c 76``; ``app.models.work_artifact.NOTE_TRIM_CHARS``, which the application's
-lookups and the advisory-lock key bind, is ``20 09 0a 0d 0c 0b``. The two differ
-on exactly the vertical tab and the letter ``v``.
+reused verbatim so the three guards are spelled alike. The literal is meant to
+be the six ASCII whitespace characters (space, tab, newline, carriage return,
+form feed, vertical tab), and what it IS depends on the server version that runs
+the DDL, which lexes it once and stores the bytes it produced.
 
-Measured on PostgreSQL 16: a note that differs from a stored one only by a
-trailing ``v`` misses the lookup and trips the guard index (an IntegrityError,
-so a 500); one that differs only by a vertical tab is folded onto the stored row
-by the lookup. This revision does not change the set. Correcting the literal
-means rebuilding the CHECK and both guard indexes, a separate and destructive
-migration, tracked as a follow-up; the new index deliberately matches its
-neighbours until then.
+Measured on PostgreSQL 16 - the version the tests, CI and the runner's schema
+dump use - ``E'...'`` strings have no ``\\v`` escape (a backslash before a
+character it does not define stands for that character), so ``\\v`` is the
+LETTER ``v`` and the literal trims bytes ``20 09 0a 0d 0c 76``, where
+``app.models.work_artifact.NOTE_TRIM_CHARS`` - the set the application's lookups
+and the advisory-lock key bind - is ``20 09 0a 0d 0c 0b``. Coord finding
+c82b4ab4-ff65-4f24-b05b-3aebcecf10cb (2026-11-07) measured PostgreSQL 18.6 as
+``ascii(E'\\v') = 11``, a real vertical tab (not re-measured here): there the
+literal is ``20 09 0a 0d 0c 0b``, the two sets agree and none of the
+consequences below occurs (presumably so on >= 18 too; 17 is unmeasured).
+Production's server version was not checked, so which set its guards trim with
+is unknown.
+
+Where the guards were created by a PostgreSQL 16 server the two sets differ on
+exactly the vertical tab and the letter ``v``, with three consequences:
+
+1. a note that differs from a stored one only by a trailing ``v`` misses the
+   lookup and trips the guard index (an IntegrityError, so a 500) - measured on
+   PostgreSQL 16;
+2. one that differs only by a vertical tab is folded onto the stored row by the
+   lookup - measured on PostgreSQL 16;
+3. a note made only of letter ``v`` and whitespace characters fails the
+   blank-note CHECK while the API's ``str.strip()`` check refuses only an
+   all-whitespace note, so the write reaches the CHECK and fails with an
+   IntegrityError, a 500 - recorded in finding c82b4ab4, not re-measured here.
+
+This revision does not change the set. Correcting the literal means rebuilding
+the CHECK and both guard indexes, a separate and destructive migration, recorded
+as coord finding c82b4ab4-ff65-4f24-b05b-3aebcecf10cb and as a spawned_followup
+edge 00953325-ae1e-40a2-be4e-e441e08f452b on the plan
+2026-11-08-a-plan-can-own-many-followups-from-one-source-plan; no plan or work
+unit owns the fix yet. The new index is deliberately spelled like its neighbours
+until then.
 
 coord's classifier
 ------------------

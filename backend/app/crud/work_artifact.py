@@ -1658,11 +1658,12 @@ def _violated_constraint(exc: IntegrityError) -> str | None:
 #: the grain :func:`_find_existing_edge` looks up by. The note is trimmed IN SQL
 #: with ``btrim(note, NOTE_TRIM_CHARS)``, the set bound exactly as the lookup
 #: binds it, so every spelling the lookup reads as one finding takes the same
-#: lock. That is the LOOKUP's grain, not the guard indexes': their SQL literal
-#: differs from it on a vertical tab and a letter ``v`` (see
-#: :data:`app.models.work_artifact.NOTE_TRIM_CHARS`), so two notes that differ
-#: only by a leading or trailing ``v`` take different locks although the guard
-#: indexes read them as one finding.
+#: lock. That is the LOOKUP's grain, not necessarily the guard indexes': on
+#: PostgreSQL 16 their SQL literal differs from it on a vertical tab and a letter
+#: ``v``, and on 18.6 it does not (see
+#: :data:`app.models.work_artifact.NOTE_TRIM_CHARS`). So on 16 two notes that
+#: differ only by a leading or trailing ``v`` take different locks although the
+#: guard indexes read them as one finding.
 _FOLLOWUP_IDENTITY_LOCK = text(
     "SELECT pg_advisory_xact_lock(hashtextextended("
     "'plan_library.spawned_followup:' || CAST(:from_id AS text) || ':' "
@@ -1727,17 +1728,25 @@ async def _find_existing_edge(
     counts as the same note misses a row the index then refuses to insert,
     turning an idempotent re-post into a 500.
 
-    **The set bound here is the intended one, not exactly the one the guard
-    indexes trim with** - and the residual disagreement does just that. Their SQL
-    literal (``NOTE_TRIM_SQL``) writes the vertical tab as an escape PostgreSQL
-    does not have, so it trims a letter ``v`` and not a vertical tab, and this
-    lookup the reverse (see :data:`app.models.work_artifact.NOTE_TRIM_CHARS`). A
-    note that differs from a stored one only by a leading or trailing ``v``
-    misses this lookup and then trips the guard index; :func:`create_edge`
+    **The set bound here is the intended one; the guard indexes may trim with a
+    different one.** Their SQL literal (``NOTE_TRIM_SQL``) writes the vertical tab
+    as an escape that PostgreSQL 16 does not define (it reads the letter ``v``)
+    and PostgreSQL 18.6 does, per coord finding
+    c82b4ab4-ff65-4f24-b05b-3aebcecf10cb; the guards of a database trim with the
+    set of the server that created them, and production's server version was not
+    checked. See :data:`app.models.work_artifact.NOTE_TRIM_CHARS` for the
+    evidence and for a third consequence, for the blank-note CHECK. On 16 the
+    guard indexes trim a letter ``v`` and not a vertical tab, and this lookup the
+    reverse: a note that differs from a stored one only by a leading or trailing
+    ``v`` misses this lookup and then trips the guard index; :func:`create_edge`
     re-raises that ``IntegrityError`` (a 500), because the retried lookup finds
     nothing either. A note that differs only by a vertical tab is folded onto the
-    stored row here, which the indexes alone would not do. Known, pre-existing,
-    and tracked as a follow-up; not changed here.
+    stored row here, which the indexes alone would not do. Where the sets agree
+    (18.6) neither happens. Pre-existing, and recorded as coord finding
+    c82b4ab4-ff65-4f24-b05b-3aebcecf10cb and as a spawned_followup edge
+    00953325-ae1e-40a2-be4e-e441e08f452b on the plan
+    2026-11-08-a-plan-can-own-many-followups-from-one-source-plan; no plan or work
+    unit owns the fix yet; not changed here.
 
     Ordered ``(to_id IS NULL), created_at, id``: an OWNED row first. A corpus
     can hold an open copy beside the owned row it duplicates (re-posting a
@@ -2209,15 +2218,16 @@ async def _owned_twin(
     """The follow-up ``to_id`` already OWNS off ``from_id`` with ``note``, if any.
 
     The grain of ``uq_work_artifact_edges_owned_followup`` - same source, same
-    owner, same relation, equal ``btrim(note)`` - with one difference: both sides
-    are trimmed in SQL with :data:`NOTE_TRIM_CHARS` (as in
+    owner, same relation, equal ``btrim(note)`` - with one possible difference:
+    both sides are trimmed in SQL with :data:`NOTE_TRIM_CHARS` (as in
     :func:`_find_existing_edge`), while the index trims with its own SQL literal,
-    which differs on a vertical tab and a letter ``v``. A note that differs only
-    by a leading or trailing ``v`` is therefore a twin to the index and not to
-    this lookup, and :func:`claim_followup` then meets the index's
-    ``IntegrityError`` with no twin to name and re-raises it (see
-    :data:`app.models.work_artifact.NOTE_TRIM_CHARS`). ``exclude_id`` is the edge
-    being claimed, which can never be its own twin.
+    which on PostgreSQL 16 differs on a vertical tab and a letter ``v`` (and on
+    18.6 does not). On 16 a note that differs only by a leading or trailing ``v``
+    is a twin to the index and not to this lookup, and :func:`claim_followup` then
+    meets the index's ``IntegrityError`` with no twin to name and re-raises it
+    (see :data:`app.models.work_artifact.NOTE_TRIM_CHARS` for the server-version
+    dependence and the evidence). ``exclude_id`` is the edge being claimed, which
+    can never be its own twin.
     """
     return (
         (
@@ -2277,7 +2287,8 @@ async def claim_followup(
     follow-up's writers per ``(source, note)`` with one; this function is not one
     of them. It creates nothing - it can only move an open row to owned - and the
     one duplicate it refuses is guarded by the owned-note index, so the twin
-    lookup is a faster route to the database's own answer, not the only one.
+    lookup is a faster route to the database's own answer for every character the
+    two trim sets share, not the only one.
     Taking the lock here would also be unsound where it matters: the key needs
     the row's ``(from_id, note)``, which only the row lock below hands over, and
     :func:`create_edge` takes the advisory lock BEFORE the row lock it needs to
