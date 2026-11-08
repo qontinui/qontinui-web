@@ -351,18 +351,25 @@ IPV4_RE: Final = re.compile(rf"(?<![0-9])(?:{_OCTET}\.){{3}}{_OCTET}(?![0-9])")
 _H16 = r"[0-9A-Fa-f]{1,4}"
 #: An IPv6 address: eight groups, or a ``::`` compression with at least one
 #: group beside it. Not inside a longer word, so ``std::vector`` and a time
-#: (``12:30:45``) or a MAC address (six groups) are not addresses.
+#: (``12:30:45``) or a MAC address (six groups) are not addresses. A colon
+#: BEFORE it is no guard: ``IPv6:2001:db8::5`` and ``IP:2001:db8::1`` are
+#: addresses behind a label.
 IPV6_RE: Final = re.compile(
-    r"(?<![0-9A-Za-z:.])"
+    r"(?<![0-9A-Za-z.])"
     rf"(?:(?:{_H16}:){{7}}{_H16}"
     rf"|(?:{_H16}:){{1,7}}:(?:{_H16}(?::{_H16}){{0,5}})?"
     rf"|::{_H16}(?::{_H16}){{0,6}})"
     r"(?![0-9A-Za-z:])"
 )
 #: A 12-digit AWS account id, bare or as the console writes it
-#: (``1234-5678-9012``), not inside a longer word or run of digits.
+#: (``1234-5678-9012``), each form with its own guards. The bare form is not
+#: inside a longer word or run of digits, but a dash beside it is no guard:
+#: account ids sit between dashes in bucket names
+#: (``cdk-hnb659fds-assets-123456789012-us-east-1``). The dashed form is not
+#: inside a longer dash-joined run, so ``1234-5678-9012-3456`` is not one.
 ACCOUNT_ID_RE: Final = re.compile(
-    r"(?<![0-9A-Za-z])(?:[0-9]{12}|[0-9]{4}-[0-9]{4}-[0-9]{4})(?![0-9A-Za-z-])"
+    r"(?<![0-9A-Za-z])[0-9]{12}(?![0-9A-Za-z])"
+    r"|(?<![0-9A-Za-z-])[0-9]{4}-[0-9]{4}-[0-9]{4}(?![0-9A-Za-z-])"
 )
 
 

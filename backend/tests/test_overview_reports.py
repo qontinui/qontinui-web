@@ -507,7 +507,7 @@ class TestReports:
                 "confidential_term",
             ),
             ({"title": "Review", "summary": "Ask ops@example.com"}, "summary", "email"),
-            ({"title": "Review at 203.0.113.40"}, "title", "ip_address"),
+            ({"title": "Review at 192.0.2.40"}, "title", "ip_address"),
         ]
         for body, slot, kind in cases:
             response = await admin.post(f"{API}/reports", json=body)
@@ -515,7 +515,7 @@ class TestReports:
             refused = response.json()
             assert refused["error"] == "report_rejected"
             assert {"slot": slot, "kind": kind} in refused["violations"]
-            for value in (TERM, "ops@example.com", "203.0.113.40"):
+            for value in (TERM, "ops@example.com", "192.0.2.40"):
                 assert value not in response.text
         # A UUID in a body is allowed: block arguments are slugs, not ids.
         await _report(admin, body_md="Ref aaaaaaaa-0000-4000-8000-000000000123.")
@@ -1318,10 +1318,16 @@ PLANTS: list[tuple[str, str, str]] = [
     ("uuid", "Ref aaaaaaaa000040008000000000000042", "notes[0].body_md"),
     ("email", "Ask ops@example.com", "items[0].label"),
     ("email", "ping release-bot@buildhost", "tables[0].caption"),
-    ("ip_address", "Reached 203.0.113.40 at noon", "items[0].label"),
+    ("ip_address", "Reached 192.0.2.40 at noon", "items[0].label"),
     ("ip_address", "Bound to 2001:db8::42 only", "notes[0].body_md"),
+    # Behind a label: the colon before the address is no guard.
+    ("ip_address", "IPv6:2001:db8::5", "method.note"),
+    ("ip_address", "IP:2001:db8::1", "tables[0].columns[0].help"),
     ("account_id", "Billed to 123456789012", "items[0].label"),
     ("account_id", "Billed to 1234-5678-9012", "figures[0].source"),
+    # Between dashes, as bucket names carry them.
+    ("account_id", "cdk-hnb659fds-assets-123456789012-us-east-1", "groups[0].help"),
+    ("account_id", "my-bucket-123456789012-logs", "tables[0].title"),
     ("confidential_term", f"Migration for {TERM}", "items[0].label"),
     ("confidential_term", "Migration for NORTHWIND-mutual", "notes[0].title"),
     ("confidential_term", "Migration for Nörthwind  Mutual", "summary"),
@@ -1385,6 +1391,13 @@ class TestScanners:
             "CI/CD for the 12:30:45 build, std::vector, MAC 00:1a:2b:3c:4d:5e",
             "Version 1.2.3, 2026-10-13, 12345678901 and 1234567890123",
             "North wind and a mutual friend",
+            # Timestamps, durations and versions a snapshot's prose carries.
+            "Measured at 2026-10-13T01:20:00Z, as of 2026-10-13T12:00:00+00:00",
+            "Read at 2026-10-13T12:00:00.123456-05:00 and 2026-10-13T12:00:00.123+05:30",
+            "Lead time 85.8 h, standup at 10:30, build at 12:30:45",
+            "Released v1.2.3, then v1.2.3-rc.1 and 1.2.3+build.5",
+            # Sixteen digits in fours: no twelve-digit form fits inside it.
+            "Order 1234-5678-9012-3456",
         ],
     )
     async def test_ordinary_text_passes(
@@ -1394,6 +1407,29 @@ class TestScanners:
         report = await _report(admin)
         doc = _doc()
         doc["notes"][0]["body_md"] = text
+        await _snapshot(admin, report["id"], doc)
+
+    @pytest.mark.parametrize(
+        "moment",
+        [
+            "2026-10-13T01:20:00Z",
+            "2026-10-13T12:00:00+00:00",
+            "2026-10-13T12:00:00.123+05:30",
+            "2026-10-13T12:00:00.123456-05:00",
+            "2026-10-13T12:00:00.123456789-05:00",
+        ],
+    )
+    async def test_timestamps_in_their_own_slots_pass(
+        self, admin: httpx.AsyncClient, moment: str
+    ) -> None:
+        """``as_of`` and ``measured_at`` are strings too, and every string is
+        scanned: no ISO 8601 spelling of a moment reads as an address or an
+        account id."""
+        report = await _report(admin)
+        doc = _with(
+            _doc(as_of=moment),
+            lambda d: d["figures"][0].update(measured_at=moment),
+        )
         await _snapshot(admin, report["id"], doc)
 
 
