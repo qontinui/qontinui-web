@@ -1,8 +1,7 @@
 /**
  * Workflow Testing Module
  *
- * Testing framework for workflows including test cases, suites,
- * execution, assertions, coverage analysis, and persistence.
+ * Authoring and persistence of workflow test cases and suites.
  */
 
 // Types
@@ -14,11 +13,6 @@ export type {
   TestSuite,
   AssertionResult,
   TestResult,
-  TestStatistics,
-  ActionCoverage,
-  PathCoverage,
-  WorkflowCoverage,
-  CoverageReport,
 } from "./types";
 
 // Service

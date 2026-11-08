@@ -2,10 +2,8 @@
  * Workflow Testing Types
  *
  * Type definitions for the workflow testing framework including
- * test cases, suites, results, assertions, and coverage.
+ * test cases, suites, assertions and results.
  */
-
-import type { ActionType } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Assertion Types
@@ -219,122 +217,4 @@ export interface TestResult {
 
   /** Additional execution details */
   details?: unknown;
-}
-
-export interface TestStatistics {
-  /** Test case ID */
-  testCaseId: string;
-
-  /** Total runs */
-  totalRuns: number;
-
-  /** Successful runs */
-  successfulRuns: number;
-
-  /** Failed runs */
-  failedRuns: number;
-
-  /** Pass rate percentage */
-  passRate: number;
-
-  /** Average duration in milliseconds */
-  avgDuration: number;
-
-  /** Minimum duration */
-  minDuration: number;
-
-  /** Maximum duration */
-  maxDuration: number;
-
-  /** Last run timestamp */
-  lastRun?: string;
-
-  /** Last result */
-  lastPassed?: boolean;
-}
-
-// ============================================================================
-// Coverage Types
-// ============================================================================
-
-export interface ActionCoverage {
-  /** Action ID */
-  actionId: string;
-
-  /** Action type */
-  actionType: ActionType;
-
-  /** Action name */
-  actionName?: string;
-
-  /** Is this action covered by tests? */
-  covered: boolean;
-
-  /** Test cases that cover this action */
-  coveredByTests: string[];
-
-  /** Number of times tested */
-  testCount: number;
-}
-
-export interface PathCoverage {
-  /** Path as array of action IDs */
-  path: string[];
-
-  /** Is this path covered? */
-  covered: boolean;
-
-  /** Test cases that cover this path */
-  coveredByTests: string[];
-}
-
-export interface WorkflowCoverage {
-  /** Workflow ID */
-  workflowId: string;
-
-  /** Workflow name */
-  workflowName: string;
-
-  /** Overall coverage percentage */
-  coveragePercentage: number;
-
-  /** Total actions in workflow */
-  totalActions: number;
-
-  /** Actions covered by tests */
-  coveredActions: number;
-
-  /** Action-level coverage details */
-  actions: ActionCoverage[];
-
-  /** Path-level coverage */
-  paths?: PathCoverage[];
-
-  /** Untested actions */
-  untestedActions: string[];
-
-  /** Test cases for this workflow */
-  testCases: string[];
-}
-
-export interface CoverageReport {
-  /** Report generation timestamp */
-  timestamp: string;
-
-  /** Coverage by workflow */
-  workflows: WorkflowCoverage[];
-
-  /** Overall coverage percentage */
-  overallCoverage: number;
-
-  /** Total workflows analyzed */
-  totalWorkflows: number;
-
-  /** Summary statistics */
-  summary: {
-    totalActions: number;
-    coveredActions: number;
-    totalTestCases: number;
-    totalTestSuites: number;
-  };
 }
