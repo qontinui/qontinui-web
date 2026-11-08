@@ -195,6 +195,13 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
   const reposUnknown =
     readIsUnknown(ci.view !== null, ci.error !== null) ||
     listUnknownReason !== null;
+  // The PRE-READ arm. Before the first aggregate read lands, `readIsUnknown`
+  // is false by contract and `summarizeRepos([])` would paint
+  // `repos on 0 · off 0` — a measured-looking zero, in neutral styling, over
+  // a read that has not answered (and the header stays visible while the
+  // panel is folded). It renders the unknown arm's amber dash instead, as the
+  // tenant badge beside it already does for a null level.
+  const reposUnread = ci.view === null && ci.error === null;
 
   return (
     <CollapsiblePanel
@@ -219,11 +226,16 @@ export function GithubHostedCiPanel({ isAdmin }: { isAdmin: boolean }) {
           </Badge>
           <Badge
             variant="outline"
-            className={`text-[10px] ${reposUnknown || summary.unknown > 0 || stale ? UNKNOWN_AMBER : ""}`}
+            className={`text-[10px] ${reposUnknown || reposUnread || summary.unknown > 0 || stale ? UNKNOWN_AMBER : ""}`}
             data-testid="github-hosted-ci-summary-repos"
             data-stale={stale ? "true" : undefined}
+            title={
+              reposUnread
+                ? "nothing has answered yet; this is a dash, not a zero"
+                : undefined
+            }
           >
-            {reposUnknown
+            {reposUnknown || reposUnread
               ? `repos ${UNKNOWN_DASH}`
               : `repos on ${summary.on} · off ${summary.off}` +
                 (summary.unknown > 0 ? ` · unknown ${summary.unknown}` : "")}
