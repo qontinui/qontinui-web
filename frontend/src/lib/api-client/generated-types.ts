@@ -47629,6 +47629,7 @@ export interface components {
             os_version?: string | null;
             /** Port */
             port: number;
+            recent_crash?: components["schemas"]["RunnerHeartbeatCrash"] | null;
             relay?: components["schemas"]["RunnerRelay"] | null;
             /**
              * Running Task Count
@@ -48472,6 +48473,7 @@ export interface components {
             os_version?: string | null;
             /** Port */
             port: number;
+            recent_crash?: components["schemas"]["RunnerHeartbeatCrash"] | null;
             relay?: components["schemas"]["RunnerRelay"] | null;
             /**
              * Running Task Count
@@ -48481,6 +48483,32 @@ export interface components {
             /** Running Task Ids */
             running_task_ids?: string[];
             ui_thread?: components["schemas"]["RunnerUiThread"] | null;
+        };
+        /**
+         * RunnerHeartbeatCrash
+         * @description The runner's most recent crash dump, as its HTTP heartbeat sends it.
+         *
+         *     The snake_case ``HeartbeatRecentCrash`` in ``heartbeat.rs``. The optional
+         *     fields are omitted, never ``null``, when the dump lacks a section. ``pid``
+         *     is omitted for a dump that predates the ``Pid:`` header
+         *     (qontinui-runner#2551 / #2722).
+         *
+         *     The route is unauthenticated and the registry lives in memory, so text is
+         *     cut to ``MAX_TEXT`` characters. Unknown keys are dropped.
+         */
+        RunnerHeartbeatCrash: {
+            /** File Path */
+            file_path: string;
+            /** Panic Location */
+            panic_location?: string | null;
+            /** Panic Message */
+            panic_message?: string | null;
+            /** Pid */
+            pid?: number | null;
+            /** Reported At */
+            reported_at: string;
+            /** Thread */
+            thread?: string | null;
         };
         /**
          * RunnerInstance
