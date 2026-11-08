@@ -15,40 +15,50 @@ Without a database (always runs):
    name ``_PARENT_REVISION_ID``. A re-point is three coupled edits: those two
    and the pin here.
 2. **The statement list.** ``upgrade()`` issues static literals only, all inside
-   the autocommit block, in this order for each index, smallest first: the two
-   leftover drops, the ``REINDEX``, then the same two drops in the failure
-   handler. ``downgrade()`` issues nothing.
+   the autocommit block: the ``statement_timeout`` bound first, then for each
+   index, smallest first, the two leftover drops, the ``REINDEX``, and the same
+   two drops in the failure handler, then the ``RESET`` last. ``downgrade()``
+   issues nothing.
+3. **The block bounds its own waits.** ``SET statement_timeout = '4h'`` comes
+   before the first ``REINDEX`` and ``RESET statement_timeout`` is the last
+   statement, so no rebuild depends on the migrator role's timeout.
+4. **Each catch is real.** Every ``REINDEX`` sits alone in its own ``try`` with
+   one ``DBAPIError`` handler that drops that index's two leftovers and logs it.
+   Assertion 8 drives only the primary key's handler at run time; this pins the
+   other two, which a flattened ``try`` would remove without changing the
+   statement list.
 
 Against a real Postgres (skipped when none is reachable):
 
-3. **Upgrade, downgrade, upgrade.** Each upgrade rebuilds all three indexes
+5. **Upgrade, downgrade, upgrade.** Each upgrade rebuilds all three indexes
    (each comes back under a new ``indexrelid``) and logs no failure; the
    downgrade leaves them as they are.
-4. **Valid, with the same definitions.** After an upgrade over a table holding
+6. **Valid, with the same definitions.** After an upgrade over a table holding
    rows, the three indexes are ``indisvalid``, ``pg_get_indexdef`` reads exactly
    the definitions spelled out below, and the primary key constraint uses the
    rebuilt index.
-5. **Leftovers are dropped before each rebuild** (superuser). An invalid
+7. **Leftovers are dropped before each rebuild** (superuser). An invalid
    ``<name>_ccnew``, or in the second case ``<name>_ccold``, planted for each of
    the three indexes is gone afterwards, and no other ``_cc*`` index is left.
-6. **One failed rebuild does not stop the others** (superuser). A real
+8. **One failed rebuild does not stop the others** (superuser). A real
    duplicate key makes the primary key's rebuild fail in its build phase, which
    leaves ``test_results_pkey_ccnew`` behind. The upgrade still exits 0 and
    stamps; that leftover is dropped; the failure is logged on one line naming
    the index and the error; the rebuild before it and the one after it both
    happen; and the old primary key index still serves.
 
-Assertion 6 is also the proof plan D3 asked for: inside alembic's
+Assertion 8 is also the proof plan D3 asked for: inside alembic's
 ``autocommit_block()`` a caught statement error leaves the connection usable for
 the next statement and for alembic's stamp.
 
-Assertions 5 and 6 write to ``pg_index`` (``indisvalid`` / ``indisunique``), so
+Assertions 7 and 8 write to ``pg_index`` (``indisvalid`` / ``indisunique``), so
 they need a superuser and skip, saying so, without one. CI's
 ``pgvector/pgvector:pg16`` ``POSTGRES_USER`` is a superuser.
 """
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import re
 import subprocess
@@ -102,6 +112,10 @@ _EXPECTED_DEFINITIONS = {
 
 #: The start of the one line the revision logs per failed rebuild.
 _FAILURE_MARKER = "coord_test_results_reindex_01: REINDEX FAILED"
+
+#: The revision's own bound on its statements, and the restore after them.
+_SET_TIMEOUT = "SET statement_timeout = '4h'"
+_RESET_TIMEOUT = "RESET statement_timeout"
 
 # 3 repos x 40 tests, 1200 rows: enough that each rebuild sorts and writes real
 # pages rather than an empty index.
@@ -208,6 +222,14 @@ def _leftover_indexes(engine: Engine) -> list[str]:
     return [str(row[0]) for row in rows]
 
 
+def _leftover_drops(name: str) -> list[str]:
+    """The two leftover drops the revision issues for ``coord.<name>``, in order."""
+    return [
+        f"DROP INDEX CONCURRENTLY IF EXISTS coord.{name}_ccnew",
+        f"DROP INDEX CONCURRENTLY IF EXISTS coord.{name}_ccold",
+    ]
+
+
 def _failure_lines(proc: subprocess.CompletedProcess[str]) -> list[str]:
     return [
         line
@@ -292,16 +314,17 @@ def test_upgrade_issues_static_literals_in_order_outside_a_transaction() -> None
         "and this test can only read the SQL that way"
     )
     issued = [" ".join(str(call.sql).split()) for call in calls]
-    expected: list[str] = []
+    expected: list[str] = [_SET_TIMEOUT]
     for name in _REBUILD_ORDER:
-        drops = [
-            f"DROP INDEX CONCURRENTLY IF EXISTS coord.{name}_ccnew",
-            f"DROP INDEX CONCURRENTLY IF EXISTS coord.{name}_ccold",
+        expected += [
+            *_leftover_drops(name),
+            f"REINDEX INDEX CONCURRENTLY coord.{name}",
+            *_leftover_drops(name),
         ]
-        expected += [*drops, f"REINDEX INDEX CONCURRENTLY coord.{name}", *drops]
+    expected.append(_RESET_TIMEOUT)
     assert issued == expected, (
-        "per index, smallest first: drop _ccnew, drop _ccold, REINDEX, then the "
-        "same two drops in the failure handler"
+        "the timeout bound, then per index, smallest first: drop _ccnew, drop "
+        "_ccold, REINDEX, the same two drops in the failure handler; then the reset"
     )
     outside = [
         sql
@@ -317,9 +340,114 @@ def test_upgrade_issues_static_literals_in_order_outside_a_transaction() -> None
     )
 
 
+def test_the_block_sets_its_own_statement_timeout_and_resets_it_last() -> None:
+    """3. The 4 h bound precedes every REINDEX, and its reset is the last statement."""
+    calls = upgrade_execute_calls(_REVISION_PATH)
+    issued = [" ".join(str(call.sql).split()) for call in calls]
+    first_reindex = next(
+        (i for i, sql in enumerate(issued) if sql.startswith("REINDEX")), None
+    )
+    assert first_reindex is not None, "upgrade() issues no REINDEX at all"
+    assert _SET_TIMEOUT in issued[:first_reindex], (
+        f"{_SET_TIMEOUT!r} must run before the first REINDEX, so no rebuild is "
+        "bounded by the migrator role's statement_timeout instead (a short one "
+        "cancels the large rebuild, which the catch then stamps unreclaimed)"
+    )
+    assert issued[-1] == _RESET_TIMEOUT, (
+        f"{_RESET_TIMEOUT!r} must be the last statement, so the session goes back "
+        "to its configured timeout before alembic stamps"
+    )
+    assert calls[issued.index(_SET_TIMEOUT)].in_autocommit_block
+    assert calls[-1].in_autocommit_block
+
+
+def _op_execute_literal(node: ast.AST) -> str | None:
+    """The whitespace-squashed SQL of an ``op.execute("...")`` statement, else None."""
+    if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)):
+        return None
+    call = node.value
+    func = call.func
+    is_op_execute = (
+        isinstance(func, ast.Attribute)
+        and func.attr == "execute"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "op"
+    )
+    if not is_op_execute or len(call.args) != 1:
+        return None
+    arg = call.args[0]
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+        return " ".join(arg.value.split())
+    return None
+
+
+def test_each_reindex_sits_alone_in_its_own_try_with_a_dbapierror_handler() -> None:
+    """4. One try per REINDEX: its handler drops that index's leftovers and logs it."""
+    tree = ast.parse(_REVISION_PATH.read_text(encoding="utf-8"))
+    upgrade = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "upgrade"
+    )
+    reindexes = [
+        sql
+        for node in ast.walk(upgrade)
+        if (sql := _op_execute_literal(node)) is not None and sql.startswith("REINDEX")
+    ]
+    assert len(reindexes) == len(_REBUILD_ORDER), reindexes
+    tries = sorted(
+        (node for node in ast.walk(upgrade) if isinstance(node, ast.Try)),
+        key=lambda node: node.lineno,
+    )
+    guarded: list[str] = []
+    for block in tries:
+        body = [_op_execute_literal(statement) for statement in block.body]
+        assert len(body) == 1 and body[0] is not None, (
+            f"the try at line {block.lineno} must guard exactly one op.execute"
+        )
+        prefix = "REINDEX INDEX CONCURRENTLY coord."
+        assert body[0].startswith(prefix), (
+            f"the try at line {block.lineno} guards {body[0]!r}, not a REINDEX"
+        )
+        name = body[0].removeprefix(prefix)
+        assert not block.orelse and not block.finalbody, name
+        assert len(block.handlers) == 1, f"{name}: exactly one handler"
+        handler = block.handlers[0]
+        assert isinstance(handler.type, ast.Name) and handler.type.id == "DBAPIError", (
+            f"{name}: the handler must catch DBAPIError, the statement's own "
+            "database error"
+        )
+        dropped = [
+            sql
+            for statement in handler.body
+            if (sql := _op_execute_literal(statement)) is not None
+        ]
+        assert dropped == _leftover_drops(name), (
+            f"{name}: the handler must drop that index's _ccnew and _ccold"
+        )
+        logged = [
+            statement.value
+            for statement in handler.body
+            if isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Call)
+            and isinstance(statement.value.func, ast.Name)
+            and statement.value.func.id == "_log_failed_rebuild"
+        ]
+        assert len(logged) == 1, f"{name}: the handler must log the failure once"
+        first_arg = logged[0].args[0]
+        assert isinstance(first_arg, ast.Constant) and first_arg.value == name, (
+            f"{name}: the failure line must name its own index"
+        )
+        guarded.append(name)
+    assert guarded == list(_REBUILD_ORDER), (
+        "every REINDEX must sit alone in its own try, in rebuild order; "
+        f"guarded: {guarded}"
+    )
+
+
 @pytest.mark.skipif(not _PG_REACHABLE, reason=_NO_POSTGRES_REASON)
 def test_upgrade_downgrade_upgrade_rebuilds_every_index_each_time() -> None:
-    """3. Both upgrades rebuild all three indexes and log no failure."""
+    """5. Both upgrades rebuild all three indexes and log no failure."""
     with _database_at_parent() as (engine, url, root):
         at_parent = _index_oids(engine)
 
@@ -347,7 +475,7 @@ def test_upgrade_downgrade_upgrade_rebuilds_every_index_each_time() -> None:
 
 @pytest.mark.skipif(not _PG_REACHABLE, reason=_NO_POSTGRES_REASON)
 def test_rebuilt_indexes_are_valid_and_keep_their_definitions() -> None:
-    """4. Valid, exactly the spelled-out definitions, primary key intact."""
+    """6. Valid, exactly the spelled-out definitions, primary key intact."""
     with _database_at_parent() as (engine, url, root):
         with engine.begin() as conn:
             conn.execute(text(_SEED_SQL))
@@ -383,7 +511,7 @@ def test_rebuilt_indexes_are_valid_and_keep_their_definitions() -> None:
 )
 @pytest.mark.parametrize("suffix", ["_ccnew", "_ccold"])
 def test_an_invalid_leftover_is_dropped_before_each_rebuild(suffix: str) -> None:
-    """5. A planted invalid leftover of each index is gone after the upgrade."""
+    """7. A planted invalid leftover of each index is gone after the upgrade."""
     with _database_at_parent() as (engine, url, root):
         planted = sorted(f"{name}{suffix}" for name in _REBUILD_ORDER)
         for leftover in planted:
@@ -407,7 +535,7 @@ def test_an_invalid_leftover_is_dropped_before_each_rebuild(suffix: str) -> None
     _SUPERUSER_SKIP_REASON is not None, reason=str(_SUPERUSER_SKIP_REASON)
 )
 def test_one_failed_rebuild_does_not_stop_the_others() -> None:
-    """6. The primary key's rebuild fails; the upgrade finishes and stamps."""
+    """8. The primary key's rebuild fails; the upgrade finishes and stamps."""
     with _database_at_parent() as (engine, url, root):
         with engine.begin() as conn:
             conn.execute(text(_SEED_SQL))
