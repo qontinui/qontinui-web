@@ -15694,6 +15694,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/operations/pr-merge/onboarding/repos/{repo}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Pr Merge Onboarding Repo
+         * @description Stop governing an enrolled repo: un-enroll it with a recorded reason.
+         *
+         *     Proxies coord's ``DELETE /coord/canonical-repos?repo=<owner/name>``, the
+         *     door ``coord_onboard_unenroll_repo`` shares one core with, and sends the
+         *     reason beside it as ``reason`` (read by coord from plan Phase 7 on). The
+         *     ``owner/name`` path param carries a slash, so it is a ``{repo:path}`` here
+         *     (the restore route's shape); it travels to coord as the ``repo`` query
+         *     parameter. Backs the "Stop governing" action on an enrolled row of the
+         *     Connected Organizations card; the row's undo is Re-enroll (the restore
+         *     route above), on the same card.
+         *
+         *     Authz — ``require_coord_tenant_admin_target``: admin IN THE ACTIVE TENANT,
+         *     the tenant the write lands in. Coord re-checks its own, stricter bar
+         *     (``strategy_admin``) on the forwarded bearer and refuses with ``403
+         *     strategy_admin_required``.
+         *
+         *     Refused HERE, with nothing sent to coord:
+         *       * ``400 {"error": "invalid_repo"}`` — the path is not ``owner/name``;
+         *       * ``400 {"error": "reason_required"}`` — no reason, or only whitespace.
+         *         Un-enrolling is sticky and silent (the repo stops appearing wherever
+         *         coord lists governed repos), so the WHY is required at this door, where
+         *         coord itself treats it as optional (``coord_onboard_unenroll_repo``
+         *         today, the HTTP door's ``reason`` from plan Phase 7);
+         *       * ``400 {"error": "reason_too_long", "max_length": <cap>}`` — over
+         *         :data:`UNENROLL_REASON_MAX` after trimming.
+         *
+         *     Coord's answers:
+         *       * ``204`` — the tenant's governance rows were removed and the tombstone
+         *         written. Answered here as a BODILESS ``204``: not through
+         *         ``_proxy_coord_delete``, which turns a ``204`` into ``200 {"status":
+         *         "ok"}``, and not as the JSON response the verbatim helper builds for
+         *         it (``_proxy_coord_verbatim`` wraps coord's empty body as ``{"detail":
+         *         ""}``, a recorded oddity of that helper's characterization suite,
+         *         ``tests/test_coord_proxy_contract.py``), because a 204 carries no
+         *         content;
+         *       * ``404 {"error": "repo not found: <repo>", "tombstoned": bool, "note":
+         *         str}`` — nothing of the caller tenant's was removed. ``tombstoned``
+         *         says whether a suppression was written anyway and ``note`` says what
+         *         that means for the tenant; both pass through VERBATIM, whatever coord
+         *         sends, because their meaning moves with coord (plan Phase 7 answers
+         *         ``tombstoned: false`` for a tenant that does not govern the repo);
+         *       * any other refusal (``403 strategy_admin_required``, ``400``, ``500``)
+         *         — status and body verbatim.
+         *
+         *     Transport failures are the web's own refusals (``_proxy_coord_verbatim``):
+         *     ``502 coord_unreachable`` (coord never saw the request), ``504
+         *     coord_write_timeout`` / ``answer_lost`` (the removal may have been
+         *     applied — re-read before retrying).
+         */
+        delete: operations["api_v1_operations_pr_merge_onboarding_repos_repo_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/operations/pr-merge/onboarding/repos/{repo}/restore": {
         parameters: {
             query?: never;
@@ -79787,6 +79854,38 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_pr_merge_onboarding_repos_repo_delete: {
+        parameters: {
+            query: {
+                /** @description Why coord stops governing the repository, recorded on the un-enrollment tombstone. Required and non-blank; at most 500 characters after trimming. */
+                reason: string;
+            };
+            header?: never;
+            path: {
+                repo: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

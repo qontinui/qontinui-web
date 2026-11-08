@@ -38,7 +38,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -2963,6 +2963,147 @@ async def post_pr_merge_onboarding_restore_repo(
     except ValueError:
         content = {"detail": resp.text}
     return JSONResponse(content=content, status_code=resp.status_code)
+
+
+# ---- Un-enroll ("stop governing") an enrolled repo --------------------------
+#
+# The inverse of the restore above, on the same card: the "Stop governing"
+# control on an ENROLLED row of the Connected Organizations card (plan
+# `2026-11-08-coord-keeps-governing-repos-a-narrowed-installation-dropped`
+# Phase 8, D6). Coord's one HTTP removal door is `DELETE
+# /coord/canonical-repos?repo=` (`canonical_repos::delete_deregister`, a thin
+# transport over `pr_merge::unenroll::unenroll_repo`): it deletes the caller
+# tenant's governance rows for the repo and writes the
+# `coord.tenant_repo_unenrollments` tombstone that keeps the installation
+# enroll path from putting the repo straight back. Coord gates it on
+# `strategy_admin` (an operator's `admin` role in the tenant coord resolves).
+# The same plan's Phase 7 gives that door an optional `reason` query parameter,
+# recorded on the tombstone; a coord that predates it ignores the parameter,
+# and its tombstone then records no reason.
+#
+# The tenant is the one the operator is LOOKING AT. `_tenant_headers` forwards
+# the bearer and `X-Qontinui-Active-Tenant`, so the write lands in the selected
+# tenant; the 2026-11-08 cleanup that called coord without that header wrote 35
+# tombstones into the operator's HOME tenant instead (plan, Why).
+COORD_CANONICAL_REPOS_PATH = "/coord/canonical-repos"
+
+#: The longest un-enrollment reason this proxy forwards, counted after
+#: trimming. Coord stores the tombstone's ``reason`` as free text with no
+#: bound of its own; the cap is a TRANSPORT bound, because the reason travels
+#: to coord in the query string (the parameter plan Phase 7 adds): 500
+#: characters stay under an 8 KiB request line even when every character is a
+#: 4-byte one, percent-encoded. The frontend input carries the same cap
+#: (``ConnectedOrgsUnenroll.tsx``).
+UNENROLL_REASON_MAX = 500
+
+#: Timeout for the un-enroll write. Coord answers only after the removal's
+#: transaction commits, and that transaction first waits for the
+#: per-(tenant, repo) advisory lock an enrollment of the same repo also takes
+#: (``pr_merge::unenroll::lock_key``) — and, once plan Phase 7 lands, for the
+#: per-repo tenancy key ahead of it. At the 5s small-read budget the "may have
+#: landed" 504 would be an ordinary outcome of that contention rather than an
+#: exceptional one. 30s stays under the frontend's 60s request default, so the
+#: proxy's own 504 envelope still reaches the page.
+_COORD_UNENROLL_WRITE_TIMEOUT = httpx.Timeout(30.0, connect=5.0)
+
+#: The ``reason`` query parameter as the schema publishes it: REQUIRED, because
+#: the route never runs without one. FastAPI is told the parameter is optional
+#: (and to leave it out of the schema) only so that a missing reason reaches the
+#: handler's ``400 reason_required`` instead of FastAPI's own 422; this entry,
+#: merged in through ``openapi_extra``, is what the snapshots and the generated
+#: types read.
+_UNENROLL_REASON_PARAMETER: dict[str, Any] = {
+    "name": "reason",
+    "in": "query",
+    "required": True,
+    "description": (
+        "Why coord stops governing the repository, recorded on the "
+        "un-enrollment tombstone. Required and non-blank; at most "
+        f"{UNENROLL_REASON_MAX} characters after trimming."
+    ),
+    "schema": {"type": "string", "minLength": 1, "title": "Reason"},
+}
+
+
+@router.delete(
+    "/pr-merge/onboarding/repos/{repo:path}",
+    status_code=204,
+    openapi_extra={"parameters": [_UNENROLL_REASON_PARAMETER]},
+)
+async def delete_pr_merge_onboarding_repo(
+    repo: str,
+    reason: str | None = Query(None, include_in_schema=False),
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> Response:
+    """Stop governing an enrolled repo: un-enroll it with a recorded reason.
+
+    Proxies coord's ``DELETE /coord/canonical-repos?repo=<owner/name>``, the
+    door ``coord_onboard_unenroll_repo`` shares one core with, and sends the
+    reason beside it as ``reason`` (read by coord from plan Phase 7 on). The
+    ``owner/name`` path param carries a slash, so it is a ``{repo:path}`` here
+    (the restore route's shape); it travels to coord as the ``repo`` query
+    parameter. Backs the "Stop governing" action on an enrolled row of the
+    Connected Organizations card; the row's undo is Re-enroll (the restore
+    route above), on the same card.
+
+    Authz — ``require_coord_tenant_admin_target``: admin IN THE ACTIVE TENANT,
+    the tenant the write lands in. Coord re-checks its own, stricter bar
+    (``strategy_admin``) on the forwarded bearer and refuses with ``403
+    strategy_admin_required``.
+
+    Refused HERE, with nothing sent to coord:
+      * ``400 {"error": "invalid_repo"}`` — the path is not ``owner/name``;
+      * ``400 {"error": "reason_required"}`` — no reason, or only whitespace.
+        Un-enrolling is sticky and silent (the repo stops appearing wherever
+        coord lists governed repos), so the WHY is required at this door, where
+        coord itself treats it as optional (``coord_onboard_unenroll_repo``
+        today, the HTTP door's ``reason`` from plan Phase 7);
+      * ``400 {"error": "reason_too_long", "max_length": <cap>}`` — over
+        :data:`UNENROLL_REASON_MAX` after trimming.
+
+    Coord's answers:
+      * ``204`` — the tenant's governance rows were removed and the tombstone
+        written. Answered here as a BODILESS ``204``: not through
+        ``_proxy_coord_delete``, which turns a ``204`` into ``200 {"status":
+        "ok"}``, and not as the JSON response the verbatim helper builds for
+        it (``_proxy_coord_verbatim`` wraps coord's empty body as ``{"detail":
+        ""}``, a recorded oddity of that helper's characterization suite,
+        ``tests/test_coord_proxy_contract.py``), because a 204 carries no
+        content;
+      * ``404 {"error": "repo not found: <repo>", "tombstoned": bool, "note":
+        str}`` — nothing of the caller tenant's was removed. ``tombstoned``
+        says whether a suppression was written anyway and ``note`` says what
+        that means for the tenant; both pass through VERBATIM, whatever coord
+        sends, because their meaning moves with coord (plan Phase 7 answers
+        ``tombstoned: false`` for a tenant that does not govern the repo);
+      * any other refusal (``403 strategy_admin_required``, ``400``, ``500``)
+        — status and body verbatim.
+
+    Transport failures are the web's own refusals (``_proxy_coord_verbatim``):
+    ``502 coord_unreachable`` (coord never saw the request), ``504
+    coord_write_timeout`` / ``answer_lost`` (the removal may have been
+    applied — re-read before retrying).
+    """
+    if not _RESTORE_REPO_RE.match(repo):
+        return JSONResponse(content={"error": "invalid_repo"}, status_code=400)
+    text = (reason or "").strip()
+    if not text:
+        return JSONResponse(content={"error": "reason_required"}, status_code=400)
+    if len(text) > UNENROLL_REASON_MAX:
+        return JSONResponse(
+            content={"error": "reason_too_long", "max_length": UNENROLL_REASON_MAX},
+            status_code=400,
+        )
+    resp = await _proxy_coord_verbatim(
+        "DELETE",
+        COORD_CANONICAL_REPOS_PATH,
+        tenant_id=tenant_id,
+        params={"repo": repo, "reason": text},
+        timeout=_COORD_UNENROLL_WRITE_TIMEOUT,
+    )
+    if resp.status_code == 204:
+        return Response(status_code=204)
+    return resp
 
 
 # ---- Per-repo tenant bindings (list / bind / unbind) ------------------------
