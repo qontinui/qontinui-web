@@ -95,6 +95,30 @@ transaction behind, and the next statement and alembic's stamp run normally.
 ``tests/test_coord_test_results_reindex_01_migration.py`` drives a real failure
 in the middle rebuild to prove it.
 
+Bounded waits, and what to do about a stall
+===========================================
+
+The block opens with ``SET statement_timeout = '4h'`` and closes with
+``RESET statement_timeout``. Every statement in it is then bounded by this
+revision's own 4 h rather than by whatever the migrator's role sets: a role
+``statement_timeout`` under about an hour would cancel the large rebuild, which
+the catch above would then stamp with nothing reclaimed. The ``SET`` is
+session-level because inside an autocommit block a ``SET LOCAL`` lasts only for
+its own statement. ``lock_timeout`` is deliberately left alone: a short one
+would turn the rebuilds' ordinary waits into stamps that reclaim nothing.
+
+A rebuild waits for every transaction holding a lock on ``coord.test_results``,
+and later for every transaction with an older snapshot, so a session left idle
+in a transaction stalls it. The signal: the migrator's row in
+``pg_stat_progress_create_index`` shows a ``waiting for ...`` ``phase`` that does
+not move, with ``current_locker_pid`` naming the session it waits on; or
+``SELECT pg_blocking_pids(<migrator pid>)`` names it. The remedy: end that
+BLOCKING session (``pg_terminate_backend(<blocker pid>)``), never the migrator.
+Left alone, the stalled statement is cancelled at 4 h. A cancelled ``REINDEX``
+is caught like any other failure, but its leftover drops can wait on the same
+blocker for up to 4 h more, and a statement that times out outside a
+``REINDEX`` fails the revision unstamped, for the next run to retry.
+
 No in-revision free-space guard
 ===============================
 
@@ -111,8 +135,17 @@ is replaced by::
 
 The drop returns the old index's space before the build needs any; coord's
 per-test history reads run without their ordered index until the build ends.
-That swap makes a new head, so it needs its own review, and the statement list
-the test pins moves with it.
+
+The existing handler does not cover that swap: a failed ``CREATE INDEX
+CONCURRENTLY`` leaves an INVALID index under the LIVE name, which the handler's
+``_ccnew`` / ``_ccold`` drops never touch. So the swap must do one of two
+things. Either it leaves the ``CREATE`` outside the ``try``, so a failed build
+fails the revision unstamped and the next migrate run's drop of the live name
+clears the invalid index before building again. Or its handler also drops the
+invalid index under the live name and logs the index as ABSENT, since per-test
+history reads then run without it until a follow-up rebuilds it. That swap
+makes a new head, so it needs its own review, and the statement list the test
+pins moves with it.
 
 How production applies it: expect UNKNOWN
 =========================================
@@ -143,10 +176,11 @@ Classifier disposition
 ======================
 
 Expected coord migration-classifier verdict: **Reject**, so the PR takes the
-escalate-evidence path rather than AutoSafe. The classifier admits no ``DROP``
-(destructive) and no ``REINDEX`` (unrecognized, fail-closed). Every SQL string
-is still a static literal at its ``op.execute`` call site, with no catalog read
-and no f-string, so those two verbs are the only reasons it has.
+escalate-evidence path rather than AutoSafe. The classifier admits no
+session-level ``SET`` or ``RESET`` (it recognizes only ``SET LOCAL`` timeouts),
+no ``DROP`` (destructive) and no ``REINDEX`` (unrecognized, fail-closed). Every
+SQL string is still a static literal at its ``op.execute`` call site, with no
+catalog read and no f-string, so those three verbs are the only reasons it has.
 
 Hand-authored, never ``--autogenerate``d. Every statement is schema-qualified
 ``coord.``.
@@ -173,10 +207,10 @@ FAILURE_MARKER = "coord_test_results_reindex_01: REINDEX FAILED"
 
 
 def _log_failed_rebuild(index_name: str, exc: DBAPIError) -> None:
-    """Log ONE line naming the index and the database error."""
+    """Log ONE line naming the index, what was done, and the database error."""
     logger.error(
-        "%s for coord.%s, so that index keeps its bloat; its _ccnew and _ccold "
-        "leftovers were dropped and the next index follows. Error: %s",
+        "%s for coord.%s; dropped its _ccnew and _ccold leftovers, if any, and "
+        "continued. Error: %s",
         FAILURE_MARKER,
         index_name,
         " ".join(str(exc.orig).split()),
@@ -191,6 +225,11 @@ def upgrade() -> None:
     schema-argument hook only read a literal there.
     """
     with op.get_context().autocommit_block():
+        # This revision's own bound on every statement below, whatever the
+        # migrator's role sets ("Bounded waits" above). Session-level, so it
+        # outlives each autocommit statement; reset at the end of the block.
+        op.execute("SET statement_timeout = '4h'")
+
         # 1 of 3: idx_test_results_repo_observed (2.19 GB reusable).
         op.execute(
             "DROP INDEX CONCURRENTLY IF EXISTS "
@@ -253,6 +292,9 @@ def upgrade() -> None:
                 "coord.idx_test_results_repo_test_observed_ccold"
             )
             _log_failed_rebuild("idx_test_results_repo_test_observed", exc)
+
+        # Back to the connection's configured value before alembic stamps.
+        op.execute("RESET statement_timeout")
 
 
 def downgrade() -> None:
