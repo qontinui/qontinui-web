@@ -55,36 +55,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import SessionsPage from "./page";
-
-function bound(shown: number) {
-  return {
-    available: true,
-    bound_kind: shown >= 500 ? "unknown" : "complete",
-    count: shown,
-    enumerate_via: null,
-    filter_narrowed: null,
-    limit: 500,
-    next_cursor: null,
-    shown,
-    total: null,
-    truncated: shown >= 500 ? null : false,
-  };
-}
-
-function row(n: number) {
-  return {
-    id: `aaaaaaaa-0000-0000-0000-${String(n).padStart(12, "0")}`,
-    device_id: "dev-a",
-    row_class: "lifecycle_only",
-    session_kind: "terminal_shell",
-    provider: null,
-    state: "active",
-    started_at: new Date().toISOString(),
-    last_heartbeat_at: new Date().toISOString(),
-    intent: { purpose: `shell ${n}` },
-    agent_session: null,
-  };
-}
+import { cappedLifecycleEnvelope } from "./sessionsPageFixtures";
 
 beforeEach(() => {
   listConsolidatedSessions.mockReset();
@@ -107,17 +78,7 @@ describe("SessionsPage — the population's entry point", () => {
   });
 
   it("discloses the 500-row ceiling once a capped read lands", async () => {
-    const sessions = Array.from({ length: 3 }, (_, i) => row(i + 1));
-    listConsolidatedSessions.mockResolvedValue({
-      count: sessions.length,
-      scope: "all",
-      shape: "consolidated",
-      sessions,
-      row_class_counts: { linked: 0, lifecycle_only: 3, agent_only: 0, unknown: 0 },
-      withheld_by_filter: 0,
-      lifecycle_half: { read: "ok", bound: bound(500) },
-      agent_half: { read: "ok", bound: bound(12) },
-    });
+    listConsolidatedSessions.mockResolvedValue(cappedLifecycleEnvelope());
     render(<SessionsPage />);
 
     const note = await screen.findByTestId("sessions-console-truncated");
