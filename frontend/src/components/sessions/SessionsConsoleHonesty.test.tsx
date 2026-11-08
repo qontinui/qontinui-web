@@ -1148,3 +1148,28 @@ describe("a count is floored only where an unread or unresolved row could raise 
     );
   });
 });
+
+describe("the strip's waiting-on-a-person sentence uses needs-a-person's own basis", () => {
+  it("states it exactly beside a FULL agent half when nothing is unresolved", async () => {
+    mount(async () =>
+      envelope(
+        [
+          { ...linked(1, "dev-a"), state: "pending_resolution" },
+          linked(2, "dev-b"),
+        ],
+        {
+          lifecycle_half: { read: "ok", bound: belowCeiling(2) },
+          agent_half: { read: "ok", bound: atCeiling() },
+        }
+      )
+    );
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(2)
+    );
+    const health = screen.getByTestId("sessions-console-health");
+    expect(health).toHaveTextContent("1 session waiting on a person");
+    expect(health).not.toHaveTextContent(
+      /at least 1 session waiting on a person/i
+    );
+  });
+});
