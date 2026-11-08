@@ -7,7 +7,7 @@
  * <reason>" where the forecast cannot say.
  */
 
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -114,6 +114,47 @@ describe("overview-plan-vs-actual", () => {
       "not measured — the forecast can't be read right now"
     );
     expect(slip.textContent).not.toMatch(/\b0\b/);
+  });
+
+  it("shows that it is loading while the forecast is — never 'not measured' before the forecast has answered", async () => {
+    let answer: (forecast: typeof FORECAST) => void = () => {};
+    mocks.fetchForecast.mockImplementation(
+      () => new Promise((resolve) => (answer = resolve))
+    );
+    render(<InIntentSection body={fence("overview-plan-vs-actual")} />);
+    // The estimate and its phases have answered; only the forecast has not.
+    await waitFor(() => expect(mocks.fetchForecast).toHaveBeenCalledWith("e1"));
+    await act(async () => {
+      for (let tick = 0; tick < 5; tick++) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    });
+    expect(mocks.listResource).toHaveBeenCalledWith("phase-progress", {
+      estimate_id: "e1",
+    });
+    const block = document.querySelector(
+      '[data-overview-block="overview-plan-vs-actual"]'
+    )!;
+    expect(
+      block.querySelector(
+        '[data-ui-bridge-id="overview.block.plan-vs-actual.loading"]'
+      )
+    ).not.toBeNull();
+    expect(block.textContent).not.toMatch(/not measured/);
+    expect(row("A2")).toBeNull();
+
+    await act(async () => answer(FORECAST));
+    await waitFor(() => expect(row("A2")).not.toBeNull());
+    expect(
+      document.querySelector(
+        '[data-ui-bridge-id="overview.block.plan-vs-actual.phase.A2.slip"]'
+      )?.textContent
+    ).toBe("3 weeks late");
+    expect(
+      document.querySelector(
+        '[data-ui-bridge-id="overview.block.plan-vs-actual.loading"]'
+      )
+    ).toBeNull();
   });
 
   it("says a project with no estimate has no schedule yet", async () => {

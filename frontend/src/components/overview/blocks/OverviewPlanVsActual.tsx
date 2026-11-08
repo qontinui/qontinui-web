@@ -9,7 +9,8 @@
  * The Timeline's own reads (`useTimelineData`) and its own words
  * (`describeSlip`, `formatDay`, the phase states): a slip reads "3 weeks
  * late" or "On plan", never a bare negative number, and a slip the forecast
- * cannot give reads "not measured — <reason>".
+ * cannot give reads "not measured — <reason>". While the forecast is still
+ * being read, the block shows that it is loading, never "not measured".
  */
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -117,6 +118,9 @@ function Body() {
       />
     );
   }
+  // Until the forecast answers, every phase it has not dated would read
+  // "not measured" — a claim about the forecast it has not made yet.
+  if (t.forecast.state === "loading") return loading;
   const forecastUnread = t.forecast.state === "error";
   return (
     <>
