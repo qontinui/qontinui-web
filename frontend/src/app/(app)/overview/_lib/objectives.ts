@@ -112,20 +112,62 @@ export interface StatusCopy {
   unknown: boolean;
 }
 
+/** What the measure's definition leaves unknown about one checkpoint, as the
+ *  card says it; each null when the read knows. */
+export interface DeclarationUnknowns {
+  /** Why its due date is unknown. Null: a date, or none declared. */
+  due: string | null;
+  /** For a checkpoint the document's list does not hold: why whether the
+   *  document declares it is unknown. Null: known. */
+  declared: string | null;
+}
+
+const WHY_DEFINITION = "the definition can't be read";
+const WHY_DUE_NOT_A_DATE = "the declared due is not a date";
+const WHY_LIST_UNREAD = "the document's checkpoint list can't be fully read";
+
+/**
+ * What the definition leaves unknown about a checkpoint (D1). Nothing is
+ * known when the definition can't be read at all. A declared checkpoint's
+ * due is unknown only when its OWN due can't be read — a sibling's bad due,
+ * or a duplicate id, says nothing about it. One the list does not hold is
+ * known to be undeclared, with no declared due, only when the list was read
+ * in full (`checkpoint_list_complete`).
+ */
+export function checkpointDeclarationUnknowns(
+  metric: MetricRead,
+  cp: CheckpointResultRead
+): DeclarationUnknowns {
+  if (metric.frontmatter_error) {
+    return {
+      due: WHY_DEFINITION,
+      declared: cp.declared ? null : WHY_DEFINITION,
+    };
+  }
+  if (cp.declared) {
+    const decl = metric.checkpoints.find((c) => c.id === cp.id);
+    return { due: decl?.due_error ? WHY_DUE_NOT_A_DATE : null, declared: null };
+  }
+  const why = metric.checkpoint_list_complete ? null : WHY_LIST_UNREAD;
+  return { due: why, declared: why };
+}
+
 /**
  * A checkpoint's due date in words: "due 8 Oct", "no due date declared", or
- * — when the measure's definition can't be read, so nothing it declares is
- * known — "due date unknown (the definition can't be read)", never "not
- * declared".
+ * — when the read could not tell (`unknownWhy`, from
+ * `checkpointDeclarationUnknowns`) — "due date unknown (<why>)", never "not
+ * declared". A declared due the date formatter can't read is still a
+ * declared one, so it is said as written.
  */
 export function dueWords(
   cp: CheckpointResultRead,
-  definitionUnreadable: boolean
+  unknownWhy: string | null = null
 ): string {
   const day = shortDay(cp.due);
   if (day) return `due ${day}`;
-  return definitionUnreadable
-    ? "due date unknown (the definition can't be read)"
+  if (cp.due) return `due ${cp.due}`;
+  return unknownWhy
+    ? `due date unknown (${unknownWhy})`
     : "no due date declared";
 }
 
@@ -133,13 +175,13 @@ function sentenceCase(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** The line a checkpoint shows under its due date. `definitionUnreadable`:
- *  the measure's definition can't be read, so its due date is unknown. */
+/** The line a checkpoint shows under its due date. `dueUnknownWhy`: why its
+ *  due date is unknown (`checkpointDeclarationUnknowns`), or null. */
 export function checkpointStatusCopy(
   cp: CheckpointResultRead,
-  { definitionUnreadable = false }: { definitionUnreadable?: boolean } = {}
+  { dueUnknownWhy = null }: { dueUnknownWhy?: string | null } = {}
 ): StatusCopy {
-  const due = sentenceCase(dueWords(cp, definitionUnreadable));
+  const due = sentenceCase(dueWords(cp, dueUnknownWhy));
   switch (cp.status) {
     case "reported":
       return { text: provenanceLine(cp), detail: null, unknown: false };
@@ -384,6 +426,23 @@ export function unresolvedResultLine(u: UnresolvedResultRead): string {
   return `${id}${u.checkpoint ? "" : " (names no checkpoint)"}: ${u.detail}`;
 }
 
+/**
+ * A checkpoint's status reason as "How this was checked" says it: the
+ * reason, unless it only repeats the recorded reports listed there. With no
+ * report, the read joins those entries' details into the reason when any of
+ * them was more than superseded; when every one was, it sends a sentence of
+ * its own ("…superseded or is missing, and no live report was found in its
+ * place"), which the entries do not say, so that one is kept.
+ */
+export function howCheckedWhy(
+  detail: string | null,
+  unresolved: readonly UnresolvedResultRead[]
+): string | null {
+  if (!detail) return null;
+  const listed = unresolved.map((u) => u.detail).join("; ");
+  return unresolved.length > 0 && detail === listed ? null : detail;
+}
+
 /** What "How this was checked" counts on its summary, the line the card
  *  face does show: "1 recorded report could not be shown; 2 notes about the
  *  reported result". Null when there is nothing to count. */
@@ -594,36 +653,49 @@ function servesUnreadable(metric: MetricRead): boolean {
 }
 
 /**
- * What an objective no shown measure serves says (D1): "No measure declared
- * for this objective yet" only when every shown measure's `serves:` could be
- * read; otherwise that no READABLE measure declares it, and how many can't
- * be read.
+ * What an objective no shown measure serves says (D1). "No measure declared
+ * for this objective yet" only when coord's document list came back whole
+ * and every shown measure's `serves:` could be read. A list that came back
+ * incomplete may lack the very measure that declares it, so that is unknown;
+ * and while some measure can't be read, no READABLE one declares it.
  */
 export function noMeasureText(read: ObjectivesRead): string {
   const unread = read.metrics.filter(servesUnreadable).length;
+  const cantBeRead =
+    unread === 1
+      ? "1 measure can't be read"
+      : `${unread} measures can't be read`;
+  if (!read.document_list_complete) {
+    return `Whether a measure declares this objective is unknown: the document list came back incomplete${
+      unread > 0 ? `, and ${cantBeRead}` : ""
+    }.`;
+  }
   if (unread === 0) return "No measure declared for this objective yet.";
-  return `No readable measure declares this objective; ${
-    unread === 1 ? "1 measure can't" : `${unread} measures can't`
-  } be read.`;
+  return `No readable measure declares this objective; ${cantBeRead}.`;
 }
 
 /**
  * What an initiative says about the measures its `success_metrics` names
  * that have no card. One whose document is marked as published to the wrong
  * project is said to be so — it is hidden, not missing — and never "no
- * readable document".
+ * readable document"; nor is one the read did not return while coord's
+ * document list came back incomplete, which may still have a document.
  */
 export function missingMeasureLines(
   initiative: InitiativeRead,
-  voidMetricNames: readonly string[]
+  voidMetricNames: readonly string[],
+  documentListComplete: boolean
 ): string[] {
   const voids = new Set(voidMetricNames);
   const voided = initiative.missing_metric_names.filter((n) => voids.has(n));
   const missing = initiative.missing_metric_names.filter((n) => !voids.has(n));
   const lines: string[] = [];
   if (missing.length > 0) {
+    const one = missing.length === 1;
     lines.push(
-      `It names ${missing.length === 1 ? "a measure" : "measures"} with no readable document: ${missing.join(", ")}.`
+      documentListComplete
+        ? `It names ${one ? "a measure" : "measures"} with no readable document: ${missing.join(", ")}.`
+        : `It names ${one ? "a measure whose document" : "measures whose documents"} this read did not return (the document list came back incomplete): ${missing.join(", ")}.`
     );
   }
   if (voided.length > 0) {

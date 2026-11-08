@@ -102,6 +102,7 @@ function metric(overrides: Partial<MetricRead> = {}): MetricRead {
     source_query_type: "absent",
     checkpoints: [],
     checkpoints_text: null,
+    checkpoint_list_complete: true,
     criteria: [],
     results: [],
     extra_fields: [],
@@ -142,6 +143,7 @@ describe("a measure whose definition can't be read", () => {
   // fact about the document. A report coord's table still places is shown.
   const broken = metric({
     frontmatter_error: "The YAML block is not read: it uses a YAML anchor",
+    checkpoint_list_complete: false,
     checkpoint_results: [
       checkpoint({ report: report({ rows: [row] }) }),
       checkpoint({ id: "checkpoint-2", report: report({ rows: [] }) }),
@@ -215,7 +217,9 @@ describe("a measure whose definition can't be read", () => {
 describe("how a checkpoint was checked (D10 R8)", () => {
   it("keeps the validator's field paths and the read's reason off the card face", () => {
     const m = metric({
-      checkpoints: [{ id: "checkpoint-1", due: "2026-10-08", label: null }],
+      checkpoints: [
+        { id: "checkpoint-1", due: "2026-10-08", label: null, due_error: null },
+      ],
       checkpoint_results: [
         checkpoint({
           declared: true,
@@ -263,7 +267,9 @@ describe("recorded reports that could not be shown (N2)", () => {
 
   it("lists a checkpoint's in How this was checked, said once and never on the face", () => {
     const m = metric({
-      checkpoints: [{ id: "checkpoint-1", due: "2026-10-08", label: null }],
+      checkpoints: [
+        { id: "checkpoint-1", due: "2026-10-08", label: null, due_error: null },
+      ],
       checkpoint_results: [
         checkpoint({
           declared: true,
@@ -293,6 +299,45 @@ describe("recorded reports that could not be shown (N2)", () => {
       "00000000-0000-4000-8000-000000000007: coord did not answer the findings read (HTTP 503)."
     );
     expect(within(disclosure).queryByText("Why")).toBeNull();
+  });
+
+  it("says the reason when every recorded report was superseded (review round 3)", () => {
+    const sentence =
+      "The recorded report was superseded or is missing, and no live report was found in its place.";
+    const m = metric({
+      checkpoints: [
+        { id: "checkpoint-1", due: "2026-10-08", label: null, due_error: null },
+      ],
+      checkpoint_results: [
+        checkpoint({
+          declared: true,
+          due: "2026-10-08",
+          status: "unreadable",
+          // The read's own sentence, not the entries' details joined.
+          status_reason: sentence,
+          report: null,
+          unresolved_results: [
+            {
+              checkpoint: "checkpoint-1",
+              finding_id: "00000000-0000-4000-8000-000000000007",
+              reason: "superseded_or_missing",
+              detail:
+                "coord served no finding for this id: it was superseded or does not exist.",
+            },
+          ],
+        }),
+      ],
+    });
+    render(<MetricCard metric={m} editing={EDITING} />);
+    const disclosure = screen
+      .getByText(/^How this was checked/)
+      .closest("details")!;
+    expect(within(disclosure).getByText("Why")).toBeInTheDocument();
+    expect(within(disclosure).getByText(sentence)).toBeInTheDocument();
+    expect(
+      within(disclosure).getByText(/it was superseded or does not exist\.$/)
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(sentence)).toHaveLength(1);
   });
 
   it("lists one naming no checkpoint in the card's own disclosure", () => {
@@ -325,7 +370,9 @@ describe("recorded reports that could not be shown (N2)", () => {
 describe("the gate a criterion was measured under (N5)", () => {
   it("is named in How this was measured, from the row's report", () => {
     const m = metric({
-      checkpoints: [{ id: "checkpoint-1", due: "2026-10-08", label: null }],
+      checkpoints: [
+        { id: "checkpoint-1", due: "2026-10-08", label: null, due_error: null },
+      ],
       criteria: [
         {
           id: "1.2",
@@ -364,5 +411,94 @@ describe("the gate a criterion was measured under (N5)", () => {
     expect(gate.nextElementSibling?.textContent).toBe(
       "00000000-0000-4000-8000-0000000000aa"
     );
+  });
+});
+
+describe("a checkpoint the document's checkpoints leave unknown (review round 3)", () => {
+  it("never calls a reported checkpoint undeclared when the list could not be fully read", () => {
+    const m = metric({
+      checkpoints: [],
+      checkpoint_list_complete: false,
+      field_errors: {
+        checkpoints: "checkpoints must be a list of {id, due, label}.",
+      },
+      checkpoint_results: [checkpoint({ report: report({ rows: [row] }) })],
+    });
+    render(<MetricCard metric={m} editing={EDITING} />);
+    expect(
+      screen.getByText(
+        "Whether the document declares this checkpoint is unknown (the document's checkpoint list can't be fully read)."
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /· due date unknown \(the document's checkpoint list can't be fully read\)/
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/named by a report, not by the document/)
+    ).toBeNull();
+    expect(screen.queryByText(/no due date declared/i)).toBeNull();
+    // Only the checkpoint list is unread: the criteria tally and the results
+    // list the report is recorded in were read, and are still said.
+    expect(screen.queryByText(/Criteria: unknown/)).toBeNull();
+    expect(
+      screen.getByText(/not yet recorded on the document/)
+    ).toBeInTheDocument();
+  });
+
+  it("calls one undeclared when the list was read in full", () => {
+    const m = metric({
+      checkpoint_results: [checkpoint({ report: report({ rows: [row] }) })],
+    });
+    render(<MetricCard metric={m} editing={EDITING} />);
+    expect(
+      screen.getByText(
+        "This checkpoint is named by a report, not by the document."
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("makes only the checkpoint whose due is not a date unknown", () => {
+    const m = metric({
+      checkpoints: [
+        {
+          id: "checkpoint-1",
+          due: null,
+          label: null,
+          due_error: "the due 'soon' is not a date",
+        },
+        { id: "checkpoint-2", due: null, label: null, due_error: null },
+      ],
+      field_errors: {
+        checkpoints: "'checkpoint-1' has a due that is not a date ('soon')",
+      },
+      checkpoint_results: [
+        checkpoint({
+          declared: true,
+          status: "no_report_found",
+          report: null,
+        }),
+        checkpoint({
+          id: "checkpoint-2",
+          declared: true,
+          status: "no_report_found",
+          report: null,
+        }),
+      ],
+    });
+    render(<MetricCard metric={m} editing={EDITING} />);
+    expect(
+      screen.getByText(
+        "Due date unknown (the declared due is not a date) — no report found in the findings of the last 14 days"
+      )
+    ).toBeInTheDocument();
+    // Its sibling declares no due, and that WAS read.
+    expect(
+      screen.getByText(
+        "No due date declared — no report found in the findings of the last 14 days"
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/declares this checkpoint/)).toBeNull();
   });
 });

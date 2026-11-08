@@ -85,8 +85,11 @@ export interface InitiativeRead {
 
 export interface CheckpointDeclRead {
   id: string;
+  /** Null when none is declared, or when `due_error` says it can't be read. */
   due: string | null;
   label: string | null;
+  /** Why the declared due can't be read: the due date is unknown. */
+  due_error: string | null;
 }
 
 export interface CriterionDeclRead {
@@ -254,6 +257,9 @@ export interface MetricRead {
   source_query_type: SourceQueryType;
   checkpoints: CheckpointDeclRead[];
   checkpoints_text: string | null;
+  /** True only when `checkpoints:` was read in full, so a checkpoint the
+   *  list lacks is one the document does not declare. */
+  checkpoint_list_complete: boolean;
   criteria: CriterionDeclRead[];
   results: ResultEntryRead[];
   extra_fields: ExtraFieldRead[];
@@ -277,6 +283,9 @@ export interface ObjectivesRead {
   /** The READABLE initiatives that are not live. */
   earlier_initiatives_count: number;
   objectives_readable: boolean;
+  /** False when coord's document list was not read or came back incomplete:
+   *  a document this read did not return may still exist. */
+  document_list_complete: boolean;
   metrics: MetricRead[];
   initiative_named_metrics: string[];
   other_metrics: string[];

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   baselineLine,
+  checkpointDeclarationUnknowns,
   checkpointResultsNotice,
   checkpointStatusCopy,
   currentValueText,
@@ -11,6 +12,7 @@ import {
   groupObjectives,
   hiddenCopy,
   howCheckedCount,
+  howCheckedWhy,
   initiativeFieldProblems,
   initiativeUnreadableText,
   missingMeasureLines,
@@ -81,9 +83,15 @@ function metric(overrides: Partial<MetricRead> = {}): MetricRead {
     structured_reporting_since: null,
     source_query_type: "manual",
     checkpoints: [
-      { id: "checkpoint-1", due: "2026-10-08", label: "unblocked" },
+      {
+        id: "checkpoint-1",
+        due: "2026-10-08",
+        label: "unblocked",
+        due_error: null,
+      },
     ],
     checkpoints_text: null,
+    checkpoint_list_complete: true,
     criteria: [],
     results: [],
     extra_fields: [],
@@ -177,6 +185,7 @@ function read(overrides: Partial<ObjectivesRead> = {}): ObjectivesRead {
     initiatives: [],
     earlier_initiatives_count: 0,
     objectives_readable: true,
+    document_list_complete: true,
     metrics: [],
     initiative_named_metrics: [],
     other_metrics: [],
@@ -404,6 +413,14 @@ describe("an unreadable source is never 'no results'", () => {
 
   it("says a due date is unknown, never undeclared, when the definition can't be read", () => {
     const cp = checkpoint({ due: null, declared: false });
+    const unknowns = checkpointDeclarationUnknowns(
+      metric({ frontmatter_error: "bad yaml", checkpoints: [] }),
+      cp
+    );
+    expect(unknowns).toEqual({
+      due: "the definition can't be read",
+      declared: "the definition can't be read",
+    });
     for (const status of [
       "awaiting",
       "no_report_found",
@@ -413,19 +430,86 @@ describe("an unreadable source is never 'no results'", () => {
     ] as const) {
       const copy = checkpointStatusCopy(
         { ...cp, status },
-        { definitionUnreadable: true }
+        { dueUnknownWhy: unknowns.due }
       );
       expect(copy.text).toMatch(
         /^Due date unknown \(the definition can't be read\) — /
       );
       expect(copy.text).not.toMatch(/declared/);
     }
-    expect(dueWords(cp, true)).toBe(
+    expect(dueWords(cp, unknowns.due)).toBe(
       "due date unknown (the definition can't be read)"
     );
-    expect(dueWords(cp, false)).toBe("no due date declared");
+    expect(dueWords(cp, null)).toBe("no due date declared");
     // A due date the read does carry is still said.
-    expect(dueWords(checkpoint(), true)).toBe("due 8 Oct");
+    expect(dueWords(checkpoint(), unknowns.due)).toBe("due 8 Oct");
+  });
+
+  it("keeps an unread checkpoint declaration unknown and a read one known (review round 3)", () => {
+    const declared = (id: string) =>
+      checkpoint({ id, due: null, declared: true });
+    // A due that is not a date is unknown on ITS checkpoint only: the
+    // sibling with no due was read, and still says so.
+    const badDue = metric({
+      checkpoints: [
+        {
+          id: "a",
+          due: null,
+          label: null,
+          due_error: "the due 'soon' is not a date",
+        },
+        { id: "b", due: null, label: null, due_error: null },
+      ],
+      field_errors: {
+        checkpoints: "'a' has a due that is not a date ('soon')",
+      },
+    });
+    const a = checkpointDeclarationUnknowns(badDue, declared("a"));
+    expect(a).toEqual({
+      due: "the declared due is not a date",
+      declared: null,
+    });
+    expect(dueWords(declared("a"), a.due)).toBe(
+      "due date unknown (the declared due is not a date)"
+    );
+    expect(checkpointDeclarationUnknowns(badDue, declared("b"))).toEqual({
+      due: null,
+      declared: null,
+    });
+    // One only a report names: undeclared is a fact only when the list was
+    // read in full; a bad due elsewhere leaves it complete.
+    const named = checkpoint({ id: "x", due: null, declared: false });
+    expect(checkpointDeclarationUnknowns(badDue, named)).toEqual({
+      due: null,
+      declared: null,
+    });
+    const notRead = metric({
+      checkpoints: [],
+      checkpoint_list_complete: false,
+      field_errors: {
+        checkpoints: "checkpoints must be a list of {id, due, label}.",
+      },
+    });
+    const unknowns = checkpointDeclarationUnknowns(notRead, named);
+    expect(unknowns).toEqual({
+      due: "the document's checkpoint list can't be fully read",
+      declared: "the document's checkpoint list can't be fully read",
+    });
+    expect(
+      checkpointStatusCopy(
+        { ...named, status: "no_report_found" },
+        { dueUnknownWhy: unknowns.due }
+      ).text
+    ).toBe(
+      "Due date unknown (the document's checkpoint list can't be fully read) — no report found in the findings of the last 14 days"
+    );
+  });
+
+  it("says a declared due it can't format as written, never 'no due date declared'", () => {
+    expect(dueWords(checkpoint({ due: "2026-10-08 noon" }))).toBe(
+      "due 2026-10-08 noon"
+    );
+    expect(dueWords(checkpoint({ due: "20261008" }), "x")).toBe("due 20261008");
   });
 
   it("treats the Summary's failed objectives read as status unknown, void docs unfiltered", () => {
@@ -759,19 +843,56 @@ describe("what can't be read declares nothing (review round 2)", () => {
     const i = initiative({
       missing_metric_names: ["never-written", "wrong-project"],
     });
-    expect(missingMeasureLines(i, ["wrong-project"])).toEqual([
+    expect(missingMeasureLines(i, ["wrong-project"], true)).toEqual([
       "It names a measure with no readable document: never-written.",
       "It names a measure whose document is marked as published to the wrong project, so it is not shown: wrong-project.",
     ]);
     expect(
-      missingMeasureLines(initiative({ missing_metric_names: ["a", "b"] }), [
-        "a",
-        "b",
-      ])
+      missingMeasureLines(
+        initiative({ missing_metric_names: ["a", "b"] }),
+        ["a", "b"],
+        true
+      )
     ).toEqual([
       "It names measures whose documents are marked as published to the wrong project, so they are not shown: a, b.",
     ]);
-    expect(missingMeasureLines(initiative(), ["a"])).toEqual([]);
+    expect(missingMeasureLines(initiative(), ["a"], true)).toEqual([]);
+  });
+
+  it("never says a measure has no document when the document list came back incomplete (review round 3)", () => {
+    expect(
+      noMeasureText(
+        read({ document_list_complete: false, metrics: [metric()] })
+      )
+    ).toBe(
+      "Whether a measure declares this objective is unknown: the document list came back incomplete."
+    );
+    expect(
+      noMeasureText(
+        read({
+          document_list_complete: false,
+          metrics: [metric({ name: "broken", frontmatter_error: "bad yaml" })],
+        })
+      )
+    ).toBe(
+      "Whether a measure declares this objective is unknown: the document list came back incomplete, and 1 measure can't be read."
+    );
+    const i = initiative({
+      missing_metric_names: ["unlisted", "wrong-project"],
+    });
+    expect(missingMeasureLines(i, ["wrong-project"], false)).toEqual([
+      "It names a measure whose document this read did not return (the document list came back incomplete): unlisted.",
+      "It names a measure whose document is marked as published to the wrong project, so it is not shown: wrong-project.",
+    ]);
+    expect(
+      missingMeasureLines(
+        initiative({ missing_metric_names: ["a", "b"] }),
+        [],
+        false
+      )
+    ).toEqual([
+      "It names measures whose documents this read did not return (the document list came back incomplete): a, b.",
+    ]);
   });
 });
 
@@ -962,6 +1083,30 @@ describe("review round 1", () => {
         detail: "x",
       })
     ).toBe("(no finding id): x");
+  });
+
+  it("keeps a status reason the recorded reports below it do not say (review round 3)", () => {
+    const superseded = {
+      checkpoint: "checkpoint-1",
+      finding_id: "f9",
+      reason: "superseded_or_missing" as const,
+      detail:
+        "coord served no finding for this id: it was superseded or does not exist.",
+    };
+    const sentence =
+      "The recorded report was superseded or is missing, and no live report was found in its place.";
+    expect(howCheckedWhy(sentence, [superseded])).toBe(sentence);
+    // The reason the read joins from the entries is not said twice.
+    const failed = {
+      ...superseded,
+      reason: "read_failed" as const,
+      detail: "HTTP 503",
+    };
+    expect(
+      howCheckedWhy(`HTTP 503; ${superseded.detail}`, [failed, superseded])
+    ).toBeNull();
+    expect(howCheckedWhy("by-id read failed", [])).toBe("by-id read failed");
+    expect(howCheckedWhy(null, [superseded])).toBeNull();
   });
 
   it("counts what How this was checked holds on its summary", () => {
