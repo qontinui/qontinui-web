@@ -8,6 +8,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -128,15 +129,25 @@ function facetOf(totals: Partial<Record<string, number | null>>) {
  * coord); a `limit=1` read with a headline is that view's own count; any
  * other read is rows — `rows[view]` for the first page, with
  * `cursors[view]` as its next cursor, and `rows["<view>@<cursor>"]` for the
- * page after it.
+ * page after it. Open's one read (`exclude_headline=done`) is the `open`
+ * view; `refuseExclude` answers it 422, as a coord without the parameter.
  */
 function route(
   totals: Partial<Record<string, number | null>>,
   rows: Partial<Record<string, SubprojectSummary[]>> = {},
-  opts: { facet?: boolean; cursors?: Partial<Record<string, string>> } = {}
+  opts: {
+    facet?: boolean;
+    cursors?: Partial<Record<string, string>>;
+    refuseExclude?: boolean;
+  } = {}
 ) {
   fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
     const headline = query.get("headline");
+    const excludesDone = query.get("exclude_headline") === "done";
+    if (excludesDone && opts.refuseExclude)
+      throw new Error(
+        `GET /api/v1/operations/subprojects?${query.toString()} failed: 422 - {"error":"unknown_query_param","detail":"exclude_headline"}`
+      );
     if (query.get("limit") === "1") {
       if (headline !== null) return page([], totals[headline] ?? 0);
       const scopeTotal =
@@ -147,7 +158,7 @@ function route(
         ? page([], scopeTotal)
         : { ...page([], scopeTotal), counts: facetOf(totals) };
     }
-    const view = headline ?? "all";
+    const view = headline ?? (excludesDone ? "open" : "all");
     const cursor = query.get("cursor");
     if (cursor) return page(rows[`${view}@${cursor}`] ?? [], totals[view] ?? 0);
     return {
@@ -185,7 +196,7 @@ describe("/admin/coord/subprojects", () => {
   });
 
   it("opens on Open with a red strip and live tab counts when anything is stalled", async () => {
-    route({ ...CALM, stalled: 2, needs_you: 1 }, { stalled: [summary()] });
+    route({ ...CALM, stalled: 2, needs_you: 1 }, { open: [summary()] });
     render(<CoordSubprojectsPage />);
     const strip = await screen.findByTestId("coord-subprojects-strip");
     await waitFor(() =>
@@ -194,9 +205,9 @@ describe("/admin/coord/subprojects", () => {
     expect(within(tabCount("stalled")).getByText("2")).toBeInTheDocument();
     // Open is every headline but done: 1 + 2 + 1 + 2 + 0.
     expect(within(tabCount("open")).getByText("6")).toBeInTheDocument();
-    // Open is the default view: no tab parameter reads its five headlines.
+    // Open is the default view: no tab parameter reads it, in ONE read.
     await waitFor(() =>
-      expect(queries()).toContain("status=open&headline=waiting&limit=100")
+      expect(queries()).toContain("status=open&exclude_headline=done&limit=100")
     );
     expect(
       screen.getByTestId("coord-subprojects-unattached")
@@ -208,7 +219,7 @@ describe("/admin/coord/subprojects", () => {
     ).toBeInTheDocument();
   });
 
-  it("reads every count from coord's facet in two reads, and Open's rows as its five headlines", async () => {
+  it("reads every count from coord's facet in two reads, and Open's rows in ONE", async () => {
     route({ ...CALM, stalled: 2 });
     render(<CoordSubprojectsPage />);
     await waitFor(() =>
@@ -219,19 +230,203 @@ describe("/admin/coord/subprojects", () => {
         .filter((q) => q.endsWith("limit=1"))
         .sort()
     ).toEqual(["status=all&limit=1", "status=open&limit=1"]);
-    expect(queries()).toEqual(
-      expect.arrayContaining([
-        "status=open&headline=needs_you&limit=100",
-        "status=open&headline=stalled&limit=100",
-        "status=open&headline=working&limit=100",
-        "status=open&headline=waiting&limit=100",
-        "status=open&headline=unknown&limit=100",
-      ])
-    );
-    expect(queries()).not.toContain("status=all&limit=100");
+    expect(queries().filter((q) => q.endsWith("limit=100"))).toEqual([
+      "status=open&exclude_headline=done&limit=100",
+    ]);
     expect(within(tabCount("open")).getByText("5")).toBeInTheDocument();
     expect(within(tabCount("done")).getByText("5")).toBeInTheDocument();
     expect(within(tabCount("all")).getByText("8")).toBeInTheDocument();
+  });
+
+  it("reads Open per headline only when coord answers 422 to exclude_headline — and keeps doing so", async () => {
+    route(
+      CALM,
+      {
+        stalled: [summary({ title: "a-stalled-one" })],
+        waiting: [
+          summary({
+            id: "22222222-2222-4222-8222-222222222222",
+            headline: "waiting",
+            title: "a-waiting-one",
+          }),
+        ],
+      },
+      { refuseExclude: true }
+    );
+    render(<CoordSubprojectsPage />);
+    expect(await screen.findByText("a-stalled-one")).toBeInTheDocument();
+    expect(screen.getByText("a-waiting-one")).toBeInTheDocument();
+    // The refused parameter is not a failure of the view.
+    expect(
+      screen.queryByTestId("coord-subprojects-rows-stale")
+    ).not.toBeInTheDocument();
+    const before = queries().filter((q) =>
+      q.includes("exclude_headline")
+    ).length;
+    expect(before).toBe(1);
+    fireEvent.click(screen.getByTestId("coord-subprojects-refresh"));
+    await waitFor(() =>
+      expect(
+        queries().filter((q) => q === "status=open&headline=stalled&limit=100")
+      ).toHaveLength(2)
+    );
+    expect(
+      queries().filter((q) => q.includes("exclude_headline"))
+    ).toHaveLength(before);
+  });
+
+  it("never shows a done row under Open, even from a coord that ignored exclude_headline", async () => {
+    route(CALM, {
+      open: [
+        summary({ title: "still-open" }),
+        summary({
+          id: "33333333-3333-4333-8333-333333333333",
+          headline: "done",
+          title: "already-done",
+        }),
+      ],
+    });
+    render(<CoordSubprojectsPage />);
+    expect(await screen.findByText("still-open")).toBeInTheDocument();
+    expect(screen.queryByText("already-done")).not.toBeInTheDocument();
+  });
+
+  it("lists a stalled one-session subproject with no work units under Stalled AND Open — never folded", async () => {
+    const lone = summary({
+      title: "a-lone-stall",
+      headline: "stalled",
+      sessions: { live: 0, total: 1 },
+      work_units: { total: 0, open: 0 },
+    });
+    route({ ...CALM, stalled: 1 }, { open: [lone], stalled: [lone] });
+    const { rerender } = render(<CoordSubprojectsPage />);
+    expect(await screen.findByText("a-lone-stall")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-subprojects-folded")
+    ).not.toBeInTheDocument();
+    mockTab = "stalled";
+    rerender(<CoordSubprojectsPage />);
+    await waitFor(() =>
+      expect(queries()).toContain("status=open&headline=stalled&limit=100")
+    );
+    expect(await screen.findByText("a-lone-stall")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-subprojects-folded")
+    ).not.toBeInTheDocument();
+  });
+
+  it("says a count is stale on its tab, the strip and the 'of M' line when its read fails after a success", async () => {
+    mockTab = "all";
+    route(CALM, { all: [summary({ title: "row-under-all" })] });
+    render(<CoordSubprojectsPage />);
+    await screen.findByText("row-under-all");
+    await waitFor(() =>
+      expect(within(tabCount("all")).getByText("8")).toBeInTheDocument()
+    );
+    expect(tabCount("all")).not.toHaveAttribute("title");
+    expect(
+      screen.getByTestId("coord-subprojects-page-count")
+    ).toHaveTextContent("1 loaded of 8.");
+    const answered = fetchSubprojects.getMockImplementation();
+    fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
+      if (query.toString() === "status=all&limit=1")
+        throw new TypeError("Failed to fetch");
+      return answered?.(query);
+    });
+    fireEvent.click(screen.getByTestId("coord-subprojects-refresh"));
+    await waitFor(() =>
+      expect(tabCount("all")).toHaveAttribute(
+        "title",
+        "the last good count; the latest read failed (coord did not answer (Failed to fetch))"
+      )
+    );
+    // The number is kept, and starred.
+    expect(tabCount("all").textContent).toContain("8*");
+    expect(tabCount("done").textContent).toContain("5*");
+    // The views the strip's own sentence does not cover are named on it.
+    expect(screen.getByTestId("coord-subprojects-strip")).toHaveTextContent(
+      "Done and All are the last good counts — the latest read failed (coord did not answer (Failed to fetch))."
+    );
+    expect(
+      screen.getByTestId("coord-subprojects-page-count")
+    ).toHaveTextContent(
+      "1 loaded of 8 (the last good count; its latest read failed)."
+    );
+    // The open scope still answered: its tabs carry nothing.
+    expect(tabCount("open")).not.toHaveAttribute("title");
+  });
+
+  it("applies an older count read that answers after a newer one failed — and calls it stale", async () => {
+    mockTab = "all";
+    const pending: Array<(n: number) => void> = [];
+    route(CALM, { all: [] });
+    const answered = fetchSubprojects.getMockImplementation();
+    let allScopeReads = 0;
+    fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
+      if (query.toString() === "status=all&limit=1") {
+        allScopeReads += 1;
+        if (allScopeReads === 1)
+          // The first (mount) read hangs until the test releases it.
+          return new Promise((resolve) => {
+            pending.push((n) => resolve({ ...page([], n), counts: null }));
+          });
+        throw new TypeError("Failed to fetch");
+      }
+      return answered?.(query);
+    });
+    render(<CoordSubprojectsPage />);
+    await waitFor(() => expect(allScopeReads).toBe(1));
+    // A newer read fails while the first is still out.
+    fireEvent.click(screen.getByTestId("coord-subprojects-refresh"));
+    await waitFor(() => expect(allScopeReads).toBe(2));
+    await waitFor(() =>
+      expect(tabCount("all")).toHaveAttribute(
+        "title",
+        expect.stringMatching(/^could not be read/)
+      )
+    );
+    // The older read now answers: its number is real — applied, and stale.
+    await act(async () => {
+      pending[0]?.(12);
+    });
+    await waitFor(() =>
+      expect(within(tabCount("all")).getByText(/12/)).toBeInTheDocument()
+    );
+    expect(tabCount("all").textContent).toContain("12*");
+    expect(tabCount("all")).toHaveAttribute(
+      "title",
+      expect.stringMatching(/^the last good count; the latest read failed/)
+    );
+  });
+
+  it("ignores an older count read that fails after a newer one answered", async () => {
+    mockTab = "all";
+    const pending: Array<() => void> = [];
+    route(CALM, { all: [] });
+    const answered = fetchSubprojects.getMockImplementation();
+    let allScopeReads = 0;
+    fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
+      if (query.toString() === "status=all&limit=1") {
+        allScopeReads += 1;
+        if (allScopeReads === 1)
+          return new Promise((_, reject) => {
+            pending.push(() => reject(new TypeError("Failed to fetch")));
+          });
+      }
+      return answered?.(query);
+    });
+    render(<CoordSubprojectsPage />);
+    await waitFor(() => expect(allScopeReads).toBe(1));
+    fireEvent.click(screen.getByTestId("coord-subprojects-refresh"));
+    await waitFor(() =>
+      expect(within(tabCount("all")).getByText("8")).toBeInTheDocument()
+    );
+    await act(async () => {
+      pending[0]?.();
+    });
+    // The superseded failure changes nothing: current, unstarred.
+    expect(tabCount("all")).not.toHaveAttribute("title");
+    expect(tabCount("all").textContent).not.toContain("*");
   });
 
   it("falls back to one count read per view when coord sends no facet", async () => {
@@ -283,7 +478,7 @@ describe("/admin/coord/subprojects", () => {
   });
 
   it("renders one line per subproject: sessions, title, headline, reason, times", async () => {
-    route(CALM, { stalled: [summary()] });
+    route(CALM, { open: [summary()] });
     render(<CoordSubprojectsPage />);
     const row = await screen.findByTestId("coord-subproject-row");
     expect(row).toHaveTextContent("0/3");
@@ -301,7 +496,7 @@ describe("/admin/coord/subprojects", () => {
   });
 
   it("expands a row in place with the way into the subproject's page", async () => {
-    route(CALM, { stalled: [summary()] });
+    route(CALM, { open: [summary()] });
     render(<CoordSubprojectsPage />);
     const row = await screen.findByTestId("coord-subproject-row");
     // The testid is on the row's wrapper; the line itself is the toggle.
@@ -343,7 +538,7 @@ describe("/admin/coord/subprojects", () => {
 
   it("calls a failed read under a newly chosen tab unknown, and never shows another tab's rows", async () => {
     route(CALM, {
-      waiting: [summary({ headline: "waiting", title: "an-open-row" })],
+      open: [summary({ headline: "waiting", title: "an-open-row" })],
     });
     const { rerender } = render(<CoordSubprojectsPage />);
     await screen.findByText("an-open-row");
@@ -460,6 +655,49 @@ describe("/admin/coord/subprojects", () => {
     );
   });
 
+  it("keeps a failed Load more with its own tab, never showing it under another", async () => {
+    mockTab = "stalled";
+    route(
+      { ...CALM, stalled: 2 },
+      {
+        stalled: [summary({ title: "first-page" })],
+        waiting: [
+          summary({
+            id: "44444444-4444-4444-8444-444444444444",
+            headline: "waiting",
+            title: "a-waiting-row",
+          }),
+        ],
+      },
+      { cursors: { stalled: "c2" } }
+    );
+    const answered = fetchSubprojects.getMockImplementation();
+    const failNextPage: Array<() => void> = [];
+    fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
+      if (query.get("cursor") === "c2")
+        return new Promise((_, reject) => {
+          failNextPage.push(() => reject(new TypeError("Failed to fetch")));
+        });
+      return answered?.(query);
+    });
+    const { rerender } = render(<CoordSubprojectsPage />);
+    await screen.findByText("first-page");
+    fireEvent.click(screen.getByTestId("coord-subprojects-load-more"));
+    await waitFor(() => expect(failNextPage).toHaveLength(1));
+    // The operator moves on while Stalled's next page is still out...
+    mockTab = "waiting";
+    rerender(<CoordSubprojectsPage />);
+    await screen.findByText("a-waiting-row");
+    // ...and it fails there: Stalled's failure, not Waiting's.
+    await act(async () => {
+      failNextPage[0]?.();
+    });
+    expect(
+      screen.queryByTestId("coord-subprojects-load-more-failed")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+  });
+
   it("switches views through the URL: Open needs no parameter, every other view is named", async () => {
     mockTab = "stalled";
     route(CALM);
@@ -483,7 +721,7 @@ describe("/admin/coord/subprojects", () => {
   });
 
   it("keeps a view's rows across a failed refresh and says they are the last good read", async () => {
-    route(CALM, { stalled: [summary()] });
+    route(CALM, { open: [summary()] });
     render(<CoordSubprojectsPage />);
     await screen.findByTestId("coord-subproject-row");
     fetchSubprojects.mockRejectedValue(new TypeError("Failed to fetch"));

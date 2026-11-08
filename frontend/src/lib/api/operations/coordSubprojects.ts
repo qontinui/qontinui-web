@@ -106,6 +106,13 @@ export interface SubprojectSummary {
   last_activity_at: string | null;
   /** When the cached verdict was computed; `null` ⇒ headline `unknown`. */
   verdict_as_of: string | null;
+  /**
+   * coord's own answer to "is this a one-off?" — the rule its
+   * `counts.folded.one_off` counts by (one member session whose work is
+   * `finished`, no work unit, a `done` headline). `null` is coord saying it
+   * could not tell; absent is a coord that predates the field.
+   */
+  one_off?: boolean | null;
 }
 
 export interface SubprojectUnattachedUnits {
@@ -340,16 +347,18 @@ export async function fetchSubprojects(
 
 /**
  * `GET /subprojects/by-sessions?ids=…` (`get_subprojects_by_sessions`) — one
- * batched lookup for a page of session rows. The caller sends at most
- * {@link SUBPROJECT_LOOKUP_MAX_IDS} harness session ids; the backend refuses
- * more before it calls coord.
+ * batch of a page's session lookup. The caller sends at most
+ * {@link SUBPROJECT_LOOKUP_MAX_IDS} harness session ids a read (more go in
+ * further batches); the backend refuses more before it calls coord.
  */
 export async function fetchSubprojectsBySessions(
   sessionIds: readonly string[],
   options: HttpOptions = {}
 ): Promise<SubprojectsBySessionsResponse> {
-  const query = new URLSearchParams({ ids: sessionIds.join(",") });
-  const url = `${OPERATIONS_BASE}/subprojects/by-sessions?${query.toString()}`;
+  // The commas stay literal (`ids=a,b`), the separator coord splits on; each
+  // id is encoded on its own, so an id can never smuggle one in.
+  const ids = sessionIds.map((id) => encodeURIComponent(id)).join(",");
+  const url = `${OPERATIONS_BASE}/subprojects/by-sessions?ids=${ids}`;
   const res = await httpClient.fetch(url, {
     ...options,
     method: "GET",

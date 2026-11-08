@@ -8,7 +8,7 @@
  * Phase 6 (D12). A subproject groups the sessions, gates, work units and PRs
  * of one piece of work; coord computes whether anything is still moving it
  * (D1, D6) and caches that verdict, with its `as_of`, for this list. The page
- * composes the console primitives only (style guide §6.4; §3.15 records what
+ * composes the console primitives only (style guide §6.4; §3.16 records what
  * it adds):
  *
  * - **R1** — a `HealthStrip` over the counts the tabs show: red when anything
@@ -49,11 +49,13 @@ import {
   SUBPROJECT_HEADLINE_PALETTE,
   SUBPROJECT_TABS,
   SUBPROJECT_TAB_LABEL,
+  countNoteOf,
   countText,
   deriveSubprojectStatus,
   deriveSubprojectsHealth,
   describeEmptyView,
   foldedReason,
+  ofCountWords,
   projectStateWords,
   readFailureWords,
   sessionsText,
@@ -153,6 +155,8 @@ export default function CoordSubprojectsPage() {
     id: t,
     label: SUBPROJECT_TAB_LABEL[t],
     count: list.counts[t].value,
+    // A kept or failed count says so on its tab (R6), not only on the strip.
+    countNote: countNoteOf(list.counts[t]),
     attention:
       (t === "needs_you" || t === "stalled") && (list.counts[t].value ?? 0) > 0,
     testId: `coord-subprojects-tab-${t}`,
@@ -171,7 +175,6 @@ export default function CoordSubprojectsPage() {
   });
 
   const unattached = list.unattached;
-  const viewCount = list.counts[tab].value;
 
   return (
     <div
@@ -286,7 +289,7 @@ export default function CoordSubprojectsPage() {
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span data-testid="coord-subprojects-page-count">
             {rows.items.length} loaded
-            {viewCount !== null ? ` of ${viewCount}` : ""}
+            {ofCountWords(list.counts[tab])}
             {rows.more ? "; more are available" : ""}.
           </span>
           {rows.pages > 1 && (
