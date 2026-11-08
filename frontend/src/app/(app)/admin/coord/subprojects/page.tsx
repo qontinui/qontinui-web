@@ -8,15 +8,17 @@
  * Phase 6 (D12). A subproject groups the sessions, gates, work units and PRs
  * of one piece of work; coord computes whether anything is still moving it
  * (D1, D6) and caches that verdict, with its `as_of`, for this list. The page
- * composes the console primitives only (style guide §6.4):
+ * composes the console primitives only (style guide §6.4; §3.15 records what
+ * it adds):
  *
  * - **R1** — a `HealthStrip` over the counts the tabs show: red when anything
- *   needs you or is stalled, amber when a verdict is unknown or a count did
- *   not come back, green only on a measured zero.
- * - **R6** — `FilterTabs` with live counts — Needs you · Stalled · Working ·
- *   Waiting · Done · All — each coord's own total for its view, `–` until it
- *   is read. One-offs, scheduled and merged subprojects are listed under All
- *   only; a headline tab says how many of its rows it folded there.
+ *   needs you or is stalled, amber when a count is stale, failed or not taken
+ *   or a verdict is unknown, green only on a measured zero.
+ * - **R6** — `FilterTabs` with live counts — Open · Needs you · Stalled ·
+ *   Working · Waiting · Done · All — each coord's own count for its view, `–`
+ *   until read. Open (the default) is every open subproject that is not done.
+ *   One-offs, scheduled and merged subprojects are listed under All only; a
+ *   tab says how many of its rows it folded there.
  * - **R2/R4/R5** — one `RecordRow` per subproject: sessions live/total · title
  *   · headline badge · top reason · last activity and the verdict's as-of.
  *   The row expands in place and carries "Open subproject ↗" (the detail page
@@ -50,20 +52,26 @@ import {
   countText,
   deriveSubprojectStatus,
   deriveSubprojectsHealth,
+  describeEmptyView,
   foldedReason,
   projectStateWords,
   readFailureWords,
   sessionsText,
   sessionsTitle,
   tabOf,
+  type CountReading,
   type SubprojectTab,
 } from "@/components/admin/coord/subprojects/subprojectStatus";
 import type { SubprojectSummary } from "@/lib/api/operations/coordSubprojects";
 import { useSubprojectsList } from "./_hooks/useSubprojectsList";
 
-/** The tabs that are a headline, i.e. that fold one-offs into All. */
-function isHeadlineTab(tab: SubprojectTab): boolean {
+/** The tabs whose rows leave one-offs, scheduled and merged ones to All. */
+function foldsIntoAll(tab: SubprojectTab): boolean {
   return tab !== "all";
+}
+
+function badgeTone(r: CountReading, loud: "attention" | "waiting") {
+  return r.value !== null && r.value > 0 ? loud : "muted";
 }
 
 export default function CoordSubprojectsPage() {
@@ -77,7 +85,9 @@ export default function CoordSubprojectsPage() {
   const setTab = useCallback(
     (next: SubprojectTab) => {
       const params = new URLSearchParams(searchParams?.toString() ?? "");
-      if (next === "all") params.delete("tab");
+      // Open is the default, so it needs no parameter; every other view —
+      // All included — is named in the URL, so it can be linked.
+      if (next === "open") params.delete("tab");
       else params.set("tab", next);
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : (pathname ?? ""), {
@@ -88,53 +98,53 @@ export default function CoordSubprojectsPage() {
   );
 
   const health = useMemo(
-    () =>
-      deriveSubprojectsHealth({
-        counts: list.counts,
-        unattached: list.unattached,
-        loaded: list.countsLoaded,
-        failure: list.countsFailure,
-      }),
-    [list.counts, list.unattached, list.countsLoaded, list.countsFailure]
+    () => deriveSubprojectsHealth(list.counts),
+    [list.counts]
   );
 
   const { rows } = list;
-  const needle = query.trim().toLowerCase();
-  const { shown, folded } = useMemo(() => {
+  const needle = query.trim();
+  const { shown, matched, folded } = useMemo(() => {
+    const lower = needle.toLowerCase();
     const matches = (s: SubprojectSummary) =>
-      needle === "" ||
-      s.title.toLowerCase().includes(needle) ||
-      s.slug.toLowerCase().includes(needle) ||
-      (s.goal ?? "").toLowerCase().includes(needle);
-    const all = rows.items.filter(matches);
-    if (!isHeadlineTab(tab)) return { shown: all, folded: 0 };
-    const kept = all.filter((s) => foldedReason(s) === null);
-    return { shown: kept, folded: all.length - kept.length };
+      lower === "" ||
+      s.title.toLowerCase().includes(lower) ||
+      s.slug.toLowerCase().includes(lower) ||
+      (s.goal ?? "").toLowerCase().includes(lower);
+    const hit = rows.items.filter(matches);
+    if (!foldsIntoAll(tab))
+      return { shown: hit, matched: hit.length, folded: 0 };
+    const kept = hit.filter((s) => foldedReason(s) === null);
+    return {
+      shown: kept,
+      matched: hit.length,
+      folded: hit.length - kept.length,
+    };
   }, [rows.items, needle, tab]);
 
   const badges: HealthBadge[] = [
     {
       key: "needs_you",
-      label: `needs you ${countText(list.counts.needs_you)}`,
-      tone: (list.counts.needs_you ?? 0) > 0 ? "attention" : "muted",
+      label: `needs you ${countText(list.counts.needs_you.value)}`,
+      tone: badgeTone(list.counts.needs_you, "attention"),
       onClick: () => setTab("needs_you"),
       navigationOnly: true,
       "data-testid": "coord-subprojects-strip-needs-you",
     },
     {
       key: "stalled",
-      label: `stalled ${countText(list.counts.stalled)}`,
-      tone: (list.counts.stalled ?? 0) > 0 ? "attention" : "muted",
+      label: `stalled ${countText(list.counts.stalled.value)}`,
+      tone: badgeTone(list.counts.stalled, "attention"),
       onClick: () => setTab("stalled"),
       navigationOnly: true,
       "data-testid": "coord-subprojects-strip-stalled",
     },
     {
       key: "unknown",
-      label: `unknown ${countText(list.counts.unknown)}`,
-      tone: (list.counts.unknown ?? 0) > 0 ? "waiting" : "muted",
+      label: `unknown ${countText(list.counts.unknown.value)}`,
+      tone: badgeTone(list.counts.unknown, "waiting"),
       title:
-        "Subprojects whose verdict coord has not computed, or could not read.",
+        "Open subprojects whose verdict coord has not computed, or could not read.",
       "data-testid": "coord-subprojects-strip-unknown",
     },
   ];
@@ -142,25 +152,26 @@ export default function CoordSubprojectsPage() {
   const tabs = SUBPROJECT_TABS.map((t) => ({
     id: t,
     label: SUBPROJECT_TAB_LABEL[t],
-    count: list.counts[t],
+    count: list.counts[t].value,
     attention:
-      (t === "needs_you" || t === "stalled") && (list.counts[t] ?? 0) > 0,
+      (t === "needs_you" || t === "stalled") && (list.counts[t].value ?? 0) > 0,
     testId: `coord-subprojects-tab-${t}`,
   }));
 
-  const emptyText = (() => {
-    if (rows.failure && !rows.loaded)
-      return `Whether any subproject is in this view is unknown: ${readFailureWords(rows.failure)}.`;
-    const what =
-      tab === "all"
-        ? "No subproject"
-        : `No ${tab === "done" ? "" : "open "}subproject is ${SUBPROJECT_TAB_LABEL[tab].toLowerCase()}`;
-    if (rows.stale && rows.failure)
-      return `${what} at the last good read; the latest read failed — ${readFailureWords(rows.failure)}.`;
-    if (needle !== "" && rows.items.length > 0)
-      return `No subproject on this page matches "${query.trim()}".`;
-    return `${what}.`;
-  })();
+  const emptyText = describeEmptyView({
+    tab,
+    loaded: rows.loaded,
+    failure: rows.failure,
+    stale: rows.stale,
+    query: needle,
+    loadedRows: rows.items.length,
+    matched,
+    folded,
+    more: rows.more,
+  });
+
+  const unattached = list.unattached;
+  const viewCount = list.counts[tab].value;
 
   return (
     <div
@@ -180,7 +191,7 @@ export default function CoordSubprojectsPage() {
         <RefreshButton
           onRefresh={list.refresh}
           label="Re-read subprojects"
-          title="Re-reads every count and this view's first page; the page also re-reads itself every minute."
+          title="Re-reads every count and this view's first page; the page also re-reads its rows every minute and its counts every two."
           data-testid="coord-subprojects-refresh"
         />
       </div>
@@ -191,18 +202,22 @@ export default function CoordSubprojectsPage() {
       >
         Work units that belong to no subproject:{" "}
         <span className="font-mono text-foreground">
-          {countText(list.unattached)}
+          {countText(unattached.value)}
         </span>
-        {list.unattached === null
-          ? list.countsLoaded
-            ? " — coord did not count them (unknown, not zero)."
-            : " — not read yet."
-          : list.unattachedByClass &&
-              Object.keys(list.unattachedByClass).length > 0
-            ? ` (${Object.entries(list.unattachedByClass)
-                .map(([cls, n]) => `${projectStateWords(cls)} ${n}`)
-                .join(", ")})`
-            : ""}
+        {unattached.failure
+          ? unattached.value !== null
+            ? ` — the last good count; the latest read failed (${readFailureWords(unattached.failure)}).`
+            : ` — could not be read (${readFailureWords(unattached.failure)}).`
+          : unattached.value === null
+            ? unattached.answered
+              ? " — coord did not count them (unknown, not zero)."
+              : " — not read yet."
+            : list.unattachedByClass &&
+                Object.keys(list.unattachedByClass).length > 0
+              ? ` (${Object.entries(list.unattachedByClass)
+                  .map(([cls, n]) => `${projectStateWords(cls)} ${n}`)
+                  .join(", ")})`
+              : ""}
       </p>
 
       <FilterTabs
@@ -249,7 +264,7 @@ export default function CoordSubprojectsPage() {
         renderRow={(s, ctx) => <SubprojectRow s={s} {...ctx} />}
       />
 
-      {folded > 0 && (
+      {folded > 0 && shown.length > 0 && (
         <p
           className="m-0 text-xs text-muted-foreground"
           data-testid="coord-subprojects-folded"
@@ -271,12 +286,25 @@ export default function CoordSubprojectsPage() {
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span data-testid="coord-subprojects-page-count">
             {rows.items.length} loaded
-            {typeof list.counts[tab] === "number"
-              ? ` of ${list.counts[tab]}`
-              : ""}
-            {rows.truncated || rows.nextCursor ? "; more are available" : ""}.
+            {viewCount !== null ? ` of ${viewCount}` : ""}
+            {rows.more ? "; more are available" : ""}.
           </span>
-          {rows.nextCursor && (
+          {rows.pages > 1 && (
+            <span data-testid="coord-subprojects-rows-paused">
+              These rows are as of{" "}
+              <RowTime
+                at={rows.asOf}
+                verb="Read"
+                absent={{
+                  label: "an unknown time",
+                  title: "coord did not date the first page.",
+                }}
+              />
+              ; with more than one page loaded the rows are not re-read every
+              minute — Refresh starts again from the first page.
+            </span>
+          )}
+          {rows.more && (
             <Button
               variant="outline"
               size="sm"
@@ -316,6 +344,7 @@ function SubprojectRow({
 }) {
   const status = deriveSubprojectStatus(s);
   const folded = foldedReason(s);
+  const title = s.title || s.slug;
   return (
     <RecordRow
       rowKey={rowKey}
@@ -327,7 +356,8 @@ function SubprojectRow({
           {sessionsText(s.sessions)}
         </span>
       }
-      label={s.title || s.slug}
+      // The label truncates; its title carries the whole of it (R2).
+      label={<span title={title}>{title}</span>}
       status={
         <StatusBadge status={status} palette={SUBPROJECT_HEADLINE_PALETTE} />
       }

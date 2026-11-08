@@ -19,7 +19,7 @@
  * (style guide §3.14: "Nothing new is fetched").
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRetainedValue } from "@/components/console";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
@@ -30,13 +30,19 @@ import {
   classifySubprojectReadFailure,
   describeStalledLine,
   viewQuery,
-  type SubprojectReadFailure,
 } from "@/components/admin/coord/subprojects/subprojectStatus";
+import { useStampedFailure } from "@/components/admin/coord/subprojects/useStampedFailure";
+
+/** The one question this line asks, as the failure bookkeeping stamps it. */
+const STALLED = "stalled";
 
 /** The read: coord's count of open subprojects headlined `stalled`. */
 function useStalledSubprojectCount() {
   const axis = useRetainedValue<number | null>(null);
-  const [failure, setFailure] = useState<SubprojectReadFailure | null>(null);
+  // Stamped with the read's sequence number: an older read that succeeds
+  // after a newer one failed cannot clear the newer failure.
+  const failures = useStampedFailure<typeof STALLED>();
+  const { fail, succeed } = failures;
   const cancelled = useRef(false);
   useEffect(() => {
     cancelled.current = false;
@@ -53,24 +59,22 @@ function useStalledSubprojectCount() {
         COORD_DASHBOARD_POLL_OPTIONS
       );
       if (cancelled.current) return;
-      if (
-        settle(seq, {
-          value: typeof page.total === "number" ? page.total : null,
-        })
-      )
-        setFailure(null);
+      settle(seq, {
+        value: typeof page.total === "number" ? page.total : null,
+      });
+      succeed(STALLED, seq);
     } catch (err) {
       if (cancelled.current) return;
       settle(seq, null);
-      setFailure(classifySubprojectReadFailure(err));
+      fail(STALLED, seq, classifySubprojectReadFailure(err));
     }
-  }, [issue, settle]);
+  }, [issue, settle, fail, succeed]);
   useVisiblePoll(read, PROJECT_STATE_POLL_MS, { runOnMount: true });
   return {
     count: axis.value,
     loaded: axis.hasRead,
     stale: axis.stale,
-    failure,
+    failure: failures.failureFor(STALLED),
   };
 }
 

@@ -68,6 +68,35 @@ describe("SubprojectTextDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("does not close on Escape while the write is out, and does when idle", async () => {
+    updateSubproject.mockReturnValue(new Promise(() => {}));
+    const onClose = vi.fn();
+    render(
+      <SubprojectTextDialog
+        open
+        onClose={onClose}
+        field="title"
+        subprojectId={ID}
+        initial="dashboards-and-presentation-27-10"
+        onSaved={vi.fn()}
+      />
+    );
+    // Idle: Escape closes (the control for the busy case below).
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByTestId("subproject-title-input"), {
+      target: { value: "Dashboards" },
+    });
+    fireEvent.click(screen.getByTestId("subproject-title-save"));
+    await waitFor(() => expect(updateSubproject).toHaveBeenCalled());
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("never sends an empty title", () => {
     render(
       <SubprojectTextDialog
@@ -208,6 +237,26 @@ describe("MoveDialog", () => {
       member_kind: "session",
       agent_session_id: SESSION,
     });
+  });
+
+  it("labels the member field by what it takes, and ties the invalid-id message to it", () => {
+    render(
+      <MoveDialog
+        open
+        onClose={vi.fn()}
+        subproject={SUBPROJECT}
+        preset={null}
+        onMoved={vi.fn()}
+      />
+    );
+    const input = screen.getByLabelText("Session id");
+    expect(input).toBe(screen.getByTestId("subproject-move-member"));
+    expect(input).not.toHaveAttribute("aria-describedby");
+    fireEvent.change(input, { target: { value: "not-a-session" } });
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAccessibleDescription(
+      /A session is named by its Claude Code session id, which is a uuid/
+    );
   });
 
   it("moves a member out to the subproject typed, not to this one", async () => {

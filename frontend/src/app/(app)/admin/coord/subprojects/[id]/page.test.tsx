@@ -35,8 +35,9 @@ vi.mock("@/contexts/auth-context", () => ({
 }));
 
 const ID = "6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f";
+let mockId = ID;
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: ID }),
+  useParams: () => ({ id: mockId }),
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
@@ -257,6 +258,7 @@ describe("/admin/coord/subprojects/[id]", () => {
     fetchSubproject.mockReset();
     updateSubproject.mockReset();
     mockAdmin = false;
+    mockId = ID;
   });
 
   it("answers why it stopped first: the headline, every reason, and refs linked where they live", async () => {
@@ -317,7 +319,7 @@ describe("/admin/coord/subprojects/[id]", () => {
     render(<SubprojectDetailPage />);
     const rows = await screen.findAllByTestId("coord-subproject-gate-row");
     expect(rows[0]).toHaveTextContent("Nothing moving it");
-    expect(rows[0].querySelector("[data-status-kind]")).toHaveAttribute(
+    expect(rows[0]?.querySelector("[data-status-kind]")).toHaveAttribute(
       "data-status-kind",
       "not_watched"
     );
@@ -363,6 +365,70 @@ describe("/admin/coord/subprojects/[id]", () => {
     expect(
       await screen.findByTestId("coord-subproject-unknown")
     ).toHaveTextContent("Whether it exists, and where it stands, is unknown.");
+    expect(
+      screen.queryByTestId("coord-subproject-not-found")
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the last good read across a failed re-read, and says it is not current", async () => {
+    fetchSubproject.mockResolvedValueOnce(detail());
+    render(<SubprojectDetailPage />);
+    await screen.findByTestId("coord-subproject-actions");
+    fetchSubproject.mockRejectedValue(new TypeError("Failed to fetch"));
+    fireEvent.click(screen.getByTestId("coord-subproject-refresh"));
+    const stale = await screen.findByTestId("coord-subproject-stale");
+    expect(stale).toHaveTextContent(/^The latest read failed/);
+    expect(stale).toHaveTextContent(/Everything below is the last good read/);
+    expect(stale).toHaveTextContent(/not a current one\.$/);
+    // The record stays on screen; the page is not UNKNOWN.
+    expect(screen.getByTestId("coord-subproject-actions")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-subproject-unknown")
+    ).not.toBeInTheDocument();
+  });
+
+  it("never shows one subproject's record under another's id", async () => {
+    fetchSubproject.mockImplementation((id: string) =>
+      id === ID ? Promise.resolve(detail()) : new Promise(() => {})
+    );
+    const { rerender } = render(<SubprojectDetailPage />);
+    await screen.findByTestId("coord-subproject-actions");
+    mockId = OTHER_SUBPROJECT;
+    rerender(<SubprojectDetailPage />);
+    // The new id is being read: its page is loading, not the old record.
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-subproject-actions")
+      ).not.toBeInTheDocument()
+    );
+    expect(
+      screen.queryByText("dashboards-and-presentation")
+    ).not.toBeInTheDocument();
+    expect(fetchSubproject).toHaveBeenLastCalledWith(
+      OTHER_SUBPROJECT,
+      expect.anything()
+    );
+  });
+
+  it("does not carry one subproject's failed read onto the next", async () => {
+    fetchSubproject.mockImplementation((id: string) =>
+      id === ID
+        ? Promise.reject(
+            new Error(
+              `GET /api/v1/operations/subprojects/${ID} failed: 502 - {"error":"BAD_GATEWAY"}`
+            )
+          )
+        : new Promise(() => {})
+    );
+    const { rerender } = render(<SubprojectDetailPage />);
+    await screen.findByTestId("coord-subproject-unknown");
+    mockId = OTHER_SUBPROJECT;
+    rerender(<SubprojectDetailPage />);
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-subproject-unknown")
+      ).not.toBeInTheDocument()
+    );
     expect(
       screen.queryByTestId("coord-subproject-not-found")
     ).not.toBeInTheDocument();
@@ -416,6 +482,49 @@ describe("/admin/coord/subprojects/[id]", () => {
       expect(updateSubproject).toHaveBeenCalledWith(ID, { status: "done" })
     );
     await waitFor(() => expect(fetchSubproject).toHaveBeenCalledTimes(2));
+  });
+
+  it("treats an archived subproject as closed: it offers Reopen, never Mark done", async () => {
+    mockAdmin = true;
+    const base = detail();
+    fetchSubproject.mockResolvedValue(
+      detail({ subproject: { ...base.subproject, status: "archived" } })
+    );
+    updateSubproject.mockResolvedValue({ id: ID, status: "open" });
+    render(<SubprojectDetailPage />);
+    const toggle = await screen.findByTestId("coord-subproject-done-toggle");
+    expect(toggle).toHaveTextContent("Reopen");
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(updateSubproject).toHaveBeenCalledWith(ID, { status: "open" })
+    );
+  });
+
+  it("says why a reference is not linked in text a screen reader reads, not only a tooltip", async () => {
+    const base = detail();
+    const unknownUnit = "99999999-9999-4999-8999-999999999999";
+    fetchSubproject.mockResolvedValue(
+      detail({
+        verdict: {
+          ...base.verdict,
+          reasons: [
+            {
+              kind: "abandoned",
+              summary: "A unit nobody is working",
+              refs: [
+                { type: "work_unit", id: unknownUnit, label: "a stray unit" },
+              ],
+              detail: null,
+            },
+          ],
+        },
+      })
+    );
+    render(<SubprojectDetailPage />);
+    const why = await screen.findByTestId("coord-subproject-why");
+    const unlinked = within(why).getByTestId("subproject-ref-unlinked");
+    expect(unlinked).toHaveTextContent(/^a stray unit \(not linked: .+\)$/);
+    expect(unlinked.querySelector(".sr-only")).not.toBeNull();
   });
 
   it("keeps a refused write in view as coord's reading", async () => {

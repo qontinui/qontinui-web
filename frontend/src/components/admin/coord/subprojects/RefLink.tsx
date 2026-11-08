@@ -7,8 +7,9 @@
  * The decision is `subprojectStatus.ts` `refTarget`; this only renders it: a
  * console link for an internal page, a new tab for GitHub, and plain text with
  * the reason in its title when the ref cannot be opened (an unknown type, a
- * work unit whose slug is not known) — never a link that leads nowhere
- * (style guide §3.12's "a control with nowhere to go … says why").
+ * work unit whose slug is not known), the reason also in screen-reader
+ * text — never a link that leads nowhere (style guide §3.12's "a control
+ * with nowhere to go … says why").
  */
 
 import Link from "next/link";
@@ -50,6 +51,10 @@ export function RefLink({
       </a>
     );
   }
+  // The reason is TEXT, not only a tooltip: a `title` is not an accessible
+  // name and has no hover for a keyboard (style guide R6, "A `title` is not
+  // an accessible name"). Sighted readers get it on hover; everyone else
+  // reads it as part of the reference.
   return (
     <span
       title={`Not linked: ${target.why}. coord id: ${subjectRef.id}`}
@@ -57,6 +62,7 @@ export function RefLink({
       data-testid="subproject-ref-unlinked"
     >
       {text}
+      <span className="sr-only"> (not linked: {target.why})</span>
     </span>
   );
 }

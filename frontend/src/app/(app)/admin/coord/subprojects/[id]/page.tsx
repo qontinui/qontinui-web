@@ -73,10 +73,14 @@ import {
   deriveMemberSessionStatus,
   deriveVerdictStatus,
   gateAttributionWords,
+  historyEventWords,
   joinedViaWords,
+  memberEmptyText,
+  memberList,
   memberSessionKey,
   nextStepWords,
   phasesRemainingWords,
+  predicateKindWords,
   prHref,
   prStateWords,
   projectStateWords,
@@ -141,7 +145,10 @@ export default function SubprojectDetailPage() {
           Subprojects
         </Button>
         <span className="text-muted-foreground">/</span>
-        <span className="min-w-0 truncate text-sm">
+        <span
+          className="min-w-0 truncate text-sm"
+          title={detail?.subproject.title ?? id}
+        >
           {detail?.subproject.title ?? id}
         </span>
         <RefreshButton
@@ -172,7 +179,8 @@ export default function SubprojectDetailPage() {
           onClose={() => setDialog(null)}
           subprojectId={detail.subproject.id}
           subprojectTitle={detail.subproject.title}
-          defaultRepos={defaultContinueRepos(detail.prs)}
+          suggestedRepos={defaultContinueRepos(detail.prs ?? [])}
+          nextSteps={detail.next_steps ?? null}
           onContinued={() => void state.refresh()}
         />
       )}
@@ -287,8 +295,13 @@ function SubprojectBody({
   const status = deriveVerdictStatus(detail.verdict ?? null);
   const context: RefContext = { units: detail.work_units, prs: detail.prs };
   const unread = unreadSources(detail.verdict?.sources ?? []);
-  const sessions = sortMemberSessions(detail.sessions ?? []);
-  const gates = sortMemberGates(detail.gates ?? []);
+  const sessionList = memberList(detail.sessions);
+  const gateList = memberList(detail.gates);
+  const unitList = memberList(detail.work_units);
+  const prList = memberList(detail.prs);
+  const historyList = memberList(detail.history);
+  const sessions = sortMemberSessions(sessionList.items);
+  const gates = sortMemberGates(gateList.items);
   const openGates = gates.filter(
     (g) => deriveMemberGateStatus(g).kind !== "closed"
   ).length;
@@ -491,7 +504,9 @@ function SubprojectBody({
       <section className="space-y-2" data-testid="coord-subproject-sessions">
         <h2 className={SECTION_HEADING}>
           Sessions{" "}
-          <span className="font-mono normal-case">{sessions.length}</span>
+          <span className="font-mono normal-case">
+            {sessionList.known ? sessions.length : "–"}
+          </span>
         </h2>
         <RecordList<SubprojectMemberSession>
           items={sessions}
@@ -503,7 +518,7 @@ function SubprojectBody({
           }
           empty={
             <p className="m-0 text-xs text-muted-foreground">
-              coord lists no member session.
+              {memberEmptyText("member session", sessionList.known, unread)}
             </p>
           }
           renderRow={(m, ctx) => (
@@ -520,7 +535,7 @@ function SubprojectBody({
         <h2 className={SECTION_HEADING}>
           Gates{" "}
           <span className="font-mono normal-case">
-            {openGates} open of {gates.length}
+            {gateList.known ? `${openGates} open of ${gates.length}` : "–"}
           </span>
         </h2>
         <RecordList<SubprojectMemberGate>
@@ -528,7 +543,7 @@ function SubprojectBody({
           itemKey={(g) => g.gate_id}
           empty={
             <p className="m-0 text-xs text-muted-foreground">
-              coord lists no member gate.
+              {memberEmptyText("member gate", gateList.known, unread)}
             </p>
           }
           renderRow={(g, ctx) => <GateRow gate={g} {...ctx} />}
@@ -538,11 +553,11 @@ function SubprojectBody({
       <section className="space-y-2" data-testid="coord-subproject-plans-prs">
         <h2 className={SECTION_HEADING}>Plans &amp; PRs</h2>
         <RecordList<SubprojectMemberUnit>
-          items={detail.work_units ?? []}
+          items={unitList.items}
           itemKey={(u) => u.work_unit_id}
           empty={
             <p className="m-0 text-xs text-muted-foreground">
-              coord lists no member work unit.
+              {memberEmptyText("member work unit", unitList.known, unread)}
             </p>
           }
           renderRow={(u, ctx) => (
@@ -554,11 +569,11 @@ function SubprojectBody({
           )}
         />
         <RecordList<SubprojectMemberPr>
-          items={detail.prs ?? []}
+          items={prList.items}
           itemKey={(p) => `${p.repo}#${p.number}`}
           empty={
             <p className="m-0 text-xs text-muted-foreground">
-              coord lists no pull request.
+              {memberEmptyText("pull request", prList.known, unread)}
             </p>
           }
           renderRow={(p, ctx) => <PrRow pr={p} {...ctx} />}
@@ -570,7 +585,7 @@ function SubprojectBody({
         title="History"
         summary={
           <span className="font-mono text-xs text-muted-foreground">
-            {(detail.history ?? []).length}
+            {historyList.known ? historyList.items.length : "–"}
           </span>
         }
         storageKey="coord-subproject-history"
@@ -578,11 +593,13 @@ function SubprojectBody({
         data-testid="coord-subproject-history"
       >
         <RecordList<SubprojectHistoryEntry>
-          items={detail.history ?? []}
+          items={historyList.items}
           itemKey={(h, i) => `${h.at}:${h.event}:${i}`}
           empty={
             <p className="m-0 text-xs text-muted-foreground">
-              coord recorded no history.
+              {historyList.known
+                ? "coord recorded no history."
+                : "coord did not send the history with this read — unknown, not none."}
             </p>
           }
           renderRow={(h, ctx) => <HistoryRow entry={h} {...ctx} />}
@@ -617,7 +634,9 @@ function SubprojectActions({
   const s = detail.subproject;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<BackendErrorReading | null>(null);
-  const done = s.status === "done";
+  // Done and archived are both closed: the lever reopens either, and never
+  // offers to mark an archived subproject done.
+  const done = s.status === "done" || s.status === "archived";
 
   const setDone = async () => {
     setBusy(true);
@@ -728,7 +747,7 @@ function SessionRow({
     <RecordRow
       rowKey={rowKey}
       identity={member.device_name ?? "device unknown"}
-      label={name}
+      label={<span title={name}>{name}</span>}
       status={
         <StatusBadge status={status} palette={SUBPROJECT_SESSION_PALETTE} />
       }
@@ -843,8 +862,12 @@ function GateRow({
   return (
     <RecordRow
       rowKey={rowKey}
-      identity={gate.predicate_kind}
-      label={gate.phase_name ?? "Gate with no phase name"}
+      identity={predicateKindWords(gate.predicate_kind)}
+      label={
+        <span title={gate.phase_name ?? undefined}>
+          {gate.phase_name ?? "Gate with no phase name"}
+        </span>
+      }
       status={<StatusBadge status={status} palette={SUBPROJECT_GATE_PALETTE} />}
       reason={status.reason}
       attention={status.attention}
@@ -909,7 +932,7 @@ function UnitRow({
     <RecordRow
       rowKey={rowKey}
       identity="unit"
-      label={label}
+      label={<span title={label}>{label}</span>}
       status={<StatusBadge status={status} palette={PLAN_STATUS_PALETTE} />}
       reason={`${projectStateWords(unit.project_state_class)} · ${phasesRemainingWords(unit.phases_remaining)}`}
       attention={status.attention}
@@ -1031,8 +1054,7 @@ function HistoryRow({
     <RecordRow
       rowKey={rowKey}
       identity="event"
-      label={entry.event.replace(/_/g, " ")}
-      reason={detailText ?? undefined}
+      label={historyEventWords(entry.event)}
       time={<RowTime at={entry.at} verb="At" />}
       expanded={expanded}
       onToggle={onToggle}

@@ -39,9 +39,8 @@ vi.mock("@/components/operations/useDeviceStatusStream", () => ({
 
 const resolveAgentSession = vi.fn();
 vi.mock("@/services/agent-sessions-api", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("@/services/agent-sessions-api")
-  >();
+  const actual =
+    await importOriginal<typeof import("@/services/agent-sessions-api")>();
   return {
     ...actual,
     resolveAgentSession: (key: string) => resolveAgentSession(key),
@@ -50,12 +49,25 @@ vi.mock("@/services/agent-sessions-api", async (importOriginal) => {
 
 const getSession = vi.fn();
 vi.mock("@/lib/api/operations/sessions", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("@/lib/api/operations/sessions")
-  >();
+  const actual =
+    await importOriginal<typeof import("@/lib/api/operations/sessions")>();
   return {
     ...actual,
     getSession: (id: string, signal?: AbortSignal) => getSession(id, signal),
+  };
+});
+
+// The subproject chip's one lookup (plan 2026-11-08 subprojects, Phase 6).
+const fetchSubprojectsBySessions = vi.fn();
+vi.mock("@/lib/api/operations/coordSubprojects", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@/lib/api/operations/coordSubprojects")
+    >();
+  return {
+    ...actual,
+    fetchSubprojectsBySessions: (ids: string[]) =>
+      fetchSubprojectsBySessions(ids),
   };
 });
 
@@ -103,6 +115,66 @@ beforeEach(() => {
   mockKey = "brave-otter";
   resolveAgentSession.mockReset();
   getSession.mockReset();
+  fetchSubprojectsBySessions.mockReset();
+  fetchSubprojectsBySessions.mockResolvedValue({ items: {}, missing: [] });
+});
+
+describe("each matched session's subproject (plan 2026-11-08 subprojects)", () => {
+  it("asks for every card's subproject in ONE lookup and links a member", async () => {
+    resolveAgentSession.mockResolvedValue({
+      resolved: [card("s-2"), card("s-1")],
+      count: 2,
+    });
+    getSession.mockRejectedValue(NOT_FOUND_LIFECYCLE);
+    fetchSubprojectsBySessions.mockResolvedValue({
+      items: {
+        "s-2": { id: "sp-9", title: "dashboards", headline: "stalled" },
+      },
+      missing: ["s-1"],
+    });
+
+    render(<SessionKeyPage />);
+
+    const link = await screen.findByRole("link", { name: "dashboards" });
+    expect(link).toHaveAttribute("href", "/admin/coord/subprojects/sp-9");
+    expect(link).toHaveAttribute("title", "Subproject: dashboards — Stalled");
+    expect(fetchSubprojectsBySessions).toHaveBeenCalledTimes(1);
+    // One read for the set of cards (asked in a stable order).
+    expect(fetchSubprojectsBySessions).toHaveBeenCalledWith(["s-1", "s-2"]);
+    // No live membership is a dash that says so — never a guess.
+    const lines = screen.getAllByTestId("sessions-detail-subproject");
+    expect(lines[1]).toHaveTextContent("–");
+    expect(lines[1]?.querySelector("[data-chip]")).toHaveAttribute(
+      "data-chip",
+      "none"
+    );
+  });
+
+  it("is a dash naming the failure when the lookup fails, not 'none'", async () => {
+    resolveAgentSession.mockResolvedValue({
+      resolved: [card("s-1")],
+      count: 1,
+    });
+    getSession.mockRejectedValue(NOT_FOUND_LIFECYCLE);
+    fetchSubprojectsBySessions.mockRejectedValue(
+      new Error(
+        'GET /api/v1/operations/subprojects/by-sessions?ids=s-1 failed: 503 - {"error":"schema_migration_pending"}'
+      )
+    );
+
+    render(<SessionKeyPage />);
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByTestId("sessions-detail-subproject")
+          .querySelector("[data-chip]")
+      ).toHaveAttribute("data-chip", "failed")
+    );
+    expect(screen.getByTestId("sessions-detail-subproject")).toHaveTextContent(
+      /not migrated yet/
+    );
+  });
 });
 
 describe("D4 — count > 1 renders EVERY match", () => {
@@ -155,7 +227,10 @@ describe("both id spaces", () => {
   });
 
   it("asks BOTH halves — neither is a fallback for the other", async () => {
-    resolveAgentSession.mockResolvedValue({ resolved: [card("s-1")], count: 1 });
+    resolveAgentSession.mockResolvedValue({
+      resolved: [card("s-1")],
+      count: 1,
+    });
     getSession.mockResolvedValue({ id: "s-1", state: "active" });
 
     render(<SessionKeyPage />);
@@ -189,7 +264,9 @@ describe("D2 — a failed read is not an absence", () => {
     // the words "does not exist" — inside the sentence that REFUSES the
     // claim — so a keyword ban would fail the honest string.)
     expect(unknown.textContent).not.toMatch(/No session matches this key/i);
-    expect(unknown.textContent).toMatch(/not a finding that the session does not exist/i);
+    expect(unknown.textContent).toMatch(
+      /not a finding that the session does not exist/i
+    );
     expect(screen.queryByTestId("sessions-detail-not-found")).toBeNull();
   });
 });
@@ -210,7 +287,10 @@ describe("trap 8 — /sessions/repository is a route, not a key", () => {
 
 describe("the frozen testid", () => {
   it("carries sessions.detail-page forward verbatim", async () => {
-    resolveAgentSession.mockResolvedValue({ resolved: [card("s-1")], count: 1 });
+    resolveAgentSession.mockResolvedValue({
+      resolved: [card("s-1")],
+      count: 1,
+    });
     getSession.mockRejectedValue(NOT_FOUND_LIFECYCLE);
 
     const { container } = render(<SessionKeyPage />);
