@@ -77,7 +77,7 @@ _PATH_FORBIDDEN_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
 #: spellings, emoji ZWJ sequences) and the visible prepended number signs
 #: (U+0600–U+0605, U+06DD, U+070F, U+0890, U+0891, U+08E2, U+110BD, U+110CD).
 #: What the carve-out costs: a joiner or a soft hyphen draws nothing where it
-#: is not needed, so ``runbooks/ci‌.md`` and ``runbooks/ci­.md``
+#: is not needed, so ``runbooks/ci\u200c.md`` and ``runbooks/ci\u00ad.md``
 #: are different paths that DISPLAY as ``runbooks/ci.md``. The unassigned code
 #: points Unicode reserves as default-ignorable (U+2065, U+FFF0–U+FFF8,
 #: U+E0000–U+E0FFF) are refused as well, since they also draw nothing.
@@ -89,7 +89,11 @@ _PATH_FORBIDDEN_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
 #: path is part of a record's identity, so it is refused rather than edited
 #: (``files.py`` instead strips the other ``Cf`` characters from an upload's
 #: display name, and keeps these).
-SPELLING_FORMAT_CHARS = frozenset("­‌‍؀؁؂؃؄؅۝܏࢐࢑࣢\U000110bd\U000110cd")
+SPELLING_FORMAT_CHARS = frozenset(
+    "\u00ad\u200c\u200d"
+    "\u0600\u0601\u0602\u0603\u0604\u0605\u06dd\u070f\u0890\u0891\u08e2"
+    "\U000110bd\U000110cd"
+)
 
 
 def is_path_forbidden_char(c: str) -> bool:

@@ -1349,8 +1349,10 @@ async def read_report_view(
         )
         return {row.id: row for row in rows.scalars().all()}
 
+    # A stop whose row is gone by the time it is loaded (its report deleted
+    # between the two reads) is skipped, never a KeyError.
     loaded = await load([keys[i].id for i in page.page])
-    page_rows = [loaded[keys[i].id] for i in page.page]
+    page_rows = [loaded[keys[i].id] for i in page.page if keys[i].id in loaded]
     scope = await _scope_for(ctx, page_rows)
     served = await _treat(page_rows, scope)
     # The stop a page's first stop compares with lies before the page: the
@@ -1358,7 +1360,9 @@ async def read_report_view(
     # values and statuses are read, so the page's scope serves for it.
     previous: Stop | None = None
     for position in range(page.page.start - 1, -1, -1):
-        candidate = (await load([keys[position].id]))[keys[position].id]
+        candidate = (await load([keys[position].id])).get(keys[position].id)
+        if candidate is None:
+            continue
         (treated,) = await _treat([candidate], scope)
         if treated.data is not None:
             previous = Stop(treated.row.seq, treated.row.as_of, treated.data)

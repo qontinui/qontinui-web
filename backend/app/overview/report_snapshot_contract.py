@@ -801,16 +801,27 @@ def narrative_violations(
     return out
 
 
-def first_storage_difference(sent: Any, stored: Any, slot: str = "") -> str | None:
+def first_storage_difference(
+    sent: Any,
+    stored: Any,
+    slot: str = "",
+    columns: Sequence[Any] | None = None,
+) -> str | None:
     """The first slot whose value did not survive storage unchanged, compared
     leaf by leaf in canonical JSON (so ``1e16`` read back as an integer, or
-    ``-0.0`` as ``0.0``, is a difference although Python calls them equal)."""
+    ``-0.0`` as ``0.0``, is a difference although Python calls them equal).
+    A cell is named by its declared column's position, as every other slot
+    names it (``cells[columns[1]]``), never by the key a writer chose;
+    ``columns`` carries the enclosing table's column ids down to it."""
     if isinstance(sent, dict) and isinstance(stored, dict):
         if set(sent) != set(stored):
             return slot or "<root>"
         for key in sent:
-            child = f"{slot}.{key}" if slot else str(key)
-            found = first_storage_difference(sent[key], stored[key], child)
+            if key == "cells" and isinstance(sent[key], dict):
+                found = _cells_difference(sent[key], stored[key], slot, columns)
+            else:
+                child = f"{slot}.{key}" if slot else str(key)
+                found = first_storage_difference(sent[key], stored[key], child, columns)
             if found is not None:
                 return found
         return None
@@ -818,12 +829,37 @@ def first_storage_difference(sent: Any, stored: Any, slot: str = "") -> str | No
         if len(sent) != len(stored):
             return slot or "<root>"
         for index, (a, b) in enumerate(zip(sent, stored, strict=True)):
-            found = first_storage_difference(a, b, f"{slot}[{index}]")
+            item_columns = columns
+            if slot == "tables" and isinstance(a, dict):
+                item_columns = [
+                    c.get("id") for c in a.get("columns", []) if isinstance(c, dict)
+                ]
+            found = first_storage_difference(a, b, f"{slot}[{index}]", item_columns)
             if found is not None:
                 return found
         return None
     if json.dumps(sent, ensure_ascii=False) != json.dumps(stored, ensure_ascii=False):
         return slot or "<root>"
+    return None
+
+
+def _cells_difference(
+    sent: dict[str, Any], stored: Any, slot: str, columns: Sequence[Any] | None
+) -> str | None:
+    """:func:`first_storage_difference` over one row's ``cells``, each cell
+    named by its column's position (:func:`column_ref`)."""
+    cells = f"{slot}.cells" if slot else "cells"
+    if not isinstance(stored, dict) or set(sent) != set(stored):
+        return cells
+    for key in sent:
+        found = first_storage_difference(
+            sent[key],
+            stored[key],
+            f"{cells}[{column_ref(columns or [], key)}]",
+            columns,
+        )
+        if found is not None:
+            return found
     return None
 
 

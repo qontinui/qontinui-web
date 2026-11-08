@@ -51,7 +51,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 API = "/api/v1/overview"
@@ -985,6 +985,57 @@ class TestCardinality:
         assert leanness(stops[2]) == (3, 4, second["seq"])
 
 
+class _GoneAfterKeys:
+    """The test session, except that right after the view reads its stops'
+    keys the given snapshots are deleted — another request deleting their
+    report between the view's reads."""
+
+    def __init__(self, session: AsyncSession, gone: list[UUID]) -> None:
+        self._session = session
+        self._gone = gone
+        self.fired = False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._session, name)
+
+    async def execute(self, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        from app.models.overview import ReportSnapshot
+
+        result = await self._session.execute(statement, *args, **kwargs)
+        columns = [c.name for c in getattr(statement, "selected_columns", [])]
+        if self.fired or columns != ["id", "seq", "as_of"]:
+            return result
+        self.fired = True
+        keys = result.all()
+        await self._session.execute(
+            delete(ReportSnapshot).where(ReportSnapshot.id.in_(self._gone))
+        )
+        return types.SimpleNamespace(all=lambda: keys)
+
+
+class TestRowsGoneMidRead:
+    async def test_a_stop_gone_between_the_views_reads_is_skipped(
+        self, admin: httpx.AsyncClient, async_db_session: AsyncSession, api_user
+    ) -> None:
+        """The view reads its stops' keys, then loads the page and the stop
+        before it. A row gone in between is skipped, never a server error."""
+        report = await _report(admin)
+        stops = [await _snapshot(admin, report["id"], _stop(day)) for day in range(49)]
+        # Gone: the stop just before the page (the first stop's comparison)
+        # and one on the page.
+        gone = _GoneAfterKeys(
+            async_db_session, [UUID(stops[0]["id"]), UUID(stops[10]["id"])]
+        )
+        async with _client(_app(gone, api_user, TENANT_A, ("admin",))) as client:
+            view = await _view(client, report["id"])
+        assert gone.fired
+        assert [s["seq"] for s in view["snapshots"]] == [
+            s["seq"] for index, s in enumerate(stops) if index not in (0, 10)
+        ]
+        assert view["snapshots"][0]["changes_since_previous"] is None
+        assert (view["shown"], view["truncated"]) == (47, True)
+
+
 class TestConcurrentCreates:
     """Two snapshot creates racing on one report, each on its OWN connection
     and committing for real — what the rolled-back single-session fixtures
@@ -1241,6 +1292,24 @@ class TestAllowlist:
         ).json()
         assert listed["items"] == []
 
+    async def test_a_cell_the_database_would_respell_is_named_by_its_column(
+        self, admin: httpx.AsyncClient
+    ) -> None:
+        """The not_storable slot names a cell by its column's position, as
+        every other slot does — never by the key the writer chose."""
+        report = await _report(admin)
+
+        def respelled_cell(d: dict[str, Any]) -> None:
+            d["tables"][0]["scale"]["max"] = 10**17  # an integer: stored as sent
+            _cell(d).update(value=1e16)
+
+        response = await _post(admin, report["id"], _with(_doc(), respelled_cell))
+        assert {
+            "slot": "tables[0].rows[0].cells[columns[0]].value",
+            "kind": "not_storable",
+        } in _violations(response)
+        assert "leanness" not in response.text
+
     async def test_an_oversized_document_is_refused(
         self, admin: httpx.AsyncClient
     ) -> None:
@@ -1427,7 +1496,7 @@ PLANTS: list[tuple[str, str, str]] = [
     ("confidential_term", "Migration for NORTHWIND-mutual", "notes[0].title"),
     ("confidential_term", "Migration for Nörthwind  Mutual", "summary"),
     ("confidential_term", "northwind_mutual pilot", "figures[0].help"),
-    ("hidden_character", "Split​the scheduler", "items[0].label"),
+    ("hidden_character", "Split\u200bthe scheduler", "items[0].label"),
 ]
 
 
