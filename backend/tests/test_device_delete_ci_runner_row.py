@@ -199,12 +199,26 @@ async def test_a_missing_row_is_still_404(env) -> None:
     assert response.status_code == 404, response.text
 
 
+#: PostgreSQL's ``lock_not_available``: what a statement that ``lock_timeout``
+#: cancelled raises.
+_LOCK_NOT_AVAILABLE = "55P03"
+
+
+def _is_lock_timeout(exc: DBAPIError) -> bool:
+    """Whether ``exc`` is a ``lock_timeout`` cancellation, and not some other
+    failure that could pass for one. asyncpg's own exception carries the
+    SQLSTATE; it is the cause of the driver error that SQLAlchemy wraps."""
+    cause = getattr(exc.orig, "__cause__", None)
+    return getattr(cause, "sqlstate", None) == _LOCK_NOT_AVAILABLE
+
+
 async def test_a_mark_cannot_land_while_the_delete_decides(env) -> None:
     """The row is unmarked when the delete reads it. The registrar then tries to
     mark it before the DELETE runs. Under the row's lock that write has to wait,
-    and here it gives up after 300 ms, so the delete removes the row it decided
-    on. Without the lock the mark would commit, and the DELETE would remove a
-    marked row."""
+    and here it gives up after 300 ms with a lock timeout, so the delete removes
+    the row it decided on. Without the lock the mark would commit, and the
+    DELETE would remove a marked row. Only a lock timeout counts as blocked: any
+    other failure of the mark fails the test instead of passing it."""
     await _seed(env, marked=False)
     outcome: list[str] = []
 
@@ -224,14 +238,16 @@ async def test_a_mark_cannot_land_while_the_delete_decides(env) -> None:
                     )
                     await registrar.commit()
                 outcome.append("marked")
-            except DBAPIError:
-                outcome.append("blocked")
+            except DBAPIError as exc:
+                outcome.append(
+                    "blocked" if _is_lock_timeout(exc) else f"failed: {exc!r}"
+                )
             await real_delete(instance)
 
         session.delete = delete  # type: ignore[method-assign]
 
     response = await _delete(env, env.owner, mark_before_the_delete)
 
-    assert outcome == ["blocked"], "the registrar's mark landed mid-decision"
+    assert outcome == ["blocked"], f"the mark was not held off by the lock: {outcome}"
     assert response.status_code == 204, response.text
     assert await _row_image(env) is None
