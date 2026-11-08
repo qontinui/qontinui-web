@@ -419,7 +419,8 @@ function InjectionsTable({
   const reading = !loaded && !unknown;
   // Coord `ORDER BY created_at DESC LIMIT n` — a full page is the only
   // evidence on the wire that older events exist. See the module doc.
-  const capped = !unknown && !reading && rows.length === LIST_LIMIT;
+  // Only an ANSWERED read can be capped; `rows` is `EMPTY_ROWS` otherwise.
+  const capped = loaded && rows.length === LIST_LIMIT;
 
   return (
     <section
