@@ -11,7 +11,7 @@
  * document page would.
  */
 
-import { screen } from "@testing-library/react";
+import { configure, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import { IntentSection } from "@/app/(app)/overview/_components/IntentSection";
 import { PageBody } from "@/app/(app)/overview/_components/PageBody";
@@ -21,6 +21,13 @@ import {
 } from "@/app/(app)/overview/_lib/intent";
 import type { PageRecord } from "@/app/(app)/overview/_lib/pages";
 import type { ReportView } from "./reportView";
+
+// A block's component loads the first time a page shows it (`registry.ts`),
+// so a test file's first block waits for its module to be transformed and
+// evaluated — report-figures with recharts. On a loaded machine that can take
+// longer than Testing Library's default wait of one second, so the files that
+// render blocks wait up to ten seconds. A passing test waits no longer.
+configure({ asyncUtilTimeout: 10_000 });
 
 /** A document whose text is `body`. */
 export function pageWith(body: string): PageRecord {

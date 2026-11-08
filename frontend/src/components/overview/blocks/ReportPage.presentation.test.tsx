@@ -73,11 +73,22 @@ function renderReportPage() {
   );
 }
 
-async function settled() {
+async function settled(view: ReturnType<typeof renderReportPage>) {
   await screen.findAllByRole("tab");
   await waitFor(() =>
     expect(document.querySelectorAll("[data-overview-block]")).toHaveLength(5)
   );
+  // The blocks load on demand, so the stepper's UI Bridge registration can
+  // land a moment after its tabs do; check (b) must see it, not miss it.
+  await waitFor(() => {
+    expect("registry" in view.uiBridge).toBe(true);
+    if (!("registry" in view.uiBridge)) return;
+    expect(
+      view.uiBridge.registry
+        .getAllComponents()
+        .some((c) => c.id === `overview.report.${SLUG}.timeline`)
+    ).toBe(true);
+  });
 }
 
 beforeEach(() => {
@@ -89,7 +100,7 @@ beforeEach(() => {
 describe("a report page, to an outsider", () => {
   it("passes the presentation oracle: no live control, read-only registrations, no identity", async () => {
     const view = renderReportPage();
-    await settled();
+    await settled(view);
     expect(screen.getByRole("tab", { selected: true }).textContent).toMatch(
       /Checkpoint 1/
     );
@@ -100,7 +111,7 @@ describe("a report page, to an outsider", () => {
     // The positive control: the oracle is not blind to what the disclosure
     // holds — its being closed is what keeps the page safe to show.
     const view = renderReportPage();
-    await settled();
+    await settled(view);
     const r01 = document.querySelector(
       `[data-ui-bridge-id="overview.report.${SLUG}.items.all.item.r01"]`
     ) as HTMLElement;

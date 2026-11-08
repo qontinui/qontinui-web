@@ -279,10 +279,16 @@ describe("the stepper's UI Bridge registration", () => {
         actions?: { id: string; effect?: string }[];
       }[];
     };
-    const stepper = registry
-      .getAllComponents()
-      .find((c) => c.id === `overview.report.${SLUG}.timeline`);
-    expect(stepper?.actions?.map((a) => [a.id, a.effect])).toEqual([
+    // The block loads on demand, so its registration can land a moment
+    // after its tabs do: wait for the registration itself.
+    const stepper = await waitFor(() => {
+      const found = registry
+        .getAllComponents()
+        .find((c) => c.id === `overview.report.${SLUG}.timeline`);
+      expect(found).toBeDefined();
+      return found!;
+    });
+    expect(stepper.actions?.map((a) => [a.id, a.effect])).toEqual([
       ["select-stop", "read"],
       ["next-stop", "read"],
       ["previous-stop", "read"],
