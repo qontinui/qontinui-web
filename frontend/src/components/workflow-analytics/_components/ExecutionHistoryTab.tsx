@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { TestResult } from "@/services/workflow-testing-service";
+import { TestResult } from "@/services/workflow-testing";
 import {
   CHART_COLORS,
   formatDuration,
