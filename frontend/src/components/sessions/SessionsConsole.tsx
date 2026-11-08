@@ -110,8 +110,6 @@ import {
   hasAgentHalf,
   hasLifecycleHalf,
   isSessionFinished,
-  lastHeartbeatAt,
-  lifecycleState,
   rowTimestamp,
   type ConsolidatedSessionRow,
   type ConsolidatedSessionsResponse,
@@ -121,6 +119,16 @@ import {
   useSessionCoordination,
   type CoordinationReaders,
 } from "./SessionRowExpansion";
+import {
+  AccountValue,
+  Dash,
+  HeartbeatValue,
+  KindValue,
+  MachineValue,
+  accountState,
+  machineTitle,
+  type MachineLabel,
+} from "./SessionRowIdentity";
 import type { SessionRevalidationOptions } from "./liveRevalidation";
 import {
   ACCOUNT_FACET_UNKNOWN,
@@ -186,19 +194,6 @@ const STATUS_TABS: ReadonlyArray<{ id: StatusTab; label: string }> = [
  */
 export function parseStatusTab(raw: string | null | undefined): StatusTab | null {
   return STATUS_TABS.some((t) => t.id === raw) ? (raw as StatusTab) : null;
-}
-
-/** The dash D2 requires, with the sentence that says WHICH unknown it is. */
-function Dash({ title }: { title: string }) {
-  return (
-    <span
-      className="text-muted-foreground/70 tabular-nums"
-      title={title}
-      data-testid="sessions-console-unknown"
-    >
-      –
-    </span>
-  );
 }
 
 export interface SessionsConsoleProps {
@@ -613,7 +608,14 @@ export function SessionsConsole({
   ];
 
   return (
-    <div className="space-y-3" data-ui-bridge-id="sessions.console">
+    // `@container` (inline-size containment) is what stops the console from
+    // widening to its longest row. It sits inside the page's Radix ScrollArea,
+    // whose `display: table` wrapper grows to the widest MIN-CONTENT child —
+    // and a row's min-content holds its whole unwrapped purpose label. A
+    // container's intrinsic width ignores its content, so the console takes
+    // its column's width and every `truncate` / `flex-wrap` inside engages.
+    // It is also the root the row's `@min-[…]` column thresholds query.
+    <div className="@container space-y-3" data-ui-bridge-id="sessions.console">
       <HealthStrip
         level={health.level}
         headline={health.headline}
@@ -813,7 +815,7 @@ function SessionConsoleRow({
   expanded: boolean;
   onToggle: () => void;
   rowKey: string;
-  machineLabel: (deviceId: string | null | undefined) => string | null;
+  machineLabel: MachineLabel;
   now?: number;
   coordinationReaders?: CoordinationReaders;
   readOutput?: OutputReader;
@@ -826,12 +828,8 @@ function SessionConsoleRow({
   // the ones coord served no `session_status` for, which get no marker at all
   // rather than a fabricated "unfinished" one.
   const workStatus = deriveSessionWorkStatus(row);
-  const machine = machineLabel(row.device_id);
-  const kind = row.session_kind ?? null;
   const purpose = sessionPurpose(row);
   const lineage = hasAgentHalf(row);
-  const beat = lastHeartbeatAt(row);
-  const state = lifecycleState(row);
   const timestamp = rowTimestamp(row);
   const agentId = agentSessionId(row);
 
@@ -870,59 +868,57 @@ function SessionConsoleRow({
       onToggle={onToggle}
       data-testid="sessions-console-row"
       label={
+        // The optional columns answer to the CONSOLE's width, not the
+        // viewport's: beside the 256 px sidebar a 1280 px viewport leaves a
+        // 976 px (61rem) console, where `md:`–`xl:` switched all six on and
+        // the row outgrew its column. Budget, worst case from `lg` up: the
+        // row's fixed parts ≈ 719 px (chrome 26, gaps 60, identity ~76, two
+        // status badges ~170, reason ≤ 40ch ~305, time ~70, chevron 14) plus
+        // the purpose's 12rem floor, then each column adds its width and a
+        // 12 px gap — machine 66rem, account 78, kind 86, lineage 92,
+        // transcript 98, heartbeat 105. Heartbeat goes first (it repeats the
+        // time slot whenever a heartbeat exists) and machine last; none shows
+        // at 61rem, and the expansion names them all (`SessionRowIdentity`).
+        // The floor engages with the first column, so a row over budget clips
+        // its rightmost column — the next to drop — instead of the purpose,
+        // and below 66rem the purpose still truncates with an ellipsis.
         <span className="flex items-baseline gap-3 min-w-0">
-          <span className="truncate min-w-0 flex-1" title={purpose}>
+          <span
+            className="truncate min-w-0 @min-[66rem]:min-w-[12rem] flex-1"
+            title={purpose}
+            data-testid="sessions-console-row-purpose"
+          >
             {purpose}
           </span>
           {/* Machine is a COLUMN, not a grouping container (§4.1). */}
           <span
-            className="hidden md:inline shrink-0 w-32 truncate text-xs text-muted-foreground"
-            title={row.device_id ? String(row.device_id) : "no device recorded"}
+            className="hidden @min-[66rem]:inline shrink-0 w-32 truncate text-xs text-muted-foreground"
+            title={machineTitle(row)}
             data-testid="sessions-console-row-machine"
           >
-            {machine ?? <Dash title="coord recorded no device for this row" />}
+            <MachineValue row={row} machineLabel={machineLabel} />
           </span>
-          {/* The Claude account (plan 2026-10-19 Phase 3). Never blank: a
-              label, an UNKNOWN that names its reason, or — for a session with
-              no Claude session id at all — D2's not-applicable dash. The full
+          {/* The Claude account — never blank (`AccountValue`); the full
               sentence is always in the title. */}
           <span
-            className="hidden md:inline shrink-0 w-44 truncate text-xs"
+            className="hidden @min-[78rem]:inline shrink-0 w-44 truncate text-xs"
             title={account.title}
             data-testid="sessions-console-row-account"
-            data-account-state={
-              account.kind === "not-applicable" ? "not-applicable" : account.state
-            }
+            data-account-state={accountState(account)}
           >
-            {account.kind === "not-applicable" ? (
-              <Dash title={account.title} />
-            ) : account.state === "known" ? (
-              <span className="font-mono text-muted-foreground">
-                {account.label}
-              </span>
-            ) : (
-              <span className="text-amber-300/90">{account.label}</span>
-            )}
+            <AccountValue account={account} />
           </span>
           <span
-            className="hidden lg:inline shrink-0 w-28 truncate text-xs text-muted-foreground"
+            className="hidden @min-[86rem]:inline shrink-0 w-28 truncate text-xs text-muted-foreground"
             data-testid="sessions-console-row-kind"
           >
-            {kind ?? (
-              <Dash
-                title={
-                  hasLifecycleHalf(row) === false
-                    ? "no coord.sessions row, so no session kind — unknown, not absent"
-                    : "coord served no session kind for this row"
-                }
-              />
-            )}
+            <KindValue row={row} />
           </span>
           {/* D2's cells. Each dash carries the sentence that says which
               unknown it is — "not applicable", "unknown" and "we did not look"
               are three different claims. */}
           <span
-            className="hidden lg:inline shrink-0 w-24 truncate text-xs text-muted-foreground"
+            className="hidden @min-[92rem]:inline shrink-0 w-24 truncate text-xs text-muted-foreground"
             data-testid="sessions-console-row-lineage"
           >
             {lineage === true ? (
@@ -942,7 +938,7 @@ function SessionConsoleRow({
               garbage-collected 7 days after a session ends and the cold object
               is the durable copy, and a row nobody probed has not answered. */}
           <span
-            className="hidden lg:inline shrink-0 w-20 truncate text-xs text-muted-foreground"
+            className="hidden @min-[98rem]:inline shrink-0 w-20 truncate text-xs text-muted-foreground"
             data-testid="sessions-console-row-transcript"
           >
             {transcriptTier.unknown ? (
@@ -952,22 +948,10 @@ function SessionConsoleRow({
             )}
           </span>
           <span
-            className="hidden xl:inline shrink-0 w-24 truncate text-xs text-muted-foreground tabular-nums"
+            className="hidden @min-[105rem]:inline shrink-0 w-24 truncate text-xs text-muted-foreground tabular-nums"
             data-testid="sessions-console-row-heartbeat"
           >
-            {state === null ? (
-              <Dash
-                title={
-                  hasLifecycleHalf(row) === false
-                    ? "no coord.sessions row — heartbeat and state are unknown for this row, NOT closed"
-                    : "the join half for this row is unresolved — unknown, not closed"
-                }
-              />
-            ) : beat === null ? (
-              <Dash title="active, but coord has recorded no heartbeat yet" />
-            ) : (
-              relativeTime(beat, { absent: "–", now })
-            )}
+            <HeartbeatValue row={row} now={now} />
           </span>
         </span>
       }
@@ -1003,9 +987,13 @@ function SessionConsoleRow({
         />
       }
     >
-      {/* R5 / D3: the detail expands IN PLACE, sharing this row's border. */}
+      {/* R5 / D3: the detail expands IN PLACE, sharing this row's border.
+          It names every identity column a narrow console hides, so it gets
+          the same account cell and machine label the columns render. */}
       <SessionRowExpansion
         row={row}
+        account={account}
+        machineLabel={machineLabel}
         coordination={coordination}
         stores={stores}
         now={now}

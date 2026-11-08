@@ -353,6 +353,47 @@ describe("FilterChips (R6, multi-select)", () => {
       "all (list partial)"
     );
   });
+
+  // `repeated-chrome-must-earn-its-space-by-varying`: a strip whose only chip
+  // is `all` can never narrow anything — `/sessions` rendered "provider: all"
+  // on every visit, for a vocabulary no row carried.
+  it("renders NOTHING when there is no option and no selection", () => {
+    const { container } = render(
+      <FilterChips
+        label="provider"
+        options={[]}
+        selected={[]}
+        onToggle={() => {}}
+        onClear={() => {}}
+        testIdPrefix="e"
+      />
+    );
+    expect(screen.queryByTestId("e")).toBeNull();
+    expect(screen.queryByTestId("e-all")).toBeNull();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("keeps a strip with no option while it carries a selection, so the selection can be cleared", () => {
+    // The vocabulary emptied under a live selection (the rows that carried the
+    // value went away). Hiding the strip here would leave the list filtered
+    // with no visible way to clear it — the `all` chip is that way.
+    const clear = vi.fn();
+    render(
+      <FilterChips
+        label="provider"
+        options={[]}
+        selected={["claude"]}
+        onToggle={() => {}}
+        onClear={clear}
+        testIdPrefix="e"
+      />
+    );
+    expect(screen.getByTestId("e")).toHaveAttribute("data-selected", "claude");
+    const all = screen.getByTestId("e-all");
+    expect(all).toHaveAttribute("aria-disabled", "false");
+    fireEvent.click(all);
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ----------------------------------------------------------------------------
