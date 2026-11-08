@@ -1344,6 +1344,18 @@ async def test_the_storage_walk_survives_nesting_past_the_recursion_limit() -> N
     assert endpoints._storage_problem({"ok": [[["fine"]]]}) is None  # noqa: SLF001
 
 
+async def test_a_deeply_nested_runner_error_body_is_a_runner_error_not_a_500() -> None:
+    """A non-2xx runner answer whose JSON nests past the recursion limit still
+    maps to the typed 502 ``runner_error``, never an escaping RecursionError."""
+    deep = b"[" * 100_000 + b"]" * 100_000
+    reply = runner_relay.Reply(500, {}, deep)
+
+    refusal = endpoints._reply_refusal(reply, uuid4())  # noqa: SLF001
+
+    assert refusal.status_code == 502
+    assert endpoints._runner_error_body(deep) == {}  # noqa: SLF001
+
+
 async def test_the_scheduled_job_runs_the_purge(monkeypatch) -> None:
     """The registered coroutine delegates to the purge entry point."""
     from app.core import scheduler as scheduler_mod
