@@ -1376,6 +1376,114 @@ describe("/admin/coord/home", () => {
     );
   });
 
+  // A `detection_bound:<plane>` row measures how long a fault on a plane can
+  // go unseen. It has no rows, so the row-count clauses are not owed, and a
+  // plane slower than the target is shown without opening "Sources read".
+  it("shows a slow plane outside the read disclosure and words its detail as a detection lag", async () => {
+    const base = doorBody();
+    await renderWith(
+      doorBody({
+        does_not_know: [
+          ...(base.does_not_know as unknown[]),
+          {
+            source: "detection_bound:merge_train",
+            state: "read",
+            as_of: "2026-09-30T12:00:00Z",
+            freshness_bound_secs: 3600,
+            exclusion_reason:
+              "a fault on this plane can be up to 3600s old before coord first observes it, above the 600s fault-to-visibility target",
+          },
+          {
+            source: "detection_bound:cloud_service",
+            state: "unknown",
+            exclusion_reason:
+              "no detection bound could be derived for this plane",
+          },
+        ],
+      })
+    );
+    const dnk = screen.getByTestId("coord-home.does-not-know");
+    // The slow plane is read: only the underivable one counts as not read.
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.count")
+    ).toHaveTextContent("2 of 5 sources not read");
+    // Listed in the open, under its own heading, with "Sources read" closed.
+    const slow = within(dnk).getByTestId("coord-home.does-not-know.slow");
+    expect(slow).toHaveTextContent(
+      "Slower than the fault-to-visibility target"
+    );
+    expect(dnk).not.toHaveTextContent("Work unit status changes");
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.read-count")
+    ).toHaveTextContent("read 2");
+    const slowRow = within(slow).getByTestId("coord-home.does-not-know.row");
+    expect(slowRow).toHaveTextContent(
+      "a fault can be up to 1h old before coord sees it"
+    );
+    expect(
+      within(dnk).queryByTestId("coord-home.does-not-know.slow.unstated")
+    ).toBeNull();
+    // Expanded: the bound is a fault-to-visibility bound, no row counts.
+    fireEvent.click(
+      within(slow).getByText(
+        "Time for a fault on merge train to reach this view"
+      )
+    );
+    expect(slowRow).toHaveTextContent("Fault-to-visibility bound: 1h");
+    expect(slowRow).not.toHaveTextContent(/Freshness bound/);
+    expect(slowRow).not.toHaveTextContent(/Rows considered|Rows excluded/);
+    expect(slowRow).toHaveTextContent("Why this lag:");
+    expect(slowRow).not.toHaveTextContent(/Why excluded/);
+
+    // The underivable plane is listed as not read, and is not counted as a
+    // source missing an age bound or an exclusion count.
+    const unknownRow = within(dnk)
+      .getByText("Time for a fault on cloud service to reach this view")
+      .closest('[data-testid="coord-home.does-not-know.row"]') as HTMLElement;
+    expect(unknownRow).toHaveTextContent("no detection bound known");
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.not-read.unstated")
+    ).toHaveTextContent(
+      "Coord stated no age bound for it, and no count of excluded rows for it."
+    );
+    fireEvent.click(
+      within(dnk).getByText(
+        "Time for a fault on cloud service to reach this view"
+      )
+    );
+    expect(unknownRow).toHaveTextContent(
+      "Fault-to-visibility bound: none could be derived"
+    );
+    expect(unknownRow).not.toHaveTextContent(/Rows considered|not stated/);
+    expect(unknownRow).toHaveTextContent("Why this lag:");
+  });
+
+  // With every source read, the headline must not say all is well while a
+  // slow plane is listed right under it.
+  it("names the slow planes in the all-read headline", async () => {
+    await renderWith(
+      doorBody({
+        does_not_know: [
+          { source: "work_units", state: "read" },
+          {
+            source: "detection_bound:merge_train",
+            state: "read",
+            freshness_bound_secs: 3600,
+          },
+        ],
+      })
+    );
+    const dnk = screen.getByTestId("coord-home.does-not-know");
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.all-read")
+    ).toHaveTextContent(
+      "Coord read every source it lists; 1 area reaches this view slower than the fault-to-visibility target."
+    );
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.slow")
+    ).toBeInTheDocument();
+  });
+
   // `useVisiblePoll`'s single-flight guard covers the poll only; a press
   // never passes through it. The hook's own guard makes a press during a read
   // JOIN that read: one request, and the button busy until it lands.

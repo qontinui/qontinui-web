@@ -162,6 +162,7 @@ import {
   unitClassLabel,
   unservedDecisionsSentence,
   internalHref,
+  isDetectionBoundSource,
   isWatcherSource,
   windowLabel,
   type BlockState,
@@ -2162,6 +2163,9 @@ function SourceRow({
 }) {
   const { presenting } = usePresentationMode();
   const words = sourceTimeWords(s);
+  // A detection-bound row measures how long a fault on a plane can go unseen:
+  // its bound is that lag, and it has no rows to consider or exclude.
+  const detection = isDetectionBoundSource(s.source);
   return (
     <RecordRow
       identity={s.state === "read" ? "read" : "not read"}
@@ -2218,21 +2222,36 @@ function SourceRow({
                   }`
                 : ""}
             </p>
-            <p className="m-0 text-muted-foreground">
-              Freshness bound:{" "}
-              {s.freshnessBoundSecs === null
-                ? "not stated"
-                : boundText(s.freshnessBoundSecs)}
-              {" · "}Rows considered: {s.rowsConsidered ?? "not stated"}
-              {" · "}Rows excluded: {s.rowsExcluded ?? "not stated"}
-            </p>
+            {detection ? (
+              <p
+                className="m-0 text-muted-foreground"
+                data-testid="coord-home.does-not-know.detection-bound"
+              >
+                Fault-to-visibility bound:{" "}
+                {s.freshnessBoundSecs === null
+                  ? "none could be derived"
+                  : boundText(s.freshnessBoundSecs)}
+              </p>
+            ) : (
+              <p className="m-0 text-muted-foreground">
+                Freshness bound:{" "}
+                {s.freshnessBoundSecs === null
+                  ? "not stated"
+                  : boundText(s.freshnessBoundSecs)}
+                {" · "}Rows considered: {s.rowsConsidered ?? "not stated"}
+                {" · "}Rows excluded: {s.rowsExcluded ?? "not stated"}
+              </p>
+            )}
             {s.exclusionReason && (
               <p className="m-0 text-muted-foreground">
-                Why excluded:{" "}
+                {detection ? "Why this lag:" : "Why excluded:"}{" "}
                 <RedactedText
                   text={withoutVerdictWords(s.exclusionReason)}
                   repo={null}
-                  descriptor={reasonDescriptor("excluded", s.asOf)}
+                  descriptor={reasonDescriptor(
+                    detection ? "detection lag" : "excluded",
+                    s.asOf
+                  )}
                 />
               </p>
             )}
@@ -2297,9 +2316,11 @@ function SourceList({
 
 /**
  * What this view does not know. The sources coord could not fully read are
- * the section's answer, so they are listed; the sources it read answer no
- * question the section asks, so they sit behind one disclosure with their
- * count. Neither list repeats a clause coord did not state on every row: it
+ * the section's answer, so they are listed; so are the planes it read whose
+ * faults reach this view slower than the fault-to-visibility target
+ * (`detection_bound:<plane>`), under their own heading and outside the "not
+ * read" count. The other sources it read answer no question the section
+ * asks, so they sit behind one disclosure with their count. Neither list repeats a clause coord did not state on every row: it
  * says it once, counted (`unstatedSummary`).
  */
 export function DoesNotKnowSection({
@@ -2318,6 +2339,11 @@ export function DoesNotKnowSection({
   const { presenting } = usePresentationMode();
   const notRead = sources?.filter((s) => s.state !== "read") ?? [];
   const read = sources?.filter((s) => s.state === "read") ?? [];
+  // A plane coord read but whose faults reach this view slower than its
+  // target answers the section's question, so it is listed in the open; the
+  // other sources read sit behind the disclosure.
+  const slow = read.filter((s) => isDetectionBoundSource(s.source));
+  const readPlain = read.filter((s) => !isDetectionBoundSource(s.source));
   // While presenting, a source coord has not built yet is not listed: one
   // line counts them, so the header's figure still adds up.
   const unbuilt = presenting
@@ -2366,8 +2392,13 @@ export function DoesNotKnowSection({
               data-testid="coord-home.does-not-know.all-read"
             >
               {stale
-                ? `Coord had read every source it lists ${lastGoodReadPhrase(generatedAt)}.`
-                : "Coord read every source it lists."}
+                ? `Coord had read every source it lists ${lastGoodReadPhrase(generatedAt)}`
+                : "Coord read every source it lists"}
+              {slow.length === 0
+                ? "."
+                : slow.length === 1
+                  ? "; 1 area reaches this view slower than the fault-to-visibility target."
+                  : `; ${slow.length} areas reach this view slower than the fault-to-visibility target.`}
             </p>
           ) : (
             unread.length > 0 && (
@@ -2389,7 +2420,24 @@ export function DoesNotKnowSection({
                 : `${unbuilt.length} further sources are not built yet, so this view does not show them.`}
             </p>
           )}
-          {read.length > 0 && (
+          {slow.length > 0 && (
+            <div
+              className="space-y-1"
+              data-testid="coord-home.does-not-know.slow"
+              data-ui-bridge-id="coord-home.does-not-know.slow"
+            >
+              <h3 className={HEADING}>
+                Slower than the fault-to-visibility target
+              </h3>
+              <SourceList
+                sources={slow}
+                list="source-slow"
+                planes={planes}
+                testId="coord-home.does-not-know.slow"
+              />
+            </div>
+          )}
+          {readPlain.length > 0 && (
             <CollapsiblePanel
               title="Sources read"
               titleAs="h3"
@@ -2400,7 +2448,7 @@ export function DoesNotKnowSection({
                     {
                       key: "read",
                       label: "read ",
-                      value: read.length,
+                      value: readPlain.length,
                       tone: "muted",
                     },
                   ]}
@@ -2411,7 +2459,7 @@ export function DoesNotKnowSection({
               data-ui-bridge-id="coord-home.does-not-know.read"
             >
               <SourceList
-                sources={read}
+                sources={readPlain}
                 list="source-read"
                 planes={planes}
                 testId="coord-home.does-not-know.read"

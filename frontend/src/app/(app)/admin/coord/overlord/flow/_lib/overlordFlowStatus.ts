@@ -262,8 +262,16 @@ export interface ClosedSessions {
 
 /** One overlord version's numbers, narrowed. */
 export interface VersionGroup {
-  /** The `triage-sessions.py` blob sha; `null` = coord says none was recorded. */
+  /**
+   * coord's digest over the group's recorded versions; `null` = coord says the
+   * version is unknown (none recorded, or an entry its runner had read missed).
+   */
   version: string | null;
+  /**
+   * The versions the digest is over, file or `runner_git_sha` → sha. `null` on
+   * the unknown group; `undefined` = not served, or could not be read.
+   */
+  versions: Record<string, string> | null | undefined;
   passes: number | undefined;
   censusPasses: number | undefined;
   closed: number | undefined;
@@ -528,6 +536,7 @@ function groupsOf(raw: unknown): VersionGroup[] | null {
     const unchanged = unchangedOf(g.unchanged);
     groups.push({
       version,
+      versions: versionsOf(g.overlord_versions),
       passes: count(g.passes_considered),
       censusPasses: count(g.census_passes_considered),
       closed: count(ttc.count),
@@ -542,6 +551,56 @@ function groupsOf(raw: unknown): VersionGroup[] | null {
     });
   }
   return groups;
+}
+
+/**
+ * A group's `overlord_versions` map. `null` is coord's own (the unknown group);
+ * `undefined` = absent, or any entry is not a non-empty string, since a dropped
+ * entry would hide the very difference the map is there to show.
+ */
+function versionsOf(raw: unknown): Record<string, string> | null | undefined {
+  if (raw === null) return null;
+  if (!isObj(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v !== "string" || v === "") return undefined;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * What differs between a version group and the nearest OLDER group with a
+ * readable map: the entries whose sha changed, plus any entry only one side
+ * recorded (an entry one map lacks was not read there, so it MAY differ).
+ * `null` = nothing to compare against: the first known group, an unknown
+ * group, or a map not served.
+ */
+export function versionChanges(
+  groups: VersionGroup[],
+  index: number
+): string[] | null {
+  const cur = groups[index]?.versions;
+  if (!cur) return null;
+  for (let i = index - 1; i >= 0; i--) {
+    const prev = groups[i]?.versions;
+    if (!prev) continue;
+    const keys = new Set([...Object.keys(prev), ...Object.keys(cur)]);
+    return [...keys].filter((k) => prev[k] !== cur[k]).sort();
+  }
+  return null;
+}
+
+/** A version map as `name sha10` entries, for a tooltip. */
+export function versionMapWords(
+  versions: Record<string, string> | null | undefined
+): string | null {
+  if (!versions) return null;
+  const entries = Object.entries(versions).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0
+  );
+  if (entries.length === 0) return null;
+  return entries.map(([k, v]) => `${k} ${v.slice(0, 10)}`).join(" · ");
 }
 
 /** `full` / `filtered` as sent; anything else is unknown, never a default. */
@@ -1188,6 +1247,15 @@ export function closedByWords(closedBy: string): string {
 export function versionWords(version: string | null | undefined): string {
   if (version === undefined) return "unknown";
   return version === null ? "none recorded" : version.slice(0, 10);
+}
+
+/**
+ * A version group's digest, short enough for a table cell. Its `null` is not
+ * "none recorded": coord puts a pass there that missed reading an entry its
+ * runner had read before, too, so the version is unknown.
+ */
+export function groupVersionWords(version: string | null): string {
+  return version === null ? "not read" : version.slice(0, 10);
 }
 
 /**

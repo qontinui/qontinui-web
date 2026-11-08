@@ -37,7 +37,10 @@ SOURCE_FRAME_TYPES: frozenset[str] = frozenset(
         # END a remote session (plan
         # `2026-09-30-close-remote-sessions-from-the-local-runner`, Phase 2).
         # Forwarded as `terminal_end` under an ATTACH grant — the open tab's,
-        # or a fresh one presented for this frame alone. See `_handle_end`.
+        # or a fresh one presented for this frame alone — or under the CREATE
+        # grant whose create left a terminal the source failed to attach to
+        # (plan `2026-09-23-remote-create-residuals-after-coord-registration-confirm`,
+        # Phase 2). See `_handle_end`.
         "remote_terminal_end",
     }
 )
@@ -61,7 +64,8 @@ ATTACH_GRANT_SUB_TYPE = "attach_grant"
 # target device and NO session, because the session it is about does not exist
 # yet. The two are never interchangeable — ``_handle_create`` refuses an attach
 # grant and ``_authorize`` refuses a create grant, so neither can be spent on
-# the other's frames.
+# the other's frames. A create grant's one other door is the create-grant path of
+# ``_handle_end``, which closes the terminal that very grant created.
 CREATE_GRANT_SUB_TYPE = "create_grant"
 
 # Which capability an attachment on this socket holds.
@@ -173,6 +177,11 @@ TARGET_ERROR_CODES = frozenset(
         "remote_create_working_dir_not_allowed",
         "remote_create_intent_repo_not_allowed",
         "remote_create_source_user_not_allowed",
+        # The target's refusals of a close under a create grant: the terminal
+        # that jti created has an attach grant bound to it, or the frame names
+        # a terminal that jti did not create.
+        "remote_create_close_attached",
+        "remote_create_close_terminal_mismatch",
         # backend_relay's pre-dispatch refusal
         "remote_type_not_admitted",
         # The remote-block checks (attach, detach, flow — and end once
