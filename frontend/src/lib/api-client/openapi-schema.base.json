@@ -89239,7 +89239,7 @@
     },
     "/api/v1/integration-testing/execute": {
       "post": {
-        "description": "Execute a mock workflow using historical data (placeholder endpoint).\n\n**Authentication:** JWT token required\n\nThis endpoint returns mock execution data for UI visualization.\nActual config testing execution happens in qontinui-runner using\nthe HistoricalDataClient to fetch historical results.\n\nNote: This is a placeholder that returns simulated data.",
+        "description": "Execute a mock workflow using historical data (placeholder endpoint).\n\n**Authentication:** JWT token required\n\nThis endpoint returns mock execution data for UI visualization.\n\nNote: This is a placeholder that returns simulated data.",
         "operationId": "api_v1_integration_testing_execute_post",
         "requestBody": {
           "content": {

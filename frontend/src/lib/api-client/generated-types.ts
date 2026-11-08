@@ -8069,8 +8069,6 @@ export interface paths {
          *     **Authentication:** JWT token required
          *
          *     This endpoint returns mock execution data for UI visualization.
-         *     Actual config testing execution happens in qontinui-runner using
-         *     the HistoricalDataClient to fetch historical results.
          *
          *     Note: This is a placeholder that returns simulated data.
          */

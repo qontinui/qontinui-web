@@ -36,7 +36,7 @@ from datetime import datetime
 from uuid import UUID
 
 # numpy is relied on via its TRANSITIVE pin in poetry.lock (2.4.5, required by
-# both `pandas` and `opencv-python-headless`, which are direct deps) rather than
+# `pandas`, a direct dep) rather than
 # a direct `[tool.poetry.dependencies]` entry: adding one makes `poetry check
 # --lock` and `poetry install` fail with "pyproject.toml changed significantly
 # since poetry.lock was last generated", which would red every backend CI job.
