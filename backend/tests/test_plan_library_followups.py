@@ -42,10 +42,15 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import work_artifact as crud
-from app.models.work_artifact import WorkArtifact
+from app.models.work_artifact import (
+    SPAWNED_FOLLOWUP_RELATION,
+    WORK_ARTIFACT_RELATIONS,
+    WorkArtifact,
+)
 
 API_PREFIX = "/api/v1/plan-library"
 
@@ -1775,3 +1780,234 @@ class TestClosureMetadataMirrorsTheMigration:
         assert "(created_at, id)" in definition
         assert "resolution IS NULL" in definition
         assert "to_id IS NULL" in definition
+
+
+# ===========================================================================
+# A follow-up is identified by the edge itself and by its note — never by the
+# pair of artifacts it connects.
+#
+# Plan 2026-11-08-a-plan-can-own-many-followups-from-one-source-plan. Measured
+# on production 2026-11-08: one source plan surfaced nine follow-ups and one new
+# plan owned all nine; the first claim answered 200 and the other eight 409 —
+# with a message saying the edge was "already claimed by <the new owner>" while
+# it was still open. ``uq_work_artifact_edges_from_to_relation`` was written for
+# two-ended relations and refused the second row of any ``(source, owner,
+# 'spawned_followup')`` pair; ``claim_followup`` then named the REQUESTED owner
+# as the claimant.
+#
+# ``conftest`` builds this database from ``Base.metadata``, so these tests
+# exercise the MODEL's indexes. That the migration declares the same ones is
+# ``test_plan_library_12_followup_identity_migration``'s job.
+# ===========================================================================
+
+#: Every relation whose ``(from_id, to_id, relation)`` triple stays unique in the
+#: database: the whole vocabulary but ``spawned_followup``. Read from the model
+#: constant so the list cannot lag it again (``ALL_TWO_ENDED_RELATIONS`` above
+#: still names six of the twelve).
+PAIR_UNIQUE_RELATIONS: tuple[str, ...] = tuple(
+    relation
+    for relation in WORK_ARTIFACT_RELATIONS
+    if relation != SPAWNED_FOLLOWUP_RELATION
+)
+
+
+def _constraint_of(exc: IntegrityError) -> str | None:
+    """The constraint or unique index an ``IntegrityError`` names, as the
+    driver reports it (asyncpg carries it on the exception SQLAlchemy wraps)."""
+    orig = exc.orig
+    cause = getattr(orig, "__cause__", None)
+    return getattr(cause, "constraint_name", None) or getattr(
+        orig, "constraint_name", None
+    )
+
+
+async def _claim(client: httpx.AsyncClient, edge_id: str, owner: str) -> httpx.Response:
+    return await client.patch(f"{API_PREFIX}/edges/{edge_id}", json={"to_id": owner})
+
+
+async def _post_owned(
+    client: httpx.AsyncClient, source: str, owner: str, note: str
+) -> httpx.Response:
+    """A follow-up written already owned: the two-ended form of the relation."""
+    return await client.post(
+        f"{API_PREFIX}/{source}/edges",
+        json={"relation": "spawned_followup", "to_id": owner, "note": note},
+    )
+
+
+async def _ghost_open_twin(db: AsyncSession, *, source: str, note: str) -> str:
+    """An OPEN copy of ``note`` beside the row that already owns it.
+
+    The shape ``create_edge`` used to leave behind: its one-ended lookup read
+    only OPEN rows, so re-posting a claimed note inserted a fresh open row next
+    to the owned one. The door no longer writes it, so the ghost is inserted
+    raw — it is the only way to put the shape in front of the claim route.
+    """
+    ghost_id = str(uuid4())
+    await db.execute(
+        text(
+            "INSERT INTO agent.work_artifact_edges "
+            "(id, from_id, to_id, relation, note) "
+            "VALUES (:id, :source, NULL, 'spawned_followup', :note)"
+        ),
+        {"id": ghost_id, "source": source, "note": note},
+    )
+    return ghost_id
+
+
+class TestAFollowupIsIdentifiedByItsNote:
+    async def test_one_owner_can_claim_every_followup_a_source_surfaced(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """T1 — three follow-ups off one source, all claimed for one owner."""
+        source = await _make_artifact(client, stem="many-source")
+        owner = await _make_artifact(client, stem="many-owner")
+        edge_ids = [
+            (await _spawn(client, source, f"finding number {n}")).json()["id"]
+            for n in range(3)
+        ]
+        open_before = (await _followups(client))["total"]
+        assert open_before == 3
+
+        for edge_id in edge_ids:
+            claimed = await _claim(client, edge_id, owner)
+            assert claimed.status_code == 200, (
+                f"claiming {edge_id} for {owner} answered "
+                f"{claimed.status_code}: {claimed.text}"
+            )
+            assert claimed.json()["to_id"] == owner
+
+        owner_edges = (await client.get(f"{API_PREFIX}/{owner}")).json()["edges"]
+        incoming = {
+            e["id"]
+            for e in owner_edges
+            if e["relation"] == "spawned_followup" and e["direction"] == "incoming"
+        }
+        assert incoming == set(edge_ids)
+
+        source_edges = (await client.get(f"{API_PREFIX}/{source}")).json()["edges"]
+        outgoing = {
+            e["id"]: e["to_id"]
+            for e in source_edges
+            if e["relation"] == "spawned_followup" and e["direction"] == "outgoing"
+        }
+        assert outgoing == dict.fromkeys(edge_ids, owner)
+
+        assert (await _followups(client))["total"] == open_before - 3
+
+    async def test_claiming_an_open_twin_of_an_owned_note_names_the_twin(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """T3 — the misreport itself, reproduced.
+
+        The owner already owns this note off this source; an OPEN copy of it
+        exists. Claiming the copy for the same owner is refused, and the 409
+        must say WHY: that the owner holds a duplicate, naming it — not that
+        the copy "is already claimed by" an owner it does not have.
+        """
+        source = await _make_artifact(client, stem="twin-source")
+        owner = await _make_artifact(client, stem="twin-owner")
+        note = "a finding that its owner already holds"
+        owned = await _post_owned(client, source, owner, note)
+        assert owned.status_code == 201, owned.text
+        ghost = await _ghost_open_twin(async_db_session, source=source, note=note)
+
+        conflict = await _claim(client, ghost, owner)
+        assert conflict.status_code == 409, conflict.text
+        detail = conflict.json()["detail"]
+        assert not (
+            detail["error"] == "followup_already_claimed" and detail["to_id"] == owner
+        ), (
+            "the 409 names the REQUESTED owner as the claimant of an edge "
+            f"nobody owns: {detail}"
+        )
+        assert detail["error"] == "followup_duplicate_owned", detail
+        assert detail["edge_id"] == ghost
+        assert detail["existing_edge_id"] == owned.json()["id"]
+        assert detail["to_id"] == owner
+        assert "dismiss" in detail["message"]
+
+        # Nothing was written: the copy is still the only open follow-up.
+        queue = await _followups(client)
+        assert [item["edge_id"] for item in queue["items"]] == [ghost]
+
+    async def test_two_owned_followups_for_one_owner_are_two_rows(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """T5 — the write path applied the same pair identity and lost data."""
+        source = await _make_artifact(client, stem="owned-source")
+        owner = await _make_artifact(client, stem="owned-owner")
+
+        first = await _post_owned(client, source, owner, "first owned finding")
+        second = await _post_owned(client, source, owner, "second owned finding")
+        assert first.status_code == 201, first.text
+        assert second.status_code == 201, (
+            "a DIFFERENT finding for the same owner answered "
+            f"{second.status_code} with {second.json()['note']!r}: {second.text}"
+        )
+        assert second.json()["id"] != first.json()["id"]
+        assert second.json()["note"] == "second owned finding"
+        assert second.json()["to_id"] == owner
+
+        again = await _post_owned(client, source, owner, "second owned finding")
+        assert again.status_code == 200, again.text
+        assert again.json()["id"] == second.json()["id"]
+        assert again.json()["followup"]["state"] == "claimed"
+
+    async def test_reposting_a_claimed_note_returns_the_claimed_row(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """T6 — a claimed note is still that follow-up's identity."""
+        source = await _make_artifact(client, stem="claimed-source")
+        owner = await _make_artifact(client, stem="claimed-owner")
+        note = "a finding that gets an owner"
+        edge_id = (await _spawn(client, source, note)).json()["id"]
+        assert (await _claim(client, edge_id, owner)).status_code == 200
+        open_before = (await _followups(client))["total"]
+        assert open_before == 0
+
+        again = await _spawn(client, source, note)
+        assert again.status_code == 200, (
+            f"re-posting a claimed note answered {again.status_code}: {again.text}"
+        )
+        assert again.json()["id"] == edge_id
+        assert again.json()["to_id"] == owner
+        assert again.json()["followup"]["state"] == "claimed"
+        assert (await _followups(client))["total"] == open_before
+
+    @pytest.mark.parametrize("relation", PAIR_UNIQUE_RELATIONS)
+    async def test_a_duplicate_triple_is_idempotent_and_refused_by_the_database(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        relation: str,
+    ) -> None:
+        """T7 — the pins. Every relation but ``spawned_followup`` keeps the
+        database-level uniqueness the pair index gave it, one at a time so a
+        failure names the relation."""
+        source = await _make_artifact(client, stem=f"pin-{relation}")
+        peer = await _make_artifact(client, stem=f"pin-{relation}-peer")
+        body = {"relation": relation, "to_id": peer}
+
+        first = await client.post(f"{API_PREFIX}/{source}/edges", json=body)
+        assert first.status_code == 201, first.text
+        again = await client.post(f"{API_PREFIX}/{source}/edges", json=body)
+        assert again.status_code == 200, again.text
+        assert again.json()["id"] == first.json()["id"]
+
+        # A writer that bypasses the door meets the database.
+        with pytest.raises(IntegrityError) as refused:
+            async with async_db_session.begin_nested():
+                await async_db_session.execute(
+                    text(
+                        "INSERT INTO agent.work_artifact_edges "
+                        "(from_id, to_id, relation) "
+                        "VALUES (:source, :peer, :relation)"
+                    ),
+                    {"source": source, "peer": peer, "relation": relation},
+                )
+        constraint = _constraint_of(refused.value) or ""
+        assert constraint.startswith("uq_work_artifact_edges_from_to_relation"), (
+            constraint,
+            str(refused.value),
+        )
