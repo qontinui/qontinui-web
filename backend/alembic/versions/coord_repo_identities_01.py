@@ -90,6 +90,26 @@ backfill.
 ``canonical_repos`` is small (one row per registered repo), so the column add,
 the CHECK (validated in place) and the index build hold their locks briefly.
 
+## moved_at -- refusing a replayed move
+
+``coord.repo_identities.moved_at`` (nullable) is GitHub's time
+(``repository.updated_at``) of the last rename or transfer coord applied for
+the id. coord refuses a ``repository`` webhook older than it: after
+``A -> B -> A`` the id is recorded under ``A`` again, so a replayed ``A -> B``
+names the recorded name as its old one and only the time tells it is stale.
+
+## retired_bare_dirs -- a deleted renamed repo keeps its directory claimed
+
+When a ``canonical_repos`` row with a ``bare_dir`` is deleted (un-enrollment),
+its bare is not removed from the replicas' disks. Without a record, nothing
+would claim that directory any more and a repository later registered under
+the renamed repo's OLD name would adopt the leftover bare. coord inserts the
+row's ``bare_dir`` here in the deleting transaction, and registration treats a
+retired directory as taken (a new row then gets ``<owner>/<name>.<tag>``).
+Same safe-path CHECK as ``bare_dir``. No ``tenant_id``: it names directories,
+not tenants' data, and it keeps the default tenant-role grants because the
+un-enrollment that writes it can run on a tenant-scoped connection.
+
 ## Head choice
 
 ``down_revision`` is the repo's single alembic head at authoring time
@@ -137,6 +157,7 @@ def upgrade() -> None:
             github_repo_id  BIGINT PRIMARY KEY,
             repo            TEXT NOT NULL,
             observed_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            moved_at        TIMESTAMPTZ,
             CONSTRAINT ck_repo_identities_github_repo_id_positive
                 CHECK (github_repo_id > 0),
             CONSTRAINT ck_repo_identities_repo_nonblank
@@ -183,6 +204,18 @@ def upgrade() -> None:
         """
     )
 
+    # moved_at (module docs, "moved_at"); ADD IF NOT EXISTS so a database that
+    # applied an earlier draft of this revision converges too.
+    op.execute(
+        "ALTER TABLE coord.repo_identities ADD COLUMN IF NOT EXISTS moved_at TIMESTAMPTZ"
+    )
+    op.execute(
+        """
+        COMMENT ON COLUMN coord.repo_identities.moved_at IS
+            'GitHub''s time (repository.updated_at) of the last rename or transfer coord applied for this id. A repository webhook older than this is a replay and is refused, so replaying A to B after A to B to A cannot roll the second move back. NULL until a move is applied.'
+        """
+    )
+
     # canonical_repos.bare_dir (module docs, "bare_dir").
     op.execute(
         "ALTER TABLE coord.canonical_repos ADD COLUMN IF NOT EXISTS bare_dir TEXT"
@@ -220,9 +253,31 @@ def upgrade() -> None:
         """
     )
 
+    # retired_bare_dirs (module docs, "retired_bare_dirs").
+    op.execute(
+        r"""
+        CREATE TABLE IF NOT EXISTS coord.retired_bare_dirs (
+            bare_dir    TEXT PRIMARY KEY,
+            repo        TEXT NOT NULL,
+            retired_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT ck_retired_bare_dirs_bare_dir_safe CHECK (
+                bare_dir ~ '^[^/\\:.][^/\\:]*/[^/\\:.][^/\\:]*$'
+                AND strpos(bare_dir, '..') = 0
+            )
+        )
+        """
+    )
+    op.execute(
+        """
+        COMMENT ON TABLE coord.retired_bare_dirs IS
+            'Bare directories of deleted canonical_repos rows that had a bare_dir (a renamed repo kept its old name''s directory), claimed for good: registration never gives such a directory to a new repo, so a repository created under a renamed repo''s old name cannot adopt the bare left on disk. Written by the un-enrollment delete. Plan 2026-11-02-coord-follows-a-repository-rename-or-transfer.'
+        """
+    )
+
 
 def downgrade() -> None:
-    """Drop bare_dir (with its CHECK and index) and the table."""
+    """Drop retired_bare_dirs, bare_dir (with its CHECK and index), and the table."""
+    op.execute("DROP TABLE IF EXISTS coord.retired_bare_dirs")
     op.execute("DROP INDEX IF EXISTS coord.ux_canonical_repos_effective_dir")
     op.execute(
         "ALTER TABLE coord.canonical_repos "
