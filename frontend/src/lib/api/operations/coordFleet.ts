@@ -342,7 +342,16 @@ export interface FleetHealthPayload {
    * An empty `devices` beside a non-zero count is a binding fault, not an
    * empty fleet. Absent on a coord predating it.
    */
-  excluded?: { unbound?: number; bound_to_other_tenant?: number } | null;
+  excluded?: {
+    unbound?: number;
+    bound_to_other_tenant?: number;
+    /**
+     * Rows coord's device reaper retired (`reaped_at` set) and the roster
+     * therefore omits. NOT a binding fault and not incompleteness: see
+     * `readRosterExclusions`. Absent on a coord predating it.
+     */
+    retired?: number;
+  } | null;
   /** Why coord could not count `excluded`; null when it could. */
   excluded_error?: string | null;
   /**
