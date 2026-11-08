@@ -180,16 +180,20 @@ jobs:
       # The only deleting action is the prune below, under an EXCLUSIVE flock on
       # pip.lock; every install holds a SHARED flock for its whole step, so a
       # prune never runs during an install, and a held lock just skips the prune
-      # for this run. It empties the dir when it is over PIP_CACHE_BOUND_MB or
-      # when free space on its filesystem is under PIP_CACHE_FLOOR_MB. A size or
+      # for this run. It empties the dir when it is over PIP_CACHE_BOUND_MB, or
+      # when free space on its filesystem is under PIP_CACHE_FLOOR_MB while the
+      # cache itself is over PIP_CACHE_FLOOR_MIN_SIZE_MB; every prune is a
+      # ::warning annotation, so repeated pruning is visible. A size or
       # free-space read that fails is UNKNOWN: logged, prune skipped, never a
       # step failure (du exits 1 when a pip temp file vanishes under it). A host
-      # missing flock/du/df falls back to a job-scoped cache with a warning.
+      # missing flock/du/df, or an unwritable cache dir, falls back to a
+      # job-scoped cache with a warning.
       # Plan 2026-11-08-web-backend-e2e-job-cap-cancels-a-slow-uncached-pip-install-on-the-light-pool.
       - name: Create a job venv
         env:
           PIP_CACHE_BOUND_MB: '8192'
           PIP_CACHE_FLOOR_MB: '61440'
+          PIP_CACHE_FLOOR_MIN_SIZE_MB: '1024'
         run: |
           python -m venv "$RUNNER_TEMP/venv"
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
@@ -203,10 +207,23 @@ jobs:
             exit 0
           fi
           root="${XDG_CACHE_HOME:-$HOME/.cache}/qontinui-web-ci"
-          mkdir -p "$root/pip"
+          # An unwritable cache dir or lock file falls back too: never a failure.
+          if ! mkdir -p "$root/pip" 2>/dev/null || ! { exec 9>"$root/pip.lock"; } 2>/dev/null; then
+            echo "::warning title=pip cache not shared::cannot write $root on ${RUNNER_NAME:-this runner}; using a job-scoped pip cache"
+            echo "PIP_CACHE_DIR=$RUNNER_TEMP/pip-cache" >> "$GITHUB_ENV"
+            exit 0
+          fi
           size_mb() { du -s --block-size=1M "$1" 2>/dev/null | cut -f1 || true; }
           avail_mb() { df --output=avail -BM "$1" 2>/dev/null | tail -n 1 | tr -dc '0-9' || true; }
-          exec 9>"$root/pip.lock"
+          prune() {
+            if rm -rf -- "$root/pip" && mkdir -p "$root/pip"; then
+              echo "::warning title=pip cache pruned::$1"
+              size=0
+            else
+              echo "::warning title=pip cache prune failed::$1"
+            fi
+          }
+          size=
           if flock -x -n 9; then
             size="$(size_mb "$root/pip")"
             avail="$(avail_mb "$root")"
@@ -215,20 +232,21 @@ jobs:
             if [ -z "$size" ] || [ -z "$avail" ]; then
               echo "pip cache size or free space UNKNOWN (size='${size}' free='${avail}'); prune skipped"
             elif [ "$size" -gt "$PIP_CACHE_BOUND_MB" ]; then
-              rm -rf -- "$root/pip" && mkdir -p "$root/pip"
-              echo "pip cache pruned (size condition: ${size}MB > ${PIP_CACHE_BOUND_MB}MB)"
-            elif [ "$avail" -lt "$PIP_CACHE_FLOOR_MB" ]; then
-              rm -rf -- "$root/pip" && mkdir -p "$root/pip"
-              echo "pip cache pruned (free condition: ${avail}MB free < ${PIP_CACHE_FLOOR_MB}MB)"
+              prune "size condition: ${size}MB > ${PIP_CACHE_BOUND_MB}MB"
+            # The free-space arm only fires when the cache is big enough to
+            # matter, so a disk filled by something else does not empty a small
+            # warm cache on every run.
+            elif [ "$avail" -lt "$PIP_CACHE_FLOOR_MB" ] && [ "$size" -gt "$PIP_CACHE_FLOOR_MIN_SIZE_MB" ]; then
+              prune "free condition: ${avail}MB free < ${PIP_CACHE_FLOOR_MB}MB with cache at ${size}MB"
             fi
             flock -u 9
           else
-            echo "pip cache prune skipped: lock held"
+            echo "::notice title=pip cache prune skipped::lock held by a running install on ${RUNNER_NAME:-this runner}"
           fi
           exec 9>&-
           echo "PIP_CACHE_DIR=$root/pip" >> "$GITHUB_ENV"
           echo "QONTINUI_PIP_LOCK=$root/pip.lock" >> "$GITHUB_ENV"
-          echo "pip cache: $root/pip $(size_mb "$root/pip")MB before install (free $(avail_mb "$root")MB)"
+          echo "pip cache: $root/pip ${size:-$(size_mb "$root/pip")}MB before install (free $(avail_mb "$root")MB)"
 
       # Hosted only: on the self-hosted pool ~/.cache/pip is one directory
       # shared by every runner, and restoring an archive over it races them.
@@ -246,7 +264,8 @@ jobs:
       # Step cap: a hung install fails here, naming this step, rather than
       # running into the job cap and concluding the job `cancelled` with no
       # failed step. 28 min leaves 7 of the 35-min job cap for the rest
-      # (measured max 2.9 min tests + ~2.5 min everything else).
+      # (measured max 2.9 min tests + ~2.5 min everything else). The shared
+      # lock below waits at most 5 min for a running prune, inside this cap.
       - name: Install dependencies
         working-directory: ./backend
         timeout-minutes: 28
@@ -256,7 +275,7 @@ jobs:
           # cache under a running install.
           if [ -n "${QONTINUI_PIP_LOCK:-}" ]; then
             exec 9>"$QONTINUI_PIP_LOCK"
-            flock -s 9
+            flock -s -w 300 9 || echo "::warning title=pip cache lock wait timed out::installing without the shared lock"
           fi
           python -m pip install --upgrade pip
           pip install pytest pytest-cov pytest-asyncio
@@ -331,7 +350,7 @@ jobs:
       - name: Explain a cancelled job (no apt step here)
         if: cancelled()
         run: |
-          echo "::notice title=Job cancelled - NOT a verdict on this diff::This job was cancelled. Either its 35-minute cap expired (it normally runs about 3-14 min on the self-hosted pool and 1m54s-2m26s hosted, so that would mean something wedged, not that your tests failed) or the run was cancelled externally - this workflow's 'concurrency: cancel-in-progress' is an expression (first-attempt pull_request runs only), so on such a run a newer push to the same PR supersedes it, and on a push, schedule or re-run only a manual cancel does. Either way a cancelled job reports no test results at all: 'gh pr checks' will render it as 'fail' with zero failing steps, and that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
+          echo "::notice title=Job cancelled - NOT a verdict on this diff::This job was cancelled. Either its 35-minute cap expired (it normally runs under about 17 min uncached on the self-hosted pool, less with a warm cache, and 1m54s-2m26s hosted, so that would mean something wedged, not that your tests failed) or the run was cancelled externally - this workflow's 'concurrency: cancel-in-progress' is an expression (first-attempt pull_request runs only), so on such a run a newer push to the same PR supersedes it, and on a push, schedule or re-run only a manual cancel does. Either way a cancelled job reports no test results at all: 'gh pr checks' will render it as 'fail' with zero failing steps, and that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
 
   # Full 4-shard suite. Runs on pushes to main/develop, on the nightly schedule,
   # and on workflow_dispatch — never on PRs and never on coord's merge-candidate*
