@@ -113,7 +113,7 @@ if (folder) {
 ### Creating a Test
 
 ```typescript
-import { getWorkflowTestingService } from '@/services/workflow-testing-service';
+import { getWorkflowTestingService } from '@/services/workflow-testing';
 
 const testing = getWorkflowTestingService();
 
@@ -127,9 +127,7 @@ const testCase = testing.createTestCase(
   { name: 'Verify login success' }
 );
 
-// Run test (simulated execution)
-const result = await testing.runTestCase(testCase.id);
-console.log(result.passed ? 'Test passed' : 'Test failed');
+// Test cases are authored and stored here; the web app does not run them.
 ```
 
 ## Architecture
