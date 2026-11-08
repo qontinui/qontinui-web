@@ -378,14 +378,20 @@ describe("the installed SDK's Next handler reads request bodies only with reques
  *      adapter);
  *   2. the behaviour: the installed `startRelayClient`
  *      (`@qontinui/ui-bridge/injected`) is driven under fake timers for three
- *      minutes against a stub relay that answers the way the SDK server does
- *      (a `ping` every RELAY_COMMAND_STREAM_HEARTBEAT_MS, the proactive
- *      snapshot and its one retry after every connect). Every request it
- *      sends must be one of the three transport routes, billed to its own
- *      sub-lane, and within that route's per-tab cadence in EVERY 60-s
- *      window — for a visible tab on a healthy stream, a hidden tab whose
- *      stream is refused, and a tab whose heartbeat is once answered
- *      `tabRegistered: false`.
+ *      minutes against a stub relay that answers the way the SDK server does:
+ *      a `ping` every RELAY_COMMAND_STREAM_HEARTBEAT_MS, the proactive
+ *      snapshot and its one retry after every connect, and `tabRegistered`
+ *      from whether it holds an open stream for the tab (the relay answers
+ *      from the instance's open listeners, `connectedTabs`). Every request
+ *      the client sends must be one of the three transport routes, billed to
+ *      its own sub-lane, and within that route's per-tab cadence in EVERY
+ *      60-s window — for a visible tab on a healthy stream, a hidden tab
+ *      whose stream is refused, and a tab whose heartbeat is once answered
+ *      `tabRegistered: false`. The one exception is measured, not assumed:
+ *      when a stream starts being refused, the first heartbeat's
+ *      `tabRegistered: false` forces one immediate reopen
+ *      (`relay-client.ts` `forceReconnect`), which the envelope deliberately
+ *      leaves out (`_transport.ts` `STREAM_OPENS_PER_TAB_PER_MIN`).
  */
 
 /** The `// <sourceFile>` section of an installed SDK bundle. */
@@ -450,6 +456,8 @@ describe("the installed SDK's relay client sends only transport, within its cade
   const BASE_PATH = "/api/ui-bridge";
   const RUN_MS = 3 * 60_000;
   const MINUTE_MS = 60_000;
+  /** The fake clock's start: every run begins here. */
+  const T0 = Date.UTC(2026, 0, 1);
   /** The only routes a relay client may send, and the sub-lane each bills. */
   const LANE_OF: Readonly<Record<string, string>> = {
     "GET /commands/stream": "transport:stream",
@@ -468,15 +476,23 @@ describe("the installed SDK's relay client sends only transport, within its cade
     vi.unstubAllGlobals();
   });
 
+  /**
+   * Overrides the relay's answer to one heartbeat. `holdsStream` is the
+   * relay's own answer: whether it holds an open stream for the tab.
+   */
+  type TabRegisteredAnswer = (beat: number, holdsStream: boolean) => boolean;
+
   /** A stub relay answering the SDK client the way the SDK server does. */
   function stubRelay(opts: {
     streamOk: boolean;
-    tabRegistered: (beat: number) => boolean;
+    tabRegistered?: TabRegisteredAnswer;
   }) {
     const sent: Sent[] = [];
     const encoder = new TextEncoder();
     let beats = 0;
     let opens = 0;
+    /** Streams the relay currently holds open (its `connectedTabs`). */
+    let openStreams = 0;
 
     const json = (body: unknown) =>
       new Response(JSON.stringify(body), {
@@ -491,6 +507,7 @@ describe("the installed SDK's relay client sends only transport, within its cade
       let closed = false;
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
+          openStreams += 1;
           const push = (frame: unknown) => {
             if (!closed) {
               controller.enqueue(
@@ -519,6 +536,7 @@ describe("the installed SDK's relay client sends only transport, within its cade
               return;
             }
             closed = true;
+            openStreams -= 1;
             timers.forEach((timer) => clearTimeout(timer));
             clearInterval(ping);
             try {
@@ -549,7 +567,13 @@ describe("the installed SDK's relay client sends only transport, within its cade
         }
         if (route === "POST /heartbeat") {
           beats += 1;
-          return json({ success: true, tabRegistered: opts.tabRegistered(beats) });
+          const holdsStream = openStreams > 0;
+          return json({
+            success: true,
+            tabRegistered: opts.tabRegistered
+              ? opts.tabRegistered(beats, holdsStream)
+              : holdsStream,
+          });
         }
         return json({ success: true });
       }
@@ -561,10 +585,10 @@ describe("the installed SDK's relay client sends only transport, within its cade
   async function runTab(opts: {
     visibility: "visible" | "hidden";
     streamOk: boolean;
-    tabRegistered: (beat: number) => boolean;
+    tabRegistered?: TabRegisteredAnswer;
   }): Promise<Sent[]> {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    vi.setSystemTime(T0);
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => opts.visibility,
@@ -593,11 +617,18 @@ describe("the installed SDK's relay client sends only transport, within its cade
   const count = (sent: readonly Sent[], route: string) =>
     sent.filter((s) => s.route === route).length;
 
-  /** The most requests to `route` in any 60-s window [t, t + 60 s) of the run. */
-  function peakPerMinute(sent: readonly Sent[], route: string): number {
+  /**
+   * The most requests to `route` in any 60-s window [t, t + 60 s) of the run
+   * that starts at or after `from`.
+   */
+  function peakPerMinute(
+    sent: readonly Sent[],
+    route: string,
+    from = T0
+  ): number {
     const times = sent.filter((s) => s.route === route).map((s) => s.at);
     let peak = 0;
-    for (const start of times) {
+    for (const start of times.filter((t) => t >= from)) {
       const inWindow = times.filter(
         (t) => t >= start && t < start + MINUTE_MS
       ).length;
@@ -606,14 +637,25 @@ describe("the installed SDK's relay client sends only transport, within its cade
     return peak;
   }
 
-  function expectTransportWithinCadence(sent: readonly Sent[]): void {
+  /**
+   * `forcedReopens`: immediate reopens the envelope deliberately leaves out
+   * (`_transport.ts` `STREAM_OPENS_PER_TAB_PER_MIN`), allowed in the run's
+   * first minute only; every window after it must hold the cadence exactly.
+   */
+  function expectTransportWithinCadence(
+    sent: readonly Sent[],
+    { forcedReopens = 0 }: { forcedReopens?: number } = {}
+  ): void {
     for (const route of new Set(sent.map((s) => s.route))) {
       const [method = "", path = ""] = route.split(" ");
       expect(laneFor(path, method), route).toBe(LANE_OF[route]);
     }
     expect(peakPerMinute(sent, "GET /commands/stream")).toBeLessThanOrEqual(
-      STREAM_OPENS_PER_TAB_PER_MIN
+      STREAM_OPENS_PER_TAB_PER_MIN + forcedReopens
     );
+    expect(
+      peakPerMinute(sent, "GET /commands/stream", T0 + MINUTE_MS)
+    ).toBeLessThanOrEqual(STREAM_OPENS_PER_TAB_PER_MIN);
     expect(peakPerMinute(sent, "POST /heartbeat")).toBeLessThanOrEqual(
       HEARTBEATS_PER_TAB_PER_MIN
     );
@@ -623,11 +665,7 @@ describe("the installed SDK's relay client sends only transport, within its cade
   }
 
   it("a visible tab on a healthy stream: one open, its two snapshot results, heartbeats within cadence", async () => {
-    const sent = await runTab({
-      visibility: "visible",
-      streamOk: true,
-      tabRegistered: () => true,
-    });
+    const sent = await runTab({ visibility: "visible", streamOk: true });
     expectTransportWithinCadence(sent);
     expect(count(sent, "GET /commands/stream")).toBe(1);
     expect(count(sent, "POST /commands")).toBe(2);
@@ -635,15 +673,17 @@ describe("the installed SDK's relay client sends only transport, within its cade
     expect(peakPerMinute(sent, "POST /heartbeat")).toBeGreaterThanOrEqual(6);
   });
 
-  it("a hidden tab whose stream is refused: reopens at the reconnect cadence and no faster", async () => {
-    const sent = await runTab({
-      visibility: "hidden",
-      streamOk: false,
-      tabRegistered: () => true,
-    });
-    expectTransportWithinCadence(sent);
-    // The ceiling is reached exactly, so the bound is not vacuous.
-    expect(peakPerMinute(sent, "GET /commands/stream")).toBe(6);
+  it("a hidden tab whose stream is refused: one forced reopen as the refusals start, then the reconnect cadence and no faster", async () => {
+    // The relay holds no stream for the tab, so it answers every heartbeat
+    // `tabRegistered: false`, and the boot heartbeat's answer reopens the
+    // stream at once beside the boot open. The reopen clears the pending
+    // reconnect, so from then on the client opens once per heartbeat.
+    const sent = await runTab({ visibility: "hidden", streamOk: false });
+    expectTransportWithinCadence(sent, { forcedReopens: 1 });
+    // Read exactly, so both bounds are met rather than merely respected:
+    // 6 + the one forced reopen in the first minute, 6 in every later window.
+    expect(peakPerMinute(sent, "GET /commands/stream")).toBe(7);
+    expect(peakPerMinute(sent, "GET /commands/stream", T0 + MINUTE_MS)).toBe(6);
     expect(count(sent, "POST /commands")).toBe(0);
     expect(peakPerMinute(sent, "POST /heartbeat")).toBeGreaterThanOrEqual(6);
   });
@@ -652,7 +692,9 @@ describe("the installed SDK's relay client sends only transport, within its cade
     const sent = await runTab({
       visibility: "visible",
       streamOk: true,
-      tabRegistered: (beat) => beat !== 2,
+      // The per-instance recovery path: one heartbeat lands on an instance
+      // that holds no stream for the tab.
+      tabRegistered: (beat, holdsStream) => (beat === 2 ? false : holdsStream),
     });
     expectTransportWithinCadence(sent);
     expect(count(sent, "GET /commands/stream")).toBe(2);

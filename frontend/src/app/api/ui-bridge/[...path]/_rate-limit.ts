@@ -23,11 +23,12 @@
  *     (`POST /commands`, a tab posting a command's result).
  *
  * Transport is not a command. Charged to the command lanes, a principal's own
- * tabs starved its commands and each other: four tabs heartbeat past 20
- * writes a minute with no command sent, and every relayed command cost a
- * second request when the tab answered it (incident 2026-11-08, coord
- * finding e0735415; plan
- * 2026-11-08-an-agents-relay-tab-spends-the-operators-ui-bridge-budget). So
+ * tabs starved its commands and each other. By the SDK's 10-s heartbeat
+ * timer, four idle tabs alone pass 20 writes a minute, and every relayed
+ * command costs a second request when the tab answers it. The measured case
+ * (2026-11-08, coord finding e0735415): one agent relay tab beside three
+ * operator tabs drew 29 x 429, a command timeout and TAB_STALE. Plan
+ * 2026-11-08-an-agents-relay-tab-spends-the-operators-ui-bridge-budget. So
  * transport has its own lanes, and the command lanes measure commands only.
  *
  * Transport is still BOUNDED per principal, one sub-lane per route, so
@@ -43,8 +44,8 @@
  *
  * A refusal on a transport sub-lane is `TRANSPORT_RATE_LIMITED`, naming the
  * lane — the envelope, not the caller's command budget. The SDK discards the
- * response to a heartbeat or a result, so `route.ts` also logs every refusal
- * server-side (`logLaneRefused`).
+ * response to a heartbeat or a result, so `route.ts` also logs refusals
+ * server-side (`logLaneRefused`, sampled by overflow).
  *
  * Window: clock-aligned minute. Counter key embeds the lane and the minute
  * index so a principal can't carry budget across a window boundary, and the
@@ -63,7 +64,8 @@
  * error, AUTH error), this module returns `{ok: true, allowed: true,
  * redisOffline: true}` — fail OPEN. Failing closed would tear down the
  * bridge for every user the moment Redis hiccups, which is much worse
- * than briefly disabling rate limits. The remaining budget is then
+ * than briefly disabling rate limits. A connection that exists but is not
+ * ready yet is the same case (`incrAndGet`). The remaining budget is then
  * unknown, and the `X-RateLimit-Remaining` header says exactly that.
  *
  * The framework's robustness priority says "fail predictably." We pick
@@ -253,16 +255,52 @@ function keyFor(userId: string, kind: RateLimitKind, windowIdx: number): string 
  * Pipeline gives us both ops in one RTT; the INCR result is what we
  * compare against the limit. The EXPIRE return is fire-and-forget
  * (success/failure doesn't gate the request).
+ *
+ * THROWS when the pipeline yields no count. With `enableOfflineQueue: false`
+ * ioredis does not reject a pipeline sent on a connection that is not ready
+ * yet (every cold instance's first request, and every request while Redis is
+ * down): it RESOLVES it with an error per command. Read as a count of 0, that
+ * admitted the request as counted and reported a full budget; thrown, it takes
+ * `checkRateLimit`'s fail-open path, which says the count is unknown.
  */
 async function incrAndGet(key: string, redis: Redis): Promise<number> {
   const pipeline = redis.pipeline();
   pipeline.incr(key);
   pipeline.expire(key, COUNTER_TTL_SEC);
   const results = await pipeline.exec();
-  if (!results || results.length === 0) return 0;
-  const incrResult = results[0];
-  if (!incrResult || incrResult[0]) return 0; // [err, value]
-  return Number(incrResult[1] ?? 0);
+  const incrResult = results?.[0];
+  if (!incrResult) {
+    throw new Error("redis pipeline returned no INCR result");
+  }
+  const [err, value] = incrResult;
+  if (err) {
+    throw err;
+  }
+  const count = Number(value);
+  if (!Number.isFinite(count) || count < 1) {
+    throw new Error(`redis INCR returned ${String(value)}, not a count`);
+  }
+  return count;
+}
+
+/** The minute window of the last fail-open warning this process logged. */
+let lastFailOpenLogWindow: number | null = null;
+
+/**
+ * Warn that a Redis op failed and the limiter is failing open — at most once
+ * per minute window per process, because during an outage EVERY request
+ * takes this path.
+ */
+function logFailingOpen(err: unknown, kind: RateLimitKind, now: number): void {
+  const windowIdx = currentWindowIndex(now);
+  if (windowIdx === lastFailOpenLogWindow) {
+    return;
+  }
+  lastFailOpenLogWindow = windowIdx;
+  log.warn("rate_limit_redis_op_failed_failing_open", {
+    error: err instanceof Error ? err.message : String(err),
+    kind,
+  });
 }
 
 /**
@@ -299,13 +337,10 @@ export async function checkRateLimit(
   try {
     count = await incrAndGet(key, redis);
   } catch (err) {
-    // Any Redis-side error (timeout, AUTH, MOVED in a misconfigured
-    // cluster) → fail open. Logged once at warn so an operator can spot
-    // a persistent outage; flood-suppressed by ioredis's own backoff.
-    log.warn("rate_limit_redis_op_failed_failing_open", {
-      error: err instanceof Error ? err.message : String(err),
-      kind,
-    });
+    // Any Redis-side error (a connection not ready yet, timeout, AUTH,
+    // MOVED in a misconfigured cluster) → fail open, and say the count is
+    // unknown. Warned at most once a minute per process (`logFailingOpen`).
+    logFailingOpen(err, kind, now);
     return {
       allowed: true,
       count: 0,
@@ -407,11 +442,21 @@ export function rateLimitedResponse(result: RateLimitResult): Response {
  * refused (`user`: an operator's bearer; `device`: a coord device JWT, keyed
  * `dev:<deviceId>`). The SDK discards a refused heartbeat's and result's
  * response, so this line is where a transport refusal is visible.
+ *
+ * Logged for the 1st, 2nd, 4th, 8th, … refusal of a principal's lane in a
+ * window (`count - limit` a power of two). The SDK keeps its cadence through
+ * 429s, so a principal over its envelope is refused steadily: every refusal
+ * logged would cost one line per request for as long as it stays over. The
+ * first refusal is always logged, and `count` still shows how far over it is.
  */
 export function logLaneRefused(
   result: RateLimitResult,
   principalKind: "user" | "device" | null,
 ): void {
+  const overflow = result.count - result.limit;
+  if (overflow < 1 || (overflow & (overflow - 1)) !== 0) {
+    return;
+  }
   log.warn("lane_refused", {
     lane: result.kind,
     principalKind: principalKind ?? "unknown",
