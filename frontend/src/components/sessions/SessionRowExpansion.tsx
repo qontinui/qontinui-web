@@ -63,6 +63,7 @@ import {
   hasLifecycleHalf,
   rowClassExplanation,
   type ConsolidatedSessionRow,
+  type HalfExtent,
 } from "./sessionConsoleStatus";
 import {
   AccountValue,
@@ -232,11 +233,11 @@ export interface SessionRowExpansionProps {
   /** device_id → the console's machine label, the one the column renders. */
   machineLabel: MachineLabel;
   /**
-   * The lifecycle half's ceiling while that read may be incomplete, else
-   * `null`/absent. An `agent_only` row's explanation is narrowed to the rows
-   * coord served then (`rowClassExplanation`).
+   * The lifecycle half's extent. While it is full or of unknown size, an
+   * `agent_only` row's explanation is narrowed to the lifecycle rows coord
+   * served (`rowClassExplanation`); absent, the class's own claim stands.
    */
-  lifecycleCeiling?: number | null;
+  lifecycleHalf?: HalfExtent;
   coordination: SessionCoordination;
   stores: TranscriptStoresState;
   /** Injected for tests so relative timestamps are deterministic. */
@@ -247,7 +248,7 @@ export function SessionRowExpansion({
   row,
   account,
   machineLabel,
-  lifecycleCeiling,
+  lifecycleHalf,
   coordination,
   stores,
   now,
@@ -260,7 +261,7 @@ export function SessionRowExpansion({
       why={
         <div className="space-y-2">
           <p className="text-muted-foreground">
-            {rowClassExplanation(row, { lifecycleCeiling })}
+            {rowClassExplanation(row, { lifecycle: lifecycleHalf })}
           </p>
           <IdentityList
             row={row}

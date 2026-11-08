@@ -46,10 +46,10 @@ export interface FilterTab<Id extends string> {
    * renders `–`. Pass `0` only when you actually looked.
    *
    * A STRING is a count that is not a plain number and says so in its own
-   * text — `"1000+"` for a read that stopped at its ceiling, so the tab claims
+   * text — `"≥1000"` for a read that stopped at its ceiling, so the tab claims
    * a lower bound rather than an exact total (`StatCluster`'s `value` takes a
-   * string for the same reason). It renders verbatim; `–` stays the only
-   * spelling of unknown.
+   * string for the same reason, and a page spells one floor the same way in
+   * both). It renders verbatim; `–` stays the only spelling of unknown.
    */
   count?: number | string | null;
   /**

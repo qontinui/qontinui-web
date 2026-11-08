@@ -11,19 +11,25 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { BoundedReadMeta } from "@/components/admin/coord/cursorPager";
 import {
   SESSION_ATTENTION_BY_KIND,
   SESSION_WORK_ATTENTION_BY_KIND,
+  agentOnlyStat,
   agentSessionId,
   ceilingDisclosure,
+  countBasis,
   deriveSessionWorkStatus,
   isSessionFinished,
   compareSessionRows,
   deriveSessionStatus,
   deriveSessionsHealth,
+  fleetCount,
+  halfExtent,
   halfMayBeIncomplete,
   hasAgentHalf,
   hasLifecycleHalf,
+  isCapped,
   lastHeartbeatAt,
   lifecycleState,
   rowClassExplanation,
@@ -464,7 +470,7 @@ describe("deriveSessionsHealth", () => {
     const h = deriveSessionsHealth([linked(), linked({ id: "s-2" })], {
       readUnknown: false,
       loaded: true,
-      ceiling: { lifecycle: 500, agent: null },
+      ceiling: ceilingOf({ lifecycle: bound(500, "unknown") }),
       options: { now: NOW },
     });
     expect(h.level).toBe("amber");
@@ -480,11 +486,134 @@ describe("deriveSessionsHealth", () => {
     const h = deriveSessionsHealth([linked({ state: "pending_resolution" })], {
       readUnknown: false,
       loaded: true,
-      ceiling: { lifecycle: 500, agent: 500 },
+      ceiling: ceilingOf({
+        lifecycle: bound(500, "unknown"),
+        agent: bound(500, "unknown"),
+      }),
       options: { now: NOW },
     });
     expect(h.level).toBe("red");
     expect(h.headline).toBe("At least 1 session waiting on a person");
+  });
+
+  it("over a capped read, 'none running' is said of the rows read — never of the fleet", () => {
+    const closed = [
+      linked({ state: "closed" }),
+      linked({ id: "s-2", state: "closed" }),
+    ];
+    const capped = deriveSessionsHealth(closed, {
+      readUnknown: false,
+      loaded: true,
+      ceiling: ceilingOf({ lifecycle: bound(500, "unknown") }),
+      options: { now: NOW },
+    });
+    expect(capped.headline).toBe(
+      "At least 2 sessions, none running among those read"
+    );
+    // Over a complete read the universal claim is the measured one.
+    const complete = deriveSessionsHealth(closed, {
+      readUnknown: false,
+      loaded: true,
+      options: { now: NOW },
+    });
+    expect(complete.headline).toBe("2 sessions, none running");
+  });
+
+  it("over a capped read an empty answer counts nothing it did not read — no 'at least 0'", () => {
+    const h = deriveSessionsHealth([], {
+      readUnknown: false,
+      loaded: true,
+      ceiling: ceilingOf({ lifecycle: bound(500, "unknown") }),
+    });
+    expect(h.headline).toBe("No sessions among those read");
+    expect(h.detail).toBe("0 rows among those read");
+    expect(`${h.headline} ${h.detail}`).not.toMatch(/at least 0/);
+  });
+
+  // A half whose bound is neither complete nor FULL answered with nothing
+  // countable: its size is unknown, so nothing is a total OR a floor.
+  it("over a half of UNKNOWN size it states the rows read, never a total or a floor", () => {
+    const h = deriveSessionsHealth([agentOnly()], {
+      readUnknown: false,
+      loaded: true,
+      ceiling: ceilingOf({
+        lifecycle: bound(0, "unknown"),
+        agent: bound(1, "complete"),
+      }),
+      options: { now: NOW },
+    });
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe("1 session read — the total is unknown");
+    expect(h.detail).toBe(
+      "1 row read across 1 machine — 1 active, 0 waiting, 0 unresolved"
+    );
+    expect(`${h.headline} ${h.detail}`).not.toMatch(/at least|on the fleet/);
+
+    // A row needing a person is red wherever it was found — said of the
+    // rows read, not as a fleet total.
+    const red = deriveSessionsHealth(
+      [lifecycleOnly({ state: "pending_resolution" })],
+      {
+        readUnknown: false,
+        loaded: true,
+        ceiling: ceilingOf({
+          lifecycle: bound(1, "complete"),
+          agent: bound(0, "unknown"),
+        }),
+        options: { now: NOW },
+      }
+    );
+    expect(red.level).toBe("red");
+    expect(red.headline).toBe("1 session waiting on a person among those read");
+  });
+
+  // `withheld_by_filter`: sessions the status/machine SERVER filter hid
+  // although coord's agent half matched it. The tab's answer is then not the
+  // whole story, so it is never the green all-clear.
+  it("an empty answer with matches hidden because their halves disagree is amber and names them", () => {
+    const h = deriveSessionsHealth([], {
+      readUnknown: false,
+      loaded: true,
+      referent: { status: "live" },
+      withheld: 2,
+    });
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe(
+      "No live sessions on the fleet — 2 matches hidden: their two halves disagree"
+    );
+    const one = deriveSessionsHealth([], {
+      readUnknown: false,
+      loaded: true,
+      referent: { status: "stale", machine: "alpha" },
+      withheld: 1,
+    });
+    expect(one.headline).toBe(
+      "No stale sessions on alpha — 1 match hidden: its two halves disagree"
+    );
+  });
+
+  it("a non-empty answer with hidden matches names them in the detail, amber rather than green", () => {
+    const h = deriveSessionsHealth([linked()], {
+      readUnknown: false,
+      loaded: true,
+      referent: { status: "live" },
+      withheld: 2,
+      options: { now: NOW },
+    });
+    expect(h.level).toBe("amber");
+    expect(h.headline).toBe("1 live session running cleanly");
+    expect(h.detail).toBe(
+      "1 live row across 1 machine — 1 active, 0 waiting, 0 unresolved; 2 matches hidden: their two halves disagree"
+    );
+    // Nothing hidden (or not reported): the clean read stays green.
+    expect(
+      deriveSessionsHealth([linked()], {
+        readUnknown: false,
+        loaded: true,
+        withheld: 0,
+        options: { now: NOW },
+      }).level
+    ).toBe("green");
   });
 });
 
@@ -492,8 +621,12 @@ describe("deriveSessionsHealth", () => {
 // U4 — the two 500-row ceilings
 // ---------------------------------------------------------------------------
 
-/** The backend's envelope for a half, as `bounded_read.complete` / `unknown` serve it. */
-function bound(shown: number, kind: "complete" | "unknown") {
+/**
+ * The backend's envelope for a half, as `bounded_read.complete` / `unknown`
+ * serve it. `unknown` below 500 is the route's third arm — a coord body with
+ * no `sessions` list (`unknown(0, 500)`); at or past 500 it is a FULL page.
+ */
+function bound(shown: number, kind: "complete" | "unknown"): BoundedReadMeta {
   return {
     available: true,
     bound_kind: kind,
@@ -508,12 +641,43 @@ function bound(shown: number, kind: "complete" | "unknown") {
   };
 }
 
+/** The ceilings a consolidated response whose halves carry these bounds reads as. */
+function ceilingOf(halves: {
+  lifecycle?: BoundedReadMeta;
+  agent?: BoundedReadMeta;
+}) {
+  return sessionsCeiling({
+    lifecycle_half: halves.lifecycle
+      ? { read: "ok", bound: halves.lifecycle }
+      : undefined,
+    agent_half: halves.agent
+      ? { read: "ok", bound: halves.agent }
+      : { read: "ok" },
+  });
+}
+
 describe("the 500-row ceilings", () => {
   it("a half is open exactly while its bound does not prove the page is everything", () => {
     expect(halfMayBeIncomplete(bound(500, "unknown"))).toBe(true);
+    expect(halfMayBeIncomplete(bound(0, "unknown"))).toBe(true);
     expect(halfMayBeIncomplete(bound(3, "complete"))).toBe(false);
-    // An older backend reports no bound: not reported, never a claim.
+    // An older backend reports no bound — read as complete (deploy skew only).
     expect(halfMayBeIncomplete(undefined)).toBe(false);
+  });
+
+  it("tells a FULL half from one whose size is unknown", () => {
+    expect(halfExtent(bound(500, "unknown"))).toEqual({
+      kind: "capped",
+      shown: 500,
+    });
+    expect(halfExtent(bound(600, "unknown"))).toEqual({
+      kind: "capped",
+      shown: 600,
+    });
+    // Not complete, and not a full page either: nothing countable came back.
+    expect(halfExtent(bound(0, "unknown"))).toEqual({ kind: "unknown" });
+    expect(halfExtent(bound(31, "complete"))).toEqual({ kind: "complete" });
+    expect(halfExtent(undefined)).toEqual({ kind: "unreported" });
   });
 
   it("names only the halves that reached a ceiling, each by its own ordering", () => {
@@ -528,9 +692,50 @@ describe("the 500-row ceilings", () => {
       lifecycle_half: { read: "ok", bound: bound(31, "complete") },
       agent_half: { read: "ok", bound: bound(500, "unknown") },
     });
-    expect(agentOnlyCapped).toEqual({ lifecycle: null, agent: 500 });
+    expect(isCapped(agentOnlyCapped)).toBe(true);
     expect(ceilingDisclosure(agentOnlyCapped)).toBe(
       "Showing the 500 most recently seen agent sessions; fleet totals may be higher."
+    );
+  });
+
+  it("names a full half by the rows it SERVED, not by the limit it asked for", () => {
+    expect(
+      ceilingDisclosure(ceilingOf({ lifecycle: bound(600, "unknown") }))
+    ).toBe(
+      "Showing the 600 most recently started lifecycle sessions; fleet totals may be higher."
+    );
+  });
+
+  it("a half that answered with nothing countable is of unknown size — never 'the 500 most recently …'", () => {
+    expect(
+      ceilingDisclosure(
+        ceilingOf({
+          lifecycle: bound(0, "unknown"),
+          agent: bound(3, "complete"),
+        })
+      )
+    ).toBe(
+      "The lifecycle half's size is unknown: coord's answer for it carried nothing countable, so the fleet counts above are dashes, not zeros."
+    );
+    expect(
+      ceilingDisclosure(
+        ceilingOf({
+          lifecycle: bound(0, "unknown"),
+          agent: bound(0, "unknown"),
+        })
+      )
+    ).toBe(
+      "The lifecycle and agent halves' sizes are unknown: coord's answers for them carried nothing countable, so the fleet counts above are dashes, not zeros."
+    );
+    expect(
+      ceilingDisclosure(
+        ceilingOf({
+          lifecycle: bound(500, "unknown"),
+          agent: bound(0, "unknown"),
+        })
+      )
+    ).toBe(
+      "Showing the 500 most recently started lifecycle sessions. The agent half's size is unknown: coord's answer for it carried nothing countable, so the fleet counts above are dashes, not zeros."
     );
   });
 
@@ -558,16 +763,122 @@ describe("the 500-row ceilings", () => {
 
   it("narrows an agent_only explanation to the rows coord served while the lifecycle half is capped", () => {
     const qualified = rowClassExplanation(agentOnly(), {
-      lifecycleCeiling: 500,
+      lifecycle: halfExtent(bound(500, "unknown")),
     });
     expect(qualified).toContain(
       "no coord.sessions row among the 500 most recently started that coord served — one may exist beyond its ceiling"
     );
     // The class is kept, never demoted to the unresolved reading.
     expect(qualified).toMatch(/^Agent only:/);
-    // Below the ceiling the claim is the established one.
+    // A lifecycle half of unknown size names no ceiling it never reached.
+    const unsized = rowClassExplanation(agentOnly(), {
+      lifecycle: halfExtent(bound(0, "unknown")),
+    });
+    expect(unsized).toContain(
+      "no coord.sessions row among the lifecycle rows coord served — that half's size is unknown, so one may exist that it did not serve"
+    );
+    expect(unsized).not.toMatch(/500/);
+    // Below the ceiling — or from a backend that reports none — the claim is
+    // the established one.
+    for (const lifecycle of [
+      halfExtent(bound(31, "complete")),
+      halfExtent(undefined),
+    ]) {
+      expect(rowClassExplanation(agentOnly(), { lifecycle })).toContain(
+        "that no coord.sessions row bridges"
+      );
+    }
     expect(rowClassExplanation(agentOnly())).toContain(
       "that no coord.sessions row bridges"
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// One numeric spelling per reading, and the agent-only set difference
+// ---------------------------------------------------------------------------
+
+describe("fleet counts", () => {
+  it("are exact, a floor, or unstated — one spelling each, and a floor of zero says what it counted", () => {
+    expect(fleetCount(31, "exact")).toBe(31);
+    expect(fleetCount(0, "exact")).toBe(0);
+    expect(fleetCount(31, "floor")).toBe("≥31");
+    expect(fleetCount(0, "floor")).toBe("0 of those read");
+    expect(fleetCount(31, "unknown")).toBeNull();
+    expect(fleetCount(0, "unknown")).toBeNull();
+  });
+
+  it("read the basis off both halves: an unknown size outranks a ceiling", () => {
+    expect(countBasis(ceilingOf({}))).toBe("exact");
+    expect(
+      countBasis(
+        ceilingOf({
+          lifecycle: bound(31, "complete"),
+          agent: bound(12, "complete"),
+        })
+      )
+    ).toBe("exact");
+    expect(countBasis(ceilingOf({ agent: bound(500, "unknown") }))).toBe(
+      "floor"
+    );
+    expect(
+      countBasis(
+        ceilingOf({
+          lifecycle: bound(500, "unknown"),
+          agent: bound(0, "unknown"),
+        })
+      )
+    ).toBe("unknown");
+  });
+});
+
+describe("the agent-only stat follows the direction of its set difference", () => {
+  // `agent_only` = agent rows read, less those a lifecycle row READ bridges.
+  const COMPLETE = bound(31, "complete");
+  const FULL = bound(500, "unknown");
+  const stat = (
+    n: number,
+    halves: { lifecycle?: BoundedReadMeta; agent?: BoundedReadMeta }
+  ) => agentOnlyStat(n, ceilingOf(halves));
+
+  it("is exact while both halves are complete — or reported no bound", () => {
+    expect(stat(3, { lifecycle: COMPLETE, agent: COMPLETE }).value).toBe(3);
+    expect(stat(3, {}).value).toBe(3);
+  });
+
+  it("is a FLOOR when only the agent half stopped: unread agent sessions may be unmatched too", () => {
+    const s = stat(3, { lifecycle: COMPLETE, agent: FULL });
+    expect(s.value).toBe("≥3");
+    expect(s.title).toContain("at least");
+    expect(stat(0, { lifecycle: COMPLETE, agent: FULL }).value).toBe(
+      "0 of those read"
+    );
+  });
+
+  it("is a CEILING when only the lifecycle half stopped: a row's twin may lie past it", () => {
+    const s = stat(3, { lifecycle: FULL, agent: COMPLETE });
+    expect(s.value).toBe("≤3");
+    expect(s.title).toContain("at most");
+    expect(s.title).toContain(
+      "no coord.sessions row among the 500 most recently started that coord served"
+    );
+    // At most none is none: every agent session was read and each matched.
+    expect(stat(0, { lifecycle: FULL, agent: COMPLETE }).value).toBe(0);
+  });
+
+  it("is neither when both stopped — the count of rows read that went unmatched, never ≥", () => {
+    const s = stat(3, { lifecycle: FULL, agent: FULL });
+    expect(s.value).toBe("3 unmatched among rows read");
+    expect(String(s.value)).not.toMatch(/[≥≤]/);
+    expect(s.title).toContain("neither a floor nor a ceiling");
+  });
+
+  it("is unstated while either half's size is unknown", () => {
+    expect(
+      stat(3, { lifecycle: bound(0, "unknown"), agent: COMPLETE }).value
+    ).toBeNull();
+    expect(
+      stat(3, { lifecycle: COMPLETE, agent: bound(0, "unknown") }).value
+    ).toBeNull();
   });
 });

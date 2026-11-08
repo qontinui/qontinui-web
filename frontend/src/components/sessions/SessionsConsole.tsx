@@ -66,8 +66,10 @@
  * (`deriveSessionsHealth`). The client facets narrow only the list, and say so
  * in the scoped line beside them. Before the first answer every count is a
  * dash under an amber "Reading sessions…"; while either half of the read
- * stopped at its 500-row ceiling the counts are floors, and a line under the
- * stats names the half that did.
+ * stopped at its 500-row ceiling the counts are floors (`≥n`, one spelling),
+ * while either half's size is unknown they are dashes, and a line under the
+ * stats names the half and says which. `agent-only` is a set difference, so
+ * its bound follows WHICH half stopped (`agentOnlyStat`).
  *
  * ## Finding a session by name, id or commit trailer — and its account
  *
@@ -114,22 +116,24 @@ import { listConsolidatedSessions } from "@/lib/api/operations/sessions";
 import {
   SESSION_STATUS_PALETTE,
   SESSION_WORK_PALETTE,
-  agentOnlyBeyondCeiling,
+  agentOnlyStat,
   agentSessionId,
   ceilingDisclosure,
   compareSessionRows,
+  countBasis,
   deriveSessionStatus,
   deriveSessionWorkStatus,
   deriveSessionsHealth,
   fleetCount,
   hasAgentHalf,
   hasLifecycleHalf,
-  isCapped,
   isSessionFinished,
+  isSizeUnknown,
   rowTimestamp,
   sessionsCeiling,
   type ConsolidatedSessionRow,
   type ConsolidatedSessionsResponse,
+  type HalfExtent,
 } from "./sessionConsoleStatus";
 import {
   SessionRowExpansion,
@@ -412,12 +416,15 @@ export function SessionsConsole({
 
   const rows = useMemo(() => payload?.sessions ?? [], [payload]);
   const agentHalfFailed = payload?.agent_half?.read === "failed";
-  // Each half's 500-row ceiling, where that half's read may be incomplete
-  // (plan `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
-  // Phase 3). A backend that reports no bound yields no ceiling, and the page
-  // then says nothing about one — neither "complete" nor "truncated".
+  // Each half's extent against its 500-row ceiling — complete, FULL (a
+  // floor), or of UNKNOWN size (no number at all) — and so how every fleet
+  // count may be stated (plan
+  // `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+  // Phase 3). A backend that reports no bound is read as complete: exact
+  // counts and no disclosure, the claim the page made before the field
+  // existed — kept for deploy skew only.
   const ceiling = useMemo(() => sessionsCeiling(payload), [payload]);
-  const capped = isCapped(ceiling);
+  const basis = countBasis(ceiling);
   const disclosure = ceilingDisclosure(ceiling);
   // Sessions the server-side status/machine filter hid although their agent
   // half matched — the halves disagree. Counted so a narrowed tab never loses
@@ -602,6 +609,9 @@ export function SessionsConsole({
           machine: machineLabel(deviceRef.current),
         },
         ceiling,
+        // Matches the server filter hid because their halves disagree: an
+        // empty tab holding them is not a green, empty fleet.
+        withheld,
         options: { now },
       }),
     [
@@ -612,6 +622,7 @@ export function SessionsConsole({
       answered,
       machineLabel,
       ceiling,
+      withheld,
       now,
     ]
   );
@@ -626,22 +637,26 @@ export function SessionsConsole({
   // measured; the others have not been fetched and a `0` on them would be the
   // same mistake. `FilterTabs` renders `null` as `–`. The answered tab shows
   // coord's count for it (`rows`), never what the facets left — that is the
-  // scoped line's number — and `1000+` over a read that stopped at a ceiling.
+  // scoped line's number — spelled like every other fleet count: `≥1000` over
+  // a full half, `–` over a half of unknown size.
   const tabs = STATUS_TABS.map((t) => ({
     id: t.id,
     label: t.label,
     count:
       !loaded || t.id !== answered.status
         ? null
-        : capped
-          ? `${rows.length}+`
-          : rows.length,
+        : fleetCount(rows.length, basis),
     attention: t.id === answered.status && (health.attention ?? 0) > 0,
   }));
 
-  /** A fleet count: `–` until coord answers, a floor over a capped read. */
+  /**
+   * A fleet count: `–` until coord answers, then exact, `≥n` (a floor of zero
+   * reads "0 of those read") over a full half, `–` over one of unknown size.
+   */
   const fleet = (n: number | null): number | string | null =>
-    !loaded || n === null ? null : fleetCount(n, capped);
+    !loaded || n === null ? null : fleetCount(n, basis);
+  // A set difference, so its bound follows WHICH half stopped.
+  const agentOnly = agentOnlyStat(countClass(rows, "agent_only"), ceiling);
 
   const stats: Stat[] = [
     { key: "rows", label: "rows ", value: fleet(rows.length) },
@@ -663,14 +678,12 @@ export function SessionsConsole({
     {
       key: "agent",
       label: "agent-only ",
-      // A floor like every fleet count over a capped read — and while the
-      // LIFECYCLE half may be incomplete the class itself is narrowed: its
-      // set difference only saw the lifecycle rows coord served.
-      value: fleet(countClass(rows, "agent_only")),
-      title:
-        ceiling.lifecycle !== null
-          ? `an allocated agent session with ${agentOnlyBeyondCeiling(ceiling.lifecycle)}`
-          : "an allocated agent session no coord.sessions row bridges — heartbeat and state are unknown, not closed",
+      // NOT a fleet floor. The class is the agent rows read less those a
+      // lifecycle row READ bridges, so a full lifecycle half can only have
+      // made it too big (`≤n`), a full agent half too small (`≥n`), and both
+      // at once leaves a count of rows read that is neither.
+      value: loaded ? agentOnly.value : null,
+      title: agentOnly.title,
       tone: "muted",
     },
     {
@@ -744,12 +757,17 @@ export function SessionsConsole({
       </div>
       {/* U4: the strip and the stats above count what coord SERVED, and each
           half stops at a ceiling. Said in words, naming only the halves that
-          reached one, so a sample is never presented as the fleet. */}
+          reached one — or whose size is unknown — so a sample is never
+          presented as the fleet. */}
       {loaded && disclosure && (
         <p
           className="text-xs text-amber-300/90"
           data-testid="sessions-console-truncated"
-          title="Each half of this read stops at a ceiling and nothing past it was read, so the counts above are floors, not totals."
+          title={
+            isSizeUnknown(ceiling)
+              ? "A half whose size is unknown supports no number — not a total and not a floor — so the fleet counts above are dashes; the rows below are what did arrive."
+              : "Each half of this read stops at a ceiling and nothing past it was read, so the fleet counts above are floors, not totals — except agent-only, whose own title says which way it can be off."
+          }
         >
           {disclosure}
         </p>
@@ -890,15 +908,15 @@ export function SessionsConsole({
             // `silent-empty-is-unknown` reading the rest of this page applies —
             // "nothing matched your filter" and "there are no sessions" are
             // different sentences and the operator has to be told which.
+            //
+            // The server half is the question the rows ANSWERED (`answered`),
+            // never the controls: between a tab click and coord's answer the
+            // rows still answer the previous question, and so must this — the
+            // same reading the strip and the tab counts take.
             filtered={
-              status !== "all" ||
-              appliedQuery !== "" ||
-              kinds.length +
-                providers.length +
-                machines.length +
-                work.length +
-                accounts.length >
-                0
+              answered.status !== "all" ||
+              answered.query !== "" ||
+              narrowedBy.length > 0
             }
           />
         }
@@ -910,7 +928,7 @@ export function SessionsConsole({
             onToggle={ctx.onToggle}
             rowKey={ctx.rowKey}
             machineLabel={machineLabel}
-            lifecycleCeiling={ceiling.lifecycle}
+            lifecycleHalf={ceiling.lifecycle}
             now={now}
             coordinationReaders={coordinationReaders}
             readOutput={readOutput}
@@ -934,7 +952,7 @@ function SessionConsoleRow({
   onToggle,
   rowKey,
   machineLabel,
-  lifecycleCeiling,
+  lifecycleHalf,
   now,
   coordinationReaders,
   readOutput,
@@ -948,8 +966,8 @@ function SessionConsoleRow({
   onToggle: () => void;
   rowKey: string;
   machineLabel: MachineLabel;
-  /** The lifecycle half's ceiling while that read may be incomplete, else `null`. */
-  lifecycleCeiling: number | null;
+  /** The lifecycle half's extent — what an `agent_only` row was compared against. */
+  lifecycleHalf: HalfExtent;
   now?: number;
   coordinationReaders?: CoordinationReaders;
   readOutput?: OutputReader;
@@ -1128,7 +1146,7 @@ function SessionConsoleRow({
         row={row}
         account={account}
         machineLabel={machineLabel}
-        lifecycleCeiling={lifecycleCeiling}
+        lifecycleHalf={lifecycleHalf}
         coordination={coordination}
         stores={stores}
         now={now}

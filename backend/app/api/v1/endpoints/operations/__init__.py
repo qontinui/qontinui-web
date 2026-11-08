@@ -9907,11 +9907,20 @@ async def list_coord_sessions(
     Phase 3. Both reads stop at 500 rows: the lifecycle half at coord's own
     ``LIMIT 500`` on ``/sessions`` (the most recently started sessions), the
     agent half at the 500 it asks ``/coord/agent-sessions`` for (the most
-    recently seen). Below its ceiling a half is ``bound_kind: "complete"``
-    with ``truncated: false``. A FULL half is ``"unknown"`` with ``truncated``
-    and ``total`` null: more rows may exist, and nothing coord sent says
-    whether they do. ``shown`` counts the rows coord SERVED, before this
-    route's own ``device`` / ``status`` / ``q`` narrowing, so it need not equal
+    recently seen). ``bound`` comes in three arms:
+
+    * below its ceiling — ``bound_kind: "complete"`` with ``truncated:
+      false``: the half holds every row the read matched;
+    * a FULL half, ``shown >= limit`` — ``"unknown"`` with ``truncated`` and
+      ``total`` null: more rows may exist, and nothing coord sent says
+      whether they do, so a count over it is a floor;
+    * a 200 whose body carries no ``sessions`` list — ``"unknown"`` over
+      ``shown: 0``: nothing countable was served, so the half's SIZE is
+      unknown. ``shown < limit`` is what tells it from a full half, and no
+      count over it is a total or a floor — not even a floor of zero.
+
+    ``shown`` counts the rows coord SERVED, before this route's own
+    ``device`` / ``status`` / ``q`` narrowing, so it need not equal
     ``count``. A failed agent read carries no ``bound`` — there is no page to
     bound.
 

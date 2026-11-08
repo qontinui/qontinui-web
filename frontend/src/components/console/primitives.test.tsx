@@ -67,13 +67,13 @@ describe("FilterTabs (R6)", () => {
     // exact total, and is still not the dash (it WAS fetched).
     render(
       <FilterTabs
-        tabs={[{ id: "all", label: "All", count: "1000+" }]}
+        tabs={[{ id: "all", label: "All", count: "≥1000" }]}
         active="all"
         onChange={() => {}}
         testIdPrefix="t"
       />
     );
-    expect(screen.getByTestId("t-all")).toHaveTextContent("All1000+");
+    expect(screen.getByTestId("t-all")).toHaveTextContent("All≥1000");
     expect(screen.getByTestId("t-all")).not.toHaveTextContent("–");
   });
 
