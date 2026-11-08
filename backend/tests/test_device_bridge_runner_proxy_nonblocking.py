@@ -34,6 +34,7 @@ import pytest
 from starlette.datastructures import Headers
 
 from app.api.v1.endpoints import device_bridge_ws
+from app.services import runner_relay
 
 USER_ID = "33333333-3333-3333-3333-333333333333"
 # The co-located arm (no ``X-Qontinui-Device-Id``) is for platform admins
@@ -323,8 +324,38 @@ async def test_runner_proxy_strips_content_encoding(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def _emits_status(node: ast.AST, code: int) -> bool:
+    """True when ``node`` holds a call carrying ``status_code=<code>``."""
+    return any(
+        isinstance(k, ast.keyword)
+        and k.arg == "status_code"
+        and isinstance(k.value, ast.Constant)
+        and k.value.value == code
+        for sub in ast.walk(node)
+        if isinstance(sub, ast.Call)
+        for k in sub.keywords
+    )
+
+
+def _innermost_guard(tree: ast.AST, emitter: ast.AST) -> str:
+    """The test of the innermost ``If`` holding ``emitter`` in its TRUE branch.
+
+    ``orelse`` is deliberately not searched: an emitter in the negation of the
+    guard is the defect, not a pass.
+    """
+    governing = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.If)
+        and any(emitter in ast.walk(stmt) for stmt in node.body)
+    ]
+    assert governing, "the emitter is not inside the true branch of any conditional"
+    innermost = max(governing, key=lambda n: n.test.col_offset)
+    return ast.unparse(innermost.test)
+
+
 def test_relay_has_exactly_one_503_emitter() -> None:
-    """``_runner_proxy_relay`` emits 503 from one place only.
+    """The relay path emits 503 from one place only, for one cause.
 
     The second emitter was ``except RunnerNotConnectedError``, which could
     not fire: ``dispatch_and_wait`` is called with
@@ -332,18 +363,37 @@ def test_relay_has_exactly_one_503_emitter() -> None:
     ``app/services/runner/command_relay.py`` raises that error only under
     ``if require_local_connection and ...``. Deleted rather than commented,
     so the ambiguity is gone rather than annotated.
-    """
-    source = inspect.getsource(device_bridge_ws._runner_proxy_relay)
 
-    assert source.count("status_code=503") == 1, (
-        "the relay path must have exactly one 503 emitter — the "
+    The relay now lives in ``app/services/runner_relay.py`` (plan
+    ``2026-11-08-save-per-tab-runner-session-lists-on-sessions-page-kept-14-days``,
+    Phase 2), so the invariant spans that module and the route: ``relay_http``
+    returns ``NotConnected`` from one place, the module renders a 503 from one
+    place, and ``_runner_proxy_relay`` hard-codes no 503 of its own.
+    """
+    relay_source = inspect.getsource(runner_relay.relay_http)
+
+    assert relay_source.count("NotConnected(") == 1, (
+        "the relay must have exactly one not-connected outcome — the "
         "ws_session_id IS NULL branch."
     )
-    assert "except RunnerNotConnectedError" not in source, (
+    assert "except RunnerNotConnectedError" not in relay_source, (
         "the RunnerNotConnectedError arm is unreachable "
         "(require_local_connection=False) and must stay deleted."
     )
-    assert "require_local_connection=False" in source
+    assert "require_local_connection=False" in relay_source
+
+    assert inspect.getsource(runner_relay).count("status_code=503") == 1, (
+        "the relay module must render a 503 from exactly one place."
+    )
+    # The route itself sets no 503 anywhere: not in a returned response, and
+    # not in a raised one (``raise HTTPException(status_code=503)``) either.
+    route_source = textwrap.dedent(
+        inspect.getsource(device_bridge_ws._runner_proxy_relay)
+    )
+    assert "status_code=503" not in route_source, (
+        "the route must not emit a 503 of its own; the relay's outcome decides."
+    )
+    assert not _emits_status(ast.parse(route_source), 503)
 
 
 def test_relay_503_is_the_ws_session_id_branch() -> None:
@@ -363,43 +413,43 @@ def test_relay_503_is_the_ws_session_id_branch() -> None:
       test exists to catch — would have PASSED.
 
     The AST knows the difference between a node's ``body`` and its
-    ``orelse``, so ask it.
+    ``orelse``, so ask it. Since the relay moved into
+    ``app/services/runner_relay.py`` the chain has two links, and each is
+    asked the same way: ``relay_http`` returns ``NotConnected`` only from the
+    true branch of the ``ws_session_id`` test, and the module's one 503 is
+    rendered only from the true branch of the ``NotConnected`` test.
     """
-    source = textwrap.dedent(inspect.getsource(device_bridge_ws._runner_proxy_relay))
-    tree = ast.parse(source)
+    relay_tree = ast.parse(textwrap.dedent(inspect.getsource(runner_relay.relay_http)))
+    not_connected = [
+        n
+        for n in ast.walk(relay_tree)
+        if isinstance(n, ast.Return)
+        and isinstance(n.value, ast.Call)
+        and isinstance(n.value.func, ast.Name)
+        and n.value.func.id == "NotConnected"
+    ]
+    assert len(not_connected) == 1, (
+        "the relay must have exactly ONE not-connected outcome; "
+        f"found {len(not_connected)}"
+    )
+    guard = _innermost_guard(relay_tree, not_connected[0])
+    assert guard == "row.get('ws_session_id') is None", (
+        "the relay's only not-connected outcome must be the ws_session_id IS "
+        f"NULL branch; the innermost conditional containing it was: {guard}"
+    )
 
-    def emits_503(node: ast.AST) -> bool:
-        return any(
-            isinstance(k, ast.keyword)
-            and k.arg == "status_code"
-            and isinstance(k.value, ast.Constant)
-            and k.value.value == 503
-            for sub in ast.walk(node)
-            if isinstance(sub, ast.Call)
-            for k in sub.keywords
-        )
-
-    emitters = [n for n in ast.walk(tree) if isinstance(n, ast.Return) and emits_503(n)]
+    module_tree = ast.parse(inspect.getsource(runner_relay))
+    emitters = [
+        n
+        for n in ast.walk(module_tree)
+        if isinstance(n, ast.Return) and _emits_status(n, 503)
+    ]
     assert len(emitters) == 1, (
         f"the relay must have exactly ONE 503 emitter; found {len(emitters)}"
     )
-    emitter = emitters[0]
-
-    # The governing ``If`` is the innermost one holding the emitter in its
-    # TRUE branch. ``orelse`` is deliberately not searched: an emitter in the
-    # negation of the ws_session_id test is the defect, not a pass.
-    governing = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.If)
-        and any(emitter in ast.walk(stmt) for stmt in node.body)
-    ]
-    assert governing, "the 503 is not inside the true branch of any conditional"
-
-    innermost = max(governing, key=lambda n: n.test.col_offset)
-    guard = ast.unparse(innermost.test)
-    assert guard == "row.get('ws_session_id') is None", (
-        "the relay's only 503 must be the ws_session_id IS NULL branch; "
+    guard = _innermost_guard(module_tree, emitters[0])
+    assert guard == "isinstance(outcome, NotConnected)", (
+        "the relay's only 503 must render the not-connected outcome; "
         f"the innermost conditional containing it was: {guard}"
     )
 
@@ -419,13 +469,14 @@ async def test_relay_returns_503_when_ws_session_id_is_null(monkeypatch):
     )
 
     # The 503 branch decorates its body with ``last_seen_at`` from the
-    # full-row coord read (W-B). Stub it so this test attempts no network.
-    async def _fake_owned(request, device_id_, user_id):
+    # full-row coord read (W-B), which the relay service makes with the
+    # caller's bearer. Stub it so this test attempts no network.
+    async def _fake_owned(device_id_, *, bearer, user_id):
         return {"device_id": str(device_id_), "last_seen_at": "2026-08-27T09:15:00Z"}
 
     monkeypatch.setattr(
         device_bridge_ws.coord_device,
-        "get_owned_device",
+        "get_owned_device_with_bearer",
         _fake_owned,
         raising=True,
     )
