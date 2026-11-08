@@ -240,7 +240,8 @@ def parse_frontmatter(block: str | None) -> tuple[dict[str, Any], str | None]:
     """``(mapping, error)``. No block is an empty mapping and no error; a block
     that is too long, uses an anchor or alias, nests too deep, fails to parse,
     or is not a mapping, is an empty mapping and the error — never an
-    exception."""
+    exception. Any other exception is a fault in this code, not in the block,
+    and is raised."""
     if not block:
         return {}, None
     lines = block.lstrip("﻿").splitlines()
@@ -259,13 +260,18 @@ def parse_frontmatter(block: str | None) -> tuple[dict[str, Any], str | None]:
         normalised: dict[str, Any] = _iso(loaded)
     except _FrontmatterRefused as exc:
         return {}, f"The YAML block is not read: it {exc}."
-    except Exception as exc:
-        # Any exception, so this never raises. A value PyYAML's constructors
-        # cannot build (`!!timestamp x`, `!!bool maybe`, the impossible date
-        # `2026-02-30`) arrives as the YAMLError _StrictLoader raises for it,
-        # naming the value. RecursionError is the last bound: the depth limit
-        # stops nesting first, so a stack that still runs out is reported on
-        # this document like any other block that could not be read.
+    except (yaml.YAMLError, RecursionError, ValueError, OverflowError) as exc:
+        # What a block's own content can raise, and nothing else: an error in
+        # this module's code must reach the build's crash path, which logs it
+        # with its traceback, rather than read as a block that could not be
+        # parsed. A value PyYAML's constructors cannot build (`!!timestamp x`,
+        # `!!bool maybe`, the impossible date `2026-02-30`) arrives as the
+        # YAMLError _StrictLoader raises for it, naming the value. A date
+        # :func:`_iso` cannot move to UTC (`0001-01-01T00:00:00+01:00` falls
+        # before year 1) raises OverflowError. RecursionError is the last
+        # bound: the depth limit stops nesting first, so a stack that still
+        # runs out is reported on this document like any other block that
+        # could not be read.
         message = " ".join(str(exc).split()) or type(exc).__name__
         return {}, f"The YAML block could not be parsed: {message[:300]}"
     return normalised, None

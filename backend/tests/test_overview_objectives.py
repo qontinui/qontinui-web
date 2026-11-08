@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import copy
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -509,6 +510,38 @@ def _checkpoint(read: ObjectivesRead, cp: str, name: str = MERGE_TRAIN) -> Any:
 
 def _criterion(read: ObjectivesRead, cid: str, name: str = MERGE_TRAIN) -> Any:
     return next(c for c in _metric(read, name).criteria_latest if c.id == cid)
+
+
+class _LogRecorder:
+    """Stands in for a module logger, recording every call.
+
+    Not ``structlog.testing.capture_logs``: the app configures structlog with
+    ``cache_logger_on_first_use=True``, so a module logger that has already
+    emitted keeps its processor chain and a later capture records nothing
+    (``tests/services/test_coord_jwks.py``). ``exception`` also records the
+    exception being handled — the traceback the real call logs.
+    """
+
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def _record(self, level: str, event: str, **kw: Any) -> None:
+        self.events.append({"level": level, "event": event, **kw})
+
+    def debug(self, event: str, **kw: Any) -> None:
+        self._record("debug", event, **kw)
+
+    def info(self, event: str, **kw: Any) -> None:
+        self._record("info", event, **kw)
+
+    def warning(self, event: str, **kw: Any) -> None:
+        self._record("warning", event, **kw)
+
+    def error(self, event: str, **kw: Any) -> None:
+        self._record("error", event, **kw)
+
+    def exception(self, event: str, **kw: Any) -> None:
+        self._record("exception", event, exc_type=sys.exc_info()[0], **kw)
 
 
 # ===========================================================================
@@ -2362,6 +2395,11 @@ class TestDocumentShapes:
             # never the "could not be read (AttributeError)" crash path.
             ("metric: dev\nstarts: !!timestamp x\n", "is not a date or time"),
             ("metric: !!bool maybe\n", "is not true or false"),
+            # A date that moved to UTC falls before year 1: OverflowError.
+            (
+                "metric: dev\nstarts: 0001-01-01T00:00:00+01:00\n",
+                "date value out of range",
+            ),
         ],
         ids=[
             "alias_bomb",
@@ -2370,6 +2408,7 @@ class TestDocumentShapes:
             "oversize",
             "tagged_timestamp",
             "tagged_bool",
+            "date_before_year_1",
         ],
     )
     async def test_a_hostile_block_degrades_only_its_document_and_the_page_is_200(
@@ -2422,6 +2461,49 @@ class TestDocumentShapes:
         (initiative,) = body["initiatives"]
         assert "RecursionError" in initiative["frontmatter_error"]
         assert initiative["objectives"] == []
+
+    async def test_an_internal_error_reading_a_block_takes_the_logged_crash_path(
+        self, docs: FakeDocs, findings: FakeFindings, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A fault in this code is not a block that could not be parsed: it
+        reaches the build's crash path, which logs it with its traceback, and
+        still marks only its own document."""
+        from app.overview import objectives
+        from app.overview import objectives_frontmatter as fm
+
+        real_iso = fm._iso
+
+        def iso_or_fault(value: Any) -> Any:
+            if isinstance(value, dict) and value.get("probe") == "fault":
+                raise TypeError("an internal fault")
+            return real_iso(value)
+
+        recorder = _LogRecorder()
+        monkeypatch.setattr(fm, "_iso", iso_or_fault)
+        monkeypatch.setattr(objectives, "logger", recorder)
+        docs.seed("success_metric", "development-speed",
+                  "---\nmetric: dev\nprobe: fault\n---\n\n# Dev\n")  # fmt: skip
+        response = await _get(docs, findings)
+        assert response.status_code == 200, response.text[:500]
+        body = response.json()
+        metrics = {m["name"]: m for m in body["metrics"]}
+        dev = metrics["development-speed"]
+        assert dev["frontmatter_error"] == (
+            "The definition could not be read (TypeError)."
+        )
+        assert "could not be parsed" not in dev["frontmatter_error"]
+        assert body["sources"]["intent_documents"]["affected"] == ["development-speed"]
+        assert metrics[MERGE_TRAIN]["frontmatter_error"] is None
+        assert body["objectives_readable"] is True
+        (logged,) = [
+            e
+            for e in recorder.events
+            if e["event"] == "overview_objectives_metric_build_failed"
+        ]
+        assert logged["level"] == "exception"
+        assert logged["metric"] == "development-speed"
+        # Logged while handling the fault, so the traceback is the fault's.
+        assert logged["exc_type"] is TypeError
 
     async def test_free_text_bounds_and_a_ceiling_without_a_target(
         self, docs: FakeDocs, findings: FakeFindings
@@ -2834,6 +2916,29 @@ class TestFrontmatterBounds:
         mapping, error = fm.parse_frontmatter("---\na: 2026-10-08\n---\n")
         assert mapping == {}
         assert error and "could not be parsed" in error
+
+    def test_a_date_before_year_1_in_utc_is_this_blocks_error(self) -> None:
+        """``_iso`` moves an offset time to UTC; one hour before year 1 cannot
+        be represented, which is the block's content, not a fault."""
+        mapping, error = parse_frontmatter(
+            "---\nmetric: dev\nstarts: 0001-01-01T00:00:00+01:00\n---\n"
+        )
+        assert mapping == {}
+        assert error == "The YAML block could not be parsed: date value out of range"
+
+    def test_a_fault_in_this_code_is_raised_never_read_as_a_bad_block(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only what a block's content can raise is its error; anything else
+        is raised, for the build's crash path to log with its traceback."""
+        from app.overview import objectives_frontmatter as fm
+
+        def fault(*_: Any) -> Any:
+            raise TypeError("an internal fault")
+
+        monkeypatch.setattr(fm, "_iso", fault)
+        with pytest.raises(TypeError, match="an internal fault"):
+            fm.parse_frontmatter("---\na: 2026-10-08\n---\n")
 
     def test_the_real_merge_train_shape_is_within_every_bound(self) -> None:
         from app.overview.intent_documents import split_frontmatter
