@@ -35,7 +35,7 @@ Layering mirrors ``tests/test_plan_library_api.py``: ``httpx.AsyncClient`` over
 from __future__ import annotations
 
 from collections.abc import Mapping
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -50,6 +50,7 @@ from app.models.work_artifact import (
     SPAWNED_FOLLOWUP_RELATION,
     WORK_ARTIFACT_RELATIONS,
     WorkArtifact,
+    WorkArtifactEdge,
 )
 
 API_PREFIX = "/api/v1/plan-library"
@@ -1835,6 +1836,34 @@ async def _post_owned(
     )
 
 
+async def _raw_followup(
+    db: AsyncSession,
+    *,
+    source: str,
+    owner: str | None,
+    note: str,
+    hours_old: int = 0,
+) -> str:
+    """One ``spawned_followup`` row inserted raw, ``hours_old`` hours in the past."""
+    edge_id = str(uuid4())
+    await db.execute(
+        text(
+            "INSERT INTO agent.work_artifact_edges "
+            "(id, from_id, to_id, relation, note, created_at) "
+            "VALUES (:id, :source, :owner, 'spawned_followup', :note, "
+            "now() - make_interval(hours => :hours))"
+        ),
+        {
+            "id": edge_id,
+            "source": source,
+            "owner": owner,
+            "note": note,
+            "hours": hours_old,
+        },
+    )
+    return edge_id
+
+
 async def _ghost_open_twin(db: AsyncSession, *, source: str, note: str) -> str:
     """An OPEN copy of ``note`` beside the row that already owns it.
 
@@ -1843,16 +1872,7 @@ async def _ghost_open_twin(db: AsyncSession, *, source: str, note: str) -> str:
     to the owned one. The door no longer writes it, so the ghost is inserted
     raw — it is the only way to put the shape in front of the claim route.
     """
-    ghost_id = str(uuid4())
-    await db.execute(
-        text(
-            "INSERT INTO agent.work_artifact_edges "
-            "(id, from_id, to_id, relation, note) "
-            "VALUES (:id, :source, NULL, 'spawned_followup', :note)"
-        ),
-        {"id": ghost_id, "source": source, "note": note},
-    )
-    return ghost_id
+    return await _raw_followup(db, source=source, owner=None, note=note)
 
 
 class TestAFollowupIsIdentifiedByItsNote:
@@ -1974,6 +1994,11 @@ class TestAFollowupIsIdentifiedByItsNote:
         assert again.json()["to_id"] == owner
         assert again.json()["followup"]["state"] == "claimed"
         assert (await _followups(client))["total"] == open_before
+        # The response shows the STORED owner: its peer fields are not null
+        # beside a set ``to_id``.
+        owner_slug = (await client.get(f"{API_PREFIX}/{owner}")).json()["slug"]
+        assert again.json()["peer_slug"] == owner_slug
+        assert again.json()["peer_kind"] == "plan"
 
     @pytest.mark.parametrize("relation", PAIR_UNIQUE_RELATIONS)
     async def test_a_duplicate_triple_is_idempotent_and_refused_by_the_database(
@@ -2010,4 +2035,487 @@ class TestAFollowupIsIdentifiedByItsNote:
         assert constraint.startswith("uq_work_artifact_edges_from_to_relation"), (
             constraint,
             str(refused.value),
+        )
+
+    async def test_a_claimed_followup_names_its_current_owner_and_a_replay_is_a_200(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """T2 — ``followup_already_claimed`` still names the CURRENT owner, and
+        claiming for the owner an edge already has is an idempotent replay."""
+        source = await _make_artifact(client, stem="current-source")
+        first_owner = await _make_artifact(client, stem="current-first")
+        second_owner = await _make_artifact(client, stem="current-second")
+        edge_id = (await _spawn(client, source, "a contested finding")).json()["id"]
+        assert (await _claim(client, edge_id, first_owner)).status_code == 200
+
+        conflict = await _claim(client, edge_id, second_owner)
+        assert conflict.status_code == 409, conflict.text
+        detail = conflict.json()["detail"]
+        assert detail["error"] == "followup_already_claimed"
+        assert detail["edge_id"] == edge_id
+        # The owner the row HAS — never the one that was asked for.
+        assert detail["to_id"] == first_owner != second_owner
+
+        replay = await _claim(client, edge_id, first_owner)
+        assert replay.status_code == 200, replay.text
+        assert replay.json()["id"] == edge_id
+        assert replay.json()["to_id"] == first_owner
+        assert replay.json()["followup"]["state"] == "claimed"
+        assert replay.json()["peer_slug"]
+
+        # Nothing moved, and nothing was added.
+        edges = (await client.get(f"{API_PREFIX}/{source}")).json()["edges"]
+        assert [(e["id"], e["to_id"]) for e in edges] == [(edge_id, first_owner)]
+
+    async def test_the_same_note_owned_by_another_artifact_is_not_a_duplicate(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Identity is (source, OWNER, note): an open copy of a note that
+        another artifact owns can be claimed by a different one."""
+        source = await _make_artifact(client, stem="other-owner-source")
+        owner = await _make_artifact(client, stem="other-owner-a")
+        other = await _make_artifact(client, stem="other-owner-b")
+        note = "a finding two plans could take"
+        assert (await _post_owned(client, source, owner, note)).status_code == 201
+        ghost = await _ghost_open_twin(async_db_session, source=source, note=note)
+
+        claimed = await _claim(client, ghost, other)
+        assert claimed.status_code == 200, claimed.text
+        assert claimed.json()["id"] == ghost
+        assert claimed.json()["to_id"] == other
+
+    async def test_a_twin_is_a_twin_however_its_whitespace_is_spelled(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        source = await _make_artifact(client, stem="ws-source")
+        owner = await _make_artifact(client, stem="ws-owner")
+        owned = await _post_owned(client, source, owner, "a spaced finding")
+        assert owned.status_code == 201, owned.text
+        ghost = await _ghost_open_twin(
+            async_db_session, source=source, note="\t a spaced finding \n"
+        )
+
+        conflict = await _claim(client, ghost, owner)
+        assert conflict.status_code == 409, conflict.text
+        detail = conflict.json()["detail"]
+        assert detail["error"] == "followup_duplicate_owned", detail
+        assert detail["existing_edge_id"] == owned.json()["id"]
+
+    @pytest.mark.parametrize("claimed", [0, 1, 3])
+    async def test_zero_one_and_many_claims_per_source(
+        self, client: httpx.AsyncClient, claimed: int
+    ) -> None:
+        """T8 — the enumeration: no claim, one, and several for one owner."""
+        source = await _make_artifact(client, stem=f"enum-source-{claimed}")
+        owner = await _make_artifact(client, stem=f"enum-owner-{claimed}")
+        edge_ids = [
+            (await _spawn(client, source, f"enumerated finding {n}")).json()["id"]
+            for n in range(3)
+        ]
+        for edge_id in edge_ids[:claimed]:
+            resp = await _claim(client, edge_id, owner)
+            assert resp.status_code == 200, resp.text
+
+        owner_edges = (await client.get(f"{API_PREFIX}/{owner}")).json()["edges"]
+        assert {e["id"] for e in owner_edges} == set(edge_ids[:claimed])
+        still_open = await _followups(client)
+        assert still_open["total"] == 3 - claimed
+        assert {i["edge_id"] for i in still_open["items"]} == set(edge_ids[claimed:])
+
+    async def test_a_two_ended_post_of_an_open_note_names_the_open_row(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """T6 — never a second copy, and never a silent claim from a POST."""
+        source = await _make_artifact(client, stem="exists-source")
+        owner = await _make_artifact(client, stem="exists-owner")
+        note = "a finding that nobody owns yet"
+        open_id = (await _spawn(client, source, note)).json()["id"]
+
+        refused = await _post_owned(client, source, owner, f"  {note}\n")
+        assert refused.status_code == 409, refused.text
+        detail = refused.json()["detail"]
+        assert detail["error"] == "followup_exists_unowned"
+        assert detail["existing_edge_id"] == open_id
+        assert detail["to_id"] == owner
+        assert f"PATCH /plan-library/edges/{open_id}" in detail["message"]
+
+        # The row is still open and unowned: the POST moved nothing.
+        queue = await _followups(client)
+        assert [item["edge_id"] for item in queue["items"]] == [open_id]
+
+    async def test_a_two_ended_post_of_a_note_another_artifact_owns_names_that_owner(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        source = await _make_artifact(client, stem="foreign-source")
+        owner = await _make_artifact(client, stem="foreign-owner")
+        other = await _make_artifact(client, stem="foreign-other")
+        note = "a finding that already has a home"
+        owned = await _post_owned(client, source, owner, note)
+        assert owned.status_code == 201, owned.text
+
+        refused = await _post_owned(client, source, other, note)
+        assert refused.status_code == 409, refused.text
+        detail = refused.json()["detail"]
+        assert detail["error"] == "followup_already_claimed"
+        assert detail["edge_id"] == owned.json()["id"]
+        # The STORED owner, not the one this post asked for.
+        assert detail["to_id"] == owner != other
+
+    async def test_a_two_ended_post_of_a_resolved_note_names_the_resolution(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        source = await _make_artifact(client, stem="resolved-source")
+        owner = await _make_artifact(client, stem="resolved-owner")
+        note = "a finding that was dismissed"
+        edge_id = (await _spawn(client, source, note)).json()["id"]
+        await _drive(client, edge_id, "dismissed")
+
+        refused = await _post_owned(client, source, owner, note)
+        assert refused.status_code == 409, refused.text
+        detail = refused.json()["detail"]
+        assert detail["error"] == "followup_resolved"
+        assert detail["edge_id"] == edge_id
+        assert detail["resolution"] == "dismissed"
+
+    async def test_a_repost_over_an_open_and_an_owned_copy_answers_with_the_owned_row(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The lookup is ordered owned-first, so a pair that already holds both
+        (the ghost an earlier build wrote) is answered deterministically. The
+        OPEN copy is made the OLDER row, so ``created_at`` alone would pick it."""
+        source = await _make_artifact(client, stem="order-source")
+        owner = await _make_artifact(client, stem="order-owner")
+        other = await _make_artifact(client, stem="order-other")
+        note = "a finding that exists twice"
+        ghost = await _raw_followup(
+            async_db_session, source=source, owner=None, note=note, hours_old=2
+        )
+        owned = await _raw_followup(
+            async_db_session, source=source, owner=owner, note=note
+        )
+
+        one_ended = await _spawn(client, source, note)
+        assert one_ended.status_code == 200, one_ended.text
+        assert one_ended.json()["id"] == owned != ghost
+        assert one_ended.json()["followup"]["state"] == "claimed"
+
+        two_ended = await _post_owned(client, source, owner, note)
+        assert two_ended.status_code == 200, two_ended.text
+        assert two_ended.json()["id"] == owned
+
+        refused = await _post_owned(client, source, other, note)
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["detail"]["error"] == "followup_already_claimed"
+        assert refused.json()["detail"]["to_id"] == owner
+
+    async def test_an_edge_deleted_before_the_lock_is_a_404_not_a_claim_conflict(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A vanished edge was once reported as "already claimed by <the
+        requested owner>". The route read it a moment before the lock; the row
+        is gone by then, and the answer is the one an unknown edge id gets."""
+        source = await _make_artifact(client, stem="vanish-source")
+        owner = await _make_artifact(client, stem="vanish-owner")
+        edge_id = (await _spawn(client, source, "about to vanish")).json()["id"]
+        stale = await crud.get_edge(async_db_session, UUID(edge_id), org_id=None)
+        assert stale is not None
+        await async_db_session.execute(
+            text("DELETE FROM agent.work_artifact_edges WHERE id = :e"),
+            {"e": edge_id},
+        )
+
+        async def stale_get_edge(db: AsyncSession, edge: UUID, *, org_id):
+            return stale
+
+        monkeypatch.setattr(crud, "get_edge", stale_get_edge)
+
+        resp = await _claim(client, edge_id, owner)
+        assert resp.status_code == 404, resp.text
+        assert "Work artifact edge not found" in resp.text
+        assert "followup_already_claimed" not in resp.text
+
+
+async def test_the_identity_indexes_the_crud_classifies_by_are_the_models() -> None:
+    """The CRUD tells "a racing writer took the slot" from "something else is
+    wrong" by constraint NAME. A rename in the model that did not reach that
+    set would silently turn the classification off."""
+    model_names = {index.name for index in WorkArtifactEdge.__table__.indexes}
+    assert crud._EDGE_IDENTITY_INDEXES <= model_names, sorted(
+        crud._EDGE_IDENTITY_INDEXES - model_names
+    )
+    assert crud._OWNED_FOLLOWUP_INDEX in crud._EDGE_IDENTITY_INDEXES
+
+
+class TestFollowupIdentityUnderRaces:
+    """The CRUD layer's answers when the database, not the lookup, decides.
+
+    ``conftest`` binds the session to an OUTER transaction, so a plain
+    ``rollback()`` after a refused write would discard every row a test seeded.
+    Each test here therefore also asserts that what it seeded is still readable
+    after the refusal: that is what separates a SAVEPOINT from a rollback.
+    """
+
+    async def _owned_pair(
+        self, db: AsyncSession, stem: str, note: str
+    ) -> tuple[WorkArtifact, WorkArtifact, WorkArtifactEdge, str]:
+        """A source, an owner, the owned follow-up, and an open ghost twin."""
+        source = await _crud_artifact(db, f"{stem}-source")
+        owner = await _crud_artifact(db, f"{stem}-owner")
+        owned, created = await crud.create_edge(
+            db,
+            from_artifact=source,
+            to_artifact=owner,
+            relation="spawned_followup",
+            note=note,
+            created_by="test",
+        )
+        assert created
+        ghost = await _ghost_open_twin(db, source=str(source.id), note=note)
+        return source, owner, owned, ghost
+
+    async def test_the_claim_judges_the_row_as_locked_not_as_the_caller_read_it(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The route reads the edge, then claims it; a concurrent claimer can
+        win in between. The locked read must refresh what the session cached."""
+        db = async_db_session
+        source = await _crud_artifact(db, "stale-source")
+        winner = await _crud_artifact(db, "stale-winner")
+        loser = await _crud_artifact(db, "stale-loser")
+        edge, _ = await crud.create_edge(
+            db,
+            from_artifact=source,
+            to_artifact=None,
+            relation="spawned_followup",
+            note="a stale read",
+            created_by="test",
+        )
+        read = await crud.get_edge(db, edge.id, org_id=None)
+        assert read is not None and read[0].to_id is None
+        # Another session claims it. A Core UPDATE never touches this session's
+        # identity map, so the cached ``to_id`` is stale exactly as in the route.
+        await db.execute(
+            text("UPDATE agent.work_artifact_edges SET to_id = :o WHERE id = :e"),
+            {"o": winner.id, "e": edge.id},
+        )
+        assert read[0].to_id is None
+
+        with pytest.raises(crud.FollowupAlreadyClaimed) as excinfo:
+            await crud.claim_followup(db, edge.id, loser.id)
+        assert excinfo.value.to_id == winner.id
+
+        stored = (
+            await db.execute(
+                text("SELECT to_id FROM agent.work_artifact_edges WHERE id = :e"),
+                {"e": edge.id},
+            )
+        ).scalar_one()
+        assert stored == winner.id
+
+    async def test_claiming_an_edge_deleted_before_the_lock_raises_vanished(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        db = async_db_session
+        source = await _crud_artifact(db, "gone-source")
+        owner = await _crud_artifact(db, "gone-owner")
+        edge, _ = await crud.create_edge(
+            db,
+            from_artifact=source,
+            to_artifact=None,
+            relation="spawned_followup",
+            note="deleted under the claimer",
+            created_by="test",
+        )
+        await db.execute(
+            text("DELETE FROM agent.work_artifact_edges WHERE id = :e"),
+            {"e": edge.id},
+        )
+        with pytest.raises(crud.FollowupVanished) as excinfo:
+            await crud.claim_followup(db, edge.id, owner.id)
+        assert isinstance(excinfo.value, LookupError)
+        assert excinfo.value.edge_id == edge.id
+
+    async def test_a_racing_twin_is_still_a_duplicate_and_the_session_survives(
+        self, async_db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """T4 — the pre-check misses (a writer took the slot after it ran), so
+        the DATABASE refuses the claim; it is still reported as the duplicate it
+        is, naming the twin."""
+        db = async_db_session
+        _, owner, owned, ghost = await self._owned_pair(db, "race", "a raced finding")
+
+        real = crud._owned_twin
+        calls: list[int] = []
+
+        async def miss_once(*args, **kwargs):
+            calls.append(1)
+            return None if len(calls) == 1 else await real(*args, **kwargs)
+
+        monkeypatch.setattr(crud, "_owned_twin", miss_once)
+
+        with pytest.raises(crud.FollowupDuplicateOwned) as excinfo:
+            await crud.claim_followup(db, UUID(ghost), owner.id)
+        assert excinfo.value.existing_edge_id == owned.id
+        assert excinfo.value.edge_id == UUID(ghost)
+        assert excinfo.value.to_id == owner.id
+        assert len(calls) == 2, "the backstop must look the twin up again"
+
+        # Only the SAVEPOINT rolled back: what this test seeded is still there,
+        # and the refused claim left the ghost open.
+        assert await crud.get_edge(db, owned.id, org_id=None) is not None
+        found = await crud.get_edge(db, UUID(ghost), org_id=None)
+        assert found is not None and found[0].to_id is None
+
+    async def test_an_integrity_error_with_no_twin_behind_it_is_not_a_claim_conflict(
+        self, async_db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """T4 — the database refused the claim and the lookup finds no twin to
+        name: the original error propagates, labelled as nothing it is not."""
+        db = async_db_session
+        _, owner, owned, ghost = await self._owned_pair(db, "notwin", "an unnamed twin")
+
+        async def never(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(crud, "_owned_twin", never)
+
+        with pytest.raises(IntegrityError) as excinfo:
+            await crud.claim_followup(db, UUID(ghost), owner.id)
+        assert (
+            crud._violated_constraint(excinfo.value)
+            == "uq_work_artifact_edges_owned_followup"
+        )
+        assert await crud.get_edge(db, owned.id, org_id=None) is not None
+
+    async def test_an_unrelated_violation_is_not_named_a_duplicate(
+        self, async_db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A claim of an artifact that no longer exists trips the foreign key,
+        not the owned-note guard. Even with a lookup that WOULD name a twin, the
+        constraint says what happened, and the lookup is not consulted again."""
+        db = async_db_session
+        source = await _crud_artifact(db, "fk-source")
+        edge, _ = await crud.create_edge(
+            db,
+            from_artifact=source,
+            to_artifact=None,
+            relation="spawned_followup",
+            note="claimed for a deleted artifact",
+            created_by="test",
+        )
+        # Read before the claim: its rolled-back savepoint expires ``edge``.
+        edge_id = edge.id
+
+        class _Twin:
+            id = uuid4()
+
+        calls: list[int] = []
+
+        async def liar(*args, **kwargs):
+            calls.append(1)
+            return None if len(calls) == 1 else _Twin()
+
+        monkeypatch.setattr(crud, "_owned_twin", liar)
+
+        with pytest.raises(IntegrityError) as excinfo:
+            await crud.claim_followup(db, edge_id, uuid4())
+        assert crud._violated_constraint(excinfo.value) == (
+            "work_artifact_edges_to_id_fkey"
+        )
+        assert len(calls) == 1, "a foreign-key violation is not a twin to look for"
+        assert await crud.get_edge(db, edge_id, org_id=None) is not None
+
+    async def test_a_racing_post_resolves_to_the_row_that_won(
+        self, async_db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The write path's backstop, one-ended and owned: the lookup misses,
+        the INSERT is refused by the guard, and the post returns the winner."""
+        db = async_db_session
+        source = await _crud_artifact(db, "post-race-source")
+        owner = await _crud_artifact(db, "post-race-owner")
+        for to_artifact in (None, owner):
+            note = f"a finding two posts race for {to_artifact is None}"
+            winner, created = await crud.create_edge(
+                db,
+                from_artifact=source,
+                to_artifact=to_artifact,
+                relation="spawned_followup",
+                note=note,
+                created_by="first",
+            )
+            assert created
+
+            real = crud._find_existing_edge
+            calls: list[int] = []
+
+            async def miss_once(*args, _real=real, _calls=calls, **kwargs):
+                _calls.append(1)
+                return None if len(_calls) == 1 else await _real(*args, **kwargs)
+
+            with monkeypatch.context() as patch:
+                patch.setattr(crud, "_find_existing_edge", miss_once)
+                edge, created = await crud.create_edge(
+                    db,
+                    from_artifact=source,
+                    to_artifact=to_artifact,
+                    relation="spawned_followup",
+                    note=f"  {note} ",
+                    created_by="second",
+                )
+            assert created is False
+            assert edge.id == winner.id
+            assert len(calls) == 2
+
+            # The savepoint kept the session, and what it held, alive.
+            assert await crud.get_edge(db, winner.id, org_id=None) is not None
+
+    async def test_an_unrelated_violation_on_a_post_is_neither_retried_nor_a_duplicate(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        db = async_db_session
+        source = await _crud_artifact(db, "post-fk-source")
+        vanished = WorkArtifact(id=uuid4())  # never inserted: the FK has no row
+        with pytest.raises(IntegrityError) as excinfo:
+            await crud.create_edge(
+                db,
+                from_artifact=source,
+                to_artifact=vanished,
+                relation="depends_on",
+                note=None,
+                created_by="test",
+            )
+        assert crud._violated_constraint(excinfo.value) == (
+            "work_artifact_edges_to_id_fkey"
+        )
+        # The source this test seeded survived the refused write.
+        assert await crud.get_artifact(db, source.id, org_id=None) is not None
+
+    async def test_a_violation_reports_the_constraint_the_database_named(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        db = async_db_session
+        source = await _crud_artifact(db, "named-source")
+        peer = await _crud_artifact(db, "named-peer")
+        await crud.create_edge(
+            db,
+            from_artifact=source,
+            to_artifact=peer,
+            relation="depends_on",
+            note=None,
+            created_by="test",
+        )
+        with pytest.raises(IntegrityError) as excinfo:
+            async with db.begin_nested():
+                await db.execute(
+                    text(
+                        "INSERT INTO agent.work_artifact_edges "
+                        "(from_id, to_id, relation) VALUES (:s, :p, 'depends_on')"
+                    ),
+                    {"s": source.id, "p": peer.id},
+                )
+        assert crud._violated_constraint(excinfo.value) == (
+            "uq_work_artifact_edges_from_to_relation_non_followup"
         )

@@ -98,6 +98,7 @@ from app.models.work_artifact import (
     NOTE_TRIM_CHARS,
     OPEN_FOLLOWUP_SQL,
     SEARCH_TSVECTOR_SQL,
+    SPAWNED_FOLLOWUP_RELATION,
     SPEC_ARTIFACT_KINDS,
     TERMINAL_STATUSES,
     UNCLAIMED_FOLLOWUP_SQL,
@@ -1614,6 +1615,101 @@ async def set_artifact_kind(
     return artifact
 
 
+#: The unique indexes that ARE an edge's identity
+#: (``plan_library_12_followup_identity_is_the_note``). A violation of one of
+#: them means a racing writer recorded the same edge between this writer's
+#: lookup and its write; a violation of anything else - a foreign key to a
+#: deleted artifact, a CHECK - is not that, and is never reported as a
+#: duplicate. ``tests/test_plan_library_followups.py`` pins every name to the
+#: model's, so a rename there cannot silently turn the classification off.
+_EDGE_IDENTITY_INDEXES: frozenset[str] = frozenset(
+    {
+        "uq_work_artifact_edges_from_to_relation_non_followup",
+        "uq_work_artifact_edges_owned_followup",
+        "uq_work_artifact_edges_open_followup",
+    }
+)
+
+#: The one index whose violation on a CLAIM means "the requested owner already
+#: holds this finding".
+_OWNED_FOLLOWUP_INDEX = "uq_work_artifact_edges_owned_followup"
+
+
+def _violated_constraint(exc: IntegrityError) -> str | None:
+    """The constraint or unique index an ``IntegrityError`` names, or ``None``
+    when the driver does not say.
+
+    asyncpg reports it on the exception SQLAlchemy wraps (``__cause__``);
+    ``app.crud.taste._is_asset_fk_violation`` reads it the same way. The
+    server's message is the fallback, for a driver that exposes no attribute.
+    """
+    orig = exc.orig
+    cause = getattr(orig, "__cause__", None)
+    name = getattr(cause, "constraint_name", None) or getattr(
+        orig, "constraint_name", None
+    )
+    if isinstance(name, str) and name:
+        return name
+    match = re.search(r'constraint "([^"]+)"', str(orig))
+    return match.group(1) if match else None
+
+
+async def _find_existing_edge(
+    db: AsyncSession,
+    *,
+    from_id: UUID,
+    to_id: UUID | None,
+    relation: str,
+    note: str | None,
+) -> WorkArtifactEdge | None:
+    """The stored edge a write of ``(from_id, to_id, relation, note)`` repeats.
+
+    **A follow-up's identity is its NOTE, in every state.** For
+    :data:`SPAWNED_FOLLOWUP_RELATION` the key is ``(from_id, relation,
+    btrim(note))`` with NO ``to_id`` predicate, so an open row, a claimed row
+    and a resolved one are all found by what they say, for the one-ended post
+    and the two-ended post alike. BOTH sides are trimmed in SQL with
+    :data:`NOTE_TRIM_CHARS` - the exact expression the two follow-up guard
+    indexes (``uq_work_artifact_edges_open_followup``,
+    ``uq_work_artifact_edges_owned_followup``) index - rather than trimming the
+    incoming note in Python. Two trims that disagree (Python's ``str.strip()``
+    also eats unicode whitespace; one-argument ``btrim`` eats only spaces)
+    would let the lookup miss a row the index then refuses to insert, turning
+    an idempotent re-post into a 500.
+
+    Ordered ``(to_id IS NULL), created_at, id``: an OWNED row first. A corpus
+    can hold an open copy beside the owned row it duplicates (re-posting a
+    claimed note used to insert one), and the answer for that pair must be the
+    owned row, not whichever the planner happens to return first.
+
+    Every other relation is identified by its ``(from_id, to_id, relation)``
+    triple, which ``uq_work_artifact_edges_from_to_relation_non_followup``
+    keeps unique.
+    """
+    if relation == SPAWNED_FOLLOWUP_RELATION:
+        stmt = (
+            select(WorkArtifactEdge)
+            .where(
+                WorkArtifactEdge.from_id == from_id,
+                WorkArtifactEdge.relation == relation,
+                func.btrim(WorkArtifactEdge.note, NOTE_TRIM_CHARS)
+                == func.btrim(note or "", NOTE_TRIM_CHARS),
+            )
+            .order_by(
+                WorkArtifactEdge.to_id.is_(None),
+                WorkArtifactEdge.created_at,
+                WorkArtifactEdge.id,
+            )
+        )
+    else:
+        stmt = select(WorkArtifactEdge).where(
+            WorkArtifactEdge.from_id == from_id,
+            WorkArtifactEdge.to_id == to_id,
+            WorkArtifactEdge.relation == relation,
+        )
+    return (await db.execute(stmt)).scalars().first()
+
+
 async def create_edge(
     db: AsyncSession,
     *,
@@ -1626,13 +1722,20 @@ async def create_edge(
 ) -> tuple[WorkArtifactEdge, bool]:
     """Create one edge, or return the existing identical one.
 
-    Returns ``(edge, created)``. Re-posting the same
-    ``(from, to, relation)`` triple is idempotent rather than a 409 — the
-    library is fed by repeatable scans.
+    Returns ``(edge, created)``. Re-posting an edge is idempotent rather than a
+    409 - the library is fed by repeatable scans. What "the same edge" means
+    depends on the relation (:func:`_find_existing_edge`):
+
+    * every relation but the follow-up: the ``(from, to, relation)`` triple;
+    * ``spawned_followup``: ``(from, relation, note)`` - the finding itself,
+      whoever owns it, in every state. A source may therefore have several
+      follow-ups with ONE owner (different notes), and re-posting the note of a
+      CLAIMED follow-up returns the claimed row instead of inserting an open
+      copy beside it.
 
     ``on_write(edge, created)``, when given, runs INSIDE the same transaction,
     after the new row is flushed (``created``) or the existing one found, and
-    before the commit — so what it adds commits or rolls back WITH the edge. It
+    before the commit - so what it adds commits or rolls back WITH the edge. It
     returns whether it wrote anything; on an existing row nothing is committed
     unless it did.
     The follow-up door uses it to write a new follow-up's anchors and size
@@ -1647,69 +1750,94 @@ async def create_edge(
     relation; the endpoint checks it first so the caller gets a 422 naming the
     relation rather than an IntegrityError 500.
 
-    **Idempotency for the one-ended form is keyed on the NOTE.** The shipped
-    ``UNIQUE (from_id, to_id, relation)`` cannot see these rows — SQL NULLs are
-    distinct, so every open follow-up is unique to it whatever it says. Keying
-    the dedup on ``(from_id, relation, btrim(note))`` — matching the partial
-    index ``uq_work_artifact_edges_open_followup`` exactly — keeps two DIFFERENT
-    follow-ups off one plan legal (a plan can surface several) while collapsing
-    a re-post of the same finding onto the existing row.
+    **A one-ended post is answered with the stored row, whatever its state** -
+    open, claimed by some artifact, or resolved.
+
+    **A two-ended follow-up post must agree with the stored row's owner.** The
+    same finding already owned by ``to_artifact`` is idempotent. Otherwise the
+    refusal names the real condition, never a guess:
+    :class:`FollowupAlreadyClaimed` (owned by ANOTHER artifact - names it),
+    :class:`FollowupExistsUnowned` (still open: claim it with ``PATCH
+    /plan-library/edges/{id}`` instead of posting it again) or
+    :class:`FollowupResolved` (closed by a resolution). Claiming from a POST
+    is deliberately not offered: it would add a second door that moves
+    ownership beside the one-way claim route.
+
+    The write runs under a SAVEPOINT. A racing writer that recorded the same
+    edge between the lookup and the INSERT trips one of the identity indexes
+    (:data:`_EDGE_IDENTITY_INDEXES`); only the savepoint rolls back - a plain
+    ``rollback()`` would also discard everything the caller's transaction
+    already held - and the lookup runs again. Any other ``IntegrityError``, or
+    one whose edge cannot then be found, is re-raised as it is.
     """
-    if to_artifact is None:
-        # The note is the identity here, so it is also the dedup key. BOTH
-        # sides are trimmed in SQL with :data:`NOTE_TRIM_CHARS` — the exact
-        # expression ``uq_work_artifact_edges_open_followup`` indexes — rather
-        # than trimming the incoming note in Python. Two trims that disagree
-        # (Python's ``str.strip()`` also eats unicode whitespace; one-argument
-        # ``btrim`` eats only spaces) would let the lookup miss a row the index
-        # then refuses to insert, turning an idempotent re-post into a 500.
-        stmt = select(WorkArtifactEdge).where(
-            WorkArtifactEdge.from_id == from_artifact.id,
-            WorkArtifactEdge.to_id.is_(None),
-            WorkArtifactEdge.relation == relation,
-            func.btrim(WorkArtifactEdge.note, NOTE_TRIM_CHARS)
-            == func.btrim(note or "", NOTE_TRIM_CHARS),
-        )
-    else:
-        stmt = select(WorkArtifactEdge).where(
-            WorkArtifactEdge.from_id == from_artifact.id,
-            WorkArtifactEdge.to_id == to_artifact.id,
-            WorkArtifactEdge.relation == relation,
-        )
-    found = (await db.execute(stmt)).scalars().first()
+    from_id = from_artifact.id
+    to_id = to_artifact.id if to_artifact is not None else None
+
+    found = await _find_existing_edge(
+        db, from_id=from_id, to_id=to_id, relation=relation, note=note
+    )
     if found is not None:
-        return await _settle_found_edge(db, found, on_write)
+        return await _settle_found_edge(db, found, to_id, on_write)
 
     edge = WorkArtifactEdge(
-        from_id=from_artifact.id,
-        to_id=to_artifact.id if to_artifact is not None else None,
+        from_id=from_id,
+        to_id=to_id,
         relation=relation,
         note=note,
         created_by=created_by,
     )
-    db.add(edge)
     try:
-        if on_write is not None:
+        async with db.begin_nested():
+            db.add(edge)
             await db.flush()
-            await on_write(edge, True)
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        found = (await db.execute(stmt)).scalars().first()
-        if found is None:  # pragma: no cover — the row must exist now
+            if on_write is not None:
+                await on_write(edge, True)
+    except IntegrityError as exc:
+        constraint = _violated_constraint(exc)
+        if constraint is not None and constraint not in _EDGE_IDENTITY_INDEXES:
             raise
-        return await _settle_found_edge(db, found, on_write)
+        found = await _find_existing_edge(
+            db, from_id=from_id, to_id=to_id, relation=relation, note=note
+        )
+        if found is None:
+            raise
+        return await _settle_found_edge(db, found, to_id, on_write)
+    await db.commit()
     await db.refresh(edge)
     return edge, True
+
+
+def _refuse_other_owner(found: WorkArtifactEdge, to_id: UUID) -> None:
+    """A two-ended follow-up post met the stored row for the same finding.
+
+    Returns when ``to_id`` already owns it (an idempotent re-post) and raises
+    the typed conflict for every other state, derived from the ROW rather than
+    assumed.
+    """
+    if found.to_id == to_id:
+        return
+    if found.to_id is not None:
+        raise FollowupAlreadyClaimed(edge_id=found.id, to_id=found.to_id)
+    if found.resolution is not None:
+        raise FollowupResolved(edge_id=found.id, resolution=found.resolution)
+    raise FollowupExistsUnowned(existing_edge_id=found.id, to_id=to_id)
 
 
 async def _settle_found_edge(
     db: AsyncSession,
     found: WorkArtifactEdge,
+    to_id: UUID | None,
     on_write: Callable[[WorkArtifactEdge, bool], Awaitable[bool]] | None,
 ) -> tuple[WorkArtifactEdge, bool]:
     """An idempotent re-post landed on ``found``: let ``on_write`` see it,
-    and commit only when it reports a write."""
+    and commit only when it reports a write.
+
+    A two-ended follow-up post is first checked against the stored owner
+    (:func:`_refuse_other_owner`), so a refused post never fills anchors on a
+    row it does not own.
+    """
+    if found.relation == SPAWNED_FOLLOWUP_RELATION and to_id is not None:
+        _refuse_other_owner(found, to_id)
     if on_write is None:
         return found, False
     if await on_write(found, False):
@@ -1724,13 +1852,16 @@ async def _settle_found_edge(
 
 
 class FollowupAlreadyClaimed(Exception):
-    """Someone already named the artifact that owns this follow-up.
+    """The edge row already has an owner, and it is not the one asked for.
 
-    Claiming is a one-way transition (open → owned) and it is NOT idempotent
-    across different targets: silently re-pointing a claimed follow-up at a
-    second artifact would erase the first claim with no trace, and the two
-    callers would each believe they own the work. Surfaced as a 409 naming the
-    current owner so the loser can look at it and decide.
+    Raised ONLY on a path that READ ``edge.to_id`` from the stored row, so
+    ``to_id`` is always the CURRENT owner - never the artifact that was asked
+    for. Claiming is a one-way transition (open -> owned) and it is NOT
+    idempotent across different targets: silently re-pointing a claimed
+    follow-up at a second artifact would erase the first claim with no trace,
+    and the two callers would each believe they own the work. Surfaced as a 409
+    naming the current owner so the loser can look at it and decide. (Claiming
+    for the owner it ALREADY has is an idempotent replay, not this error.)
     """
 
     def __init__(self, *, edge_id: UUID, to_id: UUID) -> None:
@@ -1741,10 +1872,58 @@ class FollowupAlreadyClaimed(Exception):
         )
 
 
+class FollowupDuplicateOwned(Exception):
+    """The requested owner already owns this finding, under another edge.
+
+    A source may have many follow-ups with one owner, but never the same note
+    twice (``uq_work_artifact_edges_owned_followup``). Claiming ``edge_id`` for
+    ``to_id`` would make it a second copy of ``existing_edge_id``, which ``to_id``
+    already owns off the same source - so the claim is refused and the row stays
+    open. The remedy is to dismiss this edge as a duplicate
+    (``POST /plan-library/edges/{edge_id}/resolution`` with ``dismissed`` and a
+    ``resolution_note`` naming the edge it repeats), not to claim it. Surfaced as
+    a 409 naming both edges.
+    """
+
+    def __init__(self, *, edge_id: UUID, existing_edge_id: UUID, to_id: UUID) -> None:
+        self.edge_id = edge_id
+        self.existing_edge_id = existing_edge_id
+        self.to_id = to_id
+        super().__init__(
+            f"follow-up edge {edge_id} repeats edge {existing_edge_id}, which "
+            f"artifact {to_id} already owns from the same source with the same "
+            "note; dismiss this edge as a duplicate "
+            f"(POST /plan-library/edges/{edge_id}/resolution with "
+            "resolution 'dismissed' and a resolution_note naming "
+            f"{existing_edge_id}) instead of claiming it"
+        )
+
+
+class FollowupExistsUnowned(Exception):
+    """A follow-up posted WITH an owner already exists as an OPEN follow-up.
+
+    The finding is recorded and nobody owns it yet. Writing it again with an
+    owner would be a second owner-moving door beside the one-way claim, so the
+    post is refused and names the row to claim instead:
+    ``PATCH /plan-library/edges/{existing_edge_id}`` with ``{"to_id": ...}``.
+    Surfaced as a 409.
+    """
+
+    def __init__(self, *, existing_edge_id: UUID, to_id: UUID) -> None:
+        self.existing_edge_id = existing_edge_id
+        self.to_id = to_id
+        super().__init__(
+            f"follow-up edge {existing_edge_id} already records this finding and "
+            "has no owner yet; claim it with "
+            f"PATCH /plan-library/edges/{existing_edge_id} "
+            f'{{"to_id": "{to_id}"}} instead of posting it again'
+        )
+
+
 class FollowupResolved(Exception):
     """The follow-up was already closed by a resolution, so it cannot be claimed.
 
-    A resolved follow-up (``fixing`` — a PR holds it — or one of the resting
+    A resolved follow-up (``fixing`` - a PR holds it - or one of the resting
     states) left the open queue through its resolution; pointing an artifact
     at it as well would give it two ways out. Surfaced as a 409 naming the
     resolution: reopen it first (``POST /plan-library/edges/{id}/resolution``
@@ -1758,6 +1937,21 @@ class FollowupResolved(Exception):
             f"follow-up edge {edge_id} is resolved ({resolution}); "
             "it cannot also be claimed"
         )
+
+
+class FollowupVanished(LookupError):
+    """The edge was deleted between the caller's read and the row lock.
+
+    Its own type, caught by name (``app.crud.taste.ImageAssetGone`` is the
+    precedent), so that :class:`FollowupAlreadyClaimed` stays exclusive to the
+    path that read an owner - a vanished edge was once reported as "already
+    claimed by <the requested owner>". Surfaced as a 404, the same answer an
+    unknown edge id gets.
+    """
+
+    def __init__(self, edge_id: UUID) -> None:
+        self.edge_id = edge_id
+        super().__init__(f"follow-up edge {edge_id} vanished")
 
 
 async def get_edge(
@@ -1924,25 +2118,81 @@ async def list_open_followups(
     return [(row[0], row[1]) for row in rows], total
 
 
+async def _owned_twin(
+    db: AsyncSession,
+    *,
+    from_id: UUID,
+    to_id: UUID,
+    note: str | None,
+    exclude_id: UUID,
+) -> WorkArtifactEdge | None:
+    """The follow-up ``to_id`` already OWNS off ``from_id`` with ``note``, if any.
+
+    The grain of ``uq_work_artifact_edges_owned_followup``: same source, same
+    owner, same relation, equal ``btrim(note)`` - both sides trimmed in SQL with
+    :data:`NOTE_TRIM_CHARS`, as in :func:`_find_existing_edge`. ``exclude_id``
+    is the edge being claimed, which can never be its own twin.
+    """
+    return (
+        (
+            await db.execute(
+                select(WorkArtifactEdge)
+                .where(
+                    WorkArtifactEdge.from_id == from_id,
+                    WorkArtifactEdge.to_id == to_id,
+                    WorkArtifactEdge.relation == SPAWNED_FOLLOWUP_RELATION,
+                    func.btrim(WorkArtifactEdge.note, NOTE_TRIM_CHARS)
+                    == func.btrim(note or "", NOTE_TRIM_CHARS),
+                    WorkArtifactEdge.id != exclude_id,
+                )
+                .order_by(WorkArtifactEdge.created_at, WorkArtifactEdge.id)
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
 async def claim_followup(
     db: AsyncSession, edge_id: UUID, to_id: UUID
 ) -> WorkArtifactEdge:
     """Name the artifact that owns an open follow-up.
 
     The edge stops being open and becomes an ordinary two-ended provenance
-    link. Nothing is created and nothing is deleted — the ORIGINAL row is
+    link. Nothing is created and nothing is deleted - the ORIGINAL row is
     updated, which is what keeps the claim traceable back to the plan that
-    surfaced the work.
+    surfaced the work. One owner may claim any number of a source's follow-ups;
+    what it may not hold twice is the same note.
 
-    Raises :class:`FollowupAlreadyClaimed` when ``to_id`` is already set, and
-    :class:`FollowupResolved` when a resolution already closed it. The
-    check is made under a row lock rather than from the caller's earlier read:
-    two agents claiming the same follow-up concurrently would otherwise both
-    see ``to_id IS NULL``, both write, and the second would overwrite the first
-    with no record. Callers MUST have resolved ``edge_id`` through
-    :func:`get_edge` first — this function is not an authorization boundary,
-    and it does not validate that ``to_id`` exists (the FK does, and the
-    endpoint 422s on it beforehand so the message is actionable).
+    Decided under a row lock, in this order, each refusal naming the condition
+    that actually held:
+
+    * the row is gone - :class:`FollowupVanished`;
+    * it already has an owner: the SAME ``to_id`` is an idempotent replay and
+      returns the stored edge unchanged; any other owner is
+      :class:`FollowupAlreadyClaimed`, naming that CURRENT owner;
+    * a resolution already closed it - :class:`FollowupResolved`;
+    * ``to_id`` already owns another edge from the same source with the same
+      note - :class:`FollowupDuplicateOwned`, naming that edge.
+
+    The checks run against the row AS LOCKED (``populate_existing``), not the
+    caller's earlier read: two agents claiming the same follow-up concurrently
+    would otherwise both see ``to_id IS NULL``, both write, and the second would
+    overwrite the first with no record.
+
+    The UPDATE runs under a SAVEPOINT. The database is the backstop for the race
+    between the twin lookup and the write: when ``uq_work_artifact_edges_owned_followup``
+    refuses the claim, only the savepoint rolls back (a plain ``rollback()`` would
+    also discard everything the caller's transaction held), the twin lookup runs
+    again, and :class:`FollowupDuplicateOwned` is raised if it finds one. Any
+    other ``IntegrityError`` - or one with no twin behind it - is re-raised as it
+    is: it is not a claim conflict, and calling it one is how this function used
+    to report an edge nobody owned as "already claimed".
+
+    Callers MUST have resolved ``edge_id`` through :func:`get_edge` first - this
+    function is not an authorization boundary, and it does not validate that
+    ``to_id`` exists (the FK does, and the endpoint 422s on it beforehand so the
+    message is actionable).
     """
     edge = (
         (
@@ -1950,15 +2200,23 @@ async def claim_followup(
                 select(WorkArtifactEdge)
                 .where(WorkArtifactEdge.id == edge_id)
                 .with_for_update()
+                # The session may already hold this edge (the route's
+                # ``get_edge``; ``expire_on_commit=False``): without this the
+                # locked read hands back the CACHED attributes, and the owner
+                # and resolution checks below would judge what the caller
+                # read, not what the row holds.
+                .execution_options(populate_existing=True)
             )
         )
         .scalars()
         .first()
     )
-    if edge is None:  # pragma: no cover — the caller resolved it a moment ago
-        raise FollowupAlreadyClaimed(edge_id=edge_id, to_id=to_id)
+    if edge is None:
+        raise FollowupVanished(edge_id)
 
     if edge.to_id is not None:
+        if edge.to_id == to_id:
+            return edge
         raise FollowupAlreadyClaimed(edge_id=edge_id, to_id=edge.to_id)
 
     if edge.resolution is not None:
@@ -1968,17 +2226,34 @@ async def claim_followup(
         # than surfacing the CHECK as an IntegrityError.
         raise FollowupResolved(edge_id=edge_id, resolution=edge.resolution)
 
-    edge.to_id = to_id
+    # Read now: a rolled-back savepoint expires every attribute of the object it
+    # modified, and an async session cannot lazy-load them afterwards.
+    from_id, note = edge.from_id, edge.note
+
+    twin = await _owned_twin(
+        db, from_id=from_id, to_id=to_id, note=note, exclude_id=edge_id
+    )
+    if twin is not None:
+        raise FollowupDuplicateOwned(
+            edge_id=edge_id, existing_edge_id=twin.id, to_id=to_id
+        )
+
     try:
-        await db.commit()
+        async with db.begin_nested():
+            edge.to_id = to_id
+            await db.flush()
     except IntegrityError as exc:
-        # ``uq_work_artifact_edges_from_to_relation`` already holds this
-        # (from, to, relation) triple — the same link was recorded directly as
-        # a two-ended edge. Reported as a claim conflict rather than a 500:
-        # the follow-up genuinely IS owned by that artifact, the row just is
-        # not this one.
-        await db.rollback()
-        raise FollowupAlreadyClaimed(edge_id=edge_id, to_id=to_id) from exc
+        constraint = _violated_constraint(exc)
+        if constraint is None or constraint == _OWNED_FOLLOWUP_INDEX:
+            twin = await _owned_twin(
+                db, from_id=from_id, to_id=to_id, note=note, exclude_id=edge_id
+            )
+            if twin is not None:
+                raise FollowupDuplicateOwned(
+                    edge_id=edge_id, existing_edge_id=twin.id, to_id=to_id
+                ) from exc
+        raise
+    await db.commit()
     await db.refresh(edge)
     return edge
 
