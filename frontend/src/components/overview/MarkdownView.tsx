@@ -9,16 +9,63 @@
  * - Images from other sites are not loaded. An embedded remote image would
  *   tell its host who read the document and when; it is shown as a link
  *   the reader can choose to open instead.
+ *
+ * Live blocks (plan
+ * `2026-11-07-interactive-stakeholder-reports-in-the-project-overview` D2): a
+ * fenced code block whose language names a block — ` ```report-scorecard `,
+ * ` ```overview-kpi forecast-finish ` — renders that block's first-party
+ * component (`blocks/registry.ts`) in place of the code. Every other fence
+ * renders exactly as it always has. A block takes only its own validated
+ * settings from the document, never a URL, HTML or script, so blocks add no
+ * raw HTML path either.
  */
 
 import React, { useMemo } from "react";
 import Link from "next/link";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, {
+  type Components,
+  type ExtraProps,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
+import { LiveBlock } from "./blocks/LiveBlock";
+import { ReportSourceBoundary } from "./blocks/ReportContext";
+import { isBlockName } from "./blocks/registry";
 import { remarkWikiLinks, type WikiLinkOptions } from "./wiki-links";
 
 type HeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+
+type HastElement = NonNullable<ExtraProps["node"]>;
+
+/**
+ * The live block a `<pre>` holds, or null: a fenced code block whose language
+ * names one. The language is the code element's `language-*` class; the rest
+ * of the fence's first line is its `data.meta` (Phase 9's
+ * ` ```overview-kpi forecast-finish `); the body is its text.
+ */
+export function blockInPre(
+  node: HastElement | undefined
+): { name: string; meta: string | null; body: string } | null {
+  const code = node?.children.find(
+    (child): child is HastElement =>
+      child.type === "element" && child.tagName === "code"
+  );
+  if (!code) return null;
+  const classes = code.properties?.className;
+  const language = (Array.isArray(classes) ? classes : [])
+    .map(String)
+    .find((name) => name.startsWith("language-"))
+    ?.slice("language-".length);
+  if (!language || !isBlockName(language)) return null;
+  const meta = (code.data as { meta?: unknown } | undefined)?.meta;
+  return {
+    name: language,
+    meta: typeof meta === "string" ? meta : null,
+    body: code.children
+      .map((child) => (child.type === "text" ? child.value : ""))
+      .join(""),
+  };
+}
 
 /** Same-origin (relative) sources only; anything with a scheme or a
  *  protocol-relative `//host` is remote. */
@@ -56,6 +103,13 @@ const components: Components = {
       <table {...rest} />
     </div>
   ),
+  // A fence naming a live block renders the block; any other `<pre>` renders
+  // as react-markdown's own would.
+  pre: ({ node, ...rest }) => {
+    const block = blockInPre(node);
+    if (block) return <LiveBlock {...block} />;
+    return <pre {...rest} />;
+  },
   img: ({ src, alt }) => {
     const href = typeof src === "string" ? src : undefined;
     // react-markdown's URL filter has already emptied unsafe sources
@@ -143,12 +197,16 @@ export function MarkdownView({
         className
       )}
     >
-      <ReactMarkdown
-        remarkPlugins={remarkPlugins}
-        components={{ ...components, ...shifted }}
-      >
-        {children}
-      </ReactMarkdown>
+      {/* One report source per document: every block naming the same
+          report shares one read of it (`blocks/ReportContext.tsx`). */}
+      <ReportSourceBoundary>
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          components={{ ...components, ...shifted }}
+        >
+          {children}
+        </ReactMarkdown>
+      </ReportSourceBoundary>
     </div>
   );
 }
