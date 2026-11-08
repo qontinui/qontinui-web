@@ -11,8 +11,28 @@ vi.mock("@/components/ui/destructive-button", () => ({
 vi.mock("@/components/overview/editing/permissions", () => ({
   useResourceDescriptor: () => null,
 }));
+// The reports a live block in the description reads; nothing else here
+// reads through these two.
+const reportApi = vi.hoisted(() => ({
+  listResource: vi.fn(),
+  fetchReportView: vi.fn(),
+}));
+vi.mock("@/components/overview/editing/api", async (original) => ({
+  ...(await original<object>()),
+  ...reportApi,
+}));
 
 import type { SaveResult } from "@/components/overview/editing/useResource";
+import {
+  InIntentSection,
+  atAddress,
+  fence,
+  serveReports,
+} from "@/components/overview/blocks/__fixtures__/render";
+import {
+  SLUG,
+  reportView,
+} from "@/components/overview/blocks/__fixtures__/reportView";
 import { toIntentEntry, type IntentDocument } from "../_lib/intent";
 import {
   IntentSection,
@@ -371,6 +391,36 @@ describe("a document that vanishes while its editor is open", () => {
     expect(
       screen.getByRole("heading", { name: "Example audience" })
     ).toBeTruthy();
+  });
+});
+
+describe("live blocks in the project's description", () => {
+  // Plan `2026-11-07-interactive-stakeholder-reports-in-the-project-overview`
+  // Phase 2, Arming: the Summary renders a fenced block as its component, and
+  // any other fence as the code it always was.
+  beforeEach(() => {
+    atAddress();
+    serveReports(reportApi, [reportView()]);
+  });
+
+  it("renders a report block in place of its fence", async () => {
+    render(
+      <InIntentSection body={fence("report-changes", `report: ${SLUG}`)} />
+    );
+    expect(
+      await screen.findByRole("heading", {
+        name: "What changed since Checkpoint 1",
+      })
+    ).toBeTruthy();
+    expect(document.querySelector("pre")).toBeNull();
+  });
+
+  it("renders a fence that is not a block as the code it always was", () => {
+    render(<InIntentSection body={fence("mermaid", "gantt")} />);
+    expect(
+      document.querySelector("pre > code.language-mermaid")?.textContent
+    ).toBe("gantt\n");
+    expect(document.querySelector("[data-overview-block]")).toBeNull();
   });
 });
 
