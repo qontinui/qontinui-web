@@ -108900,7 +108900,7 @@
     },
     "/api/v1/operations/subprojects": {
       "get": {
-        "description": "List the tenant's subprojects \u2014 proxy coord's ``GET /coord/subprojects``.\n\nEach item is a ``SubprojectSummary`` whose ``headline`` and ``top_reason``\ncome from the verdict coord's reconciler tick cached, with its\n``verdict_as_of``; the envelope carries ``next_cursor``, ``truncated``,\n``total`` and ``unattached_units``. The filters are forwarded only when set,\nas sent: coord owns the vocabulary and refuses a value it does not know, so\nthis route does not keep a second copy of it to drift. A coord whose\nmigration has not applied answers ``503 {\"error\":\n\"schema_migration_pending\"}``, which reaches the browser as that object.",
+        "description": "List the tenant's subprojects \u2014 proxy coord's ``GET /coord/subprojects``.\n\nEach item is a ``SubprojectSummary`` whose ``headline`` and ``top_reason``\ncome from the verdict coord's reconciler tick cached, with its\n``verdict_as_of``; the envelope carries ``next_cursor``, ``truncated``,\n``total``, ``unattached_units`` and ``counts`` \u2014 every headline's count and\nthe folded one-off / scheduled / merged counts over the same status and\norigin filter, or ``null`` when coord could not take them. The filters are\nforwarded only when set,\nas sent: coord owns the vocabulary and refuses a value it does not know, so\nthis route does not keep a second copy of it to drift. A coord whose\nmigration has not applied answers ``503 {\"error\":\n\"schema_migration_pending\"}``, which reaches the browser as that object.",
         "operationId": "api_v1_operations_subprojects_get",
         "parameters": [
           {
@@ -109017,6 +109017,51 @@
           }
         },
         "summary": "Get Subprojects",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/subprojects/by-sessions": {
+      "get": {
+        "description": "Which subproject each session belongs to \u2014 proxy coord's\n``GET /coord/subprojects/by-sessions``.\n\nOne batched read per page of session rows (the sessions console's\nsubproject chip). coord answers ``{\"items\": {<session id>: {\"id\",\n\"title\", \"headline\"}}, \"missing\": [<ids with no live membership>]}``,\nverbatim; a pending membership is reported under ``missing``. The ids are\nforwarded as sent; only their COUNT is checked here, so a page that would\nexceed coord's bound is refused before the call rather than after it.",
+        "operationId": "api_v1_operations_subprojects_by_sessions_get",
+        "parameters": [
+          {
+            "description": "Comma-separated harness (Claude Code) session ids, at most 200 \u2014 one page of session rows.",
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "description": "Comma-separated harness (Claude Code) session ids, at most 200 \u2014 one page of session rows.",
+              "title": "Ids",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Subprojects By Sessions Api V1 Operations Subprojects By Sessions Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Subprojects By Sessions",
         "tags": [
           "operations"
         ]

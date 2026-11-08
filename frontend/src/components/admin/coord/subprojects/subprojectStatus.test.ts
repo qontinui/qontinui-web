@@ -7,6 +7,7 @@ import type {
 } from "@/lib/api/operations/coordSubprojects";
 import {
   NO_COUNTS,
+  OPEN_HEADLINES,
   SUBPROJECT_ATTENTION_BY_HEADLINE,
   SUBPROJECT_GATE_ATTENTION_BY_KIND,
   SUBPROJECT_GATE_PALETTE,
@@ -14,23 +15,36 @@ import {
   SUBPROJECT_HEADLINE_PALETTE,
   SUBPROJECT_SESSION_ATTENTION_BY_KIND,
   SUBPROJECT_SESSION_PALETTE,
+  UNREAD_COUNT,
+  answeredCount,
   classifySubprojectReadFailure,
   countText,
+  countsFromFacet,
   defaultContinueRepos,
   deriveMemberGateStatus,
   deriveMemberSessionStatus,
   deriveSubprojectStatus,
   deriveSubprojectsHealth,
   deriveVerdictStatus,
+  describeEmptyView,
   describeStalledLine,
+  facetQuery,
+  failedCount,
   foldedReason,
   githubPrUrl,
   headlineKindOf,
+  historyEventWords,
   isRouteMissing,
   joinedViaWords,
+  memberEmptyText,
+  memberList,
   memberSessionKey,
+  mergeStreamRows,
   nextStepWords,
+  openFromParts,
   phasesRemainingWords,
+  predicateKindWords,
+  readCountsFacet,
   readFailureWords,
   reasonWords,
   refTarget,
@@ -39,10 +53,15 @@ import {
   sessionsText,
   sortMemberGates,
   sortMemberSessions,
+  subprojectChipWords,
   tabOf,
   unreadSources,
   viewQuery,
+  viewStreams,
+  type CountReading,
+  type EmptyViewInput,
   type SubprojectCounts,
+  type SubprojectReadFailure,
 } from "./subprojectStatus";
 
 /** A rejection exactly as `readJson` throws one. */
@@ -530,7 +549,7 @@ describe("sources", () => {
 });
 
 describe("list views", () => {
-  it("reads active headlines among open subprojects, and Done and All across every status", () => {
+  it("reads the not-done headlines among open subprojects, and Done and All across every status", () => {
     expect(viewQuery("stalled", 1).toString()).toBe(
       "status=open&headline=stalled&limit=1"
     );
@@ -545,30 +564,62 @@ describe("list views", () => {
     );
   });
 
-  it("defaults the tab to All", () => {
-    expect(tabOf(null)).toBe("all");
+  it("opens on Open — every headline but done — and names every other tab", () => {
+    expect(tabOf(null)).toBe("open");
+    expect(tabOf("all")).toBe("all");
     expect(tabOf("stalled")).toBe("stalled");
-    expect(tabOf("bogus")).toBe("all");
+    expect(tabOf("bogus")).toBe("open");
+    expect(viewStreams("open")).toEqual([...OPEN_HEADLINES]);
+    expect(OPEN_HEADLINES).not.toContain("done");
+    expect(viewStreams("waiting")).toEqual(["waiting"]);
   });
 
-  it("folds one-offs, scheduled and merged subprojects into All only", () => {
+  it("merges Open's streams most-recently-active first, each subproject once", () => {
+    const a = summary({ id: "a", last_activity_at: "2026-11-08T10:00:00Z" });
+    const b = summary({ id: "b", last_activity_at: "2026-11-08T12:00:00Z" });
+    const c = summary({
+      id: "c",
+      last_activity_at: null,
+      updated_at: "2026-11-01T00:00:00Z",
+    });
+    expect(
+      mergeStreamRows([
+        [a, c],
+        [b, a],
+      ]).map((s) => s.id)
+    ).toEqual(["b", "a", "c"]);
+    // One stream keeps coord's own order.
+    expect(mergeStreamRows([[a, b]]).map((s) => s.id)).toEqual(["a", "b"]);
+  });
+
+  it("folds one-offs (coord's definition), scheduled and merged subprojects into All only", () => {
     expect(foldedReason(summary())).toBeNull();
     expect(foldedReason(summary({ origin: "scheduled" }))).toMatch(/scheduled/);
     expect(foldedReason(summary({ merged_into: "x" }))).toMatch(/merged/);
+    // Exactly one member session, no longer live, and no work unit — whatever
+    // the headline. (coord's own count requires the session finished or
+    // closed; a row carries only live/total, so a stale one folds here too.)
     expect(
       foldedReason(
         summary({
-          headline: "done",
+          headline: "stalled",
           sessions: { live: 0, total: 1 },
           work_units: { total: 0, open: 0 },
         })
       )
     ).toMatch(/one-off/);
-    // An unknown count is not evidence of a one-off.
     expect(
       foldedReason(
         summary({
-          headline: "done",
+          sessions: { live: 1, total: 1 },
+          work_units: { total: 0, open: 0 },
+        })
+      )
+    ).toBeNull();
+    // An uncounted half is not evidence of a one-off.
+    expect(
+      foldedReason(
+        summary({
           sessions: { live: 0, total: null },
           work_units: { total: 0, open: 0 },
         })
@@ -580,6 +631,158 @@ describe("list views", () => {
     expect(countText(null)).toBe("–");
     expect(countText(0)).toBe("0");
     expect(sessionsText({ live: null, total: 3 })).toBe("–/3");
+  });
+});
+
+function emptyInput(over: Partial<EmptyViewInput> = {}): EmptyViewInput {
+  return {
+    tab: "done",
+    loaded: true,
+    failure: null,
+    stale: false,
+    query: "",
+    loadedRows: 0,
+    matched: 0,
+    folded: 0,
+    more: false,
+    ...over,
+  };
+}
+
+describe("the empty slot says what is true of THIS view", () => {
+  it("never says 'No subproject is …' over rows it folded into All", () => {
+    // A Done page made only of one-offs.
+    const text = describeEmptyView(
+      emptyInput({ loadedRows: 2, matched: 2, folded: 2, more: true })
+    );
+    expect(text).toBe(
+      "The 2 subprojects on this page in this view are one-off, scheduled or merged, listed under All. More may be on the next page: Load more."
+    );
+    expect(text).not.toMatch(/^No subproject/);
+    expect(
+      describeEmptyView(emptyInput({ loadedRows: 1, matched: 1, folded: 1 }))
+    ).toBe(
+      "The 1 subproject on this page in this view is one-off, scheduled or merged, listed under All."
+    );
+  });
+
+  it("says the same for a search whose every match was folded", () => {
+    expect(
+      describeEmptyView(
+        emptyInput({ query: "dash", loadedRows: 5, matched: 1, folded: 1 })
+      )
+    ).toBe(
+      'The 1 subproject matching "dash" on this page in this view is one-off, scheduled or merged, listed under All.'
+    );
+  });
+
+  it("scopes a search that matched nothing to this page, and points at the next one", () => {
+    expect(
+      describeEmptyView(
+        emptyInput({ query: "zzz", loadedRows: 4, matched: 0, more: true })
+      )
+    ).toBe(
+      'No subproject on this page matches "zzz". More may be on the next page: Load more.'
+    );
+  });
+
+  it("is unknown when nothing answered, and dated when a kept read failed", () => {
+    const failure: SubprojectReadFailure = { kind: "migration_pending" };
+    expect(describeEmptyView(emptyInput({ loaded: false, failure }))).toMatch(
+      /^Whether any subproject is in this view is unknown: coord's subproject tables are not migrated yet/
+    );
+    expect(
+      describeEmptyView(emptyInput({ tab: "stalled", stale: true, failure }))
+    ).toMatch(
+      /^No open subproject is stalled at the last good read; the latest read failed/
+    );
+  });
+
+  it("states the absence only when it was measured", () => {
+    expect(describeEmptyView(emptyInput({ tab: "open" }))).toBe(
+      "No open subproject is working, waiting, stalled or waiting on you."
+    );
+  });
+});
+
+describe("words for coord's closed vocabularies (R8)", () => {
+  it("words a gate's predicate and a history event, and spaces one it does not know", () => {
+    expect(predicateKindWords("pr_merged")).toBe("PR merged");
+    expect(predicateKindWords("gate_cleared")).toBe("another gate cleared");
+    expect(predicateKindWords("new_predicate")).toBe("new predicate");
+    expect(historyEventWords("member_moved")).toBe("member moved");
+    expect(historyEventWords("created")).toBe("founded");
+    expect(historyEventWords("odd_event")).toBe("odd event");
+    expect(predicateKindWords("constructor")).toBe("constructor");
+  });
+});
+
+describe("member lists", () => {
+  const unread = [
+    {
+      source: "session_obligations",
+      state: "could_not_read",
+      as_of: null,
+      error: "deadline",
+    },
+  ];
+
+  it("reads a list coord did not send as unknown, never as empty", () => {
+    expect(memberList(undefined)).toEqual({ items: [], known: false });
+    expect(memberList([1, 2])).toEqual({ items: [1, 2], known: true });
+    expect(memberEmptyText("member gate", false, [])).toBe(
+      "coord did not send the member gate with this read — unknown, not none."
+    );
+  });
+
+  it("qualifies 'none' when the verdict could not read a source", () => {
+    expect(memberEmptyText("member session", true, [])).toBe(
+      "coord lists no member session."
+    );
+    expect(memberEmptyText("member session", true, unread)).toBe(
+      "coord lists no member session, but this verdict could not read session obligations, so the list may be incomplete."
+    );
+  });
+});
+
+describe("the session chip", () => {
+  it("links only a member, with its headline in words", () => {
+    expect(
+      subprojectChipWords({
+        kind: "member",
+        id: "sp 1",
+        title: "dashboards",
+        headline: "stalled",
+      })
+    ).toEqual({
+      text: "dashboards",
+      title: "Subproject: dashboards — Stalled",
+      href: "/admin/coord/subprojects/sp%201",
+    });
+  });
+
+  it("is a dash that says which, never a guess, for every other state", () => {
+    const failure: SubprojectReadFailure = {
+      kind: "unreachable",
+      status: 502,
+      detail: "",
+    };
+    for (const chip of [
+      { kind: "none" as const },
+      { kind: "not_applicable" as const },
+      { kind: "looking_up" as const },
+      { kind: "not_looked_up" as const },
+      { kind: "unanswered" as const },
+      { kind: "failed" as const, failure },
+    ]) {
+      const words = subprojectChipWords(chip);
+      expect(words.text, chip.kind).toBe("–");
+      expect(words.href, chip.kind).toBeNull();
+      expect(words.title.length, chip.kind).toBeGreaterThan(10);
+    }
+    expect(subprojectChipWords({ kind: "failed", failure }).title).toMatch(
+      /unknown, not none/
+    );
   });
 });
 
@@ -655,28 +858,109 @@ describe("read failures", () => {
   });
 });
 
+const v = (n: number | null): CountReading => answeredCount(n);
+const UNREACHABLE: SubprojectReadFailure = {
+  kind: "unreachable",
+  status: 502,
+  detail: "",
+};
+
 function counts(over: Partial<SubprojectCounts>): SubprojectCounts {
   return { ...NO_COUNTS, ...over };
 }
 
 const ALL_ZERO = counts({
-  needs_you: 0,
-  stalled: 0,
-  working: 3,
-  waiting: 2,
-  done: 9,
-  all: 14,
-  unknown: 0,
+  open: v(5),
+  needs_you: v(0),
+  stalled: v(0),
+  working: v(3),
+  waiting: v(2),
+  done: v(9),
+  all: v(14),
+  unknown: v(0),
+});
+
+describe("count readings and the facet", () => {
+  const FACET = {
+    counts: {
+      by_headline: {
+        needs_you: 1,
+        stalled: 2,
+        working: 3,
+        waiting: 4,
+        done: 9,
+        unknown: 1,
+      },
+      folded: { one_off: 5, scheduled: 1, merged: 0 },
+      as_of: "2026-11-08T15:00:00Z",
+    },
+  };
+
+  it("reads a well-formed facet, and refuses an absent, null or malformed one", () => {
+    expect(readCountsFacet(FACET)?.by_headline.stalled).toBe(2);
+    expect(readCountsFacet({})).toBeNull();
+    expect(readCountsFacet({ counts: null })).toBeNull();
+    expect(
+      readCountsFacet({
+        counts: {
+          ...FACET.counts,
+          by_headline: { ...FACET.counts.by_headline, stalled: "2" },
+        },
+      })
+    ).toBeNull();
+  });
+
+  it("answers the not-done views (and Open, their sum) from the open scope, Done and All from the all scope", () => {
+    const facet = readCountsFacet(FACET);
+    if (!facet) throw new Error("facet");
+    expect(countsFromFacet("open", facet, 20)).toEqual({
+      needs_you: 1,
+      stalled: 2,
+      working: 3,
+      waiting: 4,
+      unknown: 1,
+      open: 11,
+    });
+    expect(countsFromFacet("all", facet, 40)).toEqual({ done: 9, all: 40 });
+    expect(facetQuery("open").toString()).toBe("status=open&limit=1");
+    expect(facetQuery("all").toString()).toBe("status=all&limit=1");
+  });
+
+  it("keeps the last good number across a failed read, and says it failed", () => {
+    expect(failedCount(v(3), UNREACHABLE)).toEqual({
+      value: 3,
+      answered: true,
+      failure: UNREACHABLE,
+    });
+    expect(failedCount(UNREAD_COUNT, UNREACHABLE)).toEqual({
+      value: null,
+      answered: false,
+      failure: UNREACHABLE,
+    });
+  });
+
+  it("sums Open from its parts only when every part was counted", () => {
+    expect(openFromParts([v(1), v(2), v(3), v(0), v(1)])).toEqual(v(7));
+    expect(openFromParts([v(1), v(null), v(3), v(0), v(1)])).toEqual({
+      value: null,
+      answered: true,
+      failure: null,
+    });
+    expect(openFromParts([v(1), UNREAD_COUNT]).answered).toBe(false);
+    expect(openFromParts([v(1), failedCount(v(2), UNREACHABLE)]).failure).toBe(
+      UNREACHABLE
+    );
+  });
 });
 
 describe("the list's health strip (R1, R6)", () => {
   it("is unknown — amber, dashed — when nothing ever answered, and says why", () => {
-    const h = deriveSubprojectsHealth({
-      counts: NO_COUNTS,
-      unattached: null,
-      loaded: false,
-      failure: { kind: "migration_pending" },
-    });
+    const h = deriveSubprojectsHealth(
+      counts({
+        needs_you: failedCount(UNREAD_COUNT, { kind: "migration_pending" }),
+        stalled: failedCount(UNREAD_COUNT, { kind: "migration_pending" }),
+      })
+    );
     expect(h.level).toBe("amber");
     expect(h.headline).toMatch(/not migrated/);
     expect(h.detail).toMatch(/dash, not a zero/);
@@ -684,22 +968,14 @@ describe("the list's health strip (R1, R6)", () => {
   });
 
   it("is amber while the first read is in flight", () => {
-    expect(
-      deriveSubprojectsHealth({
-        counts: NO_COUNTS,
-        unattached: null,
-        loaded: false,
-        failure: null,
-      }).level
-    ).toBe("amber");
+    expect(deriveSubprojectsHealth(NO_COUNTS).level).toBe("amber");
   });
 
   it("is red when anything needs you or is stalled", () => {
     const h = deriveSubprojectsHealth({
-      counts: { ...ALL_ZERO, stalled: 2, needs_you: 1 },
-      unattached: 0,
-      loaded: true,
-      failure: null,
+      ...ALL_ZERO,
+      stalled: v(2),
+      needs_you: v(1),
     });
     expect(h).toMatchObject({
       level: "red",
@@ -709,70 +985,76 @@ describe("the list's health strip (R1, R6)", () => {
   });
 
   it("is green only on a MEASURED zero, waiting and working included", () => {
-    expect(
-      deriveSubprojectsHealth({
-        counts: ALL_ZERO,
-        unattached: 0,
-        loaded: true,
-        failure: null,
-      })
-    ).toMatchObject({
+    expect(deriveSubprojectsHealth(ALL_ZERO)).toMatchObject({
       level: "green",
       headline: "Nothing is stalled or waiting on you",
     });
   });
 
-  it("is amber when a needed count did not come back, never green", () => {
-    const h = deriveSubprojectsHealth({
-      counts: { ...ALL_ZERO, stalled: null },
-      unattached: 0,
-      loaded: true,
-      failure: null,
-    });
+  it("says a count coord did not take was not taken, and is never green", () => {
+    const h = deriveSubprojectsHealth({ ...ALL_ZERO, stalled: v(null) });
     expect(h.level).toBe("amber");
-    expect(h.headline).toBe("Some counts did not come back");
+    expect(h.headline).toBe(
+      "Whether anything is stalled or waiting on you is unknown"
+    );
+    expect(h.detail).toBe("coord did not take the stalled count.");
   });
 
-  it("is amber when any verdict is unknown", () => {
+  it("words a failed per-view read as a failed read, not as 'not taken'", () => {
     const h = deriveSubprojectsHealth({
-      counts: { ...ALL_ZERO, unknown: 2 },
-      unattached: 0,
-      loaded: true,
-      failure: null,
+      ...ALL_ZERO,
+      stalled: failedCount(UNREAD_COUNT, UNREACHABLE),
     });
     expect(h.level).toBe("amber");
-    expect(h.headline).toMatch(/^2 unknown/);
+    expect(h.detail).toMatch(
+      /^the stalled count could not be read \(coord did not answer \(HTTP 502\)\)/
+    );
   });
 
   it("keeps a stale count, dated as the last good read, and is never an all-clear", () => {
-    const failure = { kind: "unreachable" as const, status: 502, detail: "" };
     const stale = deriveSubprojectsHealth({
-      counts: ALL_ZERO,
-      unattached: 0,
-      loaded: true,
-      failure,
-    });
-    const staleRed = deriveSubprojectsHealth({
-      counts: { ...ALL_ZERO, stalled: 3 },
-      unattached: 0,
-      loaded: true,
-      failure,
+      ...ALL_ZERO,
+      needs_you: failedCount(v(0), UNREACHABLE),
+      stalled: failedCount(v(0), UNREACHABLE),
     });
     expect(stale.level).toBe("amber");
     expect(stale.headline).toBe(
       "Nothing was stalled or waiting on you at the last good read"
     );
+    expect(stale.detail).toMatch(
+      /is from the last good read; its latest read failed/
+    );
+    const staleRed = deriveSubprojectsHealth({
+      ...ALL_ZERO,
+      stalled: failedCount(v(3), UNREACHABLE),
+    });
     expect(staleRed.level).toBe("amber");
     expect(staleRed.headline).toBe("At the last good read: 3 stalled");
-    // The stale arm and the current arm say different things.
-    expect(stale.headline).not.toBe(
-      deriveSubprojectsHealth({
-        counts: ALL_ZERO,
-        unattached: 0,
-        loaded: true,
-        failure: null,
-      }).headline
+    // A failed read with no number ever taken is unknown, not "nothing".
+    const staleUnknown = deriveSubprojectsHealth({
+      ...ALL_ZERO,
+      stalled: failedCount(UNREAD_COUNT, UNREACHABLE),
+      needs_you: failedCount(v(0), UNREACHABLE),
+    });
+    expect(staleUnknown.headline).toBe(
+      "Whether anything is stalled or waiting on you is unknown"
     );
+    // The stale arm and the current arm say different things.
+    expect(stale.headline).not.toBe(deriveSubprojectsHealth(ALL_ZERO).headline);
+  });
+
+  it("is amber when any verdict is unknown, or the unknown count was not taken", () => {
+    expect(
+      deriveSubprojectsHealth({ ...ALL_ZERO, unknown: v(2) })
+    ).toMatchObject({
+      level: "amber",
+    });
+    expect(
+      deriveSubprojectsHealth({ ...ALL_ZERO, unknown: v(2) }).headline
+    ).toMatch(/^2 unknown/);
+    expect(
+      deriveSubprojectsHealth({ ...ALL_ZERO, unknown: v(null) }).level
+    ).toBe("amber");
   });
 });
 
@@ -785,10 +1067,7 @@ describe("the home count line", () => {
         stale: false,
         failure: null,
       })
-    ).toEqual({
-      value: "–",
-      note: null,
-    });
+    ).toEqual({ value: "–", note: null });
     expect(
       describeStalledLine({
         count: null,
@@ -810,7 +1089,21 @@ describe("the home count line", () => {
       failure: { kind: "unreachable", status: 504, detail: "" },
     });
     expect(line.value).toBe("2");
-    expect(line.note).toMatch(/^as of the last good read/);
+    expect(line.note).toMatch(/^as of the last good read; the latest failed/);
+  });
+
+  it("says a kept count is stale even when no failure reason is held", () => {
+    expect(
+      describeStalledLine({
+        count: 2,
+        loaded: true,
+        stale: true,
+        failure: null,
+      })
+    ).toEqual({
+      value: "2",
+      note: "as of the last good read; the latest read did not refresh it",
+    });
   });
 
   it("reads an uncounted answer as unknown, not zero", () => {
@@ -832,9 +1125,6 @@ describe("the home count line", () => {
         stale: false,
         failure: null,
       })
-    ).toEqual({
-      value: "0",
-      note: null,
-    });
+    ).toEqual({ value: "0", note: null });
   });
 });

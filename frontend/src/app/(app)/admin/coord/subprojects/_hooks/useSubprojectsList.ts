@@ -1,32 +1,42 @@
 /**
- * useSubprojectsList — the two reads behind `/admin/coord/subprojects`:
+ * useSubprojectsList — the reads behind `/admin/coord/subprojects`.
  *
- * - **the counts** — one `limit=1` read per view (the five headline tabs, All,
- *   and `unknown` for the strip), each answering coord's `total` for its
- *   filter. They feed the tabs' counts, the health strip and the unattached
- *   line, so all three say the same numbers (R1: the strip derives from what
- *   the page shows; it fetches nothing of its own).
- * - **the rows** — the active view's first page, then "Load more" through
- *   coord's cursor. Stored STAMPED with the tab that produced them, and the
- *   rows on screen are derived from whether that stamp matches the tab now
- *   selected: a read for the previous tab can never render under this one,
- *   and a read that failed under a new tab is unknown, not the old tab's
- *   rows called stale (style guide R6, "a filter set is a list route's
- *   param").
+ * **The counts.** Coord's list body carries a `counts` facet — every
+ * headline's count and the folded counts, in one grouped query over the
+ * read's status filter. Two `limit=1` reads take them: `status=open` for the
+ * not-done views (and Open, their sum) and `status=all` for Done and All — the
+ * filters those views' rows are read under. When a facet is absent (a coord
+ * that predates it) or `null` (coord could not take it), that scope falls
+ * back to one `limit=1` read per view, whose `total` is the count. Every
+ * view's count is a {@link CountReading}: a number, not taken, failed, or the
+ * last good number with the latest read's failure beside it. The tabs, the
+ * health strip and the unattached line all read these, so they say the same
+ * numbers (R1: the strip derives from what the page shows and fetches nothing
+ * of its own). Counts are re-read every two minutes; rows every minute.
  *
- * Why counts are read per view instead of counted from the rows: about 150
- * subprojects are founded a week (one per root session, plan Phase 0), so a
- * page of rows is a window, and a strip counted from a window would say
- * "nothing stalled" about the subprojects beyond it.
+ * Why counts are read rather than counted from the rows: about 151 root
+ * harness ids are founded a week (the plan's Phase 0 result), one subproject
+ * each, so a page of rows is a window, and a strip counted from a window would
+ * say "nothing stalled" about every stall past it.
  *
- * Polled every 60 s while the tab is visible, single-flight
- * (`useVisiblePoll`); coord serves the list from its reconciler tick's cache,
- * so reading faster than that tick would show nothing new. A poll re-reads the
- * first page only while no further page is loaded, so "Load more" is never
- * undone under the operator.
+ * **The rows.** The active tab's first page, then Load more through coord's
+ * cursors. Open is the union of the five not-done headlines (coord filters
+ * one headline at a time), merged most-recently-active first. Rows are stored
+ * STAMPED with the tab that produced them and derived from whether the stamp
+ * matches the tab selected now, so a read for the previous tab never renders
+ * under this one, and a read that failed under a new tab is unknown — not the
+ * old tab's rows called stale (style guide R6, "a filter set is a list route's
+ * param"). Read failures are stamped too (`useStampedFailure`), so an older
+ * success can never clear a newer failure. A poll re-reads the first page
+ * only while no further page is loaded, so Load more is never undone under
+ * the operator; the page says the row refresh is paused then.
+ *
+ * Polled single-flight while the tab is visible (`useVisiblePoll`); coord
+ * serves the list from its reconciler tick's cache, so reading faster than
+ * that tick would show nothing new.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRetainedValue } from "@/components/console";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "@/components/operations/coordPollError";
@@ -36,35 +46,38 @@ import {
   type SubprojectSummary,
 } from "@/lib/api/operations/coordSubprojects";
 import {
+  FACET_VIEWS,
   NO_COUNTS,
-  SUBPROJECT_TABS,
+  OPEN_HEADLINES,
+  UNREAD_COUNT,
+  answeredCount,
   classifySubprojectReadFailure,
+  countsFromFacet,
+  facetQuery,
+  failedCount,
+  mergeStreamRows,
+  openFromParts,
+  readCountsFacet,
   viewQuery,
+  viewStreams,
+  type CountReading,
+  type CountView,
+  type FacetScope,
+  type StreamView,
   type SubprojectCounts,
   type SubprojectReadFailure,
   type SubprojectTab,
 } from "@/components/admin/coord/subprojects/subprojectStatus";
+import { useStampedFailure } from "@/components/admin/coord/subprojects/useStampedFailure";
 
-export const SUBPROJECTS_POLL_MS = 60_000;
+export const SUBPROJECTS_ROWS_POLL_MS = 60_000;
+export const SUBPROJECTS_COUNTS_POLL_MS = 120_000;
 export const SUBPROJECTS_PAGE_SIZE = 100;
-
-/** Every view a count is read for. */
-const COUNT_VIEWS: ReadonlyArray<SubprojectTab | "unknown"> = [
-  ...SUBPROJECT_TABS,
-  "unknown",
-];
-
-interface CountsValue {
-  counts: SubprojectCounts;
-  unattached: number | null;
-  unattachedByClass: Record<string, number> | null;
-  asOf: string | null;
-}
 
 interface RowsValue {
   tab: SubprojectTab;
-  items: SubprojectSummary[];
-  nextCursor: string | null;
+  perStream: Partial<Record<StreamView, SubprojectSummary[]>>;
+  cursors: Partial<Record<StreamView, string | null>>;
   truncated: boolean;
   /** How many pages are loaded; a poll refreshes only a single page. */
   pages: number;
@@ -78,22 +91,20 @@ export interface SubprojectsRows {
   loaded: boolean;
   /** This tab's rows were read, and the latest read of them failed. */
   stale: boolean;
-  /** The latest rows read failed with this, when it did. */
+  /** The latest rows read for this tab failed with this, when it did. */
   failure: SubprojectReadFailure | null;
-  nextCursor: string | null;
+  /** coord holds more rows for this view than are loaded. */
+  more: boolean;
   truncated: boolean;
+  /** How many pages are loaded (more than one pauses the row refresh). */
+  pages: number;
   asOf: string | null;
 }
 
 export interface SubprojectsList {
   counts: SubprojectCounts;
-  unattached: number | null;
+  unattached: CountReading;
   unattachedByClass: Record<string, number> | null;
-  /** Has any count read ever answered? */
-  countsLoaded: boolean;
-  /** Every count read of the latest poll failed, with this. */
-  countsFailure: SubprojectReadFailure | null;
-  countsAsOf: string | null;
   rows: SubprojectsRows;
   loadMore: () => Promise<void>;
   loadingMore: boolean;
@@ -101,41 +112,29 @@ export interface SubprojectsList {
   refresh: () => Promise<void>;
 }
 
-function countsOf(
-  answers: PromiseSettledResult<SubprojectListResponse>[]
-): CountsValue | null {
-  if (answers.every((a) => a.status === "rejected")) return null;
-  const counts: SubprojectCounts = { ...NO_COUNTS };
-  let unattached: number | null = null;
-  let unattachedByClass: Record<string, number> | null = null;
-  let asOf: string | null = null;
-  COUNT_VIEWS.forEach((view, i) => {
-    const a = answers[i];
-    if (a === undefined || a.status !== "fulfilled") return;
-    counts[view] = typeof a.value.total === "number" ? a.value.total : null;
-    if (view === "all") {
-      const u = a.value.unattached_units;
-      unattached = typeof u?.count === "number" ? u.count : null;
-      unattachedByClass = u?.by_class ?? null;
-    }
-    if (typeof a.value.generated_at === "string" && asOf === null)
-      asOf = a.value.generated_at;
-  });
-  return { counts, unattached, unattachedByClass, asOf };
+function latest(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Date.parse(b) > Date.parse(a) ? b : a;
+}
+
+function totalOf(body: SubprojectListResponse): number | null {
+  return typeof body.total === "number" ? body.total : null;
 }
 
 export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
-  const countsAxis = useRetainedValue<CountsValue | null>(null);
-  const rowsAxis = useRetainedValue<RowsValue | null>(null);
-  const [countsFailure, setCountsFailure] =
-    useState<SubprojectReadFailure | null>(null);
-  const [rowsFailure, setRowsFailure] = useState<{
-    tab: SubprojectTab;
-    failure: SubprojectReadFailure;
-  } | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loadMoreFailure, setLoadMoreFailure] =
-    useState<SubprojectReadFailure | null>(null);
+  // ─── counts ───
+  const [counts, setCounts] = useState<SubprojectCounts>(NO_COUNTS);
+  const [openFromHeadlines, setOpenFromHeadlines] = useState(false);
+  const [unattached, setUnattached] = useState<CountReading>(UNREAD_COUNT);
+  const [unattachedByClass, setUnattachedByClass] = useState<Record<
+    string,
+    number
+  > | null>(null);
+  const countsSeq = useRef(0);
+  /** The newest read applied per view: an older reply never overwrites it. */
+  const appliedSeq = useRef(new Map<CountView, number>());
+
   const cancelled = useRef(false);
   useEffect(() => {
     cancelled.current = false;
@@ -143,6 +142,102 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
       cancelled.current = true;
     };
   }, []);
+
+  const applyCount = useCallback(
+    (
+      seq: number,
+      view: CountView,
+      next: (prev: CountReading) => CountReading
+    ) => {
+      if ((appliedSeq.current.get(view) ?? 0) > seq) return;
+      appliedSeq.current.set(view, seq);
+      setCounts((prev) => ({ ...prev, [view]: next(prev[view]) }));
+    },
+    []
+  );
+
+  /** One view's own `limit=1` read — the fallback when a facet is absent. */
+  const readViewCount = useCallback(
+    async (seq: number, view: Exclude<CountView, "open">) => {
+      try {
+        const body = await fetchSubprojects(
+          viewQuery(view, 1),
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
+        if (cancelled.current) return;
+        applyCount(seq, view, () => answeredCount(totalOf(body)));
+      } catch (err) {
+        if (cancelled.current) return;
+        const failure = classifySubprojectReadFailure(err);
+        applyCount(seq, view, (prev) => failedCount(prev, failure));
+      }
+    },
+    [applyCount]
+  );
+
+  const readScope = useCallback(
+    async (seq: number, scope: FacetScope) => {
+      let body: SubprojectListResponse;
+      try {
+        body = await fetchSubprojects(
+          facetQuery(scope),
+          COORD_DASHBOARD_POLL_OPTIONS
+        );
+      } catch (err) {
+        if (cancelled.current) return;
+        const failure = classifySubprojectReadFailure(err);
+        for (const view of FACET_VIEWS[scope])
+          applyCount(seq, view, (prev) => failedCount(prev, failure));
+        if (scope === "all")
+          setUnattached((prev) => failedCount(prev, failure));
+        return;
+      }
+      if (cancelled.current) return;
+      const total = totalOf(body);
+      if (scope === "all") {
+        const u = body.unattached_units;
+        setUnattached(
+          answeredCount(typeof u?.count === "number" ? u.count : null)
+        );
+        setUnattachedByClass(u?.by_class ?? null);
+      }
+      const facet = readCountsFacet(body);
+      if (facet) {
+        const values = countsFromFacet(scope, facet, total);
+        for (const [view, value] of Object.entries(values) as Array<
+          [CountView, number | null]
+        >)
+          applyCount(seq, view, () => answeredCount(value));
+        if (scope === "open") setOpenFromHeadlines(false);
+        return;
+      }
+      // No facet: this scope's views are read one by one.
+      if (scope === "all") {
+        applyCount(seq, "all", () => answeredCount(total));
+        await readViewCount(seq, "done");
+      } else {
+        setOpenFromHeadlines(true);
+        await Promise.all(OPEN_HEADLINES.map((h) => readViewCount(seq, h)));
+      }
+    },
+    [applyCount, readViewCount]
+  );
+
+  const readCounts = useCallback(async () => {
+    countsSeq.current += 1;
+    const seq = countsSeq.current;
+    await Promise.all([readScope(seq, "open"), readScope(seq, "all")]);
+  }, [readScope]);
+
+  useVisiblePoll(readCounts, SUBPROJECTS_COUNTS_POLL_MS, { runOnMount: true });
+
+  // ─── rows ───
+  const rowsAxis = useRetainedValue<RowsValue | null>(null);
+  const rowsFailure = useStampedFailure<SubprojectTab>();
+  const { fail: failRows, succeed: succeedRows } = rowsFailure;
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailure, setLoadMoreFailure] =
+    useState<SubprojectReadFailure | null>(null);
 
   // Read by ref, so the poll is not rebuilt on every tab click.
   const tabRef = useRef(tab);
@@ -154,76 +249,66 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
     rowsRef.current = rowsAxis.value;
   }, [rowsAxis.value]);
 
-  const { issue: issueCounts, settle: settleCounts } = countsAxis;
   const { issue: issueRows, settle: settleRows } = rowsAxis;
-
-  const readCounts = useCallback(async () => {
-    const seq = issueCounts();
-    const answers = await Promise.allSettled(
-      COUNT_VIEWS.map((view) =>
-        fetchSubprojects(viewQuery(view, 1), COORD_DASHBOARD_POLL_OPTIONS)
-      )
-    );
-    if (cancelled.current) return;
-    const value = countsOf(answers);
-    settleCounts(seq, value ? { value } : null);
-    const first = answers.find((a) => a.status === "rejected");
-    setCountsFailure(
-      value === null && first && first.status === "rejected"
-        ? classifySubprojectReadFailure(first.reason)
-        : null
-    );
-  }, [issueCounts, settleCounts]);
 
   const readRows = useCallback(
     async (forTab: SubprojectTab) => {
       const seq = issueRows();
-      try {
-        const page = await fetchSubprojects(
-          viewQuery(forTab, SUBPROJECTS_PAGE_SIZE),
-          COORD_DASHBOARD_POLL_OPTIONS
-        );
-        if (cancelled.current) return;
-        const applied = settleRows(seq, {
-          value: {
-            tab: forTab,
-            items: Array.isArray(page.items) ? page.items : [],
-            nextCursor: page.next_cursor ?? null,
-            truncated: page.truncated === true,
-            pages: 1,
-            asOf:
-              typeof page.generated_at === "string" ? page.generated_at : null,
-          },
-        });
-        if (applied) {
-          setRowsFailure(null);
-          setLoadMoreFailure(null);
-        }
-      } catch (err) {
-        if (cancelled.current) return;
+      const streams = viewStreams(forTab);
+      const answers = await Promise.allSettled(
+        streams.map((view) =>
+          fetchSubprojects(
+            viewQuery(view, SUBPROJECTS_PAGE_SIZE),
+            COORD_DASHBOARD_POLL_OPTIONS
+          )
+        )
+      );
+      if (cancelled.current) return;
+      const rejected = answers.find((a) => a.status === "rejected");
+      if (rejected && rejected.status === "rejected") {
+        // A view missing one of its streams is not this view: the read failed.
         settleRows(seq, null);
-        setRowsFailure({
-          tab: forTab,
-          failure: classifySubprojectReadFailure(err),
-        });
+        failRows(forTab, seq, classifySubprojectReadFailure(rejected.reason));
+        return;
       }
+      const value: RowsValue = {
+        tab: forTab,
+        perStream: {},
+        cursors: {},
+        truncated: false,
+        pages: 1,
+        asOf: null,
+      };
+      answers.forEach((a, i) => {
+        const view = streams[i];
+        if (view === undefined || a.status !== "fulfilled") return;
+        value.perStream[view] = Array.isArray(a.value.items)
+          ? a.value.items
+          : [];
+        value.cursors[view] = a.value.next_cursor ?? null;
+        value.truncated ||= a.value.truncated === true;
+        value.asOf = latest(
+          value.asOf,
+          typeof a.value.generated_at === "string" ? a.value.generated_at : null
+        );
+      });
+      settleRows(seq, { value });
+      succeedRows(forTab, seq);
+      setLoadMoreFailure(null);
     },
-    [issueRows, settleRows]
+    [issueRows, settleRows, failRows, succeedRows]
   );
 
-  const poll = useCallback(async () => {
+  const pollRows = useCallback(async () => {
     const current = rowsRef.current;
     const keepPages =
       current !== null && current.tab === tabRef.current && current.pages > 1;
-    await Promise.all([
-      readCounts(),
-      keepPages ? Promise.resolve() : readRows(tabRef.current),
-    ]);
-  }, [readCounts, readRows]);
+    if (!keepPages) await readRows(tabRef.current);
+  }, [readRows]);
 
-  useVisiblePoll(poll, SUBPROJECTS_POLL_MS, { runOnMount: true });
+  useVisiblePoll(pollRows, SUBPROJECTS_ROWS_POLL_MS, { runOnMount: true });
 
-  // A tab change reads that tab's rows at once; its counts are already read.
+  // A tab change reads that tab's rows at once; the counts are already read.
   const firstTab = useRef(true);
   useEffect(() => {
     if (firstTab.current) {
@@ -244,72 +329,96 @@ export function useSubprojectsList(tab: SubprojectTab): SubprojectsList {
 
   const loadMore = useCallback(async () => {
     const current = rowsRef.current;
-    if (
-      current === null ||
-      current.tab !== tabRef.current ||
-      !current.nextCursor
-    )
-      return;
+    if (current === null || current.tab !== tabRef.current) return;
+    const streams = viewStreams(current.tab).filter((v) => current.cursors[v]);
+    if (streams.length === 0) return;
     setLoadingMore(true);
     setLoadMoreFailure(null);
     const seq = issueRows();
-    try {
-      const page = await fetchSubprojects(
-        viewQuery(current.tab, SUBPROJECTS_PAGE_SIZE, current.nextCursor),
-        COORD_DASHBOARD_POLL_OPTIONS
-      );
-      if (cancelled.current) return;
-      const seen = new Set(current.items.map((s) => s.id));
-      settleRows(seq, {
-        value: {
-          ...current,
-          items: [
-            ...current.items,
-            ...(Array.isArray(page.items) ? page.items : []).filter(
-              (s) => !seen.has(s.id)
-            ),
-          ],
-          nextCursor: page.next_cursor ?? null,
-          truncated: page.truncated === true,
-          pages: current.pages + 1,
-        },
-      });
-    } catch (err) {
-      if (cancelled.current) return;
+    const answers = await Promise.allSettled(
+      streams.map((view) =>
+        fetchSubprojects(
+          viewQuery(view, SUBPROJECTS_PAGE_SIZE, current.cursors[view]),
+          COORD_DASHBOARD_POLL_OPTIONS
+        )
+      )
+    );
+    if (cancelled.current) return;
+    const rejected = answers.find((a) => a.status === "rejected");
+    if (rejected && rejected.status === "rejected") {
       // A failed page leaves the rows above it as they were: it is not a
       // failure of the list, so it does not stale it (R6 "two states, two
       // sentences").
       settleRows(seq, { value: current });
-      setLoadMoreFailure(classifySubprojectReadFailure(err));
-    } finally {
-      if (!cancelled.current) setLoadingMore(false);
+      setLoadMoreFailure(classifySubprojectReadFailure(rejected.reason));
+      setLoadingMore(false);
+      return;
     }
+    const next: RowsValue = {
+      ...current,
+      perStream: { ...current.perStream },
+      cursors: { ...current.cursors },
+      truncated: false,
+      pages: current.pages + 1,
+    };
+    answers.forEach((a, i) => {
+      const view = streams[i];
+      if (view === undefined || a.status !== "fulfilled") return;
+      const seen = new Set((next.perStream[view] ?? []).map((s) => s.id));
+      next.perStream[view] = [
+        ...(next.perStream[view] ?? []),
+        ...(Array.isArray(a.value.items) ? a.value.items : []).filter(
+          (s) => !seen.has(s.id)
+        ),
+      ];
+      next.cursors[view] = a.value.next_cursor ?? null;
+      next.truncated ||= a.value.truncated === true;
+    });
+    settleRows(seq, { value: next });
+    setLoadingMore(false);
   }, [issueRows, settleRows]);
 
   const rowsValue = rowsAxis.value;
   const sameTab = rowsValue !== null && rowsValue.tab === tab;
-  const failureHere =
-    rowsFailure !== null && rowsFailure.tab === tab
-      ? rowsFailure.failure
-      : null;
+  const failureHere = rowsFailure.failureFor(tab);
+  const items = useMemo(
+    () =>
+      sameTab && rowsValue
+        ? mergeStreamRows(
+            viewStreams(tab).map((v) => rowsValue.perStream[v] ?? [])
+          )
+        : [],
+    [sameTab, rowsValue, tab]
+  );
   const rows: SubprojectsRows = {
-    items: sameTab ? rowsValue.items : [],
+    items,
     loaded: sameTab,
     stale: sameTab && failureHere !== null,
     failure: failureHere,
-    nextCursor: sameTab ? rowsValue.nextCursor : null,
-    truncated: sameTab ? rowsValue.truncated : false,
-    asOf: sameTab ? rowsValue.asOf : null,
+    more:
+      sameTab && rowsValue !== null
+        ? viewStreams(tab).some((v) => Boolean(rowsValue.cursors[v]))
+        : false,
+    truncated: sameTab && rowsValue !== null ? rowsValue.truncated : false,
+    pages: sameTab && rowsValue !== null ? rowsValue.pages : 0,
+    asOf: sameTab && rowsValue !== null ? rowsValue.asOf : null,
   };
 
-  const countsValue = countsAxis.value;
+  const shownCounts = useMemo<SubprojectCounts>(
+    () =>
+      openFromHeadlines
+        ? {
+            ...counts,
+            open: openFromParts(OPEN_HEADLINES.map((h) => counts[h])),
+          }
+        : counts,
+    [counts, openFromHeadlines]
+  );
+
   return {
-    counts: countsValue?.counts ?? NO_COUNTS,
-    unattached: countsValue?.unattached ?? null,
-    unattachedByClass: countsValue?.unattachedByClass ?? null,
-    countsLoaded: countsAxis.hasRead,
-    countsFailure,
-    countsAsOf: countsValue?.asOf ?? null,
+    counts: shownCounts,
+    unattached,
+    unattachedByClass,
     rows,
     loadMore,
     loadingMore,

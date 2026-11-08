@@ -1119,8 +1119,8 @@ def _coord_answer_lost_in_transit(exc: httpx.HTTPError) -> RefusalHTTPException:
     outcome is unknown. For the rare failure before anything was sent
     (``LocalProtocolError``, ``UnsupportedProtocol``) this over-reports "may
     have been applied", which is the safe direction. Shared by
-    ``_proxy_coord_write`` and ``_proxy_coord_verbatim`` so the two cannot
-    drift."""
+    ``_proxy_coord_write``, ``_proxy_coord_post`` and ``_proxy_coord_verbatim``
+    so they cannot drift."""
     return _coord_answer_lost(
         f"coord's answer was lost in transit ({type(exc).__name__}); the "
         "outcome is unknown and the change may have been applied, so re-read "
@@ -3732,6 +3732,14 @@ async def _proxy_coord_post(
     out of ``resp.json()`` as a 500. A success is still a success: the write
     was accepted, and turning that into a server error would tell the operator
     it failed. Default False preserves the prior behavior exactly.
+
+    Any other transport failure (``ReadError``, ``RemoteProtocolError`` — a
+    load balancer cutting the response) is treated as after-send, exactly as
+    ``_proxy_coord_write`` treats it: coord may have committed the POST, so it
+    is the **504** ``answer_lost`` refusal ("the outcome is unknown"), never an
+    unhandled 500 that reads as "refused". For a spawn that difference is the
+    difference between "try again" and "check before trying again, or you may
+    get two".
     """
     url = f"{settings.COORD_URL}{path}"
     headers = (
@@ -3744,6 +3752,11 @@ async def _proxy_coord_post(
             raise _coord_unreachable()
         except httpx.TimeoutException:
             raise _coord_timeout(write=True)
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "coord_post_answer_lost", path=path, exc_type=type(exc).__name__
+            )
+            raise _coord_answer_lost_in_transit(exc) from exc
     if resp.status_code >= 400:
         raise HTTPException(
             status_code=resp.status_code,
@@ -7807,16 +7820,18 @@ async def get_agent(
 # read"), Continue composes its brief from the same next steps (D7, D8), and
 # the list serves the tick's cached verdicts but counts each row's sessions and
 # work units and classifies the unattached units beside them — none of which
-# is part of the cached verdict. coord bounds the live computation per SOURCE:
-# each member session's obligations read runs under its own deadline, gate
-# recursion is depth-capped, and a source that runs out is served as
-# ``could_not_read`` while the door still answers 200. That is the same kind of
-# synthesis as the project-state door, so it gets that door's budget (see
-# ``_COORD_PROJECT_STATE_TIMEOUT``). UNMEASURED: the doors are new, so this is
-# sized by analogy, not by a sampled latency. At ``_COORD_TIMEOUT`` an answer
-# coord gave in 6s would be a 504 here: the detail page would render every
-# section unknown, and Continue would have to say the spawn may or may not have
-# landed. Connect stays short: an unreachable coord should still fail fast.
+# is part of the cached verdict. The plan has coord bound the live computation
+# per SOURCE (its D6 and its "Verdict cost" risk): each member session's
+# obligations read under its own deadline (`VERDICT_DEADLINE`), gate recursion
+# depth-capped, and a source that runs out served as ``could_not_read`` while
+# the door still answers 200. That is the same kind of synthesis as the
+# project-state door, so it gets that door's budget (see
+# ``_COORD_PROJECT_STATE_TIMEOUT``). UNMEASURED: coord's doors are being built
+# alongside this proxy, so this is sized by analogy, not by a sampled latency.
+# At ``_COORD_TIMEOUT`` an answer coord gave in 6s would be a 504 here: the
+# detail page would render every section unknown, and Continue would have to
+# say the spawn may or may not have landed. Connect stays short: an
+# unreachable coord should still fail fast.
 #
 # COST: the reads resolve their tenant with ``get_tenant_id``, which holds no
 # backend DB session across the coord call. Continue's admin gate does hold one
@@ -7854,7 +7869,10 @@ async def get_subprojects(
     Each item is a ``SubprojectSummary`` whose ``headline`` and ``top_reason``
     come from the verdict coord's reconciler tick cached, with its
     ``verdict_as_of``; the envelope carries ``next_cursor``, ``truncated``,
-    ``total`` and ``unattached_units``. The filters are forwarded only when set,
+    ``total``, ``unattached_units`` and ``counts`` — every headline's count and
+    the folded one-off / scheduled / merged counts over the same status and
+    origin filter, or ``null`` when coord could not take them. The filters are
+    forwarded only when set,
     as sent: coord owns the vocabulary and refuses a value it does not know, so
     this route does not keep a second copy of it to drift. A coord whose
     migration has not applied answers ``503 {"error":
@@ -7875,6 +7893,52 @@ async def get_subprojects(
         params=params or None,
         tenant_id=tenant_id,
         timeout=_COORD_SUBPROJECTS_TIMEOUT,
+        structured_errors=True,
+    )
+
+
+#: coord's bound on one ``by-sessions`` lookup (the contract's "max 200").
+_SUBPROJECT_LOOKUP_MAX_IDS = 200
+
+
+# Declared BEFORE ``/subprojects/{subproject_id}``: Starlette matches routes in
+# order and converts path parameters only after a match, so with the ``{id}``
+# route first, ``by-sessions`` would be taken for an id and refused 422.
+@router.get("/subprojects/by-sessions")
+async def get_subprojects_by_sessions(
+    ids: str = Query(
+        ...,
+        description="Comma-separated harness (Claude Code) session ids, at "
+        "most 200 — one page of session rows.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Which subproject each session belongs to — proxy coord's
+    ``GET /coord/subprojects/by-sessions``.
+
+    One batched read per page of session rows (the sessions console's
+    subproject chip). coord answers ``{"items": {<session id>: {"id",
+    "title", "headline"}}, "missing": [<ids with no live membership>]}``,
+    verbatim; a pending membership is reported under ``missing``. The ids are
+    forwarded as sent; only their COUNT is checked here, so a page that would
+    exceed coord's bound is refused before the call rather than after it.
+    """
+    count = len([part for part in ids.split(",") if part.strip()])
+    if count == 0 or count > _SUBPROJECT_LOOKUP_MAX_IDS:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "invalid_session_ids",
+                "message": (
+                    f"ids must name between 1 and {_SUBPROJECT_LOOKUP_MAX_IDS} "
+                    f"sessions; got {count}"
+                ),
+            },
+        )
+    return await _proxy_coord_get(
+        "/coord/subprojects/by-sessions",
+        params={"ids": ids},
+        tenant_id=tenant_id,
         structured_errors=True,
     )
 

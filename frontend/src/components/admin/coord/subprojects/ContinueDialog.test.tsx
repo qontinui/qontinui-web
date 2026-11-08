@@ -8,6 +8,8 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { SubprojectNextStep } from "@/lib/api/operations/coordSubprojects";
 
 const continueSubproject = vi.fn();
 vi.mock("@/lib/api/operations/coordSubprojects", () => ({
@@ -64,14 +66,30 @@ function respond(status: number, body: unknown): Response {
   });
 }
 
-function renderDialog(onContinued = vi.fn()) {
+const NEXT_STEPS: SubprojectNextStep[] = [
+  {
+    source: "gate",
+    text: "Attest phase 3's evidence gate.",
+    refs: [],
+    remedy_kind: null,
+  },
+];
+
+function renderDialog(
+  onContinued = vi.fn(),
+  over: {
+    nextSteps?: SubprojectNextStep[] | null;
+    onClose?: () => void;
+  } = {}
+) {
   render(
     <ContinueDialog
       open
-      onClose={vi.fn()}
+      onClose={over.onClose ?? vi.fn()}
       subprojectId={ID}
       subprojectTitle="dashboards-and-presentation"
-      defaultRepos={["qontinui-runner"]}
+      suggestedRepos={["qontinui-runner"]}
+      nextSteps={over.nextSteps === undefined ? NEXT_STEPS : over.nextSteps}
       onContinued={onContinued}
     />
   );
@@ -140,6 +158,12 @@ describe("ContinueDialog", () => {
       "data-placement",
       "pool"
     );
+    // The PR's repo is a one-click hint, not a prefill.
+    fireEvent.click(screen.getByTestId("subproject-continue-repo-hint"));
+    expect(screen.getByTestId("subproject-continue-repos")).toHaveValue(
+      "qontinui-runner"
+    );
+    expect(screen.queryByTestId("subproject-continue-repo-hints")).toBeNull();
     fireEvent.click(screen.getByTestId("subproject-continue-submit"));
 
     const result = await screen.findByTestId("subproject-continue-result");
@@ -164,14 +188,15 @@ describe("ContinueDialog", () => {
     expect(onContinued).toHaveBeenCalledTimes(1);
   });
 
-  it("omits the repos when the operator clears them, so coord derives them", async () => {
+  it("opens with the repos EMPTY, so coord derives them (D8), and offers the PR repos as hints", async () => {
     fetchPromptDocument.mockResolvedValue(PLAYBOOK);
     continueSubproject.mockResolvedValue(respond(200, { placement: "pool" }));
     renderDialog();
     await screen.findByText(/Default max/);
-    fireEvent.change(screen.getByTestId("subproject-continue-repos"), {
-      target: { value: "" },
-    });
+    expect(screen.getByTestId("subproject-continue-repos")).toHaveValue("");
+    expect(
+      screen.getByTestId("subproject-continue-repo-hints")
+    ).toHaveTextContent("From its pull requests:+ qontinui-runner");
     fireEvent.change(screen.getByTestId("subproject-continue-addendum"), {
       target: { value: "  Start at the failed gate.  " },
     });
@@ -234,5 +259,70 @@ describe("ContinueDialog", () => {
     expect(
       await screen.findByTestId("subproject-continue-refusal")
     ).toHaveTextContent("may or may not have landed");
+  });
+
+  it("is not submittable while the effort profiles are being read, unless an effort is chosen", async () => {
+    // The read never answers.
+    fetchPromptDocument.mockReturnValue(new Promise(() => {}));
+    const user = userEvent.setup();
+    renderDialog();
+    expect(
+      screen.getByTestId("subproject-continue-effort-source")
+    ).toHaveTextContent(/^Reading the effort profiles/);
+    expect(screen.getByTestId("subproject-continue-submit")).toBeDisabled();
+    // An explicit choice is an effort somebody chose: Continue may go.
+    await user.click(screen.getByTestId("subproject-continue-effort"));
+    await user.click(await screen.findByRole("option", { name: "medium" }));
+    expect(screen.getByTestId("subproject-continue-submit")).toBeEnabled();
+    expect(screen.getByTestId("subproject-continue-submit")).toHaveTextContent(
+      "Continue at medium"
+    );
+  });
+
+  it("shows what the session will be told, and says so when coord sent no steps", async () => {
+    fetchPromptDocument.mockResolvedValue(PLAYBOOK);
+    renderDialog();
+    const brief = await screen.findByTestId("subproject-continue-brief");
+    expect(brief).toHaveTextContent("The session will be told:");
+    expect(brief).toHaveTextContent("Attest phase 3's evidence gate.");
+  });
+
+  it("calls next steps coord did not send unknown, never none", async () => {
+    fetchPromptDocument.mockResolvedValue(PLAYBOOK);
+    renderDialog(vi.fn(), { nextSteps: null });
+    expect(
+      await screen.findByTestId("subproject-continue-brief")
+    ).toHaveTextContent(
+      /did not send this subproject's next steps .* unknown here/
+    );
+  });
+
+  it("does not close on Escape while the request is out", async () => {
+    fetchPromptDocument.mockResolvedValue(PLAYBOOK);
+    continueSubproject.mockReturnValue(new Promise(() => {}));
+    const onClose = vi.fn();
+    renderDialog(vi.fn(), { onClose });
+    await screen.findByText(/Default max/);
+    fireEvent.click(screen.getByTestId("subproject-continue-submit"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("subproject-continue-submit")
+      ).toHaveTextContent("Continuing…")
+    );
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes on Escape when idle (the control for the test above)", async () => {
+    fetchPromptDocument.mockResolvedValue(PLAYBOOK);
+    const onClose = vi.fn();
+    renderDialog(vi.fn(), { onClose });
+    await screen.findByText(/Default max/);
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -35,6 +35,7 @@ import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
 import { extractCoordRefusal } from "@/components/admin/coord/spawnPlacement";
 import { isTerminalGateVerdict } from "@/app/(app)/admin/coord/gates/gateStatus";
 import type {
+  SubprojectCountsFacet,
   SubprojectMemberGate,
   SubprojectMemberPr,
   SubprojectMemberSession,
@@ -669,12 +670,67 @@ export function sortMemberGates<T extends SubprojectMemberGate>(
   );
 }
 
+const PREDICATE_WORDS: Readonly<Record<string, string>> = {
+  pr_merged: "PR merged",
+  gate_cleared: "another gate cleared",
+  unit_status: "work unit status",
+  claim_terminal: "claim ended",
+  operator_approval: "your approval",
+  time_elapsed: "time elapsed",
+  deploy_healthy: "deploy healthy",
+  commit_live: "commit live",
+  ci_green: "CI green",
+  ref_exists: "ref exists",
+  metric_threshold: "metric threshold",
+  plan_ready: "plan ready",
+  schema_object_exists: "schema object exists",
+};
+
+/** What a gate waits for, in words (R8). A predicate this build has no word
+ *  for reads as coord's own token with its underscores spaced — a closed
+ *  vocabulary that names no machine or person (style guide §3.11); the raw
+ *  token itself stays on the raw-ids line. */
+export function predicateKindWords(kind: string): string {
+  return own(PREDICATE_WORDS, kind) ?? kind.replace(/_/g, " ");
+}
+
 /** Proven or uncertain attribution (D2), in words. */
 export function gateAttributionWords(attribution: string): string {
   if (attribution === "proven") return "registered by a member session";
   if (attribution === "uncertain")
     return "attribution uncertain: registered with no session id, by a member session's device while that session was alive";
   return `attribution: ${attribution.replace(/_/g, " ")}`;
+}
+
+// ─────────────────────────────── history ───────────────────────────────
+
+const HISTORY_EVENT_WORDS: Readonly<Record<string, string>> = {
+  created: "founded",
+  founded: "founded",
+  renamed: "renamed",
+  title_set: "renamed",
+  goal_set: "goal set",
+  next_steps_note_set: "next-steps note written",
+  note_written: "next-steps note written",
+  status_changed: "status changed",
+  marked_done: "marked done",
+  reopened: "reopened",
+  merged: "merged",
+  merged_into: "merged into another subproject",
+  member_attached: "member attached",
+  member_added: "member added",
+  member_moved: "member moved",
+  member_removed: "member removed",
+  split: "split off",
+  spawned: "a session spawned by Continue",
+  continued: "a session spawned by Continue",
+  verdict_changed: "verdict changed",
+};
+
+/** A history event in words (R8); an event this build has no word for reads
+ *  as coord's own token, spaced, and the raw token is on the raw-ids line. */
+export function historyEventWords(event: string): string {
+  return own(HISTORY_EVENT_WORDS, event) ?? event.replace(/_/g, " ");
 }
 
 // ─────────────────────────────── units and PRs ───────────────────────────
@@ -722,6 +778,31 @@ export function unreadSources(
   return sources.filter((s) => s.state !== "read");
 }
 
+/** A member list as the detail served it: an absent list is UNKNOWN, never
+ *  an empty one (the plan's "Unknown is first-class"). */
+export function memberList<T>(value: readonly T[] | null | undefined): {
+  items: T[];
+  known: boolean;
+} {
+  return Array.isArray(value)
+    ? { items: [...value], known: true }
+    : { items: [], known: false };
+}
+
+/** A member list's empty slot. coord's list is only as complete as the
+ *  sources the verdict read, so "none" is qualified when any went unread. */
+export function memberEmptyText(
+  noun: string,
+  known: boolean,
+  unread: readonly SubprojectSource[]
+): string {
+  if (!known)
+    return `coord did not send the ${noun} with this read — unknown, not none.`;
+  if (unread.length === 0) return `coord lists no ${noun}.`;
+  const names = unread.map((u) => u.source.replace(/_/g, " ")).join(", ");
+  return `coord lists no ${noun}, but this verdict could not read ${names}, so the list may be incomplete.`;
+}
+
 export function sourceStateWords(state: string): string {
   if (state === "could_not_read") return "could not be read";
   if (state === "stale") return "read from a stale copy";
@@ -732,9 +813,14 @@ export function sourceStateWords(state: string): string {
 
 // ─────────────────────────────── list views ───────────────────────────────
 
-/** The list's tabs (D12). `all` is the only view one-offs, scheduled and
- *  merged subprojects are listed under. */
+/**
+ * The list's tabs (D12). **Open** is the default: every open subproject that
+ * is not done — the plan has one-offs and scheduled subprojects "hidden by
+ * default" as its answer to one subproject per root session. One-offs,
+ * scheduled and merged subprojects are listed under **All** only.
+ */
 export type SubprojectTab =
+  | "open"
   | "needs_you"
   | "stalled"
   | "working"
@@ -743,6 +829,7 @@ export type SubprojectTab =
   | "all";
 
 export const SUBPROJECT_TABS: readonly SubprojectTab[] = [
+  "open",
   "needs_you",
   "stalled",
   "working",
@@ -752,6 +839,7 @@ export const SUBPROJECT_TABS: readonly SubprojectTab[] = [
 ];
 
 export const SUBPROJECT_TAB_LABEL: Record<SubprojectTab, string> = {
+  open: "Open",
   needs_you: "Needs you",
   stalled: "Stalled",
   working: "Working",
@@ -760,22 +848,37 @@ export const SUBPROJECT_TAB_LABEL: Record<SubprojectTab, string> = {
   all: "All",
 };
 
-/** A tab from a URL's `?tab=`, defaulting to All. */
+/** The headlines the Open view is made of: every one but done. */
+export const OPEN_HEADLINES: readonly SubprojectHeadlineKind[] = [
+  "needs_you",
+  "stalled",
+  "working",
+  "waiting",
+  "unknown",
+];
+
+/** A tab from a URL's `?tab=`, defaulting to Open. */
 export function tabOf(raw: string | null | undefined): SubprojectTab {
   return (SUBPROJECT_TABS as readonly string[]).includes(raw ?? "")
     ? (raw as SubprojectTab)
-    : "all";
+    : "open";
 }
 
+/** Every view a count is kept for: each tab, and `unknown` for the strip. */
+export type CountView = SubprojectTab | "unknown";
+
+/** A view that is one filter — one stream of rows. */
+export type StreamView = Exclude<CountView, "open">;
+
 /**
- * The query a view reads. The active headlines read `status=open`: a
+ * The query one stream reads. The not-done headlines read `status=open`: a
  * subproject declared done or archived is not stalled, whatever its last
  * cached headline was. Done reads every status, so a subproject the operator
  * marked done is still found under Done; All reads every status, so nothing is
  * hidden from it.
  */
 export function viewQuery(
-  view: SubprojectTab | "unknown",
+  view: StreamView,
   limit: number,
   cursor?: string | null
 ): URLSearchParams {
@@ -788,21 +891,58 @@ export function viewQuery(
   return q;
 }
 
-/** Why a row is listed only under All (D12), or `null` when it is not. */
+/** The streams a tab reads: Open is the union of the not-done headlines —
+ *  coord filters one headline at a time — and every other tab is one. */
+export function viewStreams(tab: SubprojectTab): StreamView[] {
+  return tab === "open" ? [...OPEN_HEADLINES] : [tab];
+}
+
+/** Rows from several streams as one list: each subproject once, the most
+ *  recently active first (an unknown time last). */
+export function mergeStreamRows(
+  pages: ReadonlyArray<readonly SubprojectSummary[]>
+): SubprojectSummary[] {
+  const seen = new Set<string>();
+  const out: SubprojectSummary[] = [];
+  for (const page of pages) {
+    for (const s of page) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id);
+      out.push(s);
+    }
+  }
+  if (pages.length < 2) return out;
+  const t = (s: SubprojectSummary) =>
+    Date.parse(s.last_activity_at ?? s.updated_at) || 0;
+  return out.sort((a, b) => t(b) - t(a));
+}
+
+/**
+ * Why a row is listed only under All (D12), or `null` when it is not.
+ *
+ * coord defines a one-off (the list's `counts.folded.one_off`) as exactly one
+ * member session, finished or closed, and no work unit. A row carries only
+ * its sessions' live/total counts, so this test reads "finished or closed" as
+ * "not live" — it also folds a subproject whose one session went STALE
+ * without closing, which coord's count does not. The folded line names every
+ * row it folds, so such a row is disclosed rather than hidden; a per-row flag
+ * from coord would make the two agree exactly. An uncounted half is not
+ * evidence of a one-off.
+ */
 export function foldedReason(
   s: Pick<
     SubprojectSummary,
-    "origin" | "merged_into" | "headline" | "sessions" | "work_units"
+    "origin" | "merged_into" | "sessions" | "work_units"
   >
 ): string | null {
   if (s.merged_into) return "merged into another subproject";
   if (s.origin === "scheduled") return "a scheduled task's standing subproject";
   if (
-    s.headline === "done" &&
     s.sessions.total === 1 &&
+    s.sessions.live === 0 &&
     s.work_units.total === 0
   )
-    return "a one-off: a single finished session and no work units";
+    return "a one-off: a single session, now ended, and no work units";
   return null;
 }
 
@@ -824,6 +964,62 @@ export function sessionsTitle(
   if (c.live === null || c.total === null)
     return "coord did not report how many member sessions are live — a dash is unknown, not zero";
   return `${c.live} of ${c.total} member session${c.total === 1 ? "" : "s"} live`;
+}
+
+const EMPTY_VIEW: Record<SubprojectTab, string> = {
+  open: "No open subproject is working, waiting, stalled or waiting on you",
+  needs_you: "No open subproject needs you",
+  stalled: "No open subproject is stalled",
+  working: "No open subproject is working",
+  waiting: "No open subproject is waiting",
+  done: "No subproject is done",
+  all: "No subproject",
+};
+
+export interface EmptyViewInput {
+  tab: SubprojectTab;
+  /** A read for this view has answered. */
+  loaded: boolean;
+  /** The latest read of this view failed with this. */
+  failure: SubprojectReadFailure | null;
+  /** Rows are kept from an earlier read, and the latest failed. */
+  stale: boolean;
+  /** The page's search text, trimmed. */
+  query: string;
+  /** Rows loaded for this view, before the search and the fold. */
+  loadedRows: number;
+  /** Of those, how many match the search. */
+  matched: number;
+  /** Of the matching rows, how many are listed under All only. */
+  folded: number;
+  /** coord holds more rows for this view than are loaded. */
+  more: boolean;
+}
+
+/**
+ * The empty slot's sentence (R6: the claim is made in words, so every arm
+ * that is not a confirmed absence says what it is instead). In order: a view
+ * nothing answered for is UNKNOWN; rows that are all folded into All are
+ * said to be there; a search that matched nothing says it is about this page;
+ * a kept read is dated as the last good one; only then the plain absence.
+ */
+export function describeEmptyView(i: EmptyViewInput): string {
+  const next = i.more ? " More may be on the next page: Load more." : "";
+  if (i.failure && !i.loaded)
+    return `Whether any subproject is in this view is unknown: ${readFailureWords(i.failure)}.`;
+  if (i.folded > 0) {
+    const what = i.query
+      ? `${i.folded === 1 ? "subproject" : "subprojects"} matching "${i.query}"`
+      : i.folded === 1
+        ? "subproject"
+        : "subprojects";
+    return `The ${i.folded} ${what} on this page in this view ${i.folded === 1 ? "is" : "are"} one-off, scheduled or merged, listed under All.${next}`;
+  }
+  if (i.query && i.loadedRows > 0 && i.matched === 0)
+    return `No subproject on this page matches "${i.query}".${next}`;
+  if (i.stale && i.failure)
+    return `${EMPTY_VIEW[i.tab]} at the last good read; the latest read failed — ${readFailureWords(i.failure)}.`;
+  return `${EMPTY_VIEW[i.tab]}.${next}`;
 }
 
 // ─────────────────────────────── read failures ─────────────────────────────
@@ -899,29 +1095,127 @@ export function readFailureWords(f: SubprojectReadFailure): string {
   }
 }
 
-// ─────────────────────────────── the list's health strip ───────────────────
+// ─────────────────────────────── counts ───────────────────────────────
 
-/** One count per view, as coord counted it: `null` is unread or uncounted. */
-export type SubprojectCounts = Record<SubprojectTab | "unknown", number | null>;
-
-export const NO_COUNTS: SubprojectCounts = {
-  needs_you: null,
-  stalled: null,
-  working: null,
-  waiting: null,
-  done: null,
-  all: null,
-  unknown: null,
-};
-
-export interface SubprojectsHealthInput {
-  counts: SubprojectCounts;
-  unattached: number | null;
-  /** Has any count read ever answered? */
-  loaded: boolean;
-  /** The latest poll's failure, when it failed. */
+/**
+ * What the page knows about one view's count. Four states, kept apart (R6):
+ *
+ * - **unread** — nothing has answered (`answered: false`, no failure);
+ * - **failed** — this view's read failed and nothing ever answered for it;
+ * - **not taken** — coord answered without the number (`value: null`);
+ * - **a value** — and, when the latest read of it failed, the value is the
+ *   last good one (`failure` set): kept, because it was measured, and said to
+ *   be stale.
+ */
+export interface CountReading {
+  value: number | null;
+  answered: boolean;
   failure: SubprojectReadFailure | null;
 }
+
+export const UNREAD_COUNT: CountReading = {
+  value: null,
+  answered: false,
+  failure: null,
+};
+
+export type SubprojectCounts = Record<CountView, CountReading>;
+
+export const NO_COUNTS: SubprojectCounts = {
+  open: UNREAD_COUNT,
+  needs_you: UNREAD_COUNT,
+  stalled: UNREAD_COUNT,
+  working: UNREAD_COUNT,
+  waiting: UNREAD_COUNT,
+  done: UNREAD_COUNT,
+  all: UNREAD_COUNT,
+  unknown: UNREAD_COUNT,
+};
+
+/** A reading after an answer: the number, or `null` for "not taken". */
+export function answeredCount(value: number | null): CountReading {
+  return { value, answered: true, failure: null };
+}
+
+/** A reading after a failed read: the last good number stays, said stale. */
+export function failedCount(
+  previous: CountReading,
+  failure: SubprojectReadFailure
+): CountReading {
+  return { ...previous, failure };
+}
+
+/** The list's `counts` facet, when an answer carries a well-formed one;
+ *  `null` for an absent, null or malformed facet — never zeros. */
+export function readCountsFacet(body: unknown): SubprojectCountsFacet | null {
+  if (typeof body !== "object" || body === null) return null;
+  const facet = (body as { counts?: unknown }).counts;
+  if (typeof facet !== "object" || facet === null) return null;
+  const by = (facet as { by_headline?: unknown }).by_headline;
+  const folded = (facet as { folded?: unknown }).folded;
+  const asOf = (facet as { as_of?: unknown }).as_of;
+  if (typeof by !== "object" || by === null) return null;
+  if (typeof folded !== "object" || folded === null) return null;
+  const n = (o: object, k: string) => (o as Record<string, unknown>)[k];
+  const allNumbers = (o: object, keys: readonly string[]) =>
+    keys.every((k) => typeof n(o, k) === "number");
+  if (!allNumbers(by, SUBPROJECT_HEADLINES)) return null;
+  if (!allNumbers(folded, ["one_off", "scheduled", "merged"])) return null;
+  return {
+    by_headline: by as SubprojectCountsFacet["by_headline"],
+    folded: folded as SubprojectCountsFacet["folded"],
+    as_of: typeof asOf === "string" ? asOf : "",
+  };
+}
+
+/** The two facet reads: the not-done views count over `status=open`, Done and
+ *  All over `status=all` — the same filters their rows are read under. */
+export type FacetScope = "open" | "all";
+
+export function facetQuery(scope: FacetScope): URLSearchParams {
+  return new URLSearchParams({ status: scope, limit: "1" });
+}
+
+/** The views each facet answers. */
+export const FACET_VIEWS: Record<FacetScope, readonly CountView[]> = {
+  open: ["open", ...OPEN_HEADLINES],
+  all: ["done", "all"],
+};
+
+/** The counts a facet answer gives: `open` → the five not-done headlines and
+ *  Open (their sum); `all` → Done and All (the read's own `total`). */
+export function countsFromFacet(
+  scope: FacetScope,
+  facet: SubprojectCountsFacet,
+  total: number | null
+): Partial<Record<CountView, number | null>> {
+  const by = facet.by_headline;
+  if (scope === "all") return { done: by.done, all: total };
+  return {
+    needs_you: by.needs_you,
+    stalled: by.stalled,
+    working: by.working,
+    waiting: by.waiting,
+    unknown: by.unknown,
+    open: OPEN_HEADLINES.reduce((sum, h) => sum + by[h], 0),
+  };
+}
+
+/** Open's count from per-view readings (the fallback path): the sum when all
+ *  five not-done headlines were counted, else not taken; stale or failed when
+ *  any of them is. */
+export function openFromParts(parts: readonly CountReading[]): CountReading {
+  const failure = parts.find((p) => p.failure !== null)?.failure ?? null;
+  const answered = parts.length > 0 && parts.every((p) => p.answered);
+  const values = parts.map((p) => p.value);
+  const value =
+    answered && values.every((v): v is number => v !== null)
+      ? values.reduce((sum, v) => sum + v, 0)
+      : null;
+  return { value, answered, failure };
+}
+
+// ─────────────────────────────── the list's health strip ───────────────────
 
 export interface SubprojectsHealth {
   level: "green" | "amber" | "red";
@@ -937,39 +1231,56 @@ function plural(n: number, kind: SubprojectHeadlineKind): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/** Why one of the strip's counts is not a current number, or `null`. */
+function countGap(name: string, r: CountReading): string | null {
+  if (r.failure)
+    return r.value !== null
+      ? `the ${name} count is from the last good read; its latest read failed (${readFailureWords(r.failure)})`
+      : `the ${name} count could not be read (${readFailureWords(r.failure)})`;
+  if (r.value === null)
+    return r.answered
+      ? `coord did not take the ${name} count`
+      : `the ${name} count has not been read`;
+  return null;
+}
+
 /**
  * The strip's verdict over the counts on the page (R1: derived, never a
- * second fetch; R6: three arms, the failure first).
+ * second fetch; R6: the failure arms first).
  *
- * - **Unknown** — no count read has ever answered: amber, every count a dash,
- *   and the failure's own reason (a pending migration and an undeployed door
- *   are said as what they are).
- * - **Stale** — counts answered earlier and the latest read failed: the
- *   counts stay (they were measured), the level is amber whatever they say,
- *   and the headline is dated as the last good read, never an all-clear.
- * - **Current** — red when anything needs the operator or is stalled; amber
- *   when a verdict is unknown or a count did not come back; green only on a
- *   MEASURED zero of all three. Waiting and working never move the level:
- *   they are the healthy states.
+ * - **Unknown** — nothing has answered: amber, every count a dash, and the
+ *   failure's own reason (a pending migration and an undeployed door are said
+ *   as what they are).
+ * - **Stale or failed** — the needs-you or stalled count's latest read failed:
+ *   amber whatever the numbers say; a kept number is "at the last good read",
+ *   a count never read or not taken is said to be unknown — never an
+ *   all-clear.
+ * - **Current** — red when anything needs you or is stalled; amber when either
+ *   count was not taken, or a verdict is unknown; green only on a MEASURED
+ *   zero of all three. Waiting and working never move the level.
  */
 export function deriveSubprojectsHealth(
-  input: SubprojectsHealthInput
+  counts: SubprojectCounts
 ): SubprojectsHealth {
-  const { counts, failure, loaded } = input;
-  if (failure && !loaded) {
-    return {
-      level: "amber",
-      headline:
-        failure.kind === "migration_pending"
-          ? "Subprojects cannot be read yet — coord's tables are not migrated"
-          : failure.kind === "not_served"
-            ? "This deployment does not serve subprojects yet"
-            : "Subprojects could not be read",
-      detail: `${readFailureWords(failure)}. Every count is a dash, not a zero.`,
-      readIsCurrent: false,
-    };
-  }
-  if (!loaded) {
+  const needs = counts.needs_you;
+  const stalled = counts.stalled;
+  const unknown = counts.unknown;
+  const readings = Object.values(counts);
+  if (!readings.some((r) => r.answered)) {
+    const failure = readings.find((r) => r.failure !== null)?.failure ?? null;
+    if (failure) {
+      return {
+        level: "amber",
+        headline:
+          failure.kind === "migration_pending"
+            ? "Subprojects cannot be read yet — coord's tables are not migrated"
+            : failure.kind === "not_served"
+              ? "This deployment does not serve subprojects yet"
+              : "Subprojects could not be read",
+        detail: `${readFailureWords(failure)}. Every count is a dash, not a zero.`,
+        readIsCurrent: false,
+      };
+    }
     return {
       level: "amber",
       headline: "Reading coord's subprojects…",
@@ -977,20 +1288,25 @@ export function deriveSubprojectsHealth(
       readIsCurrent: false,
     };
   }
-  const needs = counts.needs_you;
-  const stalled = counts.stalled;
-  const unknown = counts.unknown;
   const loud: string[] = [];
-  if (needs !== null && needs > 0) loud.push(plural(needs, "needs_you"));
-  if (stalled !== null && stalled > 0) loud.push(plural(stalled, "stalled"));
-  if (failure) {
+  if (needs.value !== null && needs.value > 0)
+    loud.push(plural(needs.value, "needs_you"));
+  if (stalled.value !== null && stalled.value > 0)
+    loud.push(plural(stalled.value, "stalled"));
+  const gaps = [
+    countGap("needs-you", needs),
+    countGap("stalled", stalled),
+  ].filter((g): g is string => g !== null);
+  if (needs.failure || stalled.failure) {
     return {
       level: "amber",
       headline:
         loud.length > 0
           ? `At the last good read: ${loud.join(" · ")}`
-          : "Nothing was stalled or waiting on you at the last good read",
-      detail: `The latest read failed — ${readFailureWords(failure)}. These counts are from the last read that answered.`,
+          : needs.value === null || stalled.value === null
+            ? "Whether anything is stalled or waiting on you is unknown"
+            : "Nothing was stalled or waiting on you at the last good read",
+      detail: `${gaps.join("; ")}.`,
       readIsCurrent: false,
     };
   }
@@ -999,26 +1315,34 @@ export function deriveSubprojectsHealth(
       level: "red",
       headline: loud.join(" · "),
       detail:
-        "A stalled subproject has nothing alive moving it, and nothing will restart it unless someone does.",
+        gaps.length > 0
+          ? `${gaps.join("; ")}.`
+          : "A stalled subproject has nothing alive moving it, and nothing will restart it unless someone does.",
       readIsCurrent: true,
     };
   }
-  if (needs === null || stalled === null) {
+  if (gaps.length > 0) {
     return {
       level: "amber",
-      headline: "Some counts did not come back",
-      detail:
-        "coord answered without counting every view, so whether anything is stalled or waiting on you is unknown.",
+      headline: "Whether anything is stalled or waiting on you is unknown",
+      detail: `${gaps.join("; ")}.`,
       readIsCurrent: true,
     };
   }
-  if (unknown === null || unknown > 0) {
+  const unknownGap = countGap("unknown-verdict", unknown);
+  if (unknownGap !== null) {
     return {
       level: "amber",
       headline:
-        unknown === null
-          ? "Nothing is stalled or waiting on you; whether any verdict is unknown was not counted"
-          : `${plural(unknown, "unknown")} — coord could not say whether ${unknown === 1 ? "it is" : "they are"} moving`,
+        "Nothing is stalled or waiting on you; whether any verdict is unknown was not counted",
+      detail: `${unknownGap}.`,
+      readIsCurrent: true,
+    };
+  }
+  if (unknown.value !== null && unknown.value > 0) {
+    return {
+      level: "amber",
+      headline: `${plural(unknown.value, "unknown")} — coord could not say whether ${unknown.value === 1 ? "it is" : "they are"} moving`,
       detail:
         "An unknown verdict is one coord has not computed, or one resting on evidence it could not read.",
       readIsCurrent: true,
@@ -1033,21 +1357,103 @@ export function deriveSubprojectsHealth(
   };
 }
 
+// ─────────────────────────────── the session chip ───────────────────────────
+
+/**
+ * A session's subproject, as the sessions console and the session detail page
+ * show it beside the session (plan Phase 6). Only a MEMBER links; every other
+ * state is a dash whose title says which — a guess is never rendered.
+ */
+export type SubprojectChip =
+  /** No Claude Code session id, so no membership can apply. */
+  | { kind: "not_applicable" }
+  /** The page's lookup has not answered yet. */
+  | { kind: "looking_up" }
+  /** Past the lookup's bound of one page of sessions. */
+  | { kind: "not_looked_up" }
+  /** The page's lookup failed. */
+  | { kind: "failed"; failure: SubprojectReadFailure }
+  /** coord lists no live membership (a pending one included). */
+  | { kind: "none" }
+  /** coord answered without naming this session either way. */
+  | { kind: "unanswered" }
+  | { kind: "member"; id: string; title: string; headline: string };
+
+export function subprojectChipWords(chip: SubprojectChip): {
+  text: string;
+  title: string;
+  href: string | null;
+} {
+  switch (chip.kind) {
+    case "member": {
+      const kind = headlineKindOf(chip.headline);
+      const headline = kind
+        ? SUBPROJECT_HEADLINE_LABEL[kind]
+        : "verdict unknown";
+      return {
+        text: chip.title,
+        title: `Subproject: ${chip.title} — ${headline}`,
+        href: `/admin/coord/subprojects/${encodeURIComponent(chip.id)}`,
+      };
+    }
+    case "none":
+      return {
+        text: "–",
+        title:
+          "coord lists no subproject for this session (a membership still pending counts as none yet)",
+        href: null,
+      };
+    case "not_applicable":
+      return {
+        text: "–",
+        title:
+          "No Claude Code session id, so no subproject applies to this row",
+        href: null,
+      };
+    case "looking_up":
+      return { text: "–", title: "Looking up the subproject…", href: null };
+    case "not_looked_up":
+      return {
+        text: "–",
+        title:
+          "Not looked up: one lookup covers the first 200 sessions on this page",
+        href: null,
+      };
+    case "failed":
+      return {
+        text: "–",
+        title: `The subproject lookup failed — ${readFailureWords(chip.failure)}; unknown, not none`,
+        href: null,
+      };
+    case "unanswered":
+      return {
+        text: "–",
+        title:
+          "coord's lookup answered without naming this session — unknown, not none",
+        href: null,
+      };
+  }
+}
+
 // ─────────────────────────────── the home count line ─────────────────────
 
 export interface StalledLineInput {
   /** coord's `total` for `headline=stalled`, or `null` when not counted. */
   count: number | null;
   loaded: boolean;
+  /** A newer read finished without replacing the count. */
   stale: boolean;
+  /** The latest failure, when the latest read failed. */
   failure: SubprojectReadFailure | null;
 }
 
 /**
  * `/admin/coord/home`'s one line (F3): how many subprojects have nothing
- * moving them. A dash until a read answers (R6); the latest failure named
- * beside a kept count; a pending migration or an undeployed door said as
- * what it is.
+ * moving them. A dash until a read answers (R6); a kept count after a failed
+ * read says it is the last good one — with the reason when there is one, and
+ * still as stale when there is none (a newer read that delivered nothing is a
+ * read that did not refresh it); a pending migration or an undeployed door is
+ * said as what it is.
  */
 export function describeStalledLine(input: StalledLineInput): {
   value: string;
@@ -1062,10 +1468,12 @@ export function describeStalledLine(input: StalledLineInput): {
     };
   }
   const value = countText(input.count);
-  if (input.stale && input.failure) {
+  if (input.stale || input.failure) {
     return {
       value,
-      note: `as of the last good read; the latest failed — ${readFailureWords(input.failure)}`,
+      note: input.failure
+        ? `as of the last good read; the latest failed — ${readFailureWords(input.failure)}`
+        : "as of the last good read; the latest read did not refresh it",
     };
   }
   if (input.count === null) {

@@ -865,3 +865,124 @@ def test_the_refusal_envelope_splices_coords_keys_to_the_top_level(
     got = resp.json()
     for key, value in coord_body.items():
         assert got[key] == value
+
+
+# ---------------------------------------------------------------------------
+# GET /subprojects/by-sessions — the sessions console's chip lookup
+# ---------------------------------------------------------------------------
+
+
+BY_SESSIONS_BODY: dict[str, Any] = {
+    "items": {
+        "6c3e0aac-0000-4000-8000-000000000001": {
+            "id": SUBPROJECT_ID,
+            "title": "dashboards-and-presentation",
+            "headline": "stalled",
+        }
+    },
+    "missing": ["da200448-0000-4000-8000-000000000002"],
+}
+
+
+class TestGetSubprojectsBySessions:
+    def test_forwards_the_ids_and_returns_coord_body_unchanged(
+        self, client: TestClient
+    ) -> None:
+        ids = (
+            "6c3e0aac-0000-4000-8000-000000000001,da200448-0000-4000-8000-000000000002"
+        )
+        with _patch_httpx() as mock_client_cls:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=BY_SESSIONS_BODY)
+            _configure_mock_client(mock_client_cls, instance)
+            resp = client.get(
+                f"{API_PREFIX}/subprojects/by-sessions", params={"ids": ids}
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == BY_SESSIONS_BODY
+        call = instance.get.call_args
+        assert call.args[0].endswith("/coord/subprojects/by-sessions")
+        assert call.kwargs["params"] == {"ids": ids}
+        _assert_bearer_forwarded_without_tenant_header(call)
+
+    def test_is_not_taken_for_a_subproject_id(self, client: TestClient) -> None:
+        """Declared before ``/subprojects/{id}``: with the order reversed, the
+        literal segment would be matched as an id and refused 422."""
+        with _patch_httpx() as mock_client_cls:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=BY_SESSIONS_BODY)
+            _configure_mock_client(mock_client_cls, instance)
+            resp = client.get(
+                f"{API_PREFIX}/subprojects/by-sessions",
+                params={"ids": "6c3e0aac-0000-4000-8000-000000000001"},
+            )
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.args[0].endswith("/by-sessions")
+
+    @pytest.mark.parametrize("count", [0, 201])
+    def test_a_page_outside_coords_bound_is_refused_before_coord(
+        self, client: TestClient, count: int
+    ) -> None:
+        ids = ",".join(str(uuid4()) for _ in range(count)) if count else " , "
+        with _patch_httpx() as mock_client_cls:
+            instance = AsyncMock()
+            _configure_mock_client(mock_client_cls, instance)
+            resp = client.get(
+                f"{API_PREFIX}/subprojects/by-sessions", params={"ids": ids}
+            )
+
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["error"] == "invalid_session_ids"
+        instance.get.assert_not_called()
+
+    def test_a_pending_migration_reaches_the_browser_as_an_object(
+        self, client: TestClient
+    ) -> None:
+        coord_body = {"error": "schema_migration_pending"}
+        with _patch_httpx() as mock_client_cls:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                status_code=503, json_data=coord_body
+            )
+            _configure_mock_client(mock_client_cls, instance)
+            resp = client.get(
+                f"{API_PREFIX}/subprojects/by-sessions",
+                params={"ids": "6c3e0aac-0000-4000-8000-000000000001"},
+            )
+
+        assert resp.status_code == 503
+        assert resp.json() == {"detail": coord_body}
+
+    def test_unresolved_tenant_is_forbidden(
+        self, unresolved_client: TestClient
+    ) -> None:
+        with _patch_httpx() as mock_client_cls:
+            instance = AsyncMock()
+            _configure_mock_client(mock_client_cls, instance)
+            resp = unresolved_client.get(
+                f"{API_PREFIX}/subprojects/by-sessions",
+                params={"ids": "6c3e0aac-0000-4000-8000-000000000001"},
+            )
+
+        assert resp.status_code == 403
+        instance.get.assert_not_called()
+
+
+def test_a_spawn_whose_answer_was_lost_is_an_unknown_outcome_not_a_500(
+    client: TestClient,
+) -> None:
+    """A ReadError after the POST went out — coord may have placed the session
+    — is the 504 ``answer_lost`` refusal, never an unhandled 500 that the
+    Continue dialog would have to read as a refusal."""
+    with _patch_httpx() as mock_client_cls:
+        instance = AsyncMock()
+        instance.post.side_effect = httpx.ReadError("connection reset")
+        _configure_mock_client(mock_client_cls, instance)
+        resp = client.post(
+            f"{API_PREFIX}/subprojects/{SUBPROJECT_ID}/spawn", json=SPAWN_BODY
+        )
+
+    assert resp.status_code == 504
+    assert "lost in transit" in str(resp.json()["detail"])

@@ -48,6 +48,10 @@ vi.mock("next/link", () => ({
 }));
 
 import CoordSubprojectsPage from "./page";
+import {
+  SUBPROJECTS_COUNTS_POLL_MS,
+  SUBPROJECTS_ROWS_POLL_MS,
+} from "./_hooks/useSubprojectsList";
 
 function summary(over: Partial<SubprojectSummary> = {}): SubprojectSummary {
   return {
@@ -93,17 +97,74 @@ function page(
   };
 }
 
-/** Answer each read by its filter: counts (`limit=1`) from `totals`, rows
- *  from `rows` for the view asked. */
+const NOT_DONE = [
+  "needs_you",
+  "stalled",
+  "working",
+  "waiting",
+  "unknown",
+] as const;
+
+/** coord's `counts` facet over `totals` (a missing headline counts 0). */
+function facetOf(totals: Partial<Record<string, number | null>>) {
+  const n = (k: string) => totals[k] ?? 0;
+  return {
+    by_headline: {
+      needs_you: n("needs_you"),
+      stalled: n("stalled"),
+      working: n("working"),
+      waiting: n("waiting"),
+      done: n("done"),
+      unknown: n("unknown"),
+    },
+    folded: { one_off: 0, scheduled: 0, merged: 0 },
+    as_of: "2026-11-08T15:00:00Z",
+  };
+}
+
+/**
+ * Answer each read by its filter. A `limit=1` read with no headline is a
+ * SCOPE read and carries the `counts` facet (unless `facet: false`, an older
+ * coord); a `limit=1` read with a headline is that view's own count; any
+ * other read is rows — `rows[view]` for the first page, with
+ * `cursors[view]` as its next cursor, and `rows["<view>@<cursor>"]` for the
+ * page after it.
+ */
 function route(
   totals: Partial<Record<string, number | null>>,
-  rows: Partial<Record<string, SubprojectSummary[]>> = {}
+  rows: Partial<Record<string, SubprojectSummary[]>> = {},
+  opts: { facet?: boolean; cursors?: Partial<Record<string, string>> } = {}
 ) {
   fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
-    const view = query.get("headline") ?? "all";
-    if (query.get("limit") === "1") return page([], totals[view] ?? 0);
-    return page(rows[view] ?? [], totals[view] ?? 0);
+    const headline = query.get("headline");
+    if (query.get("limit") === "1") {
+      if (headline !== null) return page([], totals[headline] ?? 0);
+      const scopeTotal =
+        query.get("status") === "all"
+          ? (totals.all ?? 0)
+          : NOT_DONE.reduce((sum, h) => sum + (totals[h] ?? 0), 0);
+      return opts.facet === false
+        ? page([], scopeTotal)
+        : { ...page([], scopeTotal), counts: facetOf(totals) };
+    }
+    const view = headline ?? "all";
+    const cursor = query.get("cursor");
+    if (cursor) return page(rows[`${view}@${cursor}`] ?? [], totals[view] ?? 0);
+    return {
+      ...page(rows[view] ?? [], totals[view] ?? 0),
+      next_cursor: opts.cursors?.[view] ?? null,
+    };
   });
+}
+
+function queries(): string[] {
+  return fetchSubprojects.mock.calls.map((c) =>
+    (c[0] as URLSearchParams).toString()
+  );
+}
+
+function tabCount(tab: string): HTMLElement {
+  return screen.getByTestId(`coord-subprojects-tab-${tab}`);
 }
 
 const CALM = {
@@ -123,46 +184,106 @@ describe("/admin/coord/subprojects", () => {
     mockTab = null;
   });
 
-  it("opens with a red strip and live tab counts when anything is stalled", async () => {
-    route({ ...CALM, stalled: 2, needs_you: 1 }, { all: [summary()] });
+  it("opens on Open with a red strip and live tab counts when anything is stalled", async () => {
+    route({ ...CALM, stalled: 2, needs_you: 1 }, { stalled: [summary()] });
     render(<CoordSubprojectsPage />);
     const strip = await screen.findByTestId("coord-subprojects-strip");
     await waitFor(() =>
       expect(strip).toHaveTextContent("1 needs you · 2 stalled")
     );
-    expect(
-      within(screen.getByTestId("coord-subprojects-tab-stalled")).getByText("2")
-    ).toBeInTheDocument();
+    expect(within(tabCount("stalled")).getByText("2")).toBeInTheDocument();
+    // Open is every headline but done: 1 + 2 + 1 + 2 + 0.
+    expect(within(tabCount("open")).getByText("6")).toBeInTheDocument();
+    // Open is the default view: no tab parameter reads its five headlines.
+    await waitFor(() =>
+      expect(queries()).toContain("status=open&headline=waiting&limit=100")
+    );
     expect(
       screen.getByTestId("coord-subprojects-unattached")
     ).toHaveTextContent(
       "Work units that belong to no subproject: 4 (stalled 1, not started 3)"
     );
+    expect(
+      await screen.findByTestId("coord-subproject-row")
+    ).toBeInTheDocument();
   });
 
-  it("reads each view's count from coord's own total", async () => {
-    route(CALM, { all: [] });
+  it("reads every count from coord's facet in two reads, and Open's rows as its five headlines", async () => {
+    route({ ...CALM, stalled: 2 });
     render(<CoordSubprojectsPage />);
-    await waitFor(() => expect(fetchSubprojects).toHaveBeenCalled());
-    const queries = fetchSubprojects.mock.calls.map((c) =>
-      (c[0] as URLSearchParams).toString()
+    await waitFor(() =>
+      expect(within(tabCount("stalled")).getByText("2")).toBeInTheDocument()
     );
-    expect(queries).toEqual(
+    expect(
+      queries()
+        .filter((q) => q.endsWith("limit=1"))
+        .sort()
+    ).toEqual(["status=all&limit=1", "status=open&limit=1"]);
+    expect(queries()).toEqual(
       expect.arrayContaining([
+        "status=open&headline=needs_you&limit=100",
+        "status=open&headline=stalled&limit=100",
+        "status=open&headline=working&limit=100",
+        "status=open&headline=waiting&limit=100",
+        "status=open&headline=unknown&limit=100",
+      ])
+    );
+    expect(queries()).not.toContain("status=all&limit=100");
+    expect(within(tabCount("open")).getByText("5")).toBeInTheDocument();
+    expect(within(tabCount("done")).getByText("5")).toBeInTheDocument();
+    expect(within(tabCount("all")).getByText("8")).toBeInTheDocument();
+  });
+
+  it("falls back to one count read per view when coord sends no facet", async () => {
+    route({ ...CALM, stalled: 2 }, {}, { facet: false });
+    render(<CoordSubprojectsPage />);
+    await waitFor(() =>
+      expect(within(tabCount("stalled")).getByText("2")).toBeInTheDocument()
+    );
+    expect(queries().filter((q) => q.endsWith("limit=1"))).toEqual(
+      expect.arrayContaining([
+        "status=open&limit=1",
+        "status=all&limit=1",
         "status=open&headline=needs_you&limit=1",
         "status=open&headline=stalled&limit=1",
         "status=open&headline=working&limit=1",
         "status=open&headline=waiting&limit=1",
-        "status=all&headline=done&limit=1",
-        "status=all&limit=1",
         "status=open&headline=unknown&limit=1",
-        "status=all&limit=100",
+        "status=all&headline=done&limit=1",
       ])
+    );
+    // Open is the sum of its five views' own counts: 0 + 2 + 1 + 2 + 0.
+    await waitFor(() =>
+      expect(within(tabCount("open")).getByText("5")).toBeInTheDocument()
+    );
+    expect(within(tabCount("all")).getByText("8")).toBeInTheDocument();
+  });
+
+  it("words a per-view count that failed as a failed read, never as 'not taken'", async () => {
+    route(CALM, {}, { facet: false });
+    const answered = fetchSubprojects.getMockImplementation();
+    fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
+      if (query.get("headline") === "stalled" && query.get("limit") === "1")
+        throw new TypeError("Failed to fetch");
+      return answered?.(query);
+    });
+    render(<CoordSubprojectsPage />);
+    const strip = screen.getByTestId("coord-subprojects-strip");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent(/the stalled count could not be read/)
+    );
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+    expect(within(tabCount("stalled")).getByText("–")).toBeInTheDocument();
+  });
+
+  it("re-reads the counts less often than the rows", () => {
+    expect(SUBPROJECTS_COUNTS_POLL_MS).toBeGreaterThan(
+      SUBPROJECTS_ROWS_POLL_MS
     );
   });
 
   it("renders one line per subproject: sessions, title, headline, reason, times", async () => {
-    route(CALM, { all: [summary()] });
+    route(CALM, { stalled: [summary()] });
     render(<CoordSubprojectsPage />);
     const row = await screen.findByTestId("coord-subproject-row");
     expect(row).toHaveTextContent("0/3");
@@ -173,10 +294,14 @@ describe("/admin/coord/subprojects", () => {
       "data-status-kind",
       "stalled"
     );
+    // A label that may truncate carries its full text as a tooltip.
+    expect(
+      within(row).getByTitle("dashboards-and-presentation")
+    ).toBeInTheDocument();
   });
 
   it("expands a row in place with the way into the subproject's page", async () => {
-    route(CALM, { all: [summary()] });
+    route(CALM, { stalled: [summary()] });
     render(<CoordSubprojectsPage />);
     const row = await screen.findByTestId("coord-subproject-row");
     // The testid is on the row's wrapper; the line itself is the toggle.
@@ -194,9 +319,7 @@ describe("/admin/coord/subprojects", () => {
       "data-health-level",
       "amber"
     );
-    expect(
-      within(screen.getByTestId("coord-subprojects-tab-stalled")).getByText("–")
-    ).toBeInTheDocument();
+    expect(within(tabCount("stalled")).getByText("–")).toBeInTheDocument();
     expect(
       screen.queryByTestId("coord-subprojects-empty")
     ).not.toBeInTheDocument();
@@ -215,9 +338,33 @@ describe("/admin/coord/subprojects", () => {
     const empty = await screen.findByTestId("coord-subprojects-empty");
     expect(empty).toHaveTextContent(/is unknown/);
     expect(empty).not.toHaveTextContent(/^No subproject/);
+    expect(within(tabCount("all")).getByText("–")).toBeInTheDocument();
+  });
+
+  it("calls a failed read under a newly chosen tab unknown, and never shows another tab's rows", async () => {
+    route(CALM, {
+      waiting: [summary({ headline: "waiting", title: "an-open-row" })],
+    });
+    const { rerender } = render(<CoordSubprojectsPage />);
+    await screen.findByText("an-open-row");
+    const answered = fetchSubprojects.getMockImplementation();
+    fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
+      if (query.get("headline") === "stalled" && query.get("limit") !== "1")
+        throw new TypeError("Failed to fetch");
+      return answered?.(query);
+    });
+    mockTab = "stalled";
+    rerender(<CoordSubprojectsPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-subprojects-empty")).toHaveTextContent(
+        /^Whether any subproject is in this view is unknown/
+      )
+    );
+    expect(screen.queryByText("an-open-row")).not.toBeInTheDocument();
+    // Nothing of THIS view was ever read, so there is nothing to call stale.
     expect(
-      within(screen.getByTestId("coord-subprojects-tab-all")).getByText("–")
-    ).toBeInTheDocument();
+      screen.queryByTestId("coord-subprojects-rows-stale")
+    ).not.toBeInTheDocument();
   });
 
   it("folds one-offs out of Done into All, and says how many it folded", async () => {
@@ -245,20 +392,98 @@ describe("/admin/coord/subprojects", () => {
     );
   });
 
-  it("switches views through the URL, so a view can be linked", async () => {
-    route(CALM, { all: [] });
+  it("says a Done page made only of one-offs is listed under All, never 'No subproject is done'", async () => {
+    mockTab = "done";
+    const oneOff = (id: string, title: string) =>
+      summary({
+        id,
+        title,
+        headline: "done",
+        top_reason: null,
+        sessions: { live: 0, total: 1 },
+        work_units: { total: 0, open: 0 },
+      });
+    route(
+      { ...CALM, done: 40 },
+      {
+        done: [
+          oneOff("11111111-1111-4111-8111-111111111111", "q-one"),
+          oneOff("22222222-2222-4222-8222-222222222222", "q-two"),
+        ],
+      },
+      { cursors: { done: "c2" } }
+    );
     render(<CoordSubprojectsPage />);
-    fireEvent.click(await screen.findByTestId("coord-subprojects-tab-stalled"));
-    expect(replace).toHaveBeenCalledWith(
-      "/admin/coord/subprojects?tab=stalled",
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-subprojects-empty")).toHaveTextContent(
+        "The 2 subprojects on this page in this view are one-off, scheduled or merged, listed under All. More may be on the next page: Load more."
+      )
+    );
+    expect(screen.getByTestId("coord-subprojects-empty")).not.toHaveTextContent(
+      /No subproject/
+    );
+    expect(
+      screen.getByTestId("coord-subprojects-load-more")
+    ).toBeInTheDocument();
+  });
+
+  it("after Load more, dates the rows and says their minute refresh is paused", async () => {
+    mockTab = "stalled";
+    route(
+      { ...CALM, stalled: 2 },
+      {
+        stalled: [summary({ title: "first-page" })],
+        "stalled@c2": [
+          summary({
+            id: "33333333-3333-4333-8333-333333333333",
+            title: "second-page",
+          }),
+        ],
+      },
+      { cursors: { stalled: "c2" } }
+    );
+    render(<CoordSubprojectsPage />);
+    await screen.findByText("first-page");
+    expect(
+      screen.queryByTestId("coord-subprojects-rows-paused")
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("coord-subprojects-load-more"));
+    await screen.findByText("second-page");
+    const paused = screen.getByTestId("coord-subprojects-rows-paused");
+    expect(paused).toHaveTextContent(/^These rows are as of/);
+    expect(paused).toHaveTextContent(/not re-read every minute/);
+    expect(
+      screen.getByTestId("coord-subprojects-page-count")
+    ).toHaveTextContent("2 loaded of 2.");
+    expect(queries()).toContain(
+      "status=open&headline=stalled&limit=100&cursor=c2"
+    );
+  });
+
+  it("switches views through the URL: Open needs no parameter, every other view is named", async () => {
+    mockTab = "stalled";
+    route(CALM);
+    render(<CoordSubprojectsPage />);
+    fireEvent.click(await screen.findByTestId("coord-subprojects-tab-all"));
+    expect(replace).toHaveBeenLastCalledWith(
+      "/admin/coord/subprojects?tab=all",
       {
         scroll: false,
       }
     );
+    fireEvent.click(screen.getByTestId("coord-subprojects-tab-waiting"));
+    expect(replace).toHaveBeenLastCalledWith(
+      "/admin/coord/subprojects?tab=waiting",
+      { scroll: false }
+    );
+    fireEvent.click(screen.getByTestId("coord-subprojects-tab-open"));
+    expect(replace).toHaveBeenLastCalledWith("/admin/coord/subprojects", {
+      scroll: false,
+    });
   });
 
   it("keeps a view's rows across a failed refresh and says they are the last good read", async () => {
-    route(CALM, { all: [summary()] });
+    route(CALM, { stalled: [summary()] });
     render(<CoordSubprojectsPage />);
     await screen.findByTestId("coord-subproject-row");
     fetchSubprojects.mockRejectedValue(new TypeError("Failed to fetch"));

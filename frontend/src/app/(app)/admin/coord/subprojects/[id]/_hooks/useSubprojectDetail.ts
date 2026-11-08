@@ -17,7 +17,7 @@
  *   as the last good read; with none, the page is UNKNOWN with the reason.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useRetainedValue } from "@/components/console";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
@@ -31,6 +31,7 @@ import {
   isRouteMissing,
   type SubprojectReadFailure,
 } from "@/components/admin/coord/subprojects/subprojectStatus";
+import { useStampedFailure } from "@/components/admin/coord/subprojects/useStampedFailure";
 
 export const SUBPROJECT_DETAIL_POLL_MS = 60_000;
 
@@ -61,10 +62,11 @@ export interface SubprojectDetailState {
 
 export function useSubprojectDetail(id: string): SubprojectDetailState {
   const axis = useRetainedValue<Stamped | null>(null);
-  const [failure, setFailure] = useState<{
-    id: string;
-    failure: SubprojectReadFailure;
-  } | null>(null);
+  // Failures are stamped with the id AND the read's sequence number, so an
+  // older read that succeeds after a newer one failed cannot clear it, and
+  // another id's failure never labels this one (`useStampedFailure`).
+  const failures = useStampedFailure<string>();
+  const { fail, succeed } = failures;
   const cancelled = useRef(false);
   useEffect(() => {
     cancelled.current = false;
@@ -81,46 +83,32 @@ export function useSubprojectDetail(id: string): SubprojectDetailState {
     try {
       const detail = await fetchSubproject(id, COORD_DASHBOARD_POLL_OPTIONS);
       if (cancelled.current) return;
-      if (
-        settle(seq, { value: { id, detail, absence: null, readAt: readAt() } })
-      ) {
-        setFailure(null);
-      }
+      settle(seq, { value: { id, detail, absence: null, readAt: readAt() } });
+      succeed(id, seq);
     } catch (err) {
       if (cancelled.current) return;
       const status = httpStatusOf(err);
-      if (status === 404 && !isRouteMissing(err)) {
-        if (
-          settle(seq, {
-            value: { id, detail: null, absence: "not_found", readAt: readAt() },
-          })
-        )
-          setFailure(null);
-        return;
-      }
-      if (status === 422) {
-        if (
-          settle(seq, {
-            value: {
-              id,
-              detail: null,
-              absence: "invalid_id",
-              readAt: readAt(),
-            },
-          })
-        )
-          setFailure(null);
+      // coord answered — the id names nothing — which is an answer, not a
+      // failure: the record is dropped and the absence said.
+      const absence: SubprojectAbsence | null =
+        status === 404 && !isRouteMissing(err)
+          ? "not_found"
+          : status === 422
+            ? "invalid_id"
+            : null;
+      if (absence !== null) {
+        settle(seq, { value: { id, detail: null, absence, readAt: readAt() } });
+        succeed(id, seq);
         return;
       }
       settle(seq, null);
-      setFailure({ id, failure: classifySubprojectReadFailure(err) });
+      fail(id, seq, classifySubprojectReadFailure(err));
     }
-  }, [id, issue, settle]);
+  }, [id, issue, settle, fail, succeed]);
 
-  // A new id is a new question: read it at once, and never let the previous
-  // id's failure label this one.
+  // A new id is a new question: read it at once. Its rows are derived from
+  // the stamp below, so the previous id's record never shows under it.
   useEffect(() => {
-    setFailure(null);
     void read();
   }, [read]);
 
@@ -128,8 +116,7 @@ export function useSubprojectDetail(id: string): SubprojectDetailState {
 
   const value = axis.value;
   const same = value !== null && value.id === id;
-  const failureHere =
-    failure !== null && failure.id === id ? failure.failure : null;
+  const failureHere = failures.failureFor(id);
   return {
     detail: same ? value.detail : null,
     loaded: same,

@@ -155,7 +155,12 @@ export function SubprojectTextDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o && !write.busy) onClose();
+      }}
+    >
       <DialogContent
         className="sm:max-w-lg"
         data-testid={`subproject-${field}-dialog`}
@@ -359,7 +364,12 @@ export function MergeDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o && !write.busy) onClose();
+      }}
+    >
       <DialogContent
         className="sm:max-w-lg"
         data-testid="subproject-merge-dialog"
@@ -497,7 +507,12 @@ export function MoveDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o && !write.busy) onClose();
+      }}
+    >
       <DialogContent
         className="sm:max-w-lg"
         data-testid="subproject-move-dialog"
@@ -537,20 +552,41 @@ export function MoveDialog({
                     <SelectItem value="work_unit">A work unit</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="subproject-move-member">
+                  {kind === "session" ? "Session id" : "Work unit slug or id"}
+                </Label>
                 <Input
+                  id="subproject-move-member"
                   value={memberId}
                   onChange={(e) => setMemberId(e.target.value)}
                   disabled={write.busy}
                   placeholder={
                     kind === "session"
-                      ? "session id (uuid)"
-                      : "work unit slug or id"
+                      ? "the Claude Code session id (a uuid)"
+                      : "a work unit's slug, or its id"
                   }
                   className="font-mono text-xs"
                   spellCheck={false}
                   aria-invalid={id !== "" && !idValid}
+                  aria-describedby={
+                    id !== "" && !idValid
+                      ? "subproject-move-member-invalid"
+                      : undefined
+                  }
                   data-testid="subproject-move-member"
                 />
+                {id !== "" && !idValid && (
+                  <p
+                    id="subproject-move-member-invalid"
+                    className="m-0 text-xs text-destructive"
+                    data-testid="subproject-move-member-invalid"
+                  >
+                    A session is named by its Claude Code session id, which is a
+                    uuid — this is not one.
+                  </p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="subproject-move-action">How</Label>

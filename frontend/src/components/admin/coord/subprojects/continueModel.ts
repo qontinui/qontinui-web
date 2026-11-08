@@ -29,6 +29,7 @@
 
 import {
   describeSpawnRefusal,
+  outcomeUnknownRefusal,
   extractCoordRefusal,
   type SpawnRefusalKind,
 } from "@/components/admin/coord/spawnPlacement";
@@ -73,6 +74,9 @@ export type EffortDefault =
       effort: SubprojectEffort;
       ultracode: boolean;
       profile: string;
+      /** Said beside the default when the document breaks its own rule of
+       *  one block (the first is read, as the runner's planned reader will). */
+      note: string | null;
     }
   | {
       source: "fallback";
@@ -102,10 +106,15 @@ function bodyOf(doc: unknown): string | null {
 }
 
 /**
- * The `implementation` profile out of the served playbook's ONE fenced
- * `spawn-effort` block — the same block the runner reads, held to the same
- * rules the document states for it: exactly one block, JSON, `version: 1`.
- * Anything else falls back to `high` and names what was wrong.
+ * The `implementation` profile out of the served playbook's fenced
+ * `spawn-effort` block. The document says there is exactly one block, JSON,
+ * `version: 1`; the runner's reader of it is PLANNED (plan
+ * `2026-10-27-spawn-time-effort-and-ultracode-profiles-for-every-fleet-spawn-path`,
+ * its resolver phase), not shipped, and the plan has it take the FIRST block.
+ * This reads the first block too, and says so when the document holds more
+ * than one. No block, malformed JSON, another version, no implementation
+ * profile or an effort coord does not accept falls back to `high` and names
+ * what was wrong.
  */
 export function effortDefaultFromProfiles(doc: unknown): EffortDefault {
   const body = bodyOf(doc);
@@ -114,10 +123,10 @@ export function effortDefaultFromProfiles(doc: unknown): EffortDefault {
   const blocks = [...body.matchAll(/```spawn-effort[^\n]*\n([\s\S]*?)```/g)];
   if (blocks.length === 0)
     return fallback("the effort profiles document has no spawn-effort block");
-  if (blocks.length > 1)
-    return fallback(
-      `the effort profiles document has ${blocks.length} spawn-effort blocks, and only one is read`
-    );
+  const note =
+    blocks.length > 1
+      ? `The document has ${blocks.length} spawn-effort blocks; the first is used.`
+      : null;
   const raw = blocks[0]?.[1];
   if (raw === undefined)
     return fallback("the effort profiles document has no spawn-effort block");
@@ -167,6 +176,7 @@ export function effortDefaultFromProfiles(doc: unknown): EffortDefault {
     effort,
     ultracode: ultracode === true,
     profile: CONTINUE_PROFILE,
+    note,
   };
 }
 
@@ -178,7 +188,7 @@ export function effortDefaultAfterReadFailure(detail: string): EffortDefault {
 /** The line beside the effort select. */
 export function describeEffortDefault(d: EffortDefault): string {
   return d.source === "profile"
-    ? `Default ${d.effort}${d.ultracode ? " with ultracode" : ""}: the ${d.profile} profile of agent_playbook/spawn-effort-profiles.`
+    ? `Default ${d.effort}${d.ultracode ? " with ultracode" : ""}: the ${d.profile} profile of agent_playbook/spawn-effort-profiles.${d.note ? ` ${d.note}` : ""}`
     : `Default ${d.effort}: ${d.reason}.`;
 }
 
@@ -227,13 +237,27 @@ export function buildContinueRequestBody(input: {
   };
 }
 
-/** The button's guard: a typed device must be a uuid; blank is automatic. */
+/**
+ * The button's guard. A typed device must be a uuid (blank is the next
+ * available runner), and the effort must be SETTLED: while the profiles read
+ * is out, the select shows the fallback, and sending that would start a
+ * session at an effort nobody chose — so Continue waits for the read to
+ * answer (or fail), unless the operator picked an effort themselves.
+ */
 export function canSubmitContinue(input: {
   submitting: boolean;
   deviceId: string;
+  /** The profiles read has answered or failed (`effortDefault !== null`). */
+  effortDefaultSettled: boolean;
+  /** The operator picked an effort explicitly. */
+  effortChosen: boolean;
 }): boolean {
   const device = input.deviceId.trim();
-  return !input.submitting && (device === "" || isDeviceId(device));
+  return (
+    !input.submitting &&
+    (device === "" || isDeviceId(device)) &&
+    (input.effortDefaultSettled || input.effortChosen)
+  );
 }
 
 // ─────────────────────────────── refusals ───────────────────────────────
@@ -308,6 +332,18 @@ export function describeContinueRefusal(
       headline: "Subprojects are not migrated yet, so nothing was spawned",
       detail,
       remedy: "Continue once coord's subproject tables exist.",
+    };
+  }
+  // A bare 500 — no code of coord's, or only the app envelope's own — is not
+  // coord refusing: the proxy failed somewhere after the request may have
+  // reached coord, so the spawn may have happened.
+  if (status === 500 && (code === "" || code === "INTERNAL_SERVER_ERROR")) {
+    const u = outcomeUnknownRefusal(detail || body);
+    return {
+      kind: u.kind,
+      headline: u.headline,
+      detail: u.detail,
+      remedy: u.remedy,
     };
   }
   if (status === 404 && code !== "no_such_route" && code !== "NOT_FOUND") {

@@ -123,6 +123,12 @@ import {
 } from "./SessionRowExpansion";
 import type { SessionRevalidationOptions } from "./liveRevalidation";
 import {
+  SubprojectChipText,
+  useSubprojectsBySessions,
+  type SubprojectLookup,
+} from "@/components/admin/coord/subprojects/SubprojectChip";
+import type { SubprojectChip } from "@/components/admin/coord/subprojects/subprojectStatus";
+import {
   ACCOUNT_FACET_UNKNOWN,
   accountFacetValue,
   deriveAccountCell,
@@ -184,7 +190,9 @@ const STATUS_TABS: ReadonlyArray<{ id: StatusTab; label: string }> = [
  * Phase 3's `/admin/agent-sessions?live=true` → `/sessions?status=live` 308 is
  * what puts a value here today.
  */
-export function parseStatusTab(raw: string | null | undefined): StatusTab | null {
+export function parseStatusTab(
+  raw: string | null | undefined
+): StatusTab | null {
   return STATUS_TABS.some((t) => t.id === raw) ? (raw as StatusTab) : null;
 }
 
@@ -233,6 +241,13 @@ export interface SessionsConsoleProps {
    * transport to configure here.
    */
   revalidation?: SessionRevalidationOptions;
+  /**
+   * Injected for tests — the ONE subproject lookup a page of rows makes
+   * (`GET /operations/subprojects/by-sessions`, plan
+   * `2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled`
+   * Phase 6). The default is the shipped client.
+   */
+  lookupSubprojects?: SubprojectLookup;
 }
 
 export function SessionsConsole({
@@ -246,6 +261,7 @@ export function SessionsConsole({
   readOutput,
   listArtifacts,
   revalidation,
+  lookupSubprojects,
 }: SessionsConsoleProps) {
   const doFetch = fetcher ?? listConsolidatedSessions;
 
@@ -332,7 +348,9 @@ export function SessionsConsole({
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
         setReadFailed(true);
-        setError(err instanceof Error ? err.message : "failed to load sessions");
+        setError(
+          err instanceof Error ? err.message : "failed to load sessions"
+        );
       }
     },
     [doFetch, appliedQuery, status]
@@ -434,9 +452,9 @@ export function SessionsConsole({
   );
   const machineOptions = useMemo(
     () =>
-      facetOptions(rows, (r) =>
-        r.device_id ? String(r.device_id) : null
-      ).map((o) => ({ ...o, label: machineLabel(o.value) ?? o.value })),
+      facetOptions(rows, (r) => (r.device_id ? String(r.device_id) : null)).map(
+        (o) => ({ ...o, label: machineLabel(o.value) ?? o.value })
+      ),
     [rows, machineLabel]
   );
 
@@ -539,6 +557,15 @@ export function SessionsConsole({
     return [...filtered].sort((a, b) => compareSessionRows(a, b, { now }));
   }, [rows, kinds, providers, machines, work, accounts, accountCells, now]);
 
+  // Each row's subproject, from ONE lookup per page of rows (at most 200
+  // harness ids, the rows on screen first) that is re-asked only when that
+  // set of sessions changes — not on every poll, not per row.
+  const sessionKeys = useMemo(
+    () => [...visible, ...rows].map(agentSessionId),
+    [visible, rows]
+  );
+  const subprojectOf = useSubprojectsBySessions(sessionKeys, lookupSubprojects);
+
   const health = useMemo(
     () =>
       deriveSessionsHealth(visible, {
@@ -629,10 +656,7 @@ export function SessionsConsole({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <StatCluster
-          stats={stats}
-          data-testid="sessions-console-stats"
-        />
+        <StatCluster stats={stats} data-testid="sessions-console-stats" />
         <Button
           size="sm"
           variant="ghost"
@@ -774,6 +798,7 @@ export function SessionsConsole({
           <SessionConsoleRow
             row={row}
             account={accountCells.of(row)}
+            subproject={subprojectOf(agentSessionId(row))}
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
             rowKey={ctx.rowKey}
@@ -797,6 +822,7 @@ export function SessionsConsole({
 function SessionConsoleRow({
   row,
   account,
+  subproject,
   expanded,
   onToggle,
   rowKey,
@@ -810,6 +836,8 @@ function SessionConsoleRow({
   row: ConsolidatedSessionRow;
   /** The row's Account cell — derived once in the console, shared with the facet. */
   account: AccountCell;
+  /** The row's subproject, from the page's one lookup. */
+  subproject: SubprojectChip;
   expanded: boolean;
   onToggle: () => void;
   rowKey: string;
@@ -874,6 +902,15 @@ function SessionConsoleRow({
           <span className="truncate min-w-0 flex-1" title={purpose}>
             {purpose}
           </span>
+          {/* The session's subproject (plan 2026-11-08 subprojects, Phase 6).
+              Text on the line, which is one button; it opens from the
+              expanded row. A dash names why there is none to show. */}
+          <span
+            className="hidden md:inline shrink-0 w-36 truncate text-xs text-muted-foreground"
+            data-testid="sessions-console-row-subproject"
+          >
+            <SubprojectChipText chip={subproject} />
+          </span>
           {/* Machine is a COLUMN, not a grouping container (§4.1). */}
           <span
             className="hidden md:inline shrink-0 w-32 truncate text-xs text-muted-foreground"
@@ -891,7 +928,9 @@ function SessionConsoleRow({
             title={account.title}
             data-testid="sessions-console-row-account"
             data-account-state={
-              account.kind === "not-applicable" ? "not-applicable" : account.state
+              account.kind === "not-applicable"
+                ? "not-applicable"
+                : account.state
             }
           >
             {account.kind === "not-applicable" ? (
@@ -983,10 +1022,7 @@ function SessionConsoleRow({
           <StatusBadge status={status} palette={SESSION_STATUS_PALETTE} />
           {workStatus && (
             <span data-testid="sessions-console-row-work">
-              <StatusBadge
-                status={workStatus}
-                palette={SESSION_WORK_PALETTE}
-              />
+              <StatusBadge status={workStatus} palette={SESSION_WORK_PALETTE} />
             </span>
           )}
         </span>
@@ -1009,6 +1045,7 @@ function SessionConsoleRow({
         coordination={coordination}
         stores={stores}
         now={now}
+        subproject={subproject}
       />
     </RecordRow>
   );
@@ -1054,7 +1091,9 @@ function EmptyState({
       data-testid="sessions-console-empty"
     >
       <p className="font-medium">
-        {filtered ? "No sessions match this filter" : "No sessions on the fleet"}
+        {filtered
+          ? "No sessions match this filter"
+          : "No sessions on the fleet"}
       </p>
       <p className="text-xs mt-1 max-w-md mx-auto">
         {filtered
@@ -1063,7 +1102,10 @@ function EmptyState({
       </p>
       {withheld > 0 && (
         <div className="mt-2 flex justify-center">
-          <WithheldNote count={withheld} testId="sessions-console-empty-withheld" />
+          <WithheldNote
+            count={withheld}
+            testId="sessions-console-empty-withheld"
+          />
         </div>
       )}
     </div>
