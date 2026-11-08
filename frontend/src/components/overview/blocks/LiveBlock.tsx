@@ -18,16 +18,28 @@
  * A report block shows the report its `report:` setting names, or else the
  * report the page is bound to (D3 "Binding"); with neither, that missing
  * setting is the error.
+ *
+ * A block's component loads only when a document shows it (`registry.ts`).
+ * While it loads, its place shows a loading notice; if it cannot be loaded or
+ * drawn, a notice saying so — the rest of the document still renders.
  */
 
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import type { ZodError } from "zod";
 import { z } from "zod";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { BlockArgsError } from "./parseBlockArgs";
 import { parseBlockArgs } from "./parseBlockArgs";
 import { BlockNotice } from "./blockChrome";
 import { ReportSourceBoundary, useBoundReport } from "./ReportContext";
 import { findBlock, type BlockEntry } from "./registry";
+
+const FRAME_ID = {
+  unknown: "overview.block.unknown",
+  settings: "overview.block.settings-error",
+  failed: "overview.block.failed",
+} as const;
 
 function Frame({
   name,
@@ -35,7 +47,7 @@ function Frame({
   children,
 }: {
   name: string;
-  kind: "unknown" | "settings";
+  kind: keyof typeof FRAME_ID;
   children: ReactNode;
 }) {
   return (
@@ -43,10 +55,48 @@ function Frame({
       className="not-prose my-6 rounded-md border border-border p-4 text-sm"
       data-overview-block={name}
       data-overview-block-error={kind}
-      data-ui-bridge-id={`overview.block.${kind === "unknown" ? "unknown" : "settings-error"}`}
+      data-ui-bridge-id={FRAME_ID[kind]}
     >
       {children}
     </div>
+  );
+}
+
+/** A block's place while its component loads. */
+function BlockLoading({ name }: { name: string }) {
+  return (
+    <div
+      className="not-prose my-6 space-y-2 rounded-md border border-border p-4"
+      aria-busy
+      aria-label="Loading this block"
+      data-overview-block-loading={name}
+      data-ui-bridge-id="overview.block.loading"
+    >
+      <Skeleton className="h-5 w-48" />
+      <Skeleton className="h-4 w-full" />
+    </div>
+  );
+}
+
+/** A block whose component could not be loaded, or threw while drawing. */
+function BlockFailed({ name }: { name: string }) {
+  return (
+    <Frame name={name} kind="failed">
+      <BlockNotice
+        tone="problem"
+        title="This block can't be shown right now."
+        detail="The rest of the page is unaffected. Reloading the page may bring it back."
+      />
+    </Frame>
+  );
+}
+
+/** Loads a block's component, saying so while it loads or if it cannot. */
+function Loaded({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <ErrorBoundary fallback={<BlockFailed name={name} />}>
+      <Suspense fallback={<BlockLoading name={name} />}>{children}</Suspense>
+    </ErrorBoundary>
   );
 }
 
@@ -138,12 +188,18 @@ function Settled({
     const Component = entry.component;
     return (
       <ReportSourceBoundary>
-        <Component args={args} report={slug} />
+        <Loaded name={entry.name}>
+          <Component args={args} report={slug} />
+        </Loaded>
       </ReportSourceBoundary>
     );
   }
   const Component = entry.component;
-  return <Component args={args} />;
+  return (
+    <Loaded name={entry.name}>
+      <Component args={args} />
+    </Loaded>
+  );
 }
 
 export function LiveBlock({

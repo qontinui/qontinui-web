@@ -25,13 +25,14 @@
  * ## Adding a block
  *
  * Give it a strict zod schema in `blockArgs.ts` (every key it accepts; no
- * URL, HTML or script among them), a component in this directory, a
- * `<Component>.test.tsx` that renders it through `PageBody` or
- * `IntentSection`, and a row below. A report block reads its report only
- * from `ReportContext` — never a fetch of its own (D2).
+ * URL, HTML or script among them), a component in this directory, loaded
+ * lazily below (never imported directly), a `<Component>.test.tsx` that
+ * renders it through `PageBody` or `IntentSection`, and a row below. A report
+ * block reads its report only from `ReportContext` — never a fetch of its own
+ * (D2).
  */
 
-import type { ComponentType } from "react";
+import { lazy, type ComponentType } from "react";
 import type { z } from "zod";
 import {
   objectiveCheckpointsArgs,
@@ -47,16 +48,46 @@ import {
   type DataBlockProps,
   type ReportBlockProps,
 } from "./blockArgs";
-import { ObjectiveCheckpoints } from "./ObjectiveCheckpoints";
-import { OverviewKpi } from "./OverviewKpi";
-import { OverviewPlanVsActual } from "./OverviewPlanVsActual";
-import { OverviewRisks } from "./OverviewRisks";
-import { OverviewTimeline } from "./OverviewTimeline";
-import { ReportChanges } from "./ReportChanges";
-import { ReportFigures } from "./ReportFigures";
-import { ReportItems } from "./ReportItems";
-import { ReportScorecard } from "./ReportScorecard";
-import { ReportTimeline } from "./ReportTimeline";
+
+// Each block's component loads only when a document shows that block.
+// `MarkdownView` is on every overview page; importing the blocks here would
+// pull all of them, and recharts with them, into every one of those pages.
+// `LiveBlock` shows a loading notice while one loads, and a notice if it
+// cannot.
+const ObjectiveCheckpoints = lazy(() =>
+  import("./ObjectiveCheckpoints").then((m) => ({
+    default: m.ObjectiveCheckpoints,
+  }))
+);
+const OverviewKpi = lazy(() =>
+  import("./OverviewKpi").then((m) => ({ default: m.OverviewKpi }))
+);
+const OverviewPlanVsActual = lazy(() =>
+  import("./OverviewPlanVsActual").then((m) => ({
+    default: m.OverviewPlanVsActual,
+  }))
+);
+const OverviewRisks = lazy(() =>
+  import("./OverviewRisks").then((m) => ({ default: m.OverviewRisks }))
+);
+const OverviewTimeline = lazy(() =>
+  import("./OverviewTimeline").then((m) => ({ default: m.OverviewTimeline }))
+);
+const ReportChanges = lazy(() =>
+  import("./ReportChanges").then((m) => ({ default: m.ReportChanges }))
+);
+const ReportFigures = lazy(() =>
+  import("./ReportFigures").then((m) => ({ default: m.ReportFigures }))
+);
+const ReportItems = lazy(() =>
+  import("./ReportItems").then((m) => ({ default: m.ReportItems }))
+);
+const ReportScorecard = lazy(() =>
+  import("./ReportScorecard").then((m) => ({ default: m.ReportScorecard }))
+);
+const ReportTimeline = lazy(() =>
+  import("./ReportTimeline").then((m) => ({ default: m.ReportTimeline }))
+);
 
 /** A fence language with one of these prefixes is meant as a block. */
 export const BLOCK_NAME_PREFIXES = [

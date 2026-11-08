@@ -54,11 +54,13 @@ function kpi(figure: string) {
 }
 
 async function value(figure: string) {
+  // `?? null`: before the block has loaded there is no figure at all, and
+  // `undefined` would pass a `not.toBeNull()`.
   await waitFor(() =>
     expect(
       kpi(figure)?.querySelector(
         `[data-ui-bridge-id="overview.block.kpi.${figure}.value"]`
-      )
+      ) ?? null
     ).not.toBeNull()
   );
   return kpi(figure)!.querySelector(

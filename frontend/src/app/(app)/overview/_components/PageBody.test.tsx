@@ -57,7 +57,7 @@ describe("PageBody with live blocks", () => {
 
   it("renders an overview block in place of its fence", async () => {
     render(<InPageBody body={fence("overview-risks top=3")} />);
-    expect(screen.getByText("Risks aren't available yet")).toBeTruthy();
+    expect(await screen.findByText("Risks aren't available yet")).toBeTruthy();
     expect(document.querySelector("pre")).toBeNull();
     await pageSettled();
   });

@@ -19,9 +19,9 @@ vi.mock("@/components/overview/editing/permissions", () => ({
 import { InIntentSection, fence } from "./__fixtures__/render";
 
 describe("overview-risks", () => {
-  it("says risks aren't available yet, and what the block will show — never an empty list", () => {
+  it("says risks aren't available yet, and what the block will show — never an empty list", async () => {
     render(<InIntentSection body={fence("overview-risks top=5")} />);
-    expect(screen.getByText("Risks aren't available yet")).toBeTruthy();
+    expect(await screen.findByText("Risks aren't available yet")).toBeTruthy();
     const block = document.querySelector(
       '[data-overview-block="overview-risks"]'
     )!;
@@ -31,8 +31,9 @@ describe("overview-risks", () => {
     expect(block.querySelector("ul, ol, li, table")).toBeNull();
   });
 
-  it("reads without a count too", () => {
+  it("reads without a count too", async () => {
     render(<InIntentSection body={fence("overview-risks")} />);
+    await screen.findByText("Risks aren't available yet");
     expect(
       document.querySelector('[data-overview-block="overview-risks"]')!
         .textContent
