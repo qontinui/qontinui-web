@@ -132,7 +132,7 @@ import {
   hasLifecycleHalf,
   isSessionFinished,
   isSizeUnknown,
-  joinClassCount,
+  linkedCount,
   lifecycleOnlyCount,
   rowTimestamp,
   sessionsCeiling,
@@ -692,10 +692,11 @@ export function SessionsConsole({
       key: "linked",
       label: "linked ",
       ...unread(
-        joinClassCount(
+        linkedCount(
           countClass(rows, "linked"),
           ceiling,
-          "coord.sessions row bridged to its coord.agent_sessions row"
+          "coord.sessions row bridged to its coord.agent_sessions row",
+          countClass(rows, null)
         )
       ),
     },

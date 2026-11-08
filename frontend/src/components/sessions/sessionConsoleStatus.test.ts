@@ -30,7 +30,7 @@ import {
   hasAgentHalf,
   hasLifecycleHalf,
   isCapped,
-  joinClassCount,
+  linkedCount,
   lifecycleOnlyCount,
   lastHeartbeatAt,
   lifecycleState,
@@ -958,16 +958,62 @@ describe("a FAILED agent read", () => {
 
   it("leaves the join-class counts unknown: the route withholds every row's class", () => {
     for (const lifecycle of [bound(500, "unknown"), bound(3, "complete")]) {
-      expect(joinClassCount(0, withFailedAgent(lifecycle), "own")).toEqual({
+      expect(linkedCount(0, withFailedAgent(lifecycle), "own", 0)).toEqual({
         value: null,
         title: DID_NOT_ANSWER,
       });
     }
     // While the agent half answered, a join class is a fleet count.
-    expect(joinClassCount(4, ceilingOf({}), "own")).toEqual({
+    expect(linkedCount(4, ceilingOf({}), "own", 0)).toEqual({
       value: 4,
       title: "own",
     });
+  });
+
+  it("states linked exactly unless a row could hide past a ceiling", () => {
+    const lifecycleComplete = bound(31, "complete");
+    const full = bound(500, "unknown");
+    // Lifecycle complete, agent full, nothing unresolved: a bridged row whose
+    // agent twin lay past the agent ceiling would read unresolved, and none
+    // does, so the count is exact.
+    expect(
+      linkedCount(
+        1,
+        ceilingOf({ lifecycle: lifecycleComplete, agent: full }),
+        "own",
+        0
+      )
+    ).toEqual({ value: 1, title: "own" });
+    // …but with rows unresolved, some may be linked past the agent ceiling.
+    expect(
+      linkedCount(
+        1,
+        ceilingOf({ lifecycle: lifecycleComplete, agent: full }),
+        "own",
+        2
+      ).value
+    ).toBe("≥1");
+    // A full lifecycle half: bridged sessions may lie past its ceiling.
+    expect(
+      linkedCount(
+        1,
+        ceilingOf({ lifecycle: full, agent: bound(3, "complete") }),
+        "own",
+        0
+      ).value
+    ).toBe("≥1");
+    // A half of unknown size establishes nothing.
+    expect(
+      linkedCount(
+        1,
+        ceilingOf({
+          lifecycle: bound(0, "unknown"),
+          agent: bound(3, "complete"),
+        }),
+        "own",
+        0
+      ).value
+    ).toBeNull();
   });
 
   it("bases lifecycle-only on the lifecycle half alone: a full AGENT half does not make it a floor", () => {
