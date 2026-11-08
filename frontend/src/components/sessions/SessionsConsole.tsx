@@ -133,6 +133,7 @@ import {
   isSessionFinished,
   isSizeUnknown,
   joinClassCount,
+  lifecycleOnlyCount,
   rowTimestamp,
   sessionsCeiling,
   type ConsolidatedSessionRow,
@@ -218,7 +219,9 @@ const STATUS_TABS: ReadonlyArray<{ id: StatusTab; label: string }> = [
  * Phase 3's `/admin/agent-sessions?live=true` → `/sessions?status=live` 308 is
  * what puts a value here today.
  */
-export function parseStatusTab(raw: string | null | undefined): StatusTab | null {
+export function parseStatusTab(
+  raw: string | null | undefined
+): StatusTab | null {
   return STATUS_TABS.some((t) => t.id === raw) ? (raw as StatusTab) : null;
 }
 
@@ -362,7 +365,9 @@ export function SessionsConsole({
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
         setReadFailed(true);
-        setError(err instanceof Error ? err.message : "failed to load sessions");
+        setError(
+          err instanceof Error ? err.message : "failed to load sessions"
+        );
       }
     },
     [doFetch, appliedQuery, status]
@@ -474,9 +479,9 @@ export function SessionsConsole({
   );
   const machineOptions = useMemo(
     () =>
-      facetOptions(rows, (r) =>
-        r.device_id ? String(r.device_id) : null
-      ).map((o) => ({ ...o, label: machineLabel(o.value) ?? o.value })),
+      facetOptions(rows, (r) => (r.device_id ? String(r.device_id) : null)).map(
+        (o) => ({ ...o, label: machineLabel(o.value) ?? o.value })
+      ),
     [rows, machineLabel]
   );
 
@@ -698,7 +703,7 @@ export function SessionsConsole({
       key: "lifecycle",
       label: "lifecycle-only ",
       ...unread(
-        joinClassCount(
+        lifecycleOnlyCount(
           countClass(rows, "lifecycle_only"),
           ceiling,
           "no Claude Code session id, so no agent-session row can exist — transcript and lineage are not applicable"
@@ -773,10 +778,7 @@ export function SessionsConsole({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <StatCluster
-          stats={stats}
-          data-testid="sessions-console-stats"
-        />
+        <StatCluster stats={stats} data-testid="sessions-console-stats" />
         <Button
           size="sm"
           variant="ghost"
@@ -1151,10 +1153,7 @@ function SessionConsoleRow({
           <StatusBadge status={status} palette={SESSION_STATUS_PALETTE} />
           {workStatus && (
             <span data-testid="sessions-console-row-work">
-              <StatusBadge
-                status={workStatus}
-                palette={SESSION_WORK_PALETTE}
-              />
+              <StatusBadge status={workStatus} palette={SESSION_WORK_PALETTE} />
             </span>
           )}
         </span>
@@ -1241,7 +1240,10 @@ function EmptyState({
       </p>
       {withheld > 0 && (
         <div className="mt-2 flex justify-center">
-          <WithheldNote count={withheld} testId="sessions-console-empty-withheld" />
+          <WithheldNote
+            count={withheld}
+            testId="sessions-console-empty-withheld"
+          />
         </div>
       )}
     </div>

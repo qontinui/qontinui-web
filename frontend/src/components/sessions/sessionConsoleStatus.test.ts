@@ -31,6 +31,7 @@ import {
   hasLifecycleHalf,
   isCapped,
   joinClassCount,
+  lifecycleOnlyCount,
   lastHeartbeatAt,
   lifecycleState,
   rowClassExplanation,
@@ -43,7 +44,9 @@ import {
 const NOW = Date.parse("2026-08-26T12:00:00.000Z");
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
 
-function linked(over: Partial<ConsolidatedSessionRow> = {}): ConsolidatedSessionRow {
+function linked(
+  over: Partial<ConsolidatedSessionRow> = {}
+): ConsolidatedSessionRow {
   return {
     id: "s-linked",
     device_id: "dev-a",
@@ -230,7 +233,9 @@ describe("deriveSessionStatus", () => {
 
 describe("isSessionFinished", () => {
   it("is true for coord's canonical terminal word", () => {
-    expect(isSessionFinished(linked({ session_status: "finished" }))).toBe(true);
+    expect(isSessionFinished(linked({ session_status: "finished" }))).toBe(
+      true
+    );
   });
 
   it("accepts the legacy `done` alias coord still parses", () => {
@@ -262,7 +267,9 @@ describe("isSessionFinished", () => {
 
   it("an explicit null reads IDENTICALLY to an absent key", () => {
     expect(isSessionFinished(linked({ session_status: null }))).toBe(false);
-    expect(deriveSessionWorkStatus(linked({ session_status: null }))).toBeNull();
+    expect(
+      deriveSessionWorkStatus(linked({ session_status: null }))
+    ).toBeNull();
   });
 
   it("a work word this build has never seen is not finished", () => {
@@ -291,7 +298,9 @@ describe("isSessionFinished", () => {
 
 describe("deriveSessionWorkStatus", () => {
   it("paints a calm, terminal badge — never red, never amber", () => {
-    const work = deriveSessionWorkStatus(linked({ session_status: "finished" }));
+    const work = deriveSessionWorkStatus(
+      linked({ session_status: "finished" })
+    );
     expect(work?.kind).toBe("finished");
     expect(work?.label).toBe("finished");
     expect(work?.attention).toBe("none");
@@ -299,7 +308,9 @@ describe("deriveSessionWorkStatus", () => {
   });
 
   it("says in words that it is the work axis, not liveness", () => {
-    const work = deriveSessionWorkStatus(linked({ session_status: "finished" }));
+    const work = deriveSessionWorkStatus(
+      linked({ session_status: "finished" })
+    );
     expect(work?.reason).toMatch(/work axis/i);
   });
 });
@@ -315,7 +326,9 @@ describe("compareSessionRows", () => {
       linked({ id: "calm-new", last_heartbeat_at: ago(1_000) }),
       linked({ id: "loud", state: "pending_resolution" }),
     ];
-    const sorted = [...rows].sort((a, b) => compareSessionRows(a, b, { now: NOW }));
+    const sorted = [...rows].sort((a, b) =>
+      compareSessionRows(a, b, { now: NOW })
+    );
     expect(sorted.map((r) => r.id)).toEqual(["loud", "calm-new", "calm-old"]);
   });
 
@@ -955,6 +968,48 @@ describe("a FAILED agent read", () => {
       value: 4,
       title: "own",
     });
+  });
+
+  it("bases lifecycle-only on the lifecycle half alone: a full AGENT half does not make it a floor", () => {
+    const meaning = "own";
+    // Lifecycle complete, agent full: shells are read off the lifecycle half,
+    // every lifecycle row was read, so the count is exact.
+    expect(
+      lifecycleOnlyCount(
+        2,
+        ceilingOf({
+          lifecycle: bound(31, "complete"),
+          agent: bound(500, "unknown"),
+        }),
+        meaning
+      )
+    ).toEqual({ value: 2, title: meaning });
+    // Lifecycle full: a floor, whatever the agent half did.
+    expect(
+      lifecycleOnlyCount(
+        2,
+        ceilingOf({
+          lifecycle: bound(500, "unknown"),
+          agent: bound(3, "complete"),
+        }),
+        meaning
+      ).value
+    ).toBe("≥2");
+    // Lifecycle of unknown size: nothing established.
+    expect(
+      lifecycleOnlyCount(
+        0,
+        ceilingOf({
+          lifecycle: bound(0, "unknown"),
+          agent: bound(3, "complete"),
+        }),
+        meaning
+      ).value
+    ).toBeNull();
+    // A failed agent read withholds every row's class, shells included.
+    expect(
+      lifecycleOnlyCount(0, withFailedAgent(bound(31, "complete")), meaning)
+    ).toEqual({ value: null, title: DID_NOT_ANSWER });
   });
 
   it("establishes no row's status, so the strip counts no one as needing a person or active", () => {
