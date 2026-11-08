@@ -407,9 +407,19 @@ function InjectionsTable({
   // The stale arm needs no flag of its own: inside `error && …` it is exactly
   // `!unknown`, and deriving it a second way is how the two spellings drift.
   const unknown = readIsUnknown(loaded, error !== null);
+  // The PRE-READ arm: coord has not answered THIS filter set and nothing has
+  // failed. `readIsUnknown` is false here by contract (`readFailed &&
+  // !loaded`), so without a third state the badge painted `rows.length` — a
+  // `0` read off `EMPTY_ROWS` — through the whole first read and through
+  // every filter change until that filter's read landed, and the body could
+  // reach the empty state about filters nobody had read. It is the sibling
+  // derivers' `!loaded` arm (`derivePlansHealth`'s "Waiting for coord…", the
+  // findings strip's "Reading the findings store…"), spelled after the
+  // unknown arm the same way.
+  const reading = !loaded && !unknown;
   // Coord `ORDER BY created_at DESC LIMIT n` — a full page is the only
   // evidence on the wire that older events exist. See the module doc.
-  const capped = !unknown && rows.length === LIST_LIMIT;
+  const capped = !unknown && !reading && rows.length === LIST_LIMIT;
 
   return (
     <section
@@ -429,12 +439,14 @@ function InjectionsTable({
           title={
             unknown
               ? "coord did not answer; this is a dash, not a zero"
-              : capped
-                ? `the newest ${LIST_LIMIT} events — there may be more`
-                : undefined
+              : reading
+                ? "nothing has answered for these filters yet; this is a dash, not a zero"
+                : capped
+                  ? `the newest ${LIST_LIMIT} events — there may be more`
+                  : undefined
           }
         >
-          {unknown ? "–" : capped ? `${rows.length}+` : rows.length}
+          {unknown || reading ? "–" : capped ? `${rows.length}+` : rows.length}
         </Badge>
         <Button
           variant="outline"
@@ -477,14 +489,23 @@ function InjectionsTable({
           narrow the filters to reach them.
         </p>
       )}
-      {loading && rows.length === 0 ? (
+      {rows.length === 0 && (loading || reading) ? (
         /*
          * A read is in flight and nothing is in hand — including a RETRY after
          * a failure, which is why this is not gated on `!error`. Gating it
          * there left the table area completely blank during a retry, with only
          * the button spinner to say anything was happening.
+         *
+         * `reading` covers the render that commits a filter change: the
+         * previous read's `finally` has already cleared `loading`, and the
+         * effect that sets it again runs after that render. Keyed on
+         * `loading` alone, that render fell through to the empty state below
+         * about filters nobody had read yet.
          */
-        <Skeleton className="h-32 w-full" />
+        <Skeleton
+          className="h-32 w-full"
+          data-testid="prompt-injections-reading"
+        />
       ) : rows.length === 0 && (unknown || error !== null) /*
          * No empty state whenever a read failed — on EITHER arm.
          *
