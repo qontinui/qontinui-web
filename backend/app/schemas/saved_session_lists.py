@@ -14,7 +14,7 @@ schemas version here declares it.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -40,22 +40,33 @@ class SavedSessionListCreate(BaseModel):
     title: str | None = Field(
         default=None,
         max_length=SAVED_SESSION_LIST_TITLE_MAX_LENGTH,
-        description="Optional label for the saved list. Blank is stored as null.",
+        description=(
+            "Optional label for the saved list, trimmed before its length is "
+            "checked. Blank is stored as null."
+        ),
     )
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _trim_title(cls, value: Any) -> Any:
+        """Trim the title BEFORE the length check, so surrounding whitespace
+        does not count against ``max_length``; blank becomes null. A
+        non-string is left for the type check to refuse."""
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
     @field_validator("title")
     @classmethod
-    def _blank_title_is_none(cls, value: str | None) -> str | None:
-        """Trim the title; blank is null; control characters are refused.
+    def _title_is_one_line(cls, value: str | None) -> str | None:
+        """Refuse control characters and unpaired surrogates.
 
         A title is one line of text. Refusing control characters here also
         keeps a NUL byte, and an unpaired UTF-16 surrogate (which a JSON body
         can carry as a lone ``\\ud800`` escape), from failing the insert as a
         500: Postgres ``text`` cannot store either.
         """
-        if value is None:
-            return None
-        if any(
+        if value is not None and any(
             ord(ch) < 0x20 or ord(ch) == 0x7F or 0xD800 <= ord(ch) <= 0xDFFF
             for ch in value
         ):
@@ -63,8 +74,7 @@ class SavedSessionListCreate(BaseModel):
                 "title must be one line of text, without control characters "
                 "or unpaired surrogates"
             )
-        stripped = value.strip()
-        return stripped or None
+        return value
 
 
 class SavedSessionListCoordStatus(BaseModel):

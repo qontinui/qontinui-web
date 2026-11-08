@@ -48744,7 +48744,7 @@ export interface components {
             device_id: string;
             /**
              * Title
-             * @description Optional label for the saved list. Blank is stored as null.
+             * @description Optional label for the saved list, trimmed before its length is checked. Blank is stored as null.
              */
             title?: string | null;
         };
@@ -91102,14 +91102,19 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description A malformed request: device_id is not a UUID, an unknown field (such as runner_port), or a title that is too long or holds control characters. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                content?: never;
+            };
+            /** @description This backend's own fault: the device lookup failed (device_lookup_failed), or the relay refused the capture's own request (relay_request_rejected). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
                 };
+                content?: never;
             };
             /** @description The runner answered an error or an invalid layout. */
             502: {

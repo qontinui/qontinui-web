@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import base64
 import json
+import sys
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -60,6 +61,7 @@ from app.models.saved_session_list import (
     SavedSessionList,
 )
 from app.models.user import User
+from app.schemas.saved_session_lists import SAVED_SESSION_LIST_TITLE_MAX_LENGTH
 from app.services import coord_session_status, runner_relay
 from app.services.runner import RunnerCommandTimeoutError
 
@@ -602,6 +604,67 @@ class TestCapture:
         assert resp.status_code == 502
         assert _refusal(resp)["discriminator"] == "runner_layout_invalid"
 
+    async def test_a_body_nested_past_the_parsers_limit_is_invalid_not_a_500(
+        self, h: Harness
+    ) -> None:
+        """json.loads recurses per nesting level, so a body nested past the
+        interpreter's recursion limit raises RecursionError while parsing."""
+        depth = 100_000
+        raw = (
+            json.dumps(_layout())[:-1] + ', "deep": ' + "[" * depth + "]" * depth + "}"
+        )
+        h.dispatch.return_value = _reply(200, raw.encode())
+
+        resp = await _capture(h)
+
+        assert resp.status_code == 502, resp.text
+        refusal = _refusal(resp)
+        assert refusal["discriminator"] == "runner_layout_invalid"
+        assert "nests too deeply to read" in refusal["detail"]
+        assert await _rows(h) == []
+
+    async def test_a_body_nested_past_the_layout_cap_is_invalid(
+        self, h: Harness
+    ) -> None:
+        """Parseable, but deeper than MAX_LAYOUT_DEPTH: refused before it can
+        recurse when it is serialised for the insert."""
+        depth = endpoints.MAX_LAYOUT_DEPTH + 50
+        layout = _layout()
+        nested: Any = []
+        for _ in range(depth):
+            nested = [nested]
+        layout["deep"] = nested
+        h.dispatch.return_value = _reply(200, layout)
+
+        resp = await _capture(h)
+
+        assert resp.status_code == 502, resp.text
+        refusal = _refusal(resp)
+        assert refusal["discriminator"] == "runner_layout_invalid"
+        assert (
+            f"nests deeper than {endpoints.MAX_LAYOUT_DEPTH} levels"
+            in refusal["detail"]
+        )
+        assert await _rows(h) == []
+
+    async def test_a_newer_runners_nested_field_within_the_cap_is_kept(
+        self, h: Harness
+    ) -> None:
+        # The root object is level 1 and "deep" sits at level 2, so the
+        # innermost value, "leaf", sits exactly at the cap.
+        layout = _layout()
+        nested: Any = ["leaf"]
+        for _ in range(endpoints.MAX_LAYOUT_DEPTH - 3):
+            nested = [nested]
+        layout["deep"] = nested
+        h.dispatch.return_value = _reply(200, layout)
+
+        resp = await _capture(h)
+
+        assert resp.status_code == 201, resp.text
+        [row] = await _rows(h)
+        assert row.layout["deep"] == nested
+
     @pytest.mark.parametrize(
         ("status", "body"),
         [
@@ -803,6 +866,21 @@ class TestCapture:
         resp = await _capture(h, {"device_id": str(DEVICE), "title": "   "})
         assert resp.status_code == 201
         assert resp.json()["title"] is None
+
+    async def test_a_padded_title_is_measured_after_trimming(self, h: Harness) -> None:
+        h.dispatch.return_value = _reply(200, _layout())
+        longest = "x" * SAVED_SESSION_LIST_TITLE_MAX_LENGTH
+        resp = await _capture(
+            h, {"device_id": str(DEVICE), "title": f"   {longest}\n "}
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["title"] == longest
+
+    async def test_a_title_too_long_after_trimming_is_refused(self, h: Harness) -> None:
+        too_long = " " + "x" * (SAVED_SESSION_LIST_TITLE_MAX_LENGTH + 1) + " "
+        resp = await _capture(h, {"device_id": str(DEVICE), "title": too_long})
+        assert resp.status_code == 422
+        h.dispatch.assert_not_awaited()
 
     async def test_coord_join_records_ok_and_unknown_per_id(self, h: Harness) -> None:
         layout = _layout()
@@ -1243,12 +1321,45 @@ class TestExpiry:
 
 
 async def test_the_purge_is_scheduled_hourly_and_at_boot() -> None:
-    from app.core.scheduler import scheduler
+    from app.core import scheduler as scheduler_mod
 
-    task = scheduler._tasks["saved_session_lists_cleanup"]  # noqa: SLF001
+    task = scheduler_mod.scheduler._tasks["saved_session_lists_cleanup"]  # noqa: SLF001
+    # The registered job is THIS purge, not just some task under its name.
+    assert task.coro is scheduler_mod._job_saved_session_lists_cleanup  # noqa: SLF001
     assert task.interval_seconds == 3600.0
     assert task.cron is None
     assert task.run_at_boot is True
+
+
+async def test_the_storage_walk_survives_nesting_past_the_recursion_limit() -> None:
+    """The walk is iterative: a structure deeper than Python's recursion limit
+    is reported over the cap, never a RecursionError."""
+    nested: Any = "leaf"
+    for _ in range(sys.getrecursionlimit() * 5):
+        nested = [nested]
+
+    problem = endpoints._storage_problem({"deep": nested})  # noqa: SLF001
+
+    assert problem == f"nests deeper than {endpoints.MAX_LAYOUT_DEPTH} levels"
+    assert endpoints._storage_problem({"ok": [[["fine"]]]}) is None  # noqa: SLF001
+
+
+async def test_the_scheduled_job_runs_the_purge(monkeypatch) -> None:
+    """The registered coroutine delegates to the purge entry point."""
+    from app.core import scheduler as scheduler_mod
+
+    called: list[str] = []
+
+    async def _fake_cleanup() -> dict[str, Any]:
+        called.append("cleanup")
+        return {"table_present": True, "deleted": 0, "now": T0.isoformat()}
+
+    monkeypatch.setattr(cleanup, "cleanup_expired_saved_session_lists", _fake_cleanup)
+
+    result = await scheduler_mod._job_saved_session_lists_cleanup()  # noqa: SLF001
+
+    assert called == ["cleanup"]
+    assert result["table_present"] is True
 
 
 async def test_an_absent_table_is_reported_absent_not_zero_deleted() -> None:
