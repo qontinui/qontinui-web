@@ -531,18 +531,25 @@ async def claim_ws_session_if_unheld(
     commit (and then overwrites the claim, as a primary always may).
     Returns ``True`` if claimed.
 
+    "Sees" depends on reading the LOCKED row, so the select refreshes the
+    object it returns (``populate_existing``). Without that, a ``Device`` this
+    session already holds is handed back as it was loaded. The WS handshake's
+    own ``get_device`` loads one before its connection insert commits, and
+    sessions here do not expire on commit, so the pointer decision would read
+    the value from before that commit. A primary that took the pointer in
+    between would then be displaced. Coord finding ``5f52242e``.
+
     A row carrying the CI-registrar marker raises :class:`DeviceIsCiRunnerError`
     before anything else is decided, the lock released and nothing written.
-    The marker is read under the same lock, so the row cannot be marked between
-    the check and the write, and it is read from the statement rather than the
-    ORM object, which may be one an earlier read loaded and this select does not
-    refresh.
+    The marker is read under the same lock, from the statement itself, so the
+    row cannot be marked between the check and the write.
     """
     row = (
         await db.execute(
             select(Device, _ci_runner_marker())
             .where(Device.device_id == device_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
     ).one_or_none()
     if row is None:
