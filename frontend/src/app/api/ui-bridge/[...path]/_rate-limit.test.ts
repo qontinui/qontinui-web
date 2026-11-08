@@ -209,13 +209,13 @@ describe("rateLimitedResponse", () => {
     expect(body.message).toContain("21");
   });
 
-  it.each([
-    ["transport:stream", 97, 96],
-    ["transport:heartbeat", 161, 160],
-    ["transport:result", 433, 432],
-  ] as const)(
-    "answers a %s refusal with TRANSPORT_RATE_LIMITED, naming the lane",
-    async (kind, count, limit) => {
+  it("answers every transport refusal with TRANSPORT_RATE_LIMITED, naming its lane", async () => {
+    const refusals = [
+      ["transport:stream", 97, 96],
+      ["transport:heartbeat", 161, 160],
+      ["transport:result", 433, 432],
+    ] as const;
+    for (const [kind, count, limit] of refusals) {
       const resp = rateLimitedResponse({
         allowed: false,
         count,
@@ -224,20 +224,20 @@ describe("rateLimitedResponse", () => {
         redisOffline: false,
         kind,
       });
-      expect(resp.status).toBe(429);
-      expect(resp.headers.get("Retry-After")).toBe("12");
-      expect(resp.headers.get("X-RateLimit-Lane")).toBe(kind);
-      expect(resp.headers.get("X-RateLimit-Remaining")).toBe("0");
+      expect(resp.status, kind).toBe(429);
+      expect(resp.headers.get("Retry-After"), kind).toBe("12");
+      expect(resp.headers.get("X-RateLimit-Lane"), kind).toBe(kind);
+      expect(resp.headers.get("X-RateLimit-Remaining"), kind).toBe("0");
       const body = await resp.json();
-      expect(body).toMatchObject({
+      expect(body, kind).toMatchObject({
         success: false,
         code: "TRANSPORT_RATE_LIMITED",
         lane: kind,
         retryAfterSec: 12,
       });
-      expect(body.message).toContain(String(count));
+      expect(body.message, kind).toContain(String(count));
     }
-  );
+  });
 });
 
 describe("laneFor", () => {
@@ -286,22 +286,22 @@ describe("transport lanes", () => {
     expect(WRITE_LIMIT_PER_MIN).toBe(20);
   });
 
-  it.each([
-    ["transport:stream", 96],
-    ["transport:heartbeat", 160],
-    ["transport:result", 432],
-  ] as const)(
-    "%s admits %i in a window and refuses the next, carrying its kind",
-    async (kind, limit) => {
+  it("each transport sub-lane admits exactly its ceiling in a window and refuses the next", async () => {
+    const ceilings = [
+      ["transport:stream", 96],
+      ["transport:heartbeat", 160],
+      ["transport:result", 432],
+    ] as const;
+    for (const [kind, limit] of ceilings) {
       const { client } = makeMockRedis();
       __setRedisClientForTest(client);
       const now = Date.now();
       for (let i = 0; i < limit; i++) {
         const r = await checkRateLimit("u1", kind, now);
-        expect(r.allowed).toBe(true);
+        expect(r.allowed, `${kind} call ${i + 1}`).toBe(true);
       }
       const denied = await checkRateLimit("u1", kind, now);
-      expect(denied).toMatchObject({
+      expect(denied, kind).toMatchObject({
         allowed: false,
         count: limit + 1,
         limit,
@@ -309,7 +309,7 @@ describe("transport lanes", () => {
         redisOffline: false,
       });
     }
-  );
+  });
 
   it("keeps every lane on its own counter key, so one request is one INCR on one key", async () => {
     const { client, store } = makeMockRedis();
