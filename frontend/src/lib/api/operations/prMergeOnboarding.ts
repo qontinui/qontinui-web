@@ -1,8 +1,8 @@
 /**
  * `/operations/pr-merge/onboarding/*` and `/operations/coord/devices/pair-start`:
  * connecting a GitHub org (connect-state mint, claim, App config, the keyed
- * pending-installation read), the connected-accounts list with its enroll and
- * restore writes, the per-repo tenant bindings (list, bind, unbind), the
+ * pending-installation read), the connected-accounts list with its enroll,
+ * restore and un-enroll writes, the per-repo tenant bindings (list, bind, unbind), the
  * onboarding doctor, and the merge-orchestration wizard
  * (device pairing, preconditions, the async repo audit, accept).
  *
@@ -338,6 +338,80 @@ export async function restoreRepo(repo: string): Promise<EnrollSpawned | null> {
     maxRetries: 0,
   });
   return readJson<EnrollSpawned>(res, `POST ${url}`, { unparseable: "null" });
+}
+
+/**
+ * Coord's 404 from the un-enroll door (`delete_pr_merge_onboarding_repo`,
+ * passed through verbatim): nothing of the active tenant's was removed.
+ * `tombstoned` says whether coord recorded an un-enrollment anyway and `note`
+ * says what that means for the tenant. Both are read defensively — their
+ * meaning moves with coord (plan
+ * `2026-11-08-coord-keeps-governing-repos-a-narrowed-installation-dropped`
+ * Phase 7 answers `tombstoned: false` for a tenant that does not govern the
+ * repo), so an absent field is "not reported", never `false`.
+ */
+export interface UnenrollNotFoundBody {
+  error?: string;
+  tombstoned?: boolean;
+  note?: string;
+}
+
+/**
+ * {@link unenrollRepo}'s refusal of a blank tenant, thrown before any request
+ * is built, so nothing was sent. It is its own class so the card can say
+ * exactly that, instead of reading a rejection with no HTTP status as a write
+ * that may have landed.
+ */
+export class UnpinnedTenantError extends Error {
+  constructor(repo: string) {
+    super(
+      `unenrollRepo(${repo}): a blank tenant is no pin, so nothing was sent. HttpClient fills an empty X-Qontinui-Active-Tenant from the stored selection, and fetch trims a whitespace one to an empty header, which the web backend reads as no selection, so the write would land in the operator's home tenant.`
+    );
+    this.name = "UnpinnedTenantError";
+  }
+}
+
+/**
+ * `DELETE /pr-merge/onboarding/repos/{repo:path}?reason=` —
+ * `delete_pr_merge_onboarding_repo`. Stops coord governing `repo` in the
+ * tenant `tenantId` and sends `reason` for the un-enrollment tombstone. `repo`
+ * is `owner/name` and the route's `:path` converter takes the slash, so it is
+ * NOT percent-encoded (as for {@link restoreRepo}); the reason is, in the query.
+ *
+ * The tenant is PINNED and required: `tenantId` — the project the consent
+ * dialog named — goes out as an explicit `X-Qontinui-Active-Tenant`, which
+ * `HttpClient` keeps as given instead of reading the browser's stored
+ * selection at send time (again on a replay after a token refresh). So a
+ * project switch in another tab cannot move the write into a project this
+ * page does not show. There is no unpinned form: a blank `tenantId` is
+ * refused with {@link UnpinnedTenantError} before any request is built,
+ * because a blank tenant is no pin. `HttpClient` fills an empty one from the
+ * stored selection, and `fetch` trims a whitespace one to an empty header,
+ * which the web backend reads as no selection, so the write would land in the
+ * operator's home tenant (the 2026-11-08 cleanup's own failure). The dialog
+ * refuses earlier, while no project is selected (`StopGoverningDialog`). So
+ * this write is never sent without a tenant.
+ *
+ * Never re-sent (`idempotent: false`, `maxRetries: 0`): a removal that timed
+ * out may have landed, and only a re-read can say. Coord's success is a
+ * bodiless `204`, so there is nothing to parse (`unparseable: "null"`): the
+ * 2xx is the fact. A refusal rejects with the body for `httpBodyOf` — the
+ * 404's {@link UnenrollNotFoundBody} included.
+ */
+export async function unenrollRepo(
+  repo: string,
+  reason: string,
+  tenantId: string
+): Promise<void> {
+  if (!tenantId.trim()) throw new UnpinnedTenantError(repo);
+  const url = `${OPERATIONS_BASE}/pr-merge/onboarding/repos/${repo}?reason=${encodeURIComponent(reason)}`;
+  const res = await httpClient.fetch(url, {
+    method: "DELETE",
+    idempotent: false,
+    maxRetries: 0,
+    headers: { "X-Qontinui-Active-Tenant": tenantId },
+  });
+  await readJson<unknown>(res, `DELETE ${url}`, { unparseable: "null" });
 }
 
 // ----------------------------------------------------------------------------
