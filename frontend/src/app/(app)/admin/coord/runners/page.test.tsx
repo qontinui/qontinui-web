@@ -458,6 +458,17 @@ describe("/admin/coord/runners", () => {
     expect(notice).toHaveTextContent("1 device was retired");
   });
 
+  it("names withheld machines beside the retired count on an empty roster", async () => {
+    fleetResponse = res(200, {
+      devices: [],
+      excluded: { unbound: 3, bound_to_other_tenant: 0, retired: 10 },
+    });
+    render(<CoordRunnersPage />);
+    const notice = await screen.findByTestId("coord-runners-roster-notice");
+    expect(notice).toHaveTextContent("Coord also withheld 3 machines");
+    expect(notice).toHaveTextContent("10 devices were retired");
+  });
+
   it("adds nothing to an empty-roster notice when coord states no retired count", async () => {
     fleetResponse = res(200, { devices: [] });
     render(<CoordRunnersPage />);

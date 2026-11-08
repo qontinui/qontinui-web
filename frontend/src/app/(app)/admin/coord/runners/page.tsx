@@ -71,7 +71,7 @@ import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { resolveDeviceWorktreeCap } from "@/components/operations/fleetWorktreeCap";
 import { useFleetWorktreeCap } from "@/components/operations/useFleetWorktreeCap";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
-import { appendRetiredRows } from "@/components/admin/coord/machineHealth";
+import { appendRosterExclusions } from "@/components/admin/coord/machineHealth";
 import {
   CONTROL_REASON_MAX_LENGTH,
   RUNNER_SESSION_PALETTE,
@@ -521,12 +521,12 @@ export default function CoordRunnersPage() {
   const rosterNotice = fleet.error
     ? `Could not load the device roster — ${fleet.error}. A device id in the link still works.`
     : fleet.data && devices.length === 0
-      ? appendRetiredRows(
+      ? appendRosterExclusions(
           "Coord reported 0 devices for this tenant. A device is listed only while it is bound to this tenant.",
           fleet.data
         )
       : fleet.data && pickableDevices(devices).shown.length === 0
-        ? appendRetiredRows(
+        ? appendRosterExclusions(
             "No runner machine to offer: every device coord reported is a CI runner registration or abandoned. A device id in the link still works.",
             fleet.data
           )

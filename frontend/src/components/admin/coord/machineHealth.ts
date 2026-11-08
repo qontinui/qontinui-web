@@ -422,17 +422,26 @@ function withRetired(sentence: string, e: RosterExclusions): string {
 }
 
 /**
- * `sentence` with coord's retired-row count appended, read straight from a
- * `/fleet/health` body. For the surfaces that describe an empty or
- * all-hidden roster without a parsed {@link RosterExclusions} in hand (the
- * runners page notice, SpawnModal's manual-entry fallback), so they explain
- * a roster emptied by the device reaper the same way the summaries do.
+ * `sentence` with what coord left out of its roster appended, read straight
+ * from a `/fleet/health` body: the machines it withheld (a binding fault,
+ * named so the retired clause never sits beside an unnamed withheld count),
+ * then the rows its device reaper retired. For the surfaces that describe an
+ * empty or all-hidden device picker without a parsed {@link RosterExclusions}
+ * in hand (the runners page notice, SpawnModal's manual-entry fallback).
+ * Adds nothing when coord withheld and retired nothing, and nothing for an
+ * older coord that states neither.
  */
-export function appendRetiredRows(
+export function appendRosterExclusions(
   sentence: string,
   body: RosterExclusionsRef
 ): string {
-  return withRetired(sentence, readRosterExclusions(body));
+  const e = readRosterExclusions(body);
+  const withheld = isRosterBindingFault(e)
+    ? // Never coord's own `excluded_error` text: it is an unbounded error
+      // chain, and the picker notices have no room for it.
+      rosterIncompleteSentence(e, { withReason: false })
+    : null;
+  return withRetired(withheld ? `${sentence} ${withheld}` : sentence, e);
 }
 
 function withheldParts(e: { unbound: number; boundToOtherTenant: number }) {

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  appendRetiredRows,
+  appendRosterExclusions,
   emptyRosterSentence,
   isRosterBindingFault,
   isRosterComplete,
@@ -71,10 +71,31 @@ describe("readRosterExclusions with retired rows", () => {
   });
 });
 
-describe("appendRetiredRows", () => {
+describe("appendRosterExclusions", () => {
+  it("names withheld machines before the retired clause", () => {
+    expect(
+      appendRosterExclusions("Coord reported 0 devices.", {
+        excluded: { unbound: 3, bound_to_other_tenant: 0, retired: 10 },
+      })
+    ).toBe(
+      "Coord reported 0 devices. Coord also withheld 3 machines from its roster (3 with no binding), so the roster is incomplete and their health is unknown. 10 devices were retired after going unseen past coord's reaper grace period and are not listed — retired, which is not a withheld machine."
+    );
+  });
+
+  it("names an uncountable withheld set without quoting coord's error", () => {
+    expect(
+      appendRosterExclusions("Coord reported 0 devices.", {
+        excluded: null,
+        excluded_error: "tenant_devices read failed",
+      })
+    ).toBe(
+      "Coord reported 0 devices. Coord could not count the machines it withheld from its roster, so the roster may be incomplete — machine health beyond it is unknown."
+    );
+  });
+
   it("appends the retired count read from a fleet/health body", () => {
     expect(
-      appendRetiredRows("Coord reported 0 devices.", {
+      appendRosterExclusions("Coord reported 0 devices.", {
         excluded: { unbound: 0, bound_to_other_tenant: 0, retired: 1 },
       })
     ).toBe(
@@ -85,12 +106,11 @@ describe("appendRetiredRows", () => {
   it("leaves the sentence alone when coord states no retired rows", () => {
     for (const body of [
       {},
-      { excluded: null },
       { excluded: { unbound: 0, bound_to_other_tenant: 0 } },
       { excluded: { unbound: 0, bound_to_other_tenant: 0, retired: 0 } },
       { excluded: { unbound: 0, bound_to_other_tenant: 0, retired: "9" } },
     ]) {
-      expect(appendRetiredRows("Coord reported 0 devices.", body)).toBe(
+      expect(appendRosterExclusions("Coord reported 0 devices.", body)).toBe(
         "Coord reported 0 devices."
       );
     }

@@ -41,7 +41,7 @@ import {
   pickableDevices,
 } from "@/components/operations/DevicePicker";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
-import { appendRetiredRows } from "@/components/admin/coord/machineHealth";
+import { appendRosterExclusions } from "@/components/admin/coord/machineHealth";
 import {
   MAX_CAUSE_LENGTH,
   messageFromErrorBody,
@@ -166,7 +166,7 @@ export function useSpawnRoster(open: boolean, device: string) {
         if (roster.length === 0) {
           setDevicesError({
             kind: "empty",
-            message: appendRetiredRows(
+            message: appendRosterExclusions(
               "Coord reported 0 live devices for this tenant. A device is " +
                 "listed only if it is bound to this tenant and its last heartbeat " +
                 "is recent, so a healthy machine can still be absent. Enter the " +
@@ -180,7 +180,7 @@ export function useSpawnRoster(open: boolean, device: string) {
           // abandoned, so the picker would open on nothing.
           setDevicesError({
             kind: "empty",
-            message: appendRetiredRows(
+            message: appendRosterExclusions(
               "No runner machine to offer: every device coord reported is a " +
                 "CI runner registration or abandoned. Enter the device id " +
                 "directly if you know it.",
