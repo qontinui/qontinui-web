@@ -390,7 +390,7 @@ jobs:
           # once `web-guards` is a required context.
           # A job venv: on the self-hosted light lane the setup-python
           # interpreter lives in a tool cache every runner shares.
-          python -m venv "$RUNNER_TEMP/hook-tests-venv"
+          python -m venv --clear "$RUNNER_TEMP/hook-tests-venv"
           "$RUNNER_TEMP/hook-tests-venv/bin/python" -m pip install --retries 5 --timeout 30 "pytest>=9,<10"
           "$RUNNER_TEMP/hook-tests-venv/bin/python" -m pytest .pre-commit-hooks -rA
 

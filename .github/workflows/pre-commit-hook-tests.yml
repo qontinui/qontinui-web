@@ -76,7 +76,7 @@ jobs:
       # this pytest pin behind for every later job on the runner.
       - name: Install pytest
         run: |
-          python -m venv "$RUNNER_TEMP/venv"
+          python -m venv --clear "$RUNNER_TEMP/venv"
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/venv/bin/python" -m pip install "pytest>=9,<10"
 
