@@ -206,18 +206,33 @@ def _get_family(cls: type[HTTPException]) -> dict[str, Cell]:
     }
 
 
+#: A non-Connect transport error after the request was sent: coord may have
+#: acted, so the writers say the outcome is unknown (504 ``answer_lost``).
+_ANSWER_LOST_IN_TRANSIT = Cell(
+    Raises(
+        504,
+        "coord's answer was lost in transit (ReadError); the "
+        "outcome is unknown and the change may have been applied, so "
+        "re-read the current state before retrying",
+        OPS_TRANSPORT,
+    )
+)
+
+
+def _post_family() -> dict[str, Cell]:
+    """``_proxy_coord_post``: the reader family's answers, except that a
+    ReadError is mapped like the PATCH/PUT writer's (plan
+    2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled
+    review round 1) — a POST is a write, so a lost answer is an unknown
+    outcome, not an unhandled 500."""
+    return {**_get_family(OPS_TRANSPORT), "read_error": _ANSWER_LOST_IN_TRANSIT}
+
+
 _WRITE_FAMILY: dict[str, Cell] = {
     **_transport(OPS_TRANSPORT),
-    # The one reader that maps a non-Connect transport error.
-    "read_error": Cell(
-        Raises(
-            504,
-            "coord's answer was lost in transit (ReadError); the "
-            "outcome is unknown and the change may have been applied, so "
-            "re-read the current state before retrying",
-            OPS_TRANSPORT,
-        )
-    ),
+    # The writers map a non-Connect transport error (``_proxy_coord_post``
+    # too, through ``_post_family``).
+    "read_error": _ANSWER_LOST_IN_TRANSIT,
     "coord_404_empty": Cell(Raises(404, "")),
     "coord_422_json": Cell(Raises(422, _JSON_ERROR_BODY.decode())),
     "coord_500_html": Cell(Raises(500, _HTML_BODY)),
@@ -300,9 +315,9 @@ EXPECTED: dict[str, dict[str, Cell]] = {
         **_get_family(operations.CoordTransportUnavailable),
         "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
     },
-    "ops_post": _get_family(OPS_TRANSPORT),
+    "ops_post": _post_family(),
     "ops_post_structured_errors": {
-        **_get_family(OPS_TRANSPORT),
+        **_post_family(),
         # Only a JSON OBJECT becomes a dict detail; empty/HTML stay text.
         "coord_422_json": Cell(Raises(422, _JSON_ERROR_DICT)),
     },
@@ -310,12 +325,12 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     # coord's own status passed through (the 202 row); ≥400 and non-JSON 2xx
     # behave exactly as plain ops_post.
     "ops_post_return_status": {
-        **_get_family(OPS_TRANSPORT),
+        **_post_family(),
         "ok_200_json": Cell(Returns((_OK_DICT, 200))),
         OK_202_JSON: Cell(Returns((_OK_DICT, 202))),
     },
     "ops_post_non_json_success_as_empty": {
-        **_get_family(OPS_TRANSPORT),
+        **_post_family(),
         "ok_200_empty": Cell(Returns({})),
         "no_content_204": Cell(Returns({})),
         "ok_200_text": Cell(Returns({})),
@@ -326,7 +341,7 @@ EXPECTED: dict[str, dict[str, Cell]] = {
     # re-raised exception is its own ``__cause__``. Class, status and detail
     # are unchanged, which is all these cells assert.
     "ops_post_readable": {
-        **_get_family(OPS_TRANSPORT),
+        **_post_family(),
         "coord_422_json": Cell(
             Raises(
                 422,

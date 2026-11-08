@@ -113,6 +113,34 @@ export interface SubprojectUnattachedUnits {
   by_class: Record<string, number> | null;
 }
 
+/** Every headline's count over the read's status/origin filter (a null
+ *  `last_verdict` counts as `unknown`). */
+export interface SubprojectHeadlineCounts {
+  needs_you: number;
+  stalled: number;
+  working: number;
+  waiting: number;
+  done: number;
+  unknown: number;
+}
+
+/** The subprojects the list folds into All, counted over the same filter.
+ *  A one-off is exactly one member session, finished or closed, and no work
+ *  unit. */
+export interface SubprojectFoldedCounts {
+  one_off: number;
+  scheduled: number;
+  merged: number;
+}
+
+/** The list's `counts` facet: one grouped query over the read's status and
+ *  origin filter — or `null` when coord could not take it (never zeros). */
+export interface SubprojectCountsFacet {
+  by_headline: SubprojectHeadlineCounts;
+  folded: SubprojectFoldedCounts;
+  as_of: string;
+}
+
 /** `GET /subprojects` — one page of the tenant's subprojects. */
 export interface SubprojectListResponse {
   items: SubprojectSummary[];
@@ -122,8 +150,29 @@ export interface SubprojectListResponse {
    *  count it — UNKNOWN, never zero. */
   total: number | null;
   unattached_units: SubprojectUnattachedUnits;
+  /** Absent on a coord that predates the facet; `null` when it could not
+   *  take the counts. Either way the page falls back to one read per view. */
+  counts?: SubprojectCountsFacet | null;
   generated_at: string;
 }
+
+/** One session's subproject, as `by-sessions` names it. */
+export interface SubprojectOfSession {
+  id: string;
+  title: string;
+  headline: string;
+}
+
+/** `GET /subprojects/by-sessions` — the subproject of each session asked
+ *  about; a session with no live membership (a pending one included) is
+ *  under `missing`. */
+export interface SubprojectsBySessionsResponse {
+  items: Record<string, SubprojectOfSession>;
+  missing: string[];
+}
+
+/** coord's bound on one `by-sessions` read. */
+export const SUBPROJECT_LOOKUP_MAX_IDS = 200;
 
 /** A member session. `pending` is an allocation coord spawned whose harness
  *  session has not reported yet (D8), so it has no `agent_session_id`. */
@@ -287,6 +336,26 @@ export async function fetchSubprojects(
     idempotent: true,
   });
   return readJson<SubprojectListResponse>(res, `GET ${url}`);
+}
+
+/**
+ * `GET /subprojects/by-sessions?ids=…` (`get_subprojects_by_sessions`) — one
+ * batched lookup for a page of session rows. The caller sends at most
+ * {@link SUBPROJECT_LOOKUP_MAX_IDS} harness session ids; the backend refuses
+ * more before it calls coord.
+ */
+export async function fetchSubprojectsBySessions(
+  sessionIds: readonly string[],
+  options: HttpOptions = {}
+): Promise<SubprojectsBySessionsResponse> {
+  const query = new URLSearchParams({ ids: sessionIds.join(",") });
+  const url = `${OPERATIONS_BASE}/subprojects/by-sessions?${query.toString()}`;
+  const res = await httpClient.fetch(url, {
+    ...options,
+    method: "GET",
+    idempotent: true,
+  });
+  return readJson<SubprojectsBySessionsResponse>(res, `GET ${url}`);
 }
 
 /** `GET /subprojects/{id}` (`get_subproject`) — the verdict computed live. */

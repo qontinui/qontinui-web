@@ -59,6 +59,7 @@ import { operationsErrorMessage } from "@/lib/api/operations/base";
 import {
   continueSubproject,
   type SubprojectEffort,
+  type SubprojectNextStep,
   type SubprojectSpawnResponse,
 } from "@/lib/api/operations/coordSubprojects";
 import {
@@ -81,14 +82,20 @@ import {
   type ContinueRefusal,
   type EffortDefault,
 } from "./continueModel";
+import { nextStepWords } from "./subprojectStatus";
 
 export interface ContinueDialogProps {
   open: boolean;
   onClose: () => void;
   subprojectId: string;
   subprojectTitle: string;
-  /** The repos the Repos field opens with (`defaultContinueRepos`). */
-  defaultRepos: readonly string[];
+  /** Repos to offer as one-click hints (`defaultContinueRepos`, from the
+   *  subproject's PRs). The field itself opens EMPTY, so coord derives the
+   *  repos from the members unless the operator names them (D8). */
+  suggestedRepos: readonly string[];
+  /** The subproject's next steps — what coord builds the brief from (D7) —
+   *  or `null` when the detail read did not carry them. */
+  nextSteps: readonly SubprojectNextStep[] | null;
   /** Called after coord accepted the spawn, so the page can re-read. */
   onContinued?: () => void;
 }
@@ -98,7 +105,8 @@ export function ContinueDialog({
   onClose,
   subprojectId,
   subprojectTitle,
-  defaultRepos,
+  suggestedRepos,
+  nextSteps,
   onContinued,
 }: ContinueDialogProps) {
   const [effortDefault, setEffortDefault] = useState<EffortDefault | null>(
@@ -111,7 +119,7 @@ export function ContinueDialog({
   );
   const [ultracodeChoice, setUltracodeChoice] = useState<boolean | null>(null);
   const [deviceId, setDeviceId] = useState("");
-  const [reposText, setReposText] = useState(() => defaultRepos.join(", "));
+  const [reposText, setReposText] = useState("");
   const [addendum, setAddendum] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [refusal, setRefusal] = useState<ContinueRefusal | null>(null);
@@ -153,7 +161,13 @@ export function ContinueDialog({
 
   const repos = parseRepoList(reposText);
   const automatic = device === "";
-  const canSubmit = canSubmitContinue({ submitting, deviceId });
+  const canSubmit = canSubmitContinue({
+    submitting,
+    deviceId,
+    effortDefaultSettled: effortDefault !== null,
+    effortChosen: effortChoice !== null,
+  });
+  const offeredRepos = suggestedRepos.filter((r) => !repos.includes(r));
 
   const handleSubmit = useCallback(async () => {
     setRefusal(null);
@@ -232,7 +246,14 @@ export function ContinueDialog({
   ]);
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    // While the spawn is out, Escape and the overlay do not close the
+    // dialog: its answer — or its refusal — has to land where it can be read.
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o && !submitting) onClose();
+      }}
+    >
       <DialogContent
         className="sm:max-w-xl max-h-[90vh] overflow-y-auto"
         data-testid="subproject-continue-dialog"
@@ -430,10 +451,62 @@ export function ContinueDialog({
                 data-testid="subproject-continue-repos"
               />
               <p className="text-xs text-muted-foreground">
-                {defaultRepos.length > 0
-                  ? "Filled from this subproject's pull requests. Clear it to let coord derive the repos from its work units and worktrees."
-                  : "Left empty, coord derives the repos from the subproject's work units and worktrees, and says so if it finds none."}
+                Left empty, coord derives the repos from the subproject&apos;s
+                work units and worktrees, and says so if it finds none.
               </p>
+              {offeredRepos.length > 0 && (
+                <div
+                  className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+                  data-testid="subproject-continue-repo-hints"
+                >
+                  <span>From its pull requests:</span>
+                  {offeredRepos.map((repo) => (
+                    <button
+                      key={repo}
+                      type="button"
+                      className="rounded border border-border px-1.5 py-0.5 font-mono text-[11px] hover:text-foreground"
+                      disabled={submitting}
+                      onClick={() => setReposText([...repos, repo].join(", "))}
+                      data-testid="subproject-continue-repo-hint"
+                    >
+                      + {repo}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-1" data-testid="subproject-continue-brief">
+              <p className="m-0 text-sm font-medium">
+                The session will be told:
+              </p>
+              {nextSteps === null ? (
+                <p className="m-0 text-xs text-muted-foreground">
+                  coord did not send this subproject&apos;s next steps with the
+                  last read, so what its brief will say is unknown here; coord
+                  composes it from them when it spawns.
+                </p>
+              ) : nextSteps.length === 0 ? (
+                <p className="m-0 text-xs text-muted-foreground">
+                  coord serves no next steps for this subproject, so its brief
+                  carries none.
+                </p>
+              ) : (
+                <ol className="m-0 list-decimal space-y-0.5 pl-4 text-xs">
+                  {nextSteps.map((step, i) => {
+                    const words = nextStepWords(step);
+                    return (
+                      <li key={`${step.source}:${i}`}>
+                        <span className="text-muted-foreground">
+                          {words.source}:{" "}
+                        </span>
+                        {words.remedy ? `${words.remedy} — ` : ""}
+                        {step.text}
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
             </div>
 
             <div className="space-y-1.5">

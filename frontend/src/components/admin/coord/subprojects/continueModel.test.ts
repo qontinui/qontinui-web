@@ -39,7 +39,26 @@ describe("the default effort", () => {
       effort: "max",
       ultracode: false,
       profile: "implementation",
+      note: null,
     });
+  });
+
+  it("takes the FIRST of two blocks, as the planned runner reader will, and says so", () => {
+    const second = JSON.stringify({
+      version: 1,
+      profiles: { implementation: { effort: "low", ultracode: false } },
+    });
+    const d = effortDefaultFromProfiles(
+      playbook(SERVED_BLOCK, `\n\`\`\`spawn-effort\n${second}\n\`\`\``)
+    );
+    expect(d).toMatchObject({ source: "profile", effort: "max" });
+    if (d.source === "profile")
+      expect(d.note).toBe(
+        "The document has 2 spawn-effort blocks; the first is used."
+      );
+    expect(describeEffortDefault(d)).toBe(
+      "Default max: the implementation profile of agent_playbook/spawn-effort-profiles. The document has 2 spawn-effort blocks; the first is used."
+    );
   });
 
   it("reads coord's agent-door shape, which wraps the document", () => {
@@ -62,11 +81,6 @@ describe("the default effort", () => {
   it.each([
     ["no body", { title: "x" }, /without a body/],
     ["no block", { body: "# no block here" }, /no spawn-effort block/],
-    [
-      "two blocks",
-      playbook(SERVED_BLOCK, `\n\`\`\`spawn-effort\n${SERVED_BLOCK}\n\`\`\``),
-      /2 spawn-effort blocks/,
-    ],
     ["bad JSON", playbook("{not json"), /not valid JSON/],
     [
       "version 2",
@@ -167,17 +181,44 @@ describe("the request body", () => {
   });
 
   it("enables Continue for automatic placement or a uuid pin, never mid-submit", () => {
-    expect(canSubmitContinue({ submitting: false, deviceId: "" })).toBe(true);
+    const ready = { effortDefaultSettled: true, effortChosen: false };
+    expect(
+      canSubmitContinue({ submitting: false, deviceId: "", ...ready })
+    ).toBe(true);
     expect(
       canSubmitContinue({
         submitting: false,
         deviceId: "00000000000000000000deadbeefcafe",
+        ...ready,
       })
     ).toBe(true);
-    expect(canSubmitContinue({ submitting: false, deviceId: "laptop" })).toBe(
-      false
-    );
-    expect(canSubmitContinue({ submitting: true, deviceId: "" })).toBe(false);
+    expect(
+      canSubmitContinue({ submitting: false, deviceId: "laptop", ...ready })
+    ).toBe(false);
+    expect(
+      canSubmitContinue({ submitting: true, deviceId: "", ...ready })
+    ).toBe(false);
+  });
+
+  it("waits for the effort profiles to answer, unless the operator chose an effort", () => {
+    // The read is out: the select shows a fallback nobody chose.
+    expect(
+      canSubmitContinue({
+        submitting: false,
+        deviceId: "",
+        effortDefaultSettled: false,
+        effortChosen: false,
+      })
+    ).toBe(false);
+    // An explicit choice needs no profile.
+    expect(
+      canSubmitContinue({
+        submitting: false,
+        deviceId: "",
+        effortDefaultSettled: false,
+        effortChosen: true,
+      })
+    ).toBe(true);
   });
 });
 
@@ -273,6 +314,22 @@ describe("refusals, from coord's structured answer", () => {
         CTX
       ).kind
     ).toBe("migration_pending");
+  });
+
+  it("reads a bare 500 as an unknown outcome, not as coord refusing", () => {
+    for (const body of [
+      JSON.stringify({ error: "INTERNAL_SERVER_ERROR", message: "boom" }),
+      "Internal Server Error",
+    ]) {
+      const r = describeContinueRefusal(500, body, CTX);
+      expect(r.kind).toBe("outcome_unknown");
+      expect(r.headline).toMatch(/may or may not have landed/);
+    }
+    // A 500 that carries coord's own code is still coord's answer.
+    expect(
+      describeContinueRefusal(500, JSON.stringify({ error: "no_repos" }), CTX)
+        .kind
+    ).not.toBe("outcome_unknown");
   });
 
   it("says a timeout may have landed, rather than calling it refused", () => {
