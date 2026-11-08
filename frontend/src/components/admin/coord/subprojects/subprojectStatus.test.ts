@@ -841,6 +841,7 @@ describe("the session chip", () => {
       title: "Subproject: dashboards — Stalled",
       href: "/admin/coord/subprojects/sp%201",
       label: "subproject: dashboards, stalled",
+      stale: false,
     });
   });
 
@@ -860,6 +861,7 @@ describe("the session chip", () => {
       "Subproject: dashboards — Stalled — as of the last lookup that answered; the latest failed (coord's subproject tables are not migrated yet (schema_migration_pending))"
     );
     expect(words.label).toBe("subproject: dashboards, stalled, not current");
+    expect(words.stale).toBe(true);
     expect(subprojectChipWords({ kind: "none", stale: failure }).label).toBe(
       "subproject: none, not current"
     );
