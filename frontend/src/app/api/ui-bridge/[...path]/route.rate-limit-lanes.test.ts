@@ -7,9 +7,11 @@
  * with N tabs never gets N x the command budget. The SDK's own transport —
  * `GET /commands/stream`, `POST /heartbeat`, `POST /commands` (a tab posting
  * a command's RESULT) — is not a command. Charged to the command lanes, four
- * tabs' heartbeats alone exhausted the write budget with zero commands sent
- * (measured 2026-11-08, coord finding e0735415), so transport now draws on
- * three per-principal sub-lanes of its own.
+ * idle tabs' heartbeats alone exhaust the write budget: that is derived from
+ * the SDK's 10-s heartbeat timer, and reproduced against the base by test (a)
+ * below. The measured incident (2026-11-08, coord finding e0735415) was one
+ * agent relay tab beside three operator tabs. So transport now draws on three
+ * per-principal sub-lanes of its own.
  *
  * Lanes x principal kinds x thresholds x Redis offline are enumerated below.
  * Every threshold is a LITERAL (20, 21, 60, 61, 96, 97, 160, 161, 432, 433),
@@ -156,7 +158,10 @@ function send(
     authorization: `Bearer ${token}`,
     origin: "https://qontinui.io",
   };
-  const init: RequestInit = { method, headers };
+  const init: NonNullable<ConstructorParameters<typeof NextRequest>[1]> = {
+    method,
+    headers,
+  };
   if (body !== undefined) {
     init.body = JSON.stringify(body);
     headers["content-type"] = "application/json";
@@ -510,6 +515,49 @@ describe("route.ts rate-limit lanes: SDK transport has per-principal sub-lanes o
     60_000
   );
 
+  it.each(LANES.map((l) => [l.lane, l] as const))(
+    "(h) a Redis connection that is not ready yet: %s admits past its ceiling and reports its remaining budget as unknown",
+    async (_name, lane) => {
+      // ioredis RESOLVES (never rejects) a pipeline sent on a connection that
+      // is not ready when `enableOfflineQueue` is false — every cold
+      // instance's first request, and every request while Redis is down.
+      const notWriteable = () =>
+        new Error(
+          "Stream isn't writeable and enableOfflineQueue options is false"
+        );
+      const pipeline = {
+        incr() {
+          return pipeline;
+        },
+        expire() {
+          return pipeline;
+        },
+        async exec() {
+          return [
+            [notWriteable(), null],
+            [notWriteable(), null],
+          ];
+        },
+      };
+      __setRedisClientForTest({
+        pipeline: () => pipeline,
+        on: () => undefined,
+      } as unknown as Parameters<typeof __setRedisClientForTest>[0]);
+      await withFrozenWindow(async () => {
+        expect(await burst(lane.limit + 1, lane.hit)).toEqual({
+          200: lane.limit + 1,
+        });
+        expect(budget(await lane.hit(lane.limit + 1))).toEqual({
+          lane: lane.lane,
+          limit: String(lane.limit),
+          remaining: "unknown",
+          resetAfter: "30",
+        });
+      });
+    },
+    60_000
+  );
+
   it("(i) a 200 carries its lane's budget", async () => {
     await withFrozenWindow(async () => {
       const res = await heartbeat();
@@ -574,7 +622,7 @@ describe("route.ts rate-limit lanes: SDK transport has per-principal sub-lanes o
     }
   );
 
-  it("logs lane_refused for every refusal, naming the lane and the principal kind", async () => {
+  it("logs lane_refused for the 1st, 2nd and 4th refusal of a lane, naming the lane and the principal kind", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const refusals = () =>
       warn.mock.calls.filter((call) =>
@@ -585,7 +633,8 @@ describe("route.ts rate-limit lanes: SDK transport has per-principal sub-lanes o
       expect(await burst(160, () => heartbeat())).toEqual({ 200: 160 });
       expect(refusals()).toEqual([]);
 
-      expect((await heartbeat()).status).toBe(429);
+      // Four refusals in the window (overflow 1-4): logged at 1, 2 and 4.
+      expect(await burst(4, () => heartbeat())).toEqual({ 429: 4 });
       expect(
         await burst(20, () => commandWrite("tab-dev", DEVICE_TOKEN))
       ).toEqual({ 200: 20 });
@@ -593,14 +642,18 @@ describe("route.ts rate-limit lanes: SDK transport has per-principal sub-lanes o
     });
 
     expect(refusals().map((call) => call[1])).toEqual([
-      expect.objectContaining({
-        lane: "transport:heartbeat",
-        principalKind: "user",
-        limit: 160,
-      }),
+      ...[161, 162, 164].map((count) =>
+        expect.objectContaining({
+          lane: "transport:heartbeat",
+          principalKind: "user",
+          count,
+          limit: 160,
+        })
+      ),
       expect.objectContaining({
         lane: "write",
         principalKind: "device",
+        count: 21,
         limit: 20,
       }),
     ]);

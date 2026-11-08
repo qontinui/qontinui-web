@@ -253,7 +253,8 @@ async function wrapHandler(
     rl = await checkRateLimit(callerRateLimitKey, laneFor(path, method));
     if (!rl.allowed) {
       // The SDK discards the response to a refused heartbeat or result, so
-      // a transport refusal is visible in this log line or nowhere.
+      // a transport refusal is visible in this log line (sampled by
+      // overflow) or nowhere.
       logLaneRefused(rl, callerPrincipalKind);
       return rateLimitedResponse(rl);
     }
