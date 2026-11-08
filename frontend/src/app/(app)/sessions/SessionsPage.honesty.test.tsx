@@ -74,7 +74,26 @@ describe("SessionsPage — the population's entry point", () => {
     expect(health).toHaveAttribute("data-health-level", "amber");
     expect(health).toHaveTextContent(/Reading sessions/);
     expect(screen.queryByText(/No sessions match/i)).toBeNull();
-    expect(screen.getByTestId("sessions-console-status-all")).toHaveTextContent("–");
+
+    // ALL-dash means every count, not one: each status tab, every stat, the
+    // strip's badges and the work facet's two counts.
+    const tabs = { all: "All", live: "Live", stale: "Stale", closed: "Closed" };
+    for (const [id, label] of Object.entries(tabs)) {
+      expect(
+        screen.getByTestId(`sessions-console-status-${id}`)
+      ).toHaveTextContent(new RegExp(`^${label}–$`));
+    }
+    expect(
+      screen.getByTestId("sessions-console-stats").textContent
+    ).not.toMatch(/\d/);
+    expect(health.textContent).not.toMatch(/\b0\b/);
+    expect(health).toHaveTextContent("needs a person –");
+    expect(health).toHaveTextContent("active –");
+    for (const value of ["finished", "unfinished"]) {
+      expect(
+        screen.getByTestId(`sessions-console-work-${value}`)
+      ).toHaveTextContent("–");
+    }
   });
 
   it("discloses the 500-row ceiling once a capped read lands", async () => {

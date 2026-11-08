@@ -153,11 +153,13 @@ export interface ConsolidatedSessionsResponse {
    * own hardcoded `LIMIT 500`: the most recently STARTED sessions, closed ones
    * included. `bound` is the shared bounded-read envelope (`BoundedReadMeta`,
    * the one frontend spelling of it) over what coord SERVED, before the web
-   * route's own tab / search / machine narrowing.
+   * route's own tab / search / machine narrowing — complete, full, or of
+   * unknown size ({@link HalfExtent}).
    *
-   * Optional, and so is `bound`: absent from a backend that predates them,
-   * which is "not reported" — the console then says nothing about a ceiling,
-   * rather than claiming the read was complete or that it was not.
+   * Optional, and so is `bound`: absent from a backend that predates them.
+   * The console then reads the half as complete — exact counts, no
+   * disclosure — which IS a claim, the one it made before the field existed;
+   * it is kept for deploy skew only ({@link halfMayBeIncomplete}).
    */
   lifecycle_half?: { read: string; bound?: BoundedReadMeta };
   /**
@@ -180,14 +182,26 @@ export interface ConsolidatedSessionsResponse {
  *
  * `true` when the half's `bound` is present and does not prove the page is
  * everything — `truncated !== false`, the bounded-read contract's own bit for
- * it. The web route builds each half with `bounded_read.complete` (below the
- * ceiling: `bound_kind: "complete"`, `truncated: false`) or
- * `bounded_read.unknown` (a full page: `truncated: null`, nothing fetched past
- * it), so on this route it is exactly "the bound is not `complete`".
+ * it. The web route builds each half in one of THREE arms (`_half_bound` in
+ * the operations route):
  *
- * An ABSENT bound is `false`: an older backend reported nothing, and nothing
- * is what the console says about it — absent is "not reported", never a
- * claim in either direction.
+ * - below the ceiling, `bounded_read.complete` (`truncated: false`) — `false`;
+ * - a FULL page, `bounded_read.unknown(shown, limit)` with `shown >= limit`
+ *   (nothing fetched past it, `truncated: null`) — `true`;
+ * - a coord body with no `sessions` list, `bounded_read.unknown(0, limit)`
+ *   (nothing countable served) — `true` as well.
+ *
+ * It does not say WHICH of the last two a half is, and the console reads them
+ * oppositely — a full page makes every count a floor, an answer of unknown
+ * size supports no number at all — so the console reads each half through
+ * {@link halfExtent}, which tells them apart by `shown` against `limit`.
+ *
+ * An ABSENT bound is `false`, and that IS a claim: the console reads such a
+ * half as complete and paints exact counts over it, which is what it showed
+ * before the route served a bound at all. It is kept for deploy skew only — a
+ * frontend ahead of a backend that predates the field — since the route this
+ * console ships with bounds every half it read. (A failed agent read carries
+ * no bound either; that failure is the strip's own `agentHalfFailed` arm.)
  */
 export function halfMayBeIncomplete(
   bound: BoundedReadMeta | null | undefined
@@ -196,79 +210,247 @@ export function halfMayBeIncomplete(
 }
 
 /**
- * Each half's ceiling, where that half's read may be incomplete — `null` for
- * a half that is complete, failed, or did not report a bound.
+ * How much of coord one half of the consolidated read holds, read off its
+ * `bound` — the four answers the console renders differently:
+ *
+ * | `kind` | when | the counts over it |
+ * |---|---|---|
+ * | `complete` | `truncated: false` — below its ceiling | exact |
+ * | `capped` | not complete, `shown >= limit` — the page came back FULL | floors; the disclosure names `shown` |
+ * | `unknown` | any OTHER bound that is not complete — the route's `unknown(0, limit)` for a body with no list | no number at all: dashes, and words saying the half's size is unknown |
+ * | `unreported` | no bound — a backend predating it, or a failed agent read | exact ({@link halfMayBeIncomplete} says why) |
+ *
+ * `shown` is what coord SERVED, which can pass the limit the route asked for,
+ * so it — not `limit` — is the number a full half is named by.
  */
-export interface SessionsCeiling {
-  /** The lifecycle half's limit (its most recently STARTED rows), or `null`. */
-  lifecycle: number | null;
-  /** The agent half's limit (its most recently SEEN rows), or `null`. */
-  agent: number | null;
+export type HalfExtent =
+  | { kind: "complete" }
+  | { kind: "capped"; shown: number }
+  | { kind: "unknown" }
+  | { kind: "unreported" };
+
+/** Read one half's {@link HalfExtent} off its `bound`. */
+export function halfExtent(
+  bound: BoundedReadMeta | null | undefined
+): HalfExtent {
+  if (bound == null) return { kind: "unreported" };
+  if (!halfMayBeIncomplete(bound)) return { kind: "complete" };
+  return bound.shown >= bound.limit
+    ? { kind: "capped", shown: bound.shown }
+    : { kind: "unknown" };
 }
 
-/** Neither half stopped at a ceiling — or neither said so. */
-export const NO_CEILING: SessionsCeiling = { lifecycle: null, agent: null };
+/** Each half's {@link HalfExtent}. */
+export interface SessionsCeiling {
+  /** The lifecycle half — the most recently STARTED sessions. */
+  lifecycle: HalfExtent;
+  /** The agent half — the most recently SEEN agent sessions. */
+  agent: HalfExtent;
+}
 
-/** Read each half's ceiling off the consolidated response's `bound`s. */
+/** Neither half reported a bound — what a caller passing none means. */
+export const NO_CEILING: SessionsCeiling = {
+  lifecycle: { kind: "unreported" },
+  agent: { kind: "unreported" },
+};
+
+/** Read each half's extent off the consolidated response's `bound`s. */
 export function sessionsCeiling(
   payload:
     | Pick<ConsolidatedSessionsResponse, "lifecycle_half" | "agent_half">
     | null
     | undefined
 ): SessionsCeiling {
-  const ceilingOf = (bound: BoundedReadMeta | null | undefined) =>
-    bound && halfMayBeIncomplete(bound) ? bound.limit : null;
   return {
-    lifecycle: ceilingOf(payload?.lifecycle_half?.bound),
-    agent: ceilingOf(payload?.agent_half?.bound),
+    lifecycle: halfExtent(payload?.lifecycle_half?.bound),
+    agent: halfExtent(payload?.agent_half?.bound),
   };
 }
 
-/** Did either half stop at its ceiling? Then every fleet count is a floor. */
+/** Did either half come back FULL? Then a fleet count is at best a floor. */
 export function isCapped(ceiling: SessionsCeiling): boolean {
-  return ceiling.lifecycle !== null || ceiling.agent !== null;
+  return ceiling.lifecycle.kind === "capped" || ceiling.agent.kind === "capped";
+}
+
+/** Did either half answer with a size nobody can state? */
+export function isSizeUnknown(ceiling: SessionsCeiling): boolean {
+  return (
+    ceiling.lifecycle.kind === "unknown" || ceiling.agent.kind === "unknown"
+  );
 }
 
 /**
- * The words that say the read stopped at its ceiling, naming ONLY the halves
- * that did — or `null` when neither did.
+ * How a fleet count over this read may be stated: `exact`, a `floor` (a half
+ * came back full), or not at all — `unknown` (a half's size is unknown). The
+ * unknown arm outranks the floor: a floor is a claim about a read whose size
+ * is known, and one half's is not.
+ */
+export type CountBasis = "exact" | "floor" | "unknown";
+
+export function countBasis(ceiling: SessionsCeiling): CountBasis {
+  if (isSizeUnknown(ceiling)) return "unknown";
+  if (isCapped(ceiling)) return "floor";
+  return "exact";
+}
+
+/**
+ * The words under the stats that say what this read could not count — or
+ * `null` when every half is complete (or reported no bound).
  *
- * Each half is named by its own ordering, because that is what decides which
- * rows fell off: the lifecycle half keeps the most recently STARTED sessions,
- * the agent half the most recently SEEN.
+ * A FULL half is named by its own ordering and by the rows it SERVED, because
+ * that is what decides which rows fell off: the lifecycle half keeps the most
+ * recently STARTED sessions, the agent half the most recently SEEN. A half of
+ * UNKNOWN size is named as exactly that — never by a ceiling it did not reach.
  */
 export function ceilingDisclosure(ceiling: SessionsCeiling): string | null {
-  const halves = [
-    ceiling.lifecycle !== null
-      ? `the ${ceiling.lifecycle} most recently started lifecycle sessions`
+  const { lifecycle, agent } = ceiling;
+  const full = [
+    lifecycle.kind === "capped"
+      ? `the ${lifecycle.shown} most recently started lifecycle sessions`
       : null,
-    ceiling.agent !== null
-      ? `the ${ceiling.agent} most recently seen agent sessions`
+    agent.kind === "capped"
+      ? `the ${agent.shown} most recently seen agent sessions`
       : null,
   ].filter((h): h is string => h !== null);
-  if (halves.length === 0) return null;
-  return `Showing ${halves.join(" and ")}; fleet totals may be higher.`;
+  const unsized = (["lifecycle", "agent"] as const).filter(
+    (half) => ceiling[half].kind === "unknown"
+  );
+
+  const sentences: string[] = [];
+  if (full.length > 0) {
+    // With a half of unknown size beside it there are no totals to be higher
+    // than — every fleet count is a dash.
+    sentences.push(
+      `Showing ${full.join(" and ")}${
+        unsized.length > 0 ? "." : "; fleet totals may be higher."
+      }`
+    );
+  }
+  if (unsized.length === 1) {
+    sentences.push(
+      `The ${unsized[0]} half's size is unknown: coord's answer for it carried nothing countable, so the fleet counts above are dashes, not zeros.`
+    );
+  } else if (unsized.length === 2) {
+    sentences.push(
+      "The lifecycle and agent halves' sizes are unknown: coord's answers for them carried nothing countable, so the fleet counts above are dashes, not zeros."
+    );
+  }
+  return sentences.length > 0 ? sentences.join(" ") : null;
 }
 
 /**
- * What `agent_only` can claim while the lifecycle half may be incomplete.
+ * What `agent_only` can claim while the lifecycle half it was compared against
+ * may be incomplete — or `null` while that half is complete (or reported no
+ * bound), when the class's own claim stands.
  *
  * The class is a set difference against the lifecycle rows coord SERVED, so
- * beyond the lifecycle ceiling it no longer says "no coord.sessions row
- * exists" — the row's lifecycle twin may simply have started before the
- * newest `limit`. The class and its agent half are kept (they are real); the
- * claim is narrowed to what was actually compared.
+ * beyond the lifecycle ceiling — or over a lifecycle answer of unknown size —
+ * it no longer says "no coord.sessions row exists": the row's lifecycle twin
+ * may simply be one coord did not serve. The class and its agent half are kept
+ * (they are real); the claim is narrowed to what was actually compared.
  */
-export function agentOnlyBeyondCeiling(limit: number): string {
-  return `no coord.sessions row among the ${limit} most recently started that coord served — one may exist beyond its ceiling`;
+export function agentOnlyQualifier(lifecycle: HalfExtent): string | null {
+  switch (lifecycle.kind) {
+    case "capped":
+      return `no coord.sessions row among the ${lifecycle.shown} most recently started that coord served — one may exist beyond its ceiling`;
+    case "unknown":
+      return "no coord.sessions row among the lifecycle rows coord served — that half's size is unknown, so one may exist that it did not serve";
+    default:
+      return null;
+  }
 }
 
+/** A floor of zero, said as what it counted — `≥0` is true of every count. */
+export const ZERO_OF_THOSE_READ = "0 of those read";
+
 /**
- * A fleet count over a read that may have stopped at its ceiling: `≥n` then,
- * else `n` — a floor, never an exact claim (`StatCluster` takes the string).
+ * A fleet count as the stats, the strip's badges and the answered tab render
+ * it — ONE spelling per {@link CountBasis}, the same in all three:
+ *
+ * - `exact`   → `n`
+ * - `floor`   → `≥n`, and {@link ZERO_OF_THOSE_READ} for zero
+ * - `unknown` → `null`, which every console primitive renders `–`
+ *
+ * "at least" is the PROSE spelling of the same floor, kept to the strip's
+ * sentences. `agent-only` is not a fleet count (see {@link agentOnlyStat}).
  */
-export function fleetCount(n: number, capped: boolean): number | string {
-  return capped ? `≥${n}` : n;
+export function fleetCount(
+  n: number,
+  basis: CountBasis
+): number | string | null {
+  switch (basis) {
+    case "exact":
+      return n;
+    case "floor":
+      return n === 0 ? ZERO_OF_THOSE_READ : `≥${n}`;
+    case "unknown":
+      return null;
+  }
+}
+
+/** The `agent-only` stat's value, and the sentence its `title` carries. */
+export interface AgentOnlyStat {
+  value: number | string | null;
+  title: string;
+}
+
+const AGENT_ONLY_MEANING =
+  "an allocated agent session no coord.sessions row bridges — heartbeat and state are unknown, not closed";
+
+/**
+ * The `agent-only` stat — NOT a {@link fleetCount}. `agent_only` is a SET
+ * DIFFERENCE: the agent rows read, less the ones a lifecycle row READ
+ * bridges. Which way `n` can be wrong therefore depends on WHICH half stopped:
+ *
+ * | lifecycle | agent | `n` is | renders |
+ * |---|---|---|---|
+ * | complete | complete | exact | `n` |
+ * | complete | full | a floor — agent sessions past the ceiling may be unmatched too | `≥n` |
+ * | full | complete | a CEILING — a row's lifecycle twin may lie past the lifecycle ceiling | `≤n`; `0` is exact |
+ * | full | full | neither — both errors at once | `n unmatched among rows read` |
+ * | either of unknown size | | nothing established | `–` |
+ *
+ * An `unreported` half reads as complete, as it does for every count.
+ */
+export function agentOnlyStat(
+  n: number,
+  ceiling: SessionsCeiling
+): AgentOnlyStat {
+  const { lifecycle, agent } = ceiling;
+  if (lifecycle.kind === "unknown" || agent.kind === "unknown") {
+    return {
+      value: null,
+      title:
+        "agent sessions no coord.sessions row bridges — not stated: a half of this read is of unknown size, so no number here would be a total, a floor or a ceiling",
+    };
+  }
+  if (lifecycle.kind === "capped" && agent.kind === "capped") {
+    return {
+      value: `${n} unmatched among rows read`,
+      title: `agent sessions read that matched no coord.sessions row among the ${lifecycle.shown} most recently started that coord served — neither a floor nor a ceiling of the fleet's agent-only sessions: a row's twin may lie past the lifecycle ceiling, and agent sessions past the agent ceiling were not read`,
+    };
+  }
+  if (lifecycle.kind === "capped") {
+    return n === 0
+      ? {
+          // At most none is none: every agent session was read, and each one
+          // matched a lifecycle row coord served.
+          value: 0,
+          title:
+            "none: every agent session was read, and each has a coord.sessions row among those coord served",
+        }
+      : {
+          value: `≤${n}`,
+          title: `at most ${n}: each is an allocated agent session with ${agentOnlyQualifier(lifecycle)}`,
+        };
+  }
+  if (agent.kind === "capped") {
+    return {
+      value: fleetCount(n, "floor"),
+      title: `${AGENT_ONLY_MEANING} — at least this many: the agent half stopped at its ceiling, and agent sessions past it were not read`,
+    };
+  }
+  return { value: n, title: AGENT_ONLY_MEANING };
 }
 
 // ---------------------------------------------------------------------------
@@ -422,26 +604,30 @@ export function agentSessionId(row: ConsolidatedSessionRow): string | null {
 /**
  * Plain-language explanation of the row's join class, for a title/why slot.
  *
- * `lifecycleCeiling` is the lifecycle half's limit while that read may be
- * incomplete ({@link SessionsCeiling}). An `agent_only` row is then qualified
- * ({@link agentOnlyBeyondCeiling}) rather than reclassified: `row_class: null`
+ * `lifecycle` is the lifecycle half's {@link HalfExtent}. While that half is
+ * full or of unknown size an `agent_only` row is qualified
+ * ({@link agentOnlyQualifier}) rather than reclassified: `row_class: null`
  * would be false here, because the account cell and the status read null as
  * "the agent half did not answer", and it did.
  */
 export function rowClassExplanation(
   row: ConsolidatedSessionRow,
-  opts: { lifecycleCeiling?: number | null } = {}
+  opts: { lifecycle?: HalfExtent } = {}
 ): string {
   switch (row.row_class) {
     case "linked":
       return "Both halves: a coord.sessions lifecycle row bridged to its coord.agent_sessions lineage row.";
     case "lifecycle_only":
       return "Lifecycle only: this session has no Claude Code session id, so no agent-session lineage row can exist. Transcript and lineage are not applicable — not empty.";
-    case "agent_only":
-      if (opts.lifecycleCeiling != null) {
-        return `Agent only: coord has an agent-session lineage row with ${agentOnlyBeyondCeiling(opts.lifecycleCeiling)}. Heartbeat and lifecycle state are unknown — not closed.`;
+    case "agent_only": {
+      const narrowed = opts.lifecycle
+        ? agentOnlyQualifier(opts.lifecycle)
+        : null;
+      if (narrowed) {
+        return `Agent only: coord has an agent-session lineage row with ${narrowed}. Heartbeat and lifecycle state are unknown — not closed.`;
       }
       return "Agent only: coord has an agent-session lineage row that no coord.sessions row bridges (POST /agents/allocate writes one and never the other). Heartbeat and lifecycle state are unknown — not closed.";
+    }
     default:
       return "Unknown: the read landed but the agent half did not answer for this row, so which halves exist has not been established. Every dash below is unknown, not zero.";
   }
@@ -867,13 +1053,24 @@ export interface SessionsReferent {
  * fleet" — the page holds no unsearched read to say it of, and a second fetch
  * for the strip is what R1 forbids.
  *
- * ## A read that stopped at its ceiling is a floor (U4)
+ * ## A read that stopped short of the fleet says how (U4)
  *
- * While either half may be incomplete ({@link SessionsCeiling}) the fleet
- * numbers read "at least", and the strip cannot be GREEN: the rows past a
+ * While a half came back FULL ({@link HalfExtent} `capped`) the fleet numbers
+ * read "at least" — never "at least 0", which says nothing — and an empty or
+ * none-running answer holds "among those read". While a half's size is
+ * UNKNOWN not even a floor is stated: the headline counts the rows READ and
+ * says the total is unknown. Either way the strip cannot be GREEN: rows past a
  * ceiling were never read, and an all-clear over them is a claim the page did
  * not observe — the same rule `derivePlansHealth`'s `incomplete` holds. A red
- * row still outranks it; one found in part of the fleet is still red.
+ * row still outranks both; one found in part of the fleet is still red.
+ *
+ * ## Matches the filter hid are never a green empty tab
+ *
+ * `withheld` counts sessions the status / machine SERVER filter hid although
+ * coord's agent half matched it — their two halves disagree. The tab's answer
+ * is then not the whole story, so the strip is amber and names them: in the
+ * headline when the answer is otherwise empty ("No live sessions on the fleet
+ * — 2 matches hidden: …"), in the detail otherwise.
  */
 export function deriveSessionsHealth(
   rows: ConsolidatedSessionRow[],
@@ -886,8 +1083,13 @@ export function deriveSessionsHealth(
     agentHalfFailed?: boolean;
     /** What coord was asked for. Absent: the whole fleet. */
     referent?: SessionsReferent;
-    /** Each half's ceiling, where its read may be incomplete. */
+    /** Each half's extent — complete, full, of unknown size, or unreported. */
     ceiling?: SessionsCeiling;
+    /**
+     * `withheld_by_filter`: sessions the server filter hid although their
+     * agent half matched it. Absent or `0`: none reported.
+     */
+    withheld?: number;
     options?: DeriveOptions;
   }
 ): SessionsHealth {
@@ -934,31 +1136,37 @@ export function deriveSessionsHealth(
     if (status.kind === "active" || status.kind === "starting") active += 1;
   }
 
-  const capped = isCapped(opts.ceiling ?? NO_CEILING);
+  const basis = countBasis(opts.ceiling ?? NO_CEILING);
+  const withheld = opts.withheld ?? 0;
   const level: "green" | "amber" | "red" =
     attention > 0
       ? "red"
-      : waiting > 0 || unknownJoin > 0 || opts.agentHalfFailed || capped
+      : waiting > 0 ||
+          unknownJoin > 0 ||
+          opts.agentHalfFailed ||
+          basis !== "exact" ||
+          withheld > 0
         ? "amber"
         : "green";
 
-  const say = referentPhrasing(opts.referent, capped);
-  const headline =
-    attention > 0
-      ? say.attention(attention)
-      : opts.agentHalfFailed
-        ? "Lifecycle half only — the agent half did not answer"
-        : unknownJoin > 0
-          ? say.unresolved(unknownJoin)
-          : waiting > 0
-            ? say.waiting(waiting)
-            : rows.length === 0
-              ? say.none()
-              : active > 0
-                ? say.clean(active)
-                : say.noneRunning(rows.length);
+  const say = referentPhrasing(opts.referent, basis);
+  // Whether the headline already names the hidden matches — then the detail
+  // does not repeat them.
+  let hiddenNamed = false;
+  let headline: string;
+  if (attention > 0) headline = say.attention(attention);
+  else if (basis === "unknown") headline = say.sizeUnknown(rows.length);
+  else if (opts.agentHalfFailed)
+    headline = "Lifecycle half only — the agent half did not answer";
+  else if (unknownJoin > 0) headline = say.unresolved(unknownJoin);
+  else if (waiting > 0) headline = say.waiting(waiting);
+  else if (rows.length === 0) {
+    headline = say.none(withheld);
+    hiddenNamed = withheld > 0;
+  } else if (active > 0) headline = say.clean(active);
+  else headline = say.noneRunning(rows.length);
 
-  const detail = opts.agentHalfFailed
+  const base = opts.agentHalfFailed
     ? "Transcript and lineage columns read – for every row: unknown, not absent."
     : say.detail({
         rows: rows.length,
@@ -967,6 +1175,10 @@ export function deriveSessionsHealth(
         waiting,
         unknownJoin,
       });
+  const detail =
+    withheld > 0 && !hiddenNamed
+      ? `${base.replace(/\.$/, "")}; ${say.hidden(withheld)}`
+      : base;
 
   return {
     level,
@@ -982,7 +1194,8 @@ export function deriveSessionsHealth(
 
 /**
  * The strip's sentences for one referent — every count named against what
- * coord was asked for, and read as a floor ("at least") over a capped read.
+ * coord was asked for, read as a floor ("at least") over a full half, and as
+ * a count of the rows READ over a half of unknown size.
  *
  * `unknownJoin` is the one count never floored: it is a property of THIS read
  * (rows whose other half did not answer), not a fleet total a larger read
@@ -990,14 +1203,16 @@ export function deriveSessionsHealth(
  */
 function referentPhrasing(
   referent: SessionsReferent | undefined,
-  capped: boolean
+  basis: CountBasis
 ) {
   const query = referent?.query?.trim() || null;
   const adj = referent?.status ? `${referent.status} ` : "";
   // A `?device=` deep link narrows coord's answer to one machine, and then
   // that machine is where the sessions are — never "the fleet".
   const onMachine = referent?.machine ? ` on ${referent.machine}` : "";
-  const qty = (n: number) => (capped ? `at least ${n}` : `${n}`);
+  // The prose floor. Never "at least 0": true of every count, it says nothing.
+  const qty = (n: number) =>
+    basis === "floor" && n > 0 ? `at least ${n}` : `${n}`;
   const Qty = (n: number) => capitalize(qty(n));
   const sessions = (n: number) => `${adj}session${n === 1 ? "" : "s"}`;
   const plural = (n: number, one: string, many: string) =>
@@ -1006,14 +1221,22 @@ function referentPhrasing(
   const matching = query
     ? `the ${adj}sessions matching “${query}”${onMachine}`
     : "";
-  // Over a capped read an EMPTY answer is empty only among the rows read.
-  const among = capped ? " among those read" : "";
+  const matchingQuery = query ? ` matching “${query}”` : "";
+  // Over a read that stopped short of the fleet — at a ceiling, or at a size
+  // nobody knows — an EMPTY or none-running answer holds only of the rows read.
+  const among = basis === "exact" ? "" : " among those read";
+  // Over a half of UNKNOWN size not even a floor is stated: a count is of the
+  // rows read, and says so.
+  const ofRead = basis === "unknown" ? " among those read" : "";
+  // The matches a server filter hid because the session's halves disagree.
+  const hidden = (n: number) =>
+    `${n} ${plural(n, "match", "matches")} hidden: ${plural(n, "its", "their")} two halves disagree`;
 
   return {
     attention: (n: number) =>
       query
-        ? `${Qty(n)} of ${matching} ${plural(n, "waits", "wait")} on a person`
-        : `${Qty(n)} ${sessions(n)}${onMachine} waiting on a person`,
+        ? `${Qty(n)} of ${matching} ${plural(n, "waits", "wait")} on a person${ofRead}`
+        : `${Qty(n)} ${sessions(n)}${onMachine} waiting on a person${ofRead}`,
     unresolved: (n: number) =>
       query
         ? `${n} of ${matching} ${plural(n, "has", "have")} an unresolved join half`
@@ -1022,21 +1245,29 @@ function referentPhrasing(
       query
         ? `${Qty(n)} of ${matching} ${plural(n, "is", "are")} waiting`
         : `${Qty(n)} ${sessions(n)} waiting${onMachine || " on the fleet"}`,
-    none: () =>
-      query
+    none: (withheld = 0) => {
+      const empty = query
         ? `0 ${adj}sessions match “${query}”${onMachine}${among}`
-        : onMachine || !capped
+        : onMachine || basis === "exact"
           ? `No ${adj}sessions${onMachine || " on the fleet"}${among}`
-          : `No ${adj}sessions${among}`,
+          : `No ${adj}sessions${among}`;
+      // The empty answer is not the whole story while the filter hid matches.
+      return withheld > 0 ? `${empty} — ${hidden(withheld)}` : empty;
+    },
     clean: (n: number) =>
       query
         ? `${Qty(n)} of ${matching} ${plural(n, "is", "are")} running cleanly`
         : `${Qty(n)} ${sessions(n)}${onMachine} running cleanly`,
-    // Rows, none of them waiting and none running: every one has ended.
+    // Rows, none of them waiting and none running: every one has ended — of
+    // the rows read, when the read stopped short of the fleet.
     noneRunning: (n: number) =>
       query
-        ? `${Qty(n)} ${sessions(n)} match “${query}”${onMachine}, none running`
-        : `${Qty(n)} ${sessions(n)}${onMachine}, none running`,
+        ? `${Qty(n)} ${sessions(n)} match “${query}”${onMachine}, none running${among}`
+        : `${Qty(n)} ${sessions(n)}${onMachine}, none running${among}`,
+    // A half of unknown size: the rows read are all that can be counted.
+    sizeUnknown: (n: number) =>
+      `${n === 0 ? "No" : n} ${sessions(n)}${matchingQuery}${onMachine} read — the total is unknown`,
+    hidden,
     detail: (c: {
       rows: number;
       machines: number;
@@ -1044,13 +1275,19 @@ function referentPhrasing(
       waiting: number;
       unknownJoin: number;
     }) => {
-      const rowsPhrase = `${qty(c.rows)} ${adj}row${c.rows === 1 ? "" : "s"}${
-        query ? ` matching “${query}”` : ""
-      }`;
-      const machinesPhrase = `${qty(c.machines)} machine${c.machines === 1 ? "" : "s"}`;
+      const rowsWord = `${adj}row${c.rows === 1 ? "" : "s"}${matchingQuery}`;
+      const machinesWord = `machine${c.machines === 1 ? "" : "s"}`;
       const classes = `${c.active} active, ${c.waiting} waiting, ${c.unknownJoin} unresolved`;
-      return `${rowsPhrase} across ${machinesPhrase} — ${
-        capped ? `of those read, ${classes}` : classes
+      // Short of the fleet with nothing read, there is nothing to break down —
+      // and a floor of zero would say nothing.
+      if (basis !== "exact" && c.rows === 0) {
+        return `0 ${rowsWord} among those read`;
+      }
+      if (basis === "unknown") {
+        return `${c.rows} ${rowsWord} read across ${c.machines} ${machinesWord} — ${classes}`;
+      }
+      return `${qty(c.rows)} ${rowsWord} across ${qty(c.machines)} ${machinesWord} — ${
+        basis === "floor" ? `of those read, ${classes}` : classes
       }`;
     },
   };

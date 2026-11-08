@@ -5,7 +5,11 @@
  *
  * Plan `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
  * (qontinui-dev-notes). Every Phase 2 / Phase 3 test here (U2, U3, U4) was
- * observed failing against the console as it stood before those phases.
+ * observed failing against the console as it stood before those phases. The
+ * review-fix cases — agent-only's direction under each ceiling, a half of
+ * unknown size, a full half named by `shown`, one floor spelling and a floor
+ * of zero, hidden matches on an empty tab, and the empty state's referent —
+ * were observed failing against 90a74da48, before their fixes.
  *
  * A vitest DOM cannot measure CSS, so the layout half (Phase 1) is pinned by
  * its class contract only; the operated UI Bridge re-run in the plan's
@@ -239,12 +243,20 @@ describe("U3 — the strip counts coord's answer; the facets narrow only the lis
     );
     expect(health).not.toHaveTextContent(/on the fleet/);
     // The All badge is coord's count for the search — the server filter's
-    // answer, not a client-faceted one.
-    expect(screen.getByTestId("sessions-console-status-all")).toHaveTextContent(
-      "1"
-    );
+    // answer (1), never the unsearched read's (31). An EXACT match: a bare
+    // `toHaveTextContent("1")` also passes on "All31".
+    const all = screen.getByTestId("sessions-console-status-all");
+    expect(all).toHaveTextContent(/^All1$/);
     // No client facet narrowed anything, so there is no scoped line.
     expect(screen.queryByTestId("sessions-console-scope")).toBeNull();
+    // … and never a client-faceted count: a facet that hides the one row
+    // moves the scoped line, not the badge.
+    await userEvent.click(screen.getByTestId("sessions-console-work-finished"));
+    await screen.findByTestId("sessions-console-empty");
+    expect(all).toHaveTextContent(/^All1$/);
+    expect(screen.getByTestId("sessions-console-scope")).toHaveTextContent(
+      "showing 0 of 1 row — filtered by work"
+    );
   });
 
   it("an empty search: the strip names the search, the list says a filter emptied it — neither restates the other", async () => {
@@ -283,6 +295,56 @@ describe("U3 — the strip counts coord's answer; the facets narrow only the lis
     expect(
       screen.getByTestId("sessions-console-status-live")
     ).toHaveTextContent("0");
+  });
+
+  it("an empty tab whose filter hid sessions with disagreeing halves is amber and names them — never a green empty fleet", async () => {
+    // coord's agent half matched the Live filter for two sessions whose
+    // lifecycle half did not: the tab's empty answer is not the whole story.
+    mount(async () => envelope([], { withheld_by_filter: 2 }), {
+      initialStatus: "live",
+    });
+    await screen.findByTestId("sessions-console-empty");
+    const health = screen.getByTestId("sessions-console-health");
+    expect(health).toHaveAttribute("data-health-level", "amber");
+    expect(health).toHaveTextContent(
+      "No live sessions on the fleet — 2 matches hidden: their two halves disagree"
+    );
+  });
+
+  it("the empty state answers the question the rows answer, not the one the controls are already asking", async () => {
+    // Live is clicked and its read has not landed: the rows on screen are
+    // still coord's answer for All, and the strip still says so — so the empty
+    // state below must not call that same answer a filtered list.
+    let answerLive: (r: ConsolidatedSessionsResponse) => void = () => {};
+    mount(({ status }) =>
+      status === "live"
+        ? new Promise<ConsolidatedSessionsResponse>((resolve) => {
+            answerLive = resolve;
+          })
+        : Promise.resolve(envelope([]))
+    );
+    await screen.findByTestId("sessions-console-empty");
+    await userEvent.click(screen.getByTestId("sessions-console-status-live"));
+    expect(screen.getByTestId("sessions-console-health")).toHaveTextContent(
+      "No sessions on the fleet"
+    );
+    const pending = screen.getByTestId("sessions-console-empty");
+    expect(pending).toHaveTextContent(
+      "Start a session from any runner and it will surface here."
+    );
+    expect(pending).not.toHaveTextContent(/No sessions match this filter/);
+
+    // Once Live answers, the rows answer the narrowed question — and so do
+    // the strip and the empty state, together.
+    answerLive(envelope([]));
+    await waitFor(() =>
+      expect(screen.getByTestId("sessions-console-empty")).toHaveTextContent(
+        "No sessions match this filter"
+      )
+    );
+    expect(screen.getByTestId("sessions-console-health")).toHaveTextContent(
+      "No live sessions on the fleet"
+    );
   });
 
   it("an empty fleet: the strip says so once, the list carries only the next step", async () => {
@@ -537,22 +599,31 @@ describe("U1 — every identity column a narrow row hides stays reachable in its
 
 /**
  * One half's `bound` exactly as the backend serves it — `bounded_read.unknown`
- * for a full 500-row page (nothing fetched past it, so `truncated` and `total`
- * are null), `bounded_read.complete` below the ceiling.
+ * for a full page (nothing fetched past it, so `truncated` and `total` are
+ * null; `shown` is what coord served, which may pass the 500 asked for),
+ * `bounded_read.complete` below the ceiling.
  */
-function atCeiling(): BoundedReadMeta {
+function atCeiling(shown = 500): BoundedReadMeta {
   return {
     available: true,
     bound_kind: "unknown",
-    count: 500,
+    count: shown,
     enumerate_via: null,
     filter_narrowed: null,
     limit: 500,
     next_cursor: null,
-    shown: 500,
+    shown,
     total: null,
     truncated: null,
   };
+}
+
+/**
+ * The route's THIRD arm: `bounded_read.unknown(0, 500)` for a coord body that
+ * carried no `sessions` list — not complete, and not a full page either.
+ */
+function unanswered(): BoundedReadMeta {
+  return { ...atCeiling(0), count: 0, shown: 0 };
 }
 
 function belowCeiling(shown: number): BoundedReadMeta {
@@ -584,6 +655,17 @@ const AGENT_ONLY: ConsolidatedSessionRow = {
 
 const BEYOND_CEILING =
   "no coord.sessions row among the 500 most recently started that coord served — one may exist beyond its ceiling";
+
+/** One badge of the stat cluster, by its label. */
+function statBadge(label: string): HTMLElement {
+  const badge = [
+    ...screen
+      .getByTestId("sessions-console-stats")
+      .querySelectorAll<HTMLElement>("[data-slot=badge]"),
+  ].find((b) => b.firstElementChild?.textContent?.trim() === label);
+  if (!badge) throw new Error(`no stat badge "${label}"`);
+  return badge;
+}
 
 describe("U4 — the 500-row ceiling is disclosed, never presented as the fleet", () => {
   it("says both halves stopped at their ceiling and reads every fleet number as a floor", async () => {
@@ -618,9 +700,86 @@ describe("U4 — the 500-row ceiling is disclosed, never presented as the fleet"
     const stats = screen.getByTestId("sessions-console-stats");
     expect(stats).toHaveTextContent("rows ≥31");
     expect(stats).toHaveTextContent("machines ≥3");
+    // ONE numeric spelling of a floor — the tab, the stats and the strip's
+    // badges alike; "at least" is the prose spelling, kept to sentences.
     expect(
       screen.getByTestId("sessions-console-status-live")
-    ).toHaveTextContent("31+");
+    ).toHaveTextContent(/^Live≥31$/);
+    // A floor of zero is true of every count and says nothing: it reads as
+    // the count of the rows read instead.
+    expect(health).toHaveTextContent("needs a person 0 of those read");
+    expect(statBadge("lifecycle-only")).toHaveTextContent(
+      /^lifecycle-only 0 of those read$/
+    );
+    expect(document.body.textContent).not.toMatch(/≥0|\d\+|at least 0/);
+  });
+
+  it("names the rows a full half actually served — `shown`, not the limit it asked for", async () => {
+    mount(async () =>
+      envelope(FLEET, {
+        lifecycle_half: { read: "ok", bound: atCeiling(600) },
+        agent_half: { read: "ok", bound: belowCeiling(31) },
+      })
+    );
+    expect(
+      await screen.findByTestId("sessions-console-truncated")
+    ).toHaveTextContent(
+      "Showing the 600 most recently started lifecycle sessions; fleet totals may be higher."
+    );
+  });
+
+  it("a half whose read carried nothing countable is of UNKNOWN size: dashes and words, never a ceiling over zero rows", async () => {
+    // The route's `unknown(0, 500)`: coord answered `/sessions` with no list.
+    // It is not a full page, so nothing about "the 500 most recently started"
+    // is true of it, and `≥0` is a floor of nothing.
+    mount(async () =>
+      envelope([AGENT_ONLY], {
+        lifecycle_half: { read: "ok", bound: unanswered() },
+        agent_half: { read: "ok", bound: belowCeiling(1) },
+      })
+    );
+    const note = await screen.findByTestId("sessions-console-truncated");
+    expect(note).toHaveTextContent(
+      "The lifecycle half's size is unknown: coord's answer for it carried nothing countable, so the fleet counts above are dashes, not zeros."
+    );
+    expect(note).not.toHaveTextContent(
+      /most recently|fleet totals may be higher/
+    );
+
+    for (const label of [
+      "rows",
+      "machines",
+      "linked",
+      "lifecycle-only",
+      "agent-only",
+    ]) {
+      expect(statBadge(label), label).toHaveTextContent(
+        new RegExp(`^${label} –$`)
+      );
+    }
+    // A property of THIS read, not a fleet total: still a number.
+    expect(statBadge("unresolved")).toHaveTextContent(/^unresolved 0$/);
+    expect(screen.getByTestId("sessions-console-status-all")).toHaveTextContent(
+      /^All–$/
+    );
+    const health = screen.getByTestId("sessions-console-health");
+    expect(health).toHaveAttribute("data-health-level", "amber");
+    expect(health).toHaveTextContent("1 session read — the total is unknown");
+    expect(health).toHaveTextContent("needs a person –");
+    expect(health).toHaveTextContent("active –");
+    expect(document.body.textContent).not.toMatch(/≥|\d\+|at least/);
+
+    // The agent-only row is qualified by what was compared — never "no
+    // coord.sessions row bridges it", and never a 500 that was not served.
+    const row = await rowById(AGENT_ONLY.id);
+    await userEvent.click(within(row).getByRole("button"));
+    const detail = await screen.findByTestId("sessions-console-detail");
+    expect(detail).toHaveTextContent(
+      "no coord.sessions row among the lifecycle rows coord served — that half's size is unknown, so one may exist that it did not serve"
+    );
+    expect(detail).not.toHaveTextContent(
+      /that no coord\.sessions row bridges|500/
+    );
   });
 
   it("names only the half that reached its ceiling", async () => {
@@ -659,12 +818,49 @@ describe("U4 — the 500-row ceiling is disclosed, never presented as the fleet"
     expect(detail).toHaveTextContent(BEYOND_CEILING);
     expect(detail).not.toHaveTextContent(/that no coord\.sessions row bridges/);
 
-    // The stat reads as a floor, and its title says what was compared.
-    const stat = within(screen.getByTestId("sessions-console-stats"))
-      .getByText(/agent-only/)
-      .closest("[data-slot=badge]")!;
-    expect(stat).toHaveTextContent("agent-only ≥1");
+    // `agent_only` is a set difference against the lifecycle rows SERVED, so
+    // a capped lifecycle half can only have made it too BIG: a row's twin may
+    // lie past the ceiling. Every agent session was read, so 1 is a ceiling of
+    // the true count — never a floor.
+    const stat = statBadge("agent-only");
+    expect(stat).toHaveTextContent(/^agent-only ≤1$/);
+    expect(stat.getAttribute("title")).toContain("at most");
     expect(stat.getAttribute("title")).toContain(BEYOND_CEILING);
+  });
+
+  it("agent-only is a floor only when the AGENT half stopped and the lifecycle half did not", async () => {
+    // Every lifecycle row was served, so each unmatched agent row really has
+    // no coord.sessions row; agent sessions past the agent ceiling were not
+    // read, and any of them may be unmatched too.
+    mount(async () =>
+      envelope([...FLEET.slice(0, 2), AGENT_ONLY], {
+        lifecycle_half: { read: "ok", bound: belowCeiling(2) },
+        agent_half: { read: "ok", bound: atCeiling() },
+      })
+    );
+    await screen.findAllByTestId("sessions-console-row");
+    const stat = statBadge("agent-only");
+    expect(stat).toHaveTextContent(/^agent-only ≥1$/);
+    expect(stat.getAttribute("title")).toContain("at least");
+  });
+
+  it("with both halves stopped, agent-only is neither a floor nor a ceiling — and says so", async () => {
+    // A twin may lie past the lifecycle ceiling (too big) while unmatched
+    // agent sessions lie past the agent ceiling (too small): the number is
+    // only how many rows read went unmatched.
+    mount(async () =>
+      envelope([...FLEET.slice(0, 2), AGENT_ONLY], {
+        lifecycle_half: { read: "ok", bound: atCeiling() },
+        agent_half: { read: "ok", bound: atCeiling() },
+      })
+    );
+    await screen.findAllByTestId("sessions-console-row");
+    const stat = statBadge("agent-only");
+    expect(stat).toHaveTextContent(/^agent-only 1 unmatched among rows read$/);
+    expect(stat.textContent).not.toMatch(/[≥≤]/);
+    expect(stat.getAttribute("title")).toContain(
+      "neither a floor nor a ceiling"
+    );
   });
 
   it("follows the read it describes: a complete read, or a backend that reports no ceiling, says nothing", async () => {
@@ -678,8 +874,9 @@ describe("U4 — the 500-row ceiling is disclosed, never presented as the fleet"
         lifecycle_half: { read: "ok", bound: belowCeiling(31) },
         agent_half: { read: "ok", bound: belowCeiling(31) },
       }),
-      // An older backend: no `lifecycle_half`, no `bound` — not reported, so
-      // the page claims nothing about a ceiling in either direction.
+      // An older backend: no `lifecycle_half`, no `bound`. The page reads it
+      // as complete — exact counts, no disclosure — which IS a claim, the one
+      // it made before the field existed; kept for deploy skew only.
       envelope(FLEET),
     ];
     let call = 0;

@@ -3,10 +3,12 @@
  * envelope in the backend's real shape (plan
  * `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`).
  *
- * Kept in its own module so the page test names no symbol the PR changed:
- * `arming-record.sh prove`'s static-bypass check reads a token the test
- * shares with a changed symbol as "entered on the producer side", and the
- * wire field this envelope must carry is one such token.
+ * Wire-shaped data, deliberately: plain literals with no imports — not the
+ * console's response types, not its helpers — so what the page test feeds the
+ * page is what the network would carry, and nothing the console exports can
+ * shape the fixture into agreeing with the code under test. Kept out of the
+ * test body so the test reads as the operator's path (mount the page, read
+ * what it shows) with the envelope's bulk beside it rather than inside it.
  */
 
 /** The shared bounded-read envelope coord's 500-row ceiling produces. */
