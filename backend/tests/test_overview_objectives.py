@@ -589,6 +589,7 @@ class TestRoute:
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["tenant_id"] == str(TENANT)
+        assert body["document_list_complete"] is True
         assert {m["name"] for m in body["metrics"]} == {
             MERGE_TRAIN,
             "development-speed",
@@ -624,6 +625,7 @@ class TestRoute:
         body = response.json()
         assert body["sources"]["intent_documents"]["status"] == "unavailable"
         assert body["objectives_readable"] is False
+        assert body["document_list_complete"] is False
         assert findings.list_calls == []
         assert body["sources"]["checkpoint_results"]["status"] == "unavailable"
         assert findings.results_calls == []
@@ -2159,6 +2161,7 @@ class TestDocumentShapes:
         read = await _read(docs, findings)
         metric = _metric(read, "development-speed")
         assert metric.state == "unreadable"
+        assert metric.checkpoint_list_complete is False
         assert metric.findings_read == "not_read"
         assert read.sources.intent_documents.status == "degraded"
         assert "development-speed" in read.sources.intent_documents.affected
@@ -2299,6 +2302,20 @@ class TestDocumentShapes:
         assert spend.serves_unknown == []
         assert spend.serves_unchecked == ["cost-control"]
 
+    async def test_a_degraded_listing_is_served_as_an_incomplete_document_list(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        """Structured, beside the prose reason, so a client can tell "no
+        measure declares this objective" from "one that does may not have
+        been listed"."""
+        assert (await _read(docs, findings)).document_list_complete is True
+        docs.degraded = "the store answered a partial page"
+        read = await _read(docs, findings)
+        assert read.document_list_complete is False
+        assert "partial page" in (read.sources.intent_documents.reason or "")
+        # The initiative it did return was read: the flag is about the list.
+        assert read.objectives_readable is True
+
     async def test_no_initiative_written_is_readable_and_empty_not_unreadable(
         self, docs: FakeDocs, findings: FakeFindings
     ) -> None:
@@ -2434,6 +2451,7 @@ class TestDocumentShapes:
         dev = metrics["development-speed"]
         assert said in (dev["frontmatter_error"] or ""), dev["frontmatter_error"]
         assert dev["metric"] is None and dev["criteria"] == []
+        assert dev["checkpoint_list_complete"] is False
         assert "development-speed" in body["sources"]["intent_documents"]["affected"]
         # Every other document reads as before.
         assert metrics[MERGE_TRAIN]["frontmatter_error"] is None
@@ -2462,6 +2480,7 @@ class TestDocumentShapes:
         body = response.json()
         dev = next(m for m in body["metrics"] if m["name"] == "development-speed")
         assert "RuntimeError" in dev["frontmatter_error"]
+        assert dev["checkpoint_list_complete"] is False
         assert dev["current_value"]["reason"] == DEFINITION_UNREADABLE_REASON
         assert dev["title"] == "Development speed"
         assert "development-speed" in body["sources"]["intent_documents"]["affected"]
@@ -2596,6 +2615,100 @@ class TestDocumentShapes:
         metric = _metric(read, "development-speed")
         assert [c.id for c in metric.criteria] == ["1.2"]
         assert "quoted" in metric.field_errors["criteria"]
+
+
+class TestCheckpointDeclarations:
+    """What a metric's ``checkpoints:`` leaves unknown, served structured so
+    the page never says "not declared" for it: a due that is not a date is
+    that checkpoint's own error, and a list not read in full leaves whether
+    a checkpoint only a report names is declared unknown. What WAS read
+    stays known: a sibling with no due, or a list whose only defect is a
+    duplicate, is never downgraded."""
+
+    @pytest.mark.parametrize(
+        ("checkpoints", "complete"),
+        [
+            ("", True),
+            ('checkpoints:\n  - id: "checkpoint-1"\n    due: "2026-10-08"\n', True),
+            # Every id was read; the duplicate is named, not a gap.
+            ('checkpoints:\n  - id: "checkpoint-1"\n  - id: "checkpoint-1"\n', True),
+            ("checkpoints:\n  checkpoint-1: 2026-10-08\n", False),
+            ('checkpoints:\n  - id: "checkpoint-1"\n  - due: "2026-10-13"\n', False),
+            ("checkpoints: 2026-10-08 (unblocked)\n", False),
+        ],
+        ids=[
+            "none_declared",
+            "a_list",
+            "a_duplicate_id",
+            "a_mapping",
+            "an_item_with_no_id",
+            "free_text",
+        ],
+    )
+    async def test_whether_the_checkpoint_list_was_read_in_full(
+        self, docs: FakeDocs, findings: FakeFindings, checkpoints: str, complete: bool
+    ) -> None:
+        docs.seed("success_metric", MERGE_TRAIN,
+                  f"---\nmetric: m\n{checkpoints}---\n\n# M\n")  # fmt: skip
+        read = await _read(docs, findings)
+        assert _metric(read).checkpoint_list_complete is complete
+
+    async def test_the_real_shape_is_read_in_full_with_every_due(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        metric = _metric(await _read(docs, findings))
+        assert metric.checkpoint_list_complete is True
+        assert [(c.due, c.due_error) for c in metric.checkpoints] == [
+            ("2026-10-08", None),
+            ("2026-10-13", None),
+            ("2026-10-27", None),
+        ]
+
+    async def test_a_checkpoints_mapping_leaves_a_reported_checkpoint_unknown(
+        self, docs: FakeDocs, findings: FakeFindings
+    ) -> None:
+        docs.seed("success_metric", MERGE_TRAIN,
+                  "---\nmetric: m\ncheckpoints:\n  checkpoint-1: 2026-10-08\n---\n\n# M\n")  # fmt: skip
+        findings.add(_id(1), keys=[DOC_KEY, "checkpoint-1"], block=_block())
+        read = await _read(docs, findings)
+        metric = _metric(read)
+        assert metric.field_errors["checkpoints"] == (
+            "checkpoints must be a list of {id, due, label}."
+        )
+        # The report is placed under a checkpoint the list read does not
+        # hold — and the list was not read in full, so that is not "the
+        # document does not declare it".
+        cp = _checkpoint(read, "checkpoint-1")
+        assert cp.report is not None and cp.declared is False
+        assert metric.checkpoint_list_complete is False
+
+    @pytest.mark.parametrize(
+        ("due", "said"),
+        [
+            ('"soon"', "the due 'soon' is not a date"),
+            ("[2026-10-08]", "the due ['2026-10-08'] is not a date"),
+            ("{at: 2026-10-08}", "the due {'at': '2026-10-08'} is not a date"),
+        ],
+        ids=["text", "a_list", "a_mapping"],
+    )
+    async def test_a_due_that_is_not_a_date_is_that_checkpoints_own_error(
+        self, docs: FakeDocs, findings: FakeFindings, due: str, said: str
+    ) -> None:
+        docs.seed("success_metric", MERGE_TRAIN,
+                  "---\nmetric: m\ncheckpoints:\n"
+                  f'  - id: "checkpoint-1"\n    due: {due}\n'
+                  '  - id: "checkpoint-2"\n---\n\n# M\n')  # fmt: skip
+        read = await _read(docs, findings)
+        metric = _metric(read)
+        bad, plain = metric.checkpoints
+        assert (bad.id, bad.due, bad.due_error) == ("checkpoint-1", None, said)
+        # The sibling declares no due, and that WAS read: no error on it.
+        assert (plain.id, plain.due, plain.due_error) == ("checkpoint-2", None, None)
+        assert metric.checkpoint_list_complete is True
+        error = metric.field_errors["checkpoints"]
+        assert "'checkpoint-1' has a due that is not a date" in error
+        cp = _checkpoint(read, "checkpoint-1")
+        assert cp.declared is True and cp.due is None
 
 
 class TestVerdicts:

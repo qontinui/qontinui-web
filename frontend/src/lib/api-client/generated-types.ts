@@ -30473,6 +30473,8 @@ export interface components {
         CheckpointDeclRead: {
             /** Due */
             due: string | null;
+            /** Due Error */
+            due_error?: string | null;
             /** Id */
             id: string;
             /** Label */
@@ -42762,6 +42764,8 @@ export interface components {
             ceiling?: number | null;
             /** Ceiling Text */
             ceiling_text?: string | null;
+            /** Checkpoint List Complete */
+            checkpoint_list_complete: boolean;
             /** Checkpoint Results */
             checkpoint_results?: components["schemas"]["CheckpointResultRead"][];
             /**
@@ -43592,6 +43596,8 @@ export interface components {
         };
         /** ObjectivesRead */
         ObjectivesRead: {
+            /** Document List Complete */
+            document_list_complete: boolean;
             /** Earlier Initiatives Count */
             earlier_initiatives_count: number;
             /**
