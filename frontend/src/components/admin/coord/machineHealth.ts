@@ -421,6 +421,20 @@ function withRetired(sentence: string, e: RosterExclusions): string {
   return r ? `${sentence} ${r}` : sentence;
 }
 
+/**
+ * `sentence` with coord's retired-row count appended, read straight from a
+ * `/fleet/health` body. For the surfaces that describe an empty or
+ * all-hidden roster without a parsed {@link RosterExclusions} in hand (the
+ * runners page notice, SpawnModal's manual-entry fallback), so they explain
+ * a roster emptied by the device reaper the same way the summaries do.
+ */
+export function appendRetiredRows(
+  sentence: string,
+  body: RosterExclusionsRef
+): string {
+  return withRetired(sentence, readRosterExclusions(body));
+}
+
 function withheldParts(e: { unbound: number; boundToOtherTenant: number }) {
   const parts: string[] = [];
   if (e.unbound > 0) parts.push(`${e.unbound} with no binding`);

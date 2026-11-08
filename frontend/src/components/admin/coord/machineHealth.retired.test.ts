@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  appendRetiredRows,
   emptyRosterSentence,
   isRosterBindingFault,
   isRosterComplete,
@@ -67,5 +68,31 @@ describe("readRosterExclusions with retired rows", () => {
         })
       )
     ).toBeNull();
+  });
+});
+
+describe("appendRetiredRows", () => {
+  it("appends the retired count read from a fleet/health body", () => {
+    expect(
+      appendRetiredRows("Coord reported 0 devices.", {
+        excluded: { unbound: 0, bound_to_other_tenant: 0, retired: 1 },
+      })
+    ).toBe(
+      "Coord reported 0 devices. 1 device was retired after going unseen past coord's reaper grace period and is not listed — retired, which is not a withheld machine."
+    );
+  });
+
+  it("leaves the sentence alone when coord states no retired rows", () => {
+    for (const body of [
+      {},
+      { excluded: null },
+      { excluded: { unbound: 0, bound_to_other_tenant: 0 } },
+      { excluded: { unbound: 0, bound_to_other_tenant: 0, retired: 0 } },
+      { excluded: { unbound: 0, bound_to_other_tenant: 0, retired: "9" } },
+    ]) {
+      expect(appendRetiredRows("Coord reported 0 devices.", body)).toBe(
+        "Coord reported 0 devices."
+      );
+    }
   });
 });

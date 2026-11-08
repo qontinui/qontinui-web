@@ -71,6 +71,7 @@ import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { resolveDeviceWorktreeCap } from "@/components/operations/fleetWorktreeCap";
 import { useFleetWorktreeCap } from "@/components/operations/useFleetWorktreeCap";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
+import { appendRetiredRows } from "@/components/admin/coord/machineHealth";
 import {
   CONTROL_REASON_MAX_LENGTH,
   RUNNER_SESSION_PALETTE,
@@ -249,7 +250,8 @@ function RunnerSessionRow({
                   className="text-xs text-muted-foreground"
                   data-testid="coord-runners-finish-close-unavailable"
                 >
-                  Finish &amp; close unavailable — {gates.finish_and_close.reason}
+                  Finish &amp; close unavailable —{" "}
+                  {gates.finish_and_close.reason}
                 </span>
               )}
               {gates.stop_at_boundary.allowed ? (
@@ -278,9 +280,11 @@ function RunnerSessionRow({
                 data-testid="coord-runners-action-accepted"
               >
                 Request recorded
-                {outcome.eventId ? ` (event ${outcome.eventId.slice(0, 8)})` : ""}.
-                The runner acts on it at its next catch-up; readiness shows the
-                result.
+                {outcome.eventId
+                  ? ` (event ${outcome.eventId.slice(0, 8)})`
+                  : ""}
+                . The runner acts on it at its next catch-up; readiness shows
+                the result.
               </p>
             )}
           </CoordAdminOnly>
@@ -341,7 +345,9 @@ export default function CoordRunnersPage() {
   const records = useMemo(
     () =>
       sessions.read.kind === "ok"
-        ? sortRunnerSessions(joinRunnerSessions(sessions.read.rows, readiness.read))
+        ? sortRunnerSessions(
+            joinRunnerSessions(sessions.read.rows, readiness.read)
+          )
         : [],
     [sessions.read, readiness.read]
   );
@@ -371,7 +377,11 @@ export default function CoordRunnersPage() {
   );
 
   const send = useCallback(
-    async (rec: RunnerSessionRecord, action: SessionControlAction, reason?: string) => {
+    async (
+      rec: RunnerSessionRecord,
+      action: SessionControlAction,
+      reason?: string
+    ) => {
       if (rec.session === null || inFlight.current.has(rec.key)) return;
       inFlight.current.add(rec.key);
       setPendingKey(rec.key);
@@ -388,11 +398,14 @@ export default function CoordRunnersPage() {
       }
       setOutcomes((prev) => ({ ...prev, [rec.key]: res }));
       if (res.ok) {
-        toast.success(`${ACTION_LABEL[action]} requested for ${shortSessionId(rec)}`, {
-          description:
-            "Coord recorded the request for the runner. Nothing is killed; " +
-            "the runner acts at its next catch-up.",
-        });
+        toast.success(
+          `${ACTION_LABEL[action]} requested for ${shortSessionId(rec)}`,
+          {
+            description:
+              "Coord recorded the request for the runner. Nothing is killed; " +
+              "the runner acts at its next catch-up.",
+          }
+        );
         void readiness.refresh();
         void sessions.refresh();
       } else {
@@ -508,9 +521,15 @@ export default function CoordRunnersPage() {
   const rosterNotice = fleet.error
     ? `Could not load the device roster — ${fleet.error}. A device id in the link still works.`
     : fleet.data && devices.length === 0
-      ? "Coord reported 0 devices for this tenant. A device is listed only while it is bound to this tenant."
+      ? appendRetiredRows(
+          "Coord reported 0 devices for this tenant. A device is listed only while it is bound to this tenant.",
+          fleet.data
+        )
       : fleet.data && pickableDevices(devices).shown.length === 0
-        ? "No runner machine to offer: every device coord reported is a CI runner registration or abandoned. A device id in the link still works."
+        ? appendRetiredRows(
+            "No runner machine to offer: every device coord reported is a CI runner registration or abandoned. A device id in the link still works.",
+            fleet.data
+          )
         : null;
 
   const sample = readiness.read.kind === "fresh" ? readiness.read.sample : null;
@@ -537,7 +556,9 @@ export default function CoordRunnersPage() {
             value={deviceId}
             onChange={selectDevice}
             placeholder={fleet.loading ? "Loading devices…" : "Choose a device"}
-            aria-describedby={rosterNotice ? "coord-runners-roster-notice" : undefined}
+            aria-describedby={
+              rosterNotice ? "coord-runners-roster-notice" : undefined
+            }
             data-testid="coord-runners-device-picker"
           />
         </div>
@@ -617,8 +638,8 @@ export default function CoordRunnersPage() {
                 className="text-xs text-muted-foreground"
                 data-testid="coord-runners-sessions-more"
               >
-                More sessions match than coord served ({FLEET_SESSIONS_LIMIT}), so
-                this list is not the device&apos;s whole census.
+                More sessions match than coord served ({FLEET_SESSIONS_LIMIT}),
+                so this list is not the device&apos;s whole census.
               </p>
             )}
             {sessions.read.kind === "ok" && sessions.read.refreshError && (
@@ -691,8 +712,10 @@ export default function CoordRunnersPage() {
                   {sessionName(confirming)}
                 </span>{" "}
                 ({originLabel(confirming)}
-                {confirming.session?.repo ? ` on ${confirming.session.repo}` : ""})
-                on runner <span className="font-mono">{hostname}</span>.
+                {confirming.session?.repo
+                  ? ` on ${confirming.session.repo}`
+                  : ""}
+                ) on runner <span className="font-mono">{hostname}</span>.
               </p>
               <p className="mt-2">
                 This declares the session finished — your click is the
