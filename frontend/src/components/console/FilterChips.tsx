@@ -68,19 +68,28 @@
  * click would trade one usability problem for another. Omit `maxVisible` for a
  * vocabulary you author and can count.
  *
- * ## No options and no selection renders NOTHING
+ * ## `hideWhenEmpty`: an OPT-IN for a vocabulary derived from the rows
  *
  * A strip whose only chip would be `all` is a control that can never narrow
  * anything — `/sessions` rendered `provider: all` on every visit, for a
  * vocabulary no row carried (`ux-priorities`
  * `repeated-chrome-must-earn-its-space-by-varying`; plan
  * `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
- * U5). So it renders nothing, and the rule lives HERE rather than in each
- * caller, as R6's dash does.
+ * U5). A caller whose options are DERIVED FROM THE ROWS ON THE PAGE passes
+ * `hideWhenEmpty`, and a strip with no options and no selection then renders
+ * nothing: there, an empty vocabulary means "no row carries this field", and
+ * the strip has nothing to say.
  *
- * A strip that carries a SELECTION always renders, options or not: when the
- * vocabulary empties under a live selection, the filter is still hiding rows,
- * and the `all` chip is the only visible way to clear it.
+ * It is opt-in, never the default, because an empty vocabulary does not mean
+ * that everywhere. Where coord SERVES the vocabulary, an empty one can mean
+ * "coord has not answered yet" — `/admin/coord/dossiers`' readiness strip
+ * carries a `title` saying exactly that, and hiding the strip would hide the
+ * one place that UNKNOWN is disclosed. Only the caller knows which of the two
+ * its empty list means.
+ *
+ * A strip that carries a SELECTION always renders, `hideWhenEmpty` or not:
+ * when the vocabulary empties under a live selection, the filter is still
+ * hiding rows, and the `all` chip is the only visible way to clear it.
  *
  * **Navigation-only by construction**, like `FilterTabs`: every chip narrows a
  * view, so each carries `NAVIGATION_ONLY_PROPS` and stays live in presentation
@@ -139,6 +148,14 @@ export interface FilterChipsProps<V extends string> {
    * same defect as one whose chip disappears when its last row resolves.
    */
   maxVisible?: number;
+  /**
+   * Render NOTHING while there are no options and no selection. Opt-in, for a
+   * vocabulary derived from the rows on the page, where empty means "no row
+   * carries this field". Leave it unset when an empty list can mean the
+   * vocabulary has not been served yet — see the module doc. A selection keeps
+   * the strip regardless, so it can always be cleared.
+   */
+  hideWhenEmpty?: boolean;
   /** `${testIdPrefix}-${value}` per chip, plus `${testIdPrefix}-all`. */
   testIdPrefix?: string;
   /** Applied to the group, e.g. to explain a partial option list. */
@@ -163,15 +180,19 @@ export function FilterChips<V extends string>({
   onClear,
   allLabel = "all",
   maxVisible,
+  hideWhenEmpty = false,
   testIdPrefix,
   title,
   className,
 }: FilterChipsProps<V>) {
   const [expanded, setExpanded] = useState(false);
-  // Nothing to choose and nothing chosen: the strip would be a lone `all` chip
-  // that can never narrow anything, so it renders nothing (see the module doc).
-  // AFTER the hook, so the hook order is the same on every render.
-  if (options.length === 0 && selected.length === 0) return null;
+  // Nothing to choose and nothing chosen, on a caller that said an empty
+  // vocabulary means "no row carries this": the strip would be a lone `all`
+  // chip that can never narrow anything, so it renders nothing (see the module
+  // doc). AFTER the hook, so the hook order is the same on every render.
+  if (hideWhenEmpty && options.length === 0 && selected.length === 0) {
+    return null;
+  }
   const none = selected.length === 0;
   // Counts are a group decision, so that an absent `count` and an explicit
   // `null` keep meaning the same thing INSIDE a counted strip — the reading

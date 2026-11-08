@@ -231,6 +231,12 @@ export interface SessionRowExpansionProps {
   account: AccountCell;
   /** device_id → the console's machine label, the one the column renders. */
   machineLabel: MachineLabel;
+  /**
+   * The lifecycle half's ceiling while that read may be incomplete, else
+   * `null`/absent. An `agent_only` row's explanation is narrowed to the rows
+   * coord served then (`rowClassExplanation`).
+   */
+  lifecycleCeiling?: number | null;
   coordination: SessionCoordination;
   stores: TranscriptStoresState;
   /** Injected for tests so relative timestamps are deterministic. */
@@ -241,6 +247,7 @@ export function SessionRowExpansion({
   row,
   account,
   machineLabel,
+  lifecycleCeiling,
   coordination,
   stores,
   now,
@@ -252,7 +259,9 @@ export function SessionRowExpansion({
       data-testid="sessions-console-detail"
       why={
         <div className="space-y-2">
-          <p className="text-muted-foreground">{rowClassExplanation(row)}</p>
+          <p className="text-muted-foreground">
+            {rowClassExplanation(row, { lifecycleCeiling })}
+          </p>
           <IdentityList
             row={row}
             account={account}

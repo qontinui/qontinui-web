@@ -57,6 +57,18 @@
  * "unknown" and "we did not look" are three different sentences and a bare
  * dash is only honest if the reader can find out which one it means.
  *
+ * ## The strip counts coord's answer; the facets narrow only the list
+ *
+ * Plan `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+ * Phases 2-3. The health strip, the stats and the answered tab's count are
+ * derived from `rows` — coord's answer to the status tab and the search, both
+ * SERVER filters — and the strip names that question in words
+ * (`deriveSessionsHealth`). The client facets narrow only the list, and say so
+ * in the scoped line beside them. Before the first answer every count is a
+ * dash under an amber "Reading sessions…"; while either half of the read
+ * stopped at its 500-row ceiling the counts are floors, and a line under the
+ * stats names the half that did.
+ *
  * ## Finding a session by name, id or commit trailer — and its account
  *
  * Plan `2026-10-19-session-lookup-by-name-shows-claude-account-in-web`
@@ -102,15 +114,20 @@ import { listConsolidatedSessions } from "@/lib/api/operations/sessions";
 import {
   SESSION_STATUS_PALETTE,
   SESSION_WORK_PALETTE,
+  agentOnlyBeyondCeiling,
   agentSessionId,
+  ceilingDisclosure,
   compareSessionRows,
   deriveSessionStatus,
   deriveSessionWorkStatus,
   deriveSessionsHealth,
+  fleetCount,
   hasAgentHalf,
   hasLifecycleHalf,
+  isCapped,
   isSessionFinished,
   rowTimestamp,
+  sessionsCeiling,
   type ConsolidatedSessionRow,
   type ConsolidatedSessionsResponse,
 } from "./sessionConsoleStatus";
@@ -257,6 +274,14 @@ export function SessionsConsole({
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const [status, setStatus] = useState<StatusTab>(initialStatus ?? "all");
+  // The question `payload` ANSWERED — its tab and its search. The strip and
+  // the tab counts name this, not the controls: between a click and coord's
+  // answer the rows on screen still answer the previous question, and a strip
+  // keyed on the controls would put the new referent's words on the old rows.
+  const [answered, setAnswered] = useState<{
+    status: StatusTab;
+    query: string;
+  }>({ status: initialStatus ?? "all", query: "" });
   // Two query states, not one. `query` is what the operator is typing;
   // `appliedQuery` is what has been sent. `?q=` is a SERVER filter (coord runs
   // the full-text half), so binding the fetch to `query` directly would issue
@@ -320,6 +345,7 @@ export function SessionsConsole({
           signal,
         });
         setPayload(data);
+        setAnswered({ status, query: appliedQuery });
         setLoaded(true);
         setReadFailed(false);
         setError(null);
@@ -386,6 +412,13 @@ export function SessionsConsole({
 
   const rows = useMemo(() => payload?.sessions ?? [], [payload]);
   const agentHalfFailed = payload?.agent_half?.read === "failed";
+  // Each half's 500-row ceiling, where that half's read may be incomplete
+  // (plan `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+  // Phase 3). A backend that reports no bound yields no ceiling, and the page
+  // then says nothing about one — neither "complete" nor "truncated".
+  const ceiling = useMemo(() => sessionsCeiling(payload), [payload]);
+  const capped = isCapped(ceiling);
+  const disclosure = ceilingDisclosure(ceiling);
   // Sessions the server-side status/machine filter hid although their agent
   // half matched — the halves disagree. Counted so a narrowed tab never loses
   // a session silently (`withheld_by_filter` on the envelope).
@@ -476,11 +509,13 @@ export function SessionsConsole({
    * The work facet's vocabulary — AUTHORED (two members), not derived from the
    * rows, so `maxVisible` is omitted and both chips render even at count `0`.
    *
-   * Both counts are MEASURED over the rows already on the page, so R6's `0` is
-   * honest here — `–` would be the lie. What is deliberately NOT offered is a
-   * third "never reported" chip: `isSessionFinished` is total by design (see
-   * its doc), and splitting unknown out would put a chip on the page whose
-   * selection asserts something about rows nobody has heard from.
+   * Both counts are MEASURED over the rows already on the page once coord has
+   * answered, so R6's `0` is honest then — `–` would be the lie. Before the
+   * first answer nothing is on the page to count, and the `0` would be the lie
+   * instead, so both are `null` (`–`) until `loaded`. What is deliberately NOT
+   * offered is a third "never reported" chip: `isSessionFinished` is total by
+   * design (see its doc), and splitting unknown out would put a chip on the
+   * page whose selection asserts something about rows nobody has heard from.
    */
   const workOptions = useMemo<FilterChipOption<string>[]>(() => {
     let finished = 0;
@@ -489,19 +524,19 @@ export function SessionsConsole({
       {
         value: "finished",
         label: "finished",
-        count: finished,
+        count: loaded ? finished : null,
         title:
           "sessions that reported session_status=finished — the WORK axis. Orthogonal to live/stale/closed.",
       },
       {
         value: "unfinished",
         label: "unfinished",
-        count: rows.length - finished,
+        count: loaded ? rows.length - finished : null,
         title:
           "everything else — including sessions that have never reported a work status at all. Select this to HIDE finished sessions; a row we have heard nothing from stays visible, because absence is unknown, not a measured 'not finished'.",
       },
     ];
-  }, [rows]);
+  }, [rows, loaded]);
 
   const visible = useMemo(() => {
     const filtered = rows.filter((r) => {
@@ -534,42 +569,93 @@ export function SessionsConsole({
     return [...filtered].sort((a, b) => compareSessionRows(a, b, { now }));
   }, [rows, kinds, providers, machines, work, accounts, accountCells, now]);
 
+  // The client facets holding a selection, in the order they render — what
+  // the scoped line names when they narrow the list below the strip.
+  const facetSelections: ReadonlyArray<[string, readonly string[]]> = [
+    ["kind", kinds],
+    ["provider", providers],
+    ["machine", machines],
+    ["work", work],
+    ["account", accounts],
+  ];
+  const narrowedBy = facetSelections
+    .filter(([, selected]) => selected.length > 0)
+    .map(([name]) => name);
+
+  // The strip answers for `rows` — coord's answer to the tab and the search —
+  // and NEVER for `visible`. The client facets narrow the list below it, not
+  // the fleet's numbers: deriving the strip from `visible` made one machine
+  // chip turn "31 rows across 3 machines" into "1 row across 1 machine" under
+  // a headline still saying "on the fleet". What the facets leave is the
+  // scoped line's job (`sessions-console-scope`).
   const health = useMemo(
     () =>
-      deriveSessionsHealth(visible, {
+      deriveSessionsHealth(rows, {
         readUnknown: unknown,
+        loaded,
         agentHalfFailed,
+        referent: {
+          status: answered.status === "all" ? null : answered.status,
+          query: answered.query,
+          // `?device=` is a SERVER filter too, fixed at mount: the strip
+          // names that machine rather than "the fleet".
+          machine: machineLabel(deviceRef.current),
+        },
+        ceiling,
         options: { now },
       }),
-    [visible, unknown, agentHalfFailed, now]
+    [
+      rows,
+      unknown,
+      loaded,
+      agentHalfFailed,
+      answered,
+      machineLabel,
+      ceiling,
+      now,
+    ]
   );
 
-  // ---- R6: counts are `null` while unknown, NEVER 0 ---------------------
+  // ---- R6: counts are `null` until coord has answered, NEVER 0 ----------
   //
-  // The status tabs are a SERVER filter, so only the active tab's count is
+  // Keyed on `loaded`, not on `unknown`: before the FIRST answer nothing is
+  // known either, and a `0` then is the `silent-empty-is-unknown` mistake with
+  // a number attached (`unknown` is the failed half of the same window).
+  //
+  // The status tabs are a SERVER filter, so only the answered tab's count is
   // measured; the others have not been fetched and a `0` on them would be the
-  // `silent-empty-is-unknown` mistake with a number attached. `FilterTabs`
-  // renders `null` as `–`.
+  // same mistake. `FilterTabs` renders `null` as `–`. The answered tab shows
+  // coord's count for it (`rows`), never what the facets left — that is the
+  // scoped line's number — and `1000+` over a read that stopped at a ceiling.
   const tabs = STATUS_TABS.map((t) => ({
     id: t.id,
     label: t.label,
-    count: unknown || t.id !== status ? null : visible.length,
-    attention: t.id === status && (health.attention ?? 0) > 0,
+    count:
+      !loaded || t.id !== answered.status
+        ? null
+        : capped
+          ? `${rows.length}+`
+          : rows.length,
+    attention: t.id === answered.status && (health.attention ?? 0) > 0,
   }));
 
+  /** A fleet count: `–` until coord answers, a floor over a capped read. */
+  const fleet = (n: number | null): number | string | null =>
+    !loaded || n === null ? null : fleetCount(n, capped);
+
   const stats: Stat[] = [
-    { key: "rows", label: "rows ", value: unknown ? null : visible.length },
-    { key: "machines", label: "machines ", value: health.machines },
+    { key: "rows", label: "rows ", value: fleet(rows.length) },
+    { key: "machines", label: "machines ", value: fleet(health.machines) },
     {
       key: "linked",
       label: "linked ",
-      value: unknown ? null : countClass(visible, "linked"),
+      value: fleet(countClass(rows, "linked")),
       title: "coord.sessions row bridged to its coord.agent_sessions row",
     },
     {
       key: "lifecycle",
       label: "lifecycle-only ",
-      value: unknown ? null : countClass(visible, "lifecycle_only"),
+      value: fleet(countClass(rows, "lifecycle_only")),
       title:
         "no Claude Code session id, so no agent-session row can exist — transcript and lineage are not applicable",
       tone: "muted",
@@ -577,15 +663,22 @@ export function SessionsConsole({
     {
       key: "agent",
       label: "agent-only ",
-      value: unknown ? null : countClass(visible, "agent_only"),
+      // A floor like every fleet count over a capped read — and while the
+      // LIFECYCLE half may be incomplete the class itself is narrowed: its
+      // set difference only saw the lifecycle rows coord served.
+      value: fleet(countClass(rows, "agent_only")),
       title:
-        "an allocated agent session no coord.sessions row bridges — heartbeat and state are unknown, not closed",
+        ceiling.lifecycle !== null
+          ? `an allocated agent session with ${agentOnlyBeyondCeiling(ceiling.lifecycle)}`
+          : "an allocated agent session no coord.sessions row bridges — heartbeat and state are unknown, not closed",
       tone: "muted",
     },
     {
       key: "unresolved",
       label: "unresolved ",
-      value: unknown ? null : countClass(visible, null),
+      // Exact even over a capped read: it counts rows of THIS read whose other
+      // half did not answer, not a fleet total a larger read could only add to.
+      value: loaded ? countClass(rows, null) : null,
       title:
         "the read landed but the agent half did not answer for these rows — unknown, not zero",
       tone: (health.unknownJoin ?? 0) > 0 ? "warning" : "muted",
@@ -595,10 +688,14 @@ export function SessionsConsole({
   const badges: HealthBadge[] = [
     {
       key: "attention",
-      label: `needs a person ${health.attention ?? "–"}`,
+      label: `needs a person ${fleet(health.attention) ?? "–"}`,
       tone: (health.attention ?? 0) > 0 ? "attention" : "muted",
     },
-    { key: "active", label: `active ${health.active ?? "–"}`, tone: "muted" },
+    {
+      key: "active",
+      label: `active ${fleet(health.active) ?? "–"}`,
+      tone: "muted",
+    },
     {
       key: "updated",
       label: `updated ${relativeTime(lastUpdated, { absent: "never", now })}`,
@@ -645,6 +742,18 @@ export function SessionsConsole({
           <RefreshCw className="h-3 w-3" />
         </Button>
       </div>
+      {/* U4: the strip and the stats above count what coord SERVED, and each
+          half stops at a ceiling. Said in words, naming only the halves that
+          reached one, so a sample is never presented as the fleet. */}
+      {loaded && disclosure && (
+        <p
+          className="text-xs text-amber-300/90"
+          data-testid="sessions-console-truncated"
+          title="Each half of this read stops at a ceiling and nothing past it was read, so the counts above are floors, not totals."
+        >
+          {disclosure}
+        </p>
+      )}
 
       <FilterTabs
         tabs={tabs}
@@ -678,6 +787,10 @@ export function SessionsConsole({
         </p>
       )}
 
+      {/* `hideWhenEmpty` on the four facets whose options are DERIVED FROM THE
+          ROWS (kind, provider, machine, account): there an empty vocabulary
+          means no row carries the field, so the strip would be a lone `all`
+          chip that can narrow nothing. `work` is authored and always shown. */}
       <div className="flex flex-col gap-1">
         <FilterChips
           label="kind"
@@ -686,6 +799,7 @@ export function SessionsConsole({
           onToggle={(v) => setKinds(toggle(kinds, v))}
           onClear={() => setKinds([])}
           maxVisible={8}
+          hideWhenEmpty
           testIdPrefix="sessions-console-kind"
         />
         <FilterChips
@@ -695,6 +809,7 @@ export function SessionsConsole({
           onToggle={(v) => setProviders(toggle(providers, v))}
           onClear={() => setProviders([])}
           maxVisible={8}
+          hideWhenEmpty
           testIdPrefix="sessions-console-provider"
         />
         <FilterChips
@@ -706,6 +821,7 @@ export function SessionsConsole({
           // A server vocabulary with no ceiling this page controls — one chip
           // per machine on the fleet.
           maxVisible={6}
+          hideWhenEmpty
           testIdPrefix="sessions-console-machine"
         />
         <FilterChips
@@ -728,9 +844,23 @@ export function SessionsConsole({
           // A server vocabulary (one chip per Claude account home the fleet
           // reported), so capped like `machine`.
           maxVisible={8}
+          hideWhenEmpty
           testIdPrefix="sessions-console-account"
           title="the Claude account each session ran on — coord's durable account stamp, read off the agent half"
         />
+        {/* What the facets left of coord's answer — beside the facets that
+            did it, so the strip above keeps the tab's numbers and this line
+            carries the narrowed count. Nothing when no facet narrows. */}
+        {loaded && narrowedBy.length > 0 && (
+          <p
+            className="text-[11px] text-muted-foreground"
+            data-testid="sessions-console-scope"
+          >
+            showing {visible.length} of {rows.length}{" "}
+            {rows.length === 1 ? "row" : "rows"} — filtered by{" "}
+            {joinNames(narrowedBy)}
+          </p>
+        )}
       </div>
 
       {withheld > 0 && visible.length > 0 && (
@@ -780,6 +910,7 @@ export function SessionsConsole({
             onToggle={ctx.onToggle}
             rowKey={ctx.rowKey}
             machineLabel={machineLabel}
+            lifecycleCeiling={ceiling.lifecycle}
             now={now}
             coordinationReaders={coordinationReaders}
             readOutput={readOutput}
@@ -803,6 +934,7 @@ function SessionConsoleRow({
   onToggle,
   rowKey,
   machineLabel,
+  lifecycleCeiling,
   now,
   coordinationReaders,
   readOutput,
@@ -816,6 +948,8 @@ function SessionConsoleRow({
   onToggle: () => void;
   rowKey: string;
   machineLabel: MachineLabel;
+  /** The lifecycle half's ceiling while that read may be incomplete, else `null`. */
+  lifecycleCeiling: number | null;
   now?: number;
   coordinationReaders?: CoordinationReaders;
   readOutput?: OutputReader;
@@ -994,6 +1128,7 @@ function SessionConsoleRow({
         row={row}
         account={account}
         machineLabel={machineLabel}
+        lifecycleCeiling={lifecycleCeiling}
         coordination={coordination}
         stores={stores}
         now={now}
@@ -1009,6 +1144,13 @@ function SessionConsoleRow({
 /**
  * The honest empty state — it has to name WHICH question came back empty,
  * which is exactly why `RecordList` makes the caller supply it.
+ *
+ * It names it by its NARROWING and its next step, and nothing else: what
+ * coord's answer held is the strip's sentence, directly above ("No live
+ * sessions on the fleet", "0 sessions match “q”"). Saying it here too was the
+ * same fact in two places (`ux-priorities` `a-control-belongs-with-what-it-governs`,
+ * the duplication tell), so an unnarrowed empty list says only how a session
+ * gets here.
  */
 function EmptyState({
   unknown,
@@ -1041,12 +1183,10 @@ function EmptyState({
       className="py-10 text-center text-sm text-muted-foreground"
       data-testid="sessions-console-empty"
     >
-      <p className="font-medium">
-        {filtered ? "No sessions match this filter" : "No sessions on the fleet"}
-      </p>
+      {filtered && <p className="font-medium">No sessions match this filter</p>}
       <p className="text-xs mt-1 max-w-md mx-auto">
         {filtered
-          ? "coord answered — nothing matched. Clear a filter to widen the question."
+          ? "Clear a filter to widen the question."
           : "Start a session from any runner and it will surface here."}
       </p>
       {withheld > 0 && (
@@ -1117,6 +1257,12 @@ function countClass(
   cls: ConsolidatedSessionRow["row_class"]
 ): number {
   return rows.filter((r) => (r.row_class ?? null) === (cls ?? null)).length;
+}
+
+/** `a`, `a and b`, `a, b and c`. */
+function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 function toggle(selected: string[], value: string): string[] {
