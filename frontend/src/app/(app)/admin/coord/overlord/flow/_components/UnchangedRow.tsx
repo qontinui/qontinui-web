@@ -22,6 +22,7 @@ import {
 } from "@/components/console";
 import type { FlowUnchangedSession } from "@/lib/api/operations/overlordFlow";
 import {
+  labelHref,
   lastInterventionWords,
   sessionHref,
   unchangedRowKey,
@@ -38,6 +39,10 @@ export function UnchangedRow({
   onToggle: () => void;
 }) {
   const href = sessionHref(row);
+  const labelLink = labelHref(row);
+  const interventionId = row.last_intervention
+    ? row.last_intervention.intervention_id
+    : null;
   const name = row.session_name ?? `terminal ${row.terminal_id}`;
   const reasons =
     row.reason_codes.length > 0
@@ -95,13 +100,24 @@ export function UnchangedRow({
         }
         actions={
           href ? (
-            <Link
-              href={href}
-              className="text-xs text-primary underline-offset-4 hover:underline"
-              data-testid="overlord-flow-unchanged-open"
-            >
-              Open session ↗
-            </Link>
+            <span className="flex flex-wrap gap-4">
+              <Link
+                href={href}
+                className="text-xs text-primary underline-offset-4 hover:underline"
+                data-testid="overlord-flow-unchanged-open"
+              >
+                Open session ↗
+              </Link>
+              {labelLink ? (
+                <Link
+                  href={labelLink}
+                  className="text-xs text-primary underline-offset-4 hover:underline"
+                  data-testid="overlord-flow-unchanged-label"
+                >
+                  Label this judgment ↗
+                </Link>
+              ) : null}
+            </span>
           ) : (
             <p
               className="text-xs text-muted-foreground m-0"
@@ -118,6 +134,7 @@ export function UnchangedRow({
             key {row.key} · terminal {row.terminal_id} · claude session{" "}
             {row.claude_session_id ?? "not proven"} · runner port{" "}
             {row.runner_port ?? "unknown"}
+            {interventionId ? ` · intervention ${interventionId}` : null}
           </p>
         }
       />
