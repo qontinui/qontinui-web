@@ -130,7 +130,9 @@ function facetOf(totals: Partial<Record<string, number | null>>) {
  * other read is rows — `rows[view]` for the first page, with
  * `cursors[view]` as its next cursor, and `rows["<view>@<cursor>"]` for the
  * page after it. Open's one read (`exclude_headline=done`) is the `open`
- * view; `refuseExclude` answers it 422, as a coord without the parameter.
+ * view; `refuseExclude` answers it as a coord without the parameter does:
+ * `400 {"error": "unknown_query_parameter", "unknown": ["exclude_headline"]}`,
+ * which the backend passes through as `{"detail": <that object>}`.
  */
 function route(
   totals: Partial<Record<string, number | null>>,
@@ -146,7 +148,7 @@ function route(
     const excludesDone = query.get("exclude_headline") === "done";
     if (excludesDone && opts.refuseExclude)
       throw new Error(
-        `GET /api/v1/operations/subprojects?${query.toString()} failed: 422 - {"error":"unknown_query_param","detail":"exclude_headline"}`
+        `GET /api/v1/operations/subprojects?${query.toString()} failed: 400 - {"detail":{"error":"unknown_query_parameter","unknown":["exclude_headline"]}}`
       );
     if (query.get("limit") === "1") {
       if (headline !== null) return page([], totals[headline] ?? 0);
@@ -176,6 +178,11 @@ function queries(): string[] {
 
 function tabCount(tab: string): HTMLElement {
   return screen.getByTestId(`coord-subprojects-tab-${tab}`);
+}
+
+/** A tab's count note: its count's hover title (`null` when current). */
+function noteOf(tab: string): string | null {
+  return tabCount(tab).querySelector("[title]")?.getAttribute("title") ?? null;
 }
 
 const CALM = {
@@ -238,7 +245,7 @@ describe("/admin/coord/subprojects", () => {
     expect(within(tabCount("all")).getByText("8")).toBeInTheDocument();
   });
 
-  it("reads Open per headline only when coord answers 422 to exclude_headline — and keeps doing so", async () => {
+  it("reads Open per headline when coord refuses exclude_headline as unknown — and keeps doing so", async () => {
     route(
       CALM,
       {
@@ -275,8 +282,9 @@ describe("/admin/coord/subprojects", () => {
     ).toHaveLength(before);
   });
 
-  it("never shows a done row under Open, even from a coord that ignored exclude_headline", async () => {
+  it("reads Open per headline when coord IGNORED exclude_headline — a done row in its answer proves it", async () => {
     route(CALM, {
+      // What a coord that ignored the parameter answers: every open subproject.
       open: [
         summary({ title: "still-open" }),
         summary({
@@ -285,10 +293,99 @@ describe("/admin/coord/subprojects", () => {
           title: "already-done",
         }),
       ],
+      stalled: [summary({ title: "still-open" })],
     });
     render(<CoordSubprojectsPage />);
     expect(await screen.findByText("still-open")).toBeInTheDocument();
     expect(screen.queryByText("already-done")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(queries()).toContain("status=open&headline=stalled&limit=100")
+    );
+    // Once fallen back, a refresh does not try the ignored parameter again.
+    const tried = queries().filter((q) =>
+      q.includes("exclude_headline")
+    ).length;
+    fireEvent.click(screen.getByTestId("coord-subprojects-refresh"));
+    await waitFor(() =>
+      expect(
+        queries().filter((q) => q === "status=open&headline=stalled&limit=100")
+      ).toHaveLength(2)
+    );
+    expect(
+      queries().filter((q) => q.includes("exclude_headline"))
+    ).toHaveLength(tried);
+  });
+
+  it("never renders an all-done first page from a coord that ignored the parameter as 'nothing open'", async () => {
+    const done = (id: string, title: string) =>
+      summary({ id, title, headline: "done", top_reason: null });
+    route(CALM, {
+      open: [
+        done("11111111-1111-4111-8111-111111111111", "done-one"),
+        done("22222222-2222-4222-8222-222222222222", "done-two"),
+      ],
+      waiting: [
+        summary({
+          id: "44444444-4444-4444-8444-444444444444",
+          headline: "waiting",
+          title: "an-open-one",
+        }),
+      ],
+    });
+    render(<CoordSubprojectsPage />);
+    expect(await screen.findByText("an-open-one")).toBeInTheDocument();
+    expect(screen.queryByText("done-one")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-subprojects-empty")
+    ).not.toBeInTheDocument();
+  });
+
+  it("starts Open again per headline when a LATER page shows coord ignored the parameter", async () => {
+    route(
+      CALM,
+      {
+        open: [summary({ title: "page-one" })],
+        "open@c2": [
+          summary({
+            id: "55555555-5555-4555-8555-555555555555",
+            headline: "done",
+            title: "a-done-one",
+          }),
+        ],
+        stalled: [summary({ title: "per-headline-row" })],
+      },
+      { cursors: { open: "c2" } }
+    );
+    render(<CoordSubprojectsPage />);
+    await screen.findByText("page-one");
+    fireEvent.click(screen.getByTestId("coord-subprojects-load-more"));
+    // The pages read through the ignored parameter are no view of Open:
+    // it starts again, per headline, from the first page.
+    expect(await screen.findByText("per-headline-row")).toBeInTheDocument();
+    expect(screen.queryByText("a-done-one")).not.toBeInTheDocument();
+    expect(screen.queryByText("page-one")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-subprojects-rows-paused")
+    ).not.toBeInTheDocument();
+  });
+
+  it("calls a refusal of some OTHER parameter a failed read, not a reason to fall back", async () => {
+    route(CALM, { open: [summary()] });
+    const answered = fetchSubprojects.getMockImplementation();
+    fetchSubprojects.mockImplementation(async (query: URLSearchParams) => {
+      if (query.get("exclude_headline") === "done")
+        throw new Error(
+          `GET /api/v1/operations/subprojects?${query.toString()} failed: 400 - {"detail":{"error":"unknown_query_parameter","unknown":["origin"]}}`
+        );
+      return answered?.(query);
+    });
+    render(<CoordSubprojectsPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-subprojects-empty")).toHaveTextContent(
+        /^Whether any subproject is in this view is unknown/
+      )
+    );
+    expect(queries()).not.toContain("status=open&headline=stalled&limit=100");
   });
 
   it("lists a stalled one-session subproject with no work units under Stalled AND Open — never folded", async () => {
@@ -323,7 +420,7 @@ describe("/admin/coord/subprojects", () => {
     await waitFor(() =>
       expect(within(tabCount("all")).getByText("8")).toBeInTheDocument()
     );
-    expect(tabCount("all")).not.toHaveAttribute("title");
+    expect(noteOf("all")).toBeNull();
     expect(
       screen.getByTestId("coord-subprojects-page-count")
     ).toHaveTextContent("1 loaded of 8.");
@@ -335,8 +432,7 @@ describe("/admin/coord/subprojects", () => {
     });
     fireEvent.click(screen.getByTestId("coord-subprojects-refresh"));
     await waitFor(() =>
-      expect(tabCount("all")).toHaveAttribute(
-        "title",
+      expect(noteOf("all")).toEqual(
         "the last good count; the latest read failed (coord did not answer (Failed to fetch))"
       )
     );
@@ -353,7 +449,7 @@ describe("/admin/coord/subprojects", () => {
       "1 loaded of 8 (the last good count; its latest read failed)."
     );
     // The open scope still answered: its tabs carry nothing.
-    expect(tabCount("open")).not.toHaveAttribute("title");
+    expect(noteOf("open")).toBeNull();
   });
 
   it("applies an older count read that answers after a newer one failed — and calls it stale", async () => {
@@ -380,10 +476,7 @@ describe("/admin/coord/subprojects", () => {
     fireEvent.click(screen.getByTestId("coord-subprojects-refresh"));
     await waitFor(() => expect(allScopeReads).toBe(2));
     await waitFor(() =>
-      expect(tabCount("all")).toHaveAttribute(
-        "title",
-        expect.stringMatching(/^could not be read/)
-      )
+      expect(noteOf("all")).toEqual(expect.stringMatching(/^could not be read/))
     );
     // The older read now answers: its number is real — applied, and stale.
     await act(async () => {
@@ -393,8 +486,7 @@ describe("/admin/coord/subprojects", () => {
       expect(within(tabCount("all")).getByText(/12/)).toBeInTheDocument()
     );
     expect(tabCount("all").textContent).toContain("12*");
-    expect(tabCount("all")).toHaveAttribute(
-      "title",
+    expect(noteOf("all")).toEqual(
       expect.stringMatching(/^the last good count; the latest read failed/)
     );
   });
@@ -425,7 +517,7 @@ describe("/admin/coord/subprojects", () => {
       pending[0]?.();
     });
     // The superseded failure changes nothing: current, unstarred.
-    expect(tabCount("all")).not.toHaveAttribute("title");
+    expect(noteOf("all")).toBeNull();
     expect(tabCount("all").textContent).not.toContain("*");
   });
 

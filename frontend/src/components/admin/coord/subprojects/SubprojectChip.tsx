@@ -12,14 +12,16 @@
  * asks only for what is due:
  *
  * - a session it has never asked about — at once, when it appears;
- * - a session whose last lookup failed, once that failure is
+ * - a session whose latest lookup failed, once that failure is
  *   {@link SUBPROJECT_CHIP_RETRY_MS} old;
- * - a session coord placed in no subproject, or did not name, once that
- *   answer is {@link SUBPROJECT_CHIP_REASK_MS} old — it may have joined one
- *   since.
+ * - every other answer — a membership (the session may have been moved, or
+ *   its subproject's headline changed), no subproject, coord not naming it —
+ *   once it is {@link SUBPROJECT_CHIP_REASK_MS} old.
  *
- * A member's answer is kept: membership moves far more slowly than a session
- * list polls, and the subproject's own page is one click away.
+ * An answer stays on screen while it is re-asked, so a chip never flickers to
+ * a dash; and when the re-ask FAILS, the last answer stays too, said to be
+ * not current (R6's stale arm) — a dash replaces it only when no answer was
+ * ever had.
  *
  * WHEN it checks is the caller's: on every new `sessionIds` array — the
  * sessions console hands it one per list poll, so the console's ONE visible
@@ -61,11 +63,17 @@ export const SUBPROJECT_CHIP_REASK_MS = 180_000;
 /** The lookup a surface uses; injectable for tests. */
 export type SubprojectLookup = typeof fetchSubprojectsBySessions;
 
-/** One session's latest answer, and when it came (epoch ms). */
+/** What coord last answered for one session, and when (epoch ms). */
 type Answer =
   | ({ kind: "member"; at: number } & SubprojectOfSession)
-  | { kind: "none" | "unanswered"; at: number }
-  | { kind: "failed"; failure: SubprojectReadFailure; at: number };
+  | { kind: "none" | "unanswered"; at: number };
+
+/** One session's state: its last answer, if any, and the latest lookup's
+ *  failure, when that lookup failed. */
+interface Entry {
+  answer: Answer | null;
+  failure: { failure: SubprojectReadFailure; at: number } | null;
+}
 
 function chunked<T>(items: readonly T[], size: number): T[][] {
   const out: T[][] = [];
@@ -74,17 +82,14 @@ function chunked<T>(items: readonly T[], size: number): T[][] {
   return out;
 }
 
-/** Is this session's answer due to be asked (again) at `now`? */
-function isDue(answer: Answer | undefined, now: number): boolean {
-  if (answer === undefined) return true;
-  switch (answer.kind) {
-    case "member":
-      return false;
-    case "failed":
-      return now - answer.at >= SUBPROJECT_CHIP_RETRY_MS;
-    default:
-      return now - answer.at >= SUBPROJECT_CHIP_REASK_MS;
-  }
+/** Is this session due to be asked (again) at `now`? */
+function isDue(entry: Entry | undefined, now: number): boolean {
+  if (entry === undefined) return true;
+  if (entry.failure !== null)
+    return now - entry.failure.at >= SUBPROJECT_CHIP_RETRY_MS;
+  return (
+    entry.answer === null || now - entry.answer.at >= SUBPROJECT_CHIP_REASK_MS
+  );
 }
 
 export interface SubprojectsBySessions {
@@ -121,10 +126,10 @@ export function useSubprojectsBySessions(
 
   // The answers are state, for the page, and mirrored in a ref, for the
   // lookup, which must read its own writes in the same tick.
-  const [known, setKnown] = useState<ReadonlyMap<string, Answer>>(
+  const [known, setKnown] = useState<ReadonlyMap<string, Entry>>(
     () => new Map()
   );
-  const answers = useRef<ReadonlyMap<string, Answer>>(known);
+  const entries = useRef<ReadonlyMap<string, Entry>>(known);
   const asking = useRef(new Set<string>());
   const alive = useRef(true);
   useEffect(() => {
@@ -134,17 +139,20 @@ export function useSubprojectsBySessions(
     };
   }, []);
 
-  const record = useCallback((entries: ReadonlyArray<[string, Answer]>) => {
-    const next = new Map(answers.current);
-    for (const [id, answer] of entries) next.set(id, answer);
-    answers.current = next;
-    setKnown(next);
-  }, []);
+  const record = useCallback(
+    (update: ReadonlyArray<[string, (prev: Entry | undefined) => Entry]>) => {
+      const next = new Map(entries.current);
+      for (const [id, entryFor] of update) next.set(id, entryFor(next.get(id)));
+      entries.current = next;
+      setKnown(next);
+    },
+    []
+  );
 
   const recheck = useCallback(async () => {
     const now = Date.now();
     const due = idsRef.current.filter(
-      (id) => !asking.current.has(id) && isDue(answers.current.get(id), now)
+      (id) => !asking.current.has(id) && isDue(entries.current.get(id), now)
     );
     if (due.length === 0) return;
     for (const id of due) asking.current.add(id);
@@ -162,35 +170,34 @@ export function useSubprojectsBySessions(
             Array.isArray(body?.missing) ? body.missing : []
           );
           record(
-            batch.map((id): [string, Answer] => {
+            batch.map((id) => {
               const item = Object.prototype.hasOwnProperty.call(items, id)
                 ? items[id]
                 : undefined;
-              if (item && typeof item.id === "string")
-                return [
-                  id,
-                  {
-                    kind: "member",
-                    at,
-                    id: item.id,
-                    title: item.title,
-                    headline: item.headline,
-                  },
-                ];
-              return [
-                id,
-                { kind: missing.has(id) ? "none" : "unanswered", at },
-              ];
+              const answer: Answer =
+                item && typeof item.id === "string"
+                  ? {
+                      kind: "member",
+                      at,
+                      id: item.id,
+                      title: item.title,
+                      headline: item.headline,
+                    }
+                  : { kind: missing.has(id) ? "none" : "unanswered", at };
+              return [id, () => ({ answer, failure: null })];
             })
           );
         } catch (err) {
           if (!alive.current) return;
-          const failure = classifySubprojectReadFailure(err);
-          const at = Date.now();
+          const failure = {
+            failure: classifySubprojectReadFailure(err),
+            at: Date.now(),
+          };
+          // The last answer, if any, stays — said to be not current.
           record(
-            batch.map((id): [string, Answer] => [
+            batch.map((id) => [
               id,
-              { kind: "failed", failure, at },
+              (prev) => ({ answer: prev?.answer ?? null, failure }),
             ])
           );
         } finally {
@@ -209,21 +216,23 @@ export function useSubprojectsBySessions(
   const chipOf = useCallback(
     (sessionId: string | null): SubprojectChip => {
       if (!sessionId) return { kind: "not_applicable" };
-      const answer = known.get(sessionId);
-      if (answer === undefined) return { kind: "looking_up" };
-      switch (answer.kind) {
-        case "member":
-          return {
+      const entry = known.get(sessionId);
+      if (entry === undefined) return { kind: "looking_up" };
+      const { answer, failure } = entry;
+      if (answer === null)
+        return failure
+          ? { kind: "failed", failure: failure.failure }
+          : { kind: "looking_up" };
+      const stale = failure?.failure ?? null;
+      return answer.kind === "member"
+        ? {
             kind: "member",
             id: answer.id,
             title: answer.title,
             headline: answer.headline,
-          };
-        case "failed":
-          return { kind: "failed", failure: answer.failure };
-        default:
-          return { kind: answer.kind };
-      }
+            stale,
+          }
+        : { kind: answer.kind, stale };
     },
     [known]
   );

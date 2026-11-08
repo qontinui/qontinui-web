@@ -132,8 +132,9 @@ export interface SubprojectHeadlineCounts {
 }
 
 /** The subprojects the list folds into All, counted over the same filter.
- *  A one-off is exactly one member session, finished or closed, and no work
- *  unit. */
+ *  A one-off is exactly one member session whose work is `finished`, no work
+ *  unit, and a `done` headline — a stalled or needs-you subproject is never
+ *  one. */
 export interface SubprojectFoldedCounts {
   one_off: number;
   scheduled: number;
@@ -326,9 +327,14 @@ export interface SubprojectSpawnResponse {
 // ─────────────────────────────── the reads ───────────────────────────────
 
 /**
- * `GET /subprojects?<query>` (`get_subprojects`). `query` carries `status`,
- * `headline`, `origin`, `limit` and `cursor` exactly as the caller built them;
- * an empty query sends no `?` (coord then lists `status=open`).
+ * `GET /subprojects?<query>` (`get_subprojects`). `query` carries any of
+ * `status`, `headline` (one value, or several comma-separated),
+ * `exclude_headline` (likewise — `done` reads every open subproject that is
+ * not done in one read), `origin`, `limit` and `cursor`, exactly as the caller
+ * built them; the backend forwards each one it declares, and these are all of
+ * them. An empty query sends no `?` (coord then lists `status=open`). A coord
+ * that predates a parameter refuses it: `400 {"error":
+ * "unknown_query_parameter", "unknown": [<names>]}`.
  */
 export async function fetchSubprojects(
   query: URLSearchParams,
