@@ -25,7 +25,9 @@ export type ReportView = Schemas["ReportView"];
 export type ViewSnapshot = Schemas["ViewSnapshot"];
 export type SnapshotDoc = Schemas["ReportSnapshotDoc"];
 export type SnapshotChanges = Schemas["SnapshotChanges"];
-export type ReportRead = Schemas["ReportRead"];
+/** Through the view, as `ReportContext` names it: `Schemas["ReportRead"]` is
+ *  a name another backend model also uses. */
+export type ReportRead = ReportView["report"];
 
 export const SLUG = "platform-review";
 export const REPORT_ID = "report-platform-review";

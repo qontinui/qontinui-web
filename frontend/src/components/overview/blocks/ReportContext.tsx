@@ -62,7 +62,13 @@ import type { components } from "@/lib/api-client/generated-types";
 type Schemas = components["schemas"];
 
 export type ReportView = Schemas["ReportView"];
-export type ReportRead = Schemas["ReportRead"];
+/**
+ * A report as the view serves it. Named through the view, not as
+ * `Schemas["ReportRead"]`: another backend model is also called `ReportRead`,
+ * and once both are in one OpenAPI document FastAPI qualifies both names by
+ * module, so that key stops existing.
+ */
+export type ReportRead = ReportView["report"];
 export type ViewSnapshot = Schemas["ViewSnapshot"];
 export type SnapshotDoc = Schemas["ReportSnapshotDoc"];
 export type SnapshotChanges = Schemas["SnapshotChanges"];
