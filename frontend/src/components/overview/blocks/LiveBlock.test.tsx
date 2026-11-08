@@ -62,21 +62,37 @@ describe("a fence that names a block", () => {
     );
     expect(document.querySelector("[data-overview-block]")).toBeNull();
   });
+
+  it.each(["objective-c", "Objective-C", "objective-c++", "objective-j"])(
+    "leaves %s, a code language that shares a block prefix, as code",
+    async (language) => {
+      render(
+        <InPageBody body={fence(language, "@interface Greeter : NSObject")} />
+      );
+      await pageSettled();
+      const code = document.querySelector("pre > code");
+      expect(code?.className).toBe(`language-${language}`);
+      expect(code?.textContent).toBe("@interface Greeter : NSObject\n");
+      expect(document.querySelector("[data-overview-block]")).toBeNull();
+    }
+  );
 });
 
 describe("a fence that looks like a block but is not one", () => {
-  it.each(["report-gantt", "overview-burndown", "objective-trend"])(
-    "says %s isn't available — never a silent nothing",
-    async (name) => {
-      render(<InPageBody body={fence(name, "anything: here")} />);
-      await pageSettled();
-      const notice = document.querySelector(
-        '[data-overview-block-error="unknown"]'
-      )!;
-      expect(notice.textContent).toMatch(/^This block isn.t available: /);
-      expect(notice.querySelector("code")?.textContent).toBe(name);
-    }
-  );
+  it.each([
+    "report-gantt",
+    "overview-burndown",
+    "objective-trend",
+    "objective-checkpointz",
+  ])("says %s isn't available — never a silent nothing", async (name) => {
+    render(<InPageBody body={fence(name, "anything: here")} />);
+    await pageSettled();
+    const notice = document.querySelector(
+      '[data-overview-block-error="unknown"]'
+    )!;
+    expect(notice.textContent).toMatch(/^This block isn.t available: /);
+    expect(notice.querySelector("code")?.textContent).toBe(name);
+  });
 });
 
 describe("settings that are not valid", () => {

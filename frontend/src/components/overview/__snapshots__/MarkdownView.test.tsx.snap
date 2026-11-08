@@ -15,6 +15,15 @@ exports[`MarkdownView code that is not a block > renders exactly as it did befor
 </code></pre>
 <pre><code class="language-overviewkpi">not a block either
 </code></pre>
+<pre><code class="language-objective-c">@interface Greeter : NSObject
+@end
+</code></pre>
+<pre><code class="language-objective-C++">auto greeter = [[Greeter alloc] init];
+</code></pre>
+<pre><code class="language-objective-cpp">std::string name = greeter.name;
+</code></pre>
+<pre><code class="language-objective-J">@implementation Greeter : CPObject
+</code></pre>
 <pre><code>an indented block
 </code></pre>
 <p>Inline <code>code</code> stays inline.</p></div>"

@@ -19,10 +19,14 @@ describe("isLocalImageSrc", () => {
 /**
  * Every kind of code a document can hold that is NOT a live block: a bare
  * fence, a fence in a language, one with an info string, near-misses of the
- * block prefixes, an indented block, and inline code. The snapshot was
- * recorded from `MarkdownView` before it learned to render blocks (plan
+ * block prefixes, code languages that share a block prefix (Objective-C and
+ * its relatives, in either case), an indented block, and inline code. The
+ * snapshot was recorded from `MarkdownView` before it learned to render
+ * blocks (plan
  * `2026-11-07-interactive-stakeholder-reports-in-the-project-overview` Phase
- * 2), so it pins that every one of them still renders exactly as it did.
+ * 2; the Objective-C fences were recorded against that same version, commit
+ * 30052fc2a), so it pins that every one of them still renders exactly as it
+ * did.
  */
 const NON_BLOCK_CODE = [
   "# Notes",
@@ -50,6 +54,23 @@ const NON_BLOCK_CODE = [
   "",
   "```overviewkpi forecast-finish",
   "not a block either",
+  "```",
+  "",
+  "```objective-c",
+  "@interface Greeter : NSObject",
+  "@end",
+  "```",
+  "",
+  "```objective-C++",
+  "auto greeter = [[Greeter alloc] init];",
+  "```",
+  "",
+  "```objective-cpp",
+  "std::string name = greeter.name;",
+  "```",
+  "",
+  "```objective-J",
+  "@implementation Greeter : CPObject",
   "```",
   "",
   "    an indented block",

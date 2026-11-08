@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
   BLOCKS,
   BLOCK_NAME_PREFIXES,
+  CODE_LANGUAGES_WITH_BLOCK_PREFIX,
   findBlock,
   isBlockName,
 } from "./registry";
@@ -104,5 +105,32 @@ describe("which fences are blocks", () => {
     ]) {
       expect(isBlockName(language)).toBe(false);
     }
+  });
+
+  it("is never a code language that shares a block prefix, in any case", () => {
+    for (const language of [
+      "objective-c",
+      "Objective-C",
+      "objective-c++",
+      "objective-C++",
+      "objective-cpp",
+      "OBJECTIVE-CPP",
+      "objective-j",
+      "objective-J",
+    ]) {
+      expect(isBlockName(language), language).toBe(false);
+    }
+  });
+
+  it("exempts only real prefix clashes, and no block's own name", () => {
+    for (const language of CODE_LANGUAGES_WITH_BLOCK_PREFIX) {
+      expect(BLOCK_NAME_PREFIXES.some((p) => language.startsWith(p))).toBe(
+        true
+      );
+      expect(findBlock(language)).toBeUndefined();
+    }
+    // A name that only starts like one is still meant as a block.
+    expect(isBlockName("objective-checkpointz")).toBe(true);
+    expect(isBlockName("objective-csv")).toBe(true);
   });
 });

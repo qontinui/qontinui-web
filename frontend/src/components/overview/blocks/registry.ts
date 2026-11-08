@@ -8,7 +8,10 @@
  * A fence whose language is a name here renders that block's component; any
  * other fence renders exactly as before. A fence whose language starts with
  * one of {@link BLOCK_NAME_PREFIXES} but is not registered renders a visible
- * "This block isn't available" notice — never a silent nothing.
+ * "This block isn't available" notice — never a silent nothing — unless the
+ * language is real code that shares the prefix
+ * ({@link CODE_LANGUAGES_WITH_BLOCK_PREFIX}: Objective-C and its relatives),
+ * which renders as code.
  *
  * ## Self-enforcing
  *
@@ -61,6 +64,21 @@ export const BLOCK_NAME_PREFIXES = [
   "report-",
   "objective-",
 ] as const;
+
+/**
+ * Code languages whose names happen to start with a block prefix. A fence
+ * tagged with one is code, never a block: `objective-` is reserved for blocks,
+ * but Objective-C, Objective-C++ and Objective-J are real languages. Matched
+ * without regard to case (` ```Objective-C ` is the same language).
+ */
+export const CODE_LANGUAGES_WITH_BLOCK_PREFIX = [
+  "objective-c",
+  "objective-c++",
+  "objective-cpp",
+  "objective-j",
+] as const;
+
+const CODE_LANGUAGES = new Set<string>(CODE_LANGUAGES_WITH_BLOCK_PREFIX);
 
 type Settings = Record<string, unknown>;
 
@@ -211,8 +229,10 @@ export function findBlock(name: string): BlockEntry | undefined {
   return BY_NAME.get(name);
 }
 
-/** Whether a fence's language names a block — registered, or meant as one. */
+/** Whether a fence's language names a block — registered, or meant as one.
+ *  A code language that shares a block prefix never does. */
 export function isBlockName(language: string): boolean {
+  if (CODE_LANGUAGES.has(language.toLowerCase())) return false;
   return (
     BY_NAME.has(language) ||
     BLOCK_NAME_PREFIXES.some((prefix) => language.startsWith(prefix))
