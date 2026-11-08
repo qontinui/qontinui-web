@@ -638,6 +638,11 @@ describe("GithubHostedCiPanel — read-only and read failures", () => {
     expect(
       screen.getByTestId("github-hosted-ci-summary-repos")
     ).toHaveTextContent("repos –");
+    // A read that ANSWERED with a failure is unknown, not "not read yet": the
+    // pre-read arm's title must not ride along on it.
+    expect(
+      screen.getByTestId("github-hosted-ci-summary-repos")
+    ).not.toHaveAttribute("title");
     // The tenant value comes from the same read, so it is unknown too.
     expect(
       screen.getByTestId("github-hosted-ci-tenant-effective").textContent

@@ -99,6 +99,9 @@ describe("PromptInjectionsDashboard — R6's failed-read arms", () => {
     expect(screen.getByTestId("prompt-injections-count")).toHaveTextContent(
       "–"
     );
+    // A failed read is UNKNOWN, not "still reading": no skeleton stands in
+    // for an answer that is not coming until the next poll.
+    expect(screen.queryByTestId("prompt-injections-reading")).toBeNull();
   });
 
   it("a failed REFETCH keeps its rows and says they may be out of date", async () => {
@@ -229,6 +232,9 @@ describe("PromptInjectionsDashboard — a filter set is this route's param", () 
     expect(screen.getByTestId("prompt-injections-count")).toHaveTextContent(
       "–"
     );
+    // A failed read is UNKNOWN, not "still reading": no skeleton stands in
+    // for an answer that is not coming until the next poll.
+    expect(screen.queryByTestId("prompt-injections-reading")).toBeNull();
   });
 
   it("never shows rows fetched under a DIFFERENT filter set", async () => {
@@ -603,7 +609,7 @@ describe("PromptInjectionsDashboard — before the read for these filters answer
     );
 
     const inserted: string[] = [];
-    const observer = new MutationObserver((records) => {
+    const collectEmpty = (records: MutationRecord[]) => {
       for (const r of records) {
         r.addedNodes.forEach((n) => {
           if (!(n instanceof HTMLElement)) return;
@@ -616,7 +622,8 @@ describe("PromptInjectionsDashboard — before the read for these filters answer
           for (const el of hits) inserted.push(el.textContent ?? "");
         });
       }
-    });
+    };
+    const observer = new MutationObserver(collectEmpty);
     observer.observe(container, { childList: true, subtree: true });
 
     await userEvent.type(
@@ -624,17 +631,7 @@ describe("PromptInjectionsDashboard — before the read for these filters answer
       "q"
     );
     // Deliver any records still queued before disconnecting.
-    inserted.push(
-      ...observer
-        .takeRecords()
-        .flatMap((r) => Array.from(r.addedNodes))
-        .filter(
-          (n): n is HTMLElement =>
-            n instanceof HTMLElement &&
-            n.getAttribute("data-testid") === "prompt-injections-empty"
-        )
-        .map((n) => n.textContent ?? "")
-    );
+    collectEmpty(observer.takeRecords());
     observer.disconnect();
 
     expect(inserted).toEqual([]);
