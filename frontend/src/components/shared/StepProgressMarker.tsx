@@ -11,7 +11,6 @@
  *
  * Used by:
  * - UnifiedStepCard: Shows progress when step is expanded and running
- * - TestStepTimeline: Shows inline progress for current step
  */
 
 import { useEffect, useState } from "react";

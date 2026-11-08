@@ -7,7 +7,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import type { TestSuite, TestCase } from "@/services/workflow-testing-service";
+import type { TestSuite, TestCase } from "@/services/workflow-testing";
 import type { TestSuiteValidationErrors } from "../test-suite-editor-types";
 
 export function useTestSuiteEditor(
