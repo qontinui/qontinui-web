@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSharedRead } from "@/components/overview/editing/sharedReads";
 import {
   useResourceList,
   useResourceRecord,
@@ -45,17 +46,21 @@ export type ForecastState =
   | { state: "ready"; forecast: TimelineForecast };
 
 /** The forecast for `estimateId`, re-read whenever `token` moves (after a
- *  progress write, which is what changes it). */
+ *  progress write, which is what changes it). Blocks on one document share
+ *  one read of it (`sharedReads.tsx`). */
 export function useForecast(
   estimateId: string | null,
   hold: boolean,
   token: number
 ): ForecastState {
   const [value, setValue] = useState<ForecastState>({ state: "loading" });
+  const share = useSharedRead();
   useEffect(() => {
     if (hold || estimateId === null) return;
     let live = true;
-    fetchForecast(estimateId).then(
+    share(["forecast", estimateId, token], () =>
+      fetchForecast(estimateId)
+    ).then(
       (forecast) => live && setValue({ state: "ready", forecast }),
       (err: unknown) =>
         live &&
@@ -67,7 +72,7 @@ export function useForecast(
     return () => {
       live = false;
     };
-  }, [estimateId, hold, token]);
+  }, [estimateId, hold, token, share]);
   return value;
 }
 

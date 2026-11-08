@@ -24,6 +24,7 @@ import {
   type VersionedRecord,
   type WriteSource,
 } from "./api";
+import { useSharedRead } from "./sharedReads";
 
 export type ListState<T> =
   | { state: "loading" }
@@ -55,7 +56,9 @@ function newKey(): string {
 /**
  * `path` is the resource's route segment (`intent-documents`). Nothing is
  * read while `hold` is true (the active project is not yet known); `reloadKey`
- * re-reads when it changes — pass the active project id.
+ * re-reads when it changes — pass the active project id. Inside a document's
+ * `SharedReadsBoundary` (`sharedReads.tsx`), the same read made by another
+ * block is shared instead of made again.
  */
 export function useResourceList<T extends VersionedRecord>(
   path: string,
@@ -80,14 +83,17 @@ export function useResourceList<T extends VersionedRecord>(
   }, [list]);
   // The params object is usually a literal; compare by value, not identity.
   const paramsKey = JSON.stringify(params ?? {});
+  const share = useSharedRead();
 
   useEffect(() => {
     if (hold) return;
     let live = true;
     setList({ state: "loading" });
-    listResource<T>(
-      path,
-      JSON.parse(paramsKey) as Record<string, string | readonly string[]>
+    share(["list", path, paramsKey, reloadKey, nonce], () =>
+      listResource<T>(
+        path,
+        JSON.parse(paramsKey) as Record<string, string | readonly string[]>
+      )
     ).then(
       (body) =>
         live &&
@@ -102,7 +108,7 @@ export function useResourceList<T extends VersionedRecord>(
     return () => {
       live = false;
     };
-  }, [path, paramsKey, hold, reloadKey, nonce]);
+  }, [path, paramsKey, hold, reloadKey, nonce, share]);
 
   const replace = useCallback((item: T) => {
     setList((prev) =>
@@ -215,12 +221,15 @@ export function useResourceRecord<T extends VersionedRecord>(
 ) {
   const [record, setRecord] = useState<RecordState<T>>({ state: "loading" });
   const [nonce, setNonce] = useState(0);
+  const share = useSharedRead();
 
   useEffect(() => {
     if (hold || id === null) return;
     let live = true;
     setRecord({ state: "loading" });
-    getResource<T>(path, id).then(
+    share(["record", path, id, reloadKey, nonce], () =>
+      getResource<T>(path, id)
+    ).then(
       (body) =>
         live &&
         setRecord({ state: "ready", item: body.item, canEdit: body.can_edit }),
@@ -235,7 +244,7 @@ export function useResourceRecord<T extends VersionedRecord>(
     return () => {
       live = false;
     };
-  }, [path, id, hold, reloadKey, nonce]);
+  }, [path, id, hold, reloadKey, nonce, share]);
 
   const replace = useCallback((item: T) => {
     setRecord((prev) => (prev.state === "ready" ? { ...prev, item } : prev));

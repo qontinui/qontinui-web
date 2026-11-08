@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { LiveBlock } from "./blocks/LiveBlock";
 import { ReportSourceBoundary } from "./blocks/ReportContext";
 import { isBlockName } from "./blocks/registry";
+import { SharedReadsBoundary } from "./editing/sharedReads";
 import { remarkWikiLinks, type WikiLinkOptions } from "./wiki-links";
 
 type HeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
@@ -214,18 +215,22 @@ export function MarkdownView({
       )}
     >
       {/* One report source per document: every block naming the same
-          report shares one read of it (`blocks/ReportContext.tsx`). */}
-      <ReportSourceBoundary>
-        <ReactMarkdown
-          remarkPlugins={remarkPlugins}
-          components={{
-            ...(liveBlocks ? componentsWithBlocks : components),
-            ...shifted,
-          }}
-        >
-          {children}
-        </ReactMarkdown>
-      </ReportSourceBoundary>
+          report shares one read of it (`blocks/ReportContext.tsx`). And the
+          blocks share every other read too: N blocks make one read per
+          distinct request (`editing/sharedReads.tsx`). */}
+      <SharedReadsBoundary>
+        <ReportSourceBoundary>
+          <ReactMarkdown
+            remarkPlugins={remarkPlugins}
+            components={{
+              ...(liveBlocks ? componentsWithBlocks : components),
+              ...shifted,
+            }}
+          >
+            {children}
+          </ReactMarkdown>
+        </ReportSourceBoundary>
+      </SharedReadsBoundary>
     </div>
   );
 }

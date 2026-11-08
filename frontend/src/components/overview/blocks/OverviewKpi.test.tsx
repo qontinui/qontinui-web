@@ -208,6 +208,33 @@ describe("overview-kpi — the work counts", () => {
     ).toMatch(/^source: coord's count of the project's work · as of /);
   });
 
+  it("shares one read per request across the document's blocks", async () => {
+    // Three work figures and two forecast figures: coord's project state is
+    // read once and the forecast once — not once per block.
+    render(
+      <InIntentSection
+        body={[
+          fence("overview-kpi work-done"),
+          fence("overview-kpi work-in-progress"),
+          fence("overview-kpi work-planned"),
+          fence("overview-kpi forecast-finish"),
+          fence("overview-kpi slip"),
+        ].join("\n\n")}
+      />
+    );
+    expect((await value("work-done")).textContent).toBe("4");
+    expect((await value("work-in-progress")).textContent).toBe("3");
+    expect((await value("work-planned")).textContent).toBe("3");
+    expect((await value("forecast-finish")).textContent).toBe("17 Apr 2026");
+    expect((await value("slip")).textContent).toBe("3 weeks late");
+    expect(mocks.fetchProjectState).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchForecast).toHaveBeenCalledTimes(1);
+    // The estimates both forecast figures plan from: one read as well.
+    expect(
+      mocks.listResource.mock.calls.filter(([path]) => path === "estimates")
+    ).toHaveLength(1);
+  });
+
   it("says 'not measured' when the count could not be read — never zeros", async () => {
     mocks.fetchProjectState.mockResolvedValue({
       schema: 1,

@@ -23,6 +23,7 @@
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { describeFailure } from "@/components/overview/LoadFailure";
+import { useSharedRead } from "@/components/overview/editing/sharedReads";
 import { Provenance } from "@/components/presentation/Provenance";
 import { useOverviewProject } from "@/app/(app)/overview/_hooks/useOverviewProject";
 import { loadWorkCounts } from "@/app/(app)/overview/_hooks/useSummaryData";
@@ -135,15 +136,18 @@ function workReading(figure: KpiFigure, reading: ProgressReading): Reading {
   };
 }
 
+/** The Summary's work counts; every `work-*` figure on a document shares one
+ *  read of them (`sharedReads.tsx`). */
 function useWorkCounts(projectId: string | null, hold: boolean) {
   const [state, setState] = useState<
     Loaded<{ reading: ProgressReading; asOf: string | null }>
   >({ state: "loading" });
+  const share = useSharedRead();
   useEffect(() => {
     if (hold) return;
     let live = true;
     setState({ state: "loading" });
-    loadWorkCounts().then(
+    share(["work-counts", projectId], loadWorkCounts).then(
       (loaded) => live && setState({ state: "ready", ...loaded }),
       (err: unknown) =>
         live &&
@@ -155,7 +159,7 @@ function useWorkCounts(projectId: string | null, hold: boolean) {
     return () => {
       live = false;
     };
-  }, [projectId, hold]);
+  }, [projectId, hold, share]);
   return state;
 }
 
