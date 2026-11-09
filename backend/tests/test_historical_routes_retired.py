@@ -76,3 +76,20 @@ def test_no_historical_route_is_served(live_app: Any) -> None:
     assert not documented, (
         f"the OpenAPI document still names retired historical routes: {documented}"
     )
+
+
+def test_retired_actions_write_door_is_not_found_over_http(live_app: Any) -> None:
+    """``POST /actions`` was the unauthenticated write door; a request to it now
+    reaches no handler. The route walk above proves absence from the table; this
+    proves it at the HTTP boundary, through the app's own middleware stack.
+    """
+    from fastapi.testclient import TestClient
+
+    # No ``with`` block: the lifespan (DB/Redis startup) is not needed to route.
+    client = TestClient(live_app, raise_server_exceptions=False)
+    response = client.post(f"{RETIRED_PREFIX}/actions", json={})
+    # 404, not 405: a 405 would mean some route still owns this path.
+    assert response.status_code == 404, (
+        f"POST {RETIRED_PREFIX}/actions answered {response.status_code}; the "
+        "retired write door must reach no handler"
+    )

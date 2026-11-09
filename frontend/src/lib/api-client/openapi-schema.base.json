@@ -89252,7 +89252,7 @@
     },
     "/api/v1/integration-testing/execute": {
       "post": {
-        "description": "Execute a mock workflow using historical data (placeholder endpoint).\n\n**Authentication:** JWT token required\n\nThis endpoint returns mock execution data for UI visualization.\n\nNote: This is a placeholder that returns simulated data.",
+        "description": "Return simulated execution data for a workflow (placeholder endpoint).\n\n**Authentication:** JWT token required\n\nThis endpoint returns mock execution data for UI visualization.\n\nNote: This is a placeholder that returns simulated data.",
         "operationId": "api_v1_integration_testing_execute_post",
         "requestBody": {
           "content": {
