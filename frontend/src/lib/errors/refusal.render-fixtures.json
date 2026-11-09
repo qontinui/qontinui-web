@@ -1046,6 +1046,78 @@
    "target": "https://example.com/settings"
   },
   {
+   "kind": "request_access",
+   "render": "Ask an administrator to grant you access, then try again",
+   "retry_after_s": null,
+   "target": null
+  },
+  {
+   "kind": "request_access",
+   "render": "Ask an administrator to grant you access, then try again",
+   "retry_after_s": 45,
+   "target": null
+  },
+  {
+   "kind": "request_access",
+   "render": "Ask an administrator to grant you access, then try again",
+   "retry_after_s": null,
+   "target": ""
+  },
+  {
+   "kind": "request_access",
+   "render": "Ask an administrator to grant you access, then try again",
+   "retry_after_s": 45,
+   "target": ""
+  },
+  {
+   "kind": "request_access",
+   "render": "Ask workspace_root to grant you access, then try again",
+   "retry_after_s": null,
+   "target": "workspace_root"
+  },
+  {
+   "kind": "request_access",
+   "render": "Ask workspace_root to grant you access, then try again",
+   "retry_after_s": 45,
+   "target": "workspace_root"
+  },
+  {
+   "kind": "request_access",
+   "render": "Ask a 'b' c d e\ufefff to grant you access, then try again",
+   "retry_after_s": null,
+   "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
+  },
+  {
+   "kind": "request_access",
+   "render": "Ask a 'b' c d e\ufefff to grant you access, then try again",
+   "retry_after_s": 45,
+   "target": "a\n\"b\"\t c\u0085d\u3000e\ufefff"
+  },
+  {
+   "kind": "request_access",
+   "render": "Ask an administrator to grant you access, then try again",
+   "retry_after_s": null,
+   "target": "  "
+  },
+  {
+   "kind": "request_access",
+   "render": "Ask an administrator to grant you access, then try again",
+   "retry_after_s": 45,
+   "target": "  "
+  },
+  {
+   "kind": "request_access",
+   "render": "Ask https://example.com/settings to grant you access, then try again",
+   "retry_after_s": null,
+   "target": "https://example.com/settings"
+  },
+  {
+   "kind": "request_access",
+   "render": "Ask https://example.com/settings to grant you access, then try again",
+   "retry_after_s": 45,
+   "target": "https://example.com/settings"
+  },
+  {
    "kind": "resnapshot",
    "render": "Take a fresh snapshot of the page, then retry",
    "retry_after_s": null,
