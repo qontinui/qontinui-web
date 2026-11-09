@@ -80,10 +80,9 @@ merge``: this repo keeps strict single-head discipline.
 
 ## Merge-train classifier disposition
 
-coord's migration classifier is expected to classify this revision Reject, as
-it does the landed precedent ``coord_ci_runner_quarantines_01``: it does not
-recognise ``COMMENT ON``, and it scans ``downgrade()`` too, where it rejects
-every ``DROP``. Every SQL string is a static literal.
+Classification is decided by coord's ``migration_classifier.rs`` at land time
+and is not predicted here. The upgrade is additive only (one new table and its
+comments), and every SQL string is a static literal.
 
 ## Safety
 
