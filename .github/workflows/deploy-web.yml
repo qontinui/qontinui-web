@@ -912,6 +912,7 @@ jobs:
           INPUT_CORRELATION_ID: ${{ inputs.correlation_id }}
           ROLLBACK_ARTIFACT: ${{ steps.rollback_artifact.outputs.artifact }}
           INPUT_TARGET_ENV: ${{ inputs.target_environment || 'production' }}
+          COORD_INGEST_TOKEN: ${{ secrets.COORD_INGEST_TOKEN }}
         run: |
           set -uo pipefail
 
@@ -1005,6 +1006,7 @@ jobs:
           #    migrate_safety, worst-across). An escalation annotates the run;
           #    it does not block.
           PAC=$(curl -s --max-time 20 -X POST "$COORD_BASE_URL/coord/deploys/predict-and-check" \
+            -H "Authorization: Bearer ${COORD_INGEST_TOKEN}" \
             -H 'Content-Type: application/json' -d "$BODY" || true)
           RES=$(printf '%s' "$PAC" | jq -r '.composed.resolution // empty' 2>/dev/null || true)
           echo "predict-and-check: ${RES:-unavailable}"
@@ -1014,6 +1016,7 @@ jobs:
 
           # 4. Declare. The signature_id feeds the post-rollout verify step.
           RESP=$(curl -s --max-time 20 -X POST "$COORD_BASE_URL/coord/deploys/declare" \
+            -H "Authorization: Bearer ${COORD_INGEST_TOKEN}" \
             -H 'Content-Type: application/json' -d "$BODY" || true)
           SIG=$(printf '%s' "$RESP" | jq -r '.signature_id // empty' 2>/dev/null || true)
           if [ -n "$SIG" ]; then
@@ -1679,9 +1682,11 @@ jobs:
         continue-on-error: true
         env:
           SIGNATURE_ID: ${{ steps.declare.outputs.signature_id }}
+          COORD_INGEST_TOKEN: ${{ secrets.COORD_INGEST_TOKEN }}
         run: |
           SIG="${SIGNATURE_ID}"
           RESP=$(curl -sS --max-time 60 -X POST "$COORD_BASE_URL/coord/deploys/verify" \
+            -H "Authorization: Bearer ${COORD_INGEST_TOKEN}" \
             -H 'Content-Type: application/json' \
             -d "{\"signature_id\":\"$SIG\"}" || true)
           # Annotate a reply that verified nothing, instead of printing a
