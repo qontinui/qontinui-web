@@ -65,7 +65,8 @@ def _index_row(engine: Engine) -> tuple[bool, bool, str | None]:
                        pg_get_expr(i.indpred, i.indrelid)
                   FROM pg_index i
                   JOIN pg_class c ON c.oid = i.indexrelid
-                 WHERE c.relname = :idx
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'coord' AND c.relname = :idx
                 """
             ),
             {"idx": _INDEX_NAME},

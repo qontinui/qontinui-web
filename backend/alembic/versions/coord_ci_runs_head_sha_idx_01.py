@@ -25,7 +25,7 @@ Mechanics
 ------------------------------------------------------------------------------
 ``CREATE INDEX CONCURRENTLY`` inside ``autocommit_block()``: ``coord.ci_runs``
 is written on every ``workflow_run`` webhook, and an in-transaction build would
-take a write-blocking ``SHARE`` lock. Additive and forward-only: ``upgrade``
+take a write-blocking ``SHARE`` lock. Additive (no data is changed): ``upgrade``
 creates the index ``IF NOT EXISTS``, ``downgrade`` drops it ``IF EXISTS``. The
 coord read is correct, only slower, without it, so deploy order is not
 load-bearing for correctness.
