@@ -8,7 +8,7 @@ and had no live caller, is deleted.
 
 The module keeps its integration_testing.py name, but the feature it serves
 is called Config Testing in Qontinui terminology:
-- Config Testing = Mock mode testing with simulated execution data
+- Config Testing = workflow validation (PDF reports, snapshot-run screenshots)
 - QA Testing = Real test runs from the runner (see testing.py)
 """
 

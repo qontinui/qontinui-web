@@ -106,8 +106,8 @@ graph TB
     end
 
     subgraph "5A. MOCK EXECUTION PATH"
-        E1[useMockExecution Hook]
-        E2[Integration Testing Service]
+        E1[qontinui core mock mode]
+        E2[Captured snapshot runs]
         E3[Mock Executor Python]
         E4[Captured Screenshots]
         E5[State Pattern Matching]
@@ -448,10 +448,11 @@ interface Connection {
 
 ### 5A. Mock Execution Path
 
-**useMockExecution Hook** (`frontend/src/hooks/useMockExecution.ts`)
-- React hook for triggering mock execution
-- Manages execution state (loading, result, error)
-- Calls integration testing API
+**No web entry point.** qontinui-web has no mock-execution path. The
+`useMockExecution` hook and the placeholder `POST /api/v1/integration-testing/execute`
+endpoint it called were deleted, because the endpoint returned fabricated
+results (every action successful) and nothing called the hook. Mock execution
+runs in qontinui core's mock mode.
 
 **Mock Executor** (`qontinui/src/qontinui/mock/mock_executor.py`)
 - Simulates workflow execution using captured screenshots
