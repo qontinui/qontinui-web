@@ -17,29 +17,6 @@ from app.repositories.execution_screenshot import ExecutionScreenshotRepository
 from app.repositories.execution_tree_event import ExecutionTreeEventRepository
 from app.repositories.feedback_score import FeedbackScoreRepository
 from app.repositories.prompt_version import PromptVersionRepository
-from app.repositories.test_run import CoverageRepository, TestRunRepository
-
-
-@lru_cache
-def get_test_run_repository() -> TestRunRepository:
-    """
-    Get the TestRunRepository singleton instance.
-
-    Returns:
-        TestRunRepository instance
-    """
-    return TestRunRepository()
-
-
-@lru_cache
-def get_coverage_repository() -> CoverageRepository:
-    """
-    Get the CoverageRepository singleton instance.
-
-    Returns:
-        CoverageRepository instance
-    """
-    return CoverageRepository()
 
 
 @lru_cache

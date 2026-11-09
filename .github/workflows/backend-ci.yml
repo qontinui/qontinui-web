@@ -753,16 +753,17 @@ jobs:
           # implausible value is UNKNOWN and stops the job, never a silent pass.
           if [ -z "${expected_files}" ] || [ -n "${expected_files//[0-9]/}" ] \
               || [ "${expected_files}" -lt 100 ]; then
-            echo "::error title=Truncation floor UNKNOWN::find reported '${expected_files}' test files under tests/, which cannot be right for this suite (226 collectable of 231 on disk today). The floor was NOT applied and the collection was NOT checked, so this job stops rather than sharding an unverified collection."
+            echo "::error title=Truncation floor UNKNOWN::find reported '${expected_files}' test files under tests/, which cannot be right for this suite (over 500 on disk on 2026-11-09). The floor was NOT applied and the collection was NOT checked, so this job stops rather than sharding an unverified collection."
             exit 1
           fi
           # TWO floors, because one is not enough and the reason is measured.
           #
           # FILES: three quarters of the on-disk count. An EXACT floor is wrong -
-          # conftest.py sets `collect_ignore` (today `["integration"]`, 5 of 231
-          # test files), so requiring every `test_*.py` to appear reds a
-          # perfectly correct collection. Duplicating that ignore list here is
-          # the drift this design removed, so the floor absorbs it by ratio.
+          # conftest.py may set `collect_ignore` (it set `["integration"]`, 5 of
+          # 231 test files, until that suite was deleted on 2026-11-09), so
+          # requiring every `test_*.py` to appear would red a correct collection.
+          # Duplicating that ignore list here is the drift this design removed,
+          # so the floor absorbs it by ratio.
           #
           # NODE IDS: the file floor alone is materially loose, and by a number -
           # dropping the 53 heaviest collectable files keeps 173 of 231 files and

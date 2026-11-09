@@ -299,7 +299,6 @@ _FOLLOWUP_RESOLUTION_VERB = Verb(
     admits=("open", "fixing", "fixed", "already_fixed", "dismissed"),
 )
 _MEMORY_DELETE = f"DELETE {_V1}/memory/records/{{memory_id}}"
-_TESTING = f"{_V1}/testing/runs"
 _IMAGE_ASSETS = f"{_V1}/image-assets"
 _SLOT_CANDIDATES = f"{_IMAGE_ASSETS}/slot-candidates"
 _TASTE_PAIRS = f"{_V1}/taste/pairs"
@@ -700,106 +699,6 @@ ROUTE_POSTURE: Final[dict[tuple[str, str], Posture]] = {
             ),
         ),
     ),
-    # ── testing (runner → backend reports; ``get_runner_user``) ──────────
-    ("POST", _TESTING): Evidence(
-        closed_fields=(),
-        correction=Gap(
-            tracked_by=EVIDENCE_POSTURE_PLAN,
-            what=(
-                "a mis-created test run: its project, name, description and "
-                "workflow/configuration metadata are fixed at creation — PUT "
-                "…/complete finalizes status, completed_at, error_summary and "
-                "metrics — and no "
-                "device-reachable verb deletes or re-describes a run"
-            ),
-        ),
-    ),
-    ("POST", f"{_TESTING}/{{run_id}}/transitions"): Evidence(
-        closed_fields=(),
-        # ``_process_transition`` looks a row up by (test_run_id,
-        # sequence_number) and UPDATES it in place — not an append-only log.
-        correction=SupersedeArg(
-            property="transitions[].sequence_number",
-            how=(
-                "re-posting a transition with the same sequence_number "
-                "overwrites its status, started_at, completed_at, duration, "
-                "error_type, error_message, from_state/to_state and metadata "
-                "in place. It does NOT rewrite transition_name, the derived "
-                "transition_id, action_count or retry_count (set on first "
-                "write only). And every post adds its batch size to the run's "
-                "total_transitions and its per-outcome counts to "
-                "successful/failed_transitions, so a correcting "
-                "re-post double-counts them. Nothing resets all three by "
-                "itself: PUT …/coverage resets only total_transitions (from "
-                "total_transitions_executed); PUT …/complete resets "
-                "total/successful/failed only for the keys final_metrics "
-                "carries (total_transitions_executed / successful_transitions "
-                "/ failed_transitions) — send all three"
-            ),
-        ),
-        unserved_closed_fields=(
-            # Plain ``str`` checked by ``field_validator`` lists.
-            ("transitions[].error_type", EVIDENCE_POSTURE_PLAN),
-            ("transitions[].status", EVIDENCE_POSTURE_PLAN),
-        ),
-    ),
-    ("POST", f"{_TESTING}/{{run_id}}/deficiencies"): Evidence(
-        closed_fields=(),
-        correction=Gap(
-            tracked_by=EVIDENCE_POSTURE_PLAN,
-            what=(
-                "a reported deficiency (severity, type, title, linked "
-                "transition) cannot be changed or withdrawn by a device; "
-                "PATCH /testing/deficiencies/{id} is operator-only"
-            ),
-        ),
-        unserved_closed_fields=(
-            ("deficiencies[].deficiency_type", EVIDENCE_POSTURE_PLAN),
-            ("deficiencies[].severity", EVIDENCE_POSTURE_PLAN),
-        ),
-    ),
-    ("PUT", f"{_TESTING}/{{run_id}}/coverage"): Evidence(
-        closed_fields=(),
-        correction=SupersedeArg(
-            property="run_id",
-            how=(
-                "a re-PUT replaces the run's coverage metrics and coverage "
-                "maps wholesale, and also overwrites total_transitions, "
-                "unique_paths_found and unique_states_visited"
-            ),
-        ),
-    ),
-    ("PUT", f"{_TESTING}/{{run_id}}/complete"): Evidence(
-        closed_fields=(),
-        correction=SupersedeArg(
-            property="run_id",
-            how=(
-                "a re-PUT overwrites status and completed_at, and replaces "
-                "configuration_snapshot.final_metrics and error_summary "
-                "unconditionally; the run's counters and coverage fields "
-                "(total/successful/failed transitions, coverage_percentage, "
-                "deficiencies_found) are overwritten only for the keys "
-                "final_metrics carries, otherwise kept. Nothing refuses a "
-                "second completion"
-            ),
-        ),
-        unserved_closed_fields=(("status", EVIDENCE_POSTURE_PLAN),),
-    ),
-    ("POST", f"{_TESTING}/{{run_id}}/screenshots"): Evidence(
-        closed_fields=(),
-        correction=Gap(
-            tracked_by=EVIDENCE_POSTURE_PLAN,
-            what=(
-                "an uploaded screenshot and its metadata (the transition and "
-                "state it evidences, its type) cannot be deleted or "
-                "re-attached by a device"
-            ),
-        ),
-        unserved_closed_fields=(("screenshot_type", EVIDENCE_POSTURE_PLAN),),
-        # A multipart route: ``metadata`` arrives as a JSON string Form field
-        # and is parsed into this model by hand.
-        body_model="app.schemas.testing:ScreenshotMetadata",
-    ),
     # ── devices / events / audit ────────────────────────────────────────
     ("POST", f"{_V1}/devices/{{device_id}}/machine-credential/self-mint"): Ephemeral(
         "issues the calling device a fresh dmk_ machine credential; it asserts "
@@ -1020,7 +919,6 @@ def device_jwt_admitting_dependencies() -> frozenset[Callable[..., Any]]:
     """
     from app.api import deps
     from app.api.v1.endpoints.memory import get_memory_tenant
-    from app.api.v1.endpoints.testing.deps import get_runner_user
     from app.overview.permissions import get_overview_principal
 
     return frozenset(
@@ -1035,7 +933,6 @@ def device_jwt_admitting_dependencies() -> frozenset[Callable[..., Any]]:
             deps.get_reporting_device,
             get_memory_tenant,
             get_overview_principal,
-            get_runner_user,
         }
     )
 

@@ -168,7 +168,6 @@
   "tests/test_cors_expose_headers_cover_emitted.py": 6.9,
   "tests/test_cpu_temp_01_cpu_temp_on_resource_sample_migration.py": 30.0,
   "tests/test_credprobe_01_migration.py": 8.8,
-  "tests/test_deficiency_service.py": 0.2,
   "tests/test_dev_dashboard_relay_flap_visibility.py": 0.0,
   "tests/test_dev_dashboard_running_task_envelope.py": 0.0,
   "tests/test_dev_dashboard_ui_thread.py": 3.9,

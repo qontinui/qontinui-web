@@ -19,7 +19,6 @@ from app.db.base_class import (  # noqa: F401
     DomainKnowledge,
     ErrorMonitorEntry,
     ExtractionAnnotation,
-    FrameIndex,
     Macro,
     PhaseResult,
     Project,

@@ -141,9 +141,6 @@ WRITE_PATH_FOLLOWUP: frozenset[str] = frozenset(
         # Cross-schema FK target → `coord.devices.device_id` on the web-owned
         # `phase_result` table (device-write follow-up drops the FK).
         "models/phase_result.py",
-        # Cross-schema FK target → `coord.device_connections.id` on the
-        # web-owned `software_test_run` table (device-write follow-up).
-        "models/software_test_run.py",
         # `{"schema": "coord"}` binding on the `TestTarget` ORM model. READ-ONLY
         # since plan 2026-09-30-test-host-designation-put-stamps-a-tenant-the-
         # device-is-not-bound-to: the designation PUT/DELETE now go through

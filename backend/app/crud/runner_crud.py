@@ -8,7 +8,7 @@ module. The replacement is :mod:`app.crud.device_crud` (operating on
 ``runner_id=``, ``runner_token_id=`` — to the new ``device_id=`` /
 no-token signature so the broader fleet of WS-bridge HTTP handlers
 (``runner_chat.py``, ``runner_command_ws.py``,
-``websockets/testing/handler.py``, etc.) continues to compile while the
+etc.) continues to compile while the
 rename is propagated through the codebase.
 
 The legacy token-mint helpers (``create_runner_token`` /
