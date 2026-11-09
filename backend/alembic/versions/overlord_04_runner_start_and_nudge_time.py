@@ -1,7 +1,7 @@
 """coord.overlord_passes.runner_started_at + coord.overlord_pass_rows.nudge_measured_at
 
 Revision ID: overlord_04_runner_start_and_nudge_time
-Revises: coord_test_result_runs_01
+Revises: fpl_02b
 Create Date: 2026-11-08
 
 Phase 1 of plan
@@ -60,7 +60,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "overlord_04_runner_start_and_nudge_time"
-down_revision: str | Sequence[str] | None = "coord_test_result_runs_01"
+down_revision: str | Sequence[str] | None = "fpl_02b"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
