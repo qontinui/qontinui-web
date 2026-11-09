@@ -41,6 +41,13 @@ describe("OverlordLabelPage", () => {
     ).not.toBeDisabled();
   });
 
+  it("links back to the session-flow page", async () => {
+    render(<OverlordLabelPage />);
+    expect(
+      await screen.findByTestId("overlord-label-back-to-flow")
+    ).toHaveAttribute("href", "/admin/coord/overlord/flow");
+  });
+
   it("starts empty without the query parameter", async () => {
     render(<OverlordLabelPage />);
     expect(await screen.findByLabelText("Intervention id")).toHaveValue("");
