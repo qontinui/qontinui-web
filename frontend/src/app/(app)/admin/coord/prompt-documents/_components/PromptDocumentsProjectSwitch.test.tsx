@@ -75,6 +75,8 @@ let sent: Sent[] = [];
 let home = SYS;
 /** The system tenant's auto-publish candidates, as its status read serves them. */
 let systemCandidates: unknown[] = [];
+/** Run when a row write's PATCH arrives (before it is answered). */
+let onPatch: (() => void) | null = null;
 
 /**
  * Hold the `nth` (1-based) list read, or status read, served in a project
@@ -161,6 +163,7 @@ beforeEach(() => {
   sent = [];
   home = SYS;
   systemCandidates = [];
+  onPatch = null;
   holds = [];
   served = {};
   listTenantsMock.mockReset();
@@ -193,7 +196,10 @@ beforeEach(() => {
               }),
             });
       }
-      if (method === "PATCH") return json(200, row("bravo-only"));
+      if (method === "PATCH") {
+        onPatch?.();
+        return json(200, row("bravo-only"));
+      }
       if (method === "GET" && /\/coord\/prompt-documents(\?|$)/.test(url)) {
         const held = await heldIfAsked("list", project);
         if (held?.failWith) {
@@ -518,9 +524,10 @@ describe("another tab's switch", () => {
   it("never offers Adopt all over rows a row write's re-read brought from that tab's project, even after it switches back", async () => {
     mountIn(B, [SYS]);
     await screen.findByTestId("adopt-all", {}, { timeout: 5000 });
-    // Another tab stores the system tenant (no event reaches this tab). A
-    // row write here is not pinned, so it and its re-read go there.
-    localStorage.setItem(KEY, SYS);
+    // A row write here goes out in B; another tab stores the system tenant
+    // while it is in flight — past the page's call-time guard, with no event
+    // reaching this tab yet. Its re-read is not pinned, so it goes there.
+    onPatch = () => localStorage.setItem(KEY, SYS);
     const reread = hold({ kind: "list", tenant: SYS, nth: 1 });
     await setBravoTier();
     await waitFor(() => expect(reread.arrived()).toBe(true));

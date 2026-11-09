@@ -62,6 +62,7 @@
  *   so there is no palette to enrol in `console/attention.test.ts`.
  */
 
+import { useCallback, useRef, useState } from "react";
 import { NotebookText } from "lucide-react";
 import { KindAuthorshipTierControl } from "./_components/KindAuthorshipTierControl";
 import {
@@ -70,7 +71,10 @@ import {
 } from "./_components/PolicyAutoPublishDialControl";
 import { PolicyUpstreamDialControl } from "./_components/PolicyUpstreamDialControl";
 import { PolicyWriteDialControl } from "./_components/PolicyWriteDialControl";
-import { PromptDocumentList } from "./_components/PromptDocumentList";
+import {
+  PromptDocumentList,
+  type WriteGuardRef,
+} from "./_components/PromptDocumentList";
 import { usePublishAll } from "./_hooks/usePublishAll";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
 
@@ -81,6 +85,15 @@ export default function PromptDocumentsPage() {
   // response, so they must not come from two fetches that can disagree. A
   // write to the D5 switch re-takes it, because the badges key on the switch.
   const publishAllState = usePublishAll();
+  // Whether another tab's project switch is in effect, as the list detected
+  // it. The settings below write through the same per-request project as the
+  // list's rows, so they are disabled with them; the list carries the notice.
+  const [crossTabChange, setCrossTabChange] = useState(false);
+  // The fieldset covers what is on the page; a settings confirmation renders
+  // outside it, so every settings write also asks the list's call-time guard —
+  // the stored project against the page's — at the moment it is sent.
+  const writeGuardRef = useRef<(() => boolean) | null>(null) as WriteGuardRef;
+  const canWrite = useCallback(() => writeGuardRef.current?.() ?? true, []);
   return (
     <div className="p-3 sm:p-6 space-y-8" data-testid="prompt-documents-page">
       {/* R9 — no page <h1>: `coord/layout.tsx` already renders the console
@@ -108,9 +121,18 @@ export default function PromptDocumentsPage() {
         </span>
       </p>
 
-      <PromptDocumentList publishAllState={publishAllState} />
+      <PromptDocumentList
+        publishAllState={publishAllState}
+        onCrossTabChange={setCrossTabChange}
+        writeGuardRef={writeGuardRef}
+      />
 
-      {/*
+      <fieldset
+        disabled={crossTabChange}
+        className="m-0 min-w-0 space-y-8 border-0 p-0"
+        data-testid="prompt-documents-page-controls"
+      >
+        {/*
         The tenant-wide autonomy dial sits with the per-document write-access
         control it composes with. Two controls governing one question — "what
         may an agent do to this policy?" — belong on one page; the per-document
@@ -118,7 +140,7 @@ export default function PromptDocumentsPage() {
         more restrictive of the two. Coord's own refusal message sends operators
         to this page for the first, so the second must be here too.
       */}
-      {/*
+        {/*
         The per-KIND authorship tier sits between the per-document control in
         the list above and the tenant-wide dial below, because that is where it
         sits in coord's resolution order: floor, then per-document, then
@@ -126,15 +148,15 @@ export default function PromptDocumentsPage() {
         the three that can be set for a document that does not exist yet, which
         is the case the per-document control structurally cannot reach.
       */}
-      <div className="border-t border-border pt-8">
-        <KindAuthorshipTierControl />
-      </div>
+        <div className="border-t border-border pt-8">
+          <KindAuthorshipTierControl canWrite={canWrite} />
+        </div>
 
-      <div className="border-t border-border pt-8">
-        <PolicyWriteDialControl />
-      </div>
+        <div className="border-t border-border pt-8">
+          <PolicyWriteDialControl canWrite={canWrite} />
+        </div>
 
-      {/*
+        {/*
         The upstream dial sits immediately after the policy-write dial because
         the two are one question asked from opposite ends: what may an agent
         INSIDE this tenant do to these documents, and what may the fleet
@@ -142,11 +164,11 @@ export default function PromptDocumentsPage() {
         operator deciding how much autonomy to allow needs to see both answers
         without leaving the page.
       */}
-      <div className="border-t border-border pt-8">
-        <PolicyUpstreamDialControl />
-      </div>
+        <div className="border-t border-border pt-8">
+          <PolicyUpstreamDialControl canWrite={canWrite} />
+        </div>
 
-      {/*
+        {/*
         The automatic-publishing dial sits immediately after the upstream dial
         because it is that dial's outbound twin — what the fleet may do to this
         tenant's documents, then whether this tenant's documents may leave it on
@@ -154,22 +176,24 @@ export default function PromptDocumentsPage() {
         An operator deciding how much autonomy to allow needs all three answers
         on one page, and this is the only one whose failure mode is outward.
       */}
-      <div className="border-t border-border pt-8">
-        <PolicyAutoPublishDialControl
-          onLevelChanged={() => void publishAllState.reload()}
-          observed={observedFromPublishAll(publishAllState)}
-        />
-      </div>
+        <div className="border-t border-border pt-8">
+          <PolicyAutoPublishDialControl
+            onLevelChanged={() => void publishAllState.reload()}
+            observed={observedFromPublishAll(publishAllState)}
+            canWrite={canWrite}
+          />
+        </div>
 
-      {/*
+        {/*
         Session compliance lives on this page rather than behind its own nav
         entry: the thing it enforces is one of the documents above, and the
         clause it names is edited a few inches away. Splitting the switch from
         the text it enforces is exactly how the two drift apart.
       */}
-      <div className="border-t border-border pt-8">
-        <SessionComplianceSection />
-      </div>
+        <div className="border-t border-border pt-8">
+          <SessionComplianceSection canWrite={canWrite} />
+        </div>
+      </fieldset>
     </div>
   );
 }

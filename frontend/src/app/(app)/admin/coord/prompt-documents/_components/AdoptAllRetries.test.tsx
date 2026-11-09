@@ -100,6 +100,8 @@ let onTransient: (() => void) | null = null;
 let switchNow: (() => void) | null = null;
 /** Run when a status read arrives (before it is answered). */
 let onStatus: (() => void) | null = null;
+/** Run when a row write's PATCH arrives (before it is answered). */
+let onPatch: (() => void) | null = null;
 /** The project an unpinned (header-less) request is served in. */
 let home = SYS;
 /** Per project: the rows its list read answers. */
@@ -147,6 +149,7 @@ beforeEach(() => {
   onTransient = null;
   switchNow = null;
   onStatus = null;
+  onPatch = null;
   home = SYS;
   rowsFor = {};
   token.expiry = Date.now() + 3_600_000;
@@ -198,6 +201,7 @@ beforeEach(() => {
         });
       }
       if (method === "PATCH") {
+        onPatch?.();
         return patchStatus === 200
           ? json(200, row("a"))
           : json(patchStatus, { error: "CONFLICT", message: "moved" });
@@ -330,9 +334,10 @@ describe("pinned requests through the real HttpClient", () => {
 
   it("never offers the button over another project's rows after a row write lands in it", async () => {
     await inBravoBesideTheSystemTenant();
-    // Another tab switches to the system tenant; then a row write here. It is
-    // not pinned, so it and its re-read go to the system tenant.
-    localStorage.setItem(KEY, SYS);
+    // A row write here goes out in Bravo; another tab switches to the system
+    // tenant while it is in flight — past the page's call-time guard. Its
+    // re-read is not pinned, so it goes to the system tenant.
+    onPatch = () => localStorage.setItem(KEY, SYS);
     const listReadsBefore = listTenantsSent().length;
     await setTier();
     await waitFor(() =>
@@ -348,10 +353,11 @@ describe("pinned requests through the real HttpClient", () => {
 
   it("withdraws the button while another project is stored, even over the page's own rows", async () => {
     await inBravoBesideTheSystemTenant();
-    // Another tab switches; a row write here is refused by coord (no
-    // re-read), so the rows stay the page's own and only the stored project
-    // has changed by the time the page renders again.
-    localStorage.setItem(KEY, SYS);
+    // Another tab switches while a row write here is in flight (past the
+    // page's call-time guard); coord refuses it (no re-read), so the rows
+    // stay the page's own and only the stored project has changed by the
+    // time the page renders again.
+    onPatch = () => localStorage.setItem(KEY, SYS);
     patchStatus = 409;
     const patchesBefore = sent.filter((s) => s.method === "PATCH").length;
     await setTier();
