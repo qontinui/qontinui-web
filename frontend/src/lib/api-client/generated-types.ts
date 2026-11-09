@@ -17945,6 +17945,34 @@ export interface paths {
         patch: operations["api_v1_overview_milestones_record_id_patch"];
         trace?: never;
     };
+    "/api/v1/overview/objectives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Objectives
+         * @description What the project is aiming for, and how each measure is doing.
+         *
+         *     Readable by any member of the active project (the same membership the
+         *     Summary requires), under the ``intent_documents`` resource's own rule
+         *     (``coord_admin``): a device principal gets the typed 403
+         *     ``device_not_supported_for_coord_backed_resource`` before anything is
+         *     read. Coord authorizes the forwarded bearer on every upstream read, so
+         *     this route widens nothing. A gap upstream is a ``sources`` entry and an
+         *     UNKNOWN on what it touches, never an error page and never a blank.
+         */
+        get: operations["api_v1_overview_objectives_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/overview/pages": {
         parameters: {
             query?: never;
@@ -26751,6 +26779,13 @@ export interface components {
              */
             status: "done" | "dismissed";
         };
+        /** ActionRead */
+        ActionRead: {
+            /** Kind */
+            kind: string;
+            /** Ref */
+            ref: string;
+        };
         /**
          * ActionReliabilityStats
          * @description Reliability statistics for an action type.
@@ -30434,6 +30469,45 @@ export interface components {
              */
             url: string;
         };
+        /** CheckpointDeclRead */
+        CheckpointDeclRead: {
+            /** Due */
+            due: string | null;
+            /** Due Error */
+            due_error?: string | null;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string | null;
+        };
+        /** CheckpointResultRead */
+        CheckpointResultRead: {
+            /** Criteria */
+            criteria?: components["schemas"]["CriterionResultRead"][];
+            /** Declared */
+            declared: boolean;
+            /** Due */
+            due: string | null;
+            /** History */
+            history?: components["schemas"]["ReportRead"][];
+            /** Id */
+            id: string;
+            /** Label */
+            label: string | null;
+            report?: components["schemas"]["ReportRead"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "reported" | "reported_prose_only" | "reported_unreadable" | "reported_rows_not_recorded" | "awaiting" | "no_report_found" | "possible_report_unrecorded" | "unreadable" | "checkpoint_results_unreadable" | "not_fully_read";
+            /** Status Reason */
+            status_reason?: string | null;
+            tally?: components["schemas"]["TallyRead"];
+            /** Unresolved Results */
+            unresolved_results?: components["schemas"]["UnresolvedResultRead"][];
+            /** Window Closes At */
+            window_closes_at: string | null;
+        };
         /**
          * CiHostingReading
          * @description One resolved ``github_hosted_ci`` reading. ``level is None`` ⇒ UNKNOWN.
@@ -32630,6 +32704,48 @@ export interface components {
              */
             task_name: string;
         };
+        /** CriterionDeclRead */
+        CriterionDeclRead: {
+            /** Checkpoint */
+            checkpoint: string | null;
+            /** Id */
+            id: string;
+            /** Method */
+            method: string | null;
+            /** Target */
+            target: string | null;
+        };
+        /**
+         * CriterionResultRead
+         * @description One declared criterion and the verdict shown for it.
+         */
+        CriterionResultRead: {
+            /** Checkpoint */
+            checkpoint: string | null;
+            /** Earlier */
+            earlier?: components["schemas"]["EarlierVerdictRead"][];
+            /** Finding Id */
+            finding_id?: string | null;
+            /** Id */
+            id: string;
+            /** Measured At */
+            measured_at?: string | null;
+            /** Method */
+            method: string | null;
+            out_of_date_notice?: components["schemas"]["LaterReportNotice"] | null;
+            /** Reported Checkpoint */
+            reported_checkpoint?: string | null;
+            row?: components["schemas"]["ResultRowRead"] | null;
+            /** Target */
+            target: string | null;
+            /** Unknown Reason */
+            unknown_reason?: string | null;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "met" | "missed" | "unknown";
+        };
         /**
          * CurrencyTotals
          * @description Every figure in one currency. Currencies are never added together:
@@ -32646,6 +32762,25 @@ export interface components {
             spent_to_date_micros: number;
             /** This Month Micros */
             this_month_micros: number;
+        };
+        /**
+         * CurrentValueRead
+         * @description D8. Until coord runs metrics, always ``not_measured`` with a reason.
+         */
+        CurrentValueRead: {
+            /** Reason */
+            reason: string;
+            /**
+             * Source Query Type
+             * @enum {string}
+             */
+            source_query_type: "named" | "http" | "manual" | "untyped" | "absent";
+            /**
+             * Status
+             * @default not_measured
+             * @constant
+             */
+            status: "not_measured";
         };
         /**
          * CustomFunctionListResponse
@@ -35239,6 +35374,20 @@ export interface components {
              */
             outcome: "drain_unreadable";
         };
+        /** EarlierVerdictRead */
+        EarlierVerdictRead: {
+            /** Checkpoint */
+            checkpoint: string;
+            /** Finding Id */
+            finding_id: string;
+            /** Measured At */
+            measured_at: string | null;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "met" | "missed" | "unknown";
+        };
         /**
          * EditCommandHistoryResponse
          * @description Schema for command history list
@@ -37716,6 +37865,13 @@ export interface components {
                 };
             };
         };
+        /** ExtraFieldRead */
+        ExtraFieldRead: {
+            /** Key */
+            key: string;
+            /** Text */
+            text: string;
+        };
         /**
          * ExtraFile
          * @description Additional file to export alongside the main data.
@@ -39978,6 +40134,51 @@ export interface components {
              */
             useFallback: boolean;
         };
+        /** InitiativeRead */
+        InitiativeRead: {
+            /** Ends */
+            ends?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Field Errors */
+            field_errors?: {
+                [key: string]: string;
+            };
+            /** Frontmatter Error */
+            frontmatter_error?: string | null;
+            /** Frontmatter Warnings */
+            frontmatter_warnings?: string[];
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
+            /** Missing Metric Names */
+            missing_metric_names?: string[];
+            /** Name */
+            name: string;
+            /** Objectives */
+            objectives?: components["schemas"]["ObjectiveRead"][];
+            /** Starts */
+            starts?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "authored" | "skeleton" | "unknown" | "unreadable";
+            /** Status */
+            status?: string | null;
+            /** Success Metrics */
+            success_metrics?: string[];
+            /** Title */
+            title: string;
+            /** Updated At */
+            updated_at: string | null;
+            /** Updated By */
+            updated_by: string | null;
+            /** Version */
+            version: number;
+        };
         /**
          * InstallEventAck
          * @description Lightweight ack returned to the runner after a successful install ping.
@@ -40982,6 +41183,24 @@ export interface components {
          * @enum {string}
          */
         LabelKind: "class" | "false_finish";
+        /**
+         * LaterReportNotice
+         * @description D7: a later report exists without readable rows, so this verdict may be
+         *     out of date.
+         */
+        LaterReportNotice: {
+            /** Checkpoint */
+            checkpoint: string;
+            /** Created At */
+            created_at: string | null;
+            /** Finding Id */
+            finding_id: string;
+            /**
+             * Shape
+             * @enum {string}
+             */
+            shape: "structured" | "prose_only" | "unreadable_block" | "rows_not_recorded" | "rows_unread";
+        };
         /**
          * LearnedWorkflowResponse
          * @description Schema for learned workflow response.
@@ -42531,6 +42750,114 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** MetricRead */
+        MetricRead: {
+            /** Baseline */
+            baseline?: number | null;
+            /** Baseline As Of */
+            baseline_as_of?: string | null;
+            /** Baseline Text */
+            baseline_text?: string | null;
+            /** Body */
+            body: string;
+            /** Ceiling */
+            ceiling?: number | null;
+            /** Ceiling Text */
+            ceiling_text?: string | null;
+            /** Checkpoint List Complete */
+            checkpoint_list_complete: boolean;
+            /** Checkpoint Results */
+            checkpoint_results?: components["schemas"]["CheckpointResultRead"][];
+            /**
+             * Checkpoint Results Read
+             * @default not_read
+             * @enum {string}
+             */
+            checkpoint_results_read: "ok" | "truncated" | "unavailable" | "not_read";
+            /** Checkpoints */
+            checkpoints?: components["schemas"]["CheckpointDeclRead"][];
+            /** Checkpoints Text */
+            checkpoints_text?: string | null;
+            /** Criteria */
+            criteria?: components["schemas"]["CriterionDeclRead"][];
+            /** Criteria Latest */
+            criteria_latest?: components["schemas"]["CriterionResultRead"][];
+            current_value: components["schemas"]["CurrentValueRead"];
+            /** Direction */
+            direction?: ("increase" | "decrease") | null;
+            /** Direction Text */
+            direction_text?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Extra Fields */
+            extra_fields?: components["schemas"]["ExtraFieldRead"][];
+            /** Field Errors */
+            field_errors?: {
+                [key: string]: string;
+            };
+            /**
+             * Findings Read
+             * @default not_read
+             * @enum {string}
+             */
+            findings_read: "ok" | "truncated" | "unavailable" | "not_read";
+            /** Floor */
+            floor?: number | null;
+            /** Floor Text */
+            floor_text?: string | null;
+            /** Frontmatter Error */
+            frontmatter_error?: string | null;
+            /** Frontmatter Warnings */
+            frontmatter_warnings?: string[];
+            /** Metric */
+            metric?: string | null;
+            /** Name */
+            name: string;
+            /** Overview Order */
+            overview_order: number | null;
+            /** Related Notes */
+            related_notes?: components["schemas"]["RelatedNoteRead"][];
+            /** Report Topic */
+            report_topic?: string | null;
+            /** Results */
+            results?: components["schemas"]["ResultEntryRead"][];
+            /** Serves */
+            serves?: string[];
+            /** Serves Unchecked */
+            serves_unchecked?: string[];
+            /** Serves Unknown */
+            serves_unknown?: string[];
+            /**
+             * Source Query Type
+             * @default absent
+             * @enum {string}
+             */
+            source_query_type: "named" | "http" | "manual" | "untyped" | "absent";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "authored" | "skeleton" | "unknown" | "unreadable";
+            /** Structured Reporting Since */
+            structured_reporting_since?: string | null;
+            tally_latest?: components["schemas"]["TallyRead"];
+            /** Target */
+            target?: number | null;
+            /** Target Text */
+            target_text?: string | null;
+            /** Title */
+            title: string;
+            /** Unit */
+            unit?: string | null;
+            /** Unresolved Results */
+            unresolved_results?: components["schemas"]["UnresolvedResultRead"][];
+            /** Updated At */
+            updated_at: string | null;
+            /** Updated By */
+            updated_by: string | null;
+            /** Version */
+            version: number;
+        };
         /**
          * MigrationAnchor
          * @description An alembic revision, resolved against ``coord.migration_revisions``.
@@ -43254,6 +43581,59 @@ export interface components {
             initial_verdict_reason?: string | null;
             /** Warnings */
             warnings?: string[];
+        };
+        /**
+         * ObjectiveRead
+         * @description One ``in_scope`` item of an initiative.
+         */
+        ObjectiveRead: {
+            /** Id */
+            id: string;
+            /** Metric Names */
+            metric_names: string[];
+            /** Text */
+            text: string;
+        };
+        /** ObjectivesRead */
+        ObjectivesRead: {
+            /** Document List Complete */
+            document_list_complete: boolean;
+            /** Earlier Initiatives Count */
+            earlier_initiatives_count: number;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Initiative Named Metrics */
+            initiative_named_metrics: string[];
+            /** Initiatives */
+            initiatives: components["schemas"]["InitiativeRead"][];
+            /** Metrics */
+            metrics: components["schemas"]["MetricRead"][];
+            /** Objectives Readable */
+            objectives_readable: boolean;
+            /** Other Metrics */
+            other_metrics: string[];
+            /** Skeletons Hidden */
+            skeletons_hidden: number;
+            sources: components["schemas"]["ObjectivesSources"];
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /** Void Initiative Names */
+            void_initiative_names: string[];
+            /** Void Metric Names */
+            void_metric_names: string[];
+        };
+        /** ObjectivesSources */
+        ObjectivesSources: {
+            checkpoint_results: components["schemas"]["SourceRead"];
+            findings: components["schemas"]["SourceRead"];
+            findings_by_id: components["schemas"]["SourceRead"];
+            intent_documents: components["schemas"]["SourceRead"];
         };
         /**
          * OnboardingClaimRequest
@@ -47640,6 +48020,24 @@ export interface components {
             ui_thread?: components["schemas"]["RunnerUiThread"] | null;
         };
         /**
+         * RelatedNoteRead
+         * @description A finding at the metric's key that is not a report.
+         */
+        RelatedNoteRead: {
+            /** Created At */
+            created_at: string | null;
+            /** Finding Id */
+            finding_id: string;
+            /** Note */
+            note?: string | null;
+            /** Possible Report For */
+            possible_report_for?: string | null;
+            /** Title */
+            title: string | null;
+            /** Topic */
+            topic: string | null;
+        };
+        /**
          * ReliabilityResponse
          * @description Response schema for transition reliability statistics.
          */
@@ -48178,6 +48576,54 @@ export interface components {
             repo: string;
         };
         /**
+         * ReportRead
+         * @description A finding placed as a checkpoint report (D6 point 2).
+         */
+        ReportRead: {
+            /** Block Error */
+            block_error?: string | null;
+            /** Block Warnings */
+            block_warnings?: string[];
+            /** Body */
+            body: string | null;
+            /** Body Unavailable */
+            body_unavailable?: string | null;
+            /** Checkpoint */
+            checkpoint: string;
+            /** Checkpoint Mismatch */
+            checkpoint_mismatch?: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Document Version */
+            document_version?: number | null;
+            /** Expires At */
+            expires_at: string | null;
+            /** Finding Id */
+            finding_id: string;
+            /** Gate Id */
+            gate_id?: string | null;
+            /** Measured At */
+            measured_at?: string | null;
+            /** Placed By */
+            placed_by: ("table" | "block" | "results" | "checkpoint_key")[];
+            /**
+             * Recorded
+             * @default false
+             */
+            recorded: boolean;
+            /** Rows */
+            rows?: components["schemas"]["ResultRowRead"][];
+            /**
+             * Shape
+             * @enum {string}
+             */
+            shape: "structured" | "prose_only" | "unreadable_block" | "rows_not_recorded" | "rows_unread";
+            /** Title */
+            title: string | null;
+            /** Topic */
+            topic: string | null;
+        };
+        /**
          * ReposApplyDispatchRequest
          * @description Ask a machine's runner to reconcile its cloned repositories.
          *
@@ -48308,6 +48754,53 @@ export interface components {
         ResponsibleUsersResponse: {
             /** Responsible Users */
             responsible_users?: components["schemas"]["ResponsibleUserOut"][];
+        };
+        /**
+         * ResultEntryRead
+         * @description One entry of the document's ``results:`` list.
+         */
+        ResultEntryRead: {
+            /** Checkpoint */
+            checkpoint: string | null;
+            /** Finding Id */
+            finding_id: string | null;
+            /** Posted At */
+            posted_at: string | null;
+        };
+        /**
+         * ResultRowRead
+         * @description One verdict row from coord's checkpoint results table, as the
+         *     measurer stated it.
+         */
+        ResultRowRead: {
+            action?: components["schemas"]["ActionRead"] | null;
+            /** Cause */
+            cause?: string | null;
+            /**
+             * Declared
+             * @default true
+             */
+            declared: boolean;
+            /** Door */
+            door?: string | null;
+            /** Id */
+            id: string;
+            /** Method */
+            method?: string | null;
+            /** Unit */
+            unit?: string | null;
+            /** Unknown Reason */
+            unknown_reason?: string | null;
+            /** Value */
+            value?: number | null;
+            /** Value Text */
+            value_text?: string | null;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "met" | "missed" | "unknown";
+            window?: components["schemas"]["WindowRead"] | null;
         };
         /**
          * RevertRequest
@@ -50920,6 +51413,25 @@ export interface components {
             tags?: string[] | null;
         };
         /**
+         * SourceRead
+         * @description One upstream read and whether it was complete.
+         */
+        SourceRead: {
+            /** Affected */
+            affected?: string[];
+            /** Details */
+            details?: {
+                [key: string]: string;
+            };
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "degraded" | "unavailable" | "truncated";
+        };
+        /**
          * StateAnnotation
          * @description A state discovered during extraction.
          *
@@ -52041,6 +52553,24 @@ export interface components {
              * @description Used memory in MB
              */
             memory_used_mb: number;
+        };
+        /** TallyRead */
+        TallyRead: {
+            /**
+             * Met
+             * @default 0
+             */
+            met: number;
+            /**
+             * Missed
+             * @default 0
+             */
+            missed: number;
+            /**
+             * Unknown
+             * @default 0
+             */
+            unknown: number;
         };
         /** TaskEffortRead */
         TaskEffortRead: {
@@ -55495,6 +56025,23 @@ export interface components {
             count: number;
         };
         /**
+         * UnresolvedResultRead
+         * @description A ``results:`` entry whose finding could not be shown.
+         */
+        UnresolvedResultRead: {
+            /** Checkpoint */
+            checkpoint: string | null;
+            /** Detail */
+            detail: string;
+            /** Finding Id */
+            finding_id: string | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "superseded_or_missing" | "read_failed" | "not_read_over_limit" | "invalid_id" | "another_project";
+        };
+        /**
          * UpdateStrategyEnum
          * @description How the runner keeps a designated host's build of an app current.
          * @enum {string}
@@ -56523,6 +57070,13 @@ export interface components {
             status: string;
             /** Wake Url */
             wake_url: string;
+        };
+        /** WindowRead */
+        WindowRead: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /**
          * WorkArtifactDetail
@@ -83187,6 +83741,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_overview_objectives_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectivesRead"];
                 };
             };
         };

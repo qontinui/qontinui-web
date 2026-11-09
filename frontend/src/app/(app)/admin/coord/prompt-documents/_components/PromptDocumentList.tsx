@@ -28,6 +28,7 @@ import { PublishModeControl } from "./PublishModeControl";
 import { ClauseManagerDialog } from "./ClauseManagerDialog";
 import { AgentWriteAccessControl } from "./AgentWriteAccessControl";
 import { upstreamBadge } from "../_lib/upstreamStatus";
+import { resolveDeepLink, type DeepLink } from "../_lib/deepLink";
 import {
   autoPublishBadge,
   autoPublishStatusByDocument,
@@ -85,7 +86,14 @@ function formatWhen(iso: string): string {
 export function PromptDocumentList({
   autoPublishRefreshKey = 0,
   publishAllState,
+  deepLink = null,
 }: {
+  /**
+   * `?kind=&name=` from the URL: open that document's editor once the list
+   * has it, or say there is no such document (plan
+   * `2026-10-06-overview-objectives-view` D2).
+   */
+  deepLink?: DeepLink | null;
   /**
    * Bumped by the page when something outside this list changes what the
    * auto-publish status read would say — today the D5 switch. Each change
@@ -106,10 +114,12 @@ export function PromptDocumentList({
     <PromptDocumentListBody
       autoPublishRefreshKey={autoPublishRefreshKey}
       publishAllState={publishAllState}
+      deepLink={deepLink}
     />
   ) : (
     <SelfReadingPromptDocumentList
       autoPublishRefreshKey={autoPublishRefreshKey}
+      deepLink={deepLink}
     />
   );
 }
@@ -117,14 +127,17 @@ export function PromptDocumentList({
 /** The list reading the publish-all surface itself — no page owns the read. */
 function SelfReadingPromptDocumentList({
   autoPublishRefreshKey,
+  deepLink,
 }: {
   autoPublishRefreshKey: number;
+  deepLink: DeepLink | null;
 }) {
   const publishAllState = usePublishAll();
   return (
     <PromptDocumentListBody
       autoPublishRefreshKey={autoPublishRefreshKey}
       publishAllState={publishAllState}
+      deepLink={deepLink}
     />
   );
 }
@@ -132,9 +145,11 @@ function SelfReadingPromptDocumentList({
 function PromptDocumentListBody({
   autoPublishRefreshKey,
   publishAllState,
+  deepLink,
 }: {
   autoPublishRefreshKey: number;
   publishAllState: PublishAllState;
+  deepLink: DeepLink | null;
 }) {
   const {
     documents,
@@ -412,6 +427,22 @@ function PromptDocumentListBody({
 
   const initialLoading = loading && documents.length === 0;
 
+  // The deep link opens its document ONCE per pair, after the list has it.
+  const deepLinked = deepLink
+    ? resolveDeepLink(deepLink, { documents, loading, error, degraded })
+    : null;
+  const deepLinkedDoc = deepLinked?.state === "found" ? deepLinked.doc : null;
+  const openedDeepLink = useRef<string | null>(null);
+  useEffect(() => {
+    if (!deepLinkedDoc) return;
+    const key = `${deepLinkedDoc.kind}/${deepLinkedDoc.name}`;
+    if (openedDeepLink.current === key) return;
+    openedDeepLink.current = key;
+    void openEdit(deepLinkedDoc);
+    // `openEdit` is re-created every render; the ref is what keeps this once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkedDoc]);
+
   /**
    * Whether "this band holds nothing" is a FACT we may state.
    *
@@ -459,6 +490,23 @@ function PromptDocumentListBody({
       {initialLoading && (
         <div className="py-10 text-center text-sm text-muted-foreground">
           Loading documents…
+        </div>
+      )}
+
+      {(deepLinked?.state === "missing" || deepLinked?.state === "unknown") && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5"
+          data-testid="prompt-documents-deep-link-notice"
+          data-ui-bridge-id="coord.prompt-documents.deep-link-notice"
+          data-state={deepLinked.state}
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            {deepLinked.state === "missing"
+              ? `No such document: ${deepLinked.link.kind || "(no kind)"} / ${deepLinked.link.name || "(no name)"}. The link names a document this project does not have; the full list is below.`
+              : `Couldn't look up ${deepLinked.link.kind} / ${deepLinked.link.name}, because the document list couldn't be read (${deepLinked.reason}).`}
+          </p>
         </div>
       )}
 

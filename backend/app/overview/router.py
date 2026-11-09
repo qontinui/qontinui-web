@@ -48,6 +48,7 @@ from app.overview import http as contract_http
 from app.overview.costs import router as costs_routes
 from app.overview.estimates import router as estimates_routes
 from app.overview.files import router as files_routes
+from app.overview.objectives import router as objectives_routes
 from app.overview.pages import router as pages_routes
 from app.overview.permissions import (
     OverviewAccess,
@@ -578,5 +579,6 @@ for _spec in REGISTRY.values():
 router.include_router(estimates_routes)
 router.include_router(costs_routes)
 router.include_router(timeline_routes)
+router.include_router(objectives_routes)
 router.include_router(pages_routes)
 router.include_router(files_routes)

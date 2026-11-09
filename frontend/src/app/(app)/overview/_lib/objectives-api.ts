@@ -1,0 +1,303 @@
+/**
+ * The wire contract of `GET /api/v1/overview/objectives` — `ObjectivesRead`
+ * and its parts, mirrored from `backend/app/overview/objectives_models.py`
+ * (plan `2026-10-06-overview-objectives-view` D3). The server does every join
+ * and every YAML parse; the browser only presents what it is given.
+ *
+ * The route IS in the generated-types set (`generated-types.ts` carries
+ * `/api/v1/overview/objectives` and every schema below). The literal unions
+ * are taken from it, so a status or reason the backend adds reaches every
+ * exhaustive `switch` here as a type error. The object shapes stay written out
+ * by hand: the generated set marks every field with a server-side default
+ * optional (`serves_unknown?: string[]`), though the server always sends it,
+ * and deriving them would need a deep `Required` mapping over nested
+ * references. Keep them in step with the generated schemas by hand.
+ */
+
+import { httpClient } from "@/services/service-factory";
+import { OVERVIEW_API } from "@/components/overview/editing/api";
+import type { components } from "@/lib/api-client/generated-types";
+
+type Schemas = components["schemas"];
+
+export const OBJECTIVES_URL = `${OVERVIEW_API}/objectives`;
+
+export type IntentDocState = Schemas["MetricRead"]["state"];
+export type SourceQueryType = Schemas["MetricRead"]["source_query_type"];
+export type SourceStatus = Schemas["SourceRead"]["status"];
+export type Verdict = Schemas["ResultRowRead"]["verdict"];
+/**
+ * `structured`: coord's results table holds the report's rows.
+ * `rows_not_recorded`: a readable result whose rows the table does not hold
+ * yet (the results read SUCCEEDED). `rows_unread`: a readable result whose
+ * rows the results read could not vouch for (it failed, or came back full).
+ */
+export type ReportShape = Schemas["ReportRead"]["shape"];
+export type PlacedBy = Schemas["ReportRead"]["placed_by"][number];
+export type CheckpointStatus = Schemas["CheckpointResultRead"]["status"];
+export type FindingsReadState = Schemas["MetricRead"]["findings_read"];
+/**
+ * `another_project`: coord served the recorded id as a finding that is not
+ * this project's own (coord serves every project's fleet-wide findings).
+ */
+export type UnresolvedReason = Schemas["UnresolvedResultRead"]["reason"];
+
+export interface SourceRead {
+  status: SourceStatus;
+  reason: string | null;
+  affected: string[];
+  details: Record<string, string>;
+}
+
+export interface ObjectivesSources {
+  intent_documents: SourceRead;
+  findings: SourceRead;
+  findings_by_id: SourceRead;
+  /** The read of coord's checkpoint results table — every verdict row. */
+  checkpoint_results: SourceRead;
+}
+
+export interface ObjectiveRead {
+  id: string;
+  text: string;
+  metric_names: string[];
+}
+
+export interface InitiativeRead {
+  name: string;
+  title: string;
+  state: IntentDocState;
+  version: number;
+  updated_at: string | null;
+  updated_by: string | null;
+  error: string | null;
+  status: string | null;
+  live: boolean;
+  starts: string | null;
+  ends: string | null;
+  objectives: ObjectiveRead[];
+  success_metrics: string[];
+  missing_metric_names: string[];
+  frontmatter_error: string | null;
+  field_errors: Record<string, string>;
+  frontmatter_warnings: string[];
+}
+
+export interface CheckpointDeclRead {
+  id: string;
+  /** Null when none is declared, or when `due_error` says it can't be read. */
+  due: string | null;
+  label: string | null;
+  /** Why the declared due can't be read: the due date is unknown. */
+  due_error: string | null;
+}
+
+export interface CriterionDeclRead {
+  id: string;
+  checkpoint: string | null;
+  target: string | null;
+  method: string | null;
+}
+
+export interface ResultEntryRead {
+  checkpoint: string | null;
+  finding_id: string | null;
+  posted_at: string | null;
+}
+
+export interface ExtraFieldRead {
+  key: string;
+  text: string;
+}
+
+export interface ResultRowRead {
+  id: string;
+  verdict: Verdict;
+  value: number | null;
+  unit: string | null;
+  value_text: string | null;
+  method: string | null;
+  door: string | null;
+  window: { from: string; to: string } | null;
+  unknown_reason: string | null;
+  cause: string | null;
+  action: { kind: string; ref: string } | null;
+  /** False: not one of the document's criteria — shown, flagged, not counted. */
+  declared: boolean;
+}
+
+export interface ReportRead {
+  finding_id: string;
+  title: string | null;
+  topic: string | null;
+  body: string | null;
+  created_at: string | null;
+  expires_at: string | null;
+  checkpoint: string;
+  placed_by: PlacedBy[];
+  checkpoint_mismatch: string | null;
+  shape: ReportShape;
+  block_error: string | null;
+  block_warnings: string[];
+  measured_at: string | null;
+  document_version: number | null;
+  gate_id: string | null;
+  rows: ResultRowRead[];
+  recorded: boolean;
+  /** Why the report's own text is not served (its rows are). */
+  body_unavailable: string | null;
+}
+
+export interface TallyRead {
+  met: number;
+  missed: number;
+  unknown: number;
+}
+
+export interface LaterReportNotice {
+  finding_id: string;
+  checkpoint: string;
+  created_at: string | null;
+  shape: ReportShape;
+}
+
+export interface EarlierVerdictRead {
+  checkpoint: string;
+  verdict: Verdict;
+  measured_at: string | null;
+  finding_id: string;
+}
+
+export interface CriterionResultRead {
+  id: string;
+  checkpoint: string | null;
+  target: string | null;
+  method: string | null;
+  verdict: Verdict;
+  unknown_reason: string | null;
+  row: ResultRowRead | null;
+  measured_at: string | null;
+  reported_checkpoint: string | null;
+  finding_id: string | null;
+  earlier: EarlierVerdictRead[];
+  out_of_date_notice: LaterReportNotice | null;
+}
+
+export interface UnresolvedResultRead {
+  checkpoint: string | null;
+  finding_id: string | null;
+  reason: UnresolvedReason;
+  detail: string;
+}
+
+export interface CheckpointResultRead {
+  id: string;
+  due: string | null;
+  label: string | null;
+  declared: boolean;
+  window_closes_at: string | null;
+  status: CheckpointStatus;
+  status_reason: string | null;
+  report: ReportRead | null;
+  history: ReportRead[];
+  criteria: CriterionResultRead[];
+  tally: TallyRead;
+  unresolved_results: UnresolvedResultRead[];
+}
+
+export interface RelatedNoteRead {
+  finding_id: string;
+  title: string | null;
+  topic: string | null;
+  created_at: string | null;
+  possible_report_for: string | null;
+  note: string | null;
+}
+
+export interface CurrentValueRead {
+  status: "not_measured";
+  source_query_type: SourceQueryType;
+  reason: string;
+}
+
+export interface MetricRead {
+  name: string;
+  title: string;
+  state: IntentDocState;
+  version: number;
+  updated_at: string | null;
+  updated_by: string | null;
+  overview_order: number | null;
+  body: string;
+  error: string | null;
+  frontmatter_error: string | null;
+  field_errors: Record<string, string>;
+  frontmatter_warnings: string[];
+  metric: string | null;
+  unit: string | null;
+  baseline: number | null;
+  baseline_text: string | null;
+  baseline_as_of: string | null;
+  target: number | null;
+  target_text: string | null;
+  ceiling: number | null;
+  ceiling_text: string | null;
+  floor: number | null;
+  floor_text: string | null;
+  direction: "increase" | "decrease" | null;
+  direction_text: string | null;
+  serves: string[];
+  /** `serves:` ids no initiative declares — only when every one was read. */
+  serves_unknown: string[];
+  /** `serves:` ids no READABLE initiative declares while some initiative
+   *  can't be read: whether any declares them can't be checked. */
+  serves_unchecked: string[];
+  report_topic: string | null;
+  structured_reporting_since: string | null;
+  source_query_type: SourceQueryType;
+  checkpoints: CheckpointDeclRead[];
+  checkpoints_text: string | null;
+  /** True only when `checkpoints:` was read in full, so a checkpoint the
+   *  list lacks is one the document does not declare. */
+  checkpoint_list_complete: boolean;
+  criteria: CriterionDeclRead[];
+  results: ResultEntryRead[];
+  extra_fields: ExtraFieldRead[];
+  findings_read: FindingsReadState;
+  /** This metric's share of the checkpoint results read. */
+  checkpoint_results_read: FindingsReadState;
+  checkpoint_results: CheckpointResultRead[];
+  criteria_latest: CriterionResultRead[];
+  tally_latest: TallyRead;
+  related_notes: RelatedNoteRead[];
+  /** `results:` entries that name no checkpoint and could not be shown. */
+  unresolved_results: UnresolvedResultRead[];
+  current_value: CurrentValueRead;
+}
+
+export interface ObjectivesRead {
+  tenant_id: string;
+  generated_at: string;
+  /** Live first. One that can't be read is neither live nor "earlier". */
+  initiatives: InitiativeRead[];
+  /** The READABLE initiatives that are not live. */
+  earlier_initiatives_count: number;
+  objectives_readable: boolean;
+  /** False when coord's document list was not read or came back incomplete:
+   *  a document this read did not return may still exist. */
+  document_list_complete: boolean;
+  metrics: MetricRead[];
+  initiative_named_metrics: string[];
+  other_metrics: string[];
+  skeletons_hidden: number;
+  /** Void (`mispublished: true`) metric documents, hidden — and named, so a
+   *  list of written documents can tell them from ones the read missed. */
+  void_metric_names: string[];
+  /** Void initiative documents, hidden and named the same way. */
+  void_initiative_names: string[];
+  sources: ObjectivesSources;
+}
+
+export function fetchObjectives(): Promise<ObjectivesRead> {
+  return httpClient.get<ObjectivesRead>(OBJECTIVES_URL);
+}
