@@ -85,9 +85,18 @@ function levelBlurb(
  *
  * Registered with the UI Bridge (`coord-tenant-permission-auto-accept`) so
  * the switch and its read-back are addressable without positional ids. The
- * registration keeps the state getter it was handed (`@qontinui/ui-bridge`
- * 0.31.1 does not refresh it), so the getter is a stable function reading a
- * ref that every commit updates.
+ * state getter is a stable function reading a ref that a layout effect
+ * refreshes on every commit, so a bridge state read agrees with what is on
+ * screen. Since `@qontinui/ui-bridge` 0.37 (qontinui/ui-bridge#273) the SDK
+ * also keeps an inline getter current, but it refreshes it in a passive
+ * effect: after an update that does not come from a discrete input event (a
+ * click, keypress, input and the like), such as a write's read-back or a
+ * reload's result landing, that effect runs in a later task, and a read in
+ * that gap returns the previous render's level. The action handler has the
+ * same one-task gap (the SDK refreshes handlers passively too), which this ref
+ * does not cover. Keep the ref until web pins a ui-bridge that refreshes both
+ * in a layout effect (plan
+ * `2026-11-08-ui-bridge-useuicomponent-state-lags-the-dom-by-one-task`).
  */
 export function PermissionAutoAcceptPanel() {
   /** Which level's write is in flight, so only that button spins. */
