@@ -317,8 +317,11 @@ async function mountIn(page: string = B) {
   listTenantsMock.mockResolvedValue(membership(page));
   localStorage.setItem(KEY, page);
   let setter: (id: string) => void = () => {};
+  let refresh: () => Promise<boolean> = async () => true;
   function Switcher() {
-    setter = useTenant().setActiveTenantId;
+    const tenant = useTenant();
+    setter = tenant.setActiveTenantId;
+    refresh = tenant.refresh;
     return null;
   }
   // A FRESH element each time: re-rendering with the same element object
@@ -337,6 +340,24 @@ async function mountIn(page: string = B) {
     rerender: () => view.rerender(tree()),
     switchTo: async (id: string) => {
       await act(async () => setter(id));
+    },
+    /**
+     * The provider's `refresh()` (a project rename calls it), held open: the
+     * provider sits in `loading` — the page's project UNKNOWN — until the
+     * returned release answers it.
+     */
+    refreshHeld: async (): Promise<() => void> => {
+      let answer: () => void = () => {};
+      listTenantsMock.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            answer = () => resolve(membership(page));
+          })
+      );
+      await act(async () => {
+        void refresh();
+      });
+      return () => answer();
     },
   };
 }
@@ -431,6 +452,43 @@ describe("another tab switches project", () => {
 
     await expectNotice();
     expect(screen.getByTestId("doc-edit-policy-bravo-only")).toBeDisabled();
+  }, 20_000);
+});
+
+describe("while the provider refreshes", () => {
+  it("keeps the notice up: the page's project is not forgotten while UNKNOWN", async () => {
+    const { refreshHeld } = await mountIn();
+    await act(async () => anotherTabStores(SYS));
+    await expectNotice();
+
+    const release = await refreshHeld();
+    await settle();
+
+    expect(
+      screen.getByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("doc-edit-policy-bravo-only")).toBeDisabled();
+    release();
+  }, 20_000);
+
+  it("refuses a write raced past the notice", async () => {
+    const { refreshHeld } = await mountIn();
+    anotherTabStoresSilently(SYS);
+    const release = await refreshHeld();
+    await settle();
+    const before = sent.length;
+
+    await user().click(
+      screen.getByTestId("doc-access-toggle-policy-bravo-only")
+    );
+    await user().click(
+      await screen.findByTestId("doc-access-tier-policy-bravo-only-deny")
+    );
+
+    await expectNotice();
+    await settle();
+    expect(sentSince(before, "PATCH", /./)).toEqual([]);
+    release();
   }, 20_000);
 });
 

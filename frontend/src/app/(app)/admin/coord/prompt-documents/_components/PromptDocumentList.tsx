@@ -284,32 +284,47 @@ function PromptDocumentListBody({
     followedTenant !== undefined ? followedTenant : resolvedPageTenant;
 
   /**
+   * The project the cross-tab GUARD compares against: the page's project, or
+   * — once that has been known — the last one known while it is UNKNOWN
+   * again. A provider `refresh()` (a project rename, for one) puts the
+   * provider back into `loading`, which makes `pageTenant` UNKNOWN for that
+   * round trip; the rows on screen are still the last known project's, so
+   * the guard must not lift. Only the guard reads this: Adopt all and the
+   * list re-reads keep treating UNKNOWN as offering nothing.
+   */
+  const lastKnownPageTenant = useRef<string | null | undefined>(undefined);
+  if (pageTenant !== undefined) lastKnownPageTenant.current = pageTenant;
+  const guardTenant: string | null | undefined =
+    pageTenant !== undefined ? pageTenant : lastKnownPageTenant.current;
+
+  /**
    * True while the stored project differs from the page's because ANOTHER
    * tab changed it. The HTTP client reads the stored project per request, so
    * from then on every unpinned write would land in that project while this
    * page shows its own rows — so the page's controls are disabled, writes are
    * refused at call time, and the page asks to be reloaded.
    *
-   * Computed against `pageTenant` whenever that is (re-)anchored — first
+   * Computed against `guardTenant` whenever that is (re-)anchored — first
    * known, or followed to after THIS tab's own switch, whose storage write
    * has already happened by then — and on every `storage` event for the key,
    * which only OTHER tabs receive. Another tab switching back clears it. A
-   * page whose project is UNKNOWN has nothing to compare and is not guarded.
+   * page whose project has never been known has nothing to compare and is
+   * not guarded.
    */
   const [crossTabChange, setCrossTabChange] = useState(false);
   useEffect(() => {
     setCrossTabChange(
-      pageTenant !== undefined && readActiveTenantId() !== pageTenant
+      guardTenant !== undefined && readActiveTenantId() !== guardTenant
     );
-    if (pageTenant === undefined) return;
+    if (guardTenant === undefined) return;
     const onStorage = (event: StorageEvent) => {
       // `null`: the other tab cleared storage — which clears the project too.
       if (event.key !== null && event.key !== ACTIVE_TENANT_STORAGE_KEY) return;
-      setCrossTabChange(readActiveTenantId() !== pageTenant);
+      setCrossTabChange(readActiveTenantId() !== guardTenant);
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [pageTenant]);
+  }, [guardTenant]);
   useEffect(() => {
     onCrossTabChange?.(crossTabChange);
   }, [crossTabChange, onCrossTabChange]);
@@ -319,18 +334,18 @@ function PromptDocumentListBody({
   // sit in a dialog's effect dependencies (the history dialog's version list,
   // the upstream dialog's publication reads), where a new identity per render
   // re-fetches and resets the operator's selection.
-  const pageTenantRef = useRef(pageTenant);
-  pageTenantRef.current = pageTenant;
+  const guardTenantRef = useRef(guardTenant);
+  guardTenantRef.current = guardTenant;
 
   /**
    * The call-time half of the guard: the listener above covers what is on
    * screen, this covers the race (a switch whose event has not arrived, a
    * dialog already open). `true` lets the request go; `false` sends nothing,
-   * says why, and raises the notice. A page whose project is UNKNOWN keeps
-   * the unguarded behaviour.
+   * says why, and raises the notice. A page whose project has never been
+   * known keeps the unguarded behaviour.
    */
   const writeAllowed = useCallback((): boolean => {
-    const tenant = pageTenantRef.current;
+    const tenant = guardTenantRef.current;
     if (tenant === undefined || readActiveTenantId() === tenant) return true;
     setCrossTabChange(true);
     toast.error(`${CROSS_TAB_MESSAGE} Nothing was sent.`);
@@ -398,7 +413,7 @@ function PromptDocumentListBody({
   } = usePromptDocumentPublications();
 
   // The dialogs' doors, behind the guard. Memoized on the underlying
-  // function, so a stable door stays stable (see `pageTenantRef`).
+  // function, so a stable door stays stable (see `guardTenantRef`).
   const guardedCreate = useMemo(
     () => guard(createDocument, null),
     [guard, createDocument]
