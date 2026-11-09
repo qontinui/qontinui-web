@@ -201,6 +201,34 @@ describe("CodePackageService.searchPackages", () => {
     expect(packages[0]).not.toHaveProperty("category");
   });
 
+  it("retries a failed categories read on the next call", async () => {
+    const served: PackageListResponse = {
+      packages: [searchResult],
+      total: 1,
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    };
+    let down = true;
+    const fetch = vi.fn(async (url: string) => {
+      if (url === `${PREFIX}/categories`) {
+        return down
+          ? jsonResponse({ detail: "down" }, 500)
+          : jsonResponse(SERVED_CATEGORIES);
+      }
+      return jsonResponse(served);
+    });
+    const service = new CodePackageService({ fetch } as unknown as HttpClient);
+
+    expect((await service.searchPackages()).packages[0]).not.toHaveProperty(
+      "category"
+    );
+    down = false;
+    expect((await service.searchPackages()).packages[0].category).toBe(
+      "data-processing"
+    );
+  });
+
   it("reads the categories once for the life of the service", async () => {
     const served: PackageListResponse = {
       packages: [searchResult],

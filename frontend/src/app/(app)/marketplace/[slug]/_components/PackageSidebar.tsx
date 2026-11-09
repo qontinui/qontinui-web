@@ -66,7 +66,9 @@ export function PackageSidebar({ pkg }: PackageSidebarProps) {
               {pkg.average_rating !== undefined
                 ? formatRating(pkg.average_rating)
                 : "Not rated"}
-              {pkg.rating_count !== undefined && ` (${pkg.rating_count})`}
+              {pkg.average_rating !== undefined &&
+                pkg.rating_count !== undefined &&
+                ` (${pkg.rating_count})`}
             </span>
           </div>
           <Separator className="bg-border" />

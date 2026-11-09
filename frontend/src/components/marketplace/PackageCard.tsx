@@ -144,18 +144,22 @@ export function PackageCard({
               <span>{formatDownloads(pkg.total_downloads)}</span>
             </div>
           )}
-          {pkg.average_rating !== undefined &&
-            pkg.rating_count !== undefined &&
-            pkg.rating_count > 0 && (
-              <div
-                className="flex items-center gap-1"
-                title={`${pkg.rating_count} ratings`}
-              >
-                <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
-                <span>{formatRating(pkg.average_rating)}</span>
+          {pkg.average_rating !== undefined && (
+            <div
+              className="flex items-center gap-1"
+              title={
+                pkg.rating_count !== undefined
+                  ? `${pkg.rating_count} ratings`
+                  : "Average rating"
+              }
+            >
+              <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
+              <span>{formatRating(pkg.average_rating)}</span>
+              {pkg.rating_count !== undefined && (
                 <span className="text-text-muted">({pkg.rating_count})</span>
-              </div>
-            )}
+              )}
+            </div>
+          )}
           {pkg.latest_version_number !== undefined && (
             <div className="flex items-center gap-1 text-xs">
               <span>

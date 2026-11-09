@@ -36,10 +36,11 @@ describe("PackageCard", () => {
     expect(document.querySelector('[title$="total downloads"]')).toBeNull();
   });
 
-  it("hides the rating when the payload carries no count, and shows it when served", () => {
+  it("shows an average without inventing a count, and the count when served", () => {
     const { rerender } = render(
       <PackageCard package={{ ...base, average_rating: 4.5 }} />
     );
+    expect(document.querySelector('[title="Average rating"]')).not.toBeNull();
     expect(document.querySelector('[title$="ratings"]')).toBeNull();
 
     rerender(
@@ -48,6 +49,11 @@ describe("PackageCard", () => {
       />
     );
     expect(document.querySelector('[title="3 ratings"]')).not.toBeNull();
+  });
+
+  it("hides the rating when the payload serves no average", () => {
+    render(<PackageCard package={base} />);
+    expect(document.querySelector('[title="Average rating"]')).toBeNull();
   });
 
   it("shows them when served", () => {
