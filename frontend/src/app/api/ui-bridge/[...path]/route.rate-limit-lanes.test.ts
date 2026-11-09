@@ -17,52 +17,20 @@
  * Every threshold is a LITERAL (20, 21, 60, 61, 96, 97, 160, 161, 432, 433),
  * never one of the module's constants, so a constant that drifts fails here.
  *
- * Harness: `route.audit-rl.test.ts`'s (an in-memory Redis, a frozen window).
- * Its mocked `UI_BRIDGE_ROUTES` lacks `POST /heartbeat`, so a heartbeat there
- * would 404 after the limiter; this file's mock carries it, as the real SDK's
- * does (`receiveHeartbeat`).
+ * Harness: the shared in-memory Redis (`@/test/rate-limit-redis-mock`, which
+ * records every command it receives) and `route.audit-rl.test.ts`'s frozen
+ * window. That file's mocked `UI_BRIDGE_ROUTES` lacks `POST /heartbeat`, so a
+ * heartbeat there would 404 after the limiter; this file's mock carries it,
+ * as the real SDK's does (`receiveHeartbeat`).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+import { makeMockRedis, notReadyRedis } from "@/test/rate-limit-redis-mock";
+
 import { __resetAuthCache } from "./_auth";
 import { __setRedisClientForTest } from "./_rate-limit";
-
-/** In-memory ioredis stand-in (same shape as `route.audit-rl.test.ts`). */
-function makeMockRedis() {
-  const store = new Map<string, number>();
-  const pipelineApi = {
-    _ops: [] as Array<["incr" | "expire", string]>,
-    incr(key: string) {
-      this._ops.push(["incr", key]);
-      return this;
-    },
-    expire(key: string) {
-      this._ops.push(["expire", key]);
-      return this;
-    },
-    async exec(): Promise<unknown> {
-      const results: Array<[Error | null, unknown]> = [];
-      for (const [op, key] of this._ops) {
-        if (op === "incr") {
-          const next = (store.get(key) ?? 0) + 1;
-          store.set(key, next);
-          results.push([null, next]);
-        } else {
-          results.push([null, 1]);
-        }
-      }
-      this._ops = [];
-      return results;
-    },
-  };
-  const client = {
-    pipeline: () => ({ ...pipelineApi, _ops: [] }),
-    on: () => undefined,
-  } as unknown as Parameters<typeof __setRedisClientForTest>[0];
-  return { client, store };
-}
 
 vi.mock("@/lib/ui-bridge/relay", () => {
   const fakeHandler = async () =>
@@ -518,31 +486,11 @@ describe("route.ts rate-limit lanes: SDK transport has per-principal sub-lanes o
   it.each(LANES.map((l) => [l.lane, l] as const))(
     "(h) a Redis connection that is not ready yet: %s admits past its ceiling and reports its remaining budget as unknown",
     async (_name, lane) => {
-      // ioredis RESOLVES (never rejects) a pipeline sent on a connection that
-      // is not ready when `enableOfflineQueue` is false — every cold
-      // instance's first request, and every request while Redis is down.
-      const notWriteable = () =>
-        new Error(
-          "Stream isn't writeable and enableOfflineQueue options is false"
-        );
-      const pipeline = {
-        incr() {
-          return pipeline;
-        },
-        expire() {
-          return pipeline;
-        },
-        async exec() {
-          return [
-            [notWriteable(), null],
-            [notWriteable(), null],
-          ];
-        },
-      };
-      __setRedisClientForTest({
-        pipeline: () => pipeline,
-        on: () => undefined,
-      } as unknown as Parameters<typeof __setRedisClientForTest>[0]);
+      // With `enableOfflineQueue: false`, ioredis REJECTS a command sent on a
+      // connection that is not ready (and resolves a pipeline with an error
+      // per command): every cold instance's first request, and every request
+      // while Redis is down. `notReadyRedis` models both, as measured.
+      __setRedisClientForTest(notReadyRedis().client);
       await withFrozenWindow(async () => {
         expect(await burst(lane.limit + 1, lane.hit)).toEqual({
           200: lane.limit + 1,
