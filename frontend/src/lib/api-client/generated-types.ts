@@ -8064,7 +8064,7 @@ export interface paths {
         put?: never;
         /**
          * Execute Mock Workflow
-         * @description Execute a mock workflow using historical data (placeholder endpoint).
+         * @description Return simulated execution data for a workflow (placeholder endpoint).
          *
          *     **Authentication:** JWT token required
          *

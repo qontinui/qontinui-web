@@ -1,5 +1,5 @@
 // lib/api/integration-testing.ts
-// API client for Integration Testing feature (mock mode testing with historical data)
+// API client for Integration Testing feature (mock mode testing with simulated data)
 
 import type {
   MockExecutionRequest,
@@ -12,7 +12,7 @@ import { ApiConfig } from "@/services/api-config";
 const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
 /**
- * Execute a mock workflow using historical data.
+ * Return simulated execution data for a workflow (the backend placeholder).
  * This is used for Config Testing (workflow validation).
  */
 export async function executeMockWorkflow(
