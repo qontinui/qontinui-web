@@ -165,6 +165,19 @@ describe("render — the Rust unit tests, copied", () => {
     );
   });
 
+  it("a_no_project_refusal_headline_names_who_grants_access", () => {
+    // The presentation scope's no-project refusal, as the panel headlines it.
+    expect(
+      renderRefusal({
+        code: "permission_denied",
+        discriminator: "tenant_not_resolved",
+        next_action: na("request_access", "a project admin"),
+      })
+    ).toBe(
+      "You do not have permission to do this (tenant_not_resolved). Ask a project admin to grant you access, then try again."
+    );
+  });
+
   it("retry_delays_are_humanised_and_capped", () => {
     const r = (s: number) => renderNextAction(na("retry_later", null, s));
     expect(r(0)).toBe("Try again now");
