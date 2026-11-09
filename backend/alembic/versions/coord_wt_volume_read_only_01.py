@@ -1,7 +1,7 @@
 """coord.worktree_volume.read_only — whether an observed volume is mounted read-only
 
 Revision ID: coord_wt_volume_read_only_01
-Revises: pr_events_mergeability_head_idx_01
+Revises: fpl_02b
 Create Date: 2026-11-04
 
 Phase 2 (qontinui-web migration half) of plan
@@ -89,7 +89,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_wt_volume_read_only_01"
-down_revision: str | Sequence[str] | None = "pr_events_mergeability_head_idx_01"
+down_revision: str | Sequence[str] | None = "fpl_02b"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
