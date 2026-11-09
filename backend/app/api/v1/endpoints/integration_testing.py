@@ -1,8 +1,10 @@
 """
 Config Testing API Endpoints
 
-Endpoints for mock execution and PDF report generation used by the
-Config Testing feature (workflow validation against simulated execution data).
+Endpoints for PDF report generation and snapshot-run screenshots used by the
+Config Testing feature. The placeholder mock-execution endpoint
+(`POST /integration-testing/execute`), which returned fabricated execution data
+and had no live caller, is deleted.
 
 The module keeps its integration_testing.py name, but the feature it serves
 is called Config Testing in Qontinui terminology:
@@ -42,17 +44,6 @@ router = APIRouter()
 
 
 # Request/Response Models
-class MockExecutionRequest(BaseModel):
-    """Request for mock execution"""
-
-    project_id: str
-    workflow_id: str
-    workflow_name: str
-    snapshot_run_ids: list[str] = Field(default_factory=list)
-    initial_states: list[str] = Field(default_factory=list)
-    actions: list[dict[str, Any]] = Field(default_factory=list)
-
-
 class PDFReportRequest(BaseModel):
     """Request for PDF report generation"""
 
@@ -178,59 +169,6 @@ async def verify_project_access(
         )
 
     return project
-
-
-@router.post("/execute", status_code=status.HTTP_200_OK)
-async def execute_mock_workflow(
-    request: MockExecutionRequest,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(current_active_user),
-) -> dict[str, Any]:
-    """
-    Return simulated execution data for a workflow (placeholder endpoint).
-
-    **Authentication:** JWT token required
-
-    This endpoint returns mock execution data for UI visualization.
-
-    Note: This is a placeholder that returns simulated data.
-    """
-    # Verify project access
-    await verify_project_access(db, request.project_id, current_user.id)
-
-    logger.info(
-        f"Mock execution requested for workflow {request.workflow_name} "
-        f"by user {current_user.id}"
-    )
-
-    # Return mock data structure for UI visualization
-    mock_response = {
-        "workflow_id": request.workflow_id,
-        "workflow_name": request.workflow_name,
-        "start_time": datetime.now().isoformat(),
-        "end_time": datetime.now().isoformat(),
-        "total_duration_ms": 1500,
-        "initial_states": request.initial_states,
-        "final_states": request.initial_states,
-        "actions": [
-            {
-                "action_type": action.get("type", "UNKNOWN"),
-                "screenshot_path": f"screenshot_{i}.png",
-                "action_location": [100, 100],
-                "success": True,
-                "active_states": request.initial_states,
-                "timestamp": datetime.now().isoformat(),
-                "duration_ms": 100,
-            }
-            for i, action in enumerate(request.actions)
-        ],
-        "success": True,
-        "success_rate": 1.0,
-        "total_actions": len(request.actions),
-        "successful_actions": len(request.actions),
-    }
-
-    return mock_response
 
 
 # PDF Report Generation Endpoints

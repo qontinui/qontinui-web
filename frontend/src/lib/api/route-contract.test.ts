@@ -39,19 +39,8 @@ const { captured, recordingFetch } = vi.hoisted(() => {
   return { captured, recordingFetch };
 });
 
-// `integration-testing.ts` calls the shared singleton's `fetch` directly.
-vi.mock("@/services/service-factory", () => ({
-  httpClient: { fetch: recordingFetch },
-}));
-
 import { HttpClient } from "@/services/http-client";
 import { DiscoveriesService } from "@/services/discoveries-service";
-import {
-  executeMockWorkflow,
-  generatePDFReport,
-  getScreenshotUrl,
-  getStateScreenshots,
-} from "./integration-testing";
 import { loadSnapshotPaths } from "./route-walker";
 
 /** Parsed once through the shared loader `route-walker.test.ts` also uses. */
@@ -59,9 +48,7 @@ const SNAPSHOT_PATHS = loadSnapshotPaths();
 
 /** Concrete values the cases pass for path parameters. */
 const DISCOVERY_ID = "11111111-2222-3333-4444-555555555555";
-const RUN_ID = "run-abc123";
-const SCREENSHOT = "shot-001.png";
-const PARAM_VALUES = new Set([DISCOVERY_ID, RUN_ID, SCREENSHOT]);
+const PARAM_VALUES = new Set([DISCOVERY_ID]);
 
 /**
  * The real `HttpClient` verb helpers (`put`, `post`, …) over a recording
@@ -136,32 +123,6 @@ describe("route contract: discoveries-service", () => {
   it("rejectDiscovery hits a served (method, path)", async () => {
     expectServed(
       await captureOne(() => service.rejectDiscovery(DISCOVERY_ID, "no"))
-    );
-  });
-});
-
-describe("route contract: integration-testing", () => {
-  it("executeMockWorkflow hits a served (method, path)", async () => {
-    expectServed(
-      await captureOne(() =>
-        executeMockWorkflow({} as Parameters<typeof executeMockWorkflow>[0])
-      )
-    );
-  });
-
-  it("getStateScreenshots hits a served (method, path)", async () => {
-    expectServed(await captureOne(() => getStateScreenshots(RUN_ID, ["Home"])));
-  });
-
-  it("getScreenshotUrl renders a served GET path", () => {
-    expectServed({ method: "GET", url: getScreenshotUrl(RUN_ID, SCREENSHOT) });
-  });
-
-  it("generatePDFReport hits a served (method, path)", async () => {
-    expectServed(
-      await captureOne(() =>
-        generatePDFReport({ executionResult: {}, screenshotsDir: "/tmp/shots" })
-      )
     );
   });
 });

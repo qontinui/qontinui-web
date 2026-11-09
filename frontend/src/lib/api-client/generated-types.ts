@@ -8053,32 +8053,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/integration-testing/execute": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Execute Mock Workflow
-         * @description Return simulated execution data for a workflow (placeholder endpoint).
-         *
-         *     **Authentication:** JWT token required
-         *
-         *     This endpoint returns mock execution data for UI visualization.
-         *
-         *     Note: This is a placeholder that returns simulated data.
-         */
-        post: operations["api_v1_integration_testing_execute_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/integration-testing/reports/pdf": {
         parameters: {
             query?: never;
@@ -42329,26 +42303,6 @@ export interface components {
             total: number;
         };
         /**
-         * MockExecutionRequest
-         * @description Request for mock execution
-         */
-        MockExecutionRequest: {
-            /** Actions */
-            actions?: {
-                [key: string]: unknown;
-            }[];
-            /** Initial States */
-            initial_states?: string[];
-            /** Project Id */
-            project_id: string;
-            /** Snapshot Run Ids */
-            snapshot_run_ids?: string[];
-            /** Workflow Id */
-            workflow_id: string;
-            /** Workflow Name */
-            workflow_name: string;
-        };
-        /**
          * MockSettingsSchema
          * @description Mock mode timing configuration schema.
          */
@@ -70224,41 +70178,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    api_v1_integration_testing_execute_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MockExecutionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
             };
         };
     };
