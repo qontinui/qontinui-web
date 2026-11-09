@@ -883,8 +883,13 @@ jobs:
       # The probe set comes from .qontinui/deploy.toml (coord runs in ECS and
       # cannot read repo files — this CI job is the trust boundary, §3.4); the
       # correlation_id joins the deploy to the land that triggered it via
-      # GET /coord/lands (to_sha == GITHUB_SHA; absent on schedule/dispatch
-      # runs, which is fine — correlation is best-effort).
+      # coord's ingest-authed GET /coord/lands/correlation?repo=&to_sha=, which
+      # answers the newest non-null coord.land_signatures.correlation_id for
+      # this repo at GITHUB_SHA. That id is stamped at land-declare INSERT, and
+      # only for multi-repo correlated lands; no repo POSTs /coord/lands/declare
+      # today (coord finding eb989ebd), so the lookup answers null until
+      # land_signatures has a producer. Absent on schedule/dispatch runs too —
+      # correlation is best-effort.
       #
       # Best-effort BY DESIGN: any failure here warns and the deploy proceeds
       # — the effect loop observes deploys, it does not gate them. The
@@ -933,23 +938,18 @@ jobs:
             TARGET_ENV="${INPUT_TARGET_ENV}"
           fi
 
-          # 1. Land correlation (best-effort, normal mode only): the land
-          #    verifier stamps a correlation_id on the land that advanced main
-          #    to this SHA.
+          # 1. Land correlation (best-effort, normal mode only): ask coord's
+          #    ingest-authed GET /coord/lands/correlation for the correlation_id
+          #    of the land at (repo, to_sha=GITHUB_SHA). It answers
+          #    {"correlation_id": null} until coord.land_signatures has a
+          #    producer (no repo POSTs /coord/lands/declare yet; coord finding
+          #    eb989ebd). `-f` turns any non-2xx (401/404/422/503) into empty,
+          #    so CORR stays empty and the deploy proceeds uncorrelated.
           if [ -z "$CORR" ] && [ "$ROLLBACK" != "true" ]; then
-          CORR=$(curl -s --max-time 10 "$COORD_BASE_URL/coord/lands?repo=$REPO_SLUG&limit=50" \
-            | python3 -c '
-          import json, sys, os
-          sha = os.environ["GITHUB_SHA"]
-          try:
-              lands = json.load(sys.stdin).get("lands") or []
-          except Exception:
-              lands = []
-          for land in lands:
-              if (land.get("to_sha") or "") == sha and land.get("correlation_id"):
-                  print(land["correlation_id"])
-                  break
-          ' || true)
+            CORR=$(curl -sf --max-time 10 \
+                -H "Authorization: Bearer ${COORD_INGEST_TOKEN}" \
+                "$COORD_BASE_URL/coord/lands/correlation?repo=$REPO_SLUG&to_sha=$GITHUB_SHA" \
+              | jq -r '.correlation_id // empty' 2>/dev/null || true)
           fi
           echo "correlation_id: ${CORR:-none} (rollback=$ROLLBACK)"
 
