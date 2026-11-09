@@ -17,6 +17,11 @@
  * Every threshold is a LITERAL (20, 21, 60, 61, 96, 97, 160, 161, 432, 433),
  * never one of the module's constants, so a constant that drifts fails here.
  *
+ * What a request costs the limiter's database in Redis commands is counted
+ * here too, through the route (plan
+ * 2026-11-09-webpack-bundles-the-relay-sdks-ioredis-import-so-the-deployed-
+ * relay-bus-never-starts, Phase 4).
+ *
  * Harness: the shared in-memory Redis (`@/test/rate-limit-redis-mock`, which
  * records every command it receives) and `route.audit-rl.test.ts`'s frozen
  * window. That file's mocked `UI_BRIDGE_ROUTES` lacks `POST /heartbeat`, so a
@@ -606,4 +611,100 @@ describe("route.ts rate-limit lanes: SDK transport has per-principal sub-lanes o
       }),
     ]);
   }, 60_000);
+
+  /**
+   * Plan 2026-11-09-webpack-bundles-the-relay-sdks-ioredis-import-so-the-
+   * deployed-relay-bus-never-starts, Phase 4 (D5). The provider bills per
+   * command, so a relay request costs the limiter's database one command,
+   * its INCR. The INCR that answers 1 also sends the key's EXPIRE, once per
+   * principal-lane-window. Tests (4) and (5) are in `_rate-limit.test.ts`.
+   */
+  describe("Redis commands per relay request", () => {
+    it("(1) 60 reads by one principal in one window send 61 commands: 60 INCR and 1 EXPIRE", async () => {
+      const redis = makeMockRedis();
+      __setRedisClientForTest(redis.client);
+      await withFrozenWindow(async () => {
+        expect(await burst(60, () => commandRead())).toEqual({ 200: 60 });
+      });
+      expect(redis.commands).toHaveLength(61);
+      expect(redis.commands.filter((c) => c.name === "incr")).toHaveLength(60);
+      expect(redis.commands.filter((c) => c.name === "expire")).toHaveLength(1);
+    });
+
+    it("(2) the one EXPIRE follows the INCR that answered 1, with a 70 s TTL", async () => {
+      const redis = makeMockRedis();
+      __setRedisClientForTest(redis.client);
+      await withFrozenWindow(async () => {
+        expect(await burst(60, () => commandRead())).toEqual({ 200: 60 });
+      });
+      // Where each EXPIRE sits in the command stream.
+      expect(
+        redis.commands.flatMap((c, i) => (c.name === "expire" ? [i] : []))
+      ).toEqual([1]);
+      // FROZEN_NOW's window is floor(1767225630000 / 60000) = 29453760.
+      expect(redis.commands.slice(0, 2)).toEqual([
+        {
+          name: "incr",
+          key: "bridge:rl:r:user-1:29453760",
+          via: "direct",
+          reply: 1,
+        },
+        {
+          name: "expire",
+          key: "bridge:rl:r:user-1:29453760",
+          seconds: 70,
+          via: "direct",
+          reply: 1,
+        },
+      ]);
+    });
+
+    it("(3) two lanes of one principal in one window: one EXPIRE per key, and none on the later INCRs", async () => {
+      const redis = makeMockRedis();
+      __setRedisClientForTest(redis.client);
+      await withFrozenWindow(async () => {
+        for (let n = 0; n < 10; n++) {
+          expect((await commandRead()).status).toBe(200);
+          expect((await heartbeat()).status).toBe(200);
+        }
+      });
+      const read = "bridge:rl:r:user-1:29453760";
+      const beat = "bridge:rl:t:h:user-1:29453760";
+      expect(redis.commands.map((c) => `${c.name} ${c.key}`)).toEqual([
+        `incr ${read}`,
+        `expire ${read}`,
+        `incr ${beat}`,
+        `expire ${beat}`,
+        ...Array.from({ length: 9 }, () => [
+          `incr ${read}`,
+          `incr ${beat}`,
+        ]).flat(),
+      ]);
+      expect(
+        redis.commands.filter((c) => c.name === "expire").map((c) => c.seconds)
+      ).toEqual([70, 70]);
+    });
+
+    it("(6) controls: the 21st write is refused RATE_LIMITED, and the 97th stream open TRANSPORT_RATE_LIMITED", async () => {
+      await withFrozenWindow(async () => {
+        expect(await burst(20, () => commandWrite())).toEqual({ 200: 20 });
+        const write = await commandWrite();
+        expect(write.status).toBe(429);
+        expect(await write.json()).toMatchObject({
+          success: false,
+          code: "RATE_LIMITED",
+          lane: "write",
+        });
+
+        expect(await burst(96, () => streamOpen())).toEqual({ 200: 96 });
+        const stream = await streamOpen();
+        expect(stream.status).toBe(429);
+        expect(await stream.json()).toMatchObject({
+          success: false,
+          code: "TRANSPORT_RATE_LIMITED",
+          lane: "transport:stream",
+        });
+      });
+    }, 60_000);
+  });
 });
