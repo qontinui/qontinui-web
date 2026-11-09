@@ -49,7 +49,7 @@ _REVISION_ID = "coord_agent_sessions_work_unit_context_01"
 _REVISION_FILENAME = f"{_REVISION_ID}.py"
 # The single head of origin/main when this revision was authored. If coord's
 # land-time re-point moves down_revision, update this literal with it.
-_PARENT_REVISION_ID = "coord_test_result_runs_01"
+_PARENT_REVISION_ID = "fpl_02b"
 
 _SCHEMA = "coord"
 _TABLE = "agent_sessions"
