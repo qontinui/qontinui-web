@@ -71,6 +71,7 @@ describe("renderNextAction — the Rust dump", () => {
       none_terminal: true,
       report_defect: true,
       fix_request: true,
+      request_access: true,
       resnapshot: true,
       scroll_into_view: true,
       wait_for_enabled: true,
@@ -145,6 +146,23 @@ describe("render — the Rust unit tests, copied", () => {
     });
     expect(blank).not.toContain("()");
     expect(blank).not.toContain('""');
+  });
+
+  it("request_access_names_who_grants_access", () => {
+    expect(renderNextAction(na("request_access", "a project admin"))).toBe(
+      "Ask a project admin to grant you access, then try again"
+    );
+    expect(renderNextAction(na("request_access", null))).toBe(
+      "Ask an administrator to grant you access, then try again"
+    );
+    // Unquoted is not uncleaned: line breaks and double quotes are still
+    // neutralised.
+    expect(renderNextAction(na("request_access", 'a project\n"admin"'))).toBe(
+      "Ask a project 'admin' to grant you access, then try again"
+    );
+    expect(renderNextAction(na("request_access", "  "))).toBe(
+      "Ask an administrator to grant you access, then try again"
+    );
   });
 
   it("retry_delays_are_humanised_and_capped", () => {
