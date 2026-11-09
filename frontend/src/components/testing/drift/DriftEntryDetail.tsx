@@ -6,8 +6,8 @@
  *
  * Backends:
  *   GET /api/v1/runs/:runId/drift/:entryId -> DriftEntryView
- * (See drift-api.ts. As of Phase D2 this endpoint is a follow-up — the
- * fetcher will return a network error until backend wiring lands.)
+ * (See drift-api.ts: the route is for platform admins, and anyone else sees
+ * `DriftAdminOnly`.)
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -15,10 +15,14 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, AlertCircle, HelpCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DriftAdminOnly } from "./DriftAdminOnly";
 import {
   fetchDriftEntry,
+  isDriftAdminRefusal,
+  isDriftNotFound,
   isSpecDrift,
   isVisualDrift,
+  retryDriftRead,
   type DriftEntryView,
 } from "./drift-api";
 import { VisualDriftDetail } from "./VisualDriftDetail";
@@ -43,6 +47,7 @@ export function DriftEntryDetail({ runId, entryId }: DriftEntryDetailProps) {
     queryKey: driftQueryKeys.entry(runId, entryId),
     queryFn: () => fetchDriftEntry(runId, entryId),
     staleTime: 30_000,
+    retry: retryDriftRead,
   });
 
   return (
@@ -53,7 +58,7 @@ export function DriftEntryDetail({ runId, entryId }: DriftEntryDetailProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.push(`/runs/${runId}/drift`)}
+              onClick={() => router.push(`/runs/${encodeURIComponent(runId)}/drift`)}
               className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="size-4 mr-1" />
@@ -84,6 +89,10 @@ export function DriftEntryDetail({ runId, entryId }: DriftEntryDetailProps) {
       <main className="p-6 max-w-5xl mx-auto">
         {isLoading ? (
           <LoaderPanel />
+        ) : isDriftAdminRefusal(error) ? (
+          <DriftAdminOnly />
+        ) : isDriftNotFound(error) ? (
+          <NotFoundPanel />
         ) : error ? (
           <ErrorPanel message={(error as Error).message} />
         ) : !data ? (

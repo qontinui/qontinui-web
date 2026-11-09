@@ -80,7 +80,11 @@ def _run(payload: Any) -> list[dict[str, Any]]:
         "app.services.dev_dashboard_service.httpx.AsyncClient",
         _FakeAsyncClient,
     ):
-        return asyncio.run(registry.get_all_running_tasks())
+        return asyncio.run(
+            registry.get_all_running_tasks(
+                hostnames={"envelope-host"}, may_reach_co_located=False
+            )
+        ).tasks
 
 
 class TestRunningTaskEnvelope:

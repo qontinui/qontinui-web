@@ -22,10 +22,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   fetchDriftReport,
+  isDriftAdminRefusal,
+  isDriftNotFound,
   isSpecDrift,
   isVisualDrift,
+  retryDriftRead,
   type DriftEntryView,
 } from "./drift-api";
+import { DriftAdminOnly } from "./DriftAdminOnly";
 import { driftQueryKeys } from "./DriftEntryDetail";
 
 const KIND_GROUPS: ReadonlyArray<{
@@ -65,6 +69,7 @@ export function DriftListContent({ runId }: DriftListContentProps) {
     queryKey: driftQueryKeys.byRun(runId),
     queryFn: () => fetchDriftReport(runId),
     staleTime: 30_000,
+    retry: retryDriftRead,
   });
 
   const groups = data
@@ -84,7 +89,7 @@ export function DriftListContent({ runId }: DriftListContentProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.push(`/runs/${runId}`)}
+              onClick={() => router.push(`/runs/${encodeURIComponent(runId)}`)}
               className="text-text-muted hover:text-white"
             >
               <ArrowLeft className="size-4 mr-1" />
@@ -120,6 +125,10 @@ export function DriftListContent({ runId }: DriftListContentProps) {
             <Loader2 className="size-6 animate-spin mx-auto mb-3" />
             Loading drift report...
           </div>
+        ) : isDriftAdminRefusal(error) ? (
+          <DriftAdminOnly />
+        ) : isDriftNotFound(error) ? (
+          <NoReportState />
         ) : error ? (
           <Card>
             <CardHeader>
@@ -166,7 +175,7 @@ function DriftRow({ runId, entry }: { runId: string; entry: DriftEntryView }) {
       : "(no detail)";
   return (
     <Link
-      href={`/runs/${runId}/drift/${encodeURIComponent(entry.id)}`}
+      href={`/runs/${encodeURIComponent(runId)}/drift/${encodeURIComponent(entry.id)}`}
       className="block"
     >
       <Card className="transition hover:bg-muted/40">
@@ -197,6 +206,23 @@ function EmptyState() {
         <p className="text-sm text-muted-foreground">
           The runtime registry matched the authored spec and all visual
           baselines for this run.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The run has no report, which says nothing about whether it drifted. */
+function NoReportState() {
+  return (
+    <Card data-testid="drift-no-report">
+      <CardHeader>
+        <CardTitle className="text-base">No drift report for this run</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground">
+          The runner holds no drift report for this run id, so whether it
+          drifted is unknown.
         </p>
       </CardContent>
     </Card>

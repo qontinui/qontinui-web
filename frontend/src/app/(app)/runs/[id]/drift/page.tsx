@@ -24,7 +24,8 @@ const DriftListContent = dynamic(
 
 export default function DriftListPage() {
   const params = useParams();
-  const runId = params.id ? String(params.id) : null;
+  // `useParams` hands a segment back still percent-encoded.
+  const runId = params.id ? decodeURIComponent(String(params.id)) : null;
 
   if (!runId) {
     return (
