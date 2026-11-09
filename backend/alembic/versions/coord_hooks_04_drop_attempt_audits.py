@@ -63,6 +63,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Same guard as coord_hooks_03's upgrade: a coord build predating #3899
+    # self-heals this table, so it may already be back.
+    if sa.inspect(op.get_bind()).has_table("attempt_audits", schema="coord"):
+        return
     op.create_table(
         "attempt_audits",
         sa.Column("unit_id", postgresql.UUID(as_uuid=True), nullable=False),
