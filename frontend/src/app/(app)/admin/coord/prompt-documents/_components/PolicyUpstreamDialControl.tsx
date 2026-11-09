@@ -47,7 +47,7 @@ import {
  * document is badged instead. Two more things make the automatic arm reversible
  * rather than merely safe: the adoption lands as an ordinary new version, so
  * the previous wording stays in the history a few inches above and is
- * restorable in one click, and a notification is emitted after it.
+ * restorable from it, and a notification is emitted after it.
  *
  * That is why `auto` is the default rather than a click gate: a click gate
  * means every downstream fleet runs stale policy until a human happens to look
@@ -68,7 +68,17 @@ import {
  *   mistaken for a broken dial.
  * - **A failed read-back is UNKNOWN**, not the level that was written.
  */
-export function PolicyUpstreamDialControl() {
+export function PolicyUpstreamDialControl({
+  canWrite,
+}: {
+  /**
+   * Checked at the moment of every write; `false` sends nothing (the caller
+   * says why). The prompt-documents page passes its cross-tab guard here:
+   * its disabled fieldset reaches neither a confirmation (rendered outside
+   * it) nor a click that lands before another tab's switch is seen.
+   */
+  canWrite?: () => boolean;
+} = {}) {
   const {
     policy,
     loading,
@@ -80,8 +90,10 @@ export function PolicyUpstreamDialControl() {
     readbackError,
     lastWrite,
     reload,
-    setLevel,
+    setLevel: writeLevel,
   } = usePolicyUpstreamPolicy();
+  const setLevel = (level: Parameters<typeof writeLevel>[0]) =>
+    canWrite && !canWrite() ? Promise.resolve(false) : writeLevel(level);
 
   // Held between the operator picking a confirmed level and confirming it. The
   // RadioGroup stays controlled by `displayLevel` throughout, so cancelling
@@ -345,9 +357,8 @@ export function PolicyUpstreamDialControl() {
                   At <span className="font-mono">auto</span>, a document you
                   have <strong>never edited</strong> takes a new publication on
                   its own. It lands as an ordinary new version — the previous
-                  wording stays in this page&apos;s version history and is
-                  restorable in one click — and you are told afterwards rather
-                  than asked first.
+                  wording stays in this page&apos;s version history, restorable
+                  from it — and you are told afterwards rather than asked first.
                 </p>
                 <p>
                   This does <strong>not</strong> touch a document you have

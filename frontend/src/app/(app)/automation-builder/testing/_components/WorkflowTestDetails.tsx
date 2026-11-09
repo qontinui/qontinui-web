@@ -5,49 +5,29 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import type { TestCase, WorkflowCoverage } from "@/services/workflow-testing";
+import type { TestCase } from "@/services/workflow-testing";
 import type { Workflow } from "@/lib/action-schema/action-types";
 
 interface WorkflowTestDetailsProps {
   workflow: Workflow;
   testCases: TestCase[];
-  coverage?: WorkflowCoverage;
 }
 
 export function WorkflowTestDetails({
   workflow,
   testCases,
-  coverage,
 }: WorkflowTestDetailsProps) {
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>{workflow.name}</CardTitle>
-          <CardDescription>Workflow test coverage and details</CardDescription>
+          <CardDescription>
+            Test cases authored for this workflow
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Coverage */}
-            {coverage && (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">Coverage</span>
-                  <span className="text-sm">
-                    {coverage.coveragePercentage.toFixed(1)}%
-                  </span>
-                </div>
-                <Progress value={coverage.coveragePercentage} className="h-2" />
-                <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                  <span>
-                    {coverage.coveredActions} / {coverage.totalActions} actions
-                    covered
-                  </span>
-                </div>
-              </div>
-            )}
-
             {/* Test Cases */}
             <div>
               <h3 className="font-semibold mb-2">
