@@ -1665,8 +1665,8 @@ jobs:
       # outcome matched no `case` arm and produced no `::warning::` annotation —
       # the jq summary below did print the dimensions, but nothing FLAGGED them,
       # so run 30395049856 (the first of the two missed releases) scrolled past
-      # unremarked. The release dimension is now echoed on its own line and a
-      # `contradiction` is annotated.
+      # unremarked. The release dimension is now echoed on its own line for
+      # every verification reply, and a `contradiction` is annotated.
       #
       # Calibrate expectations for that annotation: it fired on run 30411815369
       # but NOT on 30395049856, where the same rollback read as
@@ -1681,12 +1681,38 @@ jobs:
           SIGNATURE_ID: ${{ steps.declare.outputs.signature_id }}
         run: |
           SIG="${SIGNATURE_ID}"
-          RESP=$(curl -s --max-time 60 -X POST "$COORD_BASE_URL/coord/deploys/verify" \
+          RESP=$(curl -sS --max-time 60 -X POST "$COORD_BASE_URL/coord/deploys/verify" \
             -H 'Content-Type: application/json' \
             -d "{\"signature_id\":\"$SIG\"}" || true)
-          if ! printf '%s' "$RESP" | jq '{composed_outcome, settled, coverage, rationale,
-                dimensions: [.dimension_verdicts[]? | {dimension, outcome, detail}]}' 2>/dev/null; then
-            echo "::warning::deploy verify response unparseable (best-effort)"
+          # Annotate a reply that verified nothing, instead of printing a
+          # summary of nulls that reads like a verdict. That reply is either
+          # empty (curl timed out or could not connect, or coord sent no body)
+          # or carries `error`: coord could not read the signature (today a
+          # 200 error body, and a 503 `signature_load_failed` once
+          # qontinui-coord#3966 lands) or found none (404). Only `error` and
+          # `message` are echoed, because the 200 error body carries the
+          # database error in `detail`. `%` is escaped (the runner decodes
+          # %0A and friends in command data) and CR/LF are flattened, so the
+          # annotation renders as one line of coord's literal text.
+          if [ -z "$RESP" ]; then
+            echo "::warning::deploy verify got an empty reply from coord for signature $SIG (report-only); nothing was verified. Inspect GET $COORD_BASE_URL/coord/deploys/$SIG"
+            exit 0
+          fi
+          ERR=$(printf '%s' "$RESP" | jq -r 'if type == "object" then (.error // empty) else empty end' 2>/dev/null || true)
+          if [ -n "$ERR" ]; then
+            MSG=$(printf '%s' "$RESP" | jq -r 'if type == "object" then (.message // empty) else empty end' 2>/dev/null || true)
+            ERR=${ERR//[%]/%25}
+            MSG=${MSG//[%]/%25}
+            ERR=${ERR//[$'\r\n']/ }
+            MSG=${MSG//[$'\r\n']/ }
+            echo "::warning::deploy verify answered error '${ERR}' for signature $SIG (report-only)${MSG:+: ${MSG}} — inspect GET $COORD_BASE_URL/coord/deploys/$SIG"
+            exit 0
+          fi
+          if ! printf '%s' "$RESP" | jq -e 'if type == "object" and has("composed_outcome") then
+                {composed_outcome, settled, coverage, rationale,
+                 dimensions: [.dimension_verdicts[]? | {dimension, outcome, detail}]}
+                else error("not a verification reply") end' 2>/dev/null; then
+            echo "::warning::deploy verify response unparseable or not a verification (best-effort)"
             printf '%s' "$RESP" | head -c 500; echo
             exit 0
           fi
@@ -1696,17 +1722,23 @@ jobs:
               echo "::warning::deploy verification composed '$OUT' (report-only) — signature $SIG; inspect GET $COORD_BASE_URL/coord/deploys/$SIG" ;;
           esac
 
-          # The release dimension is the identity signal — always surface it,
-          # including on `partial`, which used to print nothing at all.
+          # The release dimension is the identity signal — surface it on every
+          # verification reply, including `partial`, which used to print
+          # nothing at all.
           REL_SEL='[.dimension_verdicts[]? | select(.dimension == "release")][0]'
           REL_OUT=$(printf '%s' "$RESP" | jq -r "$REL_SEL.outcome // empty" 2>/dev/null || true)
           REL_DET=$(printf '%s' "$RESP" | jq -r "$REL_SEL.detail // empty" 2>/dev/null || true)
+          # Flatten CR/LF before either echo below: a line break in coord's
+          # text would start a log line of its own, and a GitHub annotation
+          # truncates at the first one, which would silently drop the
+          # declared-vs-deployed comparison that is the entire value of
+          # the warning.
+          REL_DET=${REL_DET//[$'\r\n']/ }
           echo "release dimension: ${REL_OUT:-unavailable} — ${REL_DET:-n/a}"
           if [ "$REL_OUT" = "contradiction" ]; then
-            # Flatten newlines: a GitHub annotation truncates at the first one,
-            # which would silently drop the declared-vs-deployed comparison
-            # that is the entire value of this line.
-            echo "::warning::coord observed the release as NOT the declared artifact (release=$REL_OUT): ${REL_DET//$'\n'/ } — this is coord's INDEPENDENT second signal; the authoritative gate is the 'Assert serving revision identity' step above."
+            # Escape `%` here only: the runner decodes %0A and friends in a
+            # workflow command's data, but not in a plain log line.
+            echo "::warning::coord observed the release as NOT the declared artifact (release=$REL_OUT): ${REL_DET//[%]/%25} — this is coord's INDEPENDENT second signal; the authoritative gate is the 'Assert serving revision identity' step above."
           fi
           exit 0
 
