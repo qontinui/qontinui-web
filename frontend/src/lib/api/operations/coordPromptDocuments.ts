@@ -37,6 +37,7 @@
  */
 
 import { httpClient } from "@/services/service-factory";
+import { pinActiveTenant } from "@/services/http-client";
 import type {
   AgentWriteTier,
   AutoPublishStatusResponse,
@@ -78,12 +79,32 @@ import type {
 import type { ProposedClause } from "@/components/admin/coord/policy-gap";
 import { OPERATIONS_BASE, readJson } from "./base";
 
+/**
+ * Which project to send a request in, pinned for every attempt — see
+ * `pinActiveTenant`. Omitted, the request goes in whatever project is stored
+ * when each attempt is made, which is right for an ordinary read and wrong for
+ * a read or write a caller will attribute to a specific project.
+ */
+export interface TenantPin {
+  tenant: string | null;
+}
+
+function pinned(pin: TenantPin | undefined) {
+  return pin ? pinActiveTenant(pin.tenant) : {};
+}
+
 // ─────────────────────────────── documents ───────────────────────────────
 
 /** `GET /coord/prompt-documents` — `list_prompt_documents` (bodies omitted). */
-export async function listPromptDocuments(): Promise<ListPromptDocumentsResponse> {
+export async function listPromptDocuments(
+  pin?: TenantPin
+): Promise<ListPromptDocumentsResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListPromptDocumentsResponse>(res, `GET ${url}`);
 }
 
@@ -149,13 +170,15 @@ export async function createPromptDocument(
 export async function updatePromptDocument(
   kind: PromptDocumentKind | string,
   name: string,
-  data: PromptDocumentUpdate
+  data: PromptDocumentUpdate,
+  pin?: TenantPin
 ): Promise<PromptDocument> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
   const res = await httpClient.fetch(url, {
     method: "PATCH",
     body: JSON.stringify(data),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<PromptDocument>(res, `PATCH ${url}`);
 }
@@ -396,13 +419,15 @@ export async function fetchPromptDocumentPublication(
 export async function adoptUpstreamPublication(
   kind: PromptDocumentKind,
   name: string,
-  decision: UpstreamDecisionRequest
+  decision: UpstreamDecisionRequest,
+  pin?: TenantPin
 ): Promise<UpstreamDecisionResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/upstream-adopt`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(decision),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<UpstreamDecisionResponse>(res, `POST ${url}`);
 }
@@ -463,12 +488,15 @@ export async function applyUpstreamMerge(
  * `publish_all_prompt_documents`'s preview: every candidate with the version it
  * would publish. Writes nothing.
  */
-export async function previewPublishAll(): Promise<PublishAllDryRunResponse> {
+export async function previewPublishAll(
+  pin?: TenantPin
+): Promise<PublishAllDryRunResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/publish-all`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify({ dry_run: true }),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<PublishAllDryRunResponse>(res, `POST ${url}`);
 }
@@ -483,7 +511,8 @@ export async function previewPublishAll(): Promise<PublishAllDryRunResponse> {
  */
 export async function publishAllPromptDocuments(
   releaseNote: string | null,
-  items: PublishAllItem[]
+  items: PublishAllItem[],
+  pin?: TenantPin
 ): Promise<PublishAllArmedResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/publish-all`;
   const res = await httpClient.fetch(url, {
@@ -494,6 +523,7 @@ export async function publishAllPromptDocuments(
       items,
     }),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<PublishAllArmedResponse>(res, `POST ${url}`);
 }
@@ -503,9 +533,15 @@ export async function publishAllPromptDocuments(
  * `get_prompt_document_auto_publish_status`: what the auto-publisher would do
  * next, per candidate, and the resolved D5 switch.
  */
-export async function fetchAutoPublishStatus(): Promise<AutoPublishStatusResponse> {
+export async function fetchAutoPublishStatus(
+  pin?: TenantPin
+): Promise<AutoPublishStatusResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/auto-publish/status`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<AutoPublishStatusResponse>(res, `GET ${url}`);
 }
 

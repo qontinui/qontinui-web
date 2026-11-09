@@ -46844,6 +46844,19 @@
             "title": "Panicmessage",
             "type": "string"
           },
+          "pid": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pid of the crashed process, if the dump recorded one.",
+            "title": "Pid"
+          },
           "reportedAt": {
             "description": "ISO 8601 timestamp when the crash was reported.",
             "title": "Reportedat",
