@@ -1,7 +1,7 @@
 """coord.agent_sessions .work_unit_context_* -- a session's OWN plan, for parked messages
 
 Revision ID: coord_agent_sessions_work_unit_context_01
-Revises: coord_test_result_runs_01
+Revises: fpl_02b
 Create Date: 2026-11-08
 
 Phase 1 of plan
@@ -82,7 +82,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_agent_sessions_work_unit_context_01"
-down_revision: str | Sequence[str] | None = "coord_test_result_runs_01"
+down_revision: str | Sequence[str] | None = "fpl_02b"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
