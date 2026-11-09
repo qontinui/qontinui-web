@@ -49,14 +49,14 @@ test.describe("Workflow Testing", () => {
     }
   });
 
-  test("should display three-column layout with test navigator, details, and results", async ({
+  test("should display two-column layout with test navigator and details", async ({
     page,
   }) => {
     await page.goto("/automation-builder/testing");
     await page.waitForLoadState("domcontentloaded");
 
-    // The page has a three-column layout:
-    // Left: Test Navigator (20%), Center: Test Details (50%), Right: Test Results (30%)
+    // The page has a two-column layout: Test Navigator and Test Details.
+    // It authors test cases and suites only, so there is no results column.
     const testNavigator = page.getByText("Test Navigator", { exact: false });
     const hasNavigator = await testNavigator
       .isVisible({ timeout: 15000 })
@@ -64,9 +64,6 @@ test.describe("Workflow Testing", () => {
 
     if (hasNavigator) {
       await expect(testNavigator).toBeVisible();
-      await expect(
-        page.getByText("Test Results", { exact: false })
-      ).toBeVisible();
     }
 
     await page.screenshot({

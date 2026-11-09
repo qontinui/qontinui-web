@@ -197,6 +197,59 @@ describe("SpawnModal device roster", () => {
     expect(screen.getByTestId("coord-spawn-device-input")).toBeTruthy();
   });
 
+  it("explains an empty roster emptied by coord's device reaper", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        devices: [],
+        count: 0,
+        excluded: { unbound: 0, bound_to_other_tenant: 0, retired: 4800 },
+      }),
+    });
+
+    renderModal();
+
+    const notice = await screen.findByTestId("coord-spawn-device-notice");
+    expect(notice.textContent).toMatch(/0 live devices/i);
+    expect(notice.textContent).toMatch(/4800 devices were retired/);
+    expect(notice.textContent).toMatch(/not a withheld machine/);
+  });
+
+  it("explains an all-CI roster with coord's retired device count", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        devices: [
+          {
+            device_id: "ci-1",
+            hostname: "gh-runner-dell-2016-ccfg-1@qontinui-web",
+            state: "healthy",
+            ci_runner_status: "online",
+          },
+        ],
+        count: 1,
+        excluded: { unbound: 0, bound_to_other_tenant: 0, retired: 2 },
+      }),
+    });
+
+    renderModal();
+
+    const notice = await screen.findByTestId("coord-spawn-device-notice");
+    expect(notice.textContent).toMatch(/No runner machine to offer/);
+    expect(notice.textContent).toMatch(/2 devices were retired/);
+  });
+
+  it("leaves the empty-roster notice unchanged when coord states no retired count", async () => {
+    fetchMock.mockResolvedValue(rosterOf([]));
+
+    renderModal();
+
+    const notice = await screen.findByTestId("coord-spawn-device-notice");
+    expect(notice.textContent).not.toMatch(/retired/);
+  });
+
   it("does not offer a roster the operator cannot use", async () => {
     fetchMock.mockResolvedValue(rosterOf([]));
 

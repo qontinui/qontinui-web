@@ -404,8 +404,7 @@ if (cycles.length > 0) {
 // ✅ Good: Comprehensive tests
 const testing = getWorkflowTestingService();
 const testSuite = testing.createTestSuite('Login Tests', undefined, testCaseIds);
-
-await testing.runTestSuite(testSuite.id);
+// The web app authors suites; it does not run them.
 ```
 
 ## Performance Checklist

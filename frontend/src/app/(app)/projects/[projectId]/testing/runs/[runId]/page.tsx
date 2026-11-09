@@ -7,10 +7,9 @@ import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Download } from "lucide-react";
-import { useTestRun } from "@/hooks/useTesting";
+import { toast } from "sonner";
+import { useExportTestRun, useTestRun } from "@/hooks/useTesting";
 import { RequireProject } from "@/components/require-project";
-import { ApiConfig } from "@/services/api-config";
-import { useTestRunWebSocket } from "./_hooks/useTestRunWebSocket";
 import { RunSummaryCard } from "./_components/RunSummaryCard";
 import { TimelineTab } from "./_components/TimelineTab";
 import { CoverageTab } from "./_components/CoverageTab";
@@ -21,14 +20,19 @@ export default function TestRunDetailPage() {
   const params = useParams();
   const runId = params.runId as string;
 
-  const { data: run, isLoading, refetch } = useTestRun(runId);
+  const { data: run, isLoading } = useTestRun(runId);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const liveStatus = useTestRunWebSocket(runId, run?.status, refetch);
+  const exportTestRun = useExportTestRun();
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!run) return;
-    const url = `${ApiConfig.getBaseUrl()}/api/v1/testing/runs/${runId}/export?format=json`;
-    window.open(url, "_blank", "noopener,noreferrer");
+    try {
+      await exportTestRun.mutateAsync({ id: runId, format: "json" });
+    } catch (error) {
+      toast.error(
+        `Export failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    }
   };
 
   if (isLoading) {
@@ -49,8 +53,6 @@ export default function TestRunDetailPage() {
     );
   }
 
-  const displayStatus = liveStatus || run.status;
-
   return (
     <RequireProject pageName="Test Run Details">
       <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
@@ -58,7 +60,12 @@ export default function TestRunDetailPage() {
           <h1 className="text-lg font-semibold text-foreground">
             Test Run Details
           </h1>
-          <Button onClick={handleExport} variant="outline" size="sm">
+          <Button
+            onClick={handleExport}
+            variant="outline"
+            size="sm"
+            disabled={exportTestRun.isPending}
+          >
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
@@ -66,7 +73,7 @@ export default function TestRunDetailPage() {
 
         <main className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
-            <RunSummaryCard run={run} displayStatus={displayStatus} />
+            <RunSummaryCard run={run} displayStatus={run.status} />
 
             <Tabs defaultValue="timeline" className="w-full">
               <TabsList>

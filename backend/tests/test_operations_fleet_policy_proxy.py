@@ -39,7 +39,7 @@ from tests._ops_patch import patch_ops
 API_PREFIX = "/api/v1/operations"
 
 #: What coord returns for a domain that HAS a tenant-band row, including the
-#: five blocks that actually belong to the `fleet_resources` controls row.
+#: eight keys that actually belong to the `fleet_resources` controls row.
 COORD_GET_WITH_FOREIGN_BLOCKS = {
     "domain": "plan_capture",
     "effective_level": "record",
@@ -50,6 +50,16 @@ COORD_GET_WITH_FOREIGN_BLOCKS = {
     "current_version": 12,
     "drain": {"machine-a": {"until": "2026-08-16T00:00:00Z"}},
     "drain_effective": {"machine-a": {"until": "2026-08-16T00:00:00Z"}},
+    "capacity_controls_available": True,
+    "capacity_model_available": True,
+    "capacity_model": {
+        "mode": "enforce",
+        "mode_source": "default",
+        "off_consumers": [],
+        "ignored_off_consumers": [],
+        "permitted_consumers": ["agent_placement"],
+        "consumers": ["agent_placement"],
+    },
 }
 
 
@@ -148,10 +158,19 @@ class TestGetFleetPolicy:
         assert body["resolved_scope"] == "tenant"
         assert body["can_edit"] is True
         # None of the foreign blocks may appear as this domain's own values.
-        for key in ("controls", "drain", "drain_effective", "current_version"):
+        for key in (
+            "controls",
+            "drain",
+            "drain_effective",
+            "current_version",
+            "capacity_model",
+        ):
             assert key not in body
         # And they are NAMED, not silently dropped.
         assert sorted(body["keys_not_shown"]) == [
+            "capacity_controls_available",
+            "capacity_model",
+            "capacity_model_available",
             "controls",
             "controls_available",
             "current_version",
@@ -166,7 +185,7 @@ class TestGetFleetPolicy:
         """`fleet_resources` owns them — but this view still cannot show them.
 
         Reporting `[]` here would claim nothing was withheld while withholding
-        five blocks. What changes for this domain is the SOURCE, not the fact
+        eight keys. What changes for this domain is the SOURCE, not the fact
         of the drop.
         """
         payload = dict(COORD_GET_WITH_FOREIGN_BLOCKS, domain="fleet_resources")
@@ -181,6 +200,9 @@ class TestGetFleetPolicy:
 
         body = resp.json()
         assert sorted(body["keys_not_shown"]) == [
+            "capacity_controls_available",
+            "capacity_model",
+            "capacity_model_available",
             "controls",
             "controls_available",
             "current_version",
