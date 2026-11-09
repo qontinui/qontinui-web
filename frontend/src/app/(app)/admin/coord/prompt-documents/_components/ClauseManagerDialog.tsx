@@ -35,11 +35,13 @@ import {
   ArrowUp,
   FileInput,
   Loader2,
+  Eye,
   Pencil,
   Plus,
   Trash2,
 } from "lucide-react";
 import { useClauses } from "../_hooks/useClauses";
+import { CLAUSE_HEADER } from "../_lib/clauseMerge";
 import { ClauseEditorDialog } from "./ClauseEditorDialog";
 import { ClauseImportDialog } from "./ClauseImportDialog";
 import {
@@ -47,6 +49,7 @@ import {
   CLAUSE_TIERS,
   TIER_DESCRIPTIONS,
   TIER_INHERIT,
+  isRawClause,
   type Clause,
   type ClauseTier,
   type PromptDocument,
@@ -61,6 +64,8 @@ interface ClauseManagerDialogProps {
   loadingBody: boolean;
   /** Refresh the parent document list after a category default-tier edit. */
   onDocsReload: () => void;
+  /** Checked before every clause write; `false` sends nothing. */
+  canWrite?: () => boolean;
 }
 
 /**
@@ -75,6 +80,7 @@ export function ClauseManagerDialog({
   document,
   loadingBody,
   onDocsReload,
+  canWrite,
 }: ClauseManagerDialogProps) {
   const name = document?.name ?? "";
   const {
@@ -88,7 +94,13 @@ export function ClauseManagerDialog({
     reorderClauses,
     importCandidates,
     saveAttrs,
-  } = useClauses("policy", name, open && document !== null, onDocsReload);
+  } = useClauses(
+    "policy",
+    name,
+    open && document !== null,
+    onDocsReload,
+    canWrite
+  );
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Clause | null>(null);
@@ -340,11 +352,21 @@ function ClauseRow({
   onDelete,
   onMove,
 }: ClauseRowProps) {
-  const lintCount = lintClause({
-    action: clause.action,
-    escalate_if: clause.escalate_if,
-    bounds: clause.bounds,
-  }).length;
+  const raw = isRawClause(clause);
+  const lintCount = raw
+    ? 0
+    : lintClause({
+        action: clause.action,
+        escalate_if: clause.escalate_if,
+        bounds: clause.bounds,
+      }).length;
+  // First content line after the `## clause:` header, as the row's summary.
+  const rawSummary = raw
+    ? ((clause.body ?? "")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .find((l) => l.length > 0 && !CLAUSE_HEADER.test(l)) ?? "")
+    : "";
 
   return (
     <div
@@ -380,7 +402,16 @@ function ClauseRow({
           <Badge variant={CLAUSE_STATUS_VARIANT[clause.status]}>
             {clause.status}
           </Badge>
-          <Badge variant="outline">{clause.tier ?? "inherit"}</Badge>
+          {raw ? (
+            <Badge
+              variant="secondary"
+              title="Stored verbatim — the labelled fields do not apply"
+            >
+              verbatim
+            </Badge>
+          ) : (
+            <Badge variant="outline">{clause.tier ?? "inherit"}</Badge>
+          )}
           {lintCount > 0 && (
             <span
               className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400"
@@ -391,9 +422,9 @@ function ClauseRow({
             </span>
           )}
         </div>
-        {clause.trigger && (
+        {(raw ? rawSummary : clause.trigger) && (
           <p className="mt-1 truncate text-xs text-muted-foreground">
-            {clause.trigger}
+            {raw ? rawSummary : clause.trigger}
           </p>
         )}
       </div>
@@ -403,9 +434,10 @@ function ClauseRow({
         size="sm"
         className="h-8 w-8 shrink-0 p-0"
         onClick={onEdit}
-        title="Edit clause"
+        title={raw ? "View clause" : "Edit clause"}
+        aria-label={raw ? "View clause" : "Edit clause"}
       >
-        <Pencil className="size-4" />
+        {raw ? <Eye className="size-4" /> : <Pencil className="size-4" />}
       </Button>
       <DestructiveButton
         size="sm"

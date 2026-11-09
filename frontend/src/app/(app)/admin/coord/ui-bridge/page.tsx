@@ -14,7 +14,7 @@
  * | Live element snapshot | the runner's `ui-bridge/control/snapshot`, on demand |
  * | Capabilities and trust | the runner's `/health` (`sdkFeatures`, `uiBridgeBinding`, build) |
  * | Controls and what they do | the runner's `ui-bridge/control/components` |
- * | Page health | the runner's `ui-bridge/control/page-health`, on demand; its occlusion row is UNKNOWN until a relay carries the visibility sweep |
+ * | Page health | the runner's `ui-bridge/control/page-health`, on demand, with the occlusion row from its `ui-bridge/control/visibility` sweep |
  *
  * Every runner read goes over the cloud relay by device id
  * (`_lib/relayReads.ts`, and the digital twin's `useUiBridge` hooks, reused).
@@ -22,16 +22,16 @@
  * ## What this page will not say
  *
  * - **An empty panel for a read that did not answer.** A runner whose build
- *   predates the relay entries this page reads answers 403; that panel reads
- *   UNKNOWN and names the build (`relaySource.ts`). An unreachable runner, a
+ *   predates a route's relay entry answers 403; that panel reads UNKNOWN and
+ *   names the build and the commit the route needs (`relaySource.ts`). An unreachable runner, a
  *   refused route and a withheld answer each name their own reason.
  * - **"Read" for an action nobody classified.** An action with no declared
  *   effect is UNDECLARED, counted and badged as such (`componentEffectStatus.ts`).
  * - **"Clear" for an occlusion check nobody made.** The visibility sweep is
- *   the only source of an occlusion verdict and no relay carries it, so the
- *   occlusion row is UNKNOWN on every runner, whatever any runner answers —
- *   page health included (`occlusionStatus.ts`). Once a relay does carry it,
- *   `clear` still needs `occlusionDataObserved: true`.
+ *   the only source of an occlusion verdict — page health's body never is —
+ *   and `clear` needs the sweep's `occlusionDataObserved: true`
+ *   (`occlusionStatus.ts`). Over the relay the sweep names no covered element
+ *   (`occlusionText: "withheld"`), and the row says so.
  * - **0 for a number it could not read.** A missing count is `–`.
  * - **Another project's applications.** Neither app registry is partitioned
  *   by project, so while presenting neither is read, and each half reads
@@ -77,13 +77,13 @@ import {
 import { countEffects, readComponents } from "./_lib/componentEffectStatus";
 import { deriveDashboardHealth } from "./_lib/dashboardHealth";
 import { readPageHealth } from "./_lib/pageHealthStatus";
+import { readOcclusion } from "./_lib/occlusionStatus";
 import { queryView, readStateOf, type ReadState } from "./_lib/readState";
-import { RUNNER_ROUTES, isRelayed } from "./_lib/relayReads";
+import { RUNNER_ROUTES } from "./_lib/relayReads";
 import { buildLabel, type BuildReading } from "./_lib/relaySource";
 import { buildReadingOf, readRunnerPosture } from "./_lib/runnerHealth";
 import {
   appRegistryReadsOf,
-  occlusionReadOf,
   refreshTitleOf,
   useDashboardRefresh,
   useDashboardRunner,
@@ -108,13 +108,6 @@ const mapRead = <T, U>(read: ReadState<T>, f: (v: T) => U): ReadState<U> =>
 const asOfOf = (read: RegistryRead<unknown>): number | null =>
   read.state === "ok" ? read.asOf : null;
 
-/**
- * Whether any relay carries the occlusion sweep — read from the route table,
- * not from anything a runner answers. False: the sweep is not asked for, and
- * the occlusion row is the standing UNKNOWN (`occlusionReadOf`).
- */
-const SWEEP_RELAYED = isRelayed(RUNNER_ROUTES.visibility);
-
 export default function UiBridgeDashboardPage() {
   const { presenting } = usePresentationMode();
   const { deviceId, identity, noRunner } = useDashboardRunner();
@@ -127,7 +120,7 @@ export default function UiBridgeDashboardPage() {
   const webAccess = useWebRegistryAccess();
   const fleetAppsQuery = useFleetAppsRead();
   const runnerAppsQuery = useRunnerAppListRead(deviceId);
-  const healthRun = usePageHealthRun(deviceId, SWEEP_RELAYED);
+  const healthRun = usePageHealthRun(deviceId);
 
   const health = readStateOf(queryView(healthQuery), readRunnerPosture);
   const components = readStateOf(queryView(componentsQuery), readComponents);
@@ -138,11 +131,7 @@ export default function UiBridgeDashboardPage() {
     runner: queryView(runnerAppsQuery),
   });
   const pageHealth = readStateOf(healthRun.pageHealthView, readPageHealth);
-  const occlusion = occlusionReadOf({
-    sweepRelayed: SWEEP_RELAYED,
-    requested: healthRun.requested,
-    sweep: healthRun.visibilityView,
-  });
+  const occlusion = readStateOf(healthRun.visibilityView, readOcclusion);
 
   const build: BuildReading = buildReadingOf(
     health.state === "ok" ? health.value : null,
