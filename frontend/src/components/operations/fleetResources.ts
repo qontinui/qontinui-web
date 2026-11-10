@@ -457,10 +457,11 @@ export interface ResourceSampleRow {
   pressure: LanePressure | null;
   /**
    * **SERVER-computed**: this lane's OWN swap ratio, `swap_used / swap_total`
-   * (coord's `device_resource_samples::swap_ratio`). Coord serves a number
-   * exactly when it GRADES the lane's swap axis (`swap_axis_graded`), so one
-   * predicate decides both the grade and whether this strip prints a swap
-   * figure. The strip derives no swap ratio of its own from `swap_*_bytes`.
+   * (coord's `device_resource_samples::served_swap_ratio`). Coord serves a
+   * number only where the lane HAS a gradable swap axis (`swap_axis_graded`),
+   * the predicate its verdict uses too. It does not wait for a configured swap
+   * threshold, so a figure may print on a lane no floor is grading. The strip
+   * derives no swap ratio of its own from `swap_*_bytes`.
    *
    * It matters on the `host` lane, whose lead `pressure` is commit on every OS
    * because coord never RANKS a host on swap. A Linux host's swap device is an
@@ -471,7 +472,10 @@ export interface ResourceSampleRow {
    * (never 0). That covers a Windows `host`: its publishers omit `swap_*`
    * because swap there is derived from the same commit counters, which would
    * be one instrument printed twice. It also covers a swapless box and a lane
-   * whose reading is missing. Absent = a coord that predates the field,
+   * whose reading is missing (`swap_total` published, `swap_used` absent). On a
+   * Linux `host` that last case grades the swap axis `unknown` while this field
+   * reads the same `null` as Windows; the wire does not yet separate them, so
+   * `null` is never evidence that swap is healthy. Absent = a coord that predates the field,
    * rendered "swap not reported". See `swapReading`.
    */
   swap_ratio?: number | null;
@@ -784,9 +788,11 @@ export function pressureFormula(basis: PressureBasis): string {
  * What a row can say about its OWN swap device. Four states with four causes,
  * the same split `headroomReport` and `describeFloor` make:
  *
- * * `value` — coord served a ratio in [0, 1], so it grades this lane's swap.
+ * * `value` — coord served a ratio in [0, 1]: the lane has a swap axis and
+ *   this is its reading.
  * * `none` — coord served `null` and has no swap ratio for this lane. On a
- *   `host` row that is the Windows contract or a swapless box. On Windows,
+ *   `host` row that is the Windows contract, a swapless box, or (rarely) a
+ *   Linux host that published `swap_total` without `swap_used`. On Windows,
  *   sysinfo derives swap algebraically from the same commit counters
  *   (`swap_total − swap_used ≡ commit_available − phys_available`), so a swap
  *   figure beside the commit figure would read as corroboration from two
