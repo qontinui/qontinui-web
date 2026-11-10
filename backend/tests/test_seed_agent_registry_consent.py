@@ -857,7 +857,9 @@ def test_a_named_tenant_the_token_does_not_act_in_reads_and_sends_nothing(
     argv = ("--tenant", OTHER_TENANT) if named_by == "flag" else ()
     if named_by == "env":
         monkeypatch.setenv("QONTINUI_TENANT_ID", OTHER_TENANT)
-    calls = _run_retire(monkeypatch, _coord(), *argv)
+    # The token acts in TENANT, stated rather than inherited from the helper's
+    # default: the mismatch with the named OTHER_TENANT is what is under test.
+    calls = _run_retire(monkeypatch, _coord(), *argv, token=_fresh_jwt(TENANT))
     assert seeder.main() == seeder.EXIT_UNPROVEN
     assert calls == []
 
@@ -869,7 +871,10 @@ def test_the_named_tenant_is_matched_case_insensitively(monkeypatch):
 
 
 def test_a_malformed_named_tenant_is_refused(monkeypatch, capsys):
-    calls = _run_retire(monkeypatch, _coord(), "--tenant", "qontinui")
+    # A well-formed token acting in TENANT, stated: only the named value is bad.
+    calls = _run_retire(
+        monkeypatch, _coord(), "--tenant", "qontinui", token=_fresh_jwt(TENANT)
+    )
     assert seeder.main() == seeder.EXIT_UNPROVEN
     assert calls == []
     # Refused as MALFORMED, not as a tenant mismatch: the claim comparison would
