@@ -332,7 +332,8 @@ jobs:
 
   test:
     name: Run Tests (shard ${{ matrix.shard }}/6)
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-latest"') }}
     # SHARDED SIX WAYS (plan
     # 2026-09-12-web-gating-run-tests-fills-its-budget-so-the-suite-is-sharded).
     #
@@ -1578,7 +1579,8 @@ jobs:
     # Own override first: WEB_CI_DB_LANE_BACKEND_CI_BUILD_TEST=hosted sends only this job back to
     # hosted. On #2091's run it started in the PR's fan-out burst and hit its 15-min cap (job 127450115878)
     # while the shards on the same pool stayed in budget.
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI_BUILD_TEST || vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    # coord-pools: [self-hosted, docker-rootless, qontinui-host-nawa, ram-16g] | [ubuntu-latest]
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_BACKEND_CI_BUILD_TEST || vars.WEB_CI_DB_LANE_BACKEND_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa","ram-16g"]' || '"ubuntu-latest"') }}
     defaults:
       run:
         working-directory: ./backend
