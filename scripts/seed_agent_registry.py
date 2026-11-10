@@ -116,17 +116,31 @@ never empty.
 
 A role row outlives its definition: deleting ``.claude/agents/<name>.md`` leaves
 the row ``enabled`` in the registry, so ``GET /coord/agent-registry/effective``
-keeps offering every session an agent that no longer exists. An ORPHAN is a
-row this seeder could have written: ``spawn_path`` ``in_session_subagent``, no
-``.claude/agents/<name>.md``, and an ``agent_name`` outside the shared SPAWN
-CONTRACT. That last clause is load-bearing: ``operator_spawn`` is an
-``in_session_subagent`` row with no definition, and disabling it vetoes every
-operator ``POST /agents/spawn``. The contract's names are its ``kind_seeds``,
-its ``class_seeds`` and its ``spawn_paths``, read from
-``qontinui-schemas/rust/src/spawn_authorization.json`` at the commit
-``spawn-contract.pin.toml`` pins, with the same digest check
+keeps offering every session an agent that no longer exists. An ORPHAN has
+the shape of a row this seeder could have written: ``spawn_path``
+``in_session_subagent``, no ``.claude/agents/<name>.md``, and an
+``agent_name`` outside the shared SPAWN CONTRACT. That last clause is
+load-bearing: ``operator_spawn`` is an ``in_session_subagent`` row with no
+definition, and disabling it vetoes every operator ``POST /agents/spawn``. The
+contract's names are its ``kind_seeds``, its ``class_seeds`` and its
+``spawn_paths``, read from ``qontinui-schemas/rust/src/spawn_authorization.json``
+at the commit ``spawn-contract.pin.toml`` pins, with the same digest check
 ``spawnPathContract.test.ts`` applies. A contract that cannot be read at that
 digest retires nothing.
+
+The shape is not proof the seeder wrote the row. An operator-authored
+in-session row also matches when its name has no definition, and the runner
+vetoes every spawn it authorizes under a DISABLED row's name (it reads the same
+``/effective`` fold by agent name): ``runner-instance``,
+``orchestration-fix-agent``, a ``/sessions/spawn`` role, a looping agent's
+definition name. Those keys are not in the spawn contract yet (coord finding
+``d259f8a7-a202-43d2-b541-4120dad05dd8``), so read the ``--dry-run`` list before
+retiring: a name there that is not a deleted definition is not an orphan.
+
+A retire is sticky. ``--apply`` preserves ``default_enabled`` on rows it already
+holds, so a row retired before its definition reached qontinui-claude-config's
+``origin`` ``main`` stays disabled after it lands; the registry console's
+toggle (``PUT /coord/agent-registry/<name>``, operator) brings it back.
 
 Every run prints ``ORPHAN <name> (no definition)`` for the orphans in what it
 read (a report; it writes nothing). ``--retire-orphans`` RETIRES them, and is
@@ -136,8 +150,9 @@ held to a stricter standard than the report:
   ``origin`` ``main`` (``git ls-remote``), read from that commit's TREE: either
   ``--agents-dir`` pointing at the ``.claude/agents`` of a clean checkout whose
   ``HEAD`` IS that commit, or, without ``--agents-dir``, the objects of the
-  qontinui-claude-config checkout found above this repository (fetched into
-  ``FETCH_HEAD`` first when they are missing — no ref of that checkout moves).
+  qontinui-claude-config checkout found above this repository (fetched first
+  when they are missing, moving no ref of that checkout and writing no
+  ``FETCH_HEAD``).
   A checkout counts only when its raw ``remote.origin.url`` is
   ``github.com/qontinui/qontinui-claude-config``. The walk-up discovery the
   seed path uses is NOT a source here: from an allocated worktree it lands on
@@ -773,9 +788,20 @@ def definitions_from_origin_main(
     live = remote_main(config_repo, git)
     commit = f"{live}^{{commit}}"
     if git(config_repo, "cat-file", "-e", commit) is None:
-        # `--refmap=` with no destination writes FETCH_HEAD only: the shared
-        # checkout's remote-tracking refs and working tree are left as found.
-        git(config_repo, "fetch", "--quiet", "--refmap=", "origin", "main")
+        # Only the objects are wanted: the commit is read by sha. `--refmap=`
+        # moves no remote-tracking ref, `--no-write-fetch-head` leaves the
+        # FETCH_HEAD a peer's `git merge FETCH_HEAD` reads as it was, and
+        # `--no-auto-gc` starts no gc in a checkout other sessions share.
+        git(
+            config_repo,
+            "fetch",
+            "--quiet",
+            "--no-write-fetch-head",
+            "--no-auto-gc",
+            "--refmap=",
+            "origin",
+            "main",
+        )
         if git(config_repo, "cat-file", "-e", commit) is None:
             raise UnprovenError(
                 f"{config_repo} does not hold origin main {live}, even after a fetch"

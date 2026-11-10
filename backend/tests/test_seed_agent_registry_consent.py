@@ -868,10 +868,13 @@ def test_the_named_tenant_is_matched_case_insensitively(monkeypatch):
     assert _posted(calls) == ["test-generator"]
 
 
-def test_a_malformed_named_tenant_is_refused(monkeypatch):
+def test_a_malformed_named_tenant_is_refused(monkeypatch, capsys):
     calls = _run_retire(monkeypatch, _coord(), "--tenant", "qontinui")
     assert seeder.main() == seeder.EXIT_UNPROVEN
     assert calls == []
+    # Refused as MALFORMED, not as a tenant mismatch: the claim comparison would
+    # refuse it too, but only this reason tells the caller what to fix.
+    assert "is not a UUID" in capsys.readouterr().err
 
 
 def test_an_unreachable_coord_while_proving_sends_nothing_and_exits_3(monkeypatch):
@@ -942,7 +945,7 @@ def test_origin_main_definitions_come_from_the_live_commit_not_the_working_tree(
     assert ("ls-tree", "-z", "--name-only", LIVE_MAIN, ".claude/agents/") in git.seen
 
 
-def test_origin_main_fetches_missing_objects_into_fetch_head_then_refuses(tmp_path):
+def test_origin_main_fetches_missing_objects_then_refuses(tmp_path):
     git = _git(
         {
             ("config",): f"{CONFIG_URL}\n".encode(),
@@ -952,8 +955,17 @@ def test_origin_main_fetches_missing_objects_into_fetch_head_then_refuses(tmp_pa
     )
     with pytest.raises(seeder.UnprovenError, match="even after a fetch"):
         seeder.definitions_from_origin_main(tmp_path, git)
-    assert ("fetch", "--quiet", "--refmap=", "origin", "main") in git.seen, (
-        "it must try a fetch first, and one that moves no ref of the shared checkout"
+    assert (
+        "fetch",
+        "--quiet",
+        "--no-write-fetch-head",
+        "--no-auto-gc",
+        "--refmap=",
+        "origin",
+        "main",
+    ) in git.seen, (
+        "it must try a fetch first, and one that moves no ref, writes no "
+        "FETCH_HEAD and starts no gc in the shared checkout"
     )
 
 
