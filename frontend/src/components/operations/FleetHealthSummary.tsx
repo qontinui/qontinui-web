@@ -115,7 +115,7 @@ export function deviceRowStateLabel(
   if (state === "ci_unrefreshed") {
     const age = relativeTime(row.last_seen_at, { absent: "", now });
     return age === ""
-      ? "not refreshed by the registrar (last seen unknown)"
+      ? "not refreshed by the registrar (last refreshed unknown)"
       : `not refreshed by the registrar (last refreshed ${age})`;
   }
   return deviceStateLabel(state);
