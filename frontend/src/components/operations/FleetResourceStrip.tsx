@@ -105,7 +105,7 @@ import {
 } from "@/components/presentation";
 import {
   deviceStateBadgeVariant,
-  deviceStateLabel,
+  deviceRowStateLabel,
 } from "./FleetHealthSummary";
 import { PressureSparkline } from "./PressureSparkline";
 import { presentedFailureReason } from "./presentedFailure";
@@ -1958,7 +1958,7 @@ export function FleetResourceStrip({
                                   variant={deviceStateBadgeVariant(group.state)}
                                   data-coord-state={group.state}
                                 >
-                                  {deviceStateLabel(group.state)}
+                                  {deviceRowStateLabel(group, { now: nowMs })}
                                 </Badge>
                               )}
                             </span>

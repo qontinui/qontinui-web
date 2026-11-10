@@ -1469,6 +1469,10 @@ export interface FleetDeviceRef {
   device_id: string;
   hostname?: string;
   state?: string;
+  /** Coord's raw CI-runner status; `not_listed` names a registration GitHub stopped listing. */
+  ci_runner_status?: string | null;
+  /** Coord's `last_seen_at`; a `ci_unrefreshed` row is aged from it. */
+  last_seen_at?: string | null;
 }
 
 /** One rendered line of the strip. */
@@ -1497,6 +1501,10 @@ export interface MachineGroup {
   hostname?: string;
   displayName: string;
   state?: string;
+  /** Carried from the device so the badge can say `not_listed` (`deviceRowStateLabel`). */
+  ci_runner_status?: string | null;
+  /** Carried from the device so a `ci_unrefreshed` badge can carry its age. */
+  last_seen_at?: string | null;
   rows: StripRow[];
 }
 
@@ -1579,6 +1587,12 @@ export function buildMachineGroups(
       ...(device.hostname ? { hostname: device.hostname } : {}),
       displayName,
       state: device.state,
+      ...(device.ci_runner_status !== undefined
+        ? { ci_runner_status: device.ci_runner_status }
+        : {}),
+      ...(device.last_seen_at !== undefined
+        ? { last_seen_at: device.last_seen_at }
+        : {}),
       rows,
     });
   }

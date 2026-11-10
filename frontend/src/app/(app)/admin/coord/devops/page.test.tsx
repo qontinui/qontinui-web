@@ -511,6 +511,83 @@ describe("/admin/coord/devops", () => {
     );
   });
 
+  it("shows coord's fleet-partition ratio as partitioned/eligible with its scope", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: {
+        fleet_partition_ratio: {
+          scope: "tenant",
+          partitioned: 2,
+          eligible: 40,
+          pct: 5,
+          known: true,
+          fires: false,
+          threshold_pct: 10,
+          min_devices: 2,
+          degradable_dropped: 0,
+        },
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const badge = await screen.findByTestId(
+      "coord-devops-partition-ratio-badge"
+    );
+    expect(badge).toHaveTextContent(
+      "2/40 heartbeating rows partitioned (5.0%) — this tenant's machines"
+    );
+  });
+
+  it("says the partition ratio is UNKNOWN when coord withheld degradable rows", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: {
+        fleet_partition_ratio: {
+          scope: "tenant",
+          partitioned: 1,
+          eligible: 10,
+          pct: null,
+          known: false,
+          fires: false,
+          degradable_dropped: 3,
+        },
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const badge = await screen.findByTestId(
+      "coord-devops-partition-ratio-badge"
+    );
+    expect(badge).toHaveTextContent(
+      "partition ratio UNKNOWN: coord withheld 3 degradable rows"
+    );
+    expect(badge.textContent).not.toMatch(/%/);
+  });
+
+  it("renders an explicit UNKNOWN partition-ratio badge for a coord that serves no ratio, never 0", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const badge = await screen.findByTestId(
+      "coord-devops-partition-ratio-badge"
+    );
+    expect(badge).toHaveTextContent(
+      "partition ratio unknown — this coord does not serve it"
+    );
+    expect(badge.textContent).not.toMatch(/0%|0\//);
+  });
+
   it("marks the badge when coord's cut may hide a degrading machine", async () => {
     mockRoutes({
       devices: [coordDevice("d-1", "msi", "healthy")],

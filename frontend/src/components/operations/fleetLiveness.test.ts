@@ -318,13 +318,17 @@ describe("summarizeFleetLiveness", () => {
 
     it("says what is off in words coord backs, naming no reach it did not measure", () => {
       const ci = summarize([device("a", "ci_offline"), device("b", "healthy")]);
-      expect(ci.detail).toContain("GitHub reports its CI runner offline");
+      expect(ci.detail).toContain(
+        "Its CI runner is offline, or GitHub no longer lists its registration."
+      );
       expect(ci.detail).not.toContain("still reaches");
       const twoCi = summarize([
         device("a", "ci_offline"),
         device("b", "ci_offline"),
       ]);
-      expect(twoCi.detail).toContain("GitHub reports their CI runners offline");
+      expect(twoCi.detail).toContain(
+        "Their CI runners are offline, or GitHub no longer lists their registrations."
+      );
       const degraded = summarize([
         device("a", "degraded"),
         device("b", "healthy"),

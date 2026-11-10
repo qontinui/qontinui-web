@@ -100,6 +100,11 @@ export function parseMachineHealth(
  * machine (silent past coord's timer) is not a degradation, and a placeholder
  * row is not a machine, so neither stands in the way — but neither reports either, so a
  * roster of only those is never calm.
+ *
+ * A `ci_unrefreshed` row deliberately does NOT make this false: coord's
+ * project state raises no degradation for it, so "nothing is degrading" still
+ * holds. It is not healthy either, so `machineHealthSentence` stops short of
+ * "all report healthy" and the reconcile line names it.
  */
 export function machinesAllHealthy(m: MachineHealthView): boolean {
   return (

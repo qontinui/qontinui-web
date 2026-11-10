@@ -25,7 +25,7 @@
  *   roster, while the alert reads the unscoped one.
  */
 
-import { shareOfFraction } from "@/components/console/share";
+import { share } from "@/components/console/share";
 import type { HealthBadgeTone } from "@/components/console";
 import type { FleetHealthPayload } from "@/lib/api/operations/coordFleet";
 
@@ -108,17 +108,16 @@ export function fleetPartitionRatioLine(
         `share to measure — not 0%. ${WHAT_IT_COUNTS}`,
     };
   }
-  const pct =
-    typeof r.pct === "number" && Number.isFinite(r.pct)
-      ? shareOfFraction(r.pct / 100)
-      : null;
+  // From the two integers shown, so the percentage can never disagree with
+  // them (coord's own `pct` is the same quotient, rounded on its side).
+  const pct = share(r.partitioned, r.eligible);
   const fires = r.fires === true;
   const threshold =
     typeof r.threshold_pct === "number" && Number.isFinite(r.threshold_pct)
       ? ` Coord alerts above ${r.threshold_pct}%${isCount(r.min_devices) ? ` with at least ${r.min_devices} partitioned` : ""}.`
       : "";
   return {
-    label: `${r.partitioned}/${r.eligible} heartbeating rows partitioned${pct !== null ? ` (${pct})` : ""} — ${scope}`,
+    label: `${r.partitioned}/${r.eligible} heartbeating rows partitioned (${pct}) — ${scope}`,
     tone: fires ? "attention" : "muted",
     title:
       `${rows(r.partitioned)} of ${rows(r.eligible)} in ${scope} read partitioned.` +
