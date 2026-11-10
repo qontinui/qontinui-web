@@ -197,6 +197,14 @@ export function machineHealthSentence(
   if (noLiveMachine(m.counts)) {
     return withIncomplete(noLiveMachineSentence(m.counts));
   }
+  // A CI registration the registrar has not refreshed is not a degradation,
+  // but it is not healthy either, so "all report healthy" would be false. The
+  // reconcile line names those rows; this one only stops short of "all".
+  if (m.counts.ciUnrefreshed > 0) {
+    return withIncomplete(
+      `No machine is degrading; ${m.counts.healthy} of ${machines(live)} ${m.counts.healthy === 1 ? "reports" : "report"} healthy.`
+    );
+  }
   return withIncomplete(
     live === 1
       ? "The 1 machine reports healthy."

@@ -378,6 +378,24 @@ describe("summarizeFleetLiveness", () => {
       expect(line).not.toContain("named above");
     });
 
+    it("names a ci_unrefreshed row in the nav's line, and never reads it healthy or unknown", () => {
+      const s = summarize([
+        device("a", "healthy"),
+        device("gh", "ci_unrefreshed"),
+      ]);
+      expect(s.navReconcile).toBe(
+        "The nav's 1 unhealthy also counts what is not a degradation here: 1 CI registration the registrar has not refreshed recently."
+      );
+      expect(s.navReconcile).not.toContain("no health verdict");
+      // Not a degradation, so never red; not healthy, so never green.
+      expect(s.level).toBe("amber");
+      expect(s.ciUnrefreshed).toBe(1);
+      expect(s.unknown).toBe(0);
+      expect(s.healthy).toBe(1);
+      expect(s.headline).toBe("2 machines, 1 not refreshed by the registrar");
+      expect(s.detail).toContain("not refreshed recently is not healthy");
+    });
+
     it("says nothing of the nav over a failed read: it polls on its own", () => {
       expect(
         summarize([device("a", "abandoned")], { error: "HTTP 503" })

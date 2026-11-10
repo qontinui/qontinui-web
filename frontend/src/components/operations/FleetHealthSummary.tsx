@@ -25,6 +25,7 @@
 
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
+import { relativeTime } from "@/components/console/time";
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
 
@@ -37,7 +38,9 @@ type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
  * * `destructive` — **coord cannot reach a machine it still counts.** Reserved
  *   for `partitioned`; nothing else may borrow it.
  * * `secondary` — **coord has not given up on it, and something about it is
- *   off.** `degraded`, `stale`, and `ci_offline`.
+ *   off.** `degraded`, `stale`, `ci_offline`, and `ci_unrefreshed` (a CI
+ *   registration coord's registrar has not refreshed recently: not a
+ *   degradation, but never healthy and never unknown).
  * * `outline` — **no verdict that counts**: an absent or unrecognized state,
  *   and `abandoned`, which coord's project state treats as no degradation. On
  *   a long-lived tenant abandoned rows are most of the roster, and red on each
@@ -62,6 +65,7 @@ const STATE_BADGE_VARIANT: Record<string, BadgeVariant> = {
   degraded: "secondary",
   stale: "secondary",
   ci_offline: "secondary",
+  ci_unrefreshed: "secondary",
   partitioned: "destructive",
   abandoned: "outline",
 };
@@ -70,9 +74,51 @@ export function deviceStateBadgeVariant(state?: string): BadgeVariant {
   return STATE_BADGE_VARIANT[state ?? ""] ?? "outline";
 }
 
-/** A coord `DeviceState` in words: the one whose wire spelling is not a word. */
+/** A coord `DeviceState` in words, for the states whose wire spelling is not one. */
 export function deviceStateLabel(state: string): string {
-  return state === "ci_offline" ? "CI offline" : state;
+  if (state === "ci_offline") return "CI offline";
+  if (state === "ci_unrefreshed") return "not refreshed by the registrar";
+  return state;
+}
+
+/** The `/fleet/health` row fields {@link deviceRowStateLabel} reads. */
+export interface DeviceRowStateRef {
+  state?: string | null;
+  ci_runner_status?: string | null;
+  last_seen_at?: string | null;
+}
+
+/**
+ * One machine row's coord state in words — {@link deviceStateLabel} plus what
+ * only the row can say:
+ *
+ * * `ci_offline` with `ci_runner_status: "not_listed"` — coord polled the
+ *   registration's repo and GitHub no longer lists it. Said outright, because
+ *   "CI offline" alone reads as a runner that is down, and a finished one-job
+ *   runner or a removed registration is a different thing to go and look at.
+ * * `ci_unrefreshed` — aged from `last_seen_at`, the last time coord's
+ *   registrar refreshed the row. With no usable `last_seen_at` the age is
+ *   said to be unknown rather than left out.
+ *
+ * An absent state is `unknown` here, never healthy.
+ */
+export function deviceRowStateLabel(
+  row: DeviceRowStateRef,
+  { now }: { now?: number } = {}
+): string {
+  const state =
+    typeof row.state === "string" && row.state !== "" ? row.state : null;
+  if (state === null) return "unknown";
+  if (state === "ci_offline" && row.ci_runner_status === "not_listed") {
+    return "CI offline: GitHub no longer lists this registration";
+  }
+  if (state === "ci_unrefreshed") {
+    const age = relativeTime(row.last_seen_at, { absent: "", now });
+    return age === ""
+      ? "not refreshed by the registrar (last seen unknown)"
+      : `not refreshed by the registrar since ${age}`;
+  }
+  return deviceStateLabel(state);
 }
 
 /**
