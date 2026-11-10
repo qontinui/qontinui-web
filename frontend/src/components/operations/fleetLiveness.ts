@@ -327,9 +327,9 @@ export function summarizeFleetLiveness(input: {
               ? "Coord's recent checks of one failed, and it has not given up on it."
               : "Coord's recent checks of them failed, and it has not given up on them."
             : states.ciOffline === 1
-              ? "GitHub reports its CI runner offline."
+              ? "Its CI runner is offline, or GitHub no longer lists its registration."
               : states.ciOffline > 1
-                ? "GitHub reports their CI runners offline."
+                ? "Their CI runners are offline, or GitHub no longer lists their registrations."
                 : // Only registrations the registrar has not refreshed.
                   "A CI registration coord's registrar has not refreshed " +
                   "recently is not healthy, but nothing says it is offline " +

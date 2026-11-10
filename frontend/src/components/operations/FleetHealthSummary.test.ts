@@ -33,7 +33,7 @@ describe("deviceRowStateLabel", () => {
         { state: "ci_unrefreshed", last_seen_at: "2026-11-10T11:53:00Z" },
         { now: NOW }
       )
-    ).toBe("not refreshed by the registrar since 7m ago");
+    ).toBe("not refreshed by the registrar (last refreshed 7m ago)");
   });
 
   it("says the age is unknown for a ci_unrefreshed row with no usable last_seen_at", () => {

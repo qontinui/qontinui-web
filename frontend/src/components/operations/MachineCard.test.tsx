@@ -602,3 +602,46 @@ describe("MachineCard — CI-runner drain scope", () => {
     ).toBeNull();
   });
 });
+
+describe("MachineCard — coord state badge for CI registrations", () => {
+  const NOW = Date.parse("2026-11-10T12:00:00Z");
+  const badge = (container: HTMLElement) =>
+    container.querySelector("[data-coord-state]");
+
+  it("ages a ci_unrefreshed registration from last_seen_at", () => {
+    const { container } = renderCard(
+      baseGroup({
+        coordHealth: {
+          matched: true,
+          device_id: "d-1",
+          state: "ci_unrefreshed",
+          last_seen_at: "2026-11-10T11:55:00Z",
+        },
+      }),
+      NOW
+    );
+    expect(badge(container)?.getAttribute("data-coord-state")).toBe(
+      "ci_unrefreshed"
+    );
+    expect(badge(container)?.textContent).toBe(
+      "not refreshed by the registrar (last refreshed 5m ago)"
+    );
+  });
+
+  it("says GitHub no longer lists a not_listed ci_offline registration", () => {
+    const { container } = renderCard(
+      baseGroup({
+        coordHealth: {
+          matched: true,
+          device_id: "d-1",
+          state: "ci_offline",
+          ci_runner_status: "not_listed",
+        },
+      }),
+      NOW
+    );
+    expect(badge(container)?.textContent).toBe(
+      "CI offline: GitHub no longer lists this registration"
+    );
+  });
+});
