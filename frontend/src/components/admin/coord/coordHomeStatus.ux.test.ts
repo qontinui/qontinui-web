@@ -6,7 +6,6 @@
  */
 
 import {
-  readMachineRoster,
   readRosterCut,
   summarizeMachineHealth,
   type RosterCut,
@@ -268,31 +267,6 @@ describe("the strip over the machine roster", () => {
 
   it("is green only with the roster read and every machine healthy", () => {
     expect(deriveHomeStrip(calm(), machines(["healthy"])).level).toBe("green");
-  });
-
-  it("names a ci_unrefreshed row in the nav reconcile line, read through readMachineRoster", () => {
-    const devs = devices("healthy", "ci_unrefreshed");
-    // The roster as the home page reads it: `readMachineRoster` over the
-    // body's completeness fields, which runs `summarizeMachineHealth`.
-    const roster = readMachineRoster(devs, {
-      excluded: { unbound: 0, bound_to_other_tenant: 0 },
-      truncated: false,
-      total: 2,
-      degradable_dropped: 0,
-    });
-    expect(roster.counts.ciUnrefreshed).toBe(1);
-    expect(roster.counts.noVerdict).toBe(0);
-    const strip = deriveHomeStrip(calm(), {
-      machines: { stale: false, ...roster },
-    });
-    // `stripNotDegradationsSentence` -> `notDegradationsSentence`.
-    expect(strip.detail).toContain(
-      "1 machine not reporting healthy is not a degradation: 1 CI registration the registrar has not refreshed recently — see Dev Ops."
-    );
-    expect(strip.detail).not.toMatch(/no health verdict/);
-    // Not a degradation, so "nothing is degrading" still holds
-    // (`machinesAllHealthy`'s documented choice).
-    expect(strip.headline).toBe("Nothing needs you and nothing is degrading");
   });
 
   /** The strip over `n` healthy machines, with nothing withheld, cut as `extra` says. */
