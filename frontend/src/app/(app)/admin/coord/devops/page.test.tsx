@@ -1264,6 +1264,94 @@ describe("/admin/coord/devops — the saturation axis (Phase 5)", () => {
   });
 });
 
+describe("/admin/coord/devops — CI registrations coord re-reads", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    routerPush.mockReset();
+    deviceStatusRows.clear();
+    window.localStorage.clear();
+  });
+
+  it("names a not_listed and an aged ci_unrefreshed registration on the machine card and the resource strip", async () => {
+    // A little past five minutes, so a slow render still reads "5m ago".
+    const lastSeen = new Date(Date.now() - 5 * 60_000 - 5_000).toISOString();
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "gh-runner-a@o/r", "ci_offline", {
+          ci_runner_status: "not_listed",
+        }),
+        coordDevice("d-2", "gh-runner-b@o/r", "ci_unrefreshed", {
+          ci_runner_status: "idle",
+          last_seen_at: lastSeen,
+        }),
+      ],
+      runners: [],
+      samples: [],
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-devops-ci-unrefreshed-badge")
+      ).toHaveTextContent("not refreshed by the registrar 1")
+    );
+    const where = (state: string) => {
+      const badges = Array.from(
+        document.querySelectorAll<HTMLElement>(`[data-coord-state="${state}"]`)
+      );
+      return {
+        card: badges.filter(
+          (b) => b.closest("[data-operations-machine-card]") !== null
+        ),
+        strip: badges.filter(
+          (b) => b.closest('[data-testid="fleet-resource-strip"]') !== null
+        ),
+      };
+    };
+    const offline = where("ci_offline");
+    const unrefreshed = where("ci_unrefreshed");
+    // Both joins: FleetOverview -> MachineCard, and fleetResources -> strip.
+    for (const list of [offline.card, offline.strip]) {
+      expect(list).toHaveLength(1);
+      expect(list[0]).toHaveTextContent(
+        "CI offline: GitHub no longer lists this registration"
+      );
+    }
+    for (const list of [unrefreshed.card, unrefreshed.strip]) {
+      expect(list).toHaveLength(1);
+      expect(list[0]).toHaveTextContent(
+        "not refreshed by the registrar (last refreshed 5m ago)"
+      );
+    }
+  });
+
+  it("renders no ci_unrefreshed badge when no device is ci_unrefreshed", async () => {
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "gh-runner-a@o/r", "ci_offline", {
+          ci_runner_status: "not_listed",
+        }),
+        coordDevice("d-2", "msi", "healthy"),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-devops-ci-offline-badge")
+      ).toHaveTextContent("CI offline 1")
+    );
+    expect(
+      screen.queryByTestId("coord-devops-ci-unrefreshed-badge")
+    ).toBeNull();
+  });
+});
+
 /**
  * Phase 1 §0 — the page-locals had to be lifted before anything else could be
  * written, and Phase 4 then took the last consumer off the pipeline page

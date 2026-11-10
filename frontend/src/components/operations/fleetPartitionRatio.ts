@@ -109,7 +109,7 @@ export function fleetPartitionRatioLine(
     };
   }
   // From the two integers shown, so the percentage can never disagree with
-  // them (coord's own `pct` is the same quotient, rounded on its side).
+  // them (coord's own `pct` is the same quotient).
   const pct = share(r.partitioned, r.eligible);
   const fires = r.fires === true;
   const threshold =
