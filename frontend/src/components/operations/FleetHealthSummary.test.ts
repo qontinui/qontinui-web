@@ -43,7 +43,7 @@ describe("deviceRowStateLabel", () => {
           { state: "ci_unrefreshed", last_seen_at },
           { now: NOW }
         )
-      ).toBe("not refreshed by the registrar (last seen unknown)");
+      ).toBe("not refreshed by the registrar (last refreshed unknown)");
     }
   });
 

@@ -749,7 +749,7 @@ export type CoordHealthJoin =
       ci_runner_status?: string | null;
       /**
        * Coord's `last_seen_at` for the device, verbatim. A `ci_unrefreshed`
-       * row is aged from it; absent or `null` renders "last seen unknown".
+       * row is aged from it; absent or `null` renders "last refreshed unknown".
        */
       last_seen_at?: string | null;
       /**

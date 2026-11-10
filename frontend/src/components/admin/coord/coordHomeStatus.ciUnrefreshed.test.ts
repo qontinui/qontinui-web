@@ -50,4 +50,23 @@ describe("the home strip over a roster read through readMachineRoster", () => {
     // Not a degradation, so "nothing is degrading" still holds.
     expect(strip.headline).toBe("Nothing needs you and nothing is degrading");
   });
+  it("still names the ci_unrefreshed row when an abandoned row sits beside it", () => {
+    const devs = [
+      { device_id: "d-0", state: "healthy" },
+      { device_id: "d-1", state: "abandoned" },
+      { device_id: "d-2", state: "ci_unrefreshed" },
+    ];
+    const roster = readMachineRoster(devs, {
+      excluded: { unbound: 0, bound_to_other_tenant: 0 },
+      truncated: false,
+      total: 3,
+      degradable_dropped: 0,
+    });
+    const strip = deriveHomeStrip(calm(), {
+      machines: { stale: false, ...roster },
+    });
+    expect(strip.detail).toContain(
+      "1 CI registration the registrar has not refreshed recently"
+    );
+  });
 });
