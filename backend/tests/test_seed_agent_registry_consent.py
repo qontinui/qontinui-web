@@ -654,6 +654,22 @@ def test_an_unreadable_registry_sends_nothing(monkeypatch):
     assert _posted(calls) == []
 
 
+def test_a_non_200_registry_read_is_unknown_even_when_it_lists_agents(monkeypatch):
+    """The status decides, not the body's shape: a 503 that still carries an
+    `agents` list is not a registry read, so the rows are UNKNOWN and nothing
+    is sent."""
+
+    def http(method, url, body):
+        assert method == "GET", "nothing may be sent"
+        if url.endswith(OWNERSHIP_PATH):
+            return OWNED
+        return 503, {"agents": EFFECTIVE, "error": "registry_degraded"}
+
+    calls = _run_retire(monkeypatch, http)
+    assert seeder.main() == seeder.EXIT_UNPROVEN
+    assert _posted(calls) == []
+
+
 def test_the_dry_run_proves_everything_and_sends_nothing(monkeypatch, capsys):
     calls = _run_retire(monkeypatch, _coord(), "--dry-run")
     assert seeder.main() == 0
