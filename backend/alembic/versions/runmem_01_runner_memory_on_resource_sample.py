@@ -31,8 +31,9 @@ uptime to tens of GiB, and no fleet telemetry field named it:
   **VmRSS 27.05 GB + VmSwap 14.19 GB**.
 
 Both were read by hand from ``/proc/<pid>/status``. nilan's host lane did grade
-``warn``, but only on its generic swap axis and only once host swap was gone.
-Nothing named the runner, and nothing could have seen its growth days earlier:
+``warn``, but only on its generic swap axis, and the single read taken
+(2026-11-11T12:58Z) found host swap already exhausted. Nothing named the
+runner, and nothing could have seen its growth days earlier:
 the sample carries the publishing runner's own ``thread_count`` (``lasac_01``)
 but nothing about its memory, and the host lane's ``top_consumers``
 (``topcons_01``) can name the runner only while it ranks in the host's top 5.
@@ -57,8 +58,9 @@ runner_started_at      TIMESTAMPTZ
 * ``runner_private_bytes`` is the GRADED value. Linux: ``RssAnon + VmSwap``
   from ``/proc/self/status`` (kB x 1024). Windows:
   ``PROCESS_MEMORY_COUNTERS_EX.PrivateUsage``. Neither page-out nor
-  working-set trimming shrinks it, and it is the basis ``top_consumers`` uses
-  for the same pid, so the two can never disagree about the runner.
+  working-set trimming shrinks it, and it shares the basis ``top_consumers``
+  declares for the same pid, so the two can differ only by the interval
+  between two reads, never by definition.
 * ``runner_rss_bytes`` is DISPLAY ONLY. Linux: ``VmRSS`` (kB x 1024). Windows:
   ``WorkingSetSize``. It is the number a hand read of ``/proc/<pid>/status``
   quotes, so the dashboard and a hand read agree by construction. It is never
@@ -66,13 +68,13 @@ runner_started_at      TIMESTAMPTZ
   just as much.
 * ``runner_started_at`` is when the runner process started: the RESTART
   BOUNDARY. A slope of ``runner_private_bytes`` is fitted only over samples
-  sharing the latest ``runner_started_at``, so no slope ever differences
-  across two runner processes. ``os_booted_at`` (``kernel_gauges_01``) plays
-  the same role for S7 across a reboot.
+  whose ``runner_started_at`` matches the latest within 2 s, so no slope ever
+  differences across two runner processes. ``os_booted_at``
+  (``kernel_gauges_01``) plays the same role for S7 across a reboot.
 
 Deliberately absent: a swap column (the Linux private basis already includes
 ``VmSwap`` and ``PrivateUsage`` is its Windows equivalent, so no per-OS NULL
-case is needed), and ``VmData`` (reserved address space, 156 GB on nilan,
+case is needed), and ``VmData`` (reserved address space, 148.8 GiB on nilan,
 which overstates use and does not map onto host pressure).
 
 NULL semantics — never zero
@@ -98,8 +100,10 @@ the observe-only ``s12`` / ``runner_memory`` instance of the existing
 ``device_resource_headroom_breach`` kind (plan Phase 3). The grade is in
 absolute bytes plus a sustained slope, not a ratio of host memory, because a
 runner's footprint does not scale with host RAM. The plan's compiled defaults
-at authoring (warn 8 GiB, breach 16 GiB, slope 512 MiB/h over a covered 3 h
-window after 1 h of uptime) are PROVISIONAL until its Phase 0 calibrates them.
+(warn 8 GiB, breach 16 GiB, and a slope of 512 MiB/h fitted over a covered 3 h
+window whose first sample is at least 2 h after ``runner_started_at``, the
+start gate Phase 0 measured) are PROVISIONAL until Phase 0's calibration is
+recorded.
 None of that grading exists in coord yet, so this docstring and the column
 comments attribute it to the plan rather than stating it as coord fact.
 
@@ -144,8 +148,9 @@ Deploy ordering
    multi-lane push, and that gate is what prevents it. The coord PR is
    additionally held with ``migration_order`` until this revision is verified
    live in prod.
-3. The runner publisher (plan Phase 4), LAST: coord keeps an unknown sample
-   key without rejecting the push, but warns on every push that carries one.
+3. The runner publisher (plan Phase 4), LAST: coord accepts the push and drops
+   each unknown key, warning on every push that carries one, so readings
+   published before its consumer ships are lost.
 
 A device reports these fields only after its runner next starts on a build
 that publishes them; until then its rows read NULL, which is UNKNOWN.
@@ -156,7 +161,7 @@ Every ``op.execute`` below takes ONE static string literal, because coord's
 migration classifier (``pr_merge/migration_classifier.rs``) reads only static
 literals and holds a revision whose SQL it cannot see. Both ``upgrade()`` and
 ``downgrade()`` open with ``SET LOCAL lock_timeout = '3s'``, the house lock
-bound and the one SET form that classifier admits.
+bound, in a SET LOCAL form that classifier admits.
 
 The down_revision below is the single alembic head of ``origin/main`` at
 authoring time. If ``alembic-heads-pr`` reports ``HEAD_COUNT=2`` after this
@@ -217,12 +222,13 @@ def upgrade() -> None:
             '2026-11-11-devops-runner-self-rss-is-absent-from-the-resource-sample). '
             'Linux: /proc/self/status (RssAnon + VmSwap) x 1024. Windows: '
             'PROCESS_MEMORY_COUNTERS_EX.PrivateUsage, the basis top_consumers '
-            'uses for the same pid. Neither page-out nor working-set trimming '
-            'shrinks it. The graded value: per the plan, coord is to grade it '
-            'at read time in absolute bytes and on the observe-only s12 '
-            'runner_memory axis (plan Phases 2-3); it is never a lane-pressure '
-            'ranking input. NULL = the publisher predates the field, the read '
-            'failed, or a lane other than host; render it as UNKNOWN, never 0.'
+            'declares for the same pid. Neither page-out nor working-set '
+            'trimming shrinks it. The graded value: per the plan, coord is to '
+            'grade it at read time in absolute bytes and on the observe-only '
+            's12 runner_memory axis (plan Phases 2-3); it is never a '
+            'lane-pressure ranking input. NULL = the publisher predates the '
+            'field, the read failed, or a lane other than host; render it as '
+            'UNKNOWN, never 0.'
         """
     )
     op.execute(
@@ -244,12 +250,13 @@ def upgrade() -> None:
             'When the publishing runner process started, host lane only: the '
             'restart boundary for any slope of runner_private_bytes. Per the '
             'plan, coord is to fit that slope (plan Phase 3) only over samples '
-            'whose runner_started_at matches the latest within 2 s, and only '
-            'after an hour of uptime, so it never differences across two '
-            'runner processes (os_booted_at plays the same role for S7). NULL '
-            '= the publisher predates the field, the read failed, or a lane '
-            'other than host; render it as UNKNOWN, and with no start time '
-            'there is no restart boundary, so no slope.'
+            'whose runner_started_at matches the latest within 2 s, so it '
+            'never differences across two runner processes (os_booted_at plays '
+            'the same role for S7), and only once the first sample of the '
+            'window is at least 2 h after runner_started_at (the start gate '
+            'plan Phase 0 measured). NULL = the publisher predates the field, '
+            'the read failed, or a lane other than host; render it as UNKNOWN, '
+            'and with no start time there is no restart boundary, so no slope.'
         """
     )
 

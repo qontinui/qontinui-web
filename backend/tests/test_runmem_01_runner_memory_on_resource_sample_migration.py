@@ -11,10 +11,11 @@ around that ALTER:
    its INSERT and reads, and ``IF NOT EXISTS`` is type-blind, so a wrong type
    is never repaired by re-running the revision. A 65 GiB runner must fit, so
    the byte columns are BIGINT.
-2. **Nullable with no DEFAULT, no CHECK, and no grade column.** A NULL is
+2. **Nullable with no DEFAULT, no constraint, and no grade column.** A NULL is
    "publisher predates the field / read failed / not the host lane" and renders
    UNKNOWN; a default of ``0`` would show a leaking runner as the leanest one
    in the fleet. The grade is computed by coord at read time, never stored.
+   Checked on the WHOLE ADD statement, and live in ``pg_constraint``.
 3. **Every ``op.execute`` is one static literal** (coord's migration
    classifier reads nothing else), and DROPs live only in ``downgrade()``.
 4. **Up -> down -> up leaves no residue and keeps pre-existing rows.**
@@ -81,6 +82,19 @@ _BYTE_COLUMNS = ("runner_private_bytes", "runner_rss_bytes")
 # separate so the live assertion does not derive its expectation from the
 # thing under test.
 _PG_TYPE = {"BIGINT": "bigint", "TIMESTAMPTZ": "timestamp with time zone"}
+
+# Clauses that must appear nowhere in the ADD statement: each one either
+# fabricates a reading or puts a second door on an input coord validates
+# app-side. Matched on the statement's whole upper-cased text, so a clause on a
+# continuation line, or a table constraint added in the same ALTER, is caught.
+_FORBIDDEN_ADD_CLAUSES: tuple[str, ...] = (
+    "NOT NULL",
+    "DEFAULT",
+    "CHECK",
+    "CONSTRAINT",
+    "REFERENCES",
+    "UNIQUE",
+)
 
 # The plan's Evidence for nilan (device 4b426e2b-cc10-4870-80a5-524aaac70719),
 # 2026-11-11T12:31Z: VmRSS 68093452 kB, and its Phase 2 fixture of about
@@ -245,15 +259,20 @@ def test_both_directions_open_with_the_lock_bound(
 def test_upgrade_never_drops_defaults_or_constrains(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Nullable, no DEFAULT, no CHECK (validated app-side), no DROP, no backfill."""
+    """No NOT NULL, DEFAULT or constraint in the ADD, no DROP, and no backfill.
+
+    The clause scan reads the WHOLE ADD statement. Reading only its
+    ``ADD COLUMN`` lines let a clause on a continuation line, or an
+    ``ADD CONSTRAINT`` in the same ALTER, pass.
+    """
     statements = _recorded_sql(monkeypatch, "upgrade")
-    up = "\n".join(statements)
-    ddl = "\n".join(sql for sql in up.split("\n") if "ADD COLUMN" in sql)
-    assert not re.search(r"\bDROP\b", up)
-    assert not re.search(r"\bNOT NULL\b|\bDEFAULT\b|\bCHECK\b", ddl, re.I), (
-        "the ADD carries NOT NULL / DEFAULT / CHECK; NULL is load-bearing "
-        "(UNKNOWN, never 0) and the range is validated app-side"
-    )
+    assert not re.search(r"\bDROP\b", "\n".join(statements))
+    add = _alter_statement(statements, "ADD").upper()
+    for clause in _FORBIDDEN_ADD_CLAUSES:
+        assert clause not in add, (
+            f"the ADD statement carries {clause}; NULL is load-bearing "
+            "(UNKNOWN, never 0) and the range is validated app-side"
+        )
     backfills = [
         sql for sql in statements if re.match(r"\s*(UPDATE|INSERT)\b", sql, re.I)
     ]
@@ -371,6 +390,35 @@ def test_the_docstring_states_why_deploy_ordering_and_retention() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _assert_no_constraint_covers_the_columns(engine: Engine) -> None:
+    """No ``pg_constraint`` row (CHECK, FK, UNIQUE, ...) names the three columns.
+
+    Asserted from the catalogue rather than from the DDL text, as
+    ``test_ci_job_mem_01_memory_headroom_columns_migration.py`` does: the
+    catalogue answers for every constraint at once, however it was spelled.
+    """
+    with engine.connect() as conn:
+        covering = conn.execute(
+            text(
+                """
+                SELECT c.conname
+                  FROM pg_constraint c
+                  JOIN pg_attribute a
+                    ON a.attrelid = c.conrelid
+                   AND a.attnum = ANY (c.conkey)
+                 WHERE c.conrelid = 'coord.device_resource_samples'::regclass
+                   AND a.attname IN ('runner_private_bytes', 'runner_rss_bytes',
+                                     'runner_started_at')
+                """
+            )
+        ).fetchall()
+    assert covering == [], (
+        f"a constraint now covers a runner self-memory column ({covering}); "
+        "the range is validated app-side by coord's lenient decoder, and a "
+        "violating value would fail the whole multi-row INSERT"
+    )
+
+
 def _assert_columns_present(engine: Engine) -> None:
     for name, ddl_type in _EXPECTED_SAMPLE_DDL:
         info = column_info(engine, _SAMPLE_TABLE, name)
@@ -381,6 +429,7 @@ def _assert_columns_present(engine: Engine) -> None:
         )
         assert is_nullable == "YES", f"{name} is NOT NULL"
         assert default is None, f"{name} carries DEFAULT {default!r}"
+    _assert_no_constraint_covers_the_columns(engine)
 
 
 def _assert_columns_commented(engine: Engine) -> None:
@@ -445,84 +494,81 @@ def test_up_down_up_leaves_no_residue_and_keeps_the_sample_row() -> None:
         _assert_columns_commented(engine)
 
 
+def _insert_rows(engine: Engine) -> tuple[uuid.UUID, uuid.UUID]:
+    """Insert one host row without the runner fields and one nilan-scale reading.
+
+    Returns ``(unread, measured)``: the device id of the row a publisher that
+    predates the fields would write, and of the row carrying all three.
+    """
+    unread = uuid.uuid4()
+    measured = uuid.uuid4()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO coord.device_resource_samples
+                    (device_id, lane, sampled_at, source)
+                VALUES (:unread, 'host', now(), 'test')
+                """
+            ),
+            {"unread": str(unread)},
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO coord.device_resource_samples
+                    (device_id, lane, sampled_at, source,
+                     runner_private_bytes, runner_rss_bytes,
+                     runner_started_at)
+                VALUES (:measured, 'host', now(), 'runner',
+                        :private_bytes, :rss_bytes, :started_at)
+                """
+            ),
+            {
+                "measured": str(measured),
+                "private_bytes": _NILAN_SCALE_PRIVATE_BYTES,
+                "rss_bytes": _NILAN_VMRSS_BYTES,
+                "started_at": _NILAN_RUNNER_STARTED_AT,
+            },
+        )
+    return unread, measured
+
+
+def _read_runner_columns(engine: Engine, device_id: uuid.UUID) -> dict[str, object]:
+    """The three runner columns of ``device_id``'s one sample row, by name."""
+    names = tuple(name for name, _ in _EXPECTED_SAMPLE_DDL)
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                f"SELECT {', '.join(names)} "
+                "FROM coord.device_resource_samples "
+                "WHERE device_id = :device_id"
+            ),
+            {"device_id": str(device_id)},
+        ).one()
+    return dict(zip(names, row, strict=True))
+
+
 def test_an_unread_row_is_null_and_a_reading_round_trips() -> None:
-    """Rows omitting the fields read NULL; nilan-scale readings round-trip."""
+    """A row omitting the fields reads NULL; a nilan-scale reading round-trips."""
     admin_url = _admin_url_or_skip()
     with ephemeral_database(admin_url, "runmem01") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        unread, measured = _insert_rows(engine)
+        unread_row = _read_runner_columns(engine, unread)
+        reading = _read_runner_columns(engine, measured)
 
-        older_publisher = uuid.uuid4()
-        other_lane = uuid.uuid4()
-        measured = uuid.uuid4()
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO coord.device_resource_samples
-                        (device_id, lane, sampled_at, source)
-                    VALUES (:older_publisher, 'host', now(), 'test'),
-                           (:other_lane, 'wsl', now(), 'test')
-                    """
-                ),
-                {
-                    "older_publisher": str(older_publisher),
-                    "other_lane": str(other_lane),
-                },
-            )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO coord.device_resource_samples
-                        (device_id, lane, sampled_at, source,
-                         runner_private_bytes, runner_rss_bytes,
-                         runner_started_at)
-                    VALUES (:measured, 'host', now(), 'runner',
-                            :private_bytes, :rss_bytes, :started_at)
-                    """
-                ),
-                {
-                    "measured": str(measured),
-                    "private_bytes": _NILAN_SCALE_PRIVATE_BYTES,
-                    "rss_bytes": _NILAN_VMRSS_BYTES,
-                    "started_at": _NILAN_RUNNER_STARTED_AT,
-                },
-            )
-            columns = ", ".join(name for name, _ in _EXPECTED_SAMPLE_DDL)
-            rows = {
-                str(row[0]): row[1:]
-                for row in conn.execute(
-                    text(
-                        f"SELECT device_id, {columns} "
-                        "FROM coord.device_resource_samples "
-                        "WHERE device_id IN (:older_publisher, :other_lane, :measured)"
-                    ),
-                    {
-                        "older_publisher": str(older_publisher),
-                        "other_lane": str(other_lane),
-                        "measured": str(measured),
-                    },
-                )
-            }
-
-        for unread in (older_publisher, other_lane):
-            assert all(value is None for value in rows[str(unread)]), (
-                "a row whose publisher sends no runner memory (an older build, "
-                "or a lane other than host) must read NULL (UNKNOWN), never a "
-                "fabricated 0"
-            )
-        reading = dict(
-            zip(
-                (name for name, _ in _EXPECTED_SAMPLE_DDL),
-                rows[str(measured)],
-                strict=True,
-            )
-        )
-        assert reading["runner_private_bytes"] == _NILAN_SCALE_PRIVATE_BYTES, (
-            "a 67 GiB reading must fit; INTEGER would overflow"
-        )
-        assert reading["runner_rss_bytes"] == _NILAN_VMRSS_BYTES
-        assert reading["runner_started_at"] == _NILAN_RUNNER_STARTED_AT
-        assert reading["runner_started_at"].tzinfo is not None
+    assert all(value is None for value in unread_row.values()), (
+        "a row from a publisher that sends no runner memory must read NULL "
+        "(UNKNOWN), never a fabricated 0"
+    )
+    assert reading["runner_private_bytes"] == _NILAN_SCALE_PRIVATE_BYTES, (
+        "a 67 GiB reading must fit; INTEGER would overflow"
+    )
+    assert reading["runner_rss_bytes"] == _NILAN_VMRSS_BYTES
+    started_at = reading["runner_started_at"]
+    assert started_at == _NILAN_RUNNER_STARTED_AT
+    assert isinstance(started_at, datetime) and started_at.tzinfo is not None
 
 
 def test_upgrade_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
