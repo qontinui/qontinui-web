@@ -12,7 +12,13 @@ setup death. This module pins:
    ``urllib.request.urlopen`` to serve the RECORDED jobs listings in
    ``fixtures/shard_headroom/run-*.json`` and annotation JSON, so the real
    ``shard_headroom.fetch_jobs`` / ``get_json`` code paths run.
-2. **The wiring**: each aggregate's step against a literal table, its job-level
+2. **The harness-diff guard** (rule 5), against REAL two-parent merge commits
+   in temporary repositories, depth-1 clones and a stub ``git`` whose fetch
+   fails or hangs (``tests/setup_death_git.py``, shared with the per-job
+   declarer's tests), and read against the per-job guard for the same PRs.
+   Every decision arm runs it too: ``_env()`` points it at one PR whose diff
+   touches no harness.
+3. **The wiring**: each aggregate's step against a literal table, its job-level
    ``checks: read``, and the lane roster.
 
 Every assertion compares against literal strings spelled out here. NOTHING HERE
@@ -24,9 +30,10 @@ messages.
 
 from __future__ import annotations
 
-import ast
+import atexit
 import contextlib
 import copy
+import functools
 import importlib.util
 import io
 import itertools
@@ -35,6 +42,8 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -47,6 +56,15 @@ import yaml
 from tests.gate_lane_roster import (
     assert_docstring_names_every_lane,
     assert_lane_roster,
+)
+from tests.setup_death_git import (
+    GIT,
+    PrRepo,
+    assert_prints_nothing,
+    base_env,
+    has_commit,
+    shallow_clone,
+    stub_git,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -180,8 +198,42 @@ def _shard_title(n: int) -> str:
     return f"Run Tests (shard {n}/6) SETUP FAILED (not a verdict on this PR)"
 
 
+#: test-gate's HARNESS_PATHS_RE, spelled out: the shards' own per-job harness
+#: plus the aggregate's code (the wiring table pins the YAML to it).
+RUN_TESTS_HARNESS = (
+    r"^\.github/workflows/backend-ci\.yml$|^\.github/actions/"
+    r"|^\.github/scripts/declare-setup-death\.sh$"
+    r"|^scripts/ci/aggregate_setup_death\.py$|^scripts/ci/shard_headroom\.py$"
+)
+BASH = shutil.which("bash")
+requires_git = pytest.mark.skipif(
+    GIT is None,
+    reason="the harness-diff guard reads git objects; git is missing here (it "
+    "is always present on the ubuntu CI runner)",
+)
+
+
+@functools.cache
+def _clean_pr() -> PrRepo:
+    """One PR whose diff touches no harness: ``_env()``'s default guard target.
+
+    Built once per process and only READ: its first parent is in the repo, so
+    the guard never fetches into it.
+    """
+    if GIT is None:
+        pytest.skip("the harness-diff guard reads git objects; git is missing here")
+    root = Path(tempfile.mkdtemp(prefix="aggregate-guard-"))
+    atexit.register(shutil.rmtree, root, ignore_errors=True)
+    home = root / "home"
+    home.mkdir()
+    return PrRepo(root / "repo", home, changes={"backend/app/main.py": "print('pr')\n"})
+
+
 def _env(**overrides: str) -> dict[str, str]:
+    """A ``Run Tests`` aggregate whose inputs all hold and whose guard reads false."""
+    clean = _clean_pr()
     env = {
+        **base_env(clean.home),
         "DECLARE_JOB": "Run Tests",
         "MEMBER_NEED": "test",
         "NEEDS_JSON": json.dumps({"test": {"result": "failure", "outputs": {}}}),
@@ -191,9 +243,25 @@ def _env(**overrides: str) -> dict[str, str]:
         "GITHUB_RUN_ID": RUN_ID,
         "GITHUB_RUN_ATTEMPT": "2",
         "GITHUB_API_URL": API,
+        "GITHUB_EVENT_NAME": "pull_request",
+        "GITHUB_WORKSPACE": str(clean.root),
+        "GITHUB_SHA": clean.merge,
+        "HARNESS_PATHS_RE": RUN_TESTS_HARNESS,
     }
     env.update(overrides)
     return env
+
+
+def _pr_env(repo: PrRepo, **overrides: str) -> dict[str, str]:
+    """``_env()`` with the guard pointed at ``repo``'s merge commit."""
+    return _env(
+        **{
+            "HOME": str(repo.home),
+            "GITHUB_WORKSPACE": str(repo.root),
+            "GITHUB_SHA": repo.merge,
+            **overrides,
+        }
+    )
 
 
 @pytest.fixture
@@ -639,6 +707,359 @@ def test_no_title_it_writes_changes_coords_marker_class(github):
             assert marker not in title
 
 
+# --- rule 5: the harness-diff guard, against real merge commits ---------------
+
+
+@pytest.fixture
+def home(tmp_path: Path) -> Path:
+    path = tmp_path / "home"
+    path.mkdir()
+    return path
+
+
+@pytest.fixture
+def clean_pr(tmp_path: Path, home: Path) -> PrRepo:
+    """A PR touching application code and the frontend lockfile: no harness."""
+    return PrRepo(
+        tmp_path / "repo",
+        home,
+        changes={
+            "backend/app/main.py": "print('pr')\n",
+            "frontend/package-lock.json": '{"lockfileVersion": 3}\n',
+        },
+    )
+
+
+def _declared_failure(github) -> FakeGitHub:
+    """Rules 1-4 hold: shard 1 failed and titled its own setup death."""
+    fake = github(_with_conclusions(s1="failure"))
+    fake.declare(_shard(fake.jobs, 1)["id"], _shard_title(1))
+    return fake
+
+
+def _guard_reason(outcome, reading: str) -> str:
+    """The withheld notice's reason, asserting the guard read ``reading``."""
+    message = _assert_withheld(outcome)
+    lead = (
+        "every failed shard declared a setup death, but the harness-diff guard "
+        f"read {reading}: "
+    )
+    assert message.startswith(lead), _defang(message)
+    return message[len(lead) :]
+
+
+def _stubbed(stub: Path) -> str:
+    return f"{stub}:/usr/bin:/bin"
+
+
+@requires_git
+def test_a_pr_whose_diff_misses_the_harness_is_declared(github, clean_pr):
+    _declared_failure(github)
+    assert _parse(_line(_decide(_pr_env(clean_pr))))[:2] == ("error", RUN_TESTS_TITLE)
+
+
+@requires_git
+@pytest.mark.parametrize(
+    "touched",
+    [
+        ".github/workflows/backend-ci.yml",
+        ".github/actions/self-hosted-host-provisioned/action.yml",
+        ".github/scripts/declare-setup-death.sh",
+        "scripts/ci/aggregate_setup_death.py",
+        "scripts/ci/shard_headroom.py",
+    ],
+    ids=["own-workflow", "local-action", "per-job-declarer", "itself", "headroom"],
+)
+def test_a_pr_that_touches_the_aggregates_harness_is_withheld(
+    github, tmp_path, home, touched
+):
+    _declared_failure(github)
+    repo = PrRepo(tmp_path / "repo", home, changes={touched: "edited\n"})
+    reason = _guard_reason(_decide(_pr_env(repo)), "true")
+    assert reason.startswith(
+        f"this PR's diff touches this aggregate's harness ('{touched}')"
+    ), _defang(reason)
+
+
+@requires_git
+def test_moving_a_harness_file_out_of_the_harness_reads_true(github, tmp_path, home):
+    """`--no-renames`: a rename would otherwise list only its NEW path."""
+    _declared_failure(github)
+    repo = PrRepo(
+        tmp_path / "repo",
+        home,
+        changes={
+            "scripts/ci/shard_headroom.py": None,
+            "elsewhere/shard_headroom.py": "# the shard listing it imports\n",
+        },
+    )
+    reason = _guard_reason(_decide(_pr_env(repo)), "true")
+    assert "('scripts/ci/shard_headroom.py')" in reason, _defang(reason)
+
+
+@requires_git
+def test_off_pull_request_the_guard_is_unknown(github, clean_pr):
+    _declared_failure(github)
+    outcome = _decide(_pr_env(clean_pr, GITHUB_EVENT_NAME="push"))
+    reason = _guard_reason(outcome, "UNKNOWN")
+    assert reason.startswith("the event is 'push', not pull_request"), _defang(reason)
+
+
+@requires_git
+@pytest.mark.parametrize(
+    ("sha_of", "expected"),
+    [
+        ("head", "has 1 parent(s), not the two of a pull_request merge commit"),
+        ("absent", "is not readable in this checkout"),
+        ("ref-name", "GITHUB_SHA ('HEAD') is not a commit id"),
+    ],
+    ids=["one-parent", "absent", "ref-name"],
+)
+def test_a_github_sha_that_is_not_a_merge_commit_is_unknown(
+    github, clean_pr, sha_of, expected
+):
+    _declared_failure(github)
+    sha = {"head": clean_pr.head, "absent": "0" * 40, "ref-name": "HEAD"}[sha_of]
+    reason = _guard_reason(_decide(_pr_env(clean_pr, GITHUB_SHA=sha)), "UNKNOWN")
+    assert expected in reason, _defang(reason)
+
+
+@requires_git
+def test_a_parent_line_in_the_commit_message_is_not_a_parent(github, tmp_path, home):
+    """Only the header is read: a merge message can quote `parent <sha>`."""
+    _declared_failure(github)
+    repo = PrRepo(
+        tmp_path / "repo",
+        home,
+        changes={"backend/app/main.py": "print('pr')\n"},
+        message="Merge pr\n\nparent 0123456789abcdef0123456789abcdef01234567\n",
+    )
+    assert _parse(_line(_decide(_pr_env(repo))))[1] == RUN_TESTS_TITLE
+
+
+@requires_git
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({"HARNESS_PATHS_RE": ""}, "HARNESS_PATHS_RE is empty"),
+        (
+            {"HARNESS_PATHS_RE": "^(unclosed"},
+            "HARNESS_PATHS_RE is not a valid regular expression",
+        ),
+        (
+            {"GITHUB_WORKSPACE": "/nonexistent/checkout"},
+            "GITHUB_WORKSPACE ('/nonexistent/checkout') is not a directory",
+        ),
+    ],
+    ids=["empty-pattern", "invalid-pattern", "no-checkout"],
+)
+def test_an_unusable_guard_input_is_unknown(github, clean_pr, overrides, expected):
+    _declared_failure(github)
+    reason = _guard_reason(_decide(_pr_env(clean_pr, **overrides)), "UNKNOWN")
+    assert reason.startswith(expected), _defang(reason)
+
+
+@requires_git
+def test_the_first_parent_is_fetched_when_the_checkout_is_shallow(
+    github, tmp_path, clean_pr
+):
+    """actions/checkout on `pull_request` is depth 1, so the base is absent."""
+    _declared_failure(github)
+    clone = shallow_clone(clean_pr, tmp_path / "checkout")
+    assert not has_commit(clone, clean_pr.base, clean_pr.home)
+    outcome = _decide(_pr_env(clean_pr, GITHUB_WORKSPACE=str(clone)))
+    assert _parse(_line(outcome))[1] == RUN_TESTS_TITLE, _defang(_line(outcome))
+    assert has_commit(clone, clean_pr.base, clean_pr.home)
+
+
+@requires_git
+def test_a_first_parent_that_cannot_be_fetched_is_unknown(github, tmp_path, clean_pr):
+    _declared_failure(github)
+    clone = shallow_clone(clean_pr, tmp_path / "checkout")
+    env = _pr_env(
+        clean_pr,
+        GITHUB_WORKSPACE=str(clone),
+        PATH=_stubbed(stub_git(tmp_path, "exit 128")),
+    )
+    reason = _guard_reason(_decide(env), "UNKNOWN")
+    assert (
+        f"the merge commit's first parent {clean_pr.base} could not be fetched (git "
+        "fetch exited 128; 124 or 137 is the 60s bound)"
+    ) in reason, _defang(reason)
+
+
+@requires_git
+def test_a_fetch_that_hangs_is_bounded_and_unknown(github, tmp_path, clean_pr):
+    """A hang never holds the runner: `timeout -k 5` ends it, and that is UNKNOWN."""
+    _declared_failure(github)
+    clone = shallow_clone(clean_pr, tmp_path / "checkout")
+    env = _pr_env(
+        clean_pr,
+        GITHUB_WORKSPACE=str(clone),
+        PATH=_stubbed(stub_git(tmp_path, "exec sleep 30")),
+        DECLARE_FETCH_BOUND_SECS="2",
+    )
+    started = time.monotonic()
+    outcome = _decide(env)
+    seconds = time.monotonic() - started
+    assert seconds < 15, f"the 2 s bound took {seconds:.1f} s"
+    reason = _guard_reason(outcome, "UNKNOWN")
+    assert "(git fetch exited 124; 124 or 137 is the 2s bound)" in reason
+
+
+@requires_git
+@pytest.mark.parametrize("lever", ["", "0", "61", "600", "abc", "-1", " 2"])
+def test_the_fetch_lever_can_only_lower_the_bound(github, tmp_path, clean_pr, lever):
+    """Anything that is not 1..60 reads as the 60 s default."""
+    _declared_failure(github)
+    clone = shallow_clone(clean_pr, tmp_path / "checkout")
+    env = _pr_env(
+        clean_pr,
+        GITHUB_WORKSPACE=str(clone),
+        PATH=_stubbed(stub_git(tmp_path, "exit 128")),
+        DECLARE_FETCH_BOUND_SECS=lever,
+    )
+    assert "is the 60s bound" in _guard_reason(_decide(env), "UNKNOWN")
+
+
+@requires_git
+def test_the_runs_deadline_lowers_the_fetch_bound(github, tmp_path, clean_pr):
+    """A fetch never starts with a bound longer than what is left of the run."""
+    fake = _declared_failure(github)
+    now = [0.0]
+    fake.on_read = lambda url: (
+        now.__setitem__(0, 117.0) if "/annotations?" in url else None
+    )
+    clone = shallow_clone(clean_pr, tmp_path / "checkout")
+    env = _pr_env(
+        clean_pr,
+        GITHUB_WORKSPACE=str(clone),
+        PATH=_stubbed(stub_git(tmp_path, "exec sleep 30")),
+    )
+    started = time.monotonic()
+    outcome = _decide(env, monotonic=lambda: now[0])
+    seconds = time.monotonic() - started
+    assert seconds < 15, f"a 3 s bound took {seconds:.1f} s"
+    reason = _guard_reason(outcome, "UNKNOWN")
+    assert "(git fetch exited 124; 124 or 137 is the 3s bound)" in reason
+
+
+@requires_git
+def test_no_time_left_for_the_guard_withholds(github, clean_pr):
+    fake = _declared_failure(github)
+    now = [0.0]
+    fake.on_read = lambda url: (
+        now.__setitem__(0, 119.5) if "/annotations?" in url else None
+    )
+    outcome = _decide(_pr_env(clean_pr), monotonic=lambda: now[0])
+    reason = _guard_reason(outcome, "UNKNOWN")
+    assert reason.startswith(
+        "the 120 s time budget ran out before reading the merge commit"
+    ), _defang(reason)
+
+
+@requires_git
+def test_a_failed_diff_is_unknown(github, tmp_path, clean_pr):
+    _declared_failure(github)
+    env = _pr_env(clean_pr, PATH=_stubbed(stub_git(tmp_path, on_diff="exit 3")))
+    reason = _guard_reason(_decide(env), "UNKNOWN")
+    assert (
+        f"git diff {clean_pr.base} {clean_pr.merge} exited 3, so this PR's diff is "
+        "unread"
+    ) in reason, _defang(reason)
+
+
+@requires_git
+def test_the_guard_is_read_only_after_every_member_rule_held(github):
+    """Rule 5 is last: an undeclared member declines before any git call."""
+    fake = github(_with_conclusions(s1="failure"))
+    fake.declare(_shard(fake.jobs, 1)["id"], "")
+    outcome = _decide(_env(GITHUB_WORKSPACE="/nonexistent/checkout"))
+    assert "carries no setup-death declaration" in _assert_declined(outcome)
+
+
+DECLARER = REPO_ROOT / ".github" / "scripts" / "declare-setup-death.sh"
+
+
+def _per_job_reading(env: dict[str, str]) -> str:
+    """What the PER-JOB declarer's guard reads for the same PR and pattern."""
+    assert BASH is not None
+    proc = subprocess.run(
+        [BASH, str(DECLARER)],
+        env={
+            **env,
+            "DECLARE_JOB": "Lint & Format Check",
+            "SETUP_STEPS": "Install Poetry|failure|failure\n",
+            "VERDICT_STEPS": "Run ruff (linting)|skipped|skipped\n",
+        },
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    out = proc.stdout + proc.stderr
+    if "SETUP FAILED (not a verdict on this PR)" in out:
+        return "false"
+    found = re.search(r"harness-diff guard read (true|UNKNOWN)", out)
+    assert found, _defang(out)
+    return found.group(1)
+
+
+def _aggregate_reading(outcome) -> str:
+    line = _line(outcome)
+    if _parse(line)[0] == "error":
+        return "false"
+    found = re.search(r"harness-diff guard read (true|UNKNOWN)", line)
+    assert found, _defang(line)
+    return found.group(1)
+
+
+@pytest.mark.skipif(
+    BASH is None or GIT is None, reason="the per-job declarer is bash over git"
+)
+@pytest.mark.parametrize(
+    ("scenario", "reading"),
+    [
+        ("clean", "false"),
+        ("touched", "true"),
+        ("renamed-out", "true"),
+        ("push", "UNKNOWN"),
+        ("one-parent", "UNKNOWN"),
+        ("shallow", "false"),
+        ("unfetchable", "UNKNOWN"),
+    ],
+)
+def test_the_aggregate_guard_reads_what_the_per_job_guard_reads(
+    github, tmp_path, home, scenario, reading
+):
+    """The port must not drift from `compute_guard`: same PR, same reading."""
+    _declared_failure(github)
+    changes: dict[str, str | None] = {
+        "clean": {"backend/app/main.py": "x\n"},
+        "touched": {"scripts/ci/shard_headroom.py": "x\n"},
+        "renamed-out": {
+            ".github/actions/self-hosted-host-provisioned/action.yml": None,
+            "elsewhere/action.yml": "name: host\n",
+        },
+    }.get(scenario, {"backend/app/main.py": "x\n"})
+    repo = PrRepo(tmp_path / "repo", home, changes=changes)
+    overrides = {
+        "push": {"GITHUB_EVENT_NAME": "push"},
+        "one-parent": {"GITHUB_SHA": repo.head},
+    }.get(scenario, {})
+    if scenario in ("shallow", "unfetchable"):
+        overrides["GITHUB_WORKSPACE"] = str(shallow_clone(repo, tmp_path / "checkout"))
+    if scenario == "unfetchable":
+        overrides["PATH"] = _stubbed(stub_git(tmp_path, "exit 128"))
+    env = _pr_env(repo, **overrides)
+    assert _aggregate_reading(_decide(env)) == reading
+    if scenario == "shallow":
+        # The aggregate fetched the parent into the clone; start the per-job
+        # guard from a fresh depth-1 clone so it walks the same fetch.
+        env["GITHUB_WORKSPACE"] = str(shallow_clone(repo, tmp_path / "checkout-2"))
+    assert _per_job_reading(env) == reading
+
+
 # --- the entry point: always exit 0, one line -----------------------------------
 
 
@@ -681,20 +1102,8 @@ def test_the_script_runs_standalone_and_exits_zero_without_a_token():
 
 
 def test_this_module_never_prints_script_output():
-    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            assert node.func.id != "print", f"print() at line {node.lineno}"
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "run"
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "subprocess"
-        ):
-            keywords = {kw.arg: kw.value for kw in node.keywords}
-            captured = keywords.get("capture_output")
-            assert isinstance(captured, ast.Constant) and captured.value is True
+    for source in (Path(__file__), REPO_ROOT / "backend/tests/setup_death_git.py"):
+        assert_prints_nothing(source)
 
 
 # --- the wiring --------------------------------------------------------------------
@@ -702,11 +1111,18 @@ def test_this_module_never_prints_script_output():
 DECLARER_STEP = "Declare a setup death"
 CHECKOUT_STEP = "Check out the declarer"
 
+#: The aggregate's own code, which every aggregate's harness adds to its
+#: members' per-job harness (rule 5).
+AGGREGATE_CODE = (
+    r"|^scripts/ci/aggregate_setup_death\.py$|^scripts/ci/shard_headroom\.py$"
+)
+
 AGGREGATES: dict[tuple[str, str], dict[str, str]] = {
     ("backend-ci.yml", "test-gate"): {
         "DECLARE_JOB": "Run Tests",
         "MEMBER_NEED": "test",
         "EXPECTED_MEMBERS": "${{ env.EXPECTED_SHARDS }}",
+        "HARNESS_PATHS_RE": RUN_TESTS_HARNESS,
     },
     ("e2e-tests.yml", "test-summary"): {
         "DECLARE_JOB": "Test Summary",
@@ -714,6 +1130,10 @@ AGGREGATES: dict[tuple[str, str], dict[str, str]] = {
         "MEMBER_NAME_RE": r"^Backend E2E Tests \(3\.12\)$",
         "MEMBER_NOUN": "job",
         "EXPECTED_MEMBERS": "1",
+        "HARNESS_PATHS_RE": (
+            r"^\.github/workflows/e2e-tests\.yml$|^\.github/actions/"
+            r"|^\.github/scripts/declare-setup-death\.sh$" + AGGREGATE_CODE
+        ),
     },
     ("migration-reversal.yml", "gate"): {
         "DECLARE_JOB": "Migration Reversal Gate",
@@ -721,6 +1141,10 @@ AGGREGATES: dict[tuple[str, str], dict[str, str]] = {
         "MEMBER_NAME_RE": "^reverse$",
         "MEMBER_NOUN": "job",
         "EXPECTED_MEMBERS": "1",
+        "HARNESS_PATHS_RE": (
+            r"^\.github/workflows/migration-reversal\.yml$|^\.github/actions/"
+            r"|^\.github/scripts/declare-setup-death\.sh$" + AGGREGATE_CODE
+        ),
     },
 }
 AGGREGATE_IDS = [f"{w}:{j}" for w, j in AGGREGATES]
@@ -853,3 +1277,86 @@ def test_the_member_pattern_matches_exactly_the_member_jobs(workflow, job_id):
             continue
         for name in _served_names(other_id, other):
             assert not pattern.fullmatch(name), f"{name!r} would count as a member"
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(AGGREGATES), ids=AGGREGATE_IDS)
+def test_each_aggregates_harness_is_its_members_harness_plus_its_own_code(
+    workflow, job_id
+):
+    """Rule 5 withholds wherever a member's guard would, and on the aggregate's code.
+
+    The per-job declarer wrote the member titles the aggregate trusts; when a
+    PR edits it, the members' guard runs inside the edit and this one does not.
+    """
+    doc = _workflow(workflow)
+    table = AGGREGATES[(workflow, job_id)]
+    member_steps = doc["jobs"][table["MEMBER_NEED"]]["steps"]
+    declarers = [s for s in member_steps if s.get("name") == DECLARER_STEP]
+    assert len(declarers) == 1, f"{table['MEMBER_NEED']} carries no per-job declarer"
+    member_harness = str(declarers[0]["env"]["HARNESS_PATHS_RE"])
+    assert table["HARNESS_PATHS_RE"] == member_harness + AGGREGATE_CODE
+    pattern = re.compile(table["HARNESS_PATHS_RE"])
+    for path in (
+        f".github/workflows/{workflow}",
+        ".github/actions/self-hosted-host-provisioned/action.yml",
+        ".github/scripts/declare-setup-death.sh",
+        SCRIPT_REF,
+        "scripts/ci/shard_headroom.py",
+    ):
+        assert pattern.search(path), path
+    for path in (
+        "backend/app/main.py",
+        "scripts/ci/split_pytest_shards.py",
+        f"{SCRIPT_REF}.bak",
+        "frontend/package-lock.json",
+        f"x/.github/workflows/{workflow}",
+        ".github/workflows/spec-ci.yml",
+    ):
+        assert not pattern.search(path), path
+
+
+@requires_git
+@pytest.mark.parametrize(("workflow", "job_id"), list(AGGREGATES), ids=AGGREGATE_IDS)
+def test_each_aggregates_own_env_withholds_on_its_own_workflow(
+    github, tmp_path, home, workflow, job_id
+):
+    """The YAML's own static env drives the script against real merge commits."""
+    doc = _workflow(workflow)
+    job = doc["jobs"][job_id]
+    yaml_env = {k: str(v) for k, v in job["steps"][-1]["env"].items()}
+    static = {k: v for k, v in yaml_env.items() if "${{" not in v}
+    member_need = static["MEMBER_NEED"]
+    members = _served_names(member_need, doc["jobs"][member_need])
+    fake = github(
+        [
+            {
+                "id": 100 + i,
+                "name": name,
+                "status": "completed",
+                "conclusion": "failure" if i == 0 else "success",
+            }
+            for i, name in enumerate(members)
+        ]
+    )
+    fake.declare(100, f"{members[0]} SETUP FAILED (not a verdict on this PR)")
+    needs = job["needs"] if isinstance(job["needs"], list) else [job["needs"]]
+    needs_json = json.dumps(
+        {n: {"result": "failure" if n == member_need else "success"} for n in needs}
+    )
+
+    def env_for(repo: PrRepo) -> dict[str, str]:
+        rendered = {"EXPECTED_MEMBERS": str(len(members)), **static}
+        return _pr_env(repo, **rendered, NEEDS_JSON=needs_json)
+
+    clean = PrRepo(tmp_path / "clean", home, changes={"backend/app/main.py": "x\n"})
+    noun = static.get("MEMBER_NOUN", "shard")
+    assert _parse(_line(_decide(env_for(clean))))[:2] == (
+        "error",
+        f"{static['DECLARE_JOB']} SETUP FAILED in every failed {noun} (not a "
+        "verdict on this PR)",
+    )
+    touched = PrRepo(
+        tmp_path / "touched", home, changes={f".github/workflows/{workflow}": "x\n"}
+    )
+    message = _assert_withheld(_decide(env_for(touched)))
+    assert "the harness-diff guard read true" in message, _defang(message)
