@@ -21,11 +21,29 @@ vi.mock("@/services/service-factory", () => ({
 
 import {
   adoptUpstreamPublication,
+  applyUpstreamMerge,
+  createPromptDocument,
+  createPromptDocumentClause,
+  deletePromptDocumentClause,
   fetchAutoPublishStatus,
+  fetchPromptDocument,
+  fetchPromptDocumentPublication,
+  fetchPromptDocumentVersion,
+  keepLocalOverPublication,
+  listPromptDocumentClauses,
+  listPromptDocumentPublications,
   listPromptDocuments,
+  listPromptDocumentVersions,
   previewPublishAll,
+  previewUpstreamMerge,
   publishAllPromptDocuments,
+  publishPromptDocument,
+  reorderPromptDocumentClauses,
+  restorePromptDocumentDefault,
+  restorePromptDocumentVersion,
   updatePromptDocument,
+  updatePromptDocumentAttrs,
+  updatePromptDocumentClause,
 } from "./coordPromptDocuments";
 
 const ok = () =>
@@ -66,6 +84,102 @@ const CALLS: Array<
         "policy",
         "testing",
         { publication_version: 1, expected_version: 2 },
+        pin
+      ),
+  ],
+  // The prompt-documents list's own reads and writes, each pinned to the
+  // page's project so another tab's switch cannot retarget a retry or a
+  // token-refresh replay of one.
+  ["fetchPromptDocument", (pin) => fetchPromptDocument("policy", "t", pin)],
+  [
+    "listPromptDocumentVersions",
+    (pin) => listPromptDocumentVersions("policy", "t", pin),
+  ],
+  [
+    "fetchPromptDocumentVersion",
+    (pin) => fetchPromptDocumentVersion("policy", "t", 5, pin),
+  ],
+  [
+    "createPromptDocument",
+    (pin) => createPromptDocument("policy", { name: "t", body: "b" }, pin),
+  ],
+  [
+    "updatePromptDocumentAttrs",
+    (pin) => updatePromptDocumentAttrs("policy", "t", {}, pin),
+  ],
+  [
+    "restorePromptDocumentDefault",
+    (pin) => restorePromptDocumentDefault("policy", "t", pin),
+  ],
+  [
+    "restorePromptDocumentVersion",
+    (pin) => restorePromptDocumentVersion("policy", "t", 5, "note", pin),
+  ],
+  [
+    "listPromptDocumentClauses",
+    (pin) => listPromptDocumentClauses("policy", "t", pin),
+  ],
+  [
+    "createPromptDocumentClause",
+    (pin) =>
+      createPromptDocumentClause(
+        "policy",
+        "t",
+        { clause_id: "c" } as never,
+        pin
+      ),
+  ],
+  [
+    "updatePromptDocumentClause",
+    (pin) => updatePromptDocumentClause("policy", "t", "c", {}, pin),
+  ],
+  [
+    "deletePromptDocumentClause",
+    (pin) => deletePromptDocumentClause("policy", "t", "c", pin),
+  ],
+  [
+    "reorderPromptDocumentClauses",
+    (pin) => reorderPromptDocumentClauses("policy", "t", ["c"], pin),
+  ],
+  [
+    "publishPromptDocument",
+    (pin) =>
+      publishPromptDocument(
+        "policy",
+        "t",
+        { release_note: null, expected_version: 2 },
+        pin
+      ),
+  ],
+  [
+    "listPromptDocumentPublications",
+    (pin) => listPromptDocumentPublications("policy", "t", pin),
+  ],
+  [
+    "fetchPromptDocumentPublication",
+    (pin) => fetchPromptDocumentPublication("policy", "t", 2, pin),
+  ],
+  [
+    "keepLocalOverPublication",
+    (pin) =>
+      keepLocalOverPublication(
+        "policy",
+        "t",
+        { publication_version: 1, expected_version: 2 },
+        pin
+      ),
+  ],
+  [
+    "previewUpstreamMerge",
+    (pin) => previewUpstreamMerge("policy", "t", 2, pin),
+  ],
+  [
+    "applyUpstreamMerge",
+    (pin) =>
+      applyUpstreamMerge(
+        "policy",
+        "t",
+        { publication_version: 2, expected_version: 7, resolutions: {} },
         pin
       ),
   ],
