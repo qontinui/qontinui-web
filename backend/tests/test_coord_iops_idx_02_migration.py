@@ -26,9 +26,10 @@ What is asserted
 5. **The scan's answer is right.** The fixture covers each way a give-up drops
    out of the scan: an alert of the give-up kind, open or resolved; the marker
    on a resolved row of ANOTHER kind (the merge case the marker exists for);
-   and a discharged work unit. It also covers each near miss that must stay in
-   the scan: an alert on the key of another kind with no marker, and a
-   give-up kind alert on ANOTHER gate's key.
+   and a discharged (superseded) work unit. It also covers each near miss that
+   must stay in the scan: an alert on the key of another kind with no marker, a
+   give-up kind alert on ANOTHER gate's key, and a SHIPPED work unit (coord's
+   D1: a ship discharges no give-up, ``DISCHARGED_UNIT_SQL``).
 6. **Sensitivity.** The same scan with a different marker literal does NOT get
    the index. Without this, #4 would still pass against an index whose
    predicate had been widened or dropped.
@@ -81,6 +82,8 @@ _EXPECTED_INDEXDEF = (
 # ``GIVEUP_UNALERTED_SQL``, ``giveup_scan_sql``) close to character for
 # character. The predicate proof is syntactic, so a simplified stand-in would
 # prove nothing about the statement coord sends. ``:lim`` is coord's ``$1``.
+# Re-read at coord ``origin/main`` e1ab20bc6 (2026-11-11), after 49d7a7799 took
+# ``'shipped'`` out of the discharged-unit set (D1, ``DISCHARGED_UNIT_SQL``).
 # ---------------------------------------------------------------------------
 _GIVEUP_PREDICATE_SQL = (
     "continuation_consumed_at IS NOT NULL "
@@ -97,7 +100,7 @@ _GIVEUP_UNALERTED_SQL = (
     "AND NOT EXISTS ( "
     "SELECT 1 FROM coord.work_units wu "
     "WHERE wu.id = coord.gates.work_unit_id "
-    "AND wu.status IN ('shipped', 'superseded', 'obsolete') "
+    "AND wu.status IN ('superseded', 'obsolete') "
     ")"
 )
 _GIVEUP_SCAN_SQL = (
@@ -123,7 +126,7 @@ _GIVEUP_RESOLVE_COUNT_SQL = (
     "SELECT 1 FROM coord.gates g "
     "JOIN coord.work_units wu ON wu.id = g.work_unit_id "
     "WHERE a.alert_key = 'gate:' || g.gate_id::text "
-    "AND wu.status IN ('shipped', 'superseded', 'obsolete') "
+    "AND wu.status IN ('superseded', 'obsolete') "
     ")"
 )
 
@@ -158,11 +161,18 @@ _OTHER_GATE_ALERTED = _gid(4)  # the give-up kind exists, but on _gid(99)'s key
 _KIND_OPEN = _gid(5)  # an open give-up kind alert
 _KIND_RESOLVED = _gid(6)  # a RESOLVED give-up kind alert
 _MARKER_RESOLVED = _gid(7)  # marker on a resolved row of another kind
-_UNIT_SHIPPED = _gid(8)  # anchored work unit shipped
+_UNIT_DISCHARGED = _gid(8)  # anchored work unit superseded: discharged
 _ARCHIVED = _gid(9)  # archived give-up
 _NOT_GIVEUP = _gid(10)  # consumed with work_completed
+_UNIT_SHIPPED = _gid(11)  # anchored work unit shipped: NOT discharged (D1)
 
-_EXPECTED_SCAN = [_UNALERTED, _SUFFIXED, _OTHER_KIND_ONLY, _OTHER_GATE_ALERTED]
+_EXPECTED_SCAN = [
+    _UNALERTED,
+    _SUFFIXED,
+    _OTHER_KIND_ONLY,
+    _OTHER_GATE_ALERTED,
+    _UNIT_SHIPPED,
+]
 
 
 def _seed(conn: Connection) -> None:
@@ -173,13 +183,15 @@ def _seed(conn: Connection) -> None:
         ),
         {"t": _TENANT},
     )
+    unit = text(
+        "INSERT INTO coord.work_units (slug, tenant_id, status) "
+        "VALUES (:slug, CAST(:t AS uuid), :status) RETURNING id"
+    )
+    superseded_unit = conn.execute(
+        unit, {"slug": "iops-idx-02-superseded", "t": _TENANT, "status": "superseded"}
+    ).scalar_one()
     shipped_unit = conn.execute(
-        text(
-            "INSERT INTO coord.work_units (slug, tenant_id, status) "
-            "VALUES ('iops-idx-02-shipped', CAST(:t AS uuid), 'shipped') "
-            "RETURNING id"
-        ),
-        {"t": _TENANT},
+        unit, {"slug": "iops-idx-02-shipped", "t": _TENANT, "status": "shipped"}
     ).scalar_one()
 
     gate = text(
@@ -221,10 +233,11 @@ def _seed(conn: Connection) -> None:
     add_gate(_SUFFIXED, 90, "work_abandoned: ran out of context")
     add_gate(_OTHER_KIND_ONLY, 80, "work_abandoned")
     add_gate(_OTHER_GATE_ALERTED, 70, "work_abandoned")
+    add_gate(_UNIT_SHIPPED, 65, "work_abandoned", work_unit=shipped_unit)
     add_gate(_KIND_OPEN, 60, "work_abandoned")
     add_gate(_KIND_RESOLVED, 50, "work_abandoned")
     add_gate(_MARKER_RESOLVED, 40, "work_abandoned")
-    add_gate(_UNIT_SHIPPED, 30, "work_abandoned", work_unit=shipped_unit)
+    add_gate(_UNIT_DISCHARGED, 30, "work_abandoned", work_unit=superseded_unit)
     add_gate(_ARCHIVED, 20, "work_abandoned", archived=_BASE)
     add_gate(_NOT_GIVEUP, 10, "work_completed")
     # Background: never-consumed gates.
@@ -391,8 +404,9 @@ def test_coord_iops_idx_02_index_serves_the_giveup_scan() -> None:
         assert got == _EXPECTED_SCAN, (
             "the scan keeps exactly the unalerted give-ups, oldest first: an "
             "alert of the give-up kind (open or resolved), the marker on a "
-            "resolved row of another kind, a shipped unit, an archived gate and "
-            f"a non-give-up outcome each drop out. Got {got!r}"
+            "resolved row of another kind, a superseded unit, an archived gate "
+            "and a non-give-up outcome each drop out; a shipped unit does not "
+            f"(D1). Got {got!r}"
         )
         with engine.connect() as conn:
             conn.execute(text("SET enable_seqscan = off"))
@@ -437,4 +451,4 @@ def test_coord_iops_idx_02_index_serves_the_giveup_scan() -> None:
             alerts = conn.execute(text("SELECT count(*) FROM coord.alerts")).scalar()
             gates = conn.execute(text("SELECT count(*) FROM coord.gates")).scalar()
         assert alerts == 5 + 2 * _BACKGROUND_GATES + _GIVEUP_HISTORY, alerts
-        assert gates == 10 + _BACKGROUND_GATES, gates
+        assert gates == 11 + _BACKGROUND_GATES, gates
