@@ -37,7 +37,7 @@
  */
 
 import { httpClient } from "@/services/service-factory";
-import { pinActiveTenant } from "@/services/http-client";
+import { pinned, type TenantPin } from "@/services/http-client";
 import type {
   AgentWriteTier,
   AutoPublishStatusResponse,
@@ -80,18 +80,11 @@ import type { ProposedClause } from "@/components/admin/coord/policy-gap";
 import { OPERATIONS_BASE, readJson } from "./base";
 
 /**
- * Which project to send a request in, pinned for every attempt — see
- * `pinActiveTenant`. Omitted, the request goes in whatever project is stored
- * when each attempt is made, which is right for an ordinary read and wrong for
- * a read or write a caller will attribute to a specific project.
+ * Re-exported from `services/http-client`, where it lives beside
+ * `pinActiveTenant`. Every function below that takes one sends its request in
+ * the pinned project on every attempt.
  */
-export interface TenantPin {
-  tenant: string | null;
-}
-
-function pinned(pin: TenantPin | undefined) {
-  return pin ? pinActiveTenant(pin.tenant) : {};
-}
+export type { TenantPin };
 
 // ─────────────────────────────── documents ───────────────────────────────
 
@@ -111,10 +104,15 @@ export async function listPromptDocuments(
 /** `GET /coord/prompt-documents/{kind}/{name}` — `get_prompt_document`, body included. */
 export async function fetchPromptDocument(
   kind: PromptDocumentKind,
-  name: string
+  name: string,
+  pin?: TenantPin
 ): Promise<PromptDocument> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<PromptDocument>(res, `GET ${url}`);
 }
 
@@ -125,10 +123,15 @@ export async function fetchPromptDocument(
  */
 export async function listPromptDocumentVersions(
   kind: PromptDocumentKind | string,
-  name: string
+  name: string,
+  pin?: TenantPin
 ): Promise<ListVersionsResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/versions`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListVersionsResponse>(res, `GET ${url}`);
 }
 
@@ -139,10 +142,15 @@ export async function listPromptDocumentVersions(
 export async function fetchPromptDocumentVersion(
   kind: PromptDocumentKind | string,
   name: string,
-  version: number
+  version: number,
+  pin?: TenantPin
 ): Promise<PromptDocumentVersion> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/versions/${version}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<PromptDocumentVersion>(res, `GET ${url}`);
 }
 
@@ -152,13 +160,15 @@ export async function fetchPromptDocumentVersion(
  */
 export async function createPromptDocument(
   kind: PromptDocumentKind,
-  data: PromptDocumentCreate
+  data: PromptDocumentCreate,
+  pin?: TenantPin
 ): Promise<PromptDocument> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(data),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<PromptDocument>(res, `POST ${url}`);
 }
@@ -192,13 +202,15 @@ export async function updatePromptDocument(
 export async function updatePromptDocumentAttrs(
   kind: PromptDocumentKind,
   name: string,
-  attrs: PromptDocumentAttrs
+  attrs: PromptDocumentAttrs,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
   const res = await httpClient.fetch(url, {
     method: "PATCH",
     body: JSON.stringify({ attrs }),
     idempotent: true,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `PATCH ${url}`, { unparseable: "null" });
 }
@@ -210,13 +222,15 @@ export async function updatePromptDocumentAttrs(
  */
 export async function restorePromptDocumentDefault(
   kind: PromptDocumentKind,
-  name: string
+  name: string,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/restore-default`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify({}),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
 }
@@ -230,13 +244,15 @@ export async function restorePromptDocumentVersion(
   kind: PromptDocumentKind,
   name: string,
   version: number,
-  changeNote?: string
+  changeNote?: string,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/versions/${version}/restore`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(changeNote ? { change_note: changeNote } : {}),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
 }
@@ -277,10 +293,15 @@ export async function withdrawPromptDocument(
  */
 export async function listPromptDocumentClauses(
   kind: PromptDocumentKind,
-  name: string
+  name: string,
+  pin?: TenantPin
 ): Promise<ListClausesResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/clauses`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListClausesResponse>(res, `GET ${url}`);
 }
 
@@ -299,13 +320,15 @@ export async function listPromptDocumentClauses(
 export async function createPromptDocumentClause(
   kind: PromptDocumentKind,
   name: string,
-  clause: ClauseCreate | (ProposedClause & { clause_id: string })
+  clause: ClauseCreate | (ProposedClause & { clause_id: string }),
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/clauses`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(clause),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
 }
@@ -318,13 +341,15 @@ export async function updatePromptDocumentClause(
   kind: PromptDocumentKind,
   name: string,
   clauseId: string,
-  patch: ClauseUpdate
+  patch: ClauseUpdate,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/clauses/${encodeURIComponent(clauseId)}`;
   const res = await httpClient.fetch(url, {
     method: "PATCH",
     body: JSON.stringify(patch),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `PATCH ${url}`, { unparseable: "null" });
 }
@@ -336,12 +361,14 @@ export async function updatePromptDocumentClause(
 export async function deletePromptDocumentClause(
   kind: PromptDocumentKind,
   name: string,
-  clauseId: string
+  clauseId: string,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/clauses/${encodeURIComponent(clauseId)}`;
   const res = await httpClient.fetch(url, {
     method: "DELETE",
     idempotent: true,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `DELETE ${url}`, { unparseable: "null" });
 }
@@ -353,13 +380,15 @@ export async function deletePromptDocumentClause(
 export async function reorderPromptDocumentClauses(
   kind: PromptDocumentKind,
   name: string,
-  clauseIds: string[]
+  clauseIds: string[],
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/clauses/reorder`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify({ clause_ids: clauseIds }),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `POST ${url}`, { unparseable: "null" });
 }
@@ -374,13 +403,15 @@ export async function reorderPromptDocumentClauses(
 export async function publishPromptDocument(
   kind: PromptDocumentKind,
   name: string,
-  request: PublishRequest
+  request: PublishRequest,
+  pin?: TenantPin
 ): Promise<PublishResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/publish`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(request),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<PublishResponse>(res, `POST ${url}`);
 }
@@ -391,10 +422,15 @@ export async function publishPromptDocument(
  */
 export async function listPromptDocumentPublications(
   kind: PromptDocumentKind,
-  name: string
+  name: string,
+  pin?: TenantPin
 ): Promise<ListPublicationsResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-document-publications?kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListPublicationsResponse>(res, `GET ${url}`);
 }
 
@@ -405,10 +441,15 @@ export async function listPromptDocumentPublications(
 export async function fetchPromptDocumentPublication(
   kind: PromptDocumentKind,
   name: string,
-  version: number
+  version: number,
+  pin?: TenantPin
 ): Promise<Publication> {
   const url = `${OPERATIONS_BASE}/coord/prompt-document-publications/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/${version}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<Publication>(res, `GET ${url}`);
 }
 
@@ -440,13 +481,15 @@ export async function adoptUpstreamPublication(
 export async function keepLocalOverPublication(
   kind: PromptDocumentKind,
   name: string,
-  decision: UpstreamDecisionRequest
+  decision: UpstreamDecisionRequest,
+  pin?: TenantPin
 ): Promise<UpstreamDecisionResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/upstream-keep`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(decision),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<UpstreamDecisionResponse>(res, `POST ${url}`);
 }
@@ -458,10 +501,15 @@ export async function keepLocalOverPublication(
 export async function previewUpstreamMerge(
   kind: PromptDocumentKind,
   name: string,
-  publicationVersion: number
+  publicationVersion: number,
+  pin?: TenantPin
 ): Promise<ClauseMergePreview> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/upstream-merge?publication_version=${publicationVersion}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ClauseMergePreview>(res, `GET ${url}`);
 }
 
@@ -472,13 +520,15 @@ export async function previewUpstreamMerge(
 export async function applyUpstreamMerge(
   kind: PromptDocumentKind,
   name: string,
-  request: ClauseMergeApplyRequest
+  request: ClauseMergeApplyRequest,
+  pin?: TenantPin
 ): Promise<ClauseMergeApplyResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-documents/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/upstream-merge`;
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(request),
     idempotent: false,
+    ...pinned(pin),
   });
   return readJson<ClauseMergeApplyResponse>(res, `POST ${url}`);
 }

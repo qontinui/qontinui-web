@@ -211,6 +211,26 @@ export function pinActiveTenant(
     : { headers: { [ACTIVE_TENANT_HEADER]: tenant } };
 }
 
+/**
+ * Which project to send a request in, pinned for every attempt — see
+ * {@link pinActiveTenant}. Omitted, the request goes in whatever project is
+ * stored when each attempt is made, which is right for an ordinary read and
+ * wrong for a read or write a caller will attribute to a specific project.
+ */
+export interface TenantPin {
+  tenant: string | null;
+}
+
+/**
+ * The request options that send a request in `pin`'s project on every
+ * attempt ({@link pinActiveTenant}), or none when there is no pin.
+ */
+export function pinned(
+  pin: TenantPin | undefined
+): Pick<HttpOptions, "headers" | "maxRetries"> {
+  return pin ? pinActiveTenant(pin.tenant) : {};
+}
+
 function isActiveTenantScopedUrl(url: string): boolean {
   return ACTIVE_TENANT_URL_PREFIXES.some((prefix) => url.includes(prefix));
 }
