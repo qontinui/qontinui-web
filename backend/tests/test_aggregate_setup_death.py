@@ -632,7 +632,8 @@ def test_the_jobs_listing_re_reads_the_clock_before_every_page(github):
         lambda url: now.__setitem__(0, 110.0) if url.endswith("&page=1") else None
     )
     _decide(_env(), monotonic=lambda: now[0])
-    jobs_reads = [t for u, t in zip(fake.urls, fake.timeouts) if "/jobs?" in u]
+    reads = zip(fake.urls, fake.timeouts, strict=True)
+    jobs_reads = [t for u, t in reads if "/jobs?" in u]
     # Page 1 starts with the full budget (bound 20 s); page 2 with 10 s left.
     assert jobs_reads[:2] == [20, 10.0], fake.timeouts
 
