@@ -11,6 +11,10 @@ import { describe, it, expect } from "vitest";
 import {
   anchorKey,
   cpuTempReading,
+  formatPsi,
+  formatSliceLimit,
+  psiHasAnyFigure,
+  sliceTelemetryReading,
   AXIS_DIRECTION,
   pressureAxisIsSwap,
   pressureAxisLabel,
@@ -1155,5 +1159,78 @@ describe("cpuTempReading — temperature is measured or it is not, never zero", 
       kind: "value",
       text: "64 C",
     });
+  });
+});
+
+describe("sliceTelemetryReading — unmeasured is a state, never zero", () => {
+  const none = { cgroup_slices: null, psi: null, slice_source: null };
+
+  it("not_supported wins over everything beside it", () => {
+    expect(
+      sliceTelemetryReading({ ...none, slice_source: "not_supported" })
+    ).toEqual({ kind: "not_supported" });
+    expect(
+      sliceTelemetryReading({
+        cgroup_slices: { a: { memory_current: 1 } },
+        psi: null,
+        slice_source: " not_supported ",
+      })
+    ).toEqual({ kind: "not_supported" });
+  });
+
+  it("null / absent / non-object columns are unmeasured", () => {
+    expect(sliceTelemetryReading(none)).toEqual({ kind: "unmeasured" });
+    expect(sliceTelemetryReading({})).toEqual({ kind: "unmeasured" });
+    expect(
+      sliceTelemetryReading({
+        cgroup_slices: [] as never,
+        psi: 3 as never,
+        slice_source: "linux_cgroup_v2",
+      })
+    ).toEqual({ kind: "unmeasured" });
+  });
+
+  it("carries unsent keys as null and keeps a real 0", () => {
+    const r = sliceTelemetryReading({
+      slice_source: "linux_cgroup_v2",
+      cgroup_slices: {
+        "b.slice": {
+          memory_current: 0,
+          memory_high: "max",
+          events: { oom_kill: 0 },
+        },
+        "a.slice": {},
+      },
+      psi: { system: { memory: { some: { avg10: 0 } } } },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(r.slices.map((s) => s.name)).toEqual(["a.slice", "b.slice"]);
+    const [a, b] = r.slices;
+    expect(a.memoryCurrent).toBeNull();
+    expect(a.oomKill).toBeNull();
+    expect(a.memoryHigh).toEqual({ kind: "unmeasured" });
+    expect(b.memoryCurrent).toBe(0);
+    expect(b.memoryHigh).toEqual({ kind: "max" });
+    expect(b.memoryMax).toEqual({ kind: "unmeasured" });
+    expect(b.oomKill).toBe(0);
+    expect(r.psiSystem.memorySomeAvg10).toBe(0);
+    expect(r.psiSystem.cpuSomeAvg10).toBeNull();
+    expect(r.slicesUnmeasured).toBe(false);
+  });
+
+  it("flags slices as unmeasured when only psi arrived", () => {
+    const r = sliceTelemetryReading({ psi: { system: {} } });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(r.slicesUnmeasured).toBe(true);
+    expect(psiHasAnyFigure(r.psiSystem)).toBe(false);
+  });
+
+  it("formats limits and PSI without turning null into 0", () => {
+    expect(formatPsi(null)).toBe("—");
+    expect(formatPsi(undefined)).toBe("—");
+    expect(formatPsi(0)).toBe("0.0%");
+    expect(formatSliceLimit({ kind: "max" })).toBe("no limit");
+    expect(formatSliceLimit({ kind: "unmeasured" })).toBe("—");
+    expect(formatSliceLimit({ kind: "bytes", bytes: 1024 })).toBe("1.0 KB");
   });
 });

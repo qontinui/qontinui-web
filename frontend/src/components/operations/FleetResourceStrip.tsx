@@ -133,6 +133,9 @@ import {
   headroomSetBy,
   hostIsBindingConstraint,
   cpuTempReading,
+  formatPsi,
+  formatSliceLimit,
+  sliceTelemetryReading,
   pressureAxisIsSwap,
   pressureAxisLabel,
   pressureFormula,
@@ -1321,6 +1324,94 @@ function MemoryCell({ row }: { row: StripRow }) {
   );
 }
 
+/**
+ * Cgroup-slice memory + PSI, display only. Three explicit non-value states —
+ * `not_supported`, `unmeasured`, and a per-figure "—" — so a stall nobody read
+ * never prints as 0.0%. The decision lives in `sliceTelemetryReading`.
+ */
+function SlicesCell({ row }: { row: StripRow }) {
+  const s = row.sample;
+  if (!s || row.freshness === "unknown") {
+    return <span className="text-muted-foreground">unknown</span>;
+  }
+  const reading = sliceTelemetryReading(s);
+  if (reading.kind === "not_supported") {
+    return (
+      <span
+        className="text-muted-foreground"
+        data-testid="fleet-resource-slices"
+        data-state="not_supported"
+      >
+        not measured on this OS
+      </span>
+    );
+  }
+  if (reading.kind === "unmeasured") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className="text-muted-foreground"
+            data-testid="fleet-resource-slices"
+            data-state="unmeasured"
+          >
+            not measured
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="text-[11px]">
+          no slice telemetry reported (older publisher, or never read) — not
+          zero
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  const p = reading.psiSystem;
+  return (
+    <Aged freshness={row.freshness}>
+      <span
+        className="inline-flex flex-col leading-tight text-[11px]"
+        data-testid="fleet-resource-slices"
+        data-state="measured"
+      >
+        {reading.slicesUnmeasured ? (
+          <span
+            className="text-muted-foreground"
+            data-testid="fleet-resource-slices-none"
+          >
+            slices: not measured
+          </span>
+        ) : reading.slices.length === 0 ? (
+          <span
+            className="text-muted-foreground"
+            data-testid="fleet-resource-slices-none"
+          >
+            no watched slice present
+          </span>
+        ) : (
+          reading.slices.map((sl) => (
+            <span key={sl.name} data-testid="fleet-resource-slice">
+              {sl.name.replace(/\.slice$/, "")}: {formatBytes(sl.memoryCurrent)}
+              {" / high "}
+              {formatSliceLimit(sl.memoryHigh)}
+              {" / max "}
+              {formatSliceLimit(sl.memoryMax)}
+              {" · oom "}
+              {sl.oomKill == null ? "—" : sl.oomKill}
+            </span>
+          ))
+        )}
+        <span
+          className="text-muted-foreground"
+          data-testid="fleet-resource-psi"
+        >
+          PSI some/10s: mem {formatPsi(p.memorySomeAvg10)} · cpu{" "}
+          {formatPsi(p.cpuSomeAvg10)} · io {formatPsi(p.ioSomeAvg10)}
+        </span>
+      </span>
+    </Aged>
+  );
+}
+
 function AgeCell({ row }: { row: StripRow }) {
   const s = row.sample;
   if (!s) {
@@ -1806,6 +1897,7 @@ export function FleetResourceStrip({
                   </th>
                   <th className="py-1 pr-3 font-medium">Temperature</th>
                   <th className="py-1 pr-3 font-medium">Memory (per lane)</th>
+                  <th className="py-1 pr-3 font-medium">Slices / PSI</th>
                   <th className="py-1 pr-3 font-medium">Sample</th>
                 </tr>
               </thead>
@@ -2023,6 +2115,9 @@ export function FleetResourceStrip({
                         </td>
                         <td className="py-1.5 pr-3">
                           <MemoryCell row={row} />
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          <SlicesCell row={row} />
                         </td>
                         <td className="py-1.5 pr-3">
                           <AgeCell row={row} />
