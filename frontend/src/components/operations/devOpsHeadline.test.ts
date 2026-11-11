@@ -17,7 +17,6 @@ import {
   machinesHealthyFigure,
   workspacesInUseFigure,
 } from "./devOpsHeadline";
-import { fleetRosterCut } from "./fleetLiveness";
 import type {
   WorktreeSlotDevice,
   WorktreeSlotsResponse,
@@ -43,12 +42,20 @@ const device = (id: string, state?: string): FleetHealthDevice =>
   ({ device_id: id, hostname: `host-${id}`, state }) as FleetHealthDevice;
 
 describe("machinesHealthyFigure", () => {
+  /** What coord serves beside a roster it read and served whole. */
+  const WHOLE = {
+    excluded: { unbound: 0, bound_to_other_tenant: 0 },
+    excluded_error: null,
+    truncated: false,
+    degradable_dropped: 0,
+    row_cap: { soft: 1000, hard: 10_000 },
+  };
   const base = {
     devices: [],
+    completeness: WHOLE,
     answered: true,
     error: null,
     asOfMs: T,
-    cut: { kind: "whole" } as const,
   };
 
   it("is UNKNOWN before the first answer — never 0", () => {
@@ -92,10 +99,179 @@ describe("machinesHealthyFigure", () => {
         ],
       })
     );
-    expect(v.value).toBe("2 of 8");
+    expect(v.value).toBe("2 of 7");
     expect(v.detail).toBe(
-      "Healthy by the coordination service's own check; 2 unreachable, 1 degraded, 1 with telemetry gone quiet and 2 with no reported state."
+      "Healthy by the coordination service's own check; 1 unreachable, 1 degraded, 1 with telemetry gone quiet and 2 with no health verdict. 1 machine the coordination service marked abandoned after a long silence is not counted."
     );
+  });
+
+  // The reading coord served on 2026-11-02 (`GET /coord/fleet/health`), by
+  // count: this exact shape used to read "40 of 1000", coord's row cap standing
+  // in for the machine count, with the abandoned machines as "unreachable".
+  it("counts a long-lived tenant's cut roster by its live machines, not its rows", () => {
+    const v = known(
+      machinesHealthyFigure({
+        ...base,
+        completeness: { ...WHOLE, truncated: true, total: 4645 },
+        devices: [
+          ...Array.from({ length: 40 }, (_, i) => device(`h${i}`, "healthy")),
+          ...Array.from({ length: 54 }, (_, i) =>
+            device(`p${i}`, "partitioned")
+          ),
+          ...Array.from({ length: 27 }, (_, i) => device(`d${i}`, "degraded")),
+          ...Array.from({ length: 879 }, (_, i) =>
+            device(`a${i}`, "abandoned")
+          ),
+        ],
+      })
+    );
+    expect(v.value).toBe("40 of 121");
+    expect(v.detail).toContain("54 unreachable and 27 degraded");
+    expect(v.detail).toContain(
+      "879 machines the coordination service marked abandoned after a long silence are not counted"
+    );
+    expect(v.detail).toContain("lists 1000 of 4645 rows");
+  });
+
+  it("names coord's `ci_offline`, and leaves a placeholder row out", () => {
+    const v = known(
+      machinesHealthyFigure({
+        ...base,
+        devices: [
+          device("a", "healthy"),
+          device("b", "ci_offline"),
+          {
+            ...device("c", "partitioned"),
+            dispatch_liveness: "unknown",
+          } as FleetHealthDevice,
+        ],
+      })
+    );
+    expect(v.value).toBe("1 of 2");
+    expect(v.detail).toContain("1 with CI offline");
+    expect(v.detail).toContain("1 placeholder row");
+    expect(v.detail).not.toContain("unreachable");
+  });
+
+  it("states no share when nothing listed is live: 0 of 0 is not one", () => {
+    const v = known(
+      machinesHealthyFigure({ ...base, devices: [device("a", "abandoned")] })
+    );
+    expect(v.value).toBe("0");
+    expect(v.detail).toContain(
+      "The 1 machine the coordination service grades is abandoned"
+    );
+    expect(v.detail).not.toContain("not counted");
+  });
+
+  it.each([
+    [
+      "coord withheld machines",
+      { ...WHOLE, excluded: { unbound: 2, bound_to_other_tenant: 0 } },
+      /binding fault/,
+    ],
+    [
+      "coord could not count them",
+      { ...WHOLE, excluded: null, excluded_error: "pool timeout on db-prod-3" },
+      /could not count/,
+    ],
+    ["coord states nothing", null, /does not say/],
+    [
+      "coord cut rows that could be degrading",
+      { ...WHOLE, truncated: true, total: 5, degradable_dropped: 3 },
+      /may leave out one that is degrading/,
+    ],
+  ])(
+    "is UNKNOWN, never 0, on an empty list when %s",
+    (_name, completeness, reason) => {
+      const v = unknown(machinesHealthyFigure({ ...base, completeness }));
+      expect(v.reason).toMatch(reason);
+      expect(v.reason).not.toContain("db-prod-3");
+    }
+  );
+
+  it("gives no share over a roster that cannot vouch for every machine", () => {
+    for (const completeness of [
+      { ...WHOLE, truncated: true, total: 9, degradable_dropped: 2 },
+      { ...WHOLE, excluded: { unbound: 1, bound_to_other_tenant: 0 } },
+      { ...WHOLE, excluded: null, excluded_error: "pool timeout on db-prod-3" },
+    ]) {
+      const v = unknown(
+        machinesHealthyFigure({
+          ...base,
+          completeness,
+          devices: [device("a", "healthy")],
+        })
+      );
+      expect(v.reason).toMatch(/not known right now/);
+      expect(v.reason).not.toContain("db-prod-3");
+      expect(v.reason).not.toMatch(/\bCoord\b/);
+    }
+  });
+
+  it.each([
+    [
+      "coord withheld machines",
+      { ...WHOLE, excluded: { unbound: 2, bound_to_other_tenant: 0 } },
+      /withheld 2 machines/,
+    ],
+    [
+      "coord could not count them",
+      { ...WHOLE, excluded: null, excluded_error: "pool timeout on db-prod-3" },
+      /could not count/,
+    ],
+    ["coord states nothing", null, /does not say/],
+    [
+      "coord cut rows that could be degrading",
+      { ...WHOLE, truncated: true, total: 9, degradable_dropped: 3 },
+      /may leave out one that is degrading/,
+    ],
+  ])(
+    "is UNKNOWN, never 0, when nothing listed is live and %s",
+    (_name, completeness, reason) => {
+      for (const row of [
+        device("a", "abandoned"),
+        {
+          ...device("p", "healthy"),
+          dispatch_liveness: "unknown",
+        } as FleetHealthDevice,
+      ]) {
+        const v = unknown(
+          machinesHealthyFigure({ ...base, completeness, devices: [row] })
+        );
+        expect(v.reason).toMatch(reason);
+        expect(v.reason).not.toContain("db-prod-3");
+      }
+    }
+  );
+
+  it("says plainly when a whole roster holds only placeholder rows", () => {
+    const v = known(
+      machinesHealthyFigure({
+        ...base,
+        devices: [
+          {
+            ...device("p", "healthy"),
+            dispatch_liveness: "unknown",
+          } as FleetHealthDevice,
+        ],
+      })
+    );
+    expect(v.value).toBe("0");
+    expect(v.detail).toContain("lists no live machine");
+    expect(v.detail).toContain("1 placeholder row");
+  });
+
+  it("says every LIVE machine when the list leaves abandoned ones out", () => {
+    const v = known(
+      machinesHealthyFigure({
+        ...base,
+        devices: [device("a", "healthy"), device("b", "abandoned")],
+      })
+    );
+    expect(v.value).toBe("1 of 1");
+    expect(v.detail).toContain("Every live machine");
+    expect(v.detail).not.toContain("knows about");
   });
 
   it("says so when every machine is healthy", () => {
@@ -115,15 +291,17 @@ describe("machinesHealthyFigure", () => {
       machinesHealthyFigure({
         ...base,
         devices,
-        cut: fleetRosterCut({
-          devices,
+        completeness: {
+          ...WHOLE,
           truncated: true,
           total: 4647,
           degradable_dropped: 0,
-        }),
+        },
       })
     );
-    expect(v.value).toBe("1 of 2 listed");
+    // Every live machine is listed (the cut tail is abandoned or placeholder
+    // rows), so the share needs no "listed" qualifier.
+    expect(v.value).toBe("1 of 2");
     expect(v.detail).toContain("1 degraded");
     expect(v.detail).toContain("lists 2 of 4647 rows");
     expect(v.detail).not.toMatch(/Every machine/);
@@ -134,12 +312,12 @@ describe("machinesHealthyFigure", () => {
     const v = known(
       machinesHealthyFigure({
         ...base,
-        cut: fleetRosterCut({
-          devices: [],
+        completeness: {
+          ...WHOLE,
           truncated: true,
           total: 5,
           degradable_dropped: 0,
-        }),
+        },
       })
     );
     expect(v.value).toBe("0");
@@ -153,7 +331,7 @@ describe("machinesHealthyFigure", () => {
       device(`d${i}`, "healthy")
     );
     const v = unknown(
-      machinesHealthyFigure({ ...base, devices, cut: fleetRosterCut({ devices }) })
+      machinesHealthyFigure({ ...base, devices, completeness: {} })
     );
     expect(v.reason).toContain("reached its limit and may be cut off");
     expect(v.reason).not.toContain("was cut off");
@@ -164,12 +342,12 @@ describe("machinesHealthyFigure", () => {
     const v = machinesHealthyFigure({
       ...base,
       devices,
-      cut: fleetRosterCut({
-        devices,
+      completeness: {
+        ...WHOLE,
         truncated: true,
         total: 10_001,
         degradable_dropped: 1,
-      }),
+      },
     });
     expect(v.state).toBe("unknown");
     expect(v.state === "unknown" && v.reason).toContain(

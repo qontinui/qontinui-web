@@ -803,8 +803,8 @@ describe("PresentationScopePanel — what the re-read after a save observed", ()
 
 describe("PresentationScopePanel — a refused read", () => {
   const NO_PROJECT_SENTENCE =
-    "No project could be resolved for this request: select a project you " +
-    "belong to, or ask a project admin to add you.";
+    "No project could be resolved for this request: ask a project admin to " +
+    "add you.";
 
   /** A body carrying the refusal envelope, as `backend/app/core/refusal.py`
    *  serves it, read at `status` through the real reader. */
@@ -832,7 +832,8 @@ describe("PresentationScopePanel — a refused read", () => {
 
   /** The read's 403 when no project resolves for the caller
    *  (`backend/app/api/v1/endpoints/presentation.py`). */
-  const noProject = () => enveloped(403, { kind: "fix_request" });
+  const noProject = () =>
+    enveloped(403, { kind: "request_access", target: "a project admin" });
 
   it("shows the refusal's own sentence, and does not say to wait for the backend", async () => {
     load.mockRejectedValue(noProject());
@@ -844,6 +845,12 @@ describe("PresentationScopePanel — a refused read", () => {
     const refusal = screen.getByTestId("presentation-scope-refusal");
     expect(refusal).toHaveAttribute("data-refusal", "structured");
     expect(refusal).toHaveTextContent(NO_PROJECT_SENTENCE);
+    // The headline's next step names who can grant access, not "correct
+    // the request" — no request the operator could send would help.
+    expect(refusal).toHaveTextContent(
+      "Ask a project admin to grant you access, then try again"
+    );
+    expect(refusal).not.toHaveTextContent("Correct the request");
     expect(screen.queryByTestId("presentation-scope-form")).toBeNull();
   });
 
