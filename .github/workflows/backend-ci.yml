@@ -1679,6 +1679,20 @@ jobs:
     if: always()
     runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_BACKEND_CI || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
     timeout-minutes: 5
+    # Job-level, replacing the workflow default for this job only. `checks:
+    # read` is the setup-death declarer's read of the shards' check-run
+    # annotations (the same read coord makes); `actions: read` its listing of
+    # this run attempt's jobs. Plan
+    # 2026-11-11-web-setup-step-deaths-declare-not-a-verdict, D4.
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    env:
+      # The `test` job's matrix length, pinned equal by
+      # backend/tests/test_shard_headroom.py and
+      # backend/tests/test_aggregate_setup_death.py.
+      EXPECTED_SHARDS: '6'
     steps:
       - name: Assert every shard succeeded
         env:
@@ -1702,6 +1716,40 @@ jobs:
               exit 1
               ;;
           esac
+
+      # The aggregate's setup-death declarer (plan
+      # 2026-11-11-web-setup-step-deaths-declare-not-a-verdict, Phase 3). coord
+      # never lets a declared shard outvote this undeclared red aggregate, so
+      # when EVERY failed shard titled its own setup death, this titles the
+      # `Run Tests` red the same way; one undeclared or cancelled shard leaves
+      # it unmarked. Both steps run on failure only, and the checkout cannot
+      # fail the job, so a green `Run Tests` gains no failure mode. Logic:
+      # scripts/ci/aggregate_setup_death.py; pinned by
+      # backend/tests/test_aggregate_setup_death.py.
+      - name: Check out the declarer
+        if: failure()
+        continue-on-error: true
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+          sparse-checkout-cone-mode: true
+
+      - name: Declare a setup death
+        if: failure()
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Run Tests
+          MEMBER_NEED: test
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          EXPECTED_MEMBERS: ${{ env.EXPECTED_SHARDS }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f scripts/ci/aggregate_setup_death.py ]; then
+            echo "aggregate_setup_death.py is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          python3 scripts/ci/aggregate_setup_death.py || echo "aggregate_setup_death.py exited $?; nothing was declared."
 
   build-test:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,

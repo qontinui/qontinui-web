@@ -572,11 +572,22 @@ jobs:
     timeout-minutes: 10
     needs: [backend-tests, frontend-tests]
     if: always()
+    # Job-level, replacing the workflow default for this job only. `checks:
+    # read` is the setup-death declarer's read of `backend-tests`' check-run
+    # annotations (the same read coord makes); `actions: read` its jobs
+    # listing and the artifact download. Plan
+    # 2026-11-11-web-setup-step-deaths-declare-not-a-verdict, Phase 3.
+    permissions:
+      contents: read
+      actions: read
+      checks: read
 
     steps:
-      # This job has no checkout, so on a persistent self-hosted runner nothing
-      # else ever cleans its workspace. Clear what an earlier run left there,
-      # and download into runner.temp, which the runner empties after every job.
+      # This job checks nothing out on a green run (the declarer's checkout
+      # below runs on failure only), so on a persistent self-hosted runner
+      # nothing else reliably cleans its workspace. Clear what an earlier run
+      # left there, and download into runner.temp, which the runner empties
+      # after every job.
       - name: Clean the workspace
         shell: bash
         run: find "$GITHUB_WORKSPACE" -mindepth 1 -delete
@@ -642,3 +653,38 @@ jobs:
         if: cancelled()
         run: |
           echo "::notice title=Job cancelled - NOT a verdict on this diff::Test Summary was cancelled. It only downloads artifacts and tallies results (3-9s observed), so its 10-minute cap expiring would mean a wedged download, not a test failure; the other possibility is an external cancel, since this workflow's 'concurrency: cancel-in-progress' supersedes a running job on first-attempt pull_request runs. Either way this job produced no tally at all, and 'gh pr checks' renders a cancelled job as 'fail' with zero failing steps - that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
+
+      # The aggregate's setup-death declarer (plan
+      # 2026-11-11-web-setup-step-deaths-declare-not-a-verdict, Phase 3). When
+      # `backend-tests` failed and titled its own setup death, and no other
+      # need is red, this titles the `Test Summary` red the same way, so coord
+      # does not keep the PR `intrinsic` on this undeclared aggregate. Both
+      # steps run on failure only, and the checkout cannot fail the job. Logic:
+      # scripts/ci/aggregate_setup_death.py; pinned by
+      # backend/tests/test_aggregate_setup_death.py.
+      - name: Check out the declarer
+        if: failure()
+        continue-on-error: true
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+          sparse-checkout-cone-mode: true
+
+      - name: Declare a setup death
+        if: failure()
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Test Summary
+          MEMBER_NEED: backend-tests
+          MEMBER_NAME_RE: '^Backend E2E Tests \(3\.12\)$'
+          MEMBER_NOUN: job
+          EXPECTED_MEMBERS: '1'
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f scripts/ci/aggregate_setup_death.py ]; then
+            echo "aggregate_setup_death.py is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          python3 scripts/ci/aggregate_setup_death.py || echo "aggregate_setup_death.py exited $?; nothing was declared."

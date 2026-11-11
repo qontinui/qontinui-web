@@ -1,0 +1,45 @@
+{
+ "_source": "gh api 'repos/qontinui/qontinui-web/check-runs/128686240645/annotations?per_page=50' fetched 2026-11-11: shard 1 of run 42466217222 attempt 1 (died in Install Poetry), the read coord makes. Every title is '' -- no web job wrote the not-a-verdict phrase before this plan. Trimmed to level, title, message, path, lines.",
+ "annotations": [
+  {
+   "path": ".github",
+   "start_line": 2,
+   "end_line": 2,
+   "annotation_level": "warning",
+   "title": "",
+   "message": "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065, actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4, actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/"
+  },
+  {
+   "path": ".github",
+   "start_line": 23,
+   "end_line": 23,
+   "annotation_level": "warning",
+   "title": "",
+   "message": "No files were found with the provided path: ./backend/junit-results.xml. No artifacts will be uploaded."
+  },
+  {
+   "path": ".github",
+   "start_line": 23,
+   "end_line": 23,
+   "annotation_level": "warning",
+   "title": "",
+   "message": "No files were found with the provided path: ./backend/htmlcov/. No artifacts will be uploaded."
+  },
+  {
+   "path": ".github",
+   "start_line": 26,
+   "end_line": 26,
+   "annotation_level": "failure",
+   "title": "",
+   "message": "Process completed with exit code 1."
+  },
+  {
+   "path": ".github",
+   "start_line": 1,
+   "end_line": 1,
+   "annotation_level": "notice",
+   "title": "",
+   "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+  }
+ ]
+}
