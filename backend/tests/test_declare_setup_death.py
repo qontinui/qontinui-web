@@ -40,6 +40,12 @@ shard's red not a verdict. So:
   and every expected string compared that way here is a literal with no
   ``::``; an ``==`` between lists, tuples or dicts prints reprs, which open
   with a quote or a bracket;
+* that reasoning covers the ``::`` form only. The runner also reads a legacy
+  form at ANY column (``setup_death_git.LEGACY_PREFIX``), so no source line
+  here holds that prefix (``assert_prints_nothing`` refuses one), and the only
+  tests that build it, the legacy-form tests, build it around ``probe``, a
+  command name the runner has not registered: a printed local holding one is
+  plain text;
 * ``test_a_failing_helper_writes_no_workflow_command`` and
   ``test_a_failing_run_of_this_module_writes_no_workflow_command`` prove the
   helpers hold that when they fail, the second by running pytest itself with
@@ -51,6 +57,7 @@ from __future__ import annotations
 import itertools
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import time
@@ -61,11 +68,14 @@ import yaml
 
 from tests.setup_death_git import (
     GIT,
+    LEGACY_PREFIX,
     PrRepo,
     assert_prints_nothing,
     base_env,
     command_lines,
+    git_version,
     has_commit,
+    partial_clone,
     run_pytest_probe,
     shallow_clone,
     stub_git,
@@ -602,6 +612,105 @@ def test_a_merge_commit_absent_from_the_checkout_is_unknown(clean_pr):
     assert "is not readable in this checkout" in _assert_withheld(out)
 
 
+def _stub_timeout(stub_dir: Path, log: Path) -> None:
+    """A ``timeout`` in ``stub_dir`` that logs its arguments, then runs the real one."""
+    real = shutil.which("timeout")
+    assert real is not None
+    stub = stub_dir / "timeout"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        f'echo "$*" >> {shlex.quote(str(log))}\n'
+        f'exec {shlex.quote(real)} "$@"\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    stub.chmod(0o755)
+
+
+@requires_bash_and_git
+def test_every_git_call_of_the_guard_is_bounded_and_never_a_lazy_fetch(
+    tmp_path, clean_pr
+):
+    """Each git call runs under `timeout -k 5 <bound>`, with lazy fetch and prompts off.
+
+    A stub `git` records each call's environment and a stub `timeout` each
+    call's bound, in a depth-1 clone, so every call runs: the merge commit
+    read, the first-parent check, the fetch, its re-check and the diff. The
+    test's own environment carries neither variable, so both come from the
+    script.
+    """
+    clone = shallow_clone(clean_pr, tmp_path / "checkout")
+    git_log = tmp_path / "git-calls.log"
+    timeout_log = tmp_path / "timeout-calls.log"
+    record = 'echo "${GIT_NO_LAZY_FETCH-unset} ${GIT_TERMINAL_PROMPT-unset} $*" >> '
+    stub = stub_git(tmp_path, on_every=record + shlex.quote(str(git_log)))
+    _stub_timeout(stub, timeout_log)
+    env = _pr_env(clean_pr, workspace=clone)
+    env.pop("GIT_TERMINAL_PROMPT")
+    assert "GIT_NO_LAZY_FETCH" not in env
+    _, out, _ = _run(env, path_prefix=stub)
+    assert _titles(out) == [LINT_TITLE], _defang(out)
+    # Each git call: `<lazy fetch> <prompt> -C <workspace> <verb> ...`.
+    calls = [line.split() for line in git_log.read_text(encoding="utf-8").splitlines()]
+    assert [call[4] for call in calls] == [
+        "cat-file",
+        "cat-file",
+        "fetch",
+        "cat-file",
+        "diff",
+    ]
+    assert [call[:2] for call in calls] == [["1", "0"]] * 5
+    # Each timeout call: `-k 5 <bound> git -C <workspace> <verb> ...`, and
+    # exactly one per git call, so no git call ran outside a bound.
+    bounded = [
+        line.split() for line in timeout_log.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row[4:] for row in bounded] == [call[2:] for call in calls]
+    assert [row[:4] for row in bounded] == [
+        ["-k", "5", "30", "git"],
+        ["-k", "5", "30", "git"],
+        ["-k", "5", "60", "git"],
+        ["-k", "5", "30", "git"],
+        ["-k", "5", "30", "git"],
+    ]
+
+
+@requires_bash_and_git
+@pytest.mark.skipif(
+    git_version() < (2, 45),
+    reason=(
+        "GIT_NO_LAZY_FETCH arrived in git 2.45 (RelNotes/2.45.0); an older git "
+        "ignores it, so nothing can stop a lazy fetch there"
+    ),
+)
+@pytest.mark.parametrize("fetch", ["answers", "fails"])
+def test_in_a_partial_clone_only_the_bounded_fetch_brings_the_parent_in(
+    tmp_path, clean_pr, fetch
+):
+    """GIT_NO_LAZY_FETCH, observed rather than assumed.
+
+    No carrier's own checkout is a partial clone (the wiring test pins that),
+    so this tests the backstop, in actions/checkout's sparse shape: the
+    script's bounded fetch brings the first parent in, and when that fetch
+    fails while the promisor remote still answers, no lazy fetch fills the
+    parent in behind it. Without the variable, the script's own `cat-file -e`
+    check fetches the parent lazily, and the guard reads `false` and declares.
+    """
+    clone = partial_clone(clean_pr, tmp_path / "checkout")
+    assert not has_commit(clone, clean_pr.base, clean_pr.home)
+    stub = stub_git(tmp_path, "exit 128") if fetch == "fails" else None
+    _, out, _ = _run(_pr_env(clean_pr, workspace=clone), path_prefix=stub)
+    if fetch == "answers":
+        assert _titles(out) == [LINT_TITLE], _defang(out)
+        assert has_commit(clone, clean_pr.base, clean_pr.home)
+        return
+    reason = _assert_withheld(out)
+    assert (
+        f"first parent {clean_pr.base} could not be fetched (git fetch exited 128"
+    ) in reason, _defang(out)
+    assert not has_commit(clone, clean_pr.base, clean_pr.home)
+
+
 # --- malformed input: always exit 0, never a phrase ------------------------------
 
 
@@ -785,8 +894,9 @@ CARRIERS: dict[tuple[str, str], dict[str, object]] = {
     # must hold the explainer's non-soft APT_STEP_OUTCOMES rows (same ids);
     # `test_every_non_soft_apt_row_of_the_explainer_is_a_setup_row` checks it.
     ("e2e-playwright-stack.yml", "playwright"): {
-        # Called from e2e-tests.yml, so GitHub serves `<caller> / Playwright
-        # (chromium)`; DECLARE_JOB names this job.
+        # Called from e2e-tests.yml. GitHub's reusable-workflow docs name such
+        # a job's check `<caller job> / <called job>`; that full name was not
+        # observed here, and DECLARE_JOB names this job alone.
         "declare_job": "Playwright (chromium)",
         "setup": [
             "Self-hosted: host provisioned",
@@ -1053,13 +1163,17 @@ def test_the_status_function_predicate_reads_all_four(condition, expected):
     assert _has_status_function({"if": condition}) is expected
 
 
+def _is_own_checkout(step: dict) -> bool:
+    """A checkout of THIS repo (a sibling checkout names `repository:`)."""
+    return str(step.get("uses", "")).startswith(
+        "actions/checkout@"
+    ) and "repository" not in (step.get("with") or {})
+
+
 def _own_checkout_index(job: dict) -> int:
-    """The job's checkout of THIS repo (a sibling checkout names `repository:`)."""
+    """The job's first checkout of THIS repo."""
     for index, step in enumerate(job.get("steps") or []):
-        uses = str(step.get("uses", ""))
-        if uses.startswith("actions/checkout@") and "repository" not in (
-            step.get("with") or {}
-        ):
+        if _is_own_checkout(step):
             return index
     raise AssertionError("the job has no checkout of this repository")
 
@@ -1112,8 +1226,9 @@ def test_declare_job_is_the_check_name_github_serves(workflow, job_id):
     combos = _matrix_combos(job)
     rendered = [_render_matrix(declared, combo) for combo in combos]
     if set(triggers) == {"workflow_call"}:
-        # A called workflow's check is served as `<caller job> / <this job>`,
-        # and the caller's name is not known here: DECLARE_JOB names this job.
+        # GitHub's reusable-workflow docs name a called job's check
+        # `<caller job> / <called job>`; that was not observed here, and the
+        # caller's name is not known to this file: DECLARE_JOB names this job.
         assert rendered == [str(job.get("name", job_id))]
     else:
         assert rendered == _served_names(job_id, job)
@@ -1207,6 +1322,23 @@ def test_a_verdict_step_is_marked_iff_its_if_has_a_status_function(workflow, job
         assert bool(row.group("mark")) == _has_status_function(target), (
             f"{row['name']!r} has `if: {target.get('if')}`; the `!` mark must follow it"
         )
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_no_carriers_own_checkout_is_a_partial_clone(workflow, job_id):
+    """The guard reads git objects in this checkout, so it is never a partial clone.
+
+    actions/checkout makes a partial clone when `filter` is set, and a
+    `blob:none` one for `sparse-checkout`; there, a read of an absent object
+    is a lazy fetch. The script turns lazy fetch off (GIT_NO_LAZY_FETCH, git
+    2.45 and later); this keeps the shape from arising in the first place.
+    """
+    job = _job(workflow, job_id)
+    own = [step for step in job.get("steps") or [] if _is_own_checkout(step)]
+    assert own, "the job has no checkout of this repository"
+    for step in own:
+        partial = sorted(set(step.get("with") or {}) & {"sparse-checkout", "filter"})
+        assert partial == [], f"{step.get('name') or step['uses']} sets {partial}"
 
 
 @pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
@@ -1344,6 +1476,209 @@ def test_each_carriers_own_env_declares_its_first_setup_death(
     assert "harness-diff guard read true" in _assert_withheld(out), _defang(out)
 
 
+# --- no SETUP step starts a Python with the checkout on sys.path ----------------
+#
+# A Python started with `-m`, `-c` or its program on stdin (`-`, or none given)
+# puts its working directory FIRST on sys.path, ahead of the standard library;
+# one started on a script puts the script's directory there. From inside the
+# checkout, a module the PR adds (a `backend/email.py`, say) is then imported
+# in place of the standard one, and a SETUP step that dies of it would be
+# titled not a verdict on the PR. `-P` (or `-I`, which implies it) drops that
+# entry, but only in the process it is given to: a child Python inherits the
+# cwd, not the flag. So where the step cannot see what its Python starts -- a
+# program read from stdin (the Poetry installer runs `python -m pip` in a
+# child) or `poetry run` (it execs `<venv>/bin/python -m pip` for `pip`, and
+# takes no interpreter flag) -- the step must ALSO keep the children off the
+# checkout: run from `${{ runner.temp }}`, or set PYTHONSAFEPATH, which every
+# child inherits. (`python -P -m venv` needs no more: venv starts its
+# ensurepip child in the new venv's own directory.)
+
+#: Every carrier SETUP step whose `run:` starts a Python, in step order: the
+#: census the sys.path test judges, pinned so that a detector which finds
+#: nothing fails here instead of passing everything.
+SETUP_PYTHON_STEPS: dict[tuple[str, str], list[str]] = {
+    ("backend-ci.yml", "lint"): ["Install Poetry"],
+    ("backend-ci.yml", "test"): ["Install Poetry"],
+    ("backend-ci.yml", "security-scan"): ["Install Poetry", "Install safety"],
+    ("memory-recall-eval.yml", "recall-eval"): ["Install Poetry"],
+    ("e2e-tests.yml", "backend-tests"): ["Create a job venv"],
+}
+
+_PYTHON_WORD = re.compile(r"python(?:3(?:\.\d+)?)?")
+_SHELL_OPERATORS = frozenset({"|", "||", "|&", "&", "&&", ";", ";;", "(", ")"})
+_RUNNER_TEMP = re.compile(r"\$\{\{\s*runner\.temp\s*\}\}(?:/.*)?")
+
+
+def _shell_commands(run: str) -> list[list[str]]:
+    """``run``'s lines as shell tokens: continuations joined, comments dropped."""
+    commands = []
+    for line in run.replace("\\\n", " ").splitlines():
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        try:
+            tokens = list(lexer)
+        except ValueError:  # an unbalanced quote: fall back to plain words
+            tokens = line.split("#", 1)[0].split()
+        if tokens:
+            commands.append(tokens)
+    return commands
+
+
+def _interpreter_options(args: list[str]) -> tuple[frozenset[str], str | None]:
+    """``(single-letter options, program)`` of one Python command line.
+
+    ``program`` is ``-m``, ``-c``, ``-`` (stdin), ``script``, or ``None`` when
+    none is given before the command ends (the program is then stdin too).
+    """
+    flags: set[str] = set()
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if arg in _SHELL_OPERATORS:
+            break
+        if arg == "-":
+            return frozenset(flags), "-"
+        if not arg.startswith("-"):
+            return frozenset(flags), "script"
+        if arg.startswith("--"):
+            if arg == "--check-hash-based-pycs":
+                index += 1  # its value is the next argument
+            continue
+        for position in range(1, len(arg)):
+            letter = arg[position]
+            if letter in "mc":
+                return frozenset(flags), f"-{letter}"
+            if letter in "WX":
+                if position == len(arg) - 1:
+                    index += 1  # its value is the next argument, not glued on
+                break
+            flags.add(letter)
+    return frozenset(flags), None
+
+
+def _python_starts(run: str) -> list[tuple[str, frozenset[str], str | None]]:
+    """Every Python ``run`` starts: ``(how, options, program)``.
+
+    ``how`` is ``python`` (a ``python``, ``python3`` or ``python3.N`` word, or
+    a path ending in one) or ``poetry run``.
+    """
+    starts: list[tuple[str, frozenset[str], str | None]] = []
+    for tokens in _shell_commands(run):
+        for index, token in enumerate(tokens):
+            if token == "poetry" and tokens[index + 1 : index + 2] == ["run"]:
+                starts.append(("poetry run", frozenset(), None))
+            elif _PYTHON_WORD.fullmatch(token.rsplit("/", 1)[-1]):
+                starts.append(("python", *_interpreter_options(tokens[index + 1 :])))
+    return starts
+
+
+def _sys_path_hazard(
+    start: tuple[str, frozenset[str], str | None], *, outside: bool, safepath: bool
+) -> str | None:
+    """Why this Python, or one it starts, can have the checkout on sys.path."""
+    how, flags, program = start
+    if how == "poetry run":
+        if outside or safepath:
+            return None
+        return (
+            "`poetry run` execs a Python that takes no -P, and PYTHONSAFEPATH is unset"
+        )
+    # -I implies -P; -E (or -I) makes this process ignore PYTHONSAFEPATH.
+    flagged = bool(flags & {"P", "I"}) or (safepath and "E" not in flags)
+    if not (flagged or (outside and program != "script")):
+        return f"python {program or '(stdin)'} without -P, from inside the checkout"
+    if program in ("-", None) and not (outside or safepath):
+        return (
+            "a program read from stdin can start a child Python, which inherits "
+            "the cwd but not -P: run from ${{ runner.temp }} or set PYTHONSAFEPATH"
+        )
+    return None
+
+
+def _setup_steps(job: dict) -> list[dict]:
+    by_id = _steps_by_id(job)
+    return [by_id[row.group("id")][1] for row in _rows(_declarer(job), "SETUP_STEPS")]
+
+
+def _working_directory(doc: dict, job: dict, step: dict) -> str:
+    """The step's cwd: its own, the job's default, the workflow's, or the checkout."""
+    for scope in (
+        step,
+        (job.get("defaults") or {}).get("run") or {},
+        (doc.get("defaults") or {}).get("run") or {},
+    ):
+        if scope.get("working-directory"):
+            return str(scope["working-directory"])
+    return ""
+
+
+def _sets_pythonsafepath(doc: dict, job: dict, step: dict) -> bool:
+    """Is PYTHONSAFEPATH non-empty in the step's env (step, then job, then workflow)?"""
+    for scope in (step, job, doc):
+        env = scope.get("env") or {}
+        if "PYTHONSAFEPATH" in env:
+            return str(env["PYTHONSAFEPATH"]) != ""
+    return False
+
+
+@pytest.mark.parametrize(
+    ("run", "expected"),
+    [
+        (
+            "curl -sSL https://install.python-poetry.org | python3 -",
+            [("python", frozenset(), "-")],
+        ),
+        (
+            "curl -sSL https://install.python-poetry.org | python3 -P -",
+            [("python", frozenset("P"), "-")],
+        ),
+        (
+            "curl -sSL https://example.invalid | python3",
+            [("python", frozenset(), None)],
+        ),
+        ('python -P -m venv "$RUNNER_TEMP/venv"', [("python", frozenset("P"), "-m")]),
+        ("python3 -Im venv x", [("python", frozenset("I"), "-m")]),
+        ("python3 -W ignore -P - <<'PY'", [("python", frozenset("P"), "-")]),
+        ("python3 -c 'print(1)'", [("python", frozenset(), "-c")]),
+        ("python3 scripts/ci/x.py --flag", [("python", frozenset(), "script")]),
+        ('"$RUNNER_TEMP/v/bin/python3.12" -m pip', [("python", frozenset(), "-m")]),
+        ("poetry run pip install safety", [("poetry run", frozenset(), None)]),
+        ("# python3 -m venv, a comment line\necho done", []),
+        ("echo setup-python  # python3 -m venv, a trailing comment", []),
+        ("poetry install --no-root && pip install x", []),
+        ('echo "${{ matrix.python-version }}"', []),
+    ],
+)
+def test_the_python_start_detector(run, expected):
+    assert _python_starts(run) == expected
+
+
+def test_the_setup_python_census_is_the_literal_table():
+    found: dict[tuple[str, str], list[str]] = {}
+    for workflow, job_id in CARRIERS:
+        names = [
+            str(step.get("name"))
+            for step in _setup_steps(_job(workflow, job_id))
+            if _python_starts(str(step.get("run") or ""))
+        ]
+        if names:
+            found[(workflow, job_id)] = names
+    assert found == SETUP_PYTHON_STEPS
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_no_setup_python_has_the_checkout_first_on_sys_path(workflow, job_id):
+    doc = _workflow(workflow)
+    job = doc["jobs"][job_id]
+    for step in _setup_steps(job):
+        outside = bool(_RUNNER_TEMP.fullmatch(_working_directory(doc, job, step)))
+        safepath = _sets_pythonsafepath(doc, job, step)
+        for start in _python_starts(str(step.get("run") or "")):
+            problem = _sys_path_hazard(start, outside=outside, safepath=safepath)
+            assert problem is None, f"{step.get('name')!r}: {problem}"
+
+
 # --- the trigger: backend-ci must run this module on every file it reads -------
 
 
@@ -1413,6 +1748,50 @@ def test_backend_ci_triggers_on_the_recall_eval_workflow():
 def test_this_module_never_prints_script_output():
     """A printed declaration line in the shard log would itself be a declaration."""
     for source in (Path(__file__), REPO_ROOT / "backend/tests/setup_death_git.py"):
+        assert_prints_nothing(source)
+
+
+#: Lines holding the legacy prefix, which the runner's `TryParse` finds at any
+#: column (`IndexOf`). Each is built around `probe`, a command name the runner
+#: has not registered, so a failing test that prints one (an assertion's
+#: explanation, a `--showlocals` local) writes plain text, never a command;
+#: `command_lines` and `defang` act on the prefix whatever follows it.
+LEGACY_LINES = {
+    "column-0": LEGACY_PREFIX + "probe title=t]m",
+    "indented": "\t  " + LEGACY_PREFIX + "probe]m",
+    "mid-line": "declare-setup-death: step 'a " + LEGACY_PREFIX + "probe]m' failed",
+    "in-a-repr": repr(["a log line", LEGACY_PREFIX + "probe]m"]),
+    "three-hashes": "#" + LEGACY_PREFIX + "probe]m",
+    "twice": LEGACY_PREFIX + "probe]" + LEGACY_PREFIX + "probe]m",
+}
+
+
+@pytest.mark.parametrize("line", list(LEGACY_LINES.values()), ids=list(LEGACY_LINES))
+def test_command_lines_finds_the_legacy_prefix_at_any_column(line):
+    assert command_lines(line) == [line]
+    assert command_lines(f"plain\n{line}\nplain") == [line]
+
+
+@pytest.mark.parametrize("line", list(LEGACY_LINES.values()), ids=list(LEGACY_LINES))
+def test_defang_breaks_the_legacy_prefix(line):
+    defanged = _defang(line)
+    assert LEGACY_PREFIX not in defanged
+    assert command_lines(defanged) == []
+    # Nothing else moved: taking the inserted spaces out gives the line back.
+    assert defanged.replace("# #[", LEGACY_PREFIX) == line
+
+
+def test_defang_breaks_both_forms_in_one_text():
+    text = f"::notice::x\n  y {LEGACY_PREFIX}probe]m\n"
+    assert command_lines(text) == ["::notice::x", f"  y {LEGACY_PREFIX}probe]m"]
+    assert command_lines(_defang(text)) == []
+
+
+def test_the_source_guard_refuses_the_legacy_prefix_at_any_column(tmp_path):
+    """A failing test's traceback prints its source lines, so none may hold it."""
+    source = tmp_path / "probe_source.py"
+    source.write_text(f'NOTE = "a {LEGACY_PREFIX}probe]m"\n', encoding="utf-8")
+    with pytest.raises(AssertionError, match=r"source line\(s\) \[1\]"):
         assert_prints_nothing(source)
 
 

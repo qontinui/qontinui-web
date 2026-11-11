@@ -311,11 +311,21 @@ jobs:
       # $RUNNER_TEMP: on the
       # self-hosted light lane every runner shares one unix user's HOME, so the
       # default ~/.local and ~/.cache/pypoetry would be written by concurrent jobs.
+      #
+      # The installer RUNS from $RUNNER_TEMP too, not this job's ./backend,
+      # under `python3 -P` (Python 3.11+; PYTHON_VERSION is 3.12). A Python
+      # reading its program from stdin puts its cwd first on sys.path, so from
+      # ./backend a module the PR adds there (a `backend/email.py`, say) would
+      # be imported in place of the standard one, and this SETUP step's death
+      # would be titled not a verdict on the PR. -P alone is not enough: the
+      # installer runs `python -m pip` in a child, which inherits the cwd but
+      # not the flag. backend/tests/test_declare_setup_death.py pins both.
       - name: Install Poetry
         id: poetry_install
+        working-directory: ${{ runner.temp }}
         run: |
           export POETRY_HOME="$RUNNER_TEMP/poetry"
-          curl -sSL https://install.python-poetry.org | python3 -
+          curl -sSL https://install.python-poetry.org | python3 -P -
           echo "$POETRY_HOME/bin" >> "$GITHUB_PATH"
           echo "POETRY_CACHE_DIR=$RUNNER_TEMP/poetry-cache" >> "$GITHUB_ENV"
           echo "POETRY_VIRTUALENVS_PATH=$RUNNER_TEMP/poetry-venvs" >> "$GITHUB_ENV"
@@ -594,11 +604,14 @@ jobs:
       # Poetry, its config, its cache and its virtualenvs live under
       # $RUNNER_TEMP, the same block as `lint` (whose light lane shares one HOME);
       # on this job's db lane it is merely harmless. pip's cache stays put.
+      # The installer runs from $RUNNER_TEMP under `python3 -P`, as in `lint`,
+      # whose comment says why.
       - name: Install Poetry
         id: poetry_install
+        working-directory: ${{ runner.temp }}
         run: |
           export POETRY_HOME="$RUNNER_TEMP/poetry"
-          curl -sSL https://install.python-poetry.org | python3 -
+          curl -sSL https://install.python-poetry.org | python3 -P -
           echo "$POETRY_HOME/bin" >> "$GITHUB_PATH"
           echo "POETRY_CACHE_DIR=$RUNNER_TEMP/poetry-cache" >> "$GITHUB_ENV"
           echo "POETRY_VIRTUALENVS_PATH=$RUNNER_TEMP/poetry-venvs" >> "$GITHUB_ENV"
@@ -1507,11 +1520,14 @@ jobs:
       # $RUNNER_TEMP: on the
       # self-hosted light lane every runner shares one unix user's HOME, so the
       # default ~/.local and ~/.cache/pypoetry would be written by concurrent jobs.
+      # The installer runs from $RUNNER_TEMP under `python3 -P`, as in `lint`,
+      # whose comment says why.
       - name: Install Poetry
         id: poetry_install
+        working-directory: ${{ runner.temp }}
         run: |
           export POETRY_HOME="$RUNNER_TEMP/poetry"
-          curl -sSL https://install.python-poetry.org | python3 -
+          curl -sSL https://install.python-poetry.org | python3 -P -
           echo "$POETRY_HOME/bin" >> "$GITHUB_PATH"
           echo "POETRY_CACHE_DIR=$RUNNER_TEMP/poetry-cache" >> "$GITHUB_ENV"
           echo "POETRY_VIRTUALENVS_PATH=$RUNNER_TEMP/poetry-venvs" >> "$GITHUB_ENV"
@@ -1535,8 +1551,16 @@ jobs:
       # download from PyPI, a SETUP step for the setup-death declarer below,
       # while the check itself is a VERDICT step. Fused, a PyPI outage read as
       # a failed scan and could never be declared.
+      #
+      # PYTHONSAFEPATH: `poetry run pip` execs `<venv>/bin/python -m pip`
+      # (poetry's `get_pip_command`), which would put this job's ./backend
+      # first on sys.path, so a module the PR adds there could kill this SETUP
+      # step. The variable is -P for every Python the step starts; `poetry run`
+      # takes no interpreter flag.
       - name: Install safety
         id: safety_install
+        env:
+          PYTHONSAFEPATH: '1'
         run: poetry run pip install safety
 
       - name: Run safety check (dependency vulnerabilities)
@@ -1730,8 +1754,8 @@ jobs:
         id: declarer_checkout
         if: failure()
         continue-on-error: true
-        # A sparse fetch of scripts/ci takes seconds; one still running after
-        # a minute is stuck, and the declarer below then does not run.
+        # A one-minute bound on the sparse checkout: one it cuts off does not
+        # succeed, and the declarer below then does not run.
         timeout-minutes: 1
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:

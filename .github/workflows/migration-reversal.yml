@@ -2323,8 +2323,8 @@ jobs:
         id: declarer_checkout
         if: failure()
         continue-on-error: true
-        # A sparse fetch of scripts/ci takes seconds; one still running after
-        # a minute is stuck, and the declarer below then does not run.
+        # A one-minute bound on the sparse checkout: one it cuts off does not
+        # succeed, and the declarer below then does not run.
         timeout-minutes: 1
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:

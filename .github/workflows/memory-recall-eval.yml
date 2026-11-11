@@ -194,10 +194,19 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
+      # The installer runs from $RUNNER_TEMP, not this job's ./backend, under
+      # `python3 -P` (Python 3.11+; PYTHON_VERSION is 3.12). A Python reading
+      # its program from stdin puts its cwd first on sys.path, so from
+      # ./backend a module the PR adds there (a `backend/email.py`, say) would
+      # be imported in place of the standard one, and this SETUP step's death
+      # would be titled not a verdict on the PR. -P alone is not enough: the
+      # installer runs `python -m pip` in a child, which inherits the cwd but
+      # not the flag. backend/tests/test_declare_setup_death.py pins both.
       - name: Install Poetry
         id: poetry_install
+        working-directory: ${{ runner.temp }}
         run: |
-          curl -sSL https://install.python-poetry.org | python3 -
+          curl -sSL https://install.python-poetry.org | python3 -P -
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install dependencies

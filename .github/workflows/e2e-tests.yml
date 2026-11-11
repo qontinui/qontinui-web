@@ -191,6 +191,13 @@ jobs:
       # missing flock/du/df, or an unwritable cache dir, falls back to a
       # job-scoped cache with a warning.
       # Plan 2026-11-08-web-backend-e2e-job-cap-cancels-a-slow-uncached-pip-install-on-the-light-pool.
+      #
+      # `python -P` (Python 3.11+; the matrix is 3.12): `-m venv` otherwise
+      # puts the repo root first on sys.path, so a module the PR adds there
+      # (a `venv.py`, say) would run in this SETUP step, and its death would be
+      # titled not a verdict on the PR. venv starts its ensurepip child in the
+      # new venv's own directory (venv.EnvBuilder._call_new_python), so -P is
+      # enough here. backend/tests/test_declare_setup_death.py pins it.
       - name: Create a job venv
         id: job_venv
         env:
@@ -198,7 +205,7 @@ jobs:
           PIP_CACHE_FLOOR_MB: '61440'
           PIP_CACHE_FLOOR_MIN_SIZE_MB: '1024'
         run: |
-          python -m venv "$RUNNER_TEMP/venv"
+          python -P -m venv "$RUNNER_TEMP/venv"
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
           # Hosted keeps ~/.cache/pip, which the actions/cache step below restores.
           if [ "$RUNNER_ENVIRONMENT" != self-hosted ]; then
@@ -666,8 +673,8 @@ jobs:
         id: declarer_checkout
         if: failure()
         continue-on-error: true
-        # A sparse fetch of scripts/ci takes seconds; one still running after
-        # a minute is stuck, and the declarer below then does not run.
+        # A one-minute bound on the sparse checkout: one it cuts off does not
+        # succeed, and the declarer below then does not run.
         timeout-minutes: 1
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
