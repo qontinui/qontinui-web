@@ -681,16 +681,26 @@ def test_a_malformed_input_withholds(github, overrides, expected):
     assert expected in _assert_withheld(_decide(_env(**overrides)))
 
 
-def test_a_marker_changing_declare_job_is_withheld(github):
+@pytest.mark.parametrize(
+    "job",
+    [
+        "Run Tests killed IN THE BUILD",
+        "Run Tests TIMED OUT (not a verdict on this PR)",
+        "Run Tests OUT OF MEMORY (not a verdict on this PR)",
+    ],
+    ids=["build-kill", "timed-out", "out-of-memory"],
+)
+def test_a_declare_job_carrying_a_reserved_phrase_is_withheld(github, job):
     fake = github(_with_conclusions(s1="failure"))
     fake.declare(_shard(fake.jobs, 1)["id"], _shard_title(1))
-    message = _assert_withheld(
-        _decide(_env(DECLARE_JOB="Run Tests killed IN THE BUILD"))
-    )
-    assert "marker-changing phrase" in message
+    message = _assert_withheld(_decide(_env(DECLARE_JOB=job)))
+    assert (
+        "DECLARE_JOB would put a reserved phrase (TIMED OUT, OUT OF MEMORY or "
+        "killed IN THE BUILD) into the title"
+    ) in message
 
 
-def test_no_title_it_writes_changes_coords_marker_class(github):
+def test_no_title_it_writes_carries_a_reserved_phrase(github):
     fake = github(_with_conclusions(s1="failure"))
     fake.declare(_shard(fake.jobs, 1)["id"], _shard_title(1))
     titles = [

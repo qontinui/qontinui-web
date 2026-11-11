@@ -124,9 +124,21 @@ included (``fetch_jobs``'s ``deadline``), so a read never starts with a bound
 longer than what is left. At most 1 jobs read (more pages only past 100 jobs)
 plus 4 annotation reads per failed member.
 
-No title written here contains ``TIMED OUT (not a verdict on this PR)``,
-``OUT OF MEMORY (not a verdict on this PR)`` or ``killed IN THE BUILD``: those
-change coord's marker class, and a setup death must map to ``no_verdict``.
+Reserved phrases: no title written here contains any of three phrases, each
+kept out for its own reason (qontinui-coord: ``no_verdict_marker_for_title``
+in ``main_baseline_no_verdict.rs``, and the author nudge in
+``stuck_author_nudge.rs``). A setup death must map to the ``no_verdict``
+marker and be quoted to the author by its own title.
+
+* ``OUT OF MEMORY (not a verdict on this PR)`` maps a title to the
+  ``out_of_memory`` marker instead.
+* ``killed IN THE BUILD`` maps a title to ``build_killed`` (which skips the
+  main-baseline write), but only BESIDE one of the other two phrases; alone it
+  still maps to ``no_verdict``. It is kept out so that no wording can make that
+  pair.
+* ``TIMED OUT (not a verdict on this PR)`` alone still maps to ``no_verdict``,
+  but it switches the author nudge to its step-timeout sentence (the suite
+  "did NOT complete"), which is false of a setup step that died.
 
 It exits 0 on every path: a reporter never decides the aggregate's colour.
 """
@@ -157,7 +169,8 @@ from shard_headroom import (  # noqa: E402
 #: What a member's own declaration title must contain (the per-job declarer's
 #: `<check> SETUP FAILED (not a verdict on this PR)`).
 MEMBER_DECLARATION = "SETUP FAILED (not a verdict on this PR)"
-MARKER_CHANGING = (
+#: Never in a setup-death title; the module docstring says why each one.
+RESERVED_PHRASES = (
     "TIMED OUT (not a verdict on this PR)",
     "OUT OF MEMORY (not a verdict on this PR)",
     "killed IN THE BUILD",
@@ -653,10 +666,14 @@ def _declaration(inputs: _Inputs, failed: list[dict[str, Any]]) -> Outcome:
     """The aggregate's title, once every rule has held."""
     names = ", ".join(str(m.get("name")) for m in failed)
     title = f"{inputs.job} SETUP FAILED in every failed {inputs.noun} (not a verdict on this PR)"
-    if any(marker in title for marker in MARKER_CHANGING):
+    if any(reserved in title for reserved in RESERVED_PHRASES):
         return Outcome(
             "withhold",
-            text="DECLARE_JOB would put a marker-changing phrase into the title.",
+            text=(
+                "DECLARE_JOB would put a reserved phrase (TIMED OUT, OUT OF MEMORY "
+                "or killed IN THE BUILD) into the title, and coord would read a "
+                "setup death as a timeout or a capacity kill."
+            ),
         )
     return Outcome(
         "declare",

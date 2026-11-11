@@ -21,6 +21,19 @@
 # carrier set from every workflow `run:` that invokes this file and pins each
 # job's rows against a literal table.
 #
+# WHICH COPY RUNS. The step runs the copy in the working tree, which is the
+# PR's merge commit, with ONE exception: migration-reversal.yml's `tested`
+# job. Its `Qualify the PR's migration and switch to the base tree` step runs
+# `git checkout --quiet --detach "$BASE_TIP"` (the base branch's tip), so:
+#   * a setup death BEFORE that switch (`Self-hosted: host provisioned`,
+#     `Set up Python`) runs the merge commit's copy, as everywhere else;
+#   * a setup death AFTER it (`Free disk space`, the sibling clone,
+#     `Install postgresql-client`) runs the BASE tip's copy. A base that has
+#     no copy fails closed: the step prints that the script is absent and
+#     declares nothing.
+# Either copy reads the PR's diff from GITHUB_SHA, never HEAD (see the guard
+# below), and takes its rows and pattern from the PR's own workflow.
+#
 # INPUTS (environment only):
 #   DECLARE_JOB         the check-run name, as GitHub serves it.
 #   SETUP_STEPS         one row per setup step, in job order:
@@ -92,9 +105,20 @@
 # Plain log lines carry a fixed prefix, so none can start with `::` and be
 # parsed as a workflow command.
 #
-# No title written here contains `TIMED OUT (not a verdict on this PR)`,
-# `OUT OF MEMORY (not a verdict on this PR)` or `killed IN THE BUILD`: those
-# change coord's marker class, and a setup death must map to `no_verdict`.
+# RESERVED PHRASES. No title written here contains any of three phrases, each
+# kept out for its own reason (qontinui-coord: `no_verdict_marker_for_title`
+# in main_baseline_no_verdict.rs, and the author nudge in
+# stuck_author_nudge.rs). A setup death must map to the `no_verdict` marker
+# and be quoted to the author by its own title.
+#   * `OUT OF MEMORY (not a verdict on this PR)` maps a title to the
+#     `out_of_memory` marker instead.
+#   * `killed IN THE BUILD` maps a title to `build_killed` (which skips the
+#     main-baseline write), but only BESIDE one of the other two phrases;
+#     alone it still maps to `no_verdict`. It is kept out so that no wording
+#     can make that pair.
+#   * `TIMED OUT (not a verdict on this PR)` alone still maps to `no_verdict`,
+#     but it switches the author nudge to its step-timeout sentence (the suite
+#     "did NOT complete"), which is false of a setup step that died.
 #
 # EXIT. 0 on every path, malformed input included: a reporter never decides a
 # job's colour. `set -u` without `-e`, so a reporter always reaches its verdict
@@ -405,7 +429,7 @@ main() {
   title="${job} SETUP FAILED (not a verdict on this PR)"
   case "$title" in
     *'TIMED OUT (not a verdict on this PR)'* | *'OUT OF MEMORY (not a verdict on this PR)'* | *'killed IN THE BUILD'*)
-      withhold "DECLARE_JOB would put a marker-changing phrase into the title, which would misclass a setup death."
+      withhold "DECLARE_JOB would put a reserved phrase (TIMED OUT, OUT OF MEMORY or killed IN THE BUILD) into the title, and coord would read a setup death as a timeout or a capacity kill."
       return
       ;;
   esac
