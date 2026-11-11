@@ -37,7 +37,7 @@ other index, the planner runs a parallel sequential scan of the whole of
 Measured on production on 2026-11-04 (PostgreSQL 16.13). Performance Insights
 put this statement (``0153B221``) at 0.49 average active sessions and 87,466
 blocks read per call (coord finding ``b72e6d9d-14d2-4614-adfd-4111b5c9d7ee``).
-The remaining figures in this docstring come from read-only production reads
+The remaining production figures in this docstring come from read-only reads
 the plan's first implementing session (``dd44d9d7``, its Phase 1b agent) made
 the same day, relayed in coord finding
 ``1a6c16db-6941-44e1-aa2c-1bd8a0fa6707``. ``coord.alerts`` held 637k live rows
@@ -119,7 +119,8 @@ estimated 2,575 such rows (the 2026-11-04 session reads above). The kind arm
 alone counts 2,371, through an index-only scan of
 ``idx_alerts_kind_first_seen_at``. An entry is about 56 bytes: a 41-byte
 ``gate:<uuid>`` key, the tuple header and the line pointer. So the index is
-roughly 150-250 KB. Measured on PG16, 2,575 entries take 192 kB as a sorted
+roughly 150-250 KB. On a synthetic PG16 table (the index does not exist in
+production yet), 2,575 entries take 192 kB as a sorted
 build, and 272 kB when the same rows are inserted one at a time, so it drifts
 up a little as give-ups land after the build. That is spent against the
 storage ceiling that
