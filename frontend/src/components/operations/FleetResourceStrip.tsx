@@ -46,14 +46,24 @@
  * - `headroom` absent or `unknown` gets **the same treatment as a stale or
  *   absent sample** — the neutral unknown tone, never green. A coord that has
  *   not shipped the floor fields yet paints the fleet grey, not healthy.
- * - **No MEASURED swap figure appears on a `host` row.** Windows derives swap
- *   algebraically from the same commit counters, so printing both would read
- *   as corroboration from two instruments when it is one printed twice. The
- *   lead column IS the swap-or-commit figure; there is no second one.
- *   One deliberate exception: a swap-ratio THRESHOLD coord actually reports
- *   for such a lane is still shown (with a note that the row's pressure
- *   figure is a different instrument), because withholding a rule the
- *   dispatcher enforces is the worse error. A threshold is not a measurement.
+ * - **A row prints a MEASURED swap figure exactly when coord serves one: when
+ *   `swap_ratio` is a number.** Coord decides with the predicate it grades the
+ *   swap axis by (`swap_axis_graded`), so the grade and the display cannot
+ *   disagree, and this page derives no swap ratio from the raw counters.
+ *   On a `host` row the lead stays the commit figure, because coord never
+ *   ranks a host on swap, and the served swap figure prints BESIDE it
+ *   (`82% commit used · 100% swap used`). A Linux host's swap is an
+ *   instrument independent of commit, and a host at swap 0.9999 once read
+ *   here as commit 0.815 alone. A Windows host is served `null`, because
+ *   Windows derives swap algebraically from the same commit counters, and
+ *   printing both would read as corroboration from two instruments when it
+ *   is one printed twice. A host row whose coord predates the field says
+ *   "swap not reported", never 0 and never a silent blank. The `wsl` and
+ *   `container` leads ARE the swap figure, so they get no second one.
+ *   A swap-ratio THRESHOLD coord reports for a row that prints no swap figure
+ *   is still shown, with a note that the row's pressure figure is a different
+ *   instrument, because withholding a rule the dispatcher enforces is the
+ *   worse error. A threshold is not a measurement.
  * - **The SATURATION axis renders `unknown`, never green, until each machine's
  *   runner is rebuilt.** Added by plan
  *   `2026-08-27-fleet-telemetry-has-no-saturation-dimension-but-memory`: a
@@ -120,20 +130,22 @@ import {
   headroomTone,
   HEADROOM_LABEL,
   HEADROOM_MEANING,
+  headroomSetBy,
   hostIsBindingConstraint,
   cpuTempReading,
-  laneShowsSwap,
   pressureAxisIsSwap,
   pressureAxisLabel,
   pressureFormula,
   pressureLabel,
   rowAnchor,
   rowHeadroom,
+  rowShowsSwapAxis,
   safeRatio,
   SATURATION_REPORT_MEANING,
   saturationSourceLabel,
   showsTopConsumer,
   STALE_AFTER_SECS,
+  swapReading,
   threadHeadroom,
   topConsumerReading,
 } from "./fleetResources";
@@ -145,6 +157,7 @@ import type {
   ResourceSampleRow,
   RowTone,
   StripRow,
+  SwapReading,
 } from "./fleetResources";
 import type { UseFleetResourceSamplesResult } from "./useFleetResourceSamples";
 
@@ -269,10 +282,17 @@ function instancePositions(rows: readonly StripRow[]): Map<string, number> {
  * refuse work" are different questions, and the band that used to answer the
  * second from the first was a client-side constant coord never agreed to.
  * The Admission column beside this one carries the verdict and the tone.
+ *
+ * A `host` row also carries its OWN swap device here, beside the lead, from
+ * coord's served `swap_ratio` (`HostSwapFigure`). It sits beside the lead and
+ * not in its place, because the lead is the ranking figure and coord ranks a
+ * host on commit on every OS.
  */
 function PressureCell({ row }: { row: StripRow }) {
   const sample = row.sample;
   const pressure = sample?.pressure ?? null;
+  const swap = swapReading(sample);
+  const stale = row.freshness === "stale";
 
   if (row.freshness === "unknown") {
     return (
@@ -299,40 +319,52 @@ function PressureCell({ row }: { row: StripRow }) {
   // "no magnitude", and it would otherwise print as "NaN%".
   if (!hasPressureValue(row.freshness, pressure)) {
     return (
-      <span
-        className="inline-flex items-center gap-1.5"
-        data-testid="fleet-resource-pressure-no-opinion"
-      >
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="text-muted-foreground underline decoration-dotted">
-              unknown
-            </span>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-[20rem] text-[11px]">
-            The server has no pressure opinion for this lane — its divisor is
-            absent or zero, or the lane is one coord does not rank. Rendered
-            unknown rather than 0: a zero here would sort an unmeasured machine
-            first.
-          </TooltipContent>
-        </Tooltip>
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        <span
+          className="inline-flex items-center gap-1.5"
+          data-testid="fleet-resource-pressure-no-opinion"
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-muted-foreground underline decoration-dotted">
+                unknown
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[20rem] text-[11px]">
+              The server has no pressure opinion for this lane — its divisor is
+              absent or zero, or the lane is one coord does not rank. Rendered
+              unknown rather than 0: a zero here would sort an unmeasured
+              machine first.
+            </TooltipContent>
+          </Tooltip>
+        </span>
+        {/* A missing commit figure is no reason to hide a swap figure coord
+            DID measure. The two are separate instruments. */}
+        {row.lane === "host" && (
+          <HostSwapFigure sample={sample} swap={swap} stale={stale} />
+        )}
       </span>
     );
   }
 
-  const stale = row.freshness === "stale";
-  // §C1: a `host` row must never show a swap figure — not even one coord
-  // handed us. `laneShowsSwap` is the guard, applied to the LANE rather than
-  // to the server's `basis`, so a publisher (or coord) bug that stamps
-  // `basis: "swap"` on a Windows host row still cannot print the commit
-  // counters a second time under a swap label. The ratio itself is still the
-  // server's; only the raw-counter disclosure is withheld.
-  const swapSuppressed =
-    pressure.basis === "swap" && !laneShowsSwap(row.lane ?? "");
+  // A `host` lead is its RANKING figure, and coord makes that commit on every
+  // OS (`lane_pressure`'s host arm never falls back to swap). So a `basis:
+  // "swap"` stamped on a host lead is a defect, and its swap label and
+  // counters are ALWAYS withheld: the number may really be a commit ratio,
+  // and on a Windows host the swap counters are the commit counters printed a
+  // second time. A host's measured swap reaches the row only through the field
+  // that owns it, the served `swap_ratio`, in `HostSwapFigure` beside the
+  // lead. The ratio itself is still the server's; only the disclosure is
+  // withheld. The lane test here is about the RANKING basis, which is coord's
+  // contract. Whether a host has a swap figure at all is the served field's
+  // decision.
+  const swapSuppressed = pressure.basis === "swap" && row.lane === "host";
+  const leadIsSwap = pressure.basis === "swap" && !swapSuppressed;
   const raw = swapSuppressed
-    ? "raw counters withheld: this is a host lane, where swap is derived from " +
+    ? "raw counters withheld: coord ranks a host on commit, so a swap basis " +
+      "on a host lead is a defect, and on a Windows host swap is derived from " +
       "the same commit counters (one instrument, not two)"
-    : pressure.basis === "swap"
+    : leadIsSwap
       ? `swap_used ${formatBytes(sample?.swap_used_bytes)} / swap_total ${formatBytes(
           sample?.swap_total_bytes
         )}`
@@ -341,39 +373,139 @@ function PressureCell({ row }: { row: StripRow }) {
         )} / commit_total ${formatBytes(sample?.commit_total_bytes)}`;
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className="inline-flex items-center gap-1.5"
-          data-testid="fleet-resource-pressure"
-        >
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <Tooltip>
+        <TooltipTrigger asChild>
           <span
-            className={`font-medium tabular-nums ${
-              stale ? "line-through opacity-60 text-muted-foreground" : ""
-            }`}
+            className="inline-flex items-center gap-1.5"
+            data-testid="fleet-resource-pressure"
           >
-            {formatPercent(pressure.ratio)}
+            <span
+              className={`font-medium tabular-nums ${
+                stale ? "line-through opacity-60 text-muted-foreground" : ""
+              }`}
+            >
+              {formatPercent(pressure.ratio)}
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              {swapSuppressed ? "commit used" : pressureLabel(pressure.basis)}
+            </span>
           </span>
-          <span className="text-[10px] text-muted-foreground">
-            {swapSuppressed ? "commit used" : pressureLabel(pressure.basis)}
-          </span>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent className="max-w-[22rem] text-[11px] space-y-1">
-        <div className="font-mono">{pressureFormula(pressure.basis)}</div>
-        <div className="font-mono text-muted-foreground">{raw}</div>
-        <div>
-          Computed by coord, not by this page — the CI dispatcher ranks on the
-          same value. It is a magnitude, not a verdict: whether this lane
-          accepts work is the Admission column.
-        </div>
-        {stale && (
-          <div className="text-yellow-600 dark:text-yellow-400">
-            STALE: this is the last value, not the current one.
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[22rem] text-[11px] space-y-1">
+          <div className="font-mono">{pressureFormula(pressure.basis)}</div>
+          <div className="font-mono text-muted-foreground">{raw}</div>
+          <div>
+            Computed by coord, not by this page — the CI dispatcher ranks on the
+            same value. It is a magnitude, not a verdict: whether this lane
+            accepts work is the Admission column.
           </div>
-        )}
-      </TooltipContent>
-    </Tooltip>
+          {stale && (
+            <div className="text-yellow-600 dark:text-yellow-400">
+              STALE: this is the last value, not the current one.
+            </div>
+          )}
+        </TooltipContent>
+      </Tooltip>
+      {/* Beside the lead, unless the lead already IS the swap figure. */}
+      {row.lane === "host" && !leadIsSwap && (
+        <HostSwapFigure sample={sample} swap={swap} stale={stale} />
+      )}
+    </span>
+  );
+}
+
+/**
+ * A `host` row's OWN swap device, printed beside its commit figure exactly
+ * when coord serves a measured `swap_ratio`.
+ *
+ * `null` prints nothing at all. That is the Windows host, where swap is the
+ * commit counters derived a second time and a figure would be one instrument
+ * printed twice. An ABSENT key, from a coord that predates the field, says
+ * "swap not reported", never a 0 and never a silent blank: whether this host
+ * is swapping is unknown, and that is not the same as "it is not". Like the
+ * lead, the figure is a magnitude with no tone. Whether the swap axis is
+ * holding work back is the Admission column, which names it ("set by swap").
+ */
+function HostSwapFigure({
+  sample,
+  swap,
+  stale,
+}: {
+  sample: ResourceSampleRow | null;
+  swap: SwapReading;
+  stale: boolean;
+}) {
+  if (swap.kind === "none") return null;
+  if (swap.kind === "unreported" || swap.kind === "unreadable") {
+    const unreadable = swap.kind === "unreadable";
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span className="text-muted-foreground">·</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="text-[10px] text-muted-foreground italic underline decoration-dotted"
+              data-testid={
+                unreadable
+                  ? "fleet-resource-host-swap-unreadable"
+                  : "fleet-resource-host-swap-missing"
+              }
+            >
+              {unreadable ? "swap unreadable" : "swap not reported"}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[20rem] text-[11px]">
+            {unreadable
+              ? "coord reported a swap ratio for this host that this build cannot read — a coord newer than this page. Unknown, not zero."
+              : 'coord did not report a swap ratio for this host — a coord that predates the field. Whether this host is swapping is unknown: NOT zero, and NOT "no swap".'}
+          </TooltipContent>
+        </Tooltip>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="text-muted-foreground">·</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className="inline-flex items-center gap-1.5"
+            data-testid="fleet-resource-host-swap"
+          >
+            <span
+              className={`font-medium tabular-nums ${
+                stale ? "line-through opacity-60 text-muted-foreground" : ""
+              }`}
+            >
+              {formatPercent(swap.ratio)}
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              {pressureLabel("swap")}
+            </span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[22rem] text-[11px] space-y-1">
+          <div className="font-mono">{pressureFormula("swap")}</div>
+          <div className="font-mono text-muted-foreground">
+            swap_used {formatBytes(sample?.swap_used_bytes)} / swap_total{" "}
+            {formatBytes(sample?.swap_total_bytes)}
+          </div>
+          <div>
+            This host&apos;s own swap device, graded by coord as an axis of its
+            own. Here it is an instrument independent of commit, so the two
+            figures are two measurements, not one printed twice. It never enters
+            the ranking: the commit figure beside it stays this lane&apos;s
+            pressure. Whether it is holding work back is the Admission column.
+          </div>
+          {stale && (
+            <div className="text-yellow-600 dark:text-yellow-400">
+              STALE: this is the last value, not the current one.
+            </div>
+          )}
+        </TooltipContent>
+      </Tooltip>
+    </span>
   );
 }
 
@@ -506,10 +638,12 @@ function FloorLine({
   detail: FloorDetail | null;
   /**
    * Set when this threshold is measured on a quantity the ROW's pressure
-   * column is not showing — the Windows `host` carve-out. Without it an
-   * operator naturally compares "50% swap used" to a commit percentage
-   * sitting three columns away, which is the two-instruments-read-as-one
-   * error in the other direction.
+   * column is not showing: a swap ceiling on a host row that prints no swap
+   * figure (`rowShowsSwapAxis`). That is a Windows host, served `swap_ratio:
+   * null`, or a coord that predates the field. Without the note an operator
+   * naturally compares "50% swap used" to a commit percentage sitting three
+   * columns away, which is the two-instruments-read-as-one error in the other
+   * direction.
    */
   offAxisNote?: string;
   /**
@@ -758,20 +892,30 @@ function RejectClause({ detail }: { detail: FloorDetail }) {
  * `unknown` — the field absent (a coord without the floor fields), null, or a
  * stale/absent sample — renders in the same muted tone as a dead row. Absence
  * of signal is not health.
+ *
+ * A `warn` or `breach` also names WHICH reading set it ("set by swap"), from
+ * coord's `headroom_source`. A worst-of over several axes says nothing about
+ * what to do until it says which axis won.
  */
 function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
+  const { presenting } = usePresentationMode();
   const headroom: Headroom =
     row.freshness === "fresh" ? rowHeadroom(row.sample) : "unknown";
   const report = headroomReport(row.sample);
+  // Coord's answer, named and never re-derived. A volume's label stays with
+  // the operator, because a label someone typed can name a client.
+  const setBy = headroomSetBy(headroom, row.sample?.headroom_source, {
+    nameVolume: !presenting,
+  });
 
   const pressureFloor = row.sample?.pressure_floor;
-  // §C1 suppresses the SWAP figure on a lane that derives swap from the commit
-  // counters. It suppresses the swap THRESHOLD line too — but only while there
-  // is nothing to disclose. A basis that is not swap is not covered by that
-  // rule at all. (`laneShowsSwap("")` is true, so a lane-less row would show
-  // the line; such a row has no sample, so the floors are withheld anyway.)
+  // A swap THRESHOLD is on this row's axis only where the row carries a swap
+  // figure (`rowShowsSwapAxis`): a wsl/container lead, or a host whose swap
+  // coord serves as measured. On any other row the line is printed only when
+  // coord asserts a threshold, with a note that it is not this row's pressure
+  // axis. A basis that is not swap is not covered by that rule at all.
   const pressureFigureHidden =
-    !laneShowsSwap(row.lane ?? "") &&
+    !rowShowsSwapAxis(row.sample) &&
     pressureAxisIsSwap(pressureFloor?.basis ?? "swap_ratio");
   const showsPressureAxis = !pressureFigureHidden || pressureFloor != null;
 
@@ -804,6 +948,14 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
                     : "no guard acting"}
               </span>
             )}
+            {setBy && (
+              <span
+                className="text-[10px] text-muted-foreground"
+                data-testid="fleet-resource-headroom-source"
+              >
+                · set by {setBy}
+              </span>
+            )}
           </span>
         </TooltipTrigger>
         <TooltipContent className="max-w-[22rem] text-[11px] space-y-1">
@@ -816,6 +968,12 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
           <div className="text-muted-foreground">
             {HEADROOM_MEANING[headroom]}
           </div>
+          {setBy && (
+            <div className="text-muted-foreground">
+              Set by {setBy}: the reading coord says produced this verdict. This
+              page names it and does not re-derive it.
+            </div>
+          )}
           {headroom === "unknown" && (
             <div className="text-muted-foreground">
               {row.freshness !== "fresh"
@@ -859,13 +1017,14 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
               so omitting it would render a WSL row at swap 0.6 as "no guard
               acting" while the dispatcher had already stepped back.
 
-              Suppressed on a lane that shows no swap figure UNLESS coord
-              actually asserts a threshold there. §C1 forbids a swap word on
-              a Windows host row because swap is the commit counters printed
-              twice — and "no swap threshold" on a lane that has no swap axis
-              is noise, not disclosure. A real reported ceiling still prints:
-              withholding a rule the dispatcher enforces is the inversion this
-              column exists to prevent, and it outranks the tidiness rule. */}
+              Suppressed on a row that carries no swap figure UNLESS coord
+              actually asserts a threshold there. A Windows host is served
+              `swap_ratio: null` and no swap floor, because its swap is the
+              commit counters printed twice, and "no swap threshold" on a row
+              with no swap axis is noise, not disclosure. A real reported
+              ceiling still prints: withholding a rule the dispatcher enforces
+              is the inversion this column exists to prevent, and it outranks
+              the tidiness rule. */}
           {showsPressureAxis && (
             <Aged freshness={row.freshness}>
               <FloorLine
@@ -1277,7 +1436,10 @@ function FloorsLegend({
           disk) is crossed going <em>down</em>, while a{" "}
           <strong>ratio ceiling</strong> (swap, saturation) is crossed going{" "}
           <em>up</em>. A Windows <code>host</code> row carries byte floors and
-          no swap ceiling; a Linux lane carries the swap ceiling and no memory
+          no swap ceiling. A Linux <code>host</code> row carries its commit
+          floor <em>and</em> a swap ceiling, read against the swap figure
+          printed beside its commit figure. A <code>wsl</code> or{" "}
+          <code>container</code> lane carries the swap ceiling and no memory
           floor, because nothing in the fleet floors <code>mem_available</code>.
           The <strong>saturation</strong> ceiling is on <em>every</em> lane — a
           task table is a task table on either platform, and the incident that
@@ -1421,10 +1583,11 @@ export function FleetResourceStrip({
               // lane that legitimately has no such rule. Unconditional for
               // exactly that reason, unlike the swap line below.
               r.sample.saturation_floor === undefined ||
-              // Only on a lane that HAS a pressure axis — a Windows host row
-              // saying nothing about swap is correct, not a reporting gap.
-              // Same predicate the render uses, so the two cannot disagree.
-              (laneShowsSwap(r.lane ?? "") &&
+              // Only on a row that CARRIES a swap axis. A Windows host row,
+              // served `swap_ratio: null`, saying nothing about swap is
+              // correct, not a reporting gap. Same predicate the render uses,
+              // so the two cannot disagree.
+              (rowShowsSwapAxis(r.sample) &&
                 r.sample.pressure_floor === undefined))
           ) {
             missing += 1;
@@ -1551,10 +1714,14 @@ export function FleetResourceStrip({
                         </span>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-[22rem] text-[11px]">
-                        The lane&apos;s saturation, computed by coord — swap on
-                        Linux lanes, free commit on the Windows host lane. Each
-                        row says which. Never <code>mem_available</code>: it is
-                        pinned under saturation and reads as an all-clear.
+                        The lane&apos;s saturation, computed by coord: swap on
+                        the wsl and container lanes, commit on every host lane.
+                        Each row says which. A host row also prints its own swap
+                        device beside the commit figure wherever coord serves
+                        one. A Linux host has one; a Windows host&apos;s swap is
+                        derived from its commit counters, so it gets none. Never{" "}
+                        <code>mem_available</code>: it is pinned under
+                        saturation and reads as an all-clear.
                       </TooltipContent>
                     </Tooltip>
                   </th>
