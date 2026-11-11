@@ -13,14 +13,18 @@ real two-parent merge commits, depth-1 clones (``shallow_clone``), the
 ``tests/test_declare_setup_death.py`` and ``tests/test_aggregate_setup_death.py``.
 
 THE SHARD-LOG HAZARD. Both modules run inside a ``Run Tests`` shard, where the
-Actions runner reads any output line that starts with ``::`` (after trimming
-leading whitespace) as a workflow command: a printed
+Actions runner reads a workflow command in two forms (actions/runner
+``ActionCommand``): ``TryParseV2`` reads a line that starts with ``::`` after
+its leading whitespace is trimmed, and the legacy ``TryParse`` finds
+``LEGACY_PREFIX`` (two ``#`` and a ``[``) at ANY column (``IndexOf``) and
+reads the command up to the next ``]``. A printed
 ``::error title=... (not a verdict on this PR)::`` would itself declare that
-shard's red not a verdict. So nothing here prints, every subprocess's output
-is captured (``assert_prints_nothing`` is the AST guard both modules run over
-themselves and over this file), every failure message is ``defang``-ed, and
-``run_pytest_probe`` / ``command_lines`` let a module prove that even its
-FAILING run writes no workflow command.
+shard's red not a verdict, and so would the legacy spelling anywhere in a
+line, a repr or a ``--showlocals`` local included. So nothing here prints,
+every subprocess's output is captured (``assert_prints_nothing`` is the AST
+guard both modules run over themselves and over this file), every failure
+message is ``defang``-ed, and ``run_pytest_probe`` / ``command_lines`` let a
+module prove that even its FAILING run writes no workflow command.
 """
 
 from __future__ import annotations
@@ -54,24 +58,38 @@ BASE_FILES = {
 }
 
 
+#: The legacy workflow-command prefix, which the runner's ``TryParse`` finds at
+#: any column of a line. Spelled in two parts, so no source line here holds it
+#: (``assert_prints_nothing`` refuses one that does).
+LEGACY_PREFIX = "#" * 2 + "["
+
+
 def defang(text: str) -> str:
-    """``text`` made safe for a failure message: no line can start a command.
+    """``text`` made safe for a failure message: no line holds a command.
 
     Every ``::`` gains a space, so after leading whitespace no line can begin
-    with ``::``. Membership of a needle holding no ``:`` is unchanged.
+    with ``::``; every ``LEGACY_PREFIX`` gains one between its two ``#``, so
+    no column holds it. A needle holding no ``:`` and no ``#`` (a lone space
+    aside) is in the defanged text exactly when it is in ``text``.
     """
-    return text.replace("::", ": :")
+    return text.replace("::", ": :").replace(LEGACY_PREFIX, "# #[")
 
 
 def command_lines(text: str) -> list[str]:
-    """Every line of ``text`` the Actions runner would parse as a workflow command.
+    """Every line of ``text`` the Actions runner could parse as a workflow command.
 
-    The runner trims a line's leading whitespace (``TrimStart``) and reads it
-    as a command when it then starts with ``::``. ``str.splitlines`` and
-    ``str.lstrip`` split and strip a superset of what the runner does, so
-    this never misses one.
+    Both forms: a line that starts with ``::`` once the runner has trimmed
+    its leading whitespace (``TrimStart``), and a line holding
+    ``LEGACY_PREFIX`` at any column (``IndexOf``), whatever follows it.
+    ``str.splitlines`` and ``str.lstrip`` split and strip a superset of what
+    the runner does, and the prefix holds no line break, so this never misses
+    one.
     """
-    return [line for line in text.splitlines() if line.lstrip().startswith("::")]
+    return [
+        line
+        for line in text.splitlines()
+        if line.lstrip().startswith("::") or LEGACY_PREFIX in line
+    ]
 
 
 def base_env(home: Path) -> dict[str, str]:
@@ -346,19 +364,21 @@ def assert_prints_nothing(source: Path) -> None:
     """No ``print()`` in ``source``, and every subprocess call captures its output.
 
     A declaration line echoed into a ``Run Tests`` shard's log would itself
-    declare that shard's red not a verdict. Nor may a SOURCE line open with
-    ``::`` (a line of a multi-line string literal, say): a failing test's
-    traceback prints its function's source lines indented by spaces only.
+    declare that shard's red not a verdict. Nor may a SOURCE line be one
+    ``command_lines`` reports (one that opens with ``::``, a line of a
+    multi-line string literal say, or one holding ``LEGACY_PREFIX`` anywhere):
+    a failing test's traceback prints its function's source lines.
     """
     text = source.read_text(encoding="utf-8")
     shaped = [
         number
         for number, line in enumerate(text.splitlines(), start=1)
-        if line.lstrip().startswith("::")
+        if command_lines(line)
     ]
     assert not shaped, (
-        f"{source.name}: source line(s) {shaped} open with `::`, which a failing "
-        "test's traceback would print as a workflow command"
+        f"{source.name}: source line(s) {shaped} open with `::` or hold the "
+        "legacy prefix, which a failing test's traceback would print as a "
+        "workflow command"
     )
     tree = ast.parse(text)
     for node in ast.walk(tree):
