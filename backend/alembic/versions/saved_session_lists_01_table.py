@@ -33,7 +33,7 @@ Hand-authored (never ``--autogenerate``). Downgrade drops the table and its
 indexes, which loses only snapshots that expire within 14 days anyway.
 
 Revision ID: saved_session_lists_01
-Revises: coord_test_result_runs_01
+Revises: coord_ci_runs_head_sha_idx_01
 Create Date: 2026-11-08
 
 """
@@ -47,7 +47,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "saved_session_lists_01"
-down_revision: str | None = "coord_test_result_runs_01"
+down_revision: str | None = "coord_ci_runs_head_sha_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
