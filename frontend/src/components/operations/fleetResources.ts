@@ -226,6 +226,39 @@ export const HEADROOM_MEANING: Record<Headroom, string> = {
 
 const HEADROOM_VALUES = new Set<string>(["ok", "warn", "breach", "unknown"]);
 
+/**
+ * The axis whose reading SET a row's `headroom` — coord's `HeadroomBasis`.
+ *
+ * Coord reuses the spellings this module already carries rather than minting
+ * a third vocabulary for the same axes: `FloorBasis`'s three byte columns, and
+ * `PressureBasis`'s `swap` / `threads`. Only `other_volume` is new, because
+ * nothing else names that case.
+ */
+export type HeadroomBasis =
+  | "disk_free"
+  | "other_volume"
+  | "commit_available"
+  | "mem_available"
+  | "swap"
+  | "threads";
+
+/** coord's `HeadroomSource`: the reading that set `headroom`. */
+export interface HeadroomSource {
+  basis: HeadroomBasis;
+  /**
+   * The volume label. Present ONLY on `other_volume`, the one basis whose
+   * remedy is not visible on the row; `null` on every other basis.
+   */
+  volume: string | null;
+  /**
+   * The byte reading that produced the grade, where the basis has one. `null`
+   * on the two ratio bases (`swap`, `threads`) and on a byte column nobody
+   * measured. Evidence only: comparing it to a constant here is the
+   * client-side threshold this module exists not to hold.
+   */
+  free_bytes: number | null;
+}
+
 /** Newest sample for one `(device_id, lane, lane_instance)` anchor. */
 export interface ResourceSampleRow {
   device_id: string;
@@ -423,6 +456,26 @@ export interface ResourceSampleRow {
   /** SERVER-computed. `null` = the lane has no pressure opinion. */
   pressure: LanePressure | null;
   /**
+   * **SERVER-computed**: this lane's OWN swap ratio, `swap_used / swap_total`
+   * (coord's `device_resource_samples::swap_ratio`). Coord serves a number
+   * exactly when it GRADES the lane's swap axis (`swap_axis_graded`), so one
+   * predicate decides both the grade and whether this strip prints a swap
+   * figure. The strip derives no swap ratio of its own from `swap_*_bytes`.
+   *
+   * It matters on the `host` lane, whose lead `pressure` is commit on every OS
+   * because coord never RANKS a host on swap. A Linux host's swap device is an
+   * instrument independent of commit, and on 2026-11-09 one sat at swap 0.9999
+   * while this strip showed it only as commit 0.815.
+   *
+   * `null` = coord has no swap ratio for this lane, rendered as NO swap figure
+   * (never 0). That covers a Windows `host`: its publishers omit `swap_*`
+   * because swap there is derived from the same commit counters, which would
+   * be one instrument printed twice. It also covers a swapless box and a lane
+   * whose reading is missing. Absent = a coord that predates the field,
+   * rendered "swap not reported". See `swapReading`.
+   */
+  swap_ratio?: number | null;
+  /**
    * The memory floor this lane is admitted against. Optional on the wire:
    * absent from any coord that predates the §C3 floor-bands PR, and the
    * absence is rendered as `unknown`, never as "no floor".
@@ -471,6 +524,15 @@ export interface ResourceSampleRow {
    * `saturation` — see the module header.
    */
   headroom?: Headroom | null;
+  /**
+   * **SERVER-computed**: WHICH reading set `headroom`. `null` when the row
+   * grades `ok`, which coord defines as "nothing set a worst grade", never as
+   * health-by-absence. Absent = a coord that predates the field.
+   *
+   * Evidence, never an input: the strip names it beside the verdict ("set by
+   * swap") and does not re-derive it. See `headroomSetBy`.
+   */
+  headroom_source?: HeadroomSource | null;
   /**
    * The host lane's top commit consumers (plan
    * `2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out`
@@ -714,17 +776,80 @@ export function pressureFormula(basis: PressureBasis): string {
   return "1 − commit_available / commit_total";
 }
 
+// ---------------------------------------------------------------------------
+// A lane's own swap device — coord's served `swap_ratio`, never a lane rule
+// ---------------------------------------------------------------------------
+
 /**
- * Whether a lane may show a swap figure AT ALL.
+ * What a row can say about its OWN swap device. Four states with four causes,
+ * the same split `headroomReport` and `describeFloor` make:
  *
- * Never on `host`. Both publishers withhold `swap_*` on Windows because
- * sysinfo derives it algebraically from the same commit counters
- * (`swap_total − swap_used ≡ commit_available − phys_available`), so a swap
- * column beside a commit column on one row reads as corroboration from two
- * instruments when it is one instrument printed twice.
+ * * `value` — coord served a ratio in [0, 1], so it grades this lane's swap.
+ * * `none` — coord served `null` and has no swap ratio for this lane. On a
+ *   `host` row that is the Windows contract or a swapless box. On Windows,
+ *   sysinfo derives swap algebraically from the same commit counters
+ *   (`swap_total − swap_used ≡ commit_available − phys_available`), so a swap
+ *   figure beside the commit figure would read as corroboration from two
+ *   instruments when it is one instrument printed twice. NO swap figure, and
+ *   never a zero.
+ * * `unreported` — the key is absent, from a coord that predates it. Renders
+ *   "swap not reported": never 0, and never a silent blank.
+ * * `unreadable` — present, but not a ratio this build can read (a coord newer
+ *   than this page). Neither "no swap" nor "not reported".
+ *
+ * This replaced `laneShowsSwap`, which decided "may this lane show swap?" from
+ * the lane NAME. That rule was written for Windows hosts and applied to every
+ * host, so it hid a Linux host's real, independent swap device. On 2026-11-09
+ * a Linux host at swap 0.9999 read here only as commit 0.815. Coord now answers
+ * the question with the predicate it grades the axis by (`swap_axis_graded`),
+ * so one rule decides the grade and the display.
  */
-export function laneShowsSwap(lane: string): boolean {
-  return lane !== "host";
+export type SwapReading =
+  | { kind: "value"; ratio: number }
+  | { kind: "none" }
+  | { kind: "unreported" }
+  | { kind: "unreadable" };
+
+export function swapReading(
+  row: Pick<ResourceSampleRow, "swap_ratio"> | null | undefined
+): SwapReading {
+  if (!row || row.swap_ratio === undefined) return { kind: "unreported" };
+  const ratio: unknown = row.swap_ratio;
+  if (ratio === null) return { kind: "none" };
+  // coord clamps into [0, 1]; anything else is a value this build cannot
+  // read, never a figure to print.
+  if (
+    typeof ratio === "number" &&
+    Number.isFinite(ratio) &&
+    ratio >= 0 &&
+    ratio <= 1
+  ) {
+    return { kind: "value", ratio };
+  }
+  return { kind: "unreadable" };
+}
+
+/**
+ * Whether swap is one of the axes this row's figures carry. It decides
+ * whether a swap THRESHOLD is on the row's own axis, and whether a missing one
+ * counts as a reporting gap.
+ *
+ * * `wsl` / `container`: always. Swap IS their pressure axis (coord's
+ *   `lane_pressure` ranks them on it), so the lead figure is the swap figure,
+ *   and a missing reading there is a real gap that coord grades `unknown`.
+ * * `host`: only when coord serves a measured `swap_ratio`, which the strip
+ *   prints beside the commit figure. Coord ranks a host on commit on every OS,
+ *   so this is the only way a swap figure reaches a host row.
+ *
+ * The lane test left here is about which axis a lane is RANKED on, and that
+ * is coord's contract. Whether a host HAS a swap figure is the served field's
+ * decision alone.
+ */
+export function rowShowsSwapAxis(
+  row: Pick<ResourceSampleRow, "lane" | "swap_ratio"> | null | undefined
+): boolean {
+  if (!row) return false;
+  return row.lane !== "host" || swapReading(row).kind === "value";
 }
 
 /**
@@ -1068,11 +1193,64 @@ export function pressureAxisLabel(
   return String(basis ?? "pressure");
 }
 
-/** True when this basis is the derived-on-Windows swap figure §C1 suppresses. */
+/**
+ * True when a threshold is measured on the swap ratio, an axis a row may or
+ * may not carry (`rowShowsSwapAxis`).
+ */
 export function pressureAxisIsSwap(
   basis: PressureFloorBasis | string | null | undefined
 ): boolean {
   return basis === "swap_ratio";
+}
+
+/**
+ * Each `HeadroomBasis` in words, taken from the label maps this module already
+ * holds. "set by …" therefore names the quantity of a threshold line in the
+ * Admission column in that line's own words: the byte columns'
+ * `FLOOR_BASIS_LABEL`, and the swap and saturation lines' labels.
+ */
+export const HEADROOM_BASIS_LABEL: Record<HeadroomBasis, string> = {
+  disk_free: FLOOR_BASIS_LABEL.disk_free,
+  other_volume: "another volume",
+  commit_available: FLOOR_BASIS_LABEL.commit_available,
+  mem_available: FLOOR_BASIS_LABEL.mem_available,
+  swap: pressureAxisLabel("swap_ratio"),
+  threads: pressureAxisLabel("thread_ratio"),
+};
+
+/**
+ * `"swap"` in "set by swap": WHICH reading set a `warn` or `breach`, in words,
+ * or `null` when there is nothing to name.
+ *
+ * Only a warn or a breach names one. Coord serves `headroom_source: null` on
+ * an `ok` row ("nothing set a worst grade"), and an `unknown` verdict has no
+ * reading to point at. A source coord did not send, from a coord that
+ * predates the field, names nothing rather than a guess.
+ *
+ * `other_volume` names its volume, because it is the one basis whose remedy is
+ * not on the row. With `nameVolume: false` (presentation mode) the label is
+ * withheld: a label someone typed can name a client, and the style guide's
+ * "Positions, not names" rule applies. A basis this build does not know comes
+ * from a newer coord. It reads as coord's own word with underscores replaced
+ * by spaces, never as a guess at one of ours.
+ */
+export function headroomSetBy(
+  headroom: Headroom,
+  source: HeadroomSource | null | undefined,
+  { nameVolume = true }: { nameVolume?: boolean } = {}
+): string | null {
+  if (headroom !== "warn" && headroom !== "breach") return null;
+  const basis: unknown = source?.basis;
+  if (typeof basis !== "string" || basis.trim() === "") return null;
+  if (basis === "other_volume") {
+    const volume: unknown = source?.volume;
+    return nameVolume && typeof volume === "string" && volume.trim() !== ""
+      ? `volume ${volume}`
+      : HEADROOM_BASIS_LABEL.other_volume;
+  }
+  return Object.prototype.hasOwnProperty.call(HEADROOM_BASIS_LABEL, basis)
+    ? HEADROOM_BASIS_LABEL[basis as HeadroomBasis]
+    : basis.replace(/_/g, " ");
 }
 
 export function formatPressureFloor(
