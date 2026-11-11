@@ -127,9 +127,10 @@ def _tenant_not_resolved() -> RefusalHTTPException:
     return refusal_error(
         status.HTTP_403_FORBIDDEN,
         RefusalCode.permission_denied,
-        NextActionKind.fix_request,
-        "No project could be resolved for this request: select a project "
-        "you belong to, or ask a project admin to add you.",
+        NextActionKind.request_access,
+        "No project could be resolved for this request: ask a project admin "
+        "to add you.",
+        target="a project admin",
         discriminator=_TENANT_NOT_RESOLVED,
         error_code=_TENANT_NOT_RESOLVED,
     )

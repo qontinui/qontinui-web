@@ -8064,13 +8064,11 @@ export interface paths {
         put?: never;
         /**
          * Execute Mock Workflow
-         * @description Execute a mock workflow using historical data (placeholder endpoint).
+         * @description Return simulated execution data for a workflow (placeholder endpoint).
          *
          *     **Authentication:** JWT token required
          *
          *     This endpoint returns mock execution data for UI visualization.
-         *     Actual config testing execution happens in qontinui-runner using
-         *     the HistoricalDataClient to fetch historical results.
          *
          *     Note: This is a placeholder that returns simulated data.
          */
@@ -13391,6 +13389,33 @@ export interface paths {
          *       runner could not decide", and ``readiness_state`` is coord's freshness
          *       verdict so no browser subtracts its own clock from ``sampled_at``. A
          *       ``stale`` or ``absent`` row renders UNKNOWN, never the last verdict.
+         *     * The **commit-attribution** fields (plan
+         *       ``2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out``
+         *       D1-D4), all OPTIONAL and on host-lane ``latest`` rows.
+         *       ``top_consumers`` (alembic ``topcons_01``) is
+         *       ``{entries: [{pid, name, private_bytes, started_at}], scanned,
+         *       unreadable, attributed_private_bytes}``: at most 5 entries by
+         *       per-process private bytes (the commit charge) descending, plus the
+         *       completeness counts without which a top-5 that misses the real
+         *       consumer reads the same as one that names it. ``name`` is the image
+         *       name only — command lines carry secrets and are never published.
+         *       ``commit_floor_eta_secs`` is coord's least-squares time until free
+         *       commit reaches the row's served ``floor.bytes``, fitted over the RAW
+         *       trailing 300 s of samples and confirmed over the trailing 600 s
+         *       window (never over ``history``): both must be covered and falling,
+         *       and the LATER of the two projections is served. It is null for a
+         *       stale lane, and observed and alerted on but never ranks or filters
+         *       dispatch. ``commit_floor_eta_state`` says what that number (or its
+         *       null) means: ``falling`` (the ETA is set), ``not_falling``,
+         *       ``at_or_below_floor``, or the UNKNOWN readings ``sparse`` (too few
+         *       points, coverage or span), ``stale`` (the newest sample is older
+         *       than the stale window) and ``degraded`` (coord could not read the
+         *       raw window); ``null`` is a lane with no commit floor. Passed through
+         *       untouched, and once more **NULL must stay NULL**: ``top_consumers:
+         *       null`` is a publisher that predates the field or a read that failed,
+         *       and a key **absent** is a coord that predates it. Every UNKNOWN
+         *       reading renders UNKNOWN — never "no consumers", and never "safe";
+         *       only ``not_falling`` may render as nothing.
          *
          *     ``schema_pending: true`` means the sibling alembic migration
          *     (qontinui-web#949) has not reached coord's database yet — coord
@@ -17087,6 +17112,45 @@ export interface paths {
          * @description Turn automatic resume on or off for the caller's effective tenant.
          */
         patch: operations["api_v1_operations_tenant_policy_resume_unfinished_patch"];
+        trace?: never;
+    };
+    "/api/v1/operations/tenant/github-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tenant Github Host
+         * @description Read the tenant's effective GitHub host (github.com when unconfigured).
+         *
+         *     ``can_edit`` follows :func:`get_fleet_policy` exactly — the operator's
+         *     roles in the EFFECTIVE tenant plus the superuser bypass — because the
+         *     writes go through ``require_coord_tenant_admin``.
+         */
+        get: operations["api_v1_operations_tenant_github_host_get"];
+        /**
+         * Put Tenant Github Host
+         * @description Set the tenant's GitHub host (GitHub Enterprise Server or GHE.com).
+         *
+         *     Tenant-admin gated web-side; coord re-checks and answers the typed
+         *     refusals listed above, which pass through as structured ``detail``.
+         *     Coord's echo is the stored row, so it is returned rather than re-read.
+         */
+        put: operations["api_v1_operations_tenant_github_host_put"];
+        post?: never;
+        /**
+         * Delete Tenant Github Host
+         * @description Return the tenant to github.com. Idempotent.
+         *
+         *     Coord refuses with ``repos_registered_on_another_host`` (409) while the
+         *     tenant still has repos enrolled on the configured host.
+         */
+        delete: operations["api_v1_operations_tenant_github_host_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/operations/tenants": {
@@ -24445,236 +24509,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/testing/historical/actions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Submit Action Data
-         * @description Submit action execution data from the runner for historical indexing.
-         *
-         *     This endpoint allows the runner to directly submit action data that
-         *     will be indexed into HistoricalResult for Config Testing queries.
-         *
-         *     **No Authentication Required**: Called by qontinui-runner during
-         *     workflow execution.
-         *
-         *     **Example Request:**
-         *     ```json
-         *     {
-         *       "run_id": "uuid-of-test-run",
-         *       "project_id": "uuid-of-project",
-         *       "workflow_id": 123,
-         *       "actions": [
-         *         {
-         *           "action_id": "action-uuid-1",
-         *           "pattern_id": "login_button",
-         *           "pattern_name": "Login Button",
-         *           "action_type": "FIND",
-         *           "active_states": ["login_page"],
-         *           "success": true,
-         *           "match_count": 1,
-         *           "best_match_score": 0.95,
-         *           "match_x": 100,
-         *           "match_y": 200,
-         *           "match_width": 80,
-         *           "match_height": 40,
-         *           "duration_ms": 150,
-         *           "result_data": {"confidence": 0.95}
-         *         }
-         *       ]
-         *     }
-         *     ```
-         *
-         *     **Returns:** Number of actions indexed
-         */
-        post: operations["api_v1_testing_historical_actions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/testing/historical/frames/{historical_result_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Frame For Result
-         * @description Get the frame image for a historical result.
-         *
-         *     Returns the screenshot/frame captured during the historical action.
-         *     Used for unit testing with real screenshots.
-         *
-         *     **No Authentication Required**: Called by qontinui library.
-         *
-         *     **Returns:** JPEG image data
-         */
-        get: operations["api_v1_testing_historical_frames_historical_result_id_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/testing/historical/index/{snapshot_run_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Index Historical Results
-         * @description Index historical results from a snapshot run.
-         *
-         *     Creates HistoricalResult entries from SnapshotAction records,
-         *     enabling efficient random selection during mock mode.
-         *
-         *     Called after a workflow execution completes to make the execution
-         *     data available for integration testing.
-         *
-         *     **Returns:** Number of results indexed
-         */
-        post: operations["api_v1_testing_historical_index_snapshot_run_id_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/testing/historical/pattern/{pattern_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Historical Results For Pattern
-         * @description Get historical results for a specific pattern.
-         *
-         *     Returns all historical results matching the pattern ID and action type,
-         *     useful for analyzing pattern reliability and variations.
-         *
-         *     **No Authentication Required**: Called by qontinui library.
-         *
-         *     **Returns:** List of matching historical results
-         */
-        get: operations["api_v1_testing_historical_pattern_pattern_id_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/testing/historical/playback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Get Playback Frames
-         * @description Get frames for integration test playback.
-         *
-         *     Returns frame data and metadata for a sequence of historical results,
-         *     suitable for visual playback of an integration test.
-         *
-         *     **No Authentication Required**: Called by qontinui library.
-         *
-         *     **Returns:** List of frames with metadata
-         */
-        post: operations["api_v1_testing_historical_playback_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/testing/historical/random": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Get Random Historical Result
-         * @description Get a random historical result matching criteria.
-         *
-         *     This is the key endpoint for integration testing - it returns
-         *     a random result from historical data, making each test run different.
-         *
-         *     **No Authentication Required**: This endpoint is called by the qontinui
-         *     library during mock mode execution.
-         *
-         *     **Example Request:**
-         *     ```json
-         *     {
-         *       "pattern_id": "login_button",
-         *       "action_type": "FIND",
-         *       "active_states": ["login_page"],
-         *       "success_only": true,
-         *       "project_id": "project-uuid-123"
-         *     }
-         *     ```
-         *
-         *     **Returns:** Random matching historical result or null if none found
-         */
-        post: operations["api_v1_testing_historical_random_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/testing/historical/test-run/{test_run_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Test Run Results
-         * @description Get all historical results for a test run, ordered by sequence.
-         *
-         *     This endpoint supports workflow visualization playback by returning
-         *     all image recognition results from a test run in execution order.
-         *
-         *     **No Authentication Required**: Called by qontinui-web frontend.
-         *
-         *     **Returns:** Ordered list of historical results for the test run
-         */
-        get: operations["api_v1_testing_historical_test_run_test_run_id_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/testing/reliability-stats": {
         parameters: {
             query?: never;
@@ -26374,86 +26208,6 @@ export interface components {
             prompt?: string | null;
             /** Tags */
             tags?: string[] | null;
-        };
-        /**
-         * ActionDataBatch
-         * @description Batch of action data from runner.
-         */
-        ActionDataBatch: {
-            /** Actions */
-            actions: components["schemas"]["ActionDataCreate"][];
-            /**
-             * Project Id
-             * Format: uuid
-             */
-            project_id: string;
-            /**
-             * Run Id
-             * Format: uuid
-             * @description Test run or execution ID
-             */
-            run_id: string;
-            /**
-             * Test Run Id
-             * @description Optional link to SoftwareTestRun
-             */
-            test_run_id?: string | null;
-            /** Workflow Id */
-            workflow_id?: number | null;
-        };
-        /**
-         * ActionDataBatchResponse
-         * @description Response for batch action data submission.
-         */
-        ActionDataBatchResponse: {
-            /** Indexed */
-            indexed: number;
-            /**
-             * Run Id
-             * Format: uuid
-             */
-            run_id: string;
-        };
-        /**
-         * ActionDataCreate
-         * @description Action data submitted by runner for historical indexing.
-         */
-        ActionDataCreate: {
-            /** Action Id */
-            action_id: string;
-            /** Action Type */
-            action_type: string;
-            /** Active States */
-            active_states?: string[];
-            /** Best Match Score */
-            best_match_score?: number | null;
-            /** Duration Ms */
-            duration_ms?: number | null;
-            /** Match Count */
-            match_count?: number | null;
-            /** Match Height */
-            match_height?: number | null;
-            /** Match Width */
-            match_width?: number | null;
-            /** Match X */
-            match_x?: number | null;
-            /** Match Y */
-            match_y?: number | null;
-            /** Pattern Id */
-            pattern_id?: string | null;
-            /** Pattern Name */
-            pattern_name?: string | null;
-            /** Result Data */
-            result_data?: {
-                [key: string]: unknown;
-            };
-            /**
-             * Sequence Number
-             * @description Order within the test run
-             */
-            sequence_number?: number | null;
-            /** Success */
-            success: boolean;
         };
         /**
          * ActionExecutionBatch
@@ -39013,6 +38767,38 @@ export interface components {
             new_name?: string | null;
         };
         /**
+         * FrameResponse
+         * @description Frame response
+         */
+        FrameResponse: {
+            /** Cluster Id */
+            cluster_id?: number | null;
+            /** Frame Number */
+            frame_number: number;
+            /** Height */
+            height: number;
+            /** Id */
+            id: string;
+            /** Image Url */
+            image_url?: string | null;
+            /** Perceptual Hash */
+            perceptual_hash?: string | null;
+            /** Recording Id */
+            recording_id: string;
+            /** Relative Time Ms */
+            relative_time_ms: number;
+            /** State Id */
+            state_id?: string | null;
+            /** Timestamp */
+            timestamp: string;
+            /** Url */
+            url?: string | null;
+            /** Width */
+            width: number;
+            /** Window Title */
+            window_title?: string | null;
+        };
+        /**
          * FreshHostResponse
          * @description A resolved test host for an app.
          */
@@ -39446,43 +39232,6 @@ export interface components {
             verdict: string;
         };
         /**
-         * HistoricalResultResponse
-         * @description Response for historical result.
-         */
-        HistoricalResultResponse: {
-            /** Action Type */
-            action_type: string;
-            /** Active States */
-            active_states: string[] | null;
-            /** Best Match Score */
-            best_match_score: number | null;
-            /** Frame Timestamp Ms */
-            frame_timestamp_ms: number | null;
-            /**
-             * Has Frame
-             * @default false
-             */
-            has_frame: boolean;
-            /** Id */
-            id: number;
-            /** Match Count */
-            match_count: number | null;
-            /** Match Height */
-            match_height: number | null;
-            /** Match Width */
-            match_width: number | null;
-            /** Match X */
-            match_x: number | null;
-            /** Match Y */
-            match_y: number | null;
-            /** Pattern Id */
-            pattern_id: string | null;
-            /** Pattern Name */
-            pattern_name: string | null;
-            /** Success */
-            success: boolean;
-        };
-        /**
          * IdentityListResponse
          * @description Response for GET /identities and POST /identities/link.
          */
@@ -39766,16 +39515,6 @@ export interface components {
             reasoning?: string | null;
         };
         /**
-         * IndexHistoricalResultsResponse
-         * @description Response for indexing historical results.
-         */
-        IndexHistoricalResultsResponse: {
-            /** Indexed */
-            indexed: number;
-            /** Snapshot Run Id */
-            snapshot_run_id: number;
-        };
-        /**
          * IndividualCheckResult
          * @description Individual check result within a check group.
          */
@@ -39998,14 +39737,6 @@ export interface components {
             version: string;
             /** Version Id */
             version_id: number;
-        };
-        /**
-         * IntegrationTestPlaybackRequest
-         * @description Request for integration test playback frames.
-         */
-        IntegrationTestPlaybackRequest: {
-            /** Historical Result Ids */
-            historical_result_ids: number[];
         };
         /** IntentDocumentCreate */
         IntentDocumentCreate: {
@@ -46683,43 +46414,6 @@ export interface components {
             total_states: number;
         };
         /**
-         * RandomResultRequest
-         * @description Request for random historical result.
-         */
-        RandomResultRequest: {
-            /**
-             * Action Type
-             * @description Filter by action type (FIND, CLICK, etc.)
-             */
-            action_type?: string | null;
-            /**
-             * Active States
-             * @description Filter by active states (any match)
-             */
-            active_states?: string[] | null;
-            /**
-             * Pattern Id
-             * @description Filter by pattern ID
-             */
-            pattern_id?: string | null;
-            /**
-             * Project Id
-             * @description Filter by project ID
-             */
-            project_id?: string | null;
-            /**
-             * Success Only
-             * @description Only return successful results
-             * @default true
-             */
-            success_only: boolean;
-            /**
-             * Workflow Id
-             * @description Filter by workflow ID
-             */
-            workflow_id?: number | null;
-        };
-        /**
          * RatingCreate
          * @description Schema for creating/updating a rating.
          */
@@ -48368,6 +48062,11 @@ export interface components {
              * @description Panic message captured from the runner process.
              */
             panicMessage: string;
+            /**
+             * Pid
+             * @description Pid of the crashed process, if the dump recorded one.
+             */
+            pid?: number | null;
             /**
              * Reportedat
              * @description ISO 8601 timestamp when the crash was reported.
@@ -53327,6 +53026,43 @@ export interface components {
             display_name: string;
         };
         /**
+         * TenantGithubHostPut
+         * @description Body of ``PUT /tenant/github-host`` — coord's ``PutGithubHostRequest``.
+         *
+         *     Coord validates the shape (https, a host, no credentials, query, fragment;
+         *     ``web_base`` an origin) and that the host is public; the console does not
+         *     pre-judge either, so coord's ``invalid_github_host`` detail is the one
+         *     message the operator sees.
+         *
+         *     ``extra="forbid"`` mirrors coord's ``deny_unknown_fields``: a misspelled key
+         *     is a 422 here rather than silently dropped by ``model_dump()``.
+         */
+        TenantGithubHostPut: {
+            /** Api Base */
+            api_base: string;
+            /** Web Base */
+            web_base: string;
+        };
+        /**
+         * TenantGithubHostView
+         * @description The tenant's effective GitHub host, as coord resolves it.
+         *
+         *     ``configured`` is ``None`` when coord's answer did not carry it — UNKNOWN,
+         *     never "the github.com default". The bases are ``None`` on the same terms.
+         */
+        TenantGithubHostView: {
+            /** Api Base */
+            api_base: string | null;
+            /** Can Edit */
+            can_edit: boolean;
+            /** Configured */
+            configured: boolean | null;
+            /** Graphql Url */
+            graphql_url: string | null;
+            /** Web Base */
+            web_base: string | null;
+        };
+        /**
          * TenantRenameIn
          * @description Body for ``PATCH /operations/tenants/{tenant_id}`` — a partial rename.
          *
@@ -53656,21 +53392,6 @@ export interface components {
             runs: components["schemas"]["TestRunResponse"][];
         };
         /**
-         * TestRunPlaybackResponse
-         * @description Response for test run playback data.
-         */
-        TestRunPlaybackResponse: {
-            /** Results */
-            results: components["schemas"]["TestRunResultResponse"][];
-            /**
-             * Test Run Id
-             * Format: uuid
-             */
-            test_run_id: string;
-            /** Total Results */
-            total_results: number;
-        };
-        /**
          * TestRunResponse
          * @description Response schema for test run creation and retrieval.
          */
@@ -53725,46 +53446,6 @@ export interface components {
              * @example running
              */
             status: string;
-        };
-        /**
-         * TestRunResultResponse
-         * @description Historical result for test run playback.
-         */
-        TestRunResultResponse: {
-            /** Action Type */
-            action_type: string;
-            /** Active States */
-            active_states: string[] | null;
-            /** Best Match Score */
-            best_match_score: number | null;
-            /** Duration Ms */
-            duration_ms: number | null;
-            /** Id */
-            id: number;
-            /** Match Count */
-            match_count: number | null;
-            /** Match Height */
-            match_height: number | null;
-            /** Match Width */
-            match_width: number | null;
-            /** Match X */
-            match_x: number | null;
-            /** Match Y */
-            match_y: number | null;
-            /** Pattern Id */
-            pattern_id: string | null;
-            /** Pattern Name */
-            pattern_name: string | null;
-            /** Recorded At */
-            recorded_at: string;
-            /** Result Data */
-            result_data?: {
-                [key: string]: unknown;
-            } | null;
-            /** Sequence Number */
-            sequence_number: number | null;
-            /** Success */
-            success: boolean;
         };
         /**
          * TestTargetDesignation
@@ -57382,39 +57063,6 @@ export interface components {
             /** Size */
             size: number;
         };
-        /**
-         * FrameResponse
-         * @description Response with frame data.
-         */
-        app__api__v1__endpoints__historical__FrameResponse: {
-            /** Action Type */
-            action_type: string;
-            /**
-             * Frame Base64
-             * @description Base64 encoded JPEG
-             */
-            frame_base64?: string | null;
-            /** Has Frame */
-            has_frame: boolean;
-            /** Historical Result Id */
-            historical_result_id: number;
-            /** Match Height */
-            match_height: number | null;
-            /** Match Width */
-            match_width: number | null;
-            /** Match X */
-            match_x: number | null;
-            /** Match Y */
-            match_y: number | null;
-            /** Pattern Id */
-            pattern_id: string | null;
-            /** Pattern Name */
-            pattern_name: string | null;
-            /** Success */
-            success: boolean;
-            /** Timestamp Ms */
-            timestamp_ms: number | null;
-        };
         /** AnnotationUpdate */
         app__schemas__annotation__AnnotationUpdate: {
             /** Description */
@@ -57615,38 +57263,6 @@ export interface components {
              * @description File size in bytes
              */
             size_bytes: number;
-        };
-        /**
-         * FrameResponse
-         * @description Frame response
-         */
-        app__schemas__recording__FrameResponse: {
-            /** Cluster Id */
-            cluster_id?: number | null;
-            /** Frame Number */
-            frame_number: number;
-            /** Height */
-            height: number;
-            /** Id */
-            id: string;
-            /** Image Url */
-            image_url?: string | null;
-            /** Perceptual Hash */
-            perceptual_hash?: string | null;
-            /** Recording Id */
-            recording_id: string;
-            /** Relative Time Ms */
-            relative_time_ms: number;
-            /** State Id */
-            state_id?: string | null;
-            /** Timestamp */
-            timestamp: string;
-            /** Url */
-            url?: string | null;
-            /** Width */
-            width: number;
-            /** Window Title */
-            window_title?: string | null;
         };
         /**
          * SemanticSearchRequest
@@ -81274,6 +80890,79 @@ export interface operations {
             };
         };
     };
+    api_v1_operations_tenant_github_host_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantGithubHostView"];
+                };
+            };
+        };
+    };
+    api_v1_operations_tenant_github_host_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantGithubHostPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantGithubHostView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_v1_operations_tenant_github_host_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantGithubHostView"];
+                };
+            };
+        };
+    };
     api_v1_operations_tenants_get: {
         parameters: {
             query?: never;
@@ -90390,7 +90079,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["app__schemas__recording__FrameResponse"][];
+                    "application/json": components["schemas"]["FrameResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -94478,245 +94167,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeficiencyCommentResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_v1_testing_historical_actions_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ActionDataBatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ActionDataBatchResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_v1_testing_historical_frames_historical_result_id_get: {
-        parameters: {
-            query?: {
-                /** @description Frame type: before, action, after, result */
-                frame_type?: string;
-            };
-            header?: never;
-            path: {
-                historical_result_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_v1_testing_historical_index_snapshot_run_id_post: {
-        parameters: {
-            query?: {
-                /** @description Associated video session */
-                video_capture_session_id?: number | null;
-            };
-            header?: never;
-            path: {
-                snapshot_run_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["IndexHistoricalResultsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_v1_testing_historical_pattern_pattern_id_get: {
-        parameters: {
-            query: {
-                /** @description Action type (FIND, CLICK, etc.) */
-                action_type: string;
-                /** @description Comma-separated active states */
-                active_states?: string | null;
-                /** @description Maximum results to return */
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                pattern_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HistoricalResultResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_v1_testing_historical_playback_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["IntegrationTestPlaybackRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["app__api__v1__endpoints__historical__FrameResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_v1_testing_historical_random_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RandomResultRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HistoricalResultResponse"] | null;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_v1_testing_historical_test_run_test_run_id_get: {
-        parameters: {
-            query?: {
-                /** @description Include full result_data_json */
-                include_result_data?: boolean;
-            };
-            header?: never;
-            path: {
-                test_run_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TestRunPlaybackResponse"];
                 };
             };
             /** @description Validation Error */

@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { AlertTriangle, Lock } from "lucide-react";
 import { Provenance, usePresentationMode } from "@/components/presentation";
-import { statusSuffix } from "../_lib/failure-text";
+import { failureTail, statusSuffix } from "../_lib/failure-text";
 import {
   RESTRICTED_REASON,
   probeUnread,
@@ -67,31 +67,74 @@ export function UnknownReading({
  * refused sub-space never reaches here; it renders as its own `restricted`
  * cell, so this copy stays true whenever it shows.
  */
-export function TwinAccessRestricted() {
+export function TwinAccessRestricted({ probe }: { probe?: ProbeAttempt }) {
   const { presenting } = usePresentationMode();
+  const held =
+    probe?.refreshFailed === true ? (
+      <RestrictedHeldNotice probe={probe} presenting={presenting} />
+    ) : null;
   if (presenting) {
     return (
-      <UnknownReading
-        reason={RESTRICTED_REASON}
-        // Rendered INSTEAD of the view: nothing live is on screen.
-        consequence="no live status is shown here"
-        data-testid="digital-twin-access-restricted"
-      />
+      <div className="space-y-4">
+        {held}
+        <UnknownReading
+          reason={RESTRICTED_REASON}
+          // Rendered INSTEAD of the view: nothing live is on screen.
+          consequence="no live status is shown here"
+          data-testid="digital-twin-access-restricted"
+        />
+      </div>
     );
   }
+  // Spaced here, not by the caller: the Lifecycle tab's parent spaces nothing.
   return (
-    <div
-      data-testid="digital-twin-access-restricted"
-      className="flex flex-col items-center justify-center gap-3 rounded-lg border border-border bg-card px-6 py-16 text-center"
-    >
-      <Lock className="size-8 text-muted-foreground" />
-      <h2 className="text-base font-semibold">Access restricted</h2>
-      <p className="max-w-md text-sm text-muted-foreground">
-        The Digital Twin is limited to internal Qontinui operators. Your tenant
-        isn&apos;t on the allowlist for the fleet-wide twin observers — ask an
-        administrator if you need access.
-      </p>
+    <div className="space-y-4">
+      {held}
+      <div
+        data-testid="digital-twin-access-restricted"
+        className="flex flex-col items-center justify-center gap-3 rounded-lg border border-border bg-card px-6 py-16 text-center"
+      >
+        <Lock className="size-8 text-muted-foreground" />
+        <h2 className="text-base font-semibold">Access restricted</h2>
+        <p className="max-w-md text-sm text-muted-foreground">
+          The Digital Twin is limited to internal Qontinui operators. Your
+          tenant isn&apos;t on the allowlist for the fleet-wide twin observers —
+          ask an administrator if you need access.
+        </p>
+      </div>
     </div>
+  );
+}
+
+/**
+ * The access notice's qualifier when the latest probe read FAILED over an
+ * earlier all-refused answer (react-query keeps a query's data when a refetch
+ * fails: `refreshFailed`). The refusal shown is then that earlier answer, not
+ * a current one — coord may have changed its mind since — so this names the
+ * failure and dates the answer with a `Provenance` chip in both modes, as the
+ * Twin map's {@link TwinMapHeldNotice} does for its figures. The operator sees
+ * the failure's own text; an evaluator its HTTP status alone (`failureTail`).
+ */
+function RestrictedHeldNotice({
+  probe,
+  presenting,
+}: {
+  probe: ProbeAttempt;
+  presenting: boolean;
+}) {
+  return (
+    <UnknownReading
+      reason={`coord's live probe's latest read failed${failureTail(probe.error, presenting)}`}
+      consequence="the notice below rests on its last answer, not a current reading"
+      data-testid="digital-twin-access-restricted-held"
+    >
+      <Provenance
+        source={FIDELITY_SOURCE.probe}
+        asOf={probe.asOf}
+        persistent
+        data-testid="digital-twin-access-restricted-held-provenance"
+      />
+    </UnknownReading>
   );
 }
 
