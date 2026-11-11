@@ -39,8 +39,9 @@ put this statement (``0153B221``) at 0.49 average active sessions and 87,466
 blocks read per call (coord finding ``b72e6d9d-14d2-4614-adfd-4111b5c9d7ee``).
 The remaining figures in this docstring come from read-only production reads
 the plan's first implementing session (``dd44d9d7``, its Phase 1b agent) made
-the same day. They are recorded in that session's transcript, not in a coord
-finding. ``coord.alerts`` held 637k live rows in 1.1 GB of heap. An
+the same day, relayed in coord finding
+``1a6c16db-6941-44e1-aa2c-1bd8a0fa6707``. ``coord.alerts`` held 637k live rows
+in a 1.1 GB table (``pg_table_size``). An
 ``EXPLAIN (ANALYZE, BUFFERS)`` of the statement did not finish inside a 30 s
 ``statement_timeout``. The plan was ``Nested Loop Anti Join`` over
 ``Materialize -> Gather -> Parallel Seq Scan on alerts`` with the filter
@@ -87,8 +88,9 @@ index. Until that change lands on coord main, coord-side drift is unpinned:
 this revision's test checks a transcription of coord's SQL, so a coord edit
 to the disjunction leaves both repos green. The resolver
 (``GIVEUP_RESOLVE_PREDICATE_SQL``: the same disjunction AND ``resolved_at IS
-NULL``) also implies the predicate. At production scale (639k rows, default
-planner settings) PG16 resolves through this index, with ``alert_key`` as the
+NULL``) also implies the predicate. On a synthetic table of 639k alerts rows
+(gates and work units at fixture size, default planner settings) PG16
+resolves through this index, with ``alert_key`` as the
 index condition and ``resolved_at IS NULL`` as a filter. On the test's small
 fixture it probes ``uq_alerts_active_key`` instead, which already served it
 before this revision. With the index, each give-up gate costs one descent of
@@ -117,11 +119,14 @@ estimated 2,575 such rows (the 2026-11-04 session reads above). The kind arm
 alone counts 2,371, through an index-only scan of
 ``idx_alerts_kind_first_seen_at``. An entry is about 56 bytes: a 41-byte
 ``gate:<uuid>`` key, the tuple header and the line pointer. So the index is
-roughly 150-250 KB. Measured on PG16, 2,575 entries take 192 kB. That is
-against the storage ceiling that
-``2026-10-22-coord-rds-storage-ceiling-raise-before-it-fills`` budgets. That
-plan quotes a 180 GB volume, and finding ``b72e6d9d`` read it as gp3 200 GB on
-2026-11-04.
+roughly 150-250 KB. Measured on PG16, 2,575 entries take 192 kB as a sorted
+build, and 272 kB when the same rows are inserted one at a time, so it drifts
+up a little as give-ups land after the build. That is spent against the
+storage ceiling that
+``2026-10-22-coord-rds-storage-ceiling-raise-before-it-fills`` budgets
+(163 GiB allocated against a 200 GiB ``MaxAllocatedStorage``). This plan's
+own body quotes gp3 180 GB; finding ``b72e6d9d`` read the volume as gp3 200 GB
+on 2026-11-04.
 qontinui-web#2078's ``idx_pr_events_mergeability_head_created`` is counted in
 that budget separately.
 
@@ -133,7 +138,7 @@ whenever ``detail`` changed. Write amplification is one btree insert, and only
 for rows inside the predicate.
 
 The one-time cost is the ``CONCURRENTLY`` build. It makes two passes over the
-1.1 GB heap, roughly what three calls of today's reader read, and then never
+1.1 GB table, roughly what three calls of today's reader read, and then never
 again.
 
 Classifier-safe form
