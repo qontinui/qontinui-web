@@ -1397,6 +1397,9 @@ function SlicesCell({ row }: { row: StripRow }) {
               {formatSliceLimit(sl.memoryMax)}
               {" · oom "}
               {sl.oomKill == null ? "—" : sl.oomKill}
+              {" · high/max events "}
+              {sl.eventsHigh == null ? "—" : sl.eventsHigh}/
+              {sl.eventsMax == null ? "—" : sl.eventsMax}
             </span>
           ))
         )}
