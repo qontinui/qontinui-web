@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import type { TenantPin } from "@/services/http-client";
+import type { ProjectPin } from "@/services/http-client";
 
 /**
  * Asked at the moment a request is SENT which project to pin it to, on every
@@ -12,9 +12,11 @@ import type { TenantPin } from "@/services/http-client";
  * A page that shows one project's data passes one, so a read or write in
  * flight when another tab switches project — re-issued after a 429, replayed
  * after a token refresh, or sent once the switch is stored — is still sent in
- * the project the page shows.
+ * the project the page shows. It answers a {@link ProjectPin} or nothing,
+ * never a `null` tenant: that would hold no request to the page's project and
+ * would cost it its retries.
  */
-export type ResolvePin = () => TenantPin | undefined;
+export type ResolvePin = () => ProjectPin | undefined;
 
 /** What a hook that pins its requests at send time is told. */
 export interface SendTimePinOptions {
