@@ -44,9 +44,14 @@ Inputs (environment)
                        ``shard_headroom.SHARD_NAME``, the ``Run Tests`` shards.
 ``EXPECTED_MEMBERS``   how many member jobs the run attempt must list.
 ``MEMBER_NOUN``        the title's word for a member (default ``shard``).
+``HARNESS_PATHS_RE``   a regular expression over repo-relative paths: this
+                       aggregate's harness (rule 5).
 ``GITHUB_TOKEN`` (``actions: read`` for the jobs listing, ``checks: read`` for
 annotations), ``GITHUB_REPOSITORY``, ``GITHUB_RUN_ID``, ``GITHUB_RUN_ATTEMPT``,
-``GITHUB_API_URL``.
+``GITHUB_API_URL``, and for rule 5 ``GITHUB_EVENT_NAME``, ``GITHUB_WORKSPACE``
+and ``GITHUB_SHA``. ``DECLARE_FETCH_BOUND_SECS`` is a TEST LEVER that may only
+LOWER the 60 s first-parent fetch bound (an empty, malformed or larger value
+is 60).
 
 The decision
 ------------
@@ -64,20 +69,58 @@ It declares only when ALL of these hold:
    containing ``SETUP FAILED (not a verdict on this PR)``. A member without
    one is re-read at most ``REREADS`` (3) times, ``REREAD_DELAY_S`` (10 s)
    apart, before it counts as undeclared, and the first member still
-   undeclared ends the read.
+   undeclared ends the read;
+5. the harness-diff guard reads ``false``: this PR's diff touches none of
+   ``HARNESS_PATHS_RE``. ``true`` and UNKNOWN withhold. It is read last, so a
+   red that rules 1-4 already settle costs no fetch.
 
 Outputs: one line. A declaration is an ``::error`` whose title is above. A read
-error, a malformed input or an exhausted time budget is UNKNOWN: a
-``::notice title=Setup-death declaration withheld::`` with no phrase. A
-decision not to declare (rules 1, 3 and 4) is one plain log line.
+error, a malformed input, an exhausted time budget and a guard that does not
+read ``false`` withhold: a ``::notice title=Setup-death declaration
+withheld::`` with no phrase. A decision not to declare (rules 1, 3 and 4) is
+one plain log line.
+
+The harness-diff guard (rule 5)
+-------------------------------
+
+This script runs from the PR's OWN merge commit (the ``Check out the
+declarer`` checkout), so a PR that edits it, the ``shard_headroom.py`` it
+imports or the aggregate's workflow file would otherwise get the phrase from
+its edited code. The guard is the per-job declarer's ``compute_guard``
+(``.github/scripts/declare-setup-death.sh``), ported, and fails closed the
+same way. Each aggregate's ``HARNESS_PATHS_RE`` is its members' per-job
+harness -- its workflow file (theirs too), the ``.github/actions/`` tree and
+the per-job declarer -- plus this script and ``shard_headroom.py``. The per-job
+declarer wrote the member titles this script trusts, and when a PR edits
+that declarer, the members' guard runs inside the edit while this one does
+not.
+
+It reads ``true`` when ``git diff -z --no-renames --name-only <first parent>
+<merge commit>`` lists a path matching ``HARNESS_PATHS_RE``, ``false`` when it
+lists none, and UNKNOWN on any event other than ``pull_request``, on a
+``GITHUB_SHA`` that is not a two-parent merge commit, on a first parent it
+cannot fetch within the bound, on a failed diff and on an unusable pattern.
+
+* The merge commit is ``GITHUB_SHA``. Its parents are read from the commit
+  object's HEADER (a ``parent`` line in its message is not one), because a
+  depth-1 checkout grafts them away.
+* The first parent is fetched by sha, anonymously (qontinui-web is public),
+  under ``timeout -k 5 60``; every other git call runs under
+  ``timeout -k 5 30``, and each bound is lowered to what is left of
+  ``DEADLINE_S``. A timeout reads UNKNOWN.
+* The ``scripts/ci`` sparse checkout is a ``blob:none`` partial clone. Every
+  git call therefore runs with ``GIT_NO_LAZY_FETCH=1``, so no object read
+  turns into an unbounded fetch from the promisor remote (git 2.44 and later;
+  an older git ignores it, and ``timeout`` still bounds the call), and with
+  ``GIT_TERMINAL_PROMPT=0``.
 
 Time bounds: every REST read is bounded to ``READ_TIMEOUT_S`` (20 s) and the
-whole run to ``DEADLINE_S`` (120 s), under the invoking step's 3-minute
-``timeout-minutes``; running out reads UNKNOWN. The clock is re-read before
-EVERY read, each page of the jobs listing included (``fetch_jobs``'s
-``deadline``), so a read never starts with a bound longer than what is left.
-At most 1 jobs read (more pages only past 100 jobs) plus 4 annotation reads per
-failed member.
+whole run, the guard's git calls included, to ``DEADLINE_S`` (120 s), under
+the invoking step's 3-minute ``timeout-minutes``; running out reads UNKNOWN.
+The clock is re-read before EVERY read, each page of the jobs listing
+included (``fetch_jobs``'s ``deadline``), so a read never starts with a bound
+longer than what is left. At most 1 jobs read (more pages only past 100 jobs)
+plus 4 annotation reads per failed member.
 
 No title written here contains ``TIMED OUT (not a verdict on this PR)``,
 ``OUT OF MEMORY (not a verdict on this PR)`` or ``killed IN THE BUILD``: those
@@ -91,6 +134,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from collections.abc import Callable, Mapping
@@ -128,6 +172,15 @@ DEADLINE_S = 120
 #: declaration past it is one coord would not see either.
 ANNOTATIONS_PER_PAGE = 50
 NOUN = re.compile(r"[a-z][a-z ]{0,30}")
+
+#: Rule 5's bounds, the per-job declarer's: the first-parent fetch under
+#: `timeout -k 5 60`, every other git call under `timeout -k 5 30`, and each
+#: lowered to what is left of DEADLINE_S.
+FETCH_BOUND_S = 60
+GIT_BOUND_S = 30
+KILL_AFTER_S = 5
+SHA = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+_FETCH_LEVER = re.compile(r"[0-9]{1,3}")
 
 
 class UnknownError(Exception):
@@ -230,6 +283,178 @@ class _Clock:
 
 
 @dataclass(frozen=True)
+class Guard:
+    """The harness-diff guard's reading: ``true``, ``false`` or ``UNKNOWN``."""
+
+    value: str
+    reason: str
+
+
+class _Git:
+    """``timeout -k 5 <bound> git -C <workspace> ...``, inside the run's clock."""
+
+    def __init__(self, env: Mapping[str, str], workspace: str, clock: _Clock):
+        # No credential prompt can hang a call, and no object read becomes a
+        # lazy fetch from the sparse checkout's promisor remote.
+        self._env = {**env, "GIT_TERMINAL_PROMPT": "0", "GIT_NO_LAZY_FETCH": "1"}
+        self._workspace = workspace
+        self._clock = clock
+
+    def bound(self, nominal: int, what: str) -> int:
+        """Whole seconds for one call: ``nominal``, or what is left if that is less."""
+        left = self._clock.left()
+        if left < 1:
+            raise UnknownError(f"the {DEADLINE_S} s time budget ran out before {what}")
+        return min(nominal, int(left))
+
+    def run(
+        self, args: list[str], *, bound: int, capture: bool = True
+    ) -> subprocess.CompletedProcess[bytes]:
+        argv = ["timeout", "-k", str(KILL_AFTER_S), str(bound), "git"]
+        argv += ["-C", self._workspace, *args]
+        try:
+            return subprocess.run(
+                argv,
+                env=self._env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                # A backstop only: `timeout` has killed the call before this.
+                timeout=bound + 2 * KILL_AFTER_S,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise UnknownError(
+                f"git {args[0]} could not run under `timeout` ({exc})"
+            ) from exc
+
+    def has_commit(self, sha: str) -> bool:
+        proc = self.run(
+            ["cat-file", "-e", f"{sha}^{{commit}}"],
+            bound=self.bound(GIT_BOUND_S, "checking for a commit"),
+            capture=False,
+        )
+        return proc.returncode == 0
+
+
+def _fetch_bound(env: Mapping[str, str]) -> int:
+    """``DECLARE_FETCH_BOUND_SECS`` may only LOWER the 60 s bound (a test lever)."""
+    raw = env.get("DECLARE_FETCH_BOUND_SECS") or ""
+    if _FETCH_LEVER.fullmatch(raw) and 1 <= int(raw) <= FETCH_BOUND_S:
+        return int(raw)
+    return FETCH_BOUND_S
+
+
+def _changed_paths(env: Mapping[str, str], clock: _Clock) -> list[str]:
+    """Every path the pull_request merge commit changes against its first parent.
+
+    Raises ``UnknownError`` on every arm the per-job ``compute_guard`` reads
+    UNKNOWN once its event and pattern are usable.
+    """
+    workspace = env.get("GITHUB_WORKSPACE") or ""
+    if not workspace or not Path(workspace).is_dir():
+        raise UnknownError(
+            f"GITHUB_WORKSPACE ('{workspace}') is not a directory, so the checkout "
+            "cannot be read"
+        )
+    merge = env.get("GITHUB_SHA") or ""
+    if not SHA.fullmatch(merge):
+        raise UnknownError(f"GITHUB_SHA ('{merge}') is not a commit id")
+    git = _Git(env, workspace, clock)
+    shown = git.run(
+        ["cat-file", "-p", merge],
+        bound=git.bound(GIT_BOUND_S, "reading the merge commit"),
+    )
+    if shown.returncode != 0:
+        raise UnknownError(f"the merge commit {merge} is not readable in this checkout")
+    # Header lines only: a `parent ` line in the commit MESSAGE is not a parent.
+    header = shown.stdout.split(b"\n\n", 1)[0].decode("utf-8", "replace")
+    parents = [
+        line.removeprefix("parent ")
+        for line in header.splitlines()
+        if line.startswith("parent ")
+    ]
+    if len(parents) != 2:
+        raise UnknownError(
+            f"{merge} has {len(parents)} parent(s), not the two of a pull_request "
+            "merge commit"
+        )
+    first = parents[0]
+    if not SHA.fullmatch(first):
+        raise UnknownError(
+            f"the merge commit's first parent ('{first}') is not a commit id"
+        )
+    if not git.has_commit(first):
+        bound = git.bound(_fetch_bound(env), "fetching the merge commit's first parent")
+        fetch = git.run(
+            ["fetch", "--no-tags", "--depth=1", "origin", first],
+            bound=bound,
+            capture=False,
+        )
+        if not git.has_commit(first):
+            raise UnknownError(
+                f"the merge commit's first parent {first} could not be fetched (git "
+                f"fetch exited {fetch.returncode}; 124 or 137 is the {bound}s bound)"
+            )
+    diff = git.run(
+        ["diff", "-z", "--no-renames", "--name-only", first, merge],
+        bound=git.bound(GIT_BOUND_S, "reading this PR's diff"),
+    )
+    if diff.returncode != 0:
+        raise UnknownError(
+            f"git diff {first} {merge} exited {diff.returncode}, so this PR's diff "
+            "is unread"
+        )
+    names = diff.stdout.decode("utf-8", "surrogateescape").split("\0")
+    return [name for name in names if name]
+
+
+def harness_guard(env: Mapping[str, str], clock: _Clock) -> Guard:
+    """Rule 5: does this PR's diff touch the aggregate's harness?
+
+    The per-job declarer's ``compute_guard``, in its order; see the module
+    docstring.
+    """
+    event = env.get("GITHUB_EVENT_NAME") or ""
+    if event != "pull_request":
+        return Guard(
+            "UNKNOWN",
+            f"the event is '{event or 'unset'}', not pull_request, so there is no "
+            "PR diff to read",
+        )
+    pattern = env.get("HARNESS_PATHS_RE") or ""
+    if not pattern:
+        return Guard(
+            "UNKNOWN",
+            "HARNESS_PATHS_RE is empty, so there is no harness to compare the diff "
+            "against",
+        )
+    try:
+        harness = re.compile(pattern)
+    except re.error:
+        return Guard("UNKNOWN", "HARNESS_PATHS_RE is not a valid regular expression")
+    try:
+        changed = _changed_paths(env, clock)
+    except UnknownError as exc:
+        return Guard("UNKNOWN", str(exc))
+    if not changed:
+        return Guard("false", "this PR's diff against its base is empty")
+    touched = [path for path in changed if harness.search(path)]
+    if touched:
+        return Guard(
+            "true",
+            f"this PR's diff touches this aggregate's harness ('{touched[0]}'), so "
+            "its own edit can have caused, or declared, the setup deaths this title "
+            "would excuse",
+        )
+    return Guard(
+        "false",
+        f"none of the {len(changed)} paths in this PR's diff is this aggregate's "
+        "harness",
+    )
+
+
+@dataclass(frozen=True)
 class _Inputs:
     """The aggregate's inputs, read and checked in the order a problem is reported."""
 
@@ -248,6 +473,10 @@ class _Inputs:
 
 class _NoDeclarationError(Exception):
     """A decision NOT to declare (rules 1, 3 and 4): the red may be a verdict."""
+
+
+class _WithheldError(Exception):
+    """Rules 1-4 held, but the harness-diff guard read ``true`` or UNKNOWN."""
 
 
 def _read_inputs(env: Mapping[str, str]) -> _Inputs:
@@ -405,6 +634,19 @@ def _await_member_declaration(
         sleep(REREAD_DELAY_S)
 
 
+def _rule5_harness_untouched(
+    inputs: _Inputs, env: Mapping[str, str], clock: _Clock
+) -> None:
+    """Rule 5: the harness-diff guard reads ``false``; ``true`` and UNKNOWN withhold."""
+    guard = harness_guard(env, clock)
+    if guard.value != "false":
+        raise _WithheldError(
+            f"every failed {inputs.noun} declared a setup death, but the harness-diff "
+            f"guard read {guard.value}: {guard.reason}. This red is left to read as a "
+            "verdict on this change."
+        )
+
+
 def _declaration(inputs: _Inputs, failed: list[dict[str, Any]]) -> Outcome:
     """The aggregate's title, once every rule has held."""
     names = ", ".join(str(m.get("name")) for m in failed)
@@ -433,9 +675,9 @@ def decide(
     """The aggregate's verdict: the rules in the module docstring, in order.
 
     Each rule is one helper that returns what the next one needs, or raises:
-    ``_NoDeclarationError`` is a decision not to declare, ``UnknownError`` and
-    ``MeasurementError`` withhold the title with a notice. Every read goes
-    through ``shard_headroom``.
+    ``_NoDeclarationError`` is a decision not to declare; ``_WithheldError``,
+    ``UnknownError`` and ``MeasurementError`` withhold the title with a notice.
+    Every GitHub read goes through ``shard_headroom``.
     """
     clock = _Clock(monotonic)
     try:
@@ -444,8 +686,11 @@ def decide(
         members = _rule2_member_jobs(inputs, clock)
         failed = _rule3_failed_members(inputs, members)
         _rule4_every_failed_member_declared(inputs, failed, clock, sleep)
+        _rule5_harness_untouched(inputs, env, clock)
     except _NoDeclarationError as exc:
         return Outcome("decline", text=str(exc))
+    except _WithheldError as exc:
+        return Outcome("withhold", text=str(exc))
     except UnknownError as exc:
         return Outcome(
             "withhold", text=f"{exc}. Nothing was declared for this aggregate."

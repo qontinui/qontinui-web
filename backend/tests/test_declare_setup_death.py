@@ -31,7 +31,6 @@ module's own source, and ``_defang`` keeps ``::`` out of every failure message.
 
 from __future__ import annotations
 
-import ast
 import itertools
 import os
 import re
@@ -43,6 +42,16 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.setup_death_git import (
+    GIT,
+    PrRepo,
+    assert_prints_nothing,
+    base_env,
+    has_commit,
+    shallow_clone,
+    stub_git,
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_REF = ".github/scripts/declare-setup-death.sh"
 SCRIPT = REPO_ROOT / SCRIPT_REF
@@ -50,7 +59,6 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 BACKEND_CI = WORKFLOWS / "backend-ci.yml"
 
 BASH = shutil.which("bash")
-GIT = shutil.which("git")
 
 requires_bash_and_git = pytest.mark.skipif(
     BASH is None or GIT is None,
@@ -178,22 +186,6 @@ def _assert_withheld(out: str) -> str:
 # --- running the shipped script ----------------------------------------------
 
 
-def _base_env(home: Path) -> dict[str, str]:
-    """A clean environment: nothing inherited from the CI job running this module.
-
-    A shard runs with GITHUB_EVENT_NAME, GITHUB_SHA and GITHUB_WORKSPACE of its
-    OWN run in its environment; inheriting them would point the guard at the
-    real checkout.
-    """
-    return {
-        "PATH": "/usr/bin:/bin",
-        "HOME": str(home),
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_TERMINAL_PROMPT": "0",
-        "LC_ALL": "C",
-    }
-
-
 def _run(
     env: dict[str, str], *, path_prefix: Path | None = None, timeout: float = 60
 ) -> tuple[int, str, float]:
@@ -216,83 +208,6 @@ def _run(
     return proc.returncode, proc.stdout + proc.stderr, time.monotonic() - started
 
 
-def _git(cwd: Path, *args: str, home: Path) -> str:
-    assert GIT is not None
-    proc = subprocess.run(
-        [GIT, *args],
-        cwd=cwd,
-        env={
-            **_base_env(home),
-            "GIT_AUTHOR_NAME": "t",
-            "GIT_AUTHOR_EMAIL": "t@example.invalid",
-            "GIT_COMMITTER_NAME": "t",
-            "GIT_COMMITTER_EMAIL": "t@example.invalid",
-        },
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert proc.returncode == 0, _defang(f"git {args}: {proc.stdout}{proc.stderr}")
-    return proc.stdout.strip()
-
-
-BASE_FILES = {
-    ".github/workflows/backend-ci.yml": "name: Backend CI\n",
-    ".github/actions/self-hosted-host-provisioned/action.yml": "name: host\n",
-    ".github/scripts/declare-setup-death.sh": "#!/usr/bin/env bash\n",
-    "backend/app/main.py": "print('base')\n",
-}
-
-
-class PrRepo:
-    """A repo whose ``merge`` commit has ``base`` and a PR head as parents."""
-
-    def __init__(
-        self,
-        root: Path,
-        home: Path,
-        *,
-        changes: dict[str, str | None],
-        message: str = "Merge pr into main",
-    ):
-        self.root = root
-        self.home = home
-        root.mkdir(parents=True)
-        _git(root, "init", "-q", "-b", "main", ".", home=home)
-        for rel, body in BASE_FILES.items():
-            path = root / rel
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(body, encoding="utf-8")
-        _git(root, "add", "-A", home=home)
-        _git(root, "commit", "-q", "-m", "base", home=home)
-        self.base = _git(root, "rev-parse", "HEAD", home=home)
-        _git(root, "checkout", "-q", "-b", "pr", home=home)
-        for rel, change in changes.items():
-            path = root / rel
-            if change is None:
-                _git(root, "rm", "-q", rel, home=home)
-                continue
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(change, encoding="utf-8")
-        _git(root, "add", "-A", home=home)
-        _git(root, "commit", "-q", "--allow-empty", "-m", "pr", home=home)
-        self.head = _git(root, "rev-parse", "HEAD", home=home)
-        # The PR head is based on main, so the merge commit's tree is the head's.
-        self.merge = _git(
-            root,
-            "commit-tree",
-            f"{self.head}^{{tree}}",
-            "-p",
-            self.base,
-            "-p",
-            self.head,
-            "-m",
-            message,
-            home=home,
-        )
-        _git(root, "update-ref", "refs/heads/pr-merge", self.merge, home=home)
-
-
 def _pr_env(
     repo: PrRepo,
     *,
@@ -305,7 +220,7 @@ def _pr_env(
     workspace: Path | None = None,
 ) -> dict[str, str]:
     return {
-        **_base_env(repo.home),
+        **base_env(repo.home),
         "DECLARE_JOB": job,
         "SETUP_STEPS": setup,
         "VERDICT_STEPS": verdict,
@@ -331,59 +246,6 @@ def clean_pr(tmp_path: Path, home: Path) -> PrRepo:
     )
 
 
-def _stub_git(tmp_path: Path, on_fetch: str) -> Path:
-    """A ``git`` that runs the real one except for ``fetch``, which runs ``on_fetch``."""
-    assert GIT is not None
-    stub_dir = tmp_path / "stub-bin"
-    stub_dir.mkdir(exist_ok=True)
-    stub = stub_dir / "git"
-    stub.write_text(
-        "#!/usr/bin/env bash\n"
-        'for arg in "$@"; do\n'
-        '  if [ "$arg" = fetch ]; then\n'
-        f"    {on_fetch}\n"
-        "  fi\n"
-        "done\n"
-        f'exec {GIT} "$@"\n',
-        encoding="utf-8",
-        newline="\n",
-    )
-    stub.chmod(0o755)
-    return stub_dir
-
-
-def _shallow_clone(repo: PrRepo, dest: Path) -> Path:
-    """A depth-1 clone of the merge commit: its parents are NOT present.
-
-    That is the shape of an actions/checkout on ``pull_request``.
-    """
-    _git(repo.root, "config", "uploadpack.allowAnySHA1InWant", "true", home=repo.home)
-    _git(
-        repo.root.parent,
-        "clone",
-        "-q",
-        "--depth",
-        "1",
-        "--branch",
-        "pr-merge",
-        f"file://{repo.root}",
-        str(dest),
-        home=repo.home,
-    )
-    return dest
-
-
-def _has_commit(workspace: Path, sha: str, home: Path) -> bool:
-    assert GIT is not None
-    proc = subprocess.run(
-        [GIT, "-C", str(workspace), "cat-file", "-e", f"{sha}^{{commit}}"],
-        env=_base_env(home),
-        capture_output=True,
-        check=False,
-    )
-    return proc.returncode == 0
-
-
 # --- the declaration ----------------------------------------------------------
 
 
@@ -402,12 +264,12 @@ def test_a_setup_death_with_an_untouched_harness_declares_exactly_once(clean_pr)
 @requires_bash_and_git
 def test_the_first_parent_is_fetched_when_the_checkout_is_shallow(tmp_path, clean_pr):
     """actions/checkout on `pull_request` is depth 1, so the base is absent."""
-    clone = _shallow_clone(clean_pr, tmp_path / "checkout")
-    assert not _has_commit(clone, clean_pr.base, clean_pr.home)
+    clone = shallow_clone(clean_pr, tmp_path / "checkout")
+    assert not has_commit(clone, clean_pr.base, clean_pr.home)
     code, out, _ = _run(_pr_env(clean_pr, workspace=clone))
     assert code == 0
     assert _titles(out) == [LINT_TITLE], _defang(out)
-    assert _has_commit(clone, clean_pr.base, clean_pr.home)
+    assert has_commit(clone, clean_pr.base, clean_pr.home)
 
 
 @requires_bash_and_git
@@ -652,8 +514,8 @@ def test_a_one_parent_commit_is_unknown(clean_pr):
 
 @requires_bash_and_git
 def test_a_first_parent_that_cannot_be_fetched_is_unknown(tmp_path, clean_pr):
-    clone = _shallow_clone(clean_pr, tmp_path / "checkout")
-    stub = _stub_git(tmp_path, "exit 128")
+    clone = shallow_clone(clean_pr, tmp_path / "checkout")
+    stub = stub_git(tmp_path, "exit 128")
     code, out, _ = _run(_pr_env(clean_pr, workspace=clone), path_prefix=stub)
     assert code == 0
     reason = _assert_withheld(out)
@@ -663,8 +525,8 @@ def test_a_first_parent_that_cannot_be_fetched_is_unknown(tmp_path, clean_pr):
 @requires_bash_and_git
 def test_a_fetch_that_hangs_is_bounded_and_unknown(tmp_path, clean_pr):
     """A hang must never hold the runner: the bound fires and reads UNKNOWN."""
-    clone = _shallow_clone(clean_pr, tmp_path / "checkout")
-    stub = _stub_git(tmp_path, "exec sleep 30")
+    clone = shallow_clone(clean_pr, tmp_path / "checkout")
+    stub = stub_git(tmp_path, "exec sleep 30")
     env = {**_pr_env(clean_pr, workspace=clone), "DECLARE_FETCH_BOUND_SECS": "2"}
     code, out, seconds = _run(env, path_prefix=stub, timeout=25)
     assert code == 0
@@ -678,8 +540,8 @@ def test_a_fetch_that_hangs_is_bounded_and_unknown(tmp_path, clean_pr):
 @pytest.mark.parametrize("lever", ["", "0", "61", "600", "abc", "-1"])
 def test_the_fetch_lever_can_only_lower_the_bound(tmp_path, clean_pr, lever):
     """Anything that is not 1..60 reads as the 60 s default."""
-    clone = _shallow_clone(clean_pr, tmp_path / "checkout")
-    stub = _stub_git(tmp_path, "exit 128")
+    clone = shallow_clone(clean_pr, tmp_path / "checkout")
+    stub = stub_git(tmp_path, "exit 128")
     env = {**_pr_env(clean_pr, workspace=clone), "DECLARE_FETCH_BOUND_SECS": lever}
     _, out, _ = _run(env, path_prefix=stub)
     assert "is the 60s bound" in _assert_withheld(out), _defang(out)
@@ -710,7 +572,7 @@ def test_a_merge_commit_absent_from_the_checkout_is_unknown(clean_pr):
 
 @requires_bash_and_git
 def test_unset_inputs_exit_zero_without_a_phrase(home):
-    code, out, _ = _run(_base_env(home))
+    code, out, _ = _run(base_env(home))
     assert code == 0
     assert "DECLARE_JOB is empty" in _assert_withheld(out), _defang(out)
 
@@ -1322,21 +1184,8 @@ def test_backend_ci_triggers_on_the_recall_eval_workflow():
 
 def test_this_module_never_prints_script_output():
     """A printed declaration line in the shard log would itself be a declaration."""
-    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        if isinstance(func, ast.Name):
-            assert func.id != "print", f"print() at line {node.lineno}"
-        if isinstance(func, ast.Attribute) and func.attr in ("run", "Popen", "call"):
-            if isinstance(func.value, ast.Name) and func.value.id == "subprocess":
-                keywords = {kw.arg: kw.value for kw in node.keywords}
-                captured = keywords.get("capture_output")
-                assert isinstance(captured, ast.Constant) and captured.value is True, (
-                    f"subprocess.{func.attr} at line {node.lineno} does not capture "
-                    "its output, so the script's lines would reach the shard log"
-                )
+    for source in (Path(__file__), REPO_ROOT / "backend/tests/setup_death_git.py"):
+        assert_prints_nothing(source)
 
 
 def test_the_script_is_executable_and_strict():

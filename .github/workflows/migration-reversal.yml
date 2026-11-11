@@ -2338,6 +2338,9 @@ jobs:
           MEMBER_NOUN: job
           EXPECTED_MEMBERS: '1'
           NEEDS_JSON: ${{ toJSON(needs) }}
+          # `reverse`'s own harness plus the aggregate's code: a PR touching
+          # any of it gets no title (rule 5, the harness-diff guard).
+          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^scripts/ci/aggregate_setup_death\.py$|^scripts/ci/shard_headroom\.py$'
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ ! -f scripts/ci/aggregate_setup_death.py ]; then
