@@ -64,19 +64,29 @@ let sent: Sent[] = [];
 
 /** A request held until the test releases it. */
 type Hold = {
+  method: string;
   match: RegExp;
   gate: Promise<void>;
   release: () => void;
   seen: boolean;
 };
 let holds: Hold[] = [];
-/** Hold the next GET whose URL matches `match`. */
-function hold(match: RegExp): { release: () => void; arrived: () => boolean } {
+/** Hold the next request whose method and URL match (a GET by default). */
+function hold(
+  match: RegExp,
+  method = "GET"
+): { release: () => void; arrived: () => boolean } {
   let open: () => void = () => {};
   const gate = new Promise<void>((resolve) => {
     open = resolve;
   });
-  const entry: Hold = { match, gate, release: () => open(), seen: false };
+  const entry: Hold = {
+    method,
+    match,
+    gate,
+    release: () => open(),
+    seen: false,
+  };
   holds.push(entry);
   return { release: entry.release, arrived: () => entry.seen };
 }
@@ -174,6 +184,7 @@ beforeEach(() => {
   localStorage.clear();
   sent = [];
   holds = [];
+  refreshKey = 0;
   listTenantsMock.mockReset();
   vi.stubGlobal(
     "fetch",
@@ -185,8 +196,10 @@ beforeEach(() => {
         ] ?? null;
       sent.push({ method, url, tenant });
       const served = tenant ?? SYS;
-      const held = holds.find((h) => !h.seen && h.match.test(url));
-      if (held && method === "GET") {
+      const held = holds.find(
+        (h) => !h.seen && h.method === method && h.match.test(url)
+      );
+      if (held) {
         held.seen = true;
         await held.gate;
       }
@@ -217,6 +230,11 @@ beforeEach(() => {
                 },
               ],
             });
+      }
+      if (method === "POST" && url.endsWith("/publish")) {
+        return json(200, {
+          publication: { publication_version: 3 },
+        });
       }
       if (method !== "GET") {
         // Every write: an answer the hooks accept. The tests here assert
@@ -282,6 +300,15 @@ afterEach(() => {
 
 const user = () => userEvent.setup({ pointerEventsCheck: 0 });
 const after = (from: number) => sent.slice(from);
+/** The page's re-reads since `from`: its rows and its publish-all status. */
+const rereadsSince = (from: number) =>
+  after(from).filter(
+    (s) =>
+      s.method === "GET" &&
+      /\/coord\/prompt-documents(\?|$|\/auto-publish\/status)/.test(s.url)
+  );
+/** Bumped by a test, then `rerender()`: the list's status refresh key. */
+let refreshKey = 0;
 /** Requests sent since `from` whose method and URL match. */
 const sentSince = (from: number, method: string, match: RegExp) =>
   after(from).filter((s) => s.method === method && match.test(s.url));
@@ -329,7 +356,7 @@ async function mountIn(page: string = B) {
   const tree = () => (
     <TenantProvider>
       <Switcher />
-      <PromptDocumentList />
+      <PromptDocumentList autoPublishRefreshKey={refreshKey} />
     </TenantProvider>
   );
   const view = render(tree());
@@ -769,6 +796,25 @@ describe("a door raced past the notice is refused at call time", () => {
     expect(sentSince(before, "POST", /./)).toEqual([]);
   }, 20_000);
 
+  it("opening publish-all takes no dry run in the other project", async () => {
+    // Publish all is offered on the system tenant's page only.
+    await mountIn(SYS);
+    const open = await screen.findByTestId(
+      "publish-all",
+      {},
+      { timeout: 5000 }
+    );
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+
+    await user().click(open);
+
+    await expectNotice();
+    await settle();
+    expect(screen.queryByTestId("publish-all-dialog")).not.toBeInTheDocument();
+    expect(sentSince(before, "POST", /./)).toEqual([]);
+  }, 20_000);
+
   it("the publish-all dialog, already open, arms no run", async () => {
     await mountIn(SYS);
     await user().click(
@@ -798,6 +844,236 @@ describe("a door raced past the notice is refused at call time", () => {
     await expectNotice();
     await settle();
     expect(after(before).filter((s) => s.method !== "GET")).toEqual([]);
+  }, 20_000);
+});
+
+describe("a write in flight when another tab switches", () => {
+  // The write passed the guard; its answer arrives after the switch. What it
+  // re-reads must be THIS page's project, or the rows and the publish-all
+  // answer on screen become the other project's, and stay so after the other
+  // tab switches back and the notice lifts.
+  it("publish-all re-reads the rows and the status in the page's project", async () => {
+    await mountIn(SYS);
+    await user().click(
+      await screen.findByTestId("publish-all", {}, { timeout: 5000 })
+    );
+    const confirm = await screen.findByTestId("publish-all-confirm");
+    await waitFor(() => expect(confirm).toBeEnabled());
+    const armed = hold(/\/publish-all$/, "POST");
+    await user().click(confirm);
+    await waitFor(() => expect(armed.arrived()).toBe(true));
+    await act(async () => anotherTabStores(B));
+    await expectNotice();
+    const before = sent.length;
+
+    armed.release();
+    await waitFor(() =>
+      expect(sentSince(before, "GET", /\/auto-publish\/status/)).toHaveLength(1)
+    );
+    await settle();
+
+    const reads = sentSince(
+      before,
+      "GET",
+      /\/coord\/prompt-documents(\?|$|\/auto)/
+    );
+    expect(reads.length).toBeGreaterThanOrEqual(2);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => SYS));
+    // The other tab switches back: the notice lifts over the page's own rows,
+    // and its publish surface is not retired by another project's answer.
+    await act(async () => anotherTabStores(SYS));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("prompt-documents-cross-tab")
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.getByTestId("doc-row-policy-sys1")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("doc-row-policy-bravo-only")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("doc-publish-mode-policy-sys1")
+    ).toBeInTheDocument();
+  }, 20_000);
+
+  it("an editor save re-reads the rows in the project it was saved in", async () => {
+    await mountIn();
+    await user().click(screen.getByTestId("doc-edit-policy-bravo-only"));
+    const body = await screen.findByTestId("doc-body");
+    await waitFor(() => expect(body).toHaveValue(`body in ${B}`));
+    await user().type(body, " more");
+    const save = hold(/policy\/bravo-only$/, "PATCH");
+    await user().click(screen.getByTestId("doc-save"));
+    await waitFor(() => expect(save.arrived()).toBe(true));
+    await act(async () => anotherTabStores(SYS));
+    await expectNotice();
+    const before = sent.length;
+
+    save.release();
+    await waitFor(() =>
+      expect(
+        sentSince(before, "GET", /\/coord\/prompt-documents$/)
+      ).toHaveLength(1)
+    );
+    await settle();
+
+    expect(
+      sentSince(before, "GET", /\/coord\/prompt-documents$/)[0]?.tenant
+    ).toBe(B);
+    expect(screen.getByTestId("doc-row-policy-bravo-only")).toBeInTheDocument();
+    expect(screen.queryByTestId("doc-row-policy-sys1")).not.toBeInTheDocument();
+  }, 20_000);
+});
+
+describe("every re-read is pinned to the page's project when it is sent", () => {
+  /**
+   * Hold the write `method` to `match`, run `act` (which sends it), switch
+   * project in another tab while it is in flight, then release it: every
+   * re-read it makes must still go in `page`.
+   */
+  async function writeInFlight(
+    page: string,
+    other: string,
+    method: string,
+    match: RegExp,
+    send: () => Promise<void>
+  ) {
+    const write = hold(match, method);
+    await send();
+    await waitFor(() => expect(write.arrived()).toBe(true));
+    await act(async () => anotherTabStores(other));
+    await expectNotice();
+    const before = sent.length;
+    write.release();
+    await waitFor(() => expect(rereadsSince(before).length).toBeGreaterThan(0));
+    await settle();
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => page));
+  }
+
+  it("after a create", async () => {
+    await mountIn();
+    await user().click(screen.getByTestId("new-document"));
+    await user().type(await screen.findByTestId("create-name"), "fresh-doc");
+    await user().type(screen.getByTestId("create-body"), "a body");
+    await writeInFlight(
+      B,
+      SYS,
+      "POST",
+      /\/coord\/prompt-documents\/policy$/,
+      async () => {
+        await user().click(screen.getByTestId("create-submit"));
+      }
+    );
+  }, 20_000);
+
+  it("after a restore to default", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    await mountIn();
+    await user().click(screen.getByTestId("doc-edit-policy-bravo-only"));
+    const restore = await screen.findByTestId("doc-restore-default");
+    await waitFor(() => expect(restore).toBeEnabled());
+    await writeInFlight(B, SYS, "POST", /\/restore-default$/, async () => {
+      await user().click(restore);
+    });
+  }, 20_000);
+
+  it("after a restore of an earlier version", async () => {
+    await mountIn();
+    await openHistoryDialog();
+    await user().click(await screen.findByTestId("restore-version"));
+    const confirm = await screen.findByTestId("restore-version-confirm-button");
+    await writeInFlight(
+      B,
+      SYS,
+      "POST",
+      /\/versions\/\d+\/restore$/,
+      async () => {
+        await user().click(confirm);
+      }
+    );
+    // Nor is the open document re-read in the other project.
+    expect(
+      sent.filter(
+        (s) => s.method === "GET" && s.url.endsWith(DOC) && s.tenant !== B
+      )
+    ).toEqual([]);
+  }, 20_000);
+
+  it("after an upstream adopt", async () => {
+    await mountIn();
+    await openUpstreamDialog();
+    await writeInFlight(B, SYS, "POST", /\/upstream-adopt$/, async () => {
+      await user().click(screen.getByTestId("upstream-adopt"));
+    });
+  }, 20_000);
+
+  it("after a single publish (rows and status)", async () => {
+    await mountIn();
+    await user().click(screen.getByTestId("doc-publish-policy-bravo-only"));
+    const confirm = await screen.findByTestId("publish-confirm");
+    await writeInFlight(B, SYS, "POST", /bravo-only\/publish$/, async () => {
+      await user().click(confirm);
+    });
+  }, 20_000);
+
+  it("after a publish-mode write (its status re-read)", async () => {
+    await mountIn(SYS);
+    await screen.findByTestId(
+      "doc-publish-mode-policy-sys1",
+      {},
+      { timeout: 5000 }
+    );
+    await writeInFlight(SYS, B, "PATCH", /policy\/sys1$/, async () => {
+      await user().click(screen.getByTestId("doc-publish-mode-policy-sys1"));
+      await user().click(
+        await screen.findByTestId("doc-publish-mode-never-policy-sys1")
+      );
+    });
+  }, 20_000);
+
+  it("on a status refresh the page asks for after another tab switched", async () => {
+    const { rerender } = await mountIn(SYS);
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+    refreshKey = 1;
+    rerender();
+    await waitFor(() =>
+      expect(sentSince(before, "GET", /\/auto-publish\/status/)).toHaveLength(1)
+    );
+    expect(sentSince(before, "GET", /\/auto-publish\/status/)[0]?.tenant).toBe(
+      SYS
+    );
+  }, 20_000);
+
+  it("after THIS tab switches project while a write is in flight: the page's new project, not the write's", async () => {
+    const { switchTo } = await mountIn();
+    const write = hold(/policy\/bravo-only$/, "PATCH");
+    await user().click(
+      screen.getByTestId("doc-access-toggle-policy-bravo-only")
+    );
+    await user().click(
+      await screen.findByTestId("doc-access-tier-policy-bravo-only-deny")
+    );
+    await waitFor(() => expect(write.arrived()).toBe(true));
+    await switchTo(SYS);
+    await screen.findByTestId("doc-row-policy-sys1", {}, { timeout: 5000 });
+    await settle();
+    const before = sent.length;
+
+    write.release();
+    await waitFor(() => expect(rereadsSince(before).length).toBeGreaterThan(0));
+    await settle();
+
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => SYS));
+    expect(screen.getByTestId("doc-row-policy-sys1")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("doc-row-policy-bravo-only")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
   }, 20_000);
 });
 

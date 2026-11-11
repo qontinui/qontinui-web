@@ -12,11 +12,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-type Sent = { method: string; url: string };
+type Sent = { method: string; url: string; tenant: string | null };
 let sent: Sent[] = [];
+/** When set, the next write is held until this test releases it. */
+let holdWrite: Promise<void> | null = null;
 
 function view(domain: string, level: string) {
   return {
@@ -87,9 +89,20 @@ function answer(url: string): unknown {
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
-    fetch: async (url: string, init: { method?: string } = {}) => {
+    fetch: async (
+      url: string,
+      init: { method?: string; headers?: Record<string, string> } = {}
+    ) => {
       const method = (init.method ?? "GET").toUpperCase();
-      sent.push({ method, url });
+      // The project a request is PINNED to, when it is; unpinned requests
+      // carry none here (this fake does not read the stored project).
+      const tenant = init.headers?.["X-Qontinui-Active-Tenant"] ?? null;
+      sent.push({ method, url, tenant });
+      if (method !== "GET" && holdWrite) {
+        const gate = holdWrite;
+        holdWrite = null;
+        await gate;
+      }
       // Every write answers as accepted: the tests assert it was not SENT.
       return new Response(
         JSON.stringify(method === "GET" ? answer(url) : { ok: true })
@@ -108,6 +121,7 @@ const user = () => userEvent.setup({ pointerEventsCheck: 0 });
 
 beforeEach(() => {
   sent = [];
+  holdWrite = null;
   localStorage.clear();
   localStorage.setItem(KEY, "t-bravo");
 });
@@ -212,5 +226,49 @@ describe("a settings write raced past the page's fieldset is refused", () => {
     await user().click(screen.getByTestId("compliance-save"));
 
     await expectRefused(before);
+  });
+});
+
+describe("a settings write in flight when another tab switches", () => {
+  it("the auto-publish dial's status re-read is pinned to the page's project", async () => {
+    render(<PromptDocumentsPage />);
+    await user().click(
+      await screen.findByTestId(
+        "policy-auto-publish-level-on",
+        {},
+        { timeout: 5000 }
+      )
+    );
+    await screen.findByTestId("policy-auto-publish-confirm");
+    let release: () => void = () => {};
+    holdWrite = new Promise<void>((r) => {
+      release = r;
+    });
+    await user().click(
+      screen.getByTestId("policy-auto-publish-confirm-accept")
+    );
+    await waitFor(() =>
+      expect(sent.some((s) => s.method === "PUT")).toBe(true)
+    );
+    // Another tab switches while the write is in flight.
+    await act(async () => {
+      localStorage.setItem(KEY, "t-system");
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: KEY, newValue: "t-system" })
+      );
+    });
+    const before = sent.length;
+
+    await act(async () => release());
+
+    await waitFor(() =>
+      expect(
+        sent.slice(before).filter((s) => s.url.includes("/auto-publish/status"))
+      ).toHaveLength(1)
+    );
+    expect(
+      sent.slice(before).find((s) => s.url.includes("/auto-publish/status"))
+        ?.tenant
+    ).toBe("t-bravo");
   });
 });

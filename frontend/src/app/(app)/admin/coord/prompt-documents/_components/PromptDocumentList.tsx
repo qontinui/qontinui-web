@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useOptionalTenant } from "@/contexts/tenant-context";
-import { fetchAutoPublishStatus } from "@/lib/api/operations/coordPromptDocuments";
+import {
+  fetchAutoPublishStatus,
+  type TenantPin,
+} from "@/lib/api/operations/coordPromptDocuments";
 import {
   ACTIVE_TENANT_STORAGE_KEY,
   readActiveTenantId,
@@ -148,7 +151,8 @@ export function PromptDocumentList({
   /**
    * Given the list's call-time write guard (`true`: send; `false`: another
    * tab's switch is in effect — nothing is sent, and the notice is raised),
-   * so the page's own settings can check it at the moment they write.
+   * so the page's own settings can check it at the moment they write, and
+   * the pin for a re-read of the page's project.
    */
   writeGuardRef?: WriteGuardRef;
 } = {}) {
@@ -168,8 +172,17 @@ export function PromptDocumentList({
   );
 }
 
-/** Where the list hands the page its call-time write guard. */
-export type WriteGuardRef = { current: (() => boolean) | null };
+/**
+ * Where the list hands the page its call-time write guard, and the pin for a
+ * re-read of the page's project (see `pagePin`), so the page's own settings
+ * guard their writes and pin their re-reads the same way the list does.
+ */
+export type WriteGuardRef = {
+  current: {
+    canWrite: () => boolean;
+    pagePin: () => TenantPin | undefined;
+  } | null;
+};
 
 /** The list reading the publish-all surface itself — no page owns the read. */
 function SelfReadingPromptDocumentList({
@@ -338,6 +351,21 @@ function PromptDocumentListBody({
   guardTenantRef.current = guardTenant;
 
   /**
+   * The guard's comparison, at call time: whether another tab's switch is in
+   * effect, raising the notice when it is. A page whose project has never
+   * been known has nothing to compare and answers `false`.
+   *
+   * Used bare by a door that refuses in its own words — adopt all's
+   * `tenant_changed` — so the page still locks and offers Reload beside it.
+   */
+  const crossTabInEffect = useCallback((): boolean => {
+    const tenant = guardTenantRef.current;
+    if (tenant === undefined || readActiveTenantId() === tenant) return false;
+    setCrossTabChange(true);
+    return true;
+  }, []);
+
+  /**
    * The call-time half of the guard: the listener above covers what is on
    * screen, this covers the race (a switch whose event has not arrived, a
    * dialog already open). `true` lets the request go; `false` sends nothing,
@@ -345,19 +373,29 @@ function PromptDocumentListBody({
    * known keeps the unguarded behaviour.
    */
   const writeAllowed = useCallback((): boolean => {
-    const tenant = guardTenantRef.current;
-    if (tenant === undefined || readActiveTenantId() === tenant) return true;
-    setCrossTabChange(true);
+    if (!crossTabInEffect()) return true;
     toast.error(`${CROSS_TAB_MESSAGE} Nothing was sent.`);
     return false;
+  }, [crossTabInEffect]);
+  /**
+   * The pin for a re-read of THIS page's rows or publish-all status: the
+   * page's project, as the guard holds it. A re-read that follows a write is
+   * sent after the write answers, by when another tab may have switched the
+   * stored project; unpinned, it would put that project's rows and its
+   * not-system-tenant answer under this page, and they would stay after the
+   * other tab switched back and the guard lifted. Unknown: no pin, as before.
+   */
+  const pagePin = useCallback((): TenantPin | undefined => {
+    const tenant = guardTenantRef.current;
+    return tenant === undefined ? undefined : { tenant };
   }, []);
   useEffect(() => {
     if (!writeGuardRef) return;
-    writeGuardRef.current = writeAllowed;
+    writeGuardRef.current = { canWrite: writeAllowed, pagePin };
     return () => {
       writeGuardRef.current = null;
     };
-  }, [writeGuardRef, writeAllowed]);
+  }, [writeGuardRef, writeAllowed, pagePin]);
   /** `fn`, answering `refused` without calling it while the guard says no. */
   const guard = useCallback(
     <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
@@ -382,7 +420,7 @@ function PromptDocumentListBody({
     updateDocument,
     restoreDefault,
     restoreVersion,
-  } = usePromptDocuments();
+  } = usePromptDocuments({ rereadPin: pagePin });
 
   // Re-read the rows, pinned to the page's project, whenever that project
   // changes — first resolved, or followed to — and the NEWEST read sent (not
@@ -563,14 +601,16 @@ function PromptDocumentListBody({
   ): Promise<boolean> => {
     if (outcome.ok) {
       setUpstreamOpen(false);
-      await reload();
+      await reload(pagePin());
       return true;
     }
     // The decision was made against a version that is no longer current.
     // Retrying with the same number would refuse forever, so put the LIVE
     // document in front of the operator: re-reading it re-runs the dialog's
     // comparison against the version coord actually holds.
-    if (outcome.refusal === "document_moved") {
+    // Not while another tab's switch is in effect: the fetch is unpinned, so it
+    // would put that project's body and version in front of the operator.
+    if (outcome.refusal === "document_moved" && !crossTabInEffect()) {
       const full = await fetchDocument(doc.kind, doc.name);
       if (full) setEditing(full);
     }
@@ -648,7 +688,9 @@ function PromptDocumentListBody({
   ): Promise<boolean> => {
     if (!writeAllowed()) return false;
     const ok = await restoreVersion(kind, name, version, changeNote);
-    if (ok) {
+    // The re-read of the open document is unpinned; skipped once another
+    // tab's switch is in effect, or it would show that project's body.
+    if (ok && !crossTabInEffect()) {
       const full = await fetchDocument(kind, name);
       if (full) setEditing(full);
     }
@@ -685,8 +727,8 @@ function PromptDocumentListBody({
   useEffect(() => {
     if (seenRefreshKey.current === autoPublishRefreshKey) return;
     seenRefreshKey.current = autoPublishRefreshKey;
-    void reloadPublishAll();
-  }, [autoPublishRefreshKey, reloadPublishAll]);
+    void reloadPublishAll(pagePin());
+  }, [autoPublishRefreshKey, reloadPublishAll, pagePin]);
 
   /**
    * The auto-publish status, indexed by `kind/name` so a row is an O(1) lookup
@@ -708,8 +750,13 @@ function PromptDocumentListBody({
    * to confirm should be the ones coord returned seconds ago, and the dry run
    * is a POST on an admin write door that a page load has no business making.
    * The dialog renders its own loading state until this resolves.
+   *
+   * Refused like every other open while another tab's switch is in effect:
+   * the dry run is pinned to the project stored NOW, so it would preview the
+   * other project's changed documents over this page's rows.
    */
   const openPublishAll = async () => {
+    if (!writeAllowed()) return;
     setPublishAllOpen(true);
     await loadPublishAllPreview();
   };
@@ -820,8 +867,11 @@ function PromptDocumentListBody({
       setAdoptAllPreview([]);
     };
     // `pageTenant` is never `undefined` here — the button is not offered then —
-    // and an unknown page project could not be "unchanged" in any case.
+    // and an unknown page project could not be "unchanged" in any case. The
+    // dialog says why in its own words; the page locks beside it whenever its
+    // project is known.
     if (pageTenant === undefined || tenant !== pageTenant) {
+      crossTabInEffect();
       return refuse("tenant_changed");
     }
     // Ask coord AGAIN, now, in this project: the answer that showed the button
@@ -835,7 +885,10 @@ function PromptDocumentListBody({
     // A later open owns the preview; this read arrived too late to be it.
     if (request !== adoptAllRequest.current) return;
     // Both answers must be about the project the preview will be pinned to.
-    if (readActiveTenantId() !== tenant) return refuse("tenant_changed");
+    if (readActiveTenantId() !== tenant) {
+      crossTabInEffect();
+      return refuse("tenant_changed");
+    }
     if (tenancy === "system") return refuse("system_tenant");
     if (tenancy === "unknown") return refuse("tenancy_unknown");
     if (fresh === null) {
@@ -1157,14 +1210,15 @@ function PromptDocumentListBody({
                                       const ok = await setPublishMode(
                                         doc.kind,
                                         doc.name,
-                                        mode
+                                        mode,
+                                        pagePin
                                       );
                                       // The mode takes coord's VERSIONING path,
                                       // so a successful write bumps
                                       // `current_version` and the row must be
                                       // re-read or it shows a stale one beside
                                       // its new mode.
-                                      if (ok) await reload();
+                                      if (ok) await reload(pagePin());
                                       return ok;
                                     }
                                   : undefined
@@ -1246,7 +1300,9 @@ function PromptDocumentListBody({
           // "Publish all changed (N)" count one too high and a settles-at badge
           // promising an automatic publication that has already happened by
           // hand — both stale in the direction that reads as a live schedule.
-          if (res) await Promise.all([reload(), reloadPublishAll()]);
+          if (res) {
+            await Promise.all([reload(pagePin()), reloadPublishAll(pagePin())]);
+          }
           return res;
         }}
       />
@@ -1264,7 +1320,9 @@ function PromptDocumentListBody({
           const res = await publishAll(selected, releaseNote);
           // Same reasoning as the single publish above, and more of it: an
           // armed batch can move every row on the page at once.
-          if (res) await Promise.all([reload(), reloadPublishAll()]);
+          if (res) {
+            await Promise.all([reload(pagePin()), reloadPublishAll(pagePin())]);
+          }
           return res;
         }}
       />
@@ -1297,14 +1355,24 @@ function PromptDocumentListBody({
         // that changed before or during it makes it no answer, as does a
         // degraded one. A project that changed before it is not re-read at
         // all: this page's rows are better stale than another project's.
+        //
+        // A run that ends with another tab's switch in effect — the one that
+        // stopped it, or one made during its re-read — locks the page too: the
+        // rows on it are still this project's, and any other write would not be.
         onFinished={async () => {
           const runTenant = adoptAllTenantRef.current;
-          if (readActiveTenantId() !== runTenant) return null;
+          if (readActiveTenantId() !== runTenant) {
+            crossTabInEffect();
+            return null;
+          }
           const [reread] = await Promise.all([
             reload({ tenant: runTenant }),
             reloadPublishAll(),
           ]);
-          if (readActiveTenantId() !== runTenant) return null;
+          if (readActiveTenantId() !== runTenant) {
+            crossTabInEffect();
+            return null;
+          }
           return reread && reread.degraded === null ? reread.documents : null;
         }}
       />
@@ -1327,7 +1395,7 @@ function PromptDocumentListBody({
         onOpenChange={setClausesOpen}
         document={editing?.kind === "policy" ? editing : null}
         loadingBody={loadingBody}
-        onDocsReload={reload}
+        onDocsReload={() => void reload(pagePin())}
         canWrite={writeAllowed}
       />
     </div>

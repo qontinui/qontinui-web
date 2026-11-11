@@ -6,7 +6,7 @@
  *
  * 1. **A refusal is stamped with the project its request was PINNED to** — the
  *    stored project when it was SENT, not when it was answered — for the
- *    status read and for an armed publish-all alike.
+ *    status read, the publish-all dry run and an armed publish-all alike.
  * 2. **`reload(pin)` sends exactly that pin.**
  * 3. **A 200 from the status door clears a refusal stamped with the same
  *    project; a `null` stamp is cleared only by an explicitly pinned 200; a
@@ -21,10 +21,11 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 
 const fetchStatus = vi.hoisted(() => vi.fn());
 const publishAllMock = vi.hoisted(() => vi.fn());
+const previewMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/api/operations/coordPromptDocuments", () => ({
   fetchAutoPublishStatus: (...args: unknown[]) => fetchStatus(...args),
-  previewPublishAll: vi.fn(),
+  previewPublishAll: (...args: unknown[]) => previewMock(...args),
   publishAllPromptDocuments: (...args: unknown[]) => publishAllMock(...args),
   updatePromptDocument: vi.fn(),
 }));
@@ -48,6 +49,7 @@ const ok = { candidates: [], count: 1, publishing_enabled: true };
 beforeEach(() => {
   fetchStatus.mockReset();
   publishAllMock.mockReset();
+  previewMock.mockReset();
   localStorage.clear();
 });
 afterEach(() => localStorage.clear());
@@ -70,6 +72,33 @@ describe("what a refusal is stamped with", () => {
     await waitFor(() => expect(result.current.unavailable).not.toBeNull());
     expect(result.current.unavailable?.tenant).toBe("t-a");
     expect(fetchStatus).toHaveBeenCalledWith({ tenant: "t-a" });
+  });
+
+  it("stamps a publish-all dry run with the project it was SENT in", async () => {
+    localStorage.setItem(KEY, "t-a");
+    fetchStatus.mockResolvedValue(ok);
+    let answer: (() => void) | undefined;
+    previewMock.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          answer = () => reject(notSystem("POST", "/publish-all"));
+        })
+    );
+    const { result } = renderHook(() => usePublishAll());
+    await waitFor(() => expect(result.current.statusSettled).toBe(true));
+    let preview: Promise<unknown> | undefined;
+    act(() => {
+      preview = result.current.loadCandidates();
+    });
+    await waitFor(() => expect(answer).toBeDefined());
+    // Another tab switches while the dry run is in flight.
+    localStorage.setItem(KEY, "t-b");
+    await act(async () => {
+      answer?.();
+      await preview;
+    });
+    expect(result.current.unavailable?.tenant).toBe("t-a");
+    expect(previewMock).toHaveBeenCalledWith({ tenant: "t-a" });
   });
 
   it("stamps an armed publish-all with the project it was SENT in", async () => {

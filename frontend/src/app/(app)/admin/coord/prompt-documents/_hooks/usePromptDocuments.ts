@@ -43,7 +43,19 @@ function message(err: unknown, fallback: string): string {
  * empty list means "cannot see", not "nothing is there"). Neither is flattened
  * into a confident "no documents" empty state.
  */
-export function usePromptDocuments() {
+export function usePromptDocuments({
+  rereadPin,
+}: {
+  /**
+   * The pin for the re-read each write makes, asked at the moment that
+   * re-read is SENT: the project the page's rows belong to by then. Not the
+   * project the write was sent in — this tab may have switched project while
+   * the write was in flight, and the page has followed. The prompt-documents
+   * list passes its page project; another tab's switch must not move it.
+   * Omitted: the stored project, as before.
+   */
+  rereadPin?: () => TenantPin | undefined;
+} = {}) {
   const [documents, setDocuments] = useState<PromptDocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -184,7 +196,7 @@ export function usePromptDocuments() {
       setSaving(true);
       const created = await createPromptDocument(kind, data);
       toast.success(`Created "${created.description ?? created.name}"`);
-      await loadDocuments();
+      await loadDocuments(rereadPin?.());
       return created;
     } catch (err) {
       toast.error(message(err, "Failed to create document"));
@@ -204,7 +216,7 @@ export function usePromptDocuments() {
       setSaving(true);
       const updated = await updatePromptDocument(kind, name, data);
       toast.success(`Saved as version ${updated.current_version}`);
-      await loadDocuments();
+      await loadDocuments(rereadPin?.());
       return true;
     } catch (err) {
       toast.error(message(err, "Failed to save document"));
@@ -223,7 +235,7 @@ export function usePromptDocuments() {
       setSaving(true);
       await restorePromptDocumentDefault(kind, name);
       toast.success("Restored to default");
-      await loadDocuments();
+      await loadDocuments(rereadPin?.());
       return true;
     } catch (err) {
       toast.error(message(err, "Failed to restore default"));
@@ -256,7 +268,7 @@ export function usePromptDocuments() {
       setSaving(true);
       await restorePromptDocumentVersion(kind, name, version, changeNote);
       toast.success(`Restored version ${version} as a new version`);
-      await loadDocuments();
+      await loadDocuments(rereadPin?.());
       return true;
     } catch (err) {
       toast.error(message(err, "Failed to restore that version"));
