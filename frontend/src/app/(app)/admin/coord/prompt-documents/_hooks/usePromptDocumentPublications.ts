@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { UnreadableAnswerError } from "@/services/http-client";
 import {
   adoptUpstreamPublication,
   applyUpstreamMerge,
@@ -102,10 +104,23 @@ export function classifyUpstreamDecisionError(
  * What one decision call came back with. A refusal carries its classification
  * so the caller can act on the one that has a remedy (`document_moved` →
  * re-read) without re-parsing coord's sentence itself.
+ *
+ * `status` is the HTTP status the rejection carried, read by the console's one
+ * anchored parser (`httpStatusOf`) — or, for an answer that arrived but could
+ * not be read, the status it arrived with (`UnreadableAnswerError`) — and
+ * `null` when there was none: a network failure or an abort. It is what separates
+ * "coord refused" (a 4xx) from "nobody can say whether it landed" (no status,
+ * or a 5xx from a gateway that may have timed out AFTER coord committed — the
+ * adopt commits before it answers).
  */
 export type UpstreamDecisionOutcome<T> =
   | { ok: true; value: T }
-  | { ok: false; refusal: UpstreamDecisionRefusal; detail: string };
+  | {
+      ok: false;
+      refusal: UpstreamDecisionRefusal;
+      detail: string;
+      status: number | null;
+    };
 
 /**
  * Coord's cross-tenant publication channel, from the operator console.
@@ -242,47 +257,75 @@ export function usePromptDocumentPublications() {
 
   const [deciding, setDeciding] = useState(false);
 
-  /** The shared write shape: post, toast, classify. */
+  /**
+   * The shared write shape: post, toast, classify.
+   *
+   * `silent` drops both toasts and nothing else — the outcome still carries
+   * coord's verbatim `detail` and its classification. It exists for "Adopt all
+   * updates", which reports every document in its own dialog: seventeen toasts
+   * stacked over that dialog would say the same thing again, worse.
+   */
   const decide = async <T>(
     post: () => Promise<T>,
     onSuccess: (value: T) => string,
-    fallback: string
+    fallback: string,
+    silent: boolean
   ): Promise<UpstreamDecisionOutcome<T>> => {
     try {
       setDeciding(true);
       const value = await post();
-      toast.success(onSuccess(value));
+      if (!silent) toast.success(onSuccess(value));
       return { ok: true, value };
     } catch (err) {
       const detail = message(err, fallback);
-      toast.error(detail);
+      if (!silent) toast.error(detail);
       return {
         ok: false,
         refusal: classifyUpstreamDecisionError(detail),
         detail,
+        status:
+          httpStatusOf(err) ??
+          (err instanceof UnreadableAnswerError ? err.answeredStatus : null),
       };
     } finally {
       setDeciding(false);
     }
   };
 
-  /** `Adopt upstream`: replace the body with the publication and advance the tracked version. */
+  /**
+   * `Adopt upstream`: replace the body with the publication and advance the
+   * tracked version.
+   *
+   * `options.silent` suppresses the per-call toasts; see {@link decide}.
+   * `options.tenant`, when given, pins the project the write is sent in on
+   * every attempt (`pinActiveTenant`), so a re-issued request cannot land in
+   * a project another tab switched to.
+   */
   const adoptUpstream = useCallback(
     async (
       kind: PromptDocumentKind,
       name: string,
       publicationVersion: number,
-      expectedVersion: number
+      expectedVersion: number,
+      options: { silent?: boolean; tenant?: string | null } = {}
     ): Promise<UpstreamDecisionOutcome<UpstreamDecisionResponse>> =>
       decide<UpstreamDecisionResponse>(
         () =>
-          adoptUpstreamPublication(kind, name, {
-            publication_version: publicationVersion,
-            expected_version: expectedVersion,
-          }),
+          adoptUpstreamPublication(
+            kind,
+            name,
+            {
+              publication_version: publicationVersion,
+              expected_version: expectedVersion,
+            },
+            options.tenant === undefined
+              ? undefined
+              : { tenant: options.tenant }
+          ),
         (r) =>
           `Adopted publication v${r.publication_version} as ${kind}/${name} v${r.to_version}`,
-        "Failed to adopt the publication"
+        "Failed to adopt the publication",
+        options.silent === true
       ),
     []
   );
@@ -306,7 +349,8 @@ export function usePromptDocumentPublications() {
           }),
         (r) =>
           `Kept your ${kind}/${name}; publication v${r.publication_version} recorded as reviewed`,
-        "Failed to record the decision"
+        "Failed to record the decision",
+        false
       ),
     []
   );
@@ -357,7 +401,8 @@ export function usePromptDocumentPublications() {
           }),
         (r) =>
           `Merged publication v${r.publication_version} into ${kind}/${name} clause by clause (v${r.to_version}, ${r.clauses} clauses)`,
-        "Failed to merge the publication"
+        "Failed to merge the publication",
+        false
       ),
     []
   );
