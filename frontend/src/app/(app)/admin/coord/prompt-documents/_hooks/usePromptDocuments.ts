@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { readActiveTenantId } from "@/services/http-client";
 import {
+  type TenantPin,
   createPromptDocument,
   fetchPromptDocument,
   fetchPromptDocumentVersion,
@@ -47,25 +49,74 @@ export function usePromptDocuments() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [degraded, setDegraded] = useState<string | null>(null);
+  /**
+   * The project `documents` were read in: the read's pin, else the project
+   * stored when it was sent (`null`: none). `undefined` until a read lands.
+   */
+  const [documentsTenant, setDocumentsTenant] = useState<
+    string | null | undefined
+  >(undefined);
+  // Bumped by every read. Reads overlap (the mount read, each write's
+  // re-read, a re-read in a newly selected project), and only the newest may
+  // land: an older answer arriving last would put back rows from before —
+  // possibly another project's.
+  const listRequest = useRef(0);
+  // The project the newest read was SENT in — the read that owns the list
+  // once it answers (`undefined`: none sent yet).
+  const listSentIn = useRef<string | null | undefined>(undefined);
+  /** The project the newest list read was sent in, answered or not. */
+  const newestReadTenant = useCallback(() => listSentIn.current, []);
 
-  const loadDocuments = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await listPromptDocuments();
-      const items = (data.documents ?? [])
-        .slice()
-        .sort((a, b) => (a.description ?? a.name).localeCompare(b.description ?? b.name));
-      setDocuments(items);
-      setDegraded(data.degraded ?? null);
-      setError(null);
-    } catch (err) {
-      // Keep the last-good list on screen rather than blanking it; the banner
-      // says the view is stale.
-      setError(message(err, "Failed to load prompt documents"));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  /**
+   * Re-read the list. Resolves to what coord just served — the documents AND
+   * its `degraded` reason, because a degraded answer can carry an empty list
+   * that means "unknown", not "none" — or `null` when the read failed or a
+   * newer read was sent before it answered. A caller that needs THIS read (the
+   * adopt-all preview pins versions from it) is not left guessing whether state
+   * has settled. `pin` sends it in the pinned project (`pinActiveTenant`: a
+   * project id on every attempt; a `null` pin is not retried, though a
+   * token-refresh replay re-reads the stored project); omitted, it goes in the
+   * stored project.
+   */
+  const loadDocuments = useCallback(
+    async (
+      pin?: TenantPin
+    ): Promise<{
+      documents: PromptDocumentSummary[];
+      degraded: string | null;
+    } | null> => {
+      const request = ++listRequest.current;
+      const newest = () => request === listRequest.current;
+      const tenant = pin ? pin.tenant : readActiveTenantId();
+      listSentIn.current = tenant;
+      try {
+        setLoading(true);
+        const data = await listPromptDocuments(pin);
+        // Superseded: a newer read owns the list, and this caller gets no
+        // answer rather than one that is no longer on screen.
+        if (!newest()) return null;
+        const items = (data.documents ?? [])
+          .slice()
+          .sort((a, b) =>
+            (a.description ?? a.name).localeCompare(b.description ?? b.name)
+          );
+        setDocuments(items);
+        setDocumentsTenant(tenant);
+        setDegraded(data.degraded ?? null);
+        setError(null);
+        return { documents: items, degraded: data.degraded ?? null };
+      } catch (err) {
+        if (!newest()) return null;
+        // Keep the last-good list on screen rather than blanking it; the banner
+        // says the view is stale.
+        setError(message(err, "Failed to load prompt documents"));
+        return null;
+      } finally {
+        if (newest()) setLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     loadDocuments();
@@ -217,6 +268,8 @@ export function usePromptDocuments() {
 
   return {
     documents,
+    documentsTenant,
+    newestReadTenant,
     loading,
     saving,
     error,

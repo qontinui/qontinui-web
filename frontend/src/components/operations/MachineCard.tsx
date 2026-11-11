@@ -51,6 +51,7 @@ import { RunnerReportsSection } from "./RunnerReportsSection";
 import {
   DeviceCrossLinks,
   deviceStateBadgeVariant,
+  deviceStateLabel,
 } from "./FleetHealthSummary";
 import { CiCapacityDisclosure } from "./CiCapacityDisclosure";
 import { DeviceDrainControl } from "./DeviceDrainControl";
@@ -612,8 +613,8 @@ export function MachineCard({
         `verdict about the machine.`
       : machine.coordHealth.state
         ? presenting
-          ? `Coord device state: ${machine.coordHealth.state}.`
-          : `Coord device state: ${machine.coordHealth.state} ` +
+          ? `Coord device state: ${deviceStateLabel(machine.coordHealth.state)}.`
+          : `Coord device state: ${deviceStateLabel(machine.coordHealth.state)} ` +
             `(device ${machine.coordHealth.device_id}).`
         : presenting
           ? `Coord knows this device but reports no state for it. ` +
@@ -798,7 +799,7 @@ export function MachineCard({
                     )}
                     data-coord-state={coordState}
                   >
-                    {coordState}
+                    {deviceStateLabel(coordState)}
                   </Badge>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">

@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type {
+  PrFreshen,
   MergeEconomics,
   PrRow,
   ProposalDetail,
@@ -13,6 +14,11 @@ import type {
 } from "./mergeTypes";
 import {
   ATTENTION_BY_KIND,
+  behindCountsBadgeLabel,
+  behindCountsBadgeTitle,
+  behindCountsTotal,
+  behindRefusedCount,
+  deriveBehindCounts,
   buildPipelineRows,
   fusePipelinePrs,
   candidateChurnBadgeLabel,
@@ -45,10 +51,14 @@ import {
   waitingDwellCapMs,
   withDwellEvidence,
 } from "./prPipeline";
-import { PR_ATTENTION_BY_MERGE_STATUS } from "@/app/(app)/admin/coord/prs/prStatus";
+import {
+  PR_ATTENTION_BY_MERGE_STATUS,
+  readBehindFreshen,
+} from "./prMergeStatus";
 import {
   AUTHOR_RED,
   STATUS_BADGE_CLASS,
+  WAITING_AMBER,
 } from "@/components/console/statusRow";
 import type { PrMergeStatus } from "@/services/admin-dev-service";
 
@@ -942,8 +952,9 @@ describe("escalateStaleWaiting — dwell caps expire every waiting promise", () 
     return { kind, label: "x", reason: "y", attention: "waiting" };
   }
 
-  it("covers exactly the four waiting kinds", () => {
+  it("covers exactly the five waiting kinds", () => {
     expect(ESCALATABLE.sort()).toEqual([
+      "behind-freshening",
       "behind-held-waiting",
       "blocked",
       "conflict-deferred",
@@ -1564,6 +1575,36 @@ describe("ATTENTION_BY_KIND — the color/attention contract", () => {
         ["CLEAN", { merge_state_status: "CLEAN" }],
         ["BEHIND", { merge_state_status: "BEHIND" }],
         [
+          "BEHIND, coord updating",
+          {
+            merge_state_status: "BEHIND",
+            merge_status: "behind-base",
+            freshen: {
+              state: "in_progress",
+              attempts: 1,
+              max_attempts: 6,
+              last_attempt_at: null,
+              skip: null,
+              reason: "x",
+            },
+          },
+        ],
+        [
+          "BEHIND, coord refused",
+          {
+            merge_state_status: "BEHIND",
+            merge_status: "behind-base",
+            freshen: {
+              state: "exhausted",
+              attempts: 6,
+              max_attempts: 6,
+              last_attempt_at: null,
+              skip: null,
+              reason: "x",
+            },
+          },
+        ],
+        [
           "BEHIND held (author)",
           { merge_state_status: "BEHIND", merge_status: "review-required" },
         ],
@@ -1846,9 +1887,11 @@ describe("merged rows", () => {
   });
 
   it("coord's ci-failed-stale-base reads as needs-rebase, not the author's red", () => {
-    // The GitHub fields say red; coord says the red sits on a stale base and
-    // its own freshen is the remedy. Without the override /fleet asked the
-    // author to "push a fix" for main's failure.
+    // The GitHub fields say red; coord says the red sits on a stale base, so
+    // the red may be main's. Coord's own freshen MAY update the branch, but
+    // whether it will is not served — the row says UNKNOWN, never a promise.
+    // Without the override /fleet asked the author to "push a fix" for main's
+    // failure.
     const stale = pr({
       pr_state: "open",
       merge_state_status: "BLOCKED",
@@ -1861,6 +1904,7 @@ describe("merged rows", () => {
     expect(status.kind).toBe("needs-rebase");
     expect(status.attention).toBe("waiting");
     expect(status.reason).toContain("stale base");
+    expect(status.reason).toContain("UNKNOWN");
     // The same red WITHOUT the token is still the author's.
     const plain = buildPipelineRows(
       [pr({ ...stale, merge_status: "ci-failed" })],
@@ -2776,7 +2820,10 @@ describe("BEHIND × every PrMergeStatus — attention, palette, no promise", () 
   ) => buildPipelineRows([pr(overrides)], [], economics)[0].status;
 
   it.each(TOKENS)("BEHIND + %s", (token) => {
-    const status = statusOf({ merge_state_status: "BEHIND", merge_status: token });
+    const status = statusOf({
+      merge_state_status: "BEHIND",
+      merge_status: token,
+    });
     expect(ATTENTION_BY_KIND[status.kind]).toBe(status.attention);
     const cls = STATUS_BADGE_CLASS[status.kind];
     if (status.attention === "author") expect(cls).toBe(AUTHOR_RED);
@@ -2881,6 +2928,436 @@ describe("BEHIND × every PrMergeStatus — attention, palette, no promise", () 
       blocking_summary:
         "git fetch https://x-access-token:ghs_abcdefghijklmnopqrstuvwxyz0123456789@github.com/o/r failed",
     });
-    expect(status.reason).not.toContain("ghs_abcdefghijklmnopqrstuvwxyz0123456789");
+    expect(status.reason).not.toContain(
+      "ghs_abcdefghijklmnopqrstuvwxyz0123456789"
+    );
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Phase 3 — the row reads what coord SERVED about the freshen (D2), and the
+// health summary counts the BEHIND rows by it (D4). Plan
+// `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`.
+// ----------------------------------------------------------------------------
+
+function freshen(overrides: Partial<PrFreshen> = {}): PrFreshen {
+  return {
+    state: "eligible",
+    attempts: 2,
+    max_attempts: 6,
+    last_attempt_at: "2026-11-02T17:13:45Z",
+    skip: null,
+    reason: "coord's clause",
+    ...overrides,
+  };
+}
+
+/** The two rows that make the promise, as coord serves each. */
+const PROMISE_ROWS: ReadonlyArray<readonly [string, Partial<PrRow>, string]> = [
+  [
+    "behind-base",
+    { merge_state_status: "BEHIND", merge_status: "behind-base" },
+    "behind main",
+  ],
+  [
+    "ci-failed-stale-base",
+    {
+      merge_state_status: "BLOCKED",
+      ci_conclusion: "failure",
+      failing_contexts: ["test"],
+      merge_status: "ci-failed-stale-base",
+    },
+    "red on a stale base",
+  ],
+];
+
+describe.each(PROMISE_ROWS)("D2 table on %s", (_token, base, lead) => {
+  const PROMISE = /no action needed|in the train|auto-rebase/i;
+  const statusOf = (f: Partial<PrFreshen> | null, extra: Partial<PrRow> = {}) =>
+    buildPipelineRows(
+      [pr({ ...base, ...extra, freshen: f === null ? undefined : freshen(f) })],
+      []
+    )[0].status;
+
+  it.each([
+    ["eligible", "coord will update the branch"],
+    ["in_progress", "coord is updating the branch"],
+  ] as const)("%s → %s, waiting, never 'no action needed'", (state, phrase) => {
+    const status = statusOf({ state });
+    expect(status.kind).toBe("behind-freshening");
+    expect(status.attention).toBe("waiting");
+    expect(status.reason).toBe(
+      `${lead} — ${phrase} (attempt 2/6, last 2026-11-02 17:13 UTC)`
+    );
+    expect(status.reason).not.toMatch(PROMISE);
+    expect(STATUS_BADGE_CLASS[status.kind]).toBe(WAITING_AMBER);
+  });
+
+  it("exhausted → author, and the ceiling comes from the payload", () => {
+    const status = statusOf({
+      state: "exhausted",
+      attempts: 9,
+      max_attempts: 9,
+    });
+    expect(status.kind).toBe("behind-freshen-refused");
+    expect(status.attention).toBe("author");
+    expect(status.reason).toBe(
+      `${lead} — coord stopped updating it after 9 tries and handed it to its ` +
+        `unlandable shepherd; it needs a rebase by an author or agent`
+    );
+  });
+
+  it("ineligible → author, naming coord's skip", () => {
+    const status = statusOf({
+      state: "ineligible",
+      skip: "ineligible:distance_arm_not_shipped",
+    });
+    expect(status.kind).toBe("behind-freshen-refused");
+    expect(status.attention).toBe("author");
+    expect(status.reason).toBe(
+      `${lead} — coord does not freshen this kind ` +
+        `(ineligible:distance_arm_not_shipped); rebase or re-run it`
+    );
+  });
+
+  it("suppressed → author, pointing at the already-landed check", () => {
+    const status = statusOf({ state: "suppressed", reason: "on base" });
+    expect(status.kind).toBe("behind-freshen-refused");
+    expect(status.attention).toBe("author");
+    expect(status.reason).toBe(
+      `${lead} — coord found nothing to update (content already on main) ` +
+        `(coord: on base); check whether it already landed`
+    );
+  });
+
+  it("disabled → author", () => {
+    const status = statusOf({ state: "disabled" });
+    expect(status.kind).toBe("behind-freshen-refused");
+    expect(status.attention).toBe("author");
+    expect(status.reason).toBe(
+      `${lead} — coord's branch updater is switched off on this build`
+    );
+  });
+
+  it("unknown → the UNKNOWN row, carrying coord's clause", () => {
+    const status = statusOf({
+      state: "unknown",
+      reason: "pr_events unreadable",
+    });
+    expect(status.kind).toBe("needs-rebase");
+    expect(status.attention).toBe("waiting");
+    expect(status.reason).toContain("UNKNOWN");
+    expect(status.reason).toContain("(coord: pr_events unreadable)");
+    expect(status.reason).not.toMatch(PROMISE);
+  });
+
+  it("absent block (older coord) → UNKNOWN; no clock means dwellEvidence unknown", () => {
+    const status = statusOf(null);
+    expect(status.kind).toBe("needs-rebase");
+    expect(status.attention).toBe("waiting");
+    expect(status.reason).toContain("UNKNOWN");
+    expect(status.reason).not.toMatch(PROMISE);
+    expect(status.dwellEvidence).toBe("unknown");
+    // A row whose clock coord DOES report is measured: "coord reports no age"
+    // would be false of it, and it can still escalate.
+    expect(statusOf(null, { last_activity_secs: 60 }).dwellEvidence).toBe(
+      "measured"
+    );
+  });
+
+  it("a state this build does not know is the UNKNOWN row, never eligible", () => {
+    const status = statusOf({ state: "brand_new" as PrFreshen["state"] });
+    expect(status.kind).toBe("needs-rebase");
+    expect(status.reason).toContain("UNKNOWN");
+  });
+
+  it("coord updating still re-escalates when the branch never moves", () => {
+    const status = statusOf(
+      { state: "in_progress" },
+      { last_activity_secs: 3 * 24 * 60 * 60 }
+    );
+    expect(status.kind).toBe("needs-rebase-stale");
+    expect(status.attention).toBe("author");
+  });
+
+  it("a refusal counts as needing attention at once, with no dwell", () => {
+    const rows = buildPipelineRows(
+      [pr({ ...base, freshen: freshen({ state: "disabled" }) })],
+      []
+    );
+    expect(derivePipelineHealth(rows, NOW).needsAttention).toBe(1);
+    expect(rows[0].status.dwellEvidence).toBeUndefined();
+  });
+
+  it("a coord updating row does not need attention", () => {
+    const rows = buildPipelineRows([pr({ ...base, freshen: freshen() })], []);
+    expect(derivePipelineHealth(rows, NOW).needsAttention).toBe(0);
+  });
+});
+
+describe("D2 — what the attempt clause says when coord could not read it", () => {
+  it("an unreadable attempt count is not rendered as a number", () => {
+    const { reason } = readBehindFreshen({
+      merge_status: "behind-base",
+      base_branch: "main",
+      freshen: freshen({ attempts: null, last_attempt_at: null }),
+    });
+    expect(reason).toBe(
+      "behind main — coord will update the branch (attempt count unreadable)"
+    );
+  });
+
+  it("an unparseable last-attempt stamp is dropped, not printed", () => {
+    const { reason } = readBehindFreshen({
+      merge_status: "behind-base",
+      base_branch: "main",
+      freshen: freshen({ last_attempt_at: "not a date" }),
+    });
+    expect(reason).toBe(
+      "behind main — coord will update the branch (attempt 2/6)"
+    );
+  });
+
+  it("a block on a token that names its own hold does not outrank the hold", () => {
+    const status = buildPipelineRows(
+      [
+        pr({
+          merge_state_status: "BEHIND",
+          merge_status: "review-required",
+          freshen: freshen({ state: "in_progress" }),
+        }),
+      ],
+      []
+    )[0].status;
+    expect(status.kind).toBe("behind-held-author");
+  });
+
+  it("a block with no verdict beside it reads UNKNOWN", () => {
+    const status = buildPipelineRows(
+      [pr({ merge_state_status: "BEHIND", freshen: freshen() })],
+      []
+    )[0].status;
+    expect(status.kind).toBe("needs-rebase");
+  });
+});
+
+describe("D4 — the health summary counts BEHIND rows by what coord will do", () => {
+  const behindBase = (n: number, f?: Partial<PrFreshen>) =>
+    pr({
+      pr_number: n,
+      branch: `b${n}`,
+      merge_state_status: "BEHIND",
+      merge_status: "behind-base",
+      freshen: f ? freshen(f) : undefined,
+    });
+  const countsOf = (prs: PrRow[]) =>
+    derivePipelineHealth(buildPipelineRows(prs, []), NOW).behind;
+  const ZERO = {
+    eligible: 0,
+    in_progress: 0,
+    exhausted: 0,
+    ineligible: 0,
+    suppressed: 0,
+    disabled: 0,
+    unknown: 0,
+    held: 0,
+  };
+
+  it("counts one per state, plus held and the absent-block unknown", () => {
+    const counts = countsOf([
+      behindBase(1, { state: "eligible" }),
+      behindBase(2, { state: "in_progress" }),
+      behindBase(3, { state: "in_progress" }),
+      behindBase(4, { state: "exhausted" }),
+      behindBase(5, { state: "suppressed" }),
+      behindBase(6, { state: "disabled" }),
+      behindBase(7, { state: "unknown" }),
+      // Absent block: an older coord. `unknown`, never `eligible`.
+      behindBase(8),
+      // A real hold outranks any block.
+      pr({
+        pr_number: 9,
+        branch: "b9",
+        merge_state_status: "BEHIND",
+        merge_status: "predicate-blocked",
+      }),
+      pr({
+        pr_number: 10,
+        branch: "b10",
+        merge_state_status: "BEHIND",
+        merge_status: "review-required",
+      }),
+      pr({
+        pr_number: 11,
+        branch: "b11",
+        merge_state_status: "BEHIND",
+        mergeable: null,
+        merge_status: "conflicts",
+      }),
+    ]);
+    expect(counts).toEqual({
+      eligible: 1,
+      in_progress: 2,
+      exhausted: 1,
+      ineligible: 0,
+      suppressed: 1,
+      disabled: 1,
+      unknown: 2,
+      held: 3,
+    });
+  });
+
+  it("totals and the refused count sum the per-state buckets", () => {
+    const counts = {
+      ...ZERO,
+      eligible: 1,
+      in_progress: 2,
+      exhausted: 1,
+      suppressed: 1,
+      disabled: 1,
+      unknown: 2,
+      held: 3,
+    };
+    expect(behindCountsTotal(counts)).toBe(11);
+    expect(behindRefusedCount(counts)).toBe(3);
+  });
+
+  it("counts a stale-base row GitHub does not call BEHIND — `ineligible` lives there", () => {
+    const counts = countsOf([
+      pr({
+        pr_number: 1,
+        merge_state_status: "BLOCKED",
+        ci_conclusion: "failure",
+        merge_status: "ci-failed-stale-base",
+        freshen: freshen({
+          state: "ineligible",
+          skip: "ineligible:distance_arm_not_shipped",
+        }),
+      }),
+    ]);
+    expect(counts).toEqual({ ...ZERO, ineligible: 1 });
+  });
+
+  it("a BEHIND row whose token names no block counts where its row reads: unknown", () => {
+    for (const merge_status of ["ready", "queued", "unknown", undefined]) {
+      expect(
+        countsOf([pr({ merge_state_status: "BEHIND", merge_status })])
+      ).toEqual({ ...ZERO, unknown: 1 });
+    }
+  });
+
+  it("leaves out rows that are not behind, drafts and merged rows", () => {
+    expect(
+      countsOf([
+        pr({
+          pr_number: 1,
+          merge_state_status: "CLEAN",
+          merge_status: "ready",
+        }),
+        pr({
+          pr_number: 2,
+          pr_state: "draft",
+          merge_state_status: "BEHIND",
+          merge_status: "draft",
+        }),
+        pr({
+          pr_number: 3,
+          merge_state_status: "BEHIND",
+          merge_status: "landed-open",
+        }),
+      ])
+    ).toEqual(ZERO);
+  });
+
+  it("a BEHIND member of a group row counts once", () => {
+    const rows = buildPipelineRows(
+      [
+        behindBase(1, { state: "eligible" }),
+        pr({
+          repo: "qontinui/qontinui-runner",
+          pr_number: 2,
+          branch: "b2",
+          merge_state_status: "BEHIND",
+          merge_status: "behind-base",
+          freshen: freshen({ state: "eligible" }),
+        }),
+      ],
+      [
+        proposal({
+          status: "queued",
+          repos: [
+            repoDetail({ branch: "b1" }),
+            repoDetail({ repo: "qontinui/qontinui-runner", branch: "b2" }),
+          ],
+        }),
+      ]
+    );
+    expect(deriveBehindCounts(rows).eligible).toBe(2);
+  });
+
+  it("never moves the level: a branch being behind is not a throughput fact", () => {
+    const quiet = derivePipelineHealth(buildPipelineRows([pr()], []), NOW);
+    const behind = derivePipelineHealth(
+      buildPipelineRows([behindBase(1, { state: "exhausted" })], []),
+      NOW
+    );
+    expect(behind.level).toBe(quiet.level);
+  });
+
+  it("the badge names non-zero buckets, the title names all of them", () => {
+    const counts = { ...ZERO, in_progress: 1, held: 3, unknown: 1 };
+    expect(behindCountsBadgeLabel(counts)).toBe(
+      "behind 5 · in progress 1 · held 3 · unknown 1"
+    );
+    expect(behindCountsBadgeLabel(ZERO)).toBe("behind 0");
+    const title = behindCountsBadgeTitle(counts);
+    for (const bucket of Object.keys(ZERO)) {
+      expect(title).toContain(bucket.replace("_", " "));
+    }
+  });
+});
+
+describe("D4 review follow-ups", () => {
+  it("skips a BEHIND row the train holds: its row renders from the proposal", () => {
+    const rows = buildPipelineRows(
+      [
+        pr({
+          merge_state_status: "BEHIND",
+          merge_status: "behind-base",
+          freshen: freshen({ state: "exhausted" }),
+        }),
+      ],
+      [proposal({ status: "awaiting-ci" })]
+    );
+    expect(rows[0].status.kind).toBe("awaiting-ci");
+    expect(behindCountsTotal(deriveBehindCounts(rows))).toBe(0);
+  });
+
+  it("an exhausted reading with no served ceiling never prints 'null'", () => {
+    const { reason } = readBehindFreshen({
+      merge_status: "behind-base",
+      base_branch: "main",
+      freshen: freshen({
+        state: "exhausted",
+        max_attempts: null as unknown as number,
+      }),
+    });
+    expect(reason).not.toContain("null");
+    expect(reason).toContain("after its attempt ceiling");
+  });
+
+  it("the eligible bucket's title reads like its row", () => {
+    expect(
+      behindCountsBadgeTitle({
+        eligible: 1,
+        in_progress: 0,
+        exhausted: 0,
+        ineligible: 0,
+        suppressed: 0,
+        disabled: 0,
+        unknown: 0,
+        held: 0,
+      })
+    ).toContain("eligible 1: coord will update");
   });
 });

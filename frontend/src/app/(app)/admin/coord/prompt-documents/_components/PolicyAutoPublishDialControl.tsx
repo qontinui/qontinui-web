@@ -159,6 +159,7 @@ function ObservedLine({
 export function PolicyAutoPublishDialControl({
   onLevelChanged,
   observed,
+  canWrite,
 }: {
   /**
    * Called after a write FROM THIS CONTROL lands, so the page can re-take the
@@ -172,6 +173,13 @@ export function PolicyAutoPublishDialControl({
    * observation lines (it is mounted outside the page that owns the read).
    */
   observed?: AutoPublishObserved;
+  /**
+   * Checked at the moment of every write; `false` sends nothing (the caller
+   * says why). The prompt-documents page passes its cross-tab guard here:
+   * its disabled fieldset reaches neither a confirmation (rendered outside
+   * it) nor a click that lands before another tab's switch is seen.
+   */
+  canWrite?: () => boolean;
 } = {}) {
   const {
     policy,
@@ -194,6 +202,7 @@ export function PolicyAutoPublishDialControl({
     useState<PolicyAutoPublishLevel | null>(null);
 
   const applyLevel = async (next: PolicyAutoPublishLevel) => {
+    if (canWrite && !canWrite()) return;
     if (await setLevel(next)) onLevelChanged?.();
   };
 

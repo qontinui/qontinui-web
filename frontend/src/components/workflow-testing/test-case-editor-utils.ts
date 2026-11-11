@@ -2,7 +2,7 @@
  * Pure utility functions for TestCaseEditor.
  */
 
-import type { TestCase, Assertion } from "@/services/workflow-testing-service";
+import type { TestCase, Assertion } from "@/services/workflow-testing";
 
 /**
  * Build a TestCase data object from the editor's current state.
