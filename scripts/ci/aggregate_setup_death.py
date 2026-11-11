@@ -17,7 +17,7 @@ and ONLY when the members' own annotations say every failed member declared a
 setup death: it reads exactly what coord reads (each member check run's
 ``annotations?per_page=50``), never a second derivation of the members' rule.
 
-Two lanes invoke it, each as the step "Declare a setup death" after the
+Three lanes invoke it, each as the step "Declare a setup death" after the
 aggregate's verdict step, behind a ``Check out the declarer`` sparse checkout of
 ``scripts/ci`` (``continue-on-error``, so a green aggregate gains no failure
 mode):
@@ -26,6 +26,9 @@ mode):
   over the ``test`` matrix (members ``SHARD_NAME``, expected ``EXPECTED_SHARDS``).
 * ``.github/workflows/e2e-tests.yml``, job ``test-summary`` (``Test Summary``),
   over ``backend-tests`` (``Backend E2E Tests (3.12)``).
+* ``.github/workflows/migration-reversal.yml``, job ``gate``
+  (``Migration Reversal Gate``), over ``reverse`` (``detect`` is the other
+  need and must not be red; ``tested`` is not a need, so not a member).
 
 Inputs (environment)
 --------------------
