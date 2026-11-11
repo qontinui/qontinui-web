@@ -90,6 +90,7 @@ export const MULTI_SEGMENT_TEMPLATE_PARAMS: readonly (readonly [
     "/api/v1/integration-testing/snapshots/{run_id}/screenshot/{screenshot_path}",
     "screenshot_path",
   ],
+  ["/api/v1/operations/pr-merge/onboarding/repos/{repo}", "repo"],
   ["/api/v1/operations/pr-merge/onboarding/repos/{repo}/restore", "repo"],
   ["/api/v1/operations/pr-merge/prs/{repo}/{pr_number}/checks", "repo"],
   ["/api/v1/operations/pr-merge/repos/{repo}/profile", "repo"],

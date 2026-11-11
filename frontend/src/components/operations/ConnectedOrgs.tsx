@@ -49,6 +49,20 @@
  * unbind on the Repository tenant bindings card. The rows come from coord's
  * `bound_away[]`; a coord that does not send the field gets nothing new
  * rendered, because absent is "not reported", never "none".
+ *
+ * And the un-enroll, from plan
+ * `2026-11-08-coord-keeps-governing-repos-a-narrowed-installation-dropped`
+ * (Phase 8, D6): an enrolled row carries "Stop governing", beside its undo —
+ * the Re-enroll on the un-enrolled rows of the same card. It goes through a
+ * consent dialog with a required reason, lands in the project the sidebar has
+ * selected, and is confirmed only by a re-read that LISTS the repo as
+ * un-enrolled (a read-back that gives up says UNKNOWN). An un-enrolled row now
+ * names its cause in words, and a row GitHub's coverage removed offers no
+ * Re-enroll — it says what brings the repo back instead. Both controls render
+ * only for an administrator of the ACTIVE tenant, inside `OperatorOnly`. The
+ * separable half — the words, the dialog, the failure reading and the
+ * un-enrollment's state (`useUnenroll`) — is `./ConnectedOrgsUnenroll.tsx`;
+ * this file keeps the rows and the accounts re-read poll they share.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -57,11 +71,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, CheckCircle2 } from "lucide-react";
-import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
+import { Building2, CheckCircle2, Loader2 } from "lucide-react";
 import { absoluteTime } from "@/components/console/time";
 import { UNKNOWN_AMBER } from "@/components/console";
 import { httpBodyOf, httpStatusOf } from "@/components/admin/coord/httpStatus";
+import { OperatorOnly } from "@/components/presentation";
 import {
   enrollInstallation,
   fetchOnboardingAccounts,
@@ -72,11 +86,25 @@ import {
   type MergePosture,
 } from "@/lib/api/operations/prMergeOnboarding";
 import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import {
+  ActiveTenantAdminOnly,
+  StopGoverningDialog,
+  UnenrollOutcomeLine,
+  coverageReturnHint,
+  isCoveragePrincipal,
+  unenrolledDetail,
+  unenrolledDetailTitle,
+  useUnenroll,
+  type AccountsPoll,
+} from "./ConnectedOrgsUnenroll";
 
 // Poll cadence after a 202 enroll-spawn: coord enrolls off-connection, so we
 // re-pull the accounts list until this row's repos appear. 3s × 20 ≈ 60s cap.
+// An un-enrollment's read-back rides the same poll and cap.
 const ENROLL_POLL_INTERVAL_MS = 3000;
 const ENROLL_POLL_MAX_ATTEMPTS = 20;
+const POLL_BUDGET_SECS =
+  (ENROLL_POLL_INTERVAL_MS * ENROLL_POLL_MAX_ATTEMPTS) / 1000;
 
 /**
  * Coord's error body from a rejected enroll/restore, as the card always read
@@ -234,6 +262,253 @@ export function pollTimeoutMessage(
   return "Enrollment is taking longer than expected — refresh to check.";
 }
 
+/**
+ * One account row's accounts re-read poll, shared by its enroll, restore and
+ * un-enroll (one at a time: starting one clears the last). Coord returns no
+ * repo list from those writes, so the row re-pulls the accounts endpoint on a
+ * timer until the caller sees what it waits for and clears the poll, capped
+ * so a stuck write degrades to the caller's give-up message rather than an
+ * infinite spinner. Single-flight: a tick that finds the previous read
+ * outstanding sends nothing (plan
+ * `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5). No
+ * leaked intervals: a start clears the running poll, and unmount clears it.
+ * Exported for its own test (`ConnectedOrgs.poll.test.tsx`), because the
+ * row's callers clear the poll before they start one, so the card's suite
+ * cannot reach a start over a running poll.
+ */
+export function useAccountsPoll(
+  refetch: (polled?: boolean) => Promise<void>
+): AccountsPoll {
+  // Interval id of the running poll; cleared on success, cap, or unmount.
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const readInFlightRef = useRef(false);
+
+  const clear = useCallback(() => {
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clear, [clear]);
+
+  const start = useCallback<AccountsPoll["start"]>(
+    ({ immediate, onGiveUp }) => {
+      // One poll at a time. A replaced interval would keep re-reading unseen:
+      // its ticks return before the cap once it is no longer the current poll.
+      clear();
+      let attempts = 0;
+      let lastReadFailed = false;
+      const pollAccountsOnce = async () => {
+        if (readInFlightRef.current) return;
+        readInFlightRef.current = true;
+        try {
+          await refetch(true);
+          lastReadFailed = false;
+        } catch {
+          // transient — keep polling until the cap
+          lastReadFailed = true;
+        } finally {
+          readInFlightRef.current = false;
+        }
+      };
+      const id = setInterval(async () => {
+        attempts += 1;
+        await pollAccountsOnce();
+        // A read whose result ended the poll has already said so.
+        if (pollRef.current !== id) return;
+        if (attempts >= ENROLL_POLL_MAX_ATTEMPTS) {
+          clear();
+          onGiveUp(lastReadFailed);
+        }
+      }, ENROLL_POLL_INTERVAL_MS);
+      pollRef.current = id;
+      if (immediate) void pollAccountsOnce();
+    },
+    [refetch, clear]
+  );
+
+  return useMemo(
+    () => ({ start, clear, budgetSecs: POLL_BUDGET_SECS }),
+    [start, clear]
+  );
+}
+
+/**
+ * One enrolled repo: its onboarding-checklist link, the resolved merge
+ * posture, the raw pin when one is set, and Stop governing.
+ */
+function EnrolledRepoRow({
+  row,
+  busy,
+  stopping,
+  onStopGoverning,
+}: {
+  row: AccountRepo;
+  /** Any action on this account is in flight. */
+  busy: boolean;
+  /** This repo's un-enrollment is in flight. */
+  stopping: boolean;
+  onStopGoverning: () => void;
+}) {
+  return (
+    <li className="flex items-center gap-2 flex-wrap">
+      <Link
+        href={`/admin/coord/onboarding-status?repo=${encodeURIComponent(
+          row.repo
+        )}`}
+        className="text-sm font-mono underline underline-offset-4 hover:text-foreground"
+        data-testid={`connected-org-repo-${row.repo}`}
+      >
+        {row.repo}
+      </Link>
+      {/* The RESOLVED posture — always present (P2). Coord computed it with
+          the same `resolve_merge_enabled` the doctor and Merge settings use,
+          so this is the answer, not a re-derivation. `null` (older coord)
+          says "unknown" rather than rendering nothing — an absent indicator
+          is the gap. */}
+      <Link
+        href="/admin/coord/merge-settings"
+        title="Resolved merge posture (tenant pause → per-repo pin → tenant auto-merge → default). Open Merge settings to change it."
+        data-testid={`merge-posture-${row.repo}`}
+        data-posture={row.merge_posture ?? "unknown"}
+      >
+        <Badge
+          variant={
+            row.merge_posture == null
+              ? "outline"
+              : row.merge_enabled_resolved === false
+                ? "destructive"
+                : "secondary"
+          }
+          className="text-[10px]"
+        >
+          {mergePostureLabel(row.merge_posture)}
+        </Badge>
+      </Link>
+      {/* The RAW per-repo pin, shown ONLY when one is set — the secondary "is
+          there an override?" indicator. An inheriting repo (`null`) renders no
+          pin badge, which is the common case and the correct one; the posture
+          badge above already carries the resolved answer. */}
+      {row.merge_enabled !== null && row.merge_enabled !== undefined && (
+        <Badge
+          variant={row.merge_enabled ? "secondary" : "destructive"}
+          className="text-[10px]"
+          title="Explicit per-repo pin — not the resolved merge posture (a tenant-wide pause overrides it). See Merge settings."
+          data-testid={`merge-pin-${row.repo}`}
+        >
+          {row.merge_enabled ? "merge pinned on" : "merge pinned off"}
+        </Badge>
+      )}
+      {/* The un-enroll, beside the repo it governs and on the same card as its
+          undo (Re-enroll, on the un-enrolled rows). A write control: never
+          mounted in presentation mode, and offered only to an administrator
+          of the ACTIVE tenant — the question the route's
+          `require_coord_tenant_admin_target` asks. */}
+      <OperatorOnly>
+        <ActiveTenantAdminOnly>
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto h-6 px-2 text-xs"
+            disabled={busy}
+            aria-busy={stopping || undefined}
+            // Every enrolled row carries one: the name says which.
+            aria-label={
+              stopping
+                ? `Stopping governance of ${row.repo}`
+                : `Stop governing ${row.repo}`
+            }
+            onClick={onStopGoverning}
+            data-testid={`stop-governing-${row.repo}`}
+            data-ui-bridge-id="operations.connected-org-stop-governing"
+          >
+            {stopping ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                Stopping…
+              </>
+            ) : (
+              "Stop governing…"
+            )}
+          </Button>
+        </ActiveTenantAdminOnly>
+      </OperatorOnly>
+    </li>
+  );
+}
+
+/**
+ * One un-enrolled repo: its cause in words (coord's raw principal and reason
+ * in the `title`), and the way back — Re-enroll for a decision, or, for a row
+ * GitHub's coverage removed, what brings it back on GitHub.
+ */
+function UnenrolledRepoRow({
+  row,
+  busy,
+  restoring,
+  onRestore,
+}: {
+  row: AccountRepo;
+  /** Any action on this account is in flight. */
+  busy: boolean;
+  /** This repo's restore is in flight. */
+  restoring: boolean;
+  onRestore: () => void;
+}) {
+  const coverage = isCoveragePrincipal(row.unenrolled_by);
+  return (
+    <li
+      className="flex items-center gap-2 flex-wrap text-muted-foreground"
+      data-testid={`connected-org-repo-unenrolled-${row.repo}`}
+      data-unenroll-cause={coverage ? "coverage" : "decision"}
+    >
+      <span className="text-sm font-mono line-through decoration-muted-foreground/60">
+        {row.repo}
+      </span>
+      <span
+        className="text-xs"
+        title={unenrolledDetailTitle(row)}
+        data-testid={`unenrolled-detail-${row.repo}`}
+      >
+        {unenrolledDetail(row, absoluteTime(row.unenrolled_at))}
+      </span>
+      {coverage ? (
+        // No Re-enroll: the restore clears the un-enrollment before it
+        // enrolls, and a repo GitHub does not list enrolls nothing — so here
+        // it would only delete the record a later re-add converges on. The
+        // way back is on GitHub.
+        <span
+          className="text-xs"
+          data-testid={`unenrolled-app-access-hint-${row.repo}`}
+          data-ui-bridge-id="operations.connected-org-app-access-hint"
+        >
+          {coverageReturnHint(row.repo)}
+        </span>
+      ) : (
+        // Gated like the un-enroll it undoes: the restore re-opens enrollment
+        // (profile writes, a possible bootstrap PR) and its route checks admin
+        // in the active tenant (`require_coord_tenant_admin`).
+        <OperatorOnly>
+          <ActiveTenantAdminOnly>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-xs"
+              disabled={busy}
+              onClick={onRestore}
+              data-testid={`reenroll-repo-${row.repo}`}
+              data-ui-bridge-id="operations.connected-org-reenroll"
+            >
+              {restoring ? "Re-enrolling…" : "Re-enroll"}
+            </Button>
+          </ActiveTenantAdminOnly>
+        </OperatorOnly>
+      )}
+    </li>
+  );
+}
+
 function AccountRow({
   account,
   boundAway,
@@ -247,7 +522,9 @@ function AccountRow({
   boundAway: readonly BoundAwayRepo[];
   /**
    * `polled` marks a read the post-enroll poll issues: one request, no 5xx
-   * retry chain (the next tick is the retry).
+   * retry chain (the next tick is the retry). A polled read REJECTS when it
+   * fails, rather than replacing the list with an error line — which would
+   * unmount this row and end the poll watching it.
    */
   refetch: (polled?: boolean) => Promise<void>;
 }) {
@@ -271,30 +548,30 @@ function AccountRow({
   // The repo whose restore is in flight (spinner + disabled button on that row).
   const [restoring, setRestoring] = useState<string | null>(null);
 
-  // Interval id for the post-spawn poll; cleared on success, cap, or unmount.
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const poll = useAccountsPoll(refetch);
   // Baseline ENROLLED count captured at click time so the poll can detect
   // growth even as the parent re-renders this row with a fresh `account` prop.
   const baselineRef = useRef<number>(enrolledRepos.length);
-  // Latest tombstone count, read by the poll's timeout closure (which would
-  // otherwise see the click-time value).
+  // Latest tombstone count, read by the poll's give-up (which would otherwise
+  // see the click-time value).
   const unenrolledCountRef = useRef<number>(unenrolledRepos.length);
   unenrolledCountRef.current = unenrolledRepos.length;
 
-  // True while a poll read is outstanding: a tick that finds it set does not
-  // send a second request (single-flight, plan
-  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5).
-  const pollReadInFlightRef = useRef(false);
-
-  const clearPoll = useCallback(() => {
-    if (pollRef.current !== null) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
+  const clearMessages = useCallback(() => {
+    setEnrollError(null);
+    setEnrollMsg(null);
   }, []);
-
-  // No leaked intervals: clear on unmount.
-  useEffect(() => clearPoll, [clearPoll]);
+  const rereadOnce = useCallback(() => refetch(true), [refetch]);
+  const unenroll = useUnenroll({
+    enrolled: enrolledRepos,
+    unenrolled: unenrolledRepos,
+    otherBusy: enrolling || restoring !== null,
+    poll,
+    rereadOnce,
+    onStart: clearMessages,
+  });
+  const { clearOutcome } = unenroll;
+  const busy = enrolling || restoring !== null || unenroll.unenrolling !== null;
 
   // Detect completion: once the row re-renders with more ENROLLED repos than
   // the click-time baseline, stop the spinner + poll. A restore flips one row
@@ -304,58 +581,42 @@ function AccountRow({
       (enrolling || restoring !== null) &&
       enrolledRepos.length > baselineRef.current
     ) {
-      clearPoll();
+      poll.clear();
       setEnrolling(false);
       setRestoring(null);
       setEnrollMsg(null);
     }
-  }, [enrolledRepos.length, enrolling, restoring, clearPoll]);
+  }, [enrolledRepos.length, enrolling, restoring, poll]);
 
-  /**
-   * Start the post-`202` poll. Coord returns no repo list — re-pull the
-   * accounts endpoint until this row's enrolled repos grow, capped so a stuck
-   * enroll degrades to a soft message rather than an infinite spinner.
-   */
-  const startPoll = useCallback(
-    (mode: "enroll" | "restore") => {
-      let attempts = 0;
-      pollRef.current = setInterval(async () => {
-        attempts += 1;
-        if (!pollReadInFlightRef.current) {
-          pollReadInFlightRef.current = true;
-          try {
-            await refetch(true);
-          } catch {
-            // transient — keep polling until the cap
-          } finally {
-            pollReadInFlightRef.current = false;
-          }
-        }
-        if (attempts >= ENROLL_POLL_MAX_ATTEMPTS) {
-          clearPoll();
+  /** The enroll / restore poll, which ends its spinner on its own give-up. */
+  const startGrowthPoll = useCallback(
+    (mode: "enroll" | "restore") =>
+      poll.start({
+        immediate: false,
+        onGiveUp: () => {
           setEnrolling(false);
           setRestoring(null);
           // Do NOT claim failure: coord may still be working and the op is
           // idempotent, so a re-click is safe.
           setEnrollMsg(pollTimeoutMessage(mode, unenrolledCountRef.current));
-        }
-      }, ENROLL_POLL_INTERVAL_MS);
-    },
-    [refetch, clearPoll]
+        },
+      }),
+    [poll]
   );
 
   const onEnroll = useCallback(async () => {
-    if (enrolling || restoring !== null) return; // guard double-submit
-    clearPoll();
+    if (busy) return; // guard double-submit
+    poll.clear();
     baselineRef.current = enrolledRepos.length;
     setEnrolling(true);
+    clearOutcome();
     setEnrollError(null);
     setEnrollMsg("Enrolling repositories…");
 
     try {
       // A 2xx (coord answers 202) means the enroll was spawned.
       await enrollInstallation(account.installation_id);
-      startPoll("enroll");
+      startGrowthPoll("enroll");
     } catch (err) {
       setEnrolling(false);
       setEnrollMsg(null);
@@ -370,25 +631,26 @@ function AccountRow({
     }
   }, [
     account.installation_id,
-    enrolling,
-    restoring,
+    busy,
     enrolledRepos.length,
-    clearPoll,
-    startPoll,
+    poll,
+    clearOutcome,
+    startGrowthPoll,
   ]);
 
   const onRestore = useCallback(
     async (repo: string) => {
-      if (enrolling || restoring !== null) return; // guard double-submit
-      clearPoll();
+      if (busy) return; // guard double-submit
+      poll.clear();
       baselineRef.current = enrolledRepos.length;
       setRestoring(repo);
+      clearOutcome();
       setEnrollError(null);
       setEnrollMsg(`Re-enrolling ${repo}…`);
 
       try {
         await restoreRepo(repo);
-        startPoll("restore");
+        startGrowthPoll("restore");
       } catch (err) {
         setRestoring(null);
         setEnrollMsg(null);
@@ -405,10 +667,8 @@ function AccountRow({
         setEnrollError(restoreErrorMessage(status, body));
       }
     },
-    [enrolling, restoring, enrolledRepos.length, clearPoll, startPoll]
+    [busy, enrolledRepos.length, poll, clearOutcome, startGrowthPoll]
   );
-
-  const busy = enrolling || restoring !== null;
 
   return (
     <li
@@ -471,99 +731,48 @@ function AccountRow({
           {enrollError}
         </p>
       )}
+      {unenroll.outcome && (
+        <UnenrollOutcomeLine
+          outcome={unenroll.outcome}
+          data-testid={`unenroll-outcome-${account.account_login}`}
+        />
+      )}
       {(repos.length > 0 || boundAway.length > 0) && (
         <ul className="mt-2 space-y-1 pl-6">
           {enrolledRepos.map((r) => (
-            <li key={r.repo} className="flex items-center gap-2 flex-wrap">
-              <Link
-                href={`/admin/coord/onboarding-status?repo=${encodeURIComponent(
-                  r.repo
-                )}`}
-                className="text-sm font-mono underline underline-offset-4 hover:text-foreground"
-                data-testid={`connected-org-repo-${r.repo}`}
-              >
-                {r.repo}
-              </Link>
-              {/* The RESOLVED posture — always present (P2). Coord computed
-                  it with the same `resolve_merge_enabled` the doctor and
-                  Merge settings use, so this is the answer, not a
-                  re-derivation. `null` (older coord) says "unknown" rather
-                  than rendering nothing — an absent indicator is the gap. */}
-              <Link
-                href="/admin/coord/merge-settings"
-                title="Resolved merge posture (tenant pause → per-repo pin → tenant auto-merge → default). Open Merge settings to change it."
-                data-testid={`merge-posture-${r.repo}`}
-                data-posture={r.merge_posture ?? "unknown"}
-              >
-                <Badge
-                  variant={
-                    r.merge_posture == null
-                      ? "outline"
-                      : r.merge_enabled_resolved === false
-                        ? "destructive"
-                        : "secondary"
-                  }
-                  className="text-[10px]"
-                >
-                  {mergePostureLabel(r.merge_posture)}
-                </Badge>
-              </Link>
-              {/* The RAW per-repo pin, shown ONLY when one is set — the
-                  secondary "is there an override?" indicator. An inheriting
-                  repo (`null`) renders no pin badge, which is the common case
-                  and the correct one; the posture badge above already carries
-                  the resolved answer. */}
-              {r.merge_enabled !== null && r.merge_enabled !== undefined && (
-                <Badge
-                  variant={r.merge_enabled ? "secondary" : "destructive"}
-                  className="text-[10px]"
-                  title="Explicit per-repo pin — not the resolved merge posture (a tenant-wide pause overrides it). See Merge settings."
-                  data-testid={`merge-pin-${r.repo}`}
-                >
-                  {r.merge_enabled ? "merge pinned on" : "merge pinned off"}
-                </Badge>
-              )}
-            </li>
+            <EnrolledRepoRow
+              key={r.repo}
+              row={r}
+              busy={busy}
+              stopping={unenroll.unenrolling === r.repo}
+              onStopGoverning={() => unenroll.openDialog(r.repo)}
+            />
           ))}
           {unenrolledRepos.map((r) => (
-            <li
+            <UnenrolledRepoRow
               key={r.repo}
-              className="flex items-center gap-2 flex-wrap text-muted-foreground"
-              data-testid={`connected-org-repo-unenrolled-${r.repo}`}
-            >
-              <span className="text-sm font-mono line-through decoration-muted-foreground/60">
-                {r.repo}
-              </span>
-              <span
-                className="text-xs"
-                data-testid={`unenrolled-detail-${r.repo}`}
-              >
-                removed {absoluteTime(r.unenrolled_at)} by{" "}
-                {r.unenrolled_by || "unknown"}:{" "}
-                {r.unenroll_reason || "no reason recorded"}
-              </span>
-              {/* Admin-gated like every other mutation on this surface: the
-                  restore re-opens enrollment (profile writes, a possible
-                  bootstrap PR). The backend gate is `require_coord_tenant_admin`;
-                  this is the UX layer that keeps the surface honest. */}
-              <CoordAdminOnly>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6 px-2 text-xs"
-                  disabled={busy}
-                  onClick={() => onRestore(r.repo)}
-                  data-testid={`reenroll-repo-${r.repo}`}
-                >
-                  {restoring === r.repo ? "Re-enrolling…" : "Re-enroll"}
-                </Button>
-              </CoordAdminOnly>
-            </li>
+              row={r}
+              busy={busy}
+              restoring={restoring === r.repo}
+              onRestore={() => onRestore(r.repo)}
+            />
           ))}
           {boundAway.map((b) => (
             <BoundAwayRow key={b.repo} entry={b} />
           ))}
         </ul>
+      )}
+      {unenroll.dialogRepo !== null && (
+        <OperatorOnly>
+          <StopGoverningDialog
+            key={unenroll.dialogRepo}
+            repo={unenroll.dialogRepo}
+            onCancel={unenroll.closeDialog}
+            onConfirm={(repo, reason, tenantId) =>
+              void unenroll.confirm(repo, reason, tenantId)
+            }
+          />
+        </OperatorOnly>
       )}
     </li>
   );
@@ -639,6 +848,11 @@ export function ConnectedOrgs({ bindingsVersion }: ConnectedOrgsProps = {}) {
       );
       setError(null);
     } catch (e) {
+      // A poll tick's failure belongs to the poll that issued it: the next
+      // tick is the retry, and an un-enrollment's read-back ends in UNKNOWN
+      // rather than in a guess. Replacing the list with an error line would
+      // unmount the very row that is polling, and its outcome with it.
+      if (polled) throw e;
       setError(e instanceof Error ? e.message : String(e));
     }
   }, []);

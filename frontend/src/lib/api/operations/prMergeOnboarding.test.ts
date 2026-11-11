@@ -33,6 +33,8 @@ const {
   mintConnectStateToken,
   restoreRepo,
   startDevicePairing,
+  unenrollRepo,
+  UnpinnedTenantError,
 } = await import("./prMergeOnboarding");
 
 function answer(body: unknown, status = 200): Response {
@@ -164,6 +166,65 @@ describe("prMergeOnboarding", () => {
       "/api/v1/operations/pr-merge/onboarding/repos/portofino/infra/restore",
       { method: "POST", idempotent: false, maxRetries: 0 },
     ]);
+  });
+
+  it("unenrollRepo DELETEs with owner/name UNENCODED in the path and the reason percent-encoded in the query, never retried, its tenant pinned", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await expect(
+      unenrollRepo(
+        "portofino/infra",
+        "archived — moved & renamed",
+        "6e00ba36-342e-4afd-b674-b34b559f85ce"
+      )
+    ).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]).toEqual([
+      "/api/v1/operations/pr-merge/onboarding/repos/portofino/infra?reason=archived%20%E2%80%94%20moved%20%26%20renamed",
+      {
+        method: "DELETE",
+        idempotent: false,
+        maxRetries: 0,
+        // Explicit, so HttpClient keeps it instead of reading the browser's
+        // stored selection at send time (or again on a replay).
+        headers: {
+          "X-Qontinui-Active-Tenant": "6e00ba36-342e-4afd-b674-b34b559f85ce",
+        },
+      },
+    ]);
+  });
+
+  it("unenrollRepo refuses a blank tenant before building any request, so nothing is sent", async () => {
+    // A blank tenant is no pin: HttpClient fills an empty one from the stored
+    // selection, and fetch trims a whitespace one to an empty header, which
+    // the web backend reads as no selection — the operator's home tenant.
+    for (const blank of ["", "   ", "\t\n"]) {
+      const err = await unenrollRepo("a/b", "r", blank).catch(
+        (e: unknown) => e
+      );
+      expect(err).toBeInstanceOf(UnpinnedTenantError);
+      expect((err as Error).message).toContain(
+        "unenrollRepo(a/b): a blank tenant is no pin, so nothing was sent."
+      );
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("unenrollRepo resolves for any 2xx, whatever its body (the 2xx is the fact)", async () => {
+    fetchMock.mockResolvedValueOnce(rawAnswer("not json", 200));
+    await expect(unenrollRepo("a/b", "r", "t")).resolves.toBeUndefined();
+  });
+
+  it("unenrollRepo rejects coord's 404 with its body intact for httpBodyOf, and does not retry", async () => {
+    const notFound = {
+      error: "repo not found: a/b",
+      tombstoned: false,
+      note: "your tenant does not govern this repository",
+    };
+    fetchMock.mockResolvedValueOnce(answer(notFound, 404));
+    const err = await unenrollRepo("a/b", "r", "t").catch((e: unknown) => e);
+    expect(httpStatusOf(err)).toBe(404);
+    expect(JSON.parse(httpBodyOf(err) ?? "")).toEqual(notFound);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("fetchOnboardingDoctor GETs the doctor with the repo percent-encoded in the query", async () => {
