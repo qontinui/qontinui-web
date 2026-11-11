@@ -52,6 +52,7 @@ from os.path import abspath, dirname
 sys.path.insert(0, dirname(dirname(abspath(__file__))))
 
 from app.db.base import Base
+from app.db.migration_lock import acquire_migration_lock, release_migration_lock
 
 # ---------------------------------------------------------------------------
 # `target_metadata` is built LAZILY, and only for commands that read it.
@@ -92,6 +93,21 @@ def _invoked_command() -> str | None:
         return cmd[0].__name__
     except (TypeError, IndexError, AttributeError):
         return None
+
+
+# Online commands that only READ the database take no migration lock, so a
+# `current` or `check` does not queue behind a 30-minute concurrent index build.
+# Same direction as `_METADATA_FREE_COMMANDS`: an ALLOWLIST of commands proven
+# not to write, so an unrecognised verb or a programmatic call with no
+# `cmd_opts` takes the lock — the safe side.
+_LOCK_FREE_COMMANDS = frozenset(
+    {"current", "check", "history", "heads", "branches", "show"}
+)
+
+
+def _takes_migration_lock() -> bool:
+    """True unless the invoked command is known to be read-only."""
+    return _invoked_command() not in _LOCK_FREE_COMMANDS
 
 
 def _target_metadata():
@@ -241,16 +257,30 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=_target_metadata(),
-            include_schemas=True,
-            include_object=_include_object,
-            on_version_apply=_reset_revision_settings,
-        )
+        # One migrator at a time (app/db/migration_lock.py has the reasoning).
+        # Taken BEFORE alembic opens its transaction or reads the current
+        # revision, so a waiter plans its upgrade only after the holder has
+        # stamped. It polls rather than blocks, because a blocked waiter's
+        # snapshot deadlocks a live CREATE INDEX CONCURRENTLY, and it hands the
+        # connection back with no transaction open, because alembic would treat
+        # an open one as external and never commit.
+        lock_taken = _takes_migration_lock()
+        if lock_taken:
+            acquire_migration_lock(connection)
+        try:
+            context.configure(
+                connection=connection,
+                target_metadata=_target_metadata(),
+                include_schemas=True,
+                include_object=_include_object,
+                on_version_apply=_reset_revision_settings,
+            )
 
-        with context.begin_transaction():
-            context.run_migrations()
+            with context.begin_transaction():
+                context.run_migrations()
+        finally:
+            if lock_taken:
+                release_migration_lock(connection)
 
 
 if context.is_offline_mode():

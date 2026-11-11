@@ -3,7 +3,6 @@ import type { TestCase } from "@/services/workflow-testing";
 import type { ValidationErrors } from "../test-case-editor-types";
 
 export function useTestCaseUI(testCase?: TestCase) {
-  const [isRunning, setIsRunning] = React.useState(false);
   const [errors, setErrors] = React.useState<ValidationErrors>({});
   const [expandedSections, setExpandedSections] = React.useState({
     input: true,
@@ -23,8 +22,6 @@ export function useTestCaseUI(testCase?: TestCase) {
   );
 
   return {
-    isRunning,
-    setIsRunning,
     errors,
     setErrors,
     expandedSections,
