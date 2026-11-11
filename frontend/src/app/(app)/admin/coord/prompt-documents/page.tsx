@@ -92,9 +92,11 @@ export default function PromptDocumentsPage() {
   // below is SENT: every settings read and write and the status read go to
   // the project the page shows, so one in flight when another tab switches
   // project — re-issued after a 429, replayed after a token refresh — cannot
-  // land in, or answer from, that tab's project. One identity for the page's
-  // lifetime, so no hook's mount read re-fires on it (plan
-  // `2026-11-09-prompt-documents-cross-tab-write-guard` D10).
+  // land in, or answer from, that tab's project. It names a project or
+  // nothing: while the page's project is `null` (none selected) or never
+  // known, no pin can hold a request to it, and each request goes as before.
+  // One identity for the page's lifetime, so no hook's mount read re-fires on
+  // it (plan `2026-11-09-prompt-documents-cross-tab-write-guard` D10).
   const resolvePin = useCallback(() => writeGuardRef.current?.pin, []);
   // ONE auto-publish status read for the whole page (plan
   // `2026-10-17-auto-publish-lands-via-coord-2290-adoption` Phase 4): the

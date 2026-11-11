@@ -8,7 +8,7 @@ import { fetchAutoPublishStatus } from "@/lib/api/operations/coordPromptDocument
 import {
   ACTIVE_TENANT_STORAGE_KEY,
   readActiveTenantId,
-  type TenantPin,
+  type ProjectPin,
 } from "@/services/http-client";
 import {
   AlertTriangle,
@@ -179,10 +179,11 @@ export interface WriteGuard {
   writeAllowed: () => boolean;
   /**
    * The project every row read and write is pinned to — the page's, kept
-   * through a provider refresh. `undefined` only while the page's project has
-   * never been known. The page sends its settings and its status read in it.
+   * through a provider refresh. `undefined` while the page's project has never
+   * been known, or is `null` (none selected), which no pin can hold a request
+   * to. The page sends its settings and its status read in it.
    */
-  pin: TenantPin | undefined;
+  pin: ProjectPin | undefined;
 }
 
 /** Where the list hands the page its write guard and its pin. */
@@ -328,10 +329,17 @@ function PromptDocumentListBody({
    * from, that project. Taken from `guardTenant`, not bare `pageTenant`, so a
    * provider `refresh()` neither drops the pin for its round trip nor flips
    * the pinned readers' identity, which would re-fire an open dialog's reads.
-   * `undefined` only while the page's project has never been known.
+   *
+   * Only a NAMED project is pinned. `undefined` while the page's project has
+   * never been known, and while it is `null` (none selected): a `null` pin
+   * sends no header, so the client would fill in whatever project is stored on
+   * every attempt — another tab's, after a switch — and it would also give up
+   * the request's retries. Without a pin, the dialogs' readers below are
+   * refused at call time instead, like the write doors.
    */
-  const pin = useMemo<TenantPin | undefined>(
-    () => (guardTenant === undefined ? undefined : { tenant: guardTenant }),
+  const pin = useMemo<ProjectPin | undefined>(
+    () =>
+      typeof guardTenant === "string" ? { tenant: guardTenant } : undefined,
     [guardTenant]
   );
 
@@ -369,9 +377,9 @@ function PromptDocumentListBody({
 
   // Read through a ref so `writeAllowed` — and every guarded door built on it
   // below — keeps ONE identity for the page's lifetime. The dialogs' READERS
-  // are not guarded (they are pinned instead, and keep the hooks' identity);
-  // a reader with a new identity per render would re-fetch from a dialog's
-  // effect and reset the operator's selection.
+  // are guarded only while there is no pin (`pinnedOrGuarded`), and change
+  // identity only with it: a reader with a new identity per render would
+  // re-fetch from a dialog's effect and reset the operator's selection.
   const guardTenantRef = useRef(guardTenant);
   guardTenantRef.current = guardTenant;
 
@@ -452,12 +460,39 @@ function PromptDocumentListBody({
     applyMerge,
   } = usePromptDocumentPublications({ pin });
 
+  /**
+   * The dialogs' READERS go to them pinned while the page's project is a named
+   * one: a read in flight across another tab's switch cannot leave it, and a
+   * refused read would render as an empty one ("No versions recorded yet.").
+   * Without a pin — the page's project `null`, or never known — nothing holds
+   * a read to the page's project, so each is refused at call time like a
+   * write door. One identity until the pin changes, so an open dialog's load
+   * effect does not re-fire on a re-render.
+   */
+  const pinnedOrGuarded = useCallback(
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
+      pin ? fn : guard(fn, refused),
+    [pin, guard]
+  );
+  const dialogFetchVersions = useMemo(
+    () => pinnedOrGuarded(fetchVersions, null),
+    [pinnedOrGuarded, fetchVersions]
+  );
+  const dialogFetchVersion = useMemo(
+    () => pinnedOrGuarded(fetchVersion, null),
+    [pinnedOrGuarded, fetchVersion]
+  );
+  const dialogFetchPublication = useMemo(
+    () => pinnedOrGuarded(fetchPublication, null),
+    [pinnedOrGuarded, fetchPublication]
+  );
+  const dialogFetchMergePreview = useMemo(
+    () => pinnedOrGuarded(fetchMergePreview, null),
+    [pinnedOrGuarded, fetchMergePreview]
+  );
+
   // The dialogs' write doors, behind the guard. Memoized on the underlying
-  // function, so a stable door stays stable (see `guardTenantRef`). Their
-  // READS are not guarded: a refused read renders as an empty one ("No
-  // versions recorded yet."), so the readers go to the dialogs as the hooks
-  // return them — pinned to the page's project, which a read in flight across
-  // another tab's switch cannot leave.
+  // function, so a stable door stays stable (see `guardTenantRef`).
   const guardedCreate = useMemo(
     () => guard(createDocument, null),
     [guard, createDocument]
@@ -1245,8 +1280,8 @@ function PromptDocumentListBody({
         target={historyTarget}
         currentBody={editing?.body ?? ""}
         currentVersion={editing?.current_version ?? 0}
-        fetchVersions={fetchVersions}
-        fetchVersion={fetchVersion}
+        fetchVersions={dialogFetchVersions}
+        fetchVersion={dialogFetchVersion}
         saving={saving}
         onRestoreVersion={handleRestoreVersion}
       />
@@ -1344,10 +1379,10 @@ function PromptDocumentListBody({
         onOpenChange={setUpstreamOpen}
         doc={editing}
         loadingBody={loadingBody}
-        fetchPublication={fetchPublication}
+        fetchPublication={dialogFetchPublication}
         onAdoptUpstream={handleAdoptUpstream}
         onKeepMine={handleKeepMine}
-        fetchMergePreview={fetchMergePreview}
+        fetchMergePreview={dialogFetchMergePreview}
         onMergeClauses={handleMergeClauses}
         saving={deciding}
       />

@@ -70,6 +70,7 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
+import { toast } from "sonner";
 import { useTenantFleetPolicyDial } from "./useTenantFleetPolicyDial";
 
 const view = (level: string) => ({
@@ -348,6 +349,42 @@ describe("useTenantFleetPolicyDial — without a resolver", () => {
         },
       ],
     ]);
+  });
+
+  it("called with a subject and no options, sends today's bytes and names that subject when the fleet disagrees", async () => {
+    // Exactly three arguments, as ten of the console's dials call it: the
+    // options default to `{}`, so nothing is pinned.
+    getMock.mockResolvedValueOnce(view("off"));
+    putMock.mockResolvedValueOnce({ ...written("on"), effective: view("off") });
+    const { result } = renderHook(() =>
+      useTenantFleetPolicyDial<"off" | "on">("some_dial", "some dial", "agents")
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.setLevel("on");
+    });
+
+    expect(sentInit.mock.calls).toEqual([
+      [`${DIAL_URL}?domain=some_dial`, { method: "GET", idempotent: true }],
+      [
+        DIAL_URL,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            domain: "some_dial",
+            scope_band: "tenant",
+            scope_key: null,
+            level: "on",
+            master_enabled: true,
+            change_note: 'Set some dial to "on" from the console',
+          }),
+          idempotent: false,
+        },
+      ],
+    ]);
+    expect(toast.warning).toHaveBeenCalledWith(
+      'Wrote "on", but agents resolve "off" (from the tenant scope).'
+    );
   });
 
   it("sends the same bytes when the resolver names no project", async () => {

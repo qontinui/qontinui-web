@@ -1005,6 +1005,107 @@ describe("a dialog's read, sent while another project is stored, is pinned to th
   }, 20_000);
 });
 
+/**
+ * Mount with nothing stored and no provider: the page's project is `null` —
+ * none selected — and its reads are served the home project (here the system
+ * tenant, which answers a request that carries no header).
+ */
+async function mountInNoProject() {
+  render(<PromptDocumentList />);
+  await screen.findByTestId("doc-row-policy-sys1", {}, { timeout: 5000 });
+  await settle();
+}
+
+describe("while the page's project is null, a dialog's read is refused once another project is stored", () => {
+  // No pin can hold a read to "no project": `pinActiveTenant(null)` sends no
+  // header, so the client fills in whatever is stored on every attempt. So
+  // with nothing to pin, each dialog reader is refused at call time — like a
+  // write door, nothing sent and the notice raised — rather than answered by
+  // the project another tab stored and shown as this page's. Each read is
+  // reached after another tab stored Bravo, its event not yet arrived.
+  it("the editor's history link sends no version-list read", async () => {
+    await mountInNoProject();
+    await user().click(screen.getByTestId("doc-edit-policy-sys1"));
+    const link = await screen.findByTestId("doc-show-history");
+    await waitFor(() =>
+      expect(screen.getByTestId("doc-body")).toHaveValue(`body in ${SYS}`)
+    );
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+
+    await user().click(link);
+
+    await expectNotice();
+    await settle();
+    expect(localStorage.getItem(KEY)).toBe(B);
+    expect(sentSince(before, "GET", /\/versions$/)).toEqual([]);
+    expect(screen.queryByText(`editor in ${B}`)).not.toBeInTheDocument();
+  }, 20_000);
+
+  it("the history dialog, already open, sends no snapshot read", async () => {
+    await mountInNoProject();
+    await user().click(screen.getByTestId("doc-history-policy-sys1"));
+    await screen.findByTestId("version-5", {}, { timeout: 5000 });
+    await settle();
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+
+    await user().click(screen.getByTestId("version-5"));
+
+    await expectNotice();
+    await settle();
+    expect(localStorage.getItem(KEY)).toBe(B);
+    expect(sentSince(before, "GET", /\/versions\/\d+$/)).toEqual([]);
+    expect(screen.queryByText(`body v5 in ${B}`)).not.toBeInTheDocument();
+  }, 20_000);
+
+  it("the upstream dialog sends no publication read when its body read lands after the switch", async () => {
+    await mountInNoProject();
+    const bodyRead = hold(/\/coord\/prompt-documents\/policy\/sys1$/);
+    await user().click(screen.getByTestId("doc-upstream-policy-sys1"));
+    await waitFor(() => expect(bodyRead.arrived()).toBe(true));
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+
+    bodyRead.release();
+
+    await expectNotice();
+    await settle();
+    expect(localStorage.getItem(KEY)).toBe(B);
+    expect(
+      after(before).filter((s) =>
+        s.url.includes("/coord/prompt-document-publications/")
+      )
+    ).toEqual([]);
+    expect(
+      screen.queryByText(`published from ${B}`, { exact: false })
+    ).not.toBeInTheDocument();
+  }, 20_000);
+
+  it("the upstream dialog's merge view, already open, sends no merge-plan read", async () => {
+    await mountInNoProject();
+    await user().click(screen.getByTestId("doc-upstream-policy-sys1"));
+    const adopt = await screen.findByTestId(
+      "upstream-adopt",
+      {},
+      { timeout: 5000 }
+    );
+    await waitFor(() => expect(adopt).toBeEnabled(), { timeout: 5000 });
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+
+    await user().click(screen.getByTestId("upstream-merge-clauses"));
+
+    await expectNotice();
+    await settle();
+    expect(localStorage.getItem(KEY)).toBe(B);
+    expect(sentSince(before, "GET", /\/upstream-merge\?/)).toEqual([]);
+    expect(
+      screen.queryByTestId(`clause-merge-entry-tempo-in-${B}`)
+    ).not.toBeInTheDocument();
+  }, 20_000);
+});
+
 describe("the dialogs' doors' and readers' identity", () => {
   it("survives a re-render: the history dialog keeps its selected version and re-fetches nothing", async () => {
     const { rerender } = await mountIn();

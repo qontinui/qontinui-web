@@ -205,9 +205,10 @@ export function useClauses(
         );
       }
       // The re-read shows what the run created. A refused run takes it only
-      // when it is pinned: unpinned, it would be served by the project the
-      // other tab stored, not this page's.
-      if (!refused || projectPin !== undefined) await load();
+      // when it is pinned to a NAMED project: unpinned — or pinned to `null`,
+      // which sends no header, so the client fills in the stored project — it
+      // would be served by the project the other tab stored, not this page's.
+      if (!refused || projectPin?.tenant != null) await load();
     } finally {
       setSaving(false);
     }

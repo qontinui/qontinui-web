@@ -128,6 +128,33 @@ describe("useClauses canWrite", () => {
     );
   });
 
+  it("takes no re-read after an import stopped part-way when its pin names no project", async () => {
+    // A `null` pin sends no header, so the client fills in the project stored
+    // when the read is made — the other tab's — exactly as for no pin at all.
+    let allowed = true;
+    api.createPromptDocumentClause.mockImplementation(async () => {
+      allowed = false;
+      return {};
+    });
+    const { result } = renderHook(() =>
+      useClauses("policy", "testing", true, {
+        canWrite: () => allowed,
+        pin: { tenant: null },
+      })
+    );
+    await waitFor(() =>
+      expect(api.listPromptDocumentClauses).toHaveBeenCalledTimes(1)
+    );
+    await act(async () => {
+      await result.current.importCandidates([
+        { clause_id: "a" } as never,
+        { clause_id: "b" } as never,
+      ]);
+    });
+    expect(api.createPromptDocumentClause).toHaveBeenCalledTimes(1);
+    expect(api.listPromptDocumentClauses).toHaveBeenCalledTimes(1);
+  });
+
   it("writes when it answers true, in its pinned project", async () => {
     const { result } = renderHook(() =>
       useClauses("policy", "testing", false, {
