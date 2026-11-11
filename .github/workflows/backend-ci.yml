@@ -98,6 +98,12 @@ on:
       - '.github/workflows/spec-ci.yml'
       - '.github/workflows/style-gate.yml'
       - '.github/workflows/verify-frontend-run.yml'
+      # The setup-death declarer (plan
+      # 2026-11-11-web-setup-step-deaths-declare-not-a-verdict).
+      # tests/test_declare_setup_death.py executes it arm by arm, so a PR that
+      # edits only the script must run that module. The module asserts every
+      # file it reads appears in BOTH filters.
+      - '.github/scripts/declare-setup-death.sh'
   push:
     # main is intentionally NOT here: the per-test coverage producer that used to
     # ride this gating workflow on push-to-main now lives in the standalone,
@@ -136,6 +142,8 @@ on:
       - '.github/workflows/spec-ci.yml'
       - '.github/workflows/style-gate.yml'
       - '.github/workflows/verify-frontend-run.yml'
+      # See the pull_request filter above (the setup-death declarer).
+      - '.github/scripts/declare-setup-death.sh'
   # Nightly run with NO path filter. The "Check OpenAPI snapshot is up to date"
   # step regenerates the snapshot with the sibling repos installed — notably
   # qontinui-cloud-control, which is git-cloned + `pip install -e`'d in the test
