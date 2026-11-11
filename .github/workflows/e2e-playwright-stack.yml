@@ -1289,7 +1289,12 @@ jobs:
             Create runner schema|${{ steps.runner_schema.outcome }}|${{ steps.runner_schema.conclusion }}
             Run database migrations|${{ steps.migrations.outcome }}|${{ steps.migrations.conclusion }}
             Run frontend E2E tests|${{ steps.e2e_tests.outcome }}|${{ steps.e2e_tests.conclusion }}
-          HARNESS_PATHS_RE: '^\.github/workflows/e2e-playwright-stack\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+          # Plus the frontend lockfile: `Set up Node.js 20` caches on
+          # frontend/package-lock.json (and fails when it is missing), and
+          # `apt_playwright` runs `npx playwright install-deps chromium` from
+          # ./frontend, so its apt package list follows the Playwright version
+          # the PR's lockfile pins. A PR editing either can cause that death.
+          HARNESS_PATHS_RE: '^\.github/workflows/e2e-playwright-stack\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^frontend/package(-lock)?\.json$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
