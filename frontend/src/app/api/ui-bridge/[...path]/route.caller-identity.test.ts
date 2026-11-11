@@ -22,6 +22,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+import { makeMockRedis } from "@/test/rate-limit-redis-mock";
+
 import { __resetAuthCache } from "./_auth";
 import { __setRedisClientForTest } from "./_rate-limit";
 
@@ -75,28 +77,6 @@ import * as route from "./route";
 
 const BACKEND_URL = "http://backend.test";
 const VERIFIED = "user-b";
-
-/** A rate-limit store that always admits (the route keys it per principal). */
-function admittingRedis() {
-  const pipeline = {
-    incr() {
-      return pipeline;
-    },
-    expire() {
-      return pipeline;
-    },
-    async exec() {
-      return [
-        [null, 1],
-        [null, 1],
-      ];
-    },
-  };
-  return {
-    pipeline: () => pipeline,
-    on: () => undefined,
-  } as unknown as Parameters<typeof __setRedisClientForTest>[0];
-}
 
 function call(
   method: "GET" | "POST",
@@ -167,7 +147,9 @@ describe("route.ts, gate on: a request cannot name its caller", () => {
   beforeEach(() => {
     forwarded.length = 0;
     __resetAuthCache();
-    __setRedisClientForTest(admittingRedis());
+    // A fresh counting store per test; no test here nears a lane's ceiling,
+    // so every request is admitted (the route keys it per principal).
+    __setRedisClientForTest(makeMockRedis().client);
     vi.stubEnv("BACKEND_URL", BACKEND_URL);
     vi.stubEnv("UI_BRIDGE_REQUIRE_AUTH", "1");
     vi.stubGlobal(
