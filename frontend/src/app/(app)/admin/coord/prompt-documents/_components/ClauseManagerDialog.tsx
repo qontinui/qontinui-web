@@ -64,6 +64,8 @@ interface ClauseManagerDialogProps {
   loadingBody: boolean;
   /** Refresh the parent document list after a category default-tier edit. */
   onDocsReload: () => void;
+  /** Checked before every clause write; `false` sends nothing. */
+  canWrite?: () => boolean;
 }
 
 /**
@@ -78,6 +80,7 @@ export function ClauseManagerDialog({
   document,
   loadingBody,
   onDocsReload,
+  canWrite,
 }: ClauseManagerDialogProps) {
   const name = document?.name ?? "";
   const {
@@ -91,7 +94,13 @@ export function ClauseManagerDialog({
     reorderClauses,
     importCandidates,
     saveAttrs,
-  } = useClauses("policy", name, open && document !== null, onDocsReload);
+  } = useClauses(
+    "policy",
+    name,
+    open && document !== null,
+    onDocsReload,
+    canWrite
+  );
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Clause | null>(null);
