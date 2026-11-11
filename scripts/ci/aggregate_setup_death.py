@@ -20,7 +20,9 @@ setup death: it reads exactly what coord reads (each member check run's
 Three lanes invoke it, each as the step "Declare a setup death" after the
 aggregate's verdict step, behind a ``Check out the declarer`` sparse checkout of
 ``scripts/ci`` (``continue-on-error``, so a green aggregate gains no failure
-mode):
+mode, and ``timeout-minutes: 1``). The step runs only when that checkout's
+``outcome`` is ``success``: a failed one can leave a stale tree, a self-hosted
+workspace's earlier ``scripts/ci``, whose script must not run.
 
 * ``.github/workflows/backend-ci.yml``, job ``test-gate`` (``Run Tests``),
   over the ``test`` matrix (members ``SHARD_NAME``, expected ``EXPECTED_SHARDS``).
