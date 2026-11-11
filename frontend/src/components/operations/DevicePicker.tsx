@@ -14,9 +14,9 @@
  * and its failure states, because "the roster is empty" and "the roster could
  * not be read" have opposite remedies and only the caller knows which it has.
  *
- * **A value the roster does not name still renders.** Coord lists a device
- * only while it is bound to the tenant AND inside the liveness window, so a
- * deep link (`?device=`) to a machine that has just gone quiet is a real
+ * **A value the roster does not name still renders.** Coord's roster is
+ * capped (`row_cap.soft`) and the picker offers only {@link pickableDevices},
+ * so a deep link (`?device=`) to a machine missing from it is a real
  * selection, not an invalid one. It is shown as its id with "not in the live
  * roster" beside it rather than as a blank trigger, which would read as
  * "nothing is selected" while every read on the page is keyed on it.
@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { FleetHealthDevice } from "@/lib/api/operations/coordFleet";
+import { isCiRunnerDevice } from "./useFleetHealth";
 
 /**
  * How one device's coord state reads in the picker.
@@ -76,6 +77,61 @@ export function findRosterDevice(
   return devices.find((d) => normalizeDeviceId(d.device_id) === wanted);
 }
 
+/** What the picker offers, and what it left out (so it can say so). */
+export interface PickableDevices {
+  shown: FleetHealthDevice[];
+  /** Rows coord serves for a GitHub Actions CI runner registration. */
+  hiddenCiRunners: number;
+  /** Non-CI rows whose verdict is `abandoned`. */
+  hiddenAbandoned: number;
+}
+
+/**
+ * The roster rows a person can usefully pick: Qontinui runner machines that
+ * coord has not given up on.
+ *
+ * Coord's fleet roster also carries one row per GitHub Actions runner
+ * registration. Hosts that mint a one-job JIT runner per job add a row per
+ * job, so these rows number in the thousands and are almost all `abandoned`.
+ * None of them is a Qontinui runner: none can be drained, spawned on, or
+ * asked for restart readiness. So both pickers (`/admin/coord/runners`,
+ * `SpawnModal`) leave out every CI row ({@link isCiRunnerDevice}) and every
+ * `abandoned` row. `abandoned` is coord's last ladder rung, reached only
+ * after a device stops heartbeating for the full dwell. The excluded counts
+ * are returned so the picker can say what it left out instead of dropping
+ * rows silently.
+ *
+ * Callers still look a deep-linked id up in the FULL roster
+ * ({@link findRosterDevice}). This only decides what is offered.
+ */
+export function pickableDevices(
+  devices: ReadonlyArray<FleetHealthDevice>
+): PickableDevices {
+  const shown: FleetHealthDevice[] = [];
+  let hiddenCiRunners = 0;
+  let hiddenAbandoned = 0;
+  for (const d of devices) {
+    if (isCiRunnerDevice(d)) hiddenCiRunners += 1;
+    else if (d.state === "abandoned") hiddenAbandoned += 1;
+    else shown.push(d);
+  }
+  return { shown, hiddenCiRunners, hiddenAbandoned };
+}
+
+/** "3 CI runner registrations and 1 abandoned device hidden", or null. */
+export function hiddenDevicesNote(p: PickableDevices): string | null {
+  const parts: string[] = [];
+  if (p.hiddenCiRunners > 0)
+    parts.push(
+      `${p.hiddenCiRunners} CI runner registration${p.hiddenCiRunners === 1 ? "" : "s"}`
+    );
+  if (p.hiddenAbandoned > 0)
+    parts.push(
+      `${p.hiddenAbandoned} abandoned device${p.hiddenAbandoned === 1 ? "" : "s"}`
+    );
+  return parts.length === 0 ? null : `${parts.join(" and ")} hidden`;
+}
+
 export interface DevicePickerProps {
   devices: ReadonlyArray<FleetHealthDevice>;
   /** The selected coord device id, or `""` for none. */
@@ -100,38 +156,64 @@ export function DevicePicker({
   "aria-describedby": describedBy,
   "data-testid": testId,
 }: DevicePickerProps) {
-  const unlisted = value !== "" && findRosterDevice(devices, value) === undefined;
+  const pickable = pickableDevices(devices);
+  const note = hiddenDevicesNote(pickable);
+  const selectedRow = findRosterDevice(devices, value);
+  const unlisted = value !== "" && selectedRow === undefined;
+  // A deep link may select a row the picker would not offer. Still render
+  // it, or the trigger reads blank as if nothing were selected.
+  const selectedHidden =
+    selectedRow !== undefined && !pickable.shown.includes(selectedRow)
+      ? selectedRow
+      : undefined;
+  const noteId = note && id ? `${id}-hidden-note` : undefined;
+  const describedByIds =
+    [describedBy, noteId].filter(Boolean).join(" ") || undefined;
+  const offered = selectedHidden
+    ? [selectedHidden, ...pickable.shown]
+    : pickable.shown;
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger
-        id={id}
-        data-testid={testId}
-        aria-describedby={describedBy}
-      >
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {unlisted && (
-          <SelectItem value={value}>
-            <span className="font-mono text-xs">{value}</span>
-            <span className="ml-2 text-xs text-muted-foreground">
-              (not in the live roster)
-            </span>
-          </SelectItem>
-        )}
-        {devices.map((d) => (
-          <SelectItem key={d.device_id} value={d.device_id}>
-            <span className="font-mono text-xs">
-              {d.hostname || d.device_id}
-            </span>
-            {d.state && (
+    <>
+      <Select value={value} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger
+          id={id}
+          data-testid={testId}
+          aria-describedby={describedByIds}
+        >
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {unlisted && (
+            <SelectItem value={value}>
+              <span className="font-mono text-xs">{value}</span>
               <span className="ml-2 text-xs text-muted-foreground">
-                ({deviceStateLabel(d)})
+                (not in the live roster)
               </span>
-            )}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+            </SelectItem>
+          )}
+          {offered.map((d) => (
+            <SelectItem key={d.device_id} value={d.device_id}>
+              <span className="font-mono text-xs">
+                {d.hostname || d.device_id}
+              </span>
+              {d.state && (
+                <span className="ml-2 text-xs text-muted-foreground">
+                  ({deviceStateLabel(d)})
+                </span>
+              )}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {note && (
+        <p
+          id={noteId}
+          className="text-xs text-muted-foreground"
+          data-testid="device-picker-hidden-note"
+        >
+          {note}
+        </p>
+      )}
+    </>
   );
 }

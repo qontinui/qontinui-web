@@ -1,12 +1,4 @@
-import {
-  Play,
-  CheckCircle2,
-  XCircle,
-  Settings,
-  Copy,
-  Trash2,
-  Loader2,
-} from "lucide-react";
+import { Settings, Copy, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
@@ -17,29 +9,21 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { TestCase, TestResult } from "@/services/workflow-testing";
+import type { TestCase } from "@/services/workflow-testing";
 
 interface TestCaseDetailsProps {
   testCase: TestCase;
-  results: TestResult[];
-  onRun: (id: string) => void;
   onEdit: (testCase: TestCase) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
-  isRunning: boolean;
 }
 
 export function TestCaseDetails({
   testCase,
-  results,
-  onRun,
   onEdit,
   onDuplicate,
   onDelete,
-  isRunning,
 }: TestCaseDetailsProps) {
-  const lastResult = results[0];
-
   return (
     <div className="space-y-4">
       <Card>
@@ -52,19 +36,6 @@ export function TestCaseDetails({
               )}
             </div>
             <div className="flex gap-2">
-              <Button
-                onClick={() => onRun(testCase.id)}
-                variant="default"
-                size="sm"
-                disabled={isRunning}
-              >
-                {isRunning ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Play className="size-4" />
-                )}
-                Run
-              </Button>
               <Button
                 onClick={() => onEdit(testCase)}
                 variant="outline"
@@ -92,23 +63,6 @@ export function TestCaseDetails({
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Status */}
-            {lastResult && (
-              <div className="flex items-center gap-2">
-                {lastResult.passed ? (
-                  <CheckCircle2 className="size-5 text-green-500" />
-                ) : (
-                  <XCircle className="size-5 text-red-500" />
-                )}
-                <span className="font-medium">
-                  Last Run: {lastResult.passed ? "Passed" : "Failed"}
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  {new Date(lastResult.endTime).toLocaleString()}
-                </span>
-              </div>
-            )}
-
             {/* Configuration */}
             <div>
               <h3 className="font-semibold mb-2">Configuration</h3>

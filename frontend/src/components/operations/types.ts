@@ -718,7 +718,7 @@ export type CoordHealthJoin =
       device_id: string;
       /**
        * Coord `DeviceState`, serde-lowercase: `healthy` | `degraded` |
-       * `stale` | `partitioned` | `abandoned`, plus `unknown` where coord's
+       * `stale` | `ci_offline` | `partitioned` | `abandoned`, plus `unknown` where coord's
        * stored string did not parse. Absent => `unknown`, never healthy.
        *
        * `stale` is the derived overlay (the heartbeat is fine, the resource

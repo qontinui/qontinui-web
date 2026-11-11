@@ -24,6 +24,7 @@ const state = vi.hoisted(() => ({
     isError: false,
     error: null as unknown,
     errorUpdatedAt: 0,
+    dataUpdatedAt: 0 as number | undefined,
   },
   /** The sub-space id the header asked for. */
   askedFor: [] as (string | null)[],
@@ -139,7 +140,40 @@ describe("TwinFidelityHeader", () => {
     expect(el).toHaveTextContent("stale evidence1");
     // Phase 4b serves an unsampled decision class as null, never 0.
     expect(el).toHaveTextContent("stale at decisionUNKNOWN");
-    expect(el).toHaveTextContent("report 2m old");
+    // As of its read, not "now": the number does not grow while the page
+    // stays open. And it is coord's own number.
+    const age = screen.getByTestId("digital-twin-fidelity-age");
+    expect(age).toHaveTextContent(
+      "report 2m old as of its read (age served by coord)"
+    );
+    expect(age).toHaveAttribute("data-age-source", "served");
+  });
+
+  it("dates a report with no age_seconds from its computed_at at the read's time, and says so", () => {
+    const READ_AT = Date.parse("2026-10-23T12:00:00Z");
+    state.raw = {
+      data: {
+        subspace: "twin_fidelity",
+        tool: "coord_query_twin_fidelity",
+        verdict: {
+          total: 13,
+          observability_rate: 0.77,
+          computed_at: new Date(READ_AT - 3 * 60_000).toISOString(),
+        },
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      errorUpdatedAt: 0,
+      dataUpdatedAt: READ_AT,
+    } as typeof state.raw;
+    render(<TwinFidelityHeader />);
+    const age = screen.getByTestId("digital-twin-fidelity-age");
+    // 3m before the READ, not before this render (days later).
+    expect(age).toHaveTextContent(
+      "report 3m old as of its read (from its computed_at)"
+    );
+    expect(age).toHaveAttribute("data-age-source", "computed_at");
   });
 });
 
