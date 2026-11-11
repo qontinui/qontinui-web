@@ -423,7 +423,7 @@ export function IntegrationTestControlPanel({
             ? "Checking API connection..."
             : apiHealthy === false
               ? "runner is offline"
-              : "Tests run in mock mode using historical data"}
+              : "Tests run in mock mode using simulated data"}
         </div>
       </CardContent>
     </Card>

@@ -30,17 +30,21 @@ import {
   formatPressureFloor,
   formatRatioOfCeiling,
   formatWarnMargin,
+  FLOOR_BASIS_LABEL,
   hasPressureValue,
+  HEADROOM_BASIS_LABEL,
   headroomReport,
+  headroomSetBy,
   headroomTone,
   HEADROOM_LABEL,
   HEADROOM_MEANING,
   hostIsBindingConstraint,
-  laneShowsSwap,
   pressureFormula,
   pressureLabel,
   rowHeadroom,
+  rowShowsSwapAxis,
   safeRatio,
+  swapReading,
   threadHeadroom,
   summarizeFleetAdmission,
   EXPIRED_AFTER_SECS,
@@ -49,6 +53,7 @@ import {
 import type {
   EffectiveFloor,
   EffectivePressureFloor,
+  HeadroomSource,
   ResourceSampleRow,
 } from "./fleetResources";
 
@@ -326,10 +331,124 @@ describe("§C1 — the row says WHICH metric it is showing", () => {
     );
   });
 
-  it("never permits a swap figure on a host row", () => {
-    expect(laneShowsSwap("host")).toBe(false);
-    expect(laneShowsSwap("wsl")).toBe(true);
-    expect(laneShowsSwap("container")).toBe(true);
+  it("reads a swap figure exactly when coord serves `swap_ratio` as a number", () => {
+    // The served-field rule that replaced the lane-name rule. Coord decides
+    // whether a lane's swap is graded (`swap_axis_graded`) and serves the
+    // ratio it graded. This module derives none from the raw counters.
+    expect(
+      swapReading(
+        sample({
+          swap_total_bytes: 51_565_817_856,
+          swap_used_bytes: 51_561_738_240,
+          swap_ratio: 0.9999,
+        })
+      )
+    ).toEqual({ kind: "value", ratio: 0.9999 });
+    // A Windows host is served null whatever swap columns the row carries:
+    // there they are the commit counters derived a second time.
+    expect(
+      swapReading(
+        sample({
+          swap_total_bytes: 40 * GIB,
+          swap_used_bytes: 31 * GIB,
+          swap_ratio: null,
+        })
+      )
+    ).toEqual({ kind: "none" });
+    // 0 is a reading (a swap device nothing is using), not an absence.
+    expect(swapReading(sample({ swap_ratio: 0 }))).toEqual({
+      kind: "value",
+      ratio: 0,
+    });
+  });
+
+  it("keeps a coord that predates `swap_ratio` apart from one that serves null", () => {
+    // Absent is "not reported"; null is coord saying "no swap figure here".
+    // Collapsing them would print nothing where the honest answer is unknown.
+    const old = sample();
+    delete old.swap_ratio;
+    expect(swapReading(old)).toEqual({ kind: "unreported" });
+    expect(swapReading(null)).toEqual({ kind: "unreported" });
+    expect(swapReading(sample({ swap_ratio: null }))).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("reads a swap ratio it cannot use as unreadable, never as a figure", () => {
+    for (const bad of [1.2, -0.1, NaN, Infinity, "0.9"]) {
+      expect(
+        swapReading(sample({ swap_ratio: bad as unknown as number }))
+      ).toEqual({ kind: "unreadable" });
+    }
+  });
+
+  it("puts swap on every wsl/container row, and on a host row only when coord serves it", () => {
+    // The Linux lanes RANK on swap, so it is their axis even unmeasured.
+    expect(rowShowsSwapAxis(sample({ lane: "wsl", swap_ratio: 0.25 }))).toBe(
+      true
+    );
+    expect(rowShowsSwapAxis(sample({ lane: "wsl", swap_ratio: null }))).toBe(
+      true
+    );
+    expect(rowShowsSwapAxis(sample({ lane: "container" }))).toBe(true);
+    // A host ranks on commit; only coord's measured swap figure puts swap on
+    // the row. A Windows host (null) and a coord that never said (absent) do
+    // not.
+    expect(rowShowsSwapAxis(sample({ swap_ratio: 0.9999 }))).toBe(true);
+    expect(rowShowsSwapAxis(sample({ swap_ratio: null }))).toBe(false);
+    const old = sample();
+    delete old.swap_ratio;
+    expect(rowShowsSwapAxis(old)).toBe(false);
+    expect(rowShowsSwapAxis(null)).toBe(false);
+  });
+});
+
+describe("headroom_source — WHICH reading set a warn or a breach", () => {
+  const source = (basis: string, volume: string | null = null) =>
+    ({ basis, volume, free_bytes: null }) as HeadroomSource;
+
+  it("names the reading in the words the Admission column's lines already use", () => {
+    expect(headroomSetBy("warn", source("swap"))).toBe("swap");
+    expect(headroomSetBy("breach", source("threads"))).toBe("saturation");
+    expect(headroomSetBy("breach", source("disk_free"))).toBe("free disk");
+    expect(headroomSetBy("warn", source("commit_available"))).toBe(
+      "free commit"
+    );
+    expect(headroomSetBy("warn", source("mem_available"))).toBe(
+      "available memory"
+    );
+    // One vocabulary: the byte bases ARE the floor labels, not a third set.
+    expect(HEADROOM_BASIS_LABEL.disk_free).toBe(FLOOR_BASIS_LABEL.disk_free);
+    expect(HEADROOM_BASIS_LABEL.swap).toBe(pressureAxisLabel("swap_ratio"));
+  });
+
+  it("names the volume, the one source whose remedy is not on the row", () => {
+    expect(headroomSetBy("breach", source("other_volume", "C:"))).toBe(
+      "volume C:"
+    );
+    // Presentation mode: a label someone typed can name a client.
+    expect(
+      headroomSetBy("breach", source("other_volume", "C:"), {
+        nameVolume: false,
+      })
+    ).toBe("another volume");
+    expect(headroomSetBy("breach", source("other_volume"))).toBe(
+      "another volume"
+    );
+  });
+
+  it("names nothing on ok or unknown, or where coord sent no source", () => {
+    expect(headroomSetBy("ok", source("swap"))).toBeNull();
+    expect(headroomSetBy("unknown", source("swap"))).toBeNull();
+    expect(headroomSetBy("warn", null)).toBeNull();
+    expect(headroomSetBy("warn", undefined)).toBeNull();
+    expect(headroomSetBy("breach", source(""))).toBeNull();
+  });
+
+  it("reads a basis this build does not know as coord's own word, without underscores", () => {
+    expect(headroomSetBy("warn", source("inode_free"))).toBe("inode free");
+    // Never an inherited Object member wearing a label.
+    expect(headroomSetBy("warn", source("constructor"))).toBe("constructor");
   });
 });
 
