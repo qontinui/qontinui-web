@@ -156,19 +156,22 @@ describe("pickableDevices", () => {
     ci_runner_status: "idle",
   };
 
-  it("offers runner machines and leaves out CI rows and abandoned rows", () => {
+  it("offers every runner machine, abandoned ones last, and leaves out CI rows", () => {
     const p = pickableDevices([
+      deadMachine,
       machine,
       quietMachine,
-      deadMachine,
       jitRow,
       liveCiRow,
     ]);
-    // A partitioned machine stays: it may come back, and the runners page is
-    // where an operator goes to look at it.
-    expect(p.shown.map((d) => d.hostname)).toEqual(["nilan", "nawa"]);
+    // An abandoned machine is still a machine an operator looks for by name;
+    // it is listed after the reachable ones, not hidden.
+    expect(p.shown.map((d) => d.hostname)).toEqual([
+      "nilan",
+      "nawa",
+      "old-box",
+    ]);
     expect(p.hiddenCiRunners).toBe(2);
-    expect(p.hiddenAbandoned).toBe(1);
   });
 
   it("keeps a row whose CI status is unknown (an older coord)", () => {
@@ -184,8 +187,10 @@ describe("pickableDevices", () => {
       hiddenDevicesNote(
         pickableDevices([machine, deadMachine, jitRow, liveCiRow])
       )
-    ).toBe("2 CI runner registrations and 1 abandoned device hidden");
-    expect(hiddenDevicesNote(pickableDevices([machine]))).toBeNull();
+    ).toBe("2 CI runner registrations hidden");
+    expect(
+      hiddenDevicesNote(pickableDevices([machine, deadMachine]))
+    ).toBeNull();
   });
 
   it("still renders a deep-linked selection the picker would not offer", () => {

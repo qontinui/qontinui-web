@@ -179,6 +179,38 @@ export function readActiveTenantId(): string | null {
   }
 }
 
+/**
+ * The header the active-project selection travels in, on the URLs
+ * `isActiveTenantScopedUrl` covers.
+ */
+export const ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant";
+
+/**
+ * Request options that PIN the project a request is sent in, across every
+ * attempt the client makes of it.
+ *
+ * The client builds headers afresh on each attempt — the first, each retry of
+ * a retryable status, the replay after a token refresh — and reads the stored
+ * selection each time, so a request re-issued after another tab switched
+ * project goes to the NEW project. A caller that has to know which project
+ * answered (a stamp it will act on) or where a write landed pins it here:
+ *
+ * - a project id → sent as {@link ACTIVE_TENANT_HEADER} on every attempt (the
+ *   client keeps a caller-set header and never overwrites it);
+ * - `null` (none selected: the backend serves the home project) → there is no
+ *   header to pin, so the request is not retried (`maxRetries: 0`). The replay
+ *   after a token refresh is not charged to that budget and still re-reads the
+ *   selection — the one attempt this cannot pin, so a `null`-pinned answer can
+ *   still come from whatever project is stored by then.
+ */
+export function pinActiveTenant(
+  tenant: string | null
+): Pick<HttpOptions, "headers" | "maxRetries"> {
+  return tenant === null
+    ? { maxRetries: 0 }
+    : { headers: { [ACTIVE_TENANT_HEADER]: tenant } };
+}
+
 function isActiveTenantScopedUrl(url: string): boolean {
   return ACTIVE_TENANT_URL_PREFIXES.some((prefix) => url.includes(prefix));
 }
@@ -798,11 +830,11 @@ export class HttpClient {
     if (
       !skipAuth &&
       isActiveTenantScopedUrl(url) &&
-      !headers["X-Qontinui-Active-Tenant"]
+      !headers[ACTIVE_TENANT_HEADER]
     ) {
       const activeTenant = readActiveTenantId();
       if (activeTenant) {
-        headers["X-Qontinui-Active-Tenant"] = activeTenant;
+        headers[ACTIVE_TENANT_HEADER] = activeTenant;
       }
     }
 

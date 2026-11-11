@@ -68,7 +68,17 @@ import {
  *   stays overridden — the operator has to be told before they conclude the dial
  *   is broken.
  */
-export function PolicyWriteDialControl() {
+export function PolicyWriteDialControl({
+  canWrite,
+}: {
+  /**
+   * Checked at the moment of every write; `false` sends nothing (the caller
+   * says why). The prompt-documents page passes its cross-tab guard here:
+   * its disabled fieldset reaches neither a confirmation (rendered outside
+   * it) nor a click that lands before another tab's switch is seen.
+   */
+  canWrite?: () => boolean;
+} = {}) {
   const {
     policy,
     loading,
@@ -80,8 +90,10 @@ export function PolicyWriteDialControl() {
     readbackError,
     lastWrite,
     reload,
-    setLevel,
+    setLevel: writeLevel,
   } = usePolicyWritePolicy();
+  const setLevel = (level: Parameters<typeof writeLevel>[0]) =>
+    canWrite && !canWrite() ? Promise.resolve(false) : writeLevel(level);
 
   // Held between the operator picking a confirmed level and confirming it. The
   // RadioGroup stays controlled by `displayLevel` throughout, so cancelling

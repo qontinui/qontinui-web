@@ -17,9 +17,21 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { UI_BRIDGE_ROUTES } from "@qontinui/ui-bridge/server";
+import { startRelayClient } from "@qontinui/ui-bridge/injected";
+
+import { makeMockRedis } from "@/test/rate-limit-redis-mock";
 
 import { __resetAuthCache } from "./_auth";
-import { __setRedisClientForTest } from "./_rate-limit";
+import { __setRedisClientForTest, laneFor } from "./_rate-limit";
+import {
+  HEARTBEAT_INTERVAL_MS,
+  HEARTBEATS_PER_TAB_PER_MIN,
+  RELAY_COMMAND_STREAM_HEARTBEAT_MS,
+  RELAY_RESULTS_PER_TAB_PER_MIN,
+  RELAY_SNAPSHOTS_PER_STREAM_OPEN,
+  SSE_RECONNECT_DELAY_MS,
+  STREAM_OPENS_PER_TAB_PER_MIN,
+} from "./_transport";
 
 /** Every command the SDK dispatched to the relay, in order. */
 const dispatched = vi.hoisted(
@@ -66,28 +78,11 @@ function withBoms(count: number, json: string): Uint8Array {
   ]);
 }
 
-/** A rate-limit store that always admits (the route keys it per principal). */
-function admittingRedis() {
-  const pipeline = {
-    incr() {
-      return pipeline;
-    },
-    expire() {
-      return pipeline;
-    },
-    async exec() {
-      return [
-        [null, 1],
-        [null, 1],
-      ];
-    },
-  };
-  return {
-    pipeline: () => pipeline,
-    on: () => undefined,
-  } as unknown as Parameters<typeof __setRedisClientForTest>[0];
-}
-
+/**
+ * One request through the route, on a fresh rate-limit store. The sweeps
+ * below send far more requests than any lane admits (the GET sweep installs
+ * its own fresh store per request), and none of them may be refused.
+ */
 function send(
   method: "POST" | "PUT",
   path: string,
@@ -95,7 +90,7 @@ function send(
   contentType: string
 ): Promise<Response> {
   __resetAuthCache();
-  __setRedisClientForTest(admittingRedis());
+  __setRedisClientForTest(makeMockRedis().client);
   const request = new NextRequest(`http://localhost/api/ui-bridge${path}`, {
     method,
     headers: {
@@ -287,7 +282,7 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
     for (const routePath of routes) {
       const path = routePath.replace(/:[^/]+/g, "x1");
       __resetAuthCache();
-      __setRedisClientForTest(admittingRedis());
+      __setRedisClientForTest(makeMockRedis().client);
       const before = dispatched.length;
       const request = new NextRequest(
         `http://localhost/api/ui-bridge${path}${query}`,
@@ -351,5 +346,361 @@ describe("the installed SDK's Next handler reads request bodies only with reques
         /\b(?:request|req)\.(?:text|formData|arrayBuffer|blob)\(|\b(?:request|req)\.body\b/g
       ) ?? []
     ).toEqual([]);
+  });
+});
+
+/* -------------------------------------------------------------------- */
+/* The SDK's own transport: what one tab really sends                   */
+/* -------------------------------------------------------------------- */
+
+/**
+ * `_rate-limit.ts` sizes the three transport sub-lanes from the SDK cadences
+ * `_transport.ts` restates (the SDK keeps them module-private). These tests
+ * hold that restatement to the SDK `node_modules` resolves, two ways:
+ *
+ *   1. the constants themselves, read out of the installed bundles (sliced
+ *      by source file, as the request.json() census above slices the Next
+ *      adapter);
+ *   2. the behaviour: the installed `startRelayClient`
+ *      (`@qontinui/ui-bridge/injected`) is driven under fake timers for three
+ *      minutes against a stub relay that answers the way the SDK server does:
+ *      a `ping` every RELAY_COMMAND_STREAM_HEARTBEAT_MS, the proactive
+ *      snapshot and its one retry after every connect, and `tabRegistered`
+ *      from whether it holds an open stream for the tab (the relay answers
+ *      from the instance's open listeners, `connectedTabs`). Every request
+ *      the client sends must be one of the three transport routes, billed to
+ *      its own sub-lane, and within that route's per-tab cadence in EVERY
+ *      60-s window — for a visible tab on a healthy stream, a hidden tab
+ *      whose stream is refused, and a tab whose heartbeat is once answered
+ *      `tabRegistered: false`. The one exception is measured, not assumed:
+ *      when a stream starts being refused, the first heartbeat's
+ *      `tabRegistered: false` forces one immediate reopen
+ *      (`relay-client.ts` `forceReconnect`), which the envelope deliberately
+ *      leaves out (`_transport.ts` `STREAM_OPENS_PER_TAB_PER_MIN`).
+ */
+
+/** The `// <sourceFile>` section of an installed SDK bundle. */
+function bundleSection(specifier: string, sourceFile: string): string {
+  const bundle = readFileSync(
+    createRequire(import.meta.url).resolve(specifier),
+    "utf8"
+  );
+  const start = bundle.indexOf(`// ${sourceFile}`);
+  expect(start, `${specifier} has no ${sourceFile} section`).toBeGreaterThan(
+    -1
+  );
+  const end = bundle.indexOf("\n// src/", start + 1);
+  return bundle.slice(start, end === -1 ? undefined : end);
+}
+
+/** The number a bundle section assigns to `name` (the bundler prints 10_000 as 1e4). */
+function bundledNumber(section: string, name: string): number | null {
+  const match = new RegExp(`\\b${name}\\d* = ([0-9][0-9_.e]*);`).exec(section);
+  const literal = match?.[1];
+  return literal === undefined ? null : Number(literal.replace(/_/g, ""));
+}
+
+describe("the installed SDK's transport cadences are the ones _transport.ts restates", () => {
+  it("relay client: HEARTBEAT_INTERVAL_MS and SSE_RECONNECT_DELAY_MS", () => {
+    const client = bundleSection(
+      "@qontinui/ui-bridge/injected",
+      "src/relay/relay-client.ts"
+    );
+    expect(bundledNumber(client, "HEARTBEAT_INTERVAL_MS")).toBe(
+      HEARTBEAT_INTERVAL_MS
+    );
+    expect(bundledNumber(client, "SSE_RECONNECT_DELAY_MS")).toBe(
+      SSE_RECONNECT_DELAY_MS
+    );
+  });
+
+  it("Next adapter: RELAY_COMMAND_STREAM_HEARTBEAT_MS", () => {
+    const adapter = bundleSection(
+      "@qontinui/ui-bridge/server",
+      "src/server/nextjs.ts"
+    );
+    expect(bundledNumber(adapter, "RELAY_COMMAND_STREAM_HEARTBEAT_MS")).toBe(
+      RELAY_COMMAND_STREAM_HEARTBEAT_MS
+    );
+  });
+
+  it("command relay: the proactive snapshot is on by default and captures at most twice per connect", () => {
+    const relaySource = bundleSection(
+      "@qontinui/ui-bridge/server",
+      "src/server/command-relay.ts"
+    );
+    expect(relaySource).toContain("options?.proactiveSnapshot ?? true");
+    expect(relaySource.match(/\bcaptureSnapshot\(\)/g)?.length ?? 0).toBe(
+      RELAY_SNAPSHOTS_PER_STREAM_OPEN
+    );
+  });
+});
+
+describe("the installed SDK's relay client sends only transport, within its cadence", () => {
+  const BASE = "https://qontinui.io/api/ui-bridge";
+  const BASE_PATH = "/api/ui-bridge";
+  const RUN_MS = 3 * 60_000;
+  const MINUTE_MS = 60_000;
+  /** The fake clock's start: every run begins here. */
+  const T0 = Date.UTC(2026, 0, 1);
+  /** The only routes a relay client may send, and the sub-lane each bills. */
+  const LANE_OF: Readonly<Record<string, string>> = {
+    "GET /commands/stream": "transport:stream",
+    "POST /heartbeat": "transport:heartbeat",
+    "POST /commands": "transport:result",
+  };
+
+  interface Sent {
+    route: string;
+    at: number;
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(document, "visibilityState");
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * Overrides the relay's answer to one heartbeat. `holdsStream` is the
+   * relay's own answer: whether it holds an open stream for the tab.
+   */
+  type TabRegisteredAnswer = (beat: number, holdsStream: boolean) => boolean;
+
+  /** A stub relay answering the SDK client the way the SDK server does. */
+  function stubRelay(opts: {
+    streamOk: boolean;
+    tabRegistered?: TabRegisteredAnswer;
+  }) {
+    const sent: Sent[] = [];
+    const encoder = new TextEncoder();
+    let beats = 0;
+    let opens = 0;
+    /** Streams the relay currently holds open (its `connectedTabs`). */
+    let openStreams = 0;
+
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    function commandStream(
+      streamId: string,
+      signal: AbortSignal | null | undefined
+    ): Response {
+      let closed = false;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          openStreams += 1;
+          const push = (frame: unknown) => {
+            if (!closed) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(frame)}\n\n`)
+              );
+            }
+          };
+          const snapshot = (attempt: string) =>
+            push({
+              commandId: `${streamId}-${attempt}`,
+              action: "getControlSnapshot",
+              payload: {},
+            });
+          // The relay's proactive snapshot 500 ms after connect, and its one
+          // retry 1.5 s after a failed capture (`command-relay.ts`).
+          const timers = [
+            setTimeout(() => snapshot("snapshot"), 500),
+            setTimeout(() => snapshot("snapshot-retry"), 2000),
+          ];
+          const ping = setInterval(
+            () => push({ type: "ping" }),
+            RELAY_COMMAND_STREAM_HEARTBEAT_MS
+          );
+          signal?.addEventListener("abort", () => {
+            if (closed) {
+              return;
+            }
+            closed = true;
+            openStreams -= 1;
+            timers.forEach((timer) => clearTimeout(timer));
+            clearInterval(ping);
+            try {
+              controller.close();
+            } catch {
+              // already closed by the reader
+            }
+          });
+          push({ type: "connected", streamId });
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }
+
+    const fetchStub = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        const route = `${(init?.method ?? "GET").toUpperCase()} ${url.pathname.slice(BASE_PATH.length)}`;
+        sent.push({ route, at: Date.now() });
+        if (route === "GET /commands/stream") {
+          opens += 1;
+          return opts.streamOk
+            ? commandStream(`stream-${opens}`, init?.signal)
+            : new Response("relay unavailable", { status: 503 });
+        }
+        if (route === "POST /heartbeat") {
+          beats += 1;
+          const holdsStream = openStreams > 0;
+          return json({
+            success: true,
+            tabRegistered: opts.tabRegistered
+              ? opts.tabRegistered(beats, holdsStream)
+              : holdsStream,
+          });
+        }
+        return json({ success: true });
+      }
+    );
+    return { fetchStub, sent };
+  }
+
+  /** Run one tab's relay client for RUN_MS of fake time; return what it sent. */
+  async function runTab(opts: {
+    visibility: "visible" | "hidden";
+    streamOk: boolean;
+    tabRegistered?: TabRegisteredAnswer;
+  }): Promise<Sent[]> {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => opts.visibility,
+    });
+    const { fetchStub, sent } = stubRelay(opts);
+    vi.stubGlobal("fetch", fetchStub);
+
+    const client = startRelayClient({
+      basePath: BASE,
+      tabId: "census-tab",
+      execute: async () => ({ success: true }),
+      authHeader: () => "census-bearer",
+      registrationMetadata: () => ({
+        userId: "census-user",
+        sessionId: "census-session",
+      }),
+      onError: () => undefined,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(RUN_MS);
+    client.stop();
+    await vi.advanceTimersByTimeAsync(0);
+    return sent;
+  }
+
+  const count = (sent: readonly Sent[], route: string) =>
+    sent.filter((s) => s.route === route).length;
+
+  /**
+   * The most requests to `route` in any 60-s window [t, t + 60 s) of the run
+   * that starts at or after `from`.
+   */
+  function peakPerMinute(
+    sent: readonly Sent[],
+    route: string,
+    from = T0
+  ): number {
+    const times = sent.filter((s) => s.route === route).map((s) => s.at);
+    let peak = 0;
+    for (const start of times.filter((t) => t >= from)) {
+      const inWindow = times.filter(
+        (t) => t >= start && t < start + MINUTE_MS
+      ).length;
+      peak = Math.max(peak, inWindow);
+    }
+    return peak;
+  }
+
+  /**
+   * `forcedReopens`: immediate reopens the envelope deliberately leaves out
+   * (`_transport.ts` `STREAM_OPENS_PER_TAB_PER_MIN`), allowed in the run's
+   * first minute only; every window after it must hold the cadence exactly.
+   */
+  function expectTransportWithinCadence(
+    sent: readonly Sent[],
+    { forcedReopens = 0 }: { forcedReopens?: number } = {}
+  ): void {
+    for (const route of new Set(sent.map((s) => s.route))) {
+      const [method = "", path = ""] = route.split(" ");
+      expect(laneFor(path, method), route).toBe(LANE_OF[route]);
+    }
+    expect(peakPerMinute(sent, "GET /commands/stream")).toBeLessThanOrEqual(
+      STREAM_OPENS_PER_TAB_PER_MIN + forcedReopens
+    );
+    expect(
+      peakPerMinute(sent, "GET /commands/stream", T0 + MINUTE_MS)
+    ).toBeLessThanOrEqual(STREAM_OPENS_PER_TAB_PER_MIN);
+    expect(peakPerMinute(sent, "POST /heartbeat")).toBeLessThanOrEqual(
+      HEARTBEATS_PER_TAB_PER_MIN
+    );
+    expect(peakPerMinute(sent, "POST /commands")).toBeLessThanOrEqual(
+      RELAY_RESULTS_PER_TAB_PER_MIN
+    );
+  }
+
+  it("a visible tab on a healthy stream: one open, its two snapshot results, heartbeats within cadence", async () => {
+    const sent = await runTab({ visibility: "visible", streamOk: true });
+    expectTransportWithinCadence(sent);
+    expect(count(sent, "GET /commands/stream")).toBe(1);
+    expect(count(sent, "POST /commands")).toBe(2);
+    // Not vacuous: the timer beat all through the run.
+    expect(peakPerMinute(sent, "POST /heartbeat")).toBeGreaterThanOrEqual(6);
+  });
+
+  it("a hidden tab whose stream is refused: one forced reopen as the refusals start, then the reconnect cadence and no faster", async () => {
+    // The relay holds no stream for the tab, so it answers every heartbeat
+    // `tabRegistered: false`, and the boot heartbeat's answer reopens the
+    // stream at once beside the boot open. The reopen clears the pending
+    // reconnect, so from then on the client opens once per heartbeat.
+    const sent = await runTab({ visibility: "hidden", streamOk: false });
+    expectTransportWithinCadence(sent, { forcedReopens: 1 });
+    // Read exactly, so both bounds are met rather than merely respected:
+    // 6 + the one forced reopen in the first minute, 6 in every later window.
+    expect(peakPerMinute(sent, "GET /commands/stream")).toBe(7);
+    expect(peakPerMinute(sent, "GET /commands/stream", T0 + MINUTE_MS)).toBe(6);
+    expect(count(sent, "POST /commands")).toBe(0);
+    expect(peakPerMinute(sent, "POST /heartbeat")).toBeGreaterThanOrEqual(6);
+  });
+
+  it("a tab once answered tabRegistered:false: one forced reopen and its snapshots, all within cadence", async () => {
+    const sent = await runTab({
+      visibility: "visible",
+      streamOk: true,
+      // The per-instance recovery path: one heartbeat lands on an instance
+      // that holds no stream for the tab.
+      tabRegistered: (beat, holdsStream) => (beat === 2 ? false : holdsStream),
+    });
+    expectTransportWithinCadence(sent);
+    expect(count(sent, "GET /commands/stream")).toBe(2);
+    expect(count(sent, "POST /commands")).toBe(4);
+  });
+
+  it("bills every UI_BRIDGE_ROUTES entry to a command lane except POST /heartbeat", () => {
+    const lanes = UI_BRIDGE_ROUTES.map((r) => ({
+      route: `${r.method} ${r.path}`,
+      lane: laneFor(r.path.replace(/:[^/]+/g, "x1"), r.method),
+    }));
+    expect(lanes.filter(({ lane }) => lane.startsWith("transport:"))).toEqual([
+      { route: "POST /heartbeat", lane: "transport:heartbeat" },
+    ]);
+    expect(
+      lanes.filter(
+        ({ route, lane }) =>
+          route !== "POST /heartbeat" && lane !== "read" && lane !== "write"
+      )
+    ).toEqual([]);
+    // Not vacuous: the installed table is the SDK's whole route contract.
+    expect(UI_BRIDGE_ROUTES.length).toBeGreaterThan(80);
   });
 });
