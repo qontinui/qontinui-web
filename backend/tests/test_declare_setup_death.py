@@ -824,6 +824,78 @@ CARRIERS: dict[tuple[str, str], dict[str, object]] = {
     },
 }
 
+#: The STATUS-FUNCTION census. A step whose `if:` holds `always()`,
+#: `failure()`, `!cancelled()` or `cancelled()` can run AFTER a setup death, so
+#: each one in a carrier job is classified here or as a `!`-marked VERDICT row
+#: (whose failure after a setup death the declarer reads as the cascade). This
+#: table lists, in step order, every one that is NOT a `!` row: a reporter or
+#: a teardown, reviewed one by one, whose own failure is never a verdict on the
+#: PR. A new status-function step reds the census until it lands in one place.
+REPORTERS: dict[tuple[str, str], list[str]] = {
+    ("backend-ci.yml", "lint"): [DECLARER_STEP],
+    ("backend-ci.yml", "test"): [
+        "Upload CI-generated OpenAPI snapshot on drift",
+        "Upload coverage artifacts",
+        "Upload junit results",
+        EXPLAINER_STEP,
+        DECLARER_STEP,
+    ],
+    ("backend-ci.yml", "security-scan"): [
+        # `continue-on-error`: an upload of the scan's SARIF, never a verdict.
+        "Upload Trivy results to GitHub Security",
+        DECLARER_STEP,
+    ],
+    ("memory-recall-eval.yml", "recall-eval"): [
+        "Upload the sealed holdout scores",
+        "Comment the scores on the PR",
+        DECLARER_STEP,
+    ],
+    ("workflow-lint.yml", "workflow-lint"): [
+        # `continue-on-error`: writes the step-summary lines only.
+        "Record verdicts",
+        DECLARER_STEP,
+    ],
+    ("e2e-tests.yml", "backend-tests"): [
+        "Upload backend test results",
+        "Explain a cancelled job (no apt step here)",
+        DECLARER_STEP,
+    ],
+    ("e2e-playwright-stack.yml", "playwright"): [
+        "Stage apt archives for cache",
+        "Save Playwright apt font cache",
+        "Upload Playwright report",
+        "Upload test results",
+        "Upload test artifacts (screenshots, videos)",
+        EXPLAINER_STEP,
+        DECLARER_STEP,
+    ],
+    ("migration-reversal.yml", "reverse"): [EXPLAINER_STEP, DECLARER_STEP],
+    ("migration-reversal.yml", "tested"): [
+        # An annotation naming a missing postgresql client; no exit 1.
+        "Name an unavailable postgresql client",
+        EXPLAINER_STEP,
+        DECLARER_STEP,
+    ],
+    ("spec-ci.yml", "spec-ci"): [
+        "Stage apt archives for cache",
+        "Save Playwright apt font cache",
+        "Tear down frontend + backend",
+        "Upload Spec CI report",
+        "Upload frontend + backend logs on failure",
+        # Writes $GITHUB_STEP_SUMMARY from the report, if one exists.
+        "Summarize",
+        EXPLAINER_STEP,
+        DECLARER_STEP,
+    ],
+    ("style-gate.yml", "style-gate"): [
+        "Stage apt archives for cache",
+        "Save Playwright apt font cache",
+        "Upload style-gate artifacts",
+        EXPLAINER_STEP,
+        DECLARER_STEP,
+    ],
+}
+
 _MATRIX_EXPR = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
 _ROW = re.compile(
     r"^(?P<mark>!?)(?P<name>.+)"
@@ -902,8 +974,28 @@ def _steps_by_id(job: dict) -> dict[str, tuple[int, dict]]:
 
 
 def _has_status_function(step: dict) -> bool:
+    """Can this step run after an earlier step failed? (`!cancelled()` holds
+    `cancelled()`, so the substring reads all four status functions.)"""
     condition = str(step.get("if", ""))
     return any(f in condition for f in ("always()", "failure()", "cancelled()"))
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected"),
+    [
+        ("always()", True),
+        ("failure()", True),
+        ("!cancelled()", True),
+        ("cancelled()", True),
+        ("${{ !cancelled() && steps.install.outcome == 'success' }}", True),
+        ("cancelled() || failure()", True),
+        ("success()", False),
+        ("runner.environment == 'self-hosted'", False),
+        ("steps.checkout.outcome == 'success'", False),
+    ],
+)
+def test_the_status_function_predicate_reads_all_four(condition, expected):
+    assert _has_status_function({"if": condition}) is expected
 
 
 def _own_checkout_index(job: dict) -> int:
@@ -1017,6 +1109,38 @@ def test_a_setup_step_failing_is_the_jobs_first_failure(workflow, job_id):
         target = by_id[row.group("id")][1]
         assert not _has_status_function(target), f"{row['name']!r}: {target['if']!r}"
         assert "continue-on-error" not in target, f"{row['name']!r} can soft-fail"
+
+
+def test_the_status_function_census_covers_exactly_the_carriers():
+    assert sorted(REPORTERS) == sorted(CARRIERS)
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_every_status_function_step_is_a_marked_verdict_or_a_reviewed_reporter(
+    workflow, job_id
+):
+    """The census: no step that can run after a setup death goes unclassified.
+
+    Such a step that is really a scan or a test, on neither list, could fail
+    on its own merits beside a setup death, and the declarer would title that
+    red not a verdict. So every one is a `!` VERDICT row or on REPORTERS.
+    """
+    job = _job(workflow, job_id)
+    marked = {
+        row.group("id")
+        for row in _rows(_declarer(job), "VERDICT_STEPS")
+        if row.group("mark")
+    }
+    status_steps = [
+        step for step in job.get("steps") or [] if _has_status_function(step)
+    ]
+    unclassified = [
+        str(step.get("name")) for step in status_steps if step.get("id") not in marked
+    ]
+    assert unclassified == REPORTERS[(workflow, job_id)], (
+        "a status-function step is neither a `!` VERDICT row nor a reviewed "
+        "reporter/teardown in REPORTERS (or REPORTERS names one that is gone)"
+    )
 
 
 @pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
