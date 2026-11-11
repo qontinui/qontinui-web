@@ -1376,6 +1376,114 @@ describe("/admin/coord/home", () => {
     );
   });
 
+  // A `detection_bound:<plane>` row measures how long a fault on a plane can
+  // go unseen. It has no rows, so the row-count clauses are not owed, and a
+  // plane slower than the target is shown without opening "Sources read".
+  it("shows a slow plane outside the read disclosure and words its detail as a detection lag", async () => {
+    const base = doorBody();
+    await renderWith(
+      doorBody({
+        does_not_know: [
+          ...(base.does_not_know as unknown[]),
+          {
+            source: "detection_bound:merge_train",
+            state: "read",
+            as_of: "2026-09-30T12:00:00Z",
+            freshness_bound_secs: 3600,
+            exclusion_reason:
+              "a fault on this plane can be up to 3600s old before coord first observes it, above the 600s fault-to-visibility target",
+          },
+          {
+            source: "detection_bound:cloud_service",
+            state: "unknown",
+            exclusion_reason:
+              "no detection bound could be derived for this plane",
+          },
+        ],
+      })
+    );
+    const dnk = screen.getByTestId("coord-home.does-not-know");
+    // The slow plane is read: only the underivable one counts as not read.
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.count")
+    ).toHaveTextContent("2 of 5 sources not read");
+    // Listed in the open, under its own heading, with "Sources read" closed.
+    const slow = within(dnk).getByTestId("coord-home.does-not-know.slow");
+    expect(slow).toHaveTextContent(
+      "Slower than the fault-to-visibility target"
+    );
+    expect(dnk).not.toHaveTextContent("Work unit status changes");
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.read-count")
+    ).toHaveTextContent("read 2");
+    const slowRow = within(slow).getByTestId("coord-home.does-not-know.row");
+    expect(slowRow).toHaveTextContent(
+      "a fault can be up to 1h old before coord sees it"
+    );
+    expect(
+      within(dnk).queryByTestId("coord-home.does-not-know.slow.unstated")
+    ).toBeNull();
+    // Expanded: the bound is a fault-to-visibility bound, no row counts.
+    fireEvent.click(
+      within(slow).getByText(
+        "Time for a fault on merge train to reach this view"
+      )
+    );
+    expect(slowRow).toHaveTextContent("Fault-to-visibility bound: 1h");
+    expect(slowRow).not.toHaveTextContent(/Freshness bound/);
+    expect(slowRow).not.toHaveTextContent(/Rows considered|Rows excluded/);
+    expect(slowRow).toHaveTextContent("Why this lag:");
+    expect(slowRow).not.toHaveTextContent(/Why excluded/);
+
+    // The underivable plane is listed as not read, and is not counted as a
+    // source missing an age bound or an exclusion count.
+    const unknownRow = within(dnk)
+      .getByText("Time for a fault on cloud service to reach this view")
+      .closest('[data-testid="coord-home.does-not-know.row"]') as HTMLElement;
+    expect(unknownRow).toHaveTextContent("no detection bound known");
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.not-read.unstated")
+    ).toHaveTextContent(
+      "Coord stated no age bound for it, and no count of excluded rows for it."
+    );
+    fireEvent.click(
+      within(dnk).getByText(
+        "Time for a fault on cloud service to reach this view"
+      )
+    );
+    expect(unknownRow).toHaveTextContent(
+      "Fault-to-visibility bound: none could be derived"
+    );
+    expect(unknownRow).not.toHaveTextContent(/Rows considered|not stated/);
+    expect(unknownRow).toHaveTextContent("Why this lag:");
+  });
+
+  // With every source read, the headline must not say all is well while a
+  // slow plane is listed right under it.
+  it("names the slow planes in the all-read headline", async () => {
+    await renderWith(
+      doorBody({
+        does_not_know: [
+          { source: "work_units", state: "read" },
+          {
+            source: "detection_bound:merge_train",
+            state: "read",
+            freshness_bound_secs: 3600,
+          },
+        ],
+      })
+    );
+    const dnk = screen.getByTestId("coord-home.does-not-know");
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.all-read")
+    ).toHaveTextContent(
+      "Coord read every source it lists; 1 area reaches this view slower than the fault-to-visibility target."
+    );
+    expect(
+      within(dnk).getByTestId("coord-home.does-not-know.slow")
+    ).toBeInTheDocument();
+  });
+
   // `useVisiblePoll`'s single-flight guard covers the poll only; a press
   // never passes through it. The hook's own guard makes a press during a read
   // JOIN that read: one request, and the button busy until it lands.
@@ -1425,5 +1533,358 @@ describe("/admin/coord/home", () => {
       /Last refresh failed/
     );
     expect(screen.getByText("A runner stopped answering")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The one-screen acceptance (`answerability.questions.json`) reads the page as
+ * it loads, with nothing expanded. q4 and q7 were answered only inside a
+ * collapsed row (coord finding ddba6bb8, 2026-11-04); these pin that both
+ * answers are on the first render, before any click.
+ */
+describe("/admin/coord/home — answered on first load, nothing expanded", () => {
+  beforeEach(() => {
+    httpFetch.mockReset();
+    resetSupplements();
+  });
+
+  /** An open degradation row, on the door's shape. */
+  function openRow(id: string, auto_remediation: unknown) {
+    return {
+      id,
+      plane: "runner",
+      subject: { kind: "device", name: `box-${id}`, id: `dev-${id}` },
+      headline: `Degradation ${id}`,
+      onset_observed_at: "2026-09-30T08:00:00Z",
+      last_seen_at: "2026-09-30T11:00:00Z",
+      age_secs: 3600,
+      auto_remediation,
+      declared: false,
+    };
+  }
+
+  it("q4: each open row says who is acting on it, and a tally sums them", async () => {
+    await renderWith(
+      doorBody({
+        degradations: {
+          state: "read",
+          headline: "degraded",
+          open: [
+            openRow("a", { bound: true, response: "agent:dev_ops" }),
+            openRow("b", { bound: false, response: "operator:page" }),
+            openRow("c", null),
+            openRow("d", { bound: true, response: "merge_train" }),
+          ],
+          declared: [],
+          recently_cleared: [],
+        },
+      })
+    );
+    const region = screen.getByTestId("coord-home.degrading");
+    // No row is open.
+    expect(
+      region.querySelector('[data-console-row][aria-expanded="true"]')
+    ).toBeNull();
+    const reasons = within(region)
+      .getAllByTestId("row-reason")
+      .map((r) => r.textContent);
+    expect(reasons).toEqual([
+      "box-a · agent response bound",
+      "box-b · waits on an operator",
+      "box-c · remediation unknown",
+      "box-d · agent response bound",
+    ]);
+    expect(
+      screen.getByTestId("coord-home.degrading.remediation")
+    ).toHaveTextContent(
+      "Of 4 open: 2 with an agent response bound, 1 waiting on an operator, 1 whose remediation coord did not say."
+    );
+    // The binding coord did not serve is never counted as "none".
+    expect(region).not.toHaveTextContent(/no automatic response/);
+  });
+
+  it("q4: a stale block's tally counts only the rows shown", async () => {
+    await renderWith(
+      doorBody({
+        degradations: {
+          state: "stale",
+          headline: "degraded",
+          open: [openRow("a", { bound: true, response: "agent:dev_ops" })],
+          declared: [],
+          recently_cleared: [],
+        },
+      })
+    );
+    expect(
+      screen.getByTestId("coord-home.degrading.remediation")
+    ).toHaveTextContent("Of the 1 open shown: 1 with an agent response bound.");
+  });
+
+  it.each([
+    [
+      "nothing is open",
+      {
+        state: "read",
+        headline: "none",
+        open: [],
+        declared: [],
+        recently_cleared: [],
+      },
+    ],
+    ["the block was not read", { state: "could_not_read", error: "timeout" }],
+    [
+      "coord served no open list",
+      { state: "read", headline: "none", recently_cleared: [] },
+    ],
+  ])("q4: no tally when %s", async (_case, degradations) => {
+    await renderWith(doorBody({ degradations }));
+    expect(screen.getByTestId("coord-home.degrading")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-home.degrading.remediation")
+    ).not.toBeInTheDocument();
+  });
+
+  it("q4: a read block whose headline is unknown counts only the rows shown", async () => {
+    await renderWith(
+      doorBody({
+        degradations: {
+          state: "read",
+          headline: "something-new",
+          open: [openRow("a", { bound: true, response: "agent:dev_ops" })],
+          declared: [],
+          recently_cleared: [],
+        },
+      })
+    );
+    expect(
+      screen.getByTestId("coord-home.degrading.remediation")
+    ).toHaveTextContent(/^Of the 1 open shown: /);
+  });
+
+  it("q7: named no-recorded-change units are listed with their age, per repository, before any click", async () => {
+    await renderWith(doorBody());
+    const onTrack = screen.getByTestId("coord-home.on-track");
+    expect(
+      onTrack.querySelector('[data-console-row][aria-expanded="true"]')
+    ).toBeNull();
+    const block = screen.getByTestId("coord-home.on-track.no-recorded-change");
+    const group = within(block).getByTestId(
+      "coord-home.on-track.no-recorded-change.group"
+    );
+    expect(group).toHaveTextContent("qontinui-web");
+    expect(group).toHaveTextContent("No recorded change in 14 days");
+    expect(
+      within(group).getByText("An old plan").closest("li")
+    ).toHaveTextContent(/An old plan.*28d/);
+    // Shown once: the row's detail no longer repeats it.
+    fireEvent.click(within(onTrack).getByText(/shipped 4/));
+    expect(within(onTrack).getAllByText("An old plan")).toHaveLength(1);
+  });
+
+  it("q7: says how many more coord did not name, and unknown when it served no list", async () => {
+    const body = doorBody();
+    const onTrack = body.on_track as { groups: Array<Record<string, unknown>> };
+    onTrack.groups = [
+      {
+        ...onTrack.groups[0],
+        named: {
+          stalled: {
+            ...(onTrack.groups[0]!.named as { stalled: object }).stalled,
+            omitted: 3,
+          },
+          waiting_on_gate: { units: [], omitted: 0 },
+        },
+      },
+      {
+        key: "qontinui-coord",
+        kind: "repo",
+        row_count: 2,
+        classes: CLASSES,
+        named: { stalled: null, waiting_on_gate: null },
+      },
+    ];
+    await renderWith(body);
+    const block = screen.getByTestId("coord-home.on-track.no-recorded-change");
+    const groups = within(block).getAllByTestId(
+      "coord-home.on-track.no-recorded-change.group"
+    );
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toHaveTextContent("and 3 more not named here.");
+    expect(groups[1]).toHaveTextContent(
+      /qontinui-coord.*No recorded change in 14 days: coord served no list — unknown\./
+    );
+  });
+
+  it("q7: one sentence when every list was read and names none", async () => {
+    const body = doorBody();
+    const onTrack = body.on_track as {
+      groups: Array<Record<string, unknown>>;
+      totals: Record<string, unknown>;
+    };
+    onTrack.totals = { row_count: 11, classes: { ...CLASSES, stalled: 0 } };
+    onTrack.groups[0] = {
+      ...onTrack.groups[0],
+      classes: { ...CLASSES, stalled: 0 },
+      named: {
+        stalled: { units: [], omitted: 0 },
+        waiting_on_gate: { units: [], omitted: 0 },
+      },
+    };
+    await renderWith(body);
+    expect(
+      screen.getByTestId("coord-home.on-track.no-recorded-change")
+    ).toHaveTextContent(
+      "Coord named no unit with no recorded change in 14 days."
+    );
+  });
+
+  /** The door body with its one group's no-recorded-change list and count. */
+  function groupWith(stalled: unknown, count: number | null) {
+    const body = doorBody();
+    const onTrack = body.on_track as { groups: Array<Record<string, unknown>> };
+    onTrack.groups[0] = {
+      ...onTrack.groups[0],
+      classes: { ...CLASSES, stalled: count },
+      named: { stalled, waiting_on_gate: { units: [], omitted: 0 } },
+    };
+    return body;
+  }
+
+  it.each([
+    [
+      { units: [], omitted: 3 },
+      3,
+      "No recorded change in 14 days: 3 not named here.",
+    ],
+    [
+      { units: [], omitted: null },
+      1,
+      "No recorded change in 14 days: none named here; whether any exist is unknown.",
+    ],
+    [
+      { units: [], omitted: 0 },
+      2,
+      "No recorded change in 14 days: coord counts 2 but named none, so which units they are is unknown.",
+    ],
+    [
+      { units: [], omitted: 0 },
+      null,
+      "No recorded change in 14 days: coord counts an unknown number but named none, so which units they are is unknown.",
+    ],
+  ])(
+    "q7: an empty list %j under a count of %s never reads as none",
+    async (stalled, count, sentence) => {
+      await renderWith(groupWith(stalled, count));
+      const block = screen.getByTestId(
+        "coord-home.on-track.no-recorded-change"
+      );
+      expect(block).toHaveTextContent(sentence);
+      expect(block).not.toHaveTextContent(/: none\.|Coord named no unit/);
+    }
+  );
+
+  it("q7: every group a known zero under a non-zero section total reads as a disagreement, not none", async () => {
+    // doorBody's section total counts 1 unit with no recorded change.
+    await renderWith(groupWith({ units: [], omitted: 0 }, 0));
+    const block = screen.getByTestId("coord-home.on-track.no-recorded-change");
+    expect(block).toHaveTextContent(
+      "Coord counts 1 work unit with no recorded change in 14 days but named none, so which units they are is unknown."
+    );
+    expect(block).not.toHaveTextContent(/Coord named no unit/);
+  });
+
+  it("q7: a named list shorter than its count, with none omitted, says the rest is unknown", async () => {
+    // doorBody names 1 unit with omitted 0; the group counts 3.
+    const body = doorBody();
+    const onTrack = body.on_track as { groups: Array<Record<string, unknown>> };
+    onTrack.groups[0] = {
+      ...onTrack.groups[0],
+      classes: { ...CLASSES, stalled: 3 },
+    };
+    await renderWith(body);
+    const block = screen.getByTestId("coord-home.on-track.no-recorded-change");
+    expect(block).toHaveTextContent("An old plan");
+    expect(
+      within(block).getByTestId(
+        "coord-home.on-track.no-recorded-change.shortfall"
+      )
+    ).toHaveTextContent(
+      "Coord counts 3 but named 1, so the other 2 units are unknown."
+    );
+  });
+
+  it("q7: no shortfall note when the named list matches its count", async () => {
+    await renderWith(doorBody());
+    expect(
+      screen.queryByTestId("coord-home.on-track.no-recorded-change.shortfall")
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [2, 0, "Coord counts 2 but named 1, so the other unit is unknown."],
+    [
+      5,
+      1,
+      "Coord counts 5 but named 1 and says it left 1 out, so the other 3 units are unknown.",
+    ],
+  ])(
+    "q7: count %i with %i omitted beyond the one named reads as unknown",
+    async (count, omitted, sentence) => {
+      const body = doorBody();
+      const onTrack = body.on_track as {
+        groups: Array<Record<string, unknown>>;
+      };
+      const g = onTrack.groups[0] as {
+        named: { stalled: Record<string, unknown> };
+      };
+      onTrack.groups[0] = {
+        ...g,
+        classes: { ...CLASSES, stalled: count },
+        named: { ...g.named, stalled: { ...g.named.stalled, omitted } },
+      };
+      await renderWith(body);
+      expect(
+        screen.getByTestId("coord-home.on-track.no-recorded-change.shortfall")
+      ).toHaveTextContent(sentence);
+    }
+  );
+
+  it("q7: no shortfall note when the group count is unknown", async () => {
+    const body = doorBody();
+    const onTrack = body.on_track as { groups: Array<Record<string, unknown>> };
+    onTrack.groups[0] = {
+      ...onTrack.groups[0],
+      classes: { ...CLASSES, stalled: null },
+    };
+    await renderWith(body);
+    expect(
+      screen.getByTestId("coord-home.on-track.no-recorded-change")
+    ).toHaveTextContent("An old plan");
+    expect(
+      screen.queryByTestId("coord-home.on-track.no-recorded-change.shortfall")
+    ).not.toBeInTheDocument();
+  });
+
+  it("q7: nothing named, some omitted, and a larger count says the rest is unknown", async () => {
+    const body = doorBody();
+    const onTrack = body.on_track as { groups: Array<Record<string, unknown>> };
+    onTrack.groups[0] = {
+      ...onTrack.groups[0],
+      classes: { ...CLASSES, stalled: 5 },
+      named: {
+        stalled: { units: [], omitted: 2 },
+        waiting_on_gate: { units: [], omitted: 0 },
+      },
+    };
+    await renderWith(body);
+    const block = screen.getByTestId("coord-home.on-track.no-recorded-change");
+    expect(block).toHaveTextContent("2 not named here.");
+    expect(
+      within(block).getByTestId(
+        "coord-home.on-track.no-recorded-change.shortfall"
+      )
+    ).toHaveTextContent(
+      "Coord counts 5 but named 0 and says it left 2 out, so the other 3 units are unknown."
+    );
   });
 });

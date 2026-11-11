@@ -1,11 +1,13 @@
 /**
  * A fake of the web backend's runner relay for the dashboard's page tests:
  * one handler per runner route, defaulting to what a CURRENT runner answers
- * (qontinui-runner `be39991d2` plus Phase 6's runner half, `afc970df9`). In
- * particular the runner's own app list (`GET /apps`) and the occlusion sweep
- * are refused as not carried, because no runner's relay allowlist carries them
- * yet, and the component read answers its relayed shape: the runner's own
- * registry, `wrapperComponents: "withheld"`.
+ * (qontinui-runner `827745bd3`, the build `BUILD_ID` names). Every route the
+ * dashboard asks answers 200 in its RELAYED shape — the component read is the
+ * runner's own registry (`wrapperComponents: "withheld"`), and the occlusion
+ * sweep is a real clear whose entries name nothing (`occlusionText:
+ * "withheld"`). Only the runner's own app list (`GET /apps`) is still refused
+ * as not carried: no runner's relay allowlist carries it. A test about an
+ * older build overrides the routes that build refuses.
  *
  * Every request is recorded as `"<METHOD> <runner path>"`, so a test can
  * assert what was — and was not — asked for; `requestsFor` adds the device id
@@ -20,6 +22,7 @@ import {
   SNAPSHOT_BODY,
   SPEC_GRAPH_BODY,
   SPEC_LIST_BODY,
+  VISIBILITY_RELAYED_CLEAR_OBSERVED,
 } from "./runnerBodies";
 
 export type RelayRoute =
@@ -49,7 +52,7 @@ const DEFAULTS: Record<RelayRoute, RelayAnswer> = {
   specGraph: () => json(200, SPEC_GRAPH_BODY),
   snapshot: () => json(200, SNAPSHOT_BODY),
   pageHealth: () => json(200, PAGE_HEALTH_BODY),
-  visibility: () => json(403, NOT_CARRIED_BODY),
+  visibility: () => json(200, VISIBILITY_RELAYED_CLEAR_OBSERVED),
 };
 
 const PREFIX = "/api/v1/device-bridge/runner-proxy/";
