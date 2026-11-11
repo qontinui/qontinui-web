@@ -19,6 +19,8 @@ import { NextRequest } from "next/server";
 import { UI_BRIDGE_ROUTES } from "@qontinui/ui-bridge/server";
 import { startRelayClient } from "@qontinui/ui-bridge/injected";
 
+import { makeMockRedis } from "@/test/rate-limit-redis-mock";
+
 import { __resetAuthCache } from "./_auth";
 import { __setRedisClientForTest, laneFor } from "./_rate-limit";
 import {
@@ -76,28 +78,11 @@ function withBoms(count: number, json: string): Uint8Array {
   ]);
 }
 
-/** A rate-limit store that always admits (the route keys it per principal). */
-function admittingRedis() {
-  const pipeline = {
-    incr() {
-      return pipeline;
-    },
-    expire() {
-      return pipeline;
-    },
-    async exec() {
-      return [
-        [null, 1],
-        [null, 1],
-      ];
-    },
-  };
-  return {
-    pipeline: () => pipeline,
-    on: () => undefined,
-  } as unknown as Parameters<typeof __setRedisClientForTest>[0];
-}
-
+/**
+ * One request through the route, on a fresh rate-limit store. The sweeps
+ * below send far more requests than any lane admits (the GET sweep installs
+ * its own fresh store per request), and none of them may be refused.
+ */
 function send(
   method: "POST" | "PUT",
   path: string,
@@ -105,7 +90,7 @@ function send(
   contentType: string
 ): Promise<Response> {
   __resetAuthCache();
-  __setRedisClientForTest(admittingRedis());
+  __setRedisClientForTest(makeMockRedis().client);
   const request = new NextRequest(`http://localhost/api/ui-bridge${path}`, {
     method,
     headers: {
@@ -297,7 +282,7 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
     for (const routePath of routes) {
       const path = routePath.replace(/:[^/]+/g, "x1");
       __resetAuthCache();
-      __setRedisClientForTest(admittingRedis());
+      __setRedisClientForTest(makeMockRedis().client);
       const before = dispatched.length;
       const request = new NextRequest(
         `http://localhost/api/ui-bridge${path}${query}`,
