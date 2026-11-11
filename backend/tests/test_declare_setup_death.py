@@ -73,7 +73,10 @@ requires_bash_and_git = pytest.mark.skipif(
 
 PHRASE = "(not a verdict on this PR)"
 WITHHELD_TITLE = "Setup-death declaration withheld"
-MARKER_CHANGING = (
+#: Phrases a setup-death title must never carry. Not all three change coord's
+#: marker on their own; the script's header ("RESERVED PHRASES") says why each
+#: is kept out.
+RESERVED_PHRASES = (
     "TIMED OUT (not a verdict on this PR)",
     "OUT OF MEMORY (not a verdict on this PR)",
     "killed IN THE BUILD",
@@ -597,14 +600,26 @@ def test_garbage_rows_exit_zero_and_withhold(clean_pr, setup):
 
 
 @requires_bash_and_git
-def test_a_declare_job_carrying_a_marker_changing_phrase_is_withheld(clean_pr):
-    _, out, _ = _run(_pr_env(clean_pr, job="Shard killed IN THE BUILD"))
-    assert "marker-changing phrase" in _assert_withheld(out), _defang(out)
+@pytest.mark.parametrize(
+    "job",
+    [
+        "Shard killed IN THE BUILD",
+        "Shard TIMED OUT (not a verdict on this PR)",
+        "Shard OUT OF MEMORY (not a verdict on this PR)",
+    ],
+    ids=["build-kill", "timed-out", "out-of-memory"],
+)
+def test_a_declare_job_carrying_a_reserved_phrase_is_withheld(clean_pr, job):
+    _, out, _ = _run(_pr_env(clean_pr, job=job))
+    assert (
+        "DECLARE_JOB would put a reserved phrase (TIMED OUT, OUT OF MEMORY or "
+        "killed IN THE BUILD) into the title"
+    ) in _assert_withheld(out), _defang(out)
 
 
 @requires_bash_and_git
-def test_no_title_the_script_writes_changes_coords_marker_class(tmp_path, home):
-    """A setup death must map to `no_verdict` (coord `no_verdict_marker_for_title`)."""
+def test_no_title_the_script_writes_carries_a_reserved_phrase(tmp_path, home):
+    """A setup death maps to coord's `no_verdict` and is quoted by its own title."""
     repo = PrRepo(tmp_path / "repo", home, changes={"backend/x.py": "x\n"})
     outputs = [
         _run(_pr_env(repo))[1],
@@ -615,8 +630,8 @@ def test_no_title_the_script_writes_changes_coords_marker_class(tmp_path, home):
     titles = [title for out in outputs for title in _titles(out)]
     assert len(titles) == 4
     for title in titles:
-        for marker in MARKER_CHANGING:
-            assert marker not in title, title
+        for reserved in RESERVED_PHRASES:
+            assert reserved not in title, title
 
 
 # --- the wiring: every carrier job, against LITERAL tables ---------------------
@@ -769,8 +784,15 @@ CARRIERS: dict[tuple[str, str], dict[str, object]] = {
         ],
     },
     ("migration-reversal.yml", "tested"): {
-        # The qualify step detaches HEAD at the base tip, which is why the
-        # guard measures GITHUB_SHA rather than HEAD.
+        # The qualify step detaches HEAD at the base tip (`git checkout
+        # --quiet --detach "$BASE_TIP"`), which is why the guard measures
+        # GITHUB_SHA rather than HEAD. It also decides WHICH COPY of the script
+        # runs (the script's header): a setup death before the switch (host
+        # provisioned, Set up Python) runs the merge commit's copy, and one
+        # after it (Free disk space, the sibling clone, Install
+        # postgresql-client) runs the BASE tip's copy, failing closed (the
+        # step prints that the script is absent and declares nothing) on a
+        # base that has none.
         "declare_job": "Migration Reversal Tested",
         "setup": [
             "Self-hosted: host provisioned",
