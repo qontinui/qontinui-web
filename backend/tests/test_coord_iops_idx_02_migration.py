@@ -66,7 +66,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_iops_idx_02"
-_PARENT_REVISION_ID = "pr_events_mergeability_head_idx_01"
+_PARENT_REVISION_ID = "coord_ci_runs_head_sha_idx_01"
 
 _IDX = "idx_alerts_giveup_raised_key"
 _EXPECTED_INDEXDEF = (
