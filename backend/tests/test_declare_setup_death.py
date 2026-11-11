@@ -20,13 +20,30 @@ Every assertion compares against strings spelled out HERE, never a constant the
 script defines; a test that reads its expectation from the code under test
 cannot fail.
 
-NOTHING HERE PRINTS SCRIPT OUTPUT. This module runs inside a ``Run Tests``
-shard, and the Actions runner turns any stdout line that starts with ``::``
-(after trimming leading space) into a workflow command. A declaration line
-echoed into the shard's log would itself declare that shard's red not a verdict.
-The script's output is captured into a string and only ever parsed;
-``test_this_module_never_prints_script_output`` holds that by reading this
-module's own source, and ``_defang`` keeps ``::`` out of every failure message.
+NOTHING HERE PRINTS SCRIPT OUTPUT, NOT EVEN WHEN A TEST FAILS. This module runs
+inside a ``Run Tests`` shard, and the Actions runner turns any log line that
+starts with ``::`` (after trimming leading whitespace) into a workflow command.
+A declaration line echoed into the shard's log would itself declare that
+shard's red not a verdict. So:
+
+* the script's output is captured into a string and only ever parsed;
+  ``test_this_module_never_prints_script_output`` holds that by reading this
+  module's own source;
+* a FAILING assertion prints too. Its message, and pytest's explanation of the
+  comparison, land in the ``-ra`` summary with no ``E`` prefix, and on CI
+  (``CI=true``) or at the shard's ``-vv`` that summary carries every line of
+  them. pytest's explanation of ``x not in text`` re-prints ``text``'s lines,
+  indented by spaces only. So every ``in`` / ``not in`` against script output
+  reads ``_defang(...)`` of it (``_assert_withheld`` returns its reason
+  defanged), and every message built from output is ``_defang``-ed. An ``==``
+  between two strings re-prints, unprefixed, only the lines BOTH sides share,
+  and every expected string compared that way here is a literal with no
+  ``::``; an ``==`` between lists, tuples or dicts prints reprs, which open
+  with a quote or a bracket;
+* ``test_a_failing_helper_writes_no_workflow_command`` and
+  ``test_a_failing_run_of_this_module_writes_no_workflow_command`` prove the
+  helpers hold that when they fail, the second by running pytest itself with
+  the repo's addopts, as a shard does.
 """
 
 from __future__ import annotations
@@ -47,10 +64,13 @@ from tests.setup_death_git import (
     PrRepo,
     assert_prints_nothing,
     base_env,
+    command_lines,
     has_commit,
+    run_pytest_probe,
     shallow_clone,
     stub_git,
 )
+from tests.setup_death_git import defang as _defang
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_REF = ".github/scripts/declare-setup-death.sh"
@@ -152,11 +172,6 @@ def _commands(output: str) -> list[tuple[str, dict[str, str], str]]:
     return found
 
 
-def _defang(text: str) -> str:
-    """``text`` made safe for a failure message: no line can start a command."""
-    return text.replace("::", ": :")
-
-
 def _titles(output: str) -> list[str]:
     return [props.get("title", "") for _, props, _ in _commands(output)]
 
@@ -171,11 +186,24 @@ def _declarations(output: str) -> list[tuple[str, str]]:
 
 
 def _assert_no_phrase(out: str) -> None:
-    assert PHRASE not in out, _defang(out)
+    """No phrase anywhere in ``out``.
+
+    Against ``_defang(out)``, never ``out``: when this fails, pytest explains
+    a ``not in`` by re-printing the matching lines of its right-hand side,
+    indented by spaces only, so a raw ``out`` would write the very
+    declaration it caught into the shard's log. ``PHRASE`` holds no ``:``, so
+    the defanged text carries it exactly where ``out`` does.
+    """
+    assert PHRASE not in _defang(out), _defang(out)
 
 
 def _assert_withheld(out: str) -> str:
-    """Exactly one withheld notice and no phrase; returns the notice's reason."""
+    """Exactly one withheld notice and no phrase; returns its reason, defanged.
+
+    Defanged so the callers' ``in`` checks never compare against raw script
+    output (the module docstring says why); none of their needles holds a
+    ``:`` pair.
+    """
     _assert_no_phrase(out)
     notices = [
         data
@@ -183,7 +211,7 @@ def _assert_withheld(out: str) -> str:
         if name == "notice" and props.get("title") == WITHHELD_TITLE
     ]
     assert len(notices) == 1, _defang(out)
-    return notices[0]
+    return _defang(notices[0])
 
 
 # --- running the shipped script ----------------------------------------------
@@ -353,7 +381,9 @@ def test_a_job_name_with_a_comma_and_a_colon_keeps_the_phrase(clean_pr):
     """An unescaped `,` would split the property and `::` would end it."""
     job = "Check: a, b :: c 100%"
     _, out, _ = _run(_pr_env(clean_pr, job=job))
-    assert "title=Check%3A a%2C b %3A%3A c 100%25 SETUP FAILED" in out, _defang(out)
+    assert "title=Check%3A a%2C b %3A%3A c 100%25 SETUP FAILED" in _defang(out), (
+        _defang(out)
+    )
     assert _titles(out) == [
         "Check: a, b :: c 100% SETUP FAILED (not a verdict on this PR)"
     ], _defang(out)
@@ -398,7 +428,7 @@ def test_a_failed_verdict_step_beside_a_failed_setup_row_never_declares(clean_pr
     assert (
         "declare-setup-death: no declaration: scan/test step(s) 'Run ruff "
         "(linting)' concluded failure, so this red is a verdict on the change."
-    ) in out, _defang(out)
+    ) in _defang(out), _defang(out)
 
 
 @requires_bash_and_git
@@ -409,7 +439,9 @@ def test_a_marked_verdict_failure_with_no_setup_death_is_a_verdict(clean_pr):
     )
     _, out, _ = _run(_pr_env(clean_pr, setup=setup, verdict=verdict))
     _assert_no_phrase(out)
-    assert "concluded failure, so this red is a verdict on the change." in out
+    assert "concluded failure, so this red is a verdict on the change." in _defang(
+        out
+    ), _defang(out)
 
 
 @requires_bash_and_git
@@ -426,7 +458,7 @@ def test_only_an_other_step_failed_so_nothing_is_declared(clean_pr):
     assert _commands(out) == [], _defang(out)
     assert (
         "declare-setup-death: no declaration: no setup step concluded failure"
-    ) in out, _defang(out)
+    ) in _defang(out), _defang(out)
 
 
 @requires_bash_and_git
@@ -435,7 +467,7 @@ def test_a_soft_failed_setup_step_never_declares(clean_pr):
     setup = "Set up Python|success|success\nInstall Poetry|failure|success\n"
     _, out, _ = _run(_pr_env(clean_pr, setup=setup))
     _assert_no_phrase(out)
-    assert "no setup step concluded failure" in out, _defang(out)
+    assert "no setup step concluded failure" in _defang(out), _defang(out)
 
 
 # --- UNKNOWN withholds: an unrendered row --------------------------------------
@@ -631,7 +663,8 @@ def test_no_title_the_script_writes_carries_a_reserved_phrase(tmp_path, home):
     assert len(titles) == 4
     for title in titles:
         for reserved in RESERVED_PHRASES:
-            assert reserved not in title, title
+            # Defanged: a decoded title can hold a newline, then `::`.
+            assert reserved not in _defang(title), _defang(title)
 
 
 # --- the wiring: every carrier job, against LITERAL tables ---------------------
@@ -1383,10 +1416,103 @@ def test_this_module_never_prints_script_output():
         assert_prints_nothing(source)
 
 
+#: Outputs a wrongly declaring script could produce, each a shape pytest's
+#: explanation of a failed helper could re-print as a command: the script's
+#: own line; one whose phrase starts within the first 42 characters (without
+#: -v, pytest's string diff drops a longer identical lead, and the line's
+#: `::` with it, so only this shape leaks at every verbosity); and several
+#: lines, where the lines past the first match come back as shared context.
+DECLARING_OUTPUTS = {
+    "script-line": f"::error title={LINT_TITLE}::{POETRY_DIED_MESSAGE}\n",
+    "short-prefix": f"::error title={PHRASE}::m\n",
+    "multi-line": (
+        "declare-setup-death: one log line\n"
+        f"::error title={PHRASE}::m\n"
+        f"::warning title={LINT_TITLE}::m\n"
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "helper", [_assert_no_phrase, _assert_withheld], ids=["no-phrase", "withheld"]
+)
+@pytest.mark.parametrize(
+    "out", list(DECLARING_OUTPUTS.values()), ids=list(DECLARING_OUTPUTS)
+)
+def test_a_failing_helper_writes_no_workflow_command(helper, out):
+    """A helper that catches a declaration fails WITHOUT writing one.
+
+    Its AssertionError is what pytest prints, with no `E` prefix in the `-ra`
+    summary: the message and the comparison's explanation, both of which
+    echo `out`. No line of it may start a workflow command once the runner
+    has trimmed its leading whitespace.
+    """
+    with pytest.raises(AssertionError) as excinfo:
+        helper(out)
+    message = str(excinfo.value)
+    assert PHRASE in message, "the failure no longer shows the output: proves nothing"
+    assert command_lines(message) == [], _defang(message)
+
+
+#: A test module that fails the way a wrongly declaring script makes this one
+#: fail: through its own helpers, on a multi-line output it also holds in a
+#: local, which `--showlocals` prints.
+_SHARD_LOG_PROBE = r"""
+from tests.test_declare_setup_death import _assert_no_phrase, _assert_withheld
+
+OUT = (
+    "declare-setup-death: one log line\n"
+    "::error title=(not a verdict on this PR)::m\n"
+    "::warning title=Lint & Format Check SETUP FAILED (not a verdict on this PR)::m\n"
+)
+
+
+def test_assert_no_phrase_on_a_declaration():
+    out = OUT
+    _assert_no_phrase(out)
+
+
+def test_assert_withheld_on_a_declaration():
+    out = OUT
+    _assert_withheld(out)
+"""
+
+
+@pytest.mark.parametrize("extra", [(), ("-v",)], ids=["repo-addopts", "shard-flags"])
+def test_a_failing_run_of_this_module_writes_no_workflow_command(tmp_path, extra):
+    """pytest itself, with the repo's addopts, on two deliberately failing tests.
+
+    `repo-addopts` is backend/pytest.ini alone (`-v -ra --showlocals`);
+    `shard-flags` adds the second `-v` the shard's command line passes, which
+    prints a multi-line local over several lines. Both run with `CI=true`, as
+    on Actions, so the `-ra` summary carries every line of every message.
+    """
+    code, out = run_pytest_probe(tmp_path, _SHARD_LOG_PROBE, *extra)
+    shown = _defang(out)
+    # The probe failed as designed, through every path that can echo `out`:
+    assert code == 1, shown
+    assert "2 failed" in shown, shown
+    assert "short test summary info" in shown, shown
+    assert "is contained here:" in shown, shown  # pytest's `not in` explanation
+    assert "out        = " in shown, shown  # --showlocals printed the raw local
+    if extra:
+        # At -vv the local spans lines: the raw `::error` line opens one of
+        # them, behind the quote of its repr.
+        assert any(
+            line.lstrip().startswith("'::error title=") for line in out.splitlines()
+        ), shown
+    # ... and still no line of it is a workflow command.
+    assert command_lines(out) == [], _defang("\n".join(command_lines(out)))
+
+
 def test_the_script_is_executable_and_strict():
     text = SCRIPT.read_text(encoding="utf-8")
     assert text.startswith("#!/usr/bin/env bash\n")
     assert "\nset -uo pipefail\n" in text
-    assert "\nset -e" not in text, "-e would let a failing command skip the verdict"
-    assert "eval " not in text
+    # Defanged haystacks: a failing `not in` re-prints the script's lines, and
+    # a source line can start with `::` (a heredoc body, say).
+    assert "\nset -e" not in _defang(text), (
+        "-e would let a failing command skip the verdict"
+    )
+    assert "eval " not in _defang(text)
     assert os.access(SCRIPT, os.X_OK)
