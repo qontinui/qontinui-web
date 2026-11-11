@@ -90,6 +90,31 @@ export type ReviewDecision =
   | "CHANGES_REQUESTED"
   | string;
 
+/**
+ * Whether coord will bring a BEHIND branch current, as coord read it. Plan
+ * `2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act`, D1.
+ */
+export type FreshenState =
+  | "eligible"
+  | "in_progress"
+  | "ineligible"
+  | "exhausted"
+  | "suppressed"
+  | "disabled"
+  | "unknown";
+
+export interface PrFreshen {
+  state: FreshenState;
+  /** `null` when coord could not read its own attempt record. */
+  attempts: number | null;
+  max_attempts: number;
+  last_attempt_at: string | null;
+  /** Why coord refused, e.g. `ineligible:distance_arm_not_shipped`. */
+  skip: string | null;
+  /** Coord's one human clause. */
+  reason: string;
+}
+
 export interface PrRow {
   repo: string;
   pr_number: number;
@@ -135,6 +160,12 @@ export interface PrRow {
   /** Short human one-liner explaining {@link PrRow.merge_status}. Same
    *  optionality contract. */
   blocking_summary?: string;
+  /**
+   * Served only on rows whose `merge_status` is `behind-base` or
+   * `ci-failed-stale-base`. ABSENT on an older coord, which reads as UNKNOWN,
+   * never as `eligible`. Rendered through `readBehindFreshen`.
+   */
+  freshen?: PrFreshen | null;
   /**
    * Status of the latest non-cancelled `merge_proposal` linked to this PR via
    * `coord.merge_proposal_repos (repo, head_sha)`. Same optionality contract;
