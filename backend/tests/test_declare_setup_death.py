@@ -633,13 +633,30 @@ EXPLAINER_STEP = "Explain infrastructure timeout vs external cancellation"
 SIBLINGS = "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)"
 
 
+#: Carriers whose SETUP rows read the PR's frontend lockfile, so the lockfile
+#: is harness there: `Setup Node` / `Set up Node.js 20` caches on
+#: frontend/package-lock.json (and fails when it is missing), and the
+#: `apt_playwright` row runs `npx playwright install-deps chromium` from
+#: ./frontend, whose apt package list follows the Playwright version the
+#: lockfile pins. A PR editing either file can cause the death it would excuse.
+FRONTEND_LOCKFILE_CARRIERS = frozenset(
+    {"e2e-playwright-stack.yml", "spec-ci.yml", "style-gate.yml"}
+)
+
+
 def _harness_literal(workflow: str) -> str:
-    """The plan's pattern: own workflow file, local actions, the declarer."""
+    """The plan's pattern: own workflow file, local actions, the declarer.
+
+    Plus the frontend lockfile for the FRONTEND_LOCKFILE_CARRIERS.
+    """
     escaped = workflow.replace(".", "\\.")
-    return (
+    pattern = (
         f"^\\.github/workflows/{escaped}$|^\\.github/actions/"
         "|^\\.github/scripts/declare-setup-death\\.sh$"
     )
+    if workflow in FRONTEND_LOCKFILE_CARRIERS:
+        pattern += "|^frontend/package(-lock)?\\.json$"
+    return pattern
 
 
 CARRIERS: dict[tuple[str, str], dict[str, object]] = {
@@ -1058,8 +1075,40 @@ def test_the_harness_pattern_covers_the_jobs_own_harness(workflow, job_id):
         f".github/workflows/{workflow}.orig",
         "frontend/.github/actions/x.yml",
         ".github/scripts/declare-setup-death.sh.bak",
+        "frontend/src/package.json",
+        "frontend/package-lock.json.orig",
+        "backend/frontend/package.json",
     ):
         assert not compiled.search(path), path
+    lockfile = ("frontend/package.json", "frontend/package-lock.json")
+    for path in lockfile:
+        assert bool(compiled.search(path)) == (
+            workflow in FRONTEND_LOCKFILE_CARRIERS
+        ), f"{path}: harness only where a SETUP row reads it"
+
+
+@requires_bash_and_git
+@pytest.mark.parametrize(
+    "lockfile", ["frontend/package.json", "frontend/package-lock.json"]
+)
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_a_frontend_lockfile_edit_withholds_only_where_setup_reads_it(
+    tmp_path, home, workflow, job_id, lockfile
+):
+    """The YAML's own pattern, against a PR that edits only the lockfile."""
+    step = _declarer(_job(workflow, job_id))
+    repo = PrRepo(tmp_path / "repo", home, changes={lockfile: '{"edited": true}\n'})
+    env = {
+        **_pr_env(repo),
+        "HARNESS_PATHS_RE": str(step["env"]["HARNESS_PATHS_RE"]),
+    }
+    _, out, _ = _run(env)
+    if workflow in FRONTEND_LOCKFILE_CARRIERS:
+        reason = _assert_withheld(out)
+        assert "harness-diff guard read true" in reason, _defang(out)
+        assert f"('{lockfile}')" in reason, _defang(out)
+    else:
+        assert _titles(out) == [LINT_TITLE], _defang(out)
 
 
 def test_create_test_schemas_carries_its_id_only_for_the_declarer():
