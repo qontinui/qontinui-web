@@ -259,7 +259,11 @@ function keyFor(userId: string, kind: RateLimitKind, windowIdx: number): string 
  * The EXPIRE is not awaited, and its outcome does not gate the request. If it
  * fails, that key keeps no TTL. The key embeds its window index (`keyFor`),
  * so nothing reads it after its window: it leaks one small key and can never
- * over-count. The failure is logged (`logExpireFailed`).
+ * over-count. The failure is logged (`logExpireFailed`). One TTL-less leak is
+ * NOT logged: an INCR that Redis applied but whose reply was lost (the request
+ * fails open, and the key's next INCR answers 2, so no EXPIRE is ever sent).
+ * Main re-sent EXPIRE with every INCR and so repaired that key; this costs one
+ * leaked key per lost first reply, which is accepted for halving the commands.
  *
  * THROWS, taking `checkRateLimit`'s fail-open path (which says the count is
  * unknown), when the INCR rejects or answers something that is not a count.

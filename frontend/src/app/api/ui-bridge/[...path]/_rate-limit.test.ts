@@ -293,6 +293,24 @@ describe("checkRateLimit: one INCR per request, EXPIRE on the first", () => {
       warn.mockRestore();
     }
   });
+
+  it("does not wait for the EXPIRE: a request whose EXPIRE never settles is still answered", async () => {
+    const redis = makeMockRedis();
+    // An EXPIRE the server never answers: a request that awaited it would hang.
+    (redis.client as unknown as { expire: () => Promise<number> }).expire =
+      () => new Promise<number>(() => undefined);
+    __setRedisClientForTest(redis.client);
+    const pending = Symbol("pending");
+    const answered = await Promise.race([
+      checkRateLimit("u1", "write", NOW),
+      nextMacrotask().then(() => pending),
+    ]);
+    expect(answered).toMatchObject({
+      allowed: true,
+      count: 1,
+      redisOffline: false,
+    });
+  });
 });
 
 describe("rateLimitedResponse", () => {
