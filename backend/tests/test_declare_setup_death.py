@@ -800,6 +800,10 @@ FRONTEND_LOCKFILE_CARRIERS = frozenset(
     {"e2e-playwright-stack.yml", "spec-ci.yml", "style-gate.yml"}
 )
 
+# style-gate's `Set up Rust toolchain` (dtolnay/rust-toolchain) runs `rustc`
+# in the workspace, which honours a repo-root rust-toolchain override file.
+RUST_TOOLCHAIN_CARRIERS = frozenset({"style-gate.yml"})
+
 
 def _harness_literal(workflow: str) -> str:
     """The plan's pattern: own workflow file, local actions, the declarer.
@@ -813,6 +817,8 @@ def _harness_literal(workflow: str) -> str:
     )
     if workflow in FRONTEND_LOCKFILE_CARRIERS:
         pattern += "|^frontend/package(-lock)?\\.json$"
+    if workflow in RUST_TOOLCHAIN_CARRIERS:
+        pattern += "|^rust-toolchain(\\.toml)?$"
     return pattern
 
 
@@ -1396,6 +1402,30 @@ def test_the_harness_pattern_covers_the_jobs_own_harness(workflow, job_id):
         assert bool(compiled.search(path)) == (
             workflow in FRONTEND_LOCKFILE_CARRIERS
         ), f"{path}: harness only where a SETUP row reads it"
+
+
+@requires_bash_and_git
+@pytest.mark.parametrize("toolchain", ["rust-toolchain", "rust-toolchain.toml"])
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_a_rust_toolchain_file_withholds_only_where_setup_reads_it(
+    tmp_path, home, workflow, job_id, toolchain
+):
+    """The YAML's own pattern, against a PR that adds only a toolchain file."""
+    step = _declarer(_job(workflow, job_id))
+    repo = PrRepo(
+        tmp_path / "repo", home, changes={toolchain: '[toolchain]\nchannel = "x"\n'}
+    )
+    env = {
+        **_pr_env(repo),
+        "HARNESS_PATHS_RE": str(step["env"]["HARNESS_PATHS_RE"]),
+    }
+    _, out, _ = _run(env)
+    if workflow in RUST_TOOLCHAIN_CARRIERS:
+        reason = _assert_withheld(out)
+        assert "harness-diff guard read true" in reason, _defang(out)
+        assert f"('{toolchain}')" in reason, _defang(out)
+    else:
+        assert _titles(out) == [LINT_TITLE], _defang(out)
 
 
 @requires_bash_and_git

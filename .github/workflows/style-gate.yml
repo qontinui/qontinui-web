@@ -1558,7 +1558,7 @@ jobs:
           # `apt_playwright` runs `npx playwright install-deps chromium` from
           # ./frontend, so its apt package list follows the Playwright version
           # the PR's lockfile pins. A PR editing either can cause that death.
-          HARNESS_PATHS_RE: '^\.github/workflows/style-gate\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^frontend/package(-lock)?\.json$'
+          HARNESS_PATHS_RE: '^\.github/workflows/style-gate\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^frontend/package(-lock)?\.json$|^rust-toolchain(\.toml)?$'
         run: |
           if [ ! -f .github/scripts/declare-setup-death.sh ]; then
             echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
