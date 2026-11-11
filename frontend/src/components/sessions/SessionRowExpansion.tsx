@@ -38,6 +38,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { SubprojectChipCell } from "@/components/admin/coord/subprojects/SubprojectChip";
+import type { SubprojectChip } from "@/components/admin/coord/subprojects/subprojectStatus";
 import { Lock } from "lucide-react";
 import { RecordDetail, relativeTime } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
@@ -119,8 +121,11 @@ export function useSessionCoordination(
     lineage: IDLE,
   });
 
-  const { claims: readClaims, agents: readAgents, lineage: readLineage } =
-    readers;
+  const {
+    claims: readClaims,
+    agents: readAgents,
+    lineage: readLineage,
+  } = readers;
 
   /**
    * Issue all three reads once. `refresh` is `false` for the read that opens
@@ -174,7 +179,10 @@ export function useSessionCoordination(
         readLineage ?? getSessionLineage,
         (r) => r.actions ?? [],
         (lineage) =>
-          setState((prev) => ({ ...prev, lineage: fold(prev.lineage, lineage) }))
+          setState((prev) => ({
+            ...prev,
+            lineage: fold(prev.lineage, lineage),
+          }))
       );
 
       return ctrl;
@@ -217,6 +225,10 @@ export interface SessionRowExpansionProps {
   stores: TranscriptStoresState;
   /** Injected for tests so relative timestamps are deterministic. */
   now?: number;
+  /** The session's subproject (plan 2026-11-08 subprojects, Phase 6): the
+   *  row's line names it; this is where it opens, since the line is one
+   *  button. Absent on a surface that does not look it up. */
+  subproject?: SubprojectChip;
 }
 
 export function SessionRowExpansion({
@@ -224,6 +236,7 @@ export function SessionRowExpansion({
   coordination,
   stores,
   now,
+  subproject,
 }: SessionRowExpansionProps) {
   const agentId = agentSessionId(row);
 
@@ -232,7 +245,10 @@ export function SessionRowExpansion({
       data-testid="sessions-console-detail"
       why={<p className="text-muted-foreground">{rowClassExplanation(row)}</p>}
       problems={
-        <div className="space-y-2" data-testid="sessions-console-detail-coordination">
+        <div
+          className="space-y-2"
+          data-testid="sessions-console-detail-coordination"
+        >
           <p className="text-xs font-medium text-muted-foreground">
             Coordination — claims and agent status
           </p>
@@ -308,6 +324,15 @@ export function SessionRowExpansion({
             >
               Open full view ↗
             </Link>
+            {subproject !== undefined && (
+              <span className="text-xs text-muted-foreground">
+                Subproject:{" "}
+                <SubprojectChipCell
+                  chip={subproject}
+                  data-testid="sessions-console-detail-subproject"
+                />
+              </span>
+            )}
           </div>
           <TranscriptStoresPanel
             live={stores.live}
@@ -317,7 +342,10 @@ export function SessionRowExpansion({
         </div>
       }
       history={
-        <div className="space-y-2" data-testid="sessions-console-detail-lineage">
+        <div
+          className="space-y-2"
+          data-testid="sessions-console-detail-lineage"
+        >
           <p className="text-xs font-medium text-muted-foreground">
             Lineage — worktrees, claims, builds, merges
           </p>

@@ -45,12 +45,23 @@ closed, so nothing here is best-effort:
   ``coord_operator_not_found`` / 409 ``coord_operator_ambiguous``. We never
   "skip the coord call because we couldn't find them".
 * Coord answers 4xx/5xx (403 not-a-coord-admin, 404 no-such-operator, 503
-  ``column_not_present`` in the pre-migration window) → surfaced. 401/403 pass
-  through verbatim because they are actionable auth answers about the CALLER;
-  everything else becomes a 502 carrying coord's original code as
-  ``coord_status``, so an upstream 404 is never confused with this route's own
-  "user not found" and an upstream 500 never reads as "web crashed".
-* Coord unreachable / times out → 502.
+  ``column_not_present`` in the pre-migration window) — to the operator lookup
+  or to the disable/enable — → surfaced. 401/403 pass through verbatim because
+  they are actionable auth answers about the CALLER; everything else becomes a
+  502 carrying coord's original code as ``coord_status``, so an upstream 404 is
+  never confused with this route's own "user not found" and an upstream 500
+  never reads as "web crashed". Coord unreachable → 502.
+* What a failure leaves standing depends on the direction, and every message
+  says which: a deactivation calls coord FIRST, so a failed lookup or a refused
+  disable leaves nothing changed ("the deactivation was NOT applied"); a
+  reactivation persists FIRST, so the same failure leaves the user active in
+  qontinui-web and still disabled in coord ("retry the enable").
+* The disable or enable timing out, or its answer being lost in transit after
+  it was sent → 504, its outcome UNKNOWN: coord may have applied it, so the
+  message says to re-read the user's coord access before retrying. The
+  operator lookup is a read, so its timeout applies nothing and takes the arms
+  above. (For a deactivation the local write still never ran; coord may be the
+  stricter side, which is the harmless divergence.)
 
 ## Identifier mapping (web ``User`` → coord ``operator_id``)
 
@@ -131,6 +142,18 @@ _BEARER_MISSING_MESSAGE = (
 )
 
 
+def _not_applied(action: str) -> str:
+    """What stands when coord did NOT apply the change. A deactivation calls
+    coord first, so nothing changed; a reactivation persisted in qontinui-web
+    first, so the user is active there and still disabled in coord."""
+    if action == "enable":
+        return (
+            "the user is active in qontinui-web but still disabled in coord — "
+            "retry the enable"
+        )
+    return "the deactivation was NOT applied"
+
+
 class CoordActivationSyncError(HTTPException):
     """A deactivation/reactivation could not be propagated to coord.
 
@@ -157,7 +180,7 @@ class CoordActivationSyncError(HTTPException):
         self.error = error
 
 
-def _capture_caller_context(request: Request) -> None:
+def _capture_caller_context(request: Request, action: str) -> None:
     """Capture the acting caller's bearer for ``_tenant_headers`` to forward.
 
     The two deactivation writers are gated by ``get_current_superuser_async`` /
@@ -169,25 +192,54 @@ def _capture_caller_context(request: Request) -> None:
     token = _extract_caller_token(request)
     if not token:
         raise CoordActivationSyncError(
-            401, "coord_bearer_missing", _BEARER_MISSING_MESSAGE
+            401,
+            "coord_bearer_missing",
+            "no caller bearer to authorize the coord operator "
+            f"{action} with; {_not_applied(action)}",
         )
     _caller_bearer.set(token)
     _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
 
 
-def _coord_failure(exc: HTTPException, error: str) -> CoordActivationSyncError:
-    """Re-raise a shared-proxy ``HTTPException`` as a named sync failure."""
+def _coord_failure(
+    exc: HTTPException, error: str, *, action: str, write: bool
+) -> CoordActivationSyncError:
+    """Re-raise a shared-proxy ``HTTPException`` as a named sync failure.
+
+    A 504 from the WRITE is not a refusal: the proxy raises it when coord's
+    answer timed out or was lost in transit after the request was sent (and
+    passes coord's own 504 through), so coord may have applied the disable or
+    enable. Saying "NOT applied" there invites a blind retry and tells the
+    operator a principal's coord access is unchanged when it is unknown, so it
+    becomes a 504 that says to re-read first. The lookup is a read — nothing
+    can have been applied by it — so its failures take the not-applied arm,
+    which says what stands for this ``action`` (:func:`_not_applied`).
+    """
+    if write and exc.status_code == 504:
+        web = (
+            "the user is active in qontinui-web, and"
+            if action == "enable"
+            else "the deactivation was not applied in qontinui-web, but"
+        )
+        return CoordActivationSyncError(
+            504,
+            error,
+            f"coord's answer to the {action} did not arrive ({exc.detail!r}); "
+            f"{web} coord may have applied the {action}, so re-read the user's "
+            "coord access before retrying",
+            coord_status=exc.status_code,
+        )
     status_code = exc.status_code if exc.status_code in _PASSTHROUGH_STATUSES else 502
     return CoordActivationSyncError(
         status_code,
         error,
         f"coord refused or could not complete the request ({exc.detail!r}); "
-        "the activation change was NOT applied",
+        f"{_not_applied(action)}",
         coord_status=exc.status_code,
     )
 
 
-def _require_subject(user: User) -> str:
+def _require_subject(user: User, action: str) -> str:
     """The user's Cognito subject, or a loud failure.
 
     Resolved before the coord call because it is BOTH the server-side filter
@@ -199,12 +251,12 @@ def _require_subject(user: User) -> str:
             502,
             "coord_operator_subject_missing",
             "this user has no Cognito subject, so they cannot be matched to a "
-            "coord operator; the activation change was NOT applied",
+            f"coord operator; {_not_applied(action)}",
         )
     return subject
 
 
-def _match_operator(operators: list[Any], subject: str) -> str:
+def _match_operator(operators: list[Any], subject: str, action: str) -> str:
     """Pick the one coord operator whose subject IS ``subject``, or raise loudly.
 
     Matches on the Cognito subject only — see the module docstring for why
@@ -230,7 +282,7 @@ def _match_operator(operators: list[Any], subject: str) -> str:
             409,
             "coord_operator_ambiguous",
             f"{len(matches)} coord operators share this Cognito subject; "
-            "refusing to guess — the activation change was NOT applied",
+            f"refusing to guess — {_not_applied(action)}",
         )
     if not matches:
         raise CoordActivationSyncError(
@@ -238,8 +290,7 @@ def _match_operator(operators: list[Any], subject: str) -> str:
             "coord_operator_not_found",
             "no coord operator matches this user's Cognito subject in the "
             "acting admin's tenant (note: coord's operator list must expose "
-            "`sso_subject` for this match to resolve); the activation change "
-            "was NOT applied",
+            f"`sso_subject` for this match to resolve); {_not_applied(action)}",
         )
 
     operator_id = str(matches[0].get("operator_id") or "")
@@ -247,15 +298,15 @@ def _match_operator(operators: list[Any], subject: str) -> str:
         raise CoordActivationSyncError(
             502,
             "coord_operator_id_missing",
-            "the matched coord operator carries no operator_id; the "
-            "activation change was NOT applied",
+            "the matched coord operator carries no operator_id; "
+            f"{_not_applied(action)}",
         )
     return operator_id
 
 
-async def _resolve_operator_id(user: User) -> str:
+async def _resolve_operator_id(user: User, action: str) -> str:
     """Resolve ``user`` to coord's ``operator_id`` UUID, or raise loudly."""
-    subject = _require_subject(user)
+    subject = _require_subject(user, action)
     try:
         payload = await _proxy_coord_get(
             _OPERATORS_LIST_PATH,
@@ -263,7 +314,9 @@ async def _resolve_operator_id(user: User) -> str:
             forward_bearer=True,
         )
     except HTTPException as exc:
-        raise _coord_failure(exc, "coord_operator_lookup_failed") from exc
+        raise _coord_failure(
+            exc, "coord_operator_lookup_failed", action=action, write=False
+        ) from exc
 
     operators = payload.get("operators") if isinstance(payload, dict) else None
     if not isinstance(operators, list):
@@ -271,9 +324,9 @@ async def _resolve_operator_id(user: User) -> str:
             502,
             "coord_operator_list_malformed",
             "coord GET /admin/coord/operators did not return an `operators` "
-            "list; the activation change was NOT applied",
+            f"list; {_not_applied(action)}",
         )
-    return _match_operator(operators, subject)
+    return _match_operator(operators, subject, action)
 
 
 def transition_for(user: User, requested_is_active: bool | None) -> str | None:
@@ -293,8 +346,8 @@ async def _sync(
     *, request: Request, user: User, action: str, actor: User | None
 ) -> None:
     """Perform the coord disable/enable for ``user``, or raise loudly."""
-    _capture_caller_context(request)
-    operator_id = await _resolve_operator_id(user)
+    _capture_caller_context(request, action)
+    operator_id = await _resolve_operator_id(user, action)
 
     body: dict[str, Any] | None = None
     if action == "disable":
@@ -308,7 +361,9 @@ async def _sync(
             forward_bearer=True,
         )
     except HTTPException as exc:
-        raise _coord_failure(exc, f"coord_operator_{action}_failed") from exc
+        raise _coord_failure(
+            exc, f"coord_operator_{action}_failed", action=action, write=True
+        ) from exc
 
     logger.info(
         "coord_operator_activation_synced",

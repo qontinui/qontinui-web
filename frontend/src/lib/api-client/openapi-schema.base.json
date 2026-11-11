@@ -108096,6 +108096,479 @@
         ]
       }
     },
+    "/api/v1/operations/subprojects": {
+      "get": {
+        "description": "List the tenant's subprojects \u2014 proxy coord's ``GET /coord/subprojects``.\n\nEach item is a ``SubprojectSummary`` whose ``headline`` and ``top_reason``\ncome from the verdict coord's reconciler tick cached, with its\n``verdict_as_of``; the envelope carries ``next_cursor``, ``truncated``,\n``total``, ``unattached_units`` and ``counts`` \u2014 every headline's count and\nthe folded one-off / scheduled / merged counts over the same status and\norigin filter, or ``null`` when coord could not take them. The filters\n(``status``, ``headline``, ``exclude_headline``, ``origin``, ``limit``,\n``cursor``) are forwarded only when set, as sent: coord owns the\nvocabulary and refuses a value \u2014 or a parameter \u2014 it does not know, so this\nroute does not keep a second copy of it to drift. Every filter coord takes\nhas to be declared here: this router does not refuse an undeclared query\nparameter, it drops it, so an undeclared filter would never reach coord.\nA coord whose migration has not applied answers ``503 {\"error\":\n\"schema_migration_pending\"}``, which reaches the browser as that object.",
+        "operationId": "api_v1_operations_subprojects_get",
+        "parameters": [
+          {
+            "description": "Lifecycle filter, forwarded as sent: `open` (coord's default), `done`, `archived` or `all`.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Lifecycle filter, forwarded as sent: `open` (coord's default), `done`, `archived` or `all`.",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "Verdict filter, forwarded as sent: one of `needs_you`, `stalled`, `working`, `waiting`, `done` or `unknown` (coord's vocabulary), or several comma-separated (`needs_you,stalled`).",
+            "in": "query",
+            "name": "headline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Verdict filter, forwarded as sent: one of `needs_you`, `stalled`, `working`, `waiting`, `done` or `unknown` (coord's vocabulary), or several comma-separated (`needs_you,stalled`).",
+              "title": "Headline"
+            }
+          },
+          {
+            "description": "Verdicts to leave out, forwarded as sent, comma-separated like `headline` \u2014 `done` lists every subproject that is not done in one read. A coord that predates the parameter refuses it (400 `unknown_query_parameter`, passed through) or ignores it (its answer then still holds done subprojects); a caller tells which.",
+            "in": "query",
+            "name": "exclude_headline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Verdicts to leave out, forwarded as sent, comma-separated like `headline` \u2014 `done` lists every subproject that is not done in one read. A coord that predates the parameter refuses it (400 `unknown_query_parameter`, passed through) or ignores it (its answer then still holds done subprojects); a caller tells which.",
+              "title": "Exclude Headline"
+            }
+          },
+          {
+            "description": "Origin filter, forwarded as sent (`operator_prompt`, `autonomous`, `scheduled`, ...).",
+            "in": "query",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Origin filter, forwarded as sent (`operator_prompt`, `autonomous`, `scheduled`, ...).",
+              "title": "Origin"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 200,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "coord's opaque `next_cursor` from the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "coord's opaque `next_cursor` from the previous page.",
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Subprojects Api V1 Operations Subprojects Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Subprojects",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/subprojects/by-sessions": {
+      "get": {
+        "description": "Which subproject each session belongs to \u2014 proxy coord's\n``GET /coord/subprojects/by-sessions``.\n\nOne batched read per page of session rows (the sessions console's\nsubproject chip). coord answers ``{\"items\": {<session id>: {\"id\",\n\"title\", \"headline\"}}, \"missing\": [<ids with no live membership>]}``,\nverbatim; a pending membership is reported under ``missing``. The ids are\nforwarded as sent; only their COUNT is checked here, so a page that would\nexceed coord's bound is refused before the call rather than after it.",
+        "operationId": "api_v1_operations_subprojects_by_sessions_get",
+        "parameters": [
+          {
+            "description": "Comma-separated harness (Claude Code) session ids, at most 200 \u2014 one page of session rows.",
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "description": "Comma-separated harness (Claude Code) session ids, at most 200 \u2014 one page of session rows.",
+              "title": "Ids",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Subprojects By Sessions Api V1 Operations Subprojects By Sessions Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Subprojects By Sessions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/subprojects/{subproject_id}": {
+      "get": {
+        "description": "One subproject with its verdict computed live \u2014 proxy coord's\n``GET /coord/subprojects/{id}``.\n\nThe body is coord's verbatim: the summary plus the note fields, the LIVE\n``verdict`` (headline, reasons and per-source read states), ``next_steps``,\nthe member ``sessions`` (open AND closed), ``work_units``, ``gates`` (each\nwith its mover), ``prs`` and ``history``. A merged id resolves to the\nsubproject it was merged into, and the body then carries ``resolved_from``.\ncoord answers 404 for an id that is unknown in the caller's tenant.",
+        "operationId": "api_v1_operations_subprojects_subproject_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subproject_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subproject Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Subproject Api V1 Operations Subprojects  Subproject Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Subproject",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Rename a subproject, set its goal or next-steps note, or mark it done /\nreopen it \u2014 proxy coord's ``PATCH /coord/subprojects/{id}``.\n\nThe body (``{\"title\"?, \"goal\"?, \"next_steps_note\"?, \"status\"?}``) is\nforwarded verbatim; coord answers the updated ``SubprojectSummary``. Coord\ntenant admin, like every subproject write (D11).",
+        "operationId": "api_v1_operations_subprojects_subproject_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subproject_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subproject Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Patch Subproject Api V1 Operations Subprojects  Subproject Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Patch Subproject",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/subprojects/{subproject_id}/members": {
+      "post": {
+        "description": "Attach, move or remove one member session or work unit \u2014 proxy coord's\n``POST /coord/subprojects/{id}/members``.\n\nThe body (``{\"action\", \"member_kind\", \"agent_session_id\"?,\n\"work_unit_id\"?, \"work_unit_slug\"?}``) is forwarded verbatim; coord\nresolves a harness session id through its identity card in the caller's\ntenant and answers ``{\"member\": {...}}`` (D11).",
+        "operationId": "api_v1_operations_subprojects_subproject_id_members_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subproject_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subproject Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Subproject Members Api V1 Operations Subprojects  Subproject Id  Members Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Subproject Members",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/subprojects/{subproject_id}/merge": {
+      "post": {
+        "description": "Merge this subproject INTO another \u2014 proxy coord's\n``POST /coord/subprojects/{id}/merge``.\n\nThe body (``{\"into_id\": <uuid>}``) is forwarded verbatim. coord moves the\nmembers, records ``merged_into`` and answers\n``{\"merged_into\", \"moved_members\"}``; the merged id resolves to its target\nfrom then on (D11).",
+        "operationId": "api_v1_operations_subprojects_subproject_id_merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subproject_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subproject Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Subproject Merge Api V1 Operations Subprojects  Subproject Id  Merge Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Subproject Merge",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/subprojects/{subproject_id}/spawn": {
+      "post": {
+        "description": "Continue a subproject: spawn a session to work on it \u2014 proxy coord's\n``POST /coord/subprojects/{id}/spawn`` (D8).\n\nThe body (``{\"effort\", \"ultracode\"?, \"prompt_addendum\"?,\n\"target_device_id\"?, \"account\"?, \"repos\"?}``) is forwarded verbatim. coord\nderives the repos when none are sent, composes the brief from the\nsubproject's next steps, writes the pending allocation membership and\nplaces the session through ``/agents/spawn``'s placement: a hard pin on a\nnamed device, coord's pool otherwise. It answers the allocation id, where\nthe session went (``placement``) and the effort it was ASKED for \u2014 never the\neffort applied, which no runner reports yet.\n\nMirrors ``post_agents_spawn``: coord's refusals pass through as objects\n(``structured_errors=True``) \u2014 the capacity and pin 409s ``/agents/spawn``\nalready returns, ``422 {\"error\": \"subproject_has_no_repo\"}`` and\n``422 {\"error\": \"invalid_effort\"}`` \u2014 because the Continue dialog branches\non them. It uses ``_COORD_SUBPROJECTS_TIMEOUT``, not ``_COORD_TIMEOUT``:\nthe brief is built from the verdict the detail door computes, and a spawn\nthat times out here is one whose outcome is unknown, so the timeout must\noutlast coord's own work rather than cut it off.",
+        "operationId": "api_v1_operations_subprojects_subproject_id_spawn_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subproject_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subproject Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Subproject Spawn Api V1 Operations Subprojects  Subproject Id  Spawn Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Subproject Spawn",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/symbol-claims": {
       "get": {
         "description": "Proxy ``GET /coord/claims/list?kind=symbol`` for the dashboard.\n\nResponse shape (coord ``ListResponse``):\n\n    {\n        \"kind\": \"symbol\",\n        \"prefix\": \"<echo>\",\n        \"holders\": [\n            {\n                \"kind\": \"symbol\",\n                \"resource_key\": \"<repo>:<file>:<symbol>\",\n                \"machine_id\": \"<uuid>\",\n                \"ttl_seconds\": <int>\n            },\n            ...\n        ],\n        \"truncated\": <bool>\n    }\n\nOptional ``machine_id`` filter is applied client-side after coord\nreturns (coord's ``/coord/claims/list`` doesn't accept a machine\nfilter directly \u2014 prefix matches on resource_key, not on holder).\nThe dashboard groups client-side anyway; this filter is for\ntargeted CLI / curl consumers.",

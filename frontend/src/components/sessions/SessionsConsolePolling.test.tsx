@@ -77,10 +77,17 @@ const STUBS = {
     chunks: [],
     count: 0,
   })),
-  listArtifacts: vi.fn(async () => ({ items: [], total: 0, offset: 0, limit: 10 })),
+  listArtifacts: vi.fn(async () => ({
+    items: [],
+    total: 0,
+    offset: 0,
+    limit: 10,
+  })),
   // The per-session SSE an open row would subscribe to. Stubbed so no test in
   // this file can reach the network even if a row were opened.
   revalidation: { subscribe: vi.fn(() => () => {}) },
+  // The page's one subproject lookup (plan 2026-11-08 subprojects).
+  lookupSubprojects: vi.fn(async () => ({ items: {}, missing: [] })),
 };
 
 /** `document.hidden` is a getter with no setter — install our own. */
@@ -298,7 +305,9 @@ describe("SessionsConsole — the one list poll (Phase 4)", () => {
 
     // Nothing was ever answered, so this is unknown — a different sentence
     // from the stale case above, and from "no sessions on the fleet".
-    expect(screen.getByTestId("sessions-console-unknown-state")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("sessions-console-unknown-state")
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("sessions-console-empty")).toBeNull();
     expect(screen.getByTestId("sessions-console-stats")).not.toHaveTextContent(
       "rows 0"

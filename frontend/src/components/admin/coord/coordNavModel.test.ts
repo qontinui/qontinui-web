@@ -90,6 +90,7 @@ describe("coordNavModel", () => {
     expect(labels("work")).toEqual([
       "Plans",
       "Work Units",
+      "Subprojects",
       "Plan Library Settings",
       "Artifact Library",
       "Plan Candidates",

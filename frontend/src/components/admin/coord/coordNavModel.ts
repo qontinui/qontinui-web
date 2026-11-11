@@ -12,7 +12,8 @@
  *
  *   Home · Pipeline · Pull Requests · Gates · Notifications · Action items ·
  *   Tour                                                               ← direct
- *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
+ *   Work ▸    Plans / Work Units / Subprojects / Plan Library /
+ *             Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Findings /
  *             Operator Touches /
  *             Verification /
@@ -66,6 +67,7 @@ import {
   Cpu,
   FileText,
   Files,
+  FolderKanban,
   FolderOpen,
   Gauge,
   Gavel,
@@ -283,6 +285,19 @@ export const GROUPS: NavGroup[] = [
         label: "Work Units",
         icon: ListTodo,
         testId: "coord-nav-work-units",
+      },
+      {
+        // Beside Work Units because a subproject GROUPS them: the sessions,
+        // gates, work units and PRs of one piece of work, with coord's verdict
+        // on whether anything is still moving it (plan
+        // `2026-11-08-subprojects-group-sessions-gates-and-plans-and-say-why-one-stalled`).
+        // Member-visible like Work Units — its reads are tenant-member reads;
+        // its writes are admin-gated on the page and in the proxies. Its own
+        // path, so no other leaf's startsWith active-match claims it.
+        href: "/admin/coord/subprojects",
+        label: "Subprojects",
+        icon: FolderKanban,
+        testId: "coord-nav-subprojects",
       },
       {
         // The plan library's two policy dials (`plan_capture`,
