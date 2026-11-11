@@ -742,9 +742,15 @@ export interface KindTiersResponse {
 }
 
 /** `GET /coord/prompt-document-kind-tiers` — one row per kind. */
-export async function fetchKindTiers(): Promise<KindTiersResponse> {
+export async function fetchKindTiers(
+  pin?: TenantPin
+): Promise<KindTiersResponse> {
   const url = `${OPERATIONS_BASE}/coord/prompt-document-kind-tiers`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<KindTiersResponse>(res, `GET ${url}`);
 }
 
@@ -754,13 +760,15 @@ export async function fetchKindTiers(): Promise<KindTiersResponse> {
  */
 export async function setKindTier(
   kind: string,
-  tier: AgentWriteTier
+  tier: AgentWriteTier,
+  pin?: TenantPin
 ): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-document-kind-tiers/${encodeURIComponent(kind)}`;
   const res = await httpClient.fetch(url, {
     method: "PUT",
     body: JSON.stringify({ tier }),
     idempotent: true,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `PUT ${url}`, { unparseable: "null" });
 }
@@ -769,11 +777,15 @@ export async function setKindTier(
  * `DELETE /coord/prompt-document-kind-tiers/{kind}` —
  * `clear_prompt_document_kind_tier`: back to coord's compile-time default.
  */
-export async function clearKindTier(kind: string): Promise<unknown> {
+export async function clearKindTier(
+  kind: string,
+  pin?: TenantPin
+): Promise<unknown> {
   const url = `${OPERATIONS_BASE}/coord/prompt-document-kind-tiers/${encodeURIComponent(kind)}`;
   const res = await httpClient.fetch(url, {
     method: "DELETE",
     idempotent: true,
+    ...pinned(pin),
   });
   return readJson<unknown>(res, `DELETE ${url}`, { unparseable: "null" });
 }
@@ -781,9 +793,15 @@ export async function clearKindTier(kind: string): Promise<unknown> {
 // ─────────────────────────── session compliance ───────────────────────────
 
 /** `GET /coord/session-compliance/config` — `get_session_compliance_config`. */
-export async function fetchSessionComplianceConfig(): Promise<SessionComplianceConfig> {
+export async function fetchSessionComplianceConfig(
+  pin?: TenantPin
+): Promise<SessionComplianceConfig> {
   const url = `${OPERATIONS_BASE}/coord/session-compliance/config`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<SessionComplianceConfig>(res, `GET ${url}`);
 }
 
@@ -791,9 +809,15 @@ export async function fetchSessionComplianceConfig(): Promise<SessionComplianceC
  * `GET /coord/session-compliance/config/versions` —
  * `list_session_compliance_config_versions`: the settings' audit trail.
  */
-export async function listSessionComplianceConfigVersions(): Promise<ListConfigVersionsResponse> {
+export async function listSessionComplianceConfigVersions(
+  pin?: TenantPin
+): Promise<ListConfigVersionsResponse> {
   const url = `${OPERATIONS_BASE}/coord/session-compliance/config/versions`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListConfigVersionsResponse>(res, `GET ${url}`);
 }
 
@@ -803,13 +827,15 @@ export async function listSessionComplianceConfigVersions(): Promise<ListConfigV
  * Retried by method (`PUT`), exactly as the old `httpClient.put` call was.
  */
 export async function saveSessionComplianceConfig(
-  patch: SessionComplianceConfigUpdate
+  patch: SessionComplianceConfigUpdate,
+  pin?: TenantPin
 ): Promise<SessionComplianceConfig> {
   const url = `${OPERATIONS_BASE}/coord/session-compliance/config`;
   const res = await httpClient.fetch(url, {
     method: "PUT",
     body: JSON.stringify(patch),
     idempotent: true,
+    ...pinned(pin),
   });
   return readJson<SessionComplianceConfig>(res, `PUT ${url}`);
 }
@@ -819,16 +845,23 @@ export async function saveSessionComplianceConfig(
  * `list_session_compliance_sessions`. `verdict` and `cursor` are sent only when
  * given, in that order after `limit`.
  */
-export async function listSessionComplianceSessions(params: {
-  limit: number;
-  verdict?: string;
-  cursor?: string | null;
-}): Promise<ListComplianceSessionsResponse> {
+export async function listSessionComplianceSessions(
+  params: {
+    limit: number;
+    verdict?: string;
+    cursor?: string | null;
+  },
+  pin?: TenantPin
+): Promise<ListComplianceSessionsResponse> {
   const qs = new URLSearchParams({ limit: String(params.limit) });
   if (params.verdict) qs.set("verdict", params.verdict);
   if (params.cursor) qs.set("cursor", params.cursor);
   const url = `${OPERATIONS_BASE}/coord/session-compliance/sessions?${qs.toString()}`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListComplianceSessionsResponse>(res, `GET ${url}`);
 }
 
@@ -836,9 +869,15 @@ export async function listSessionComplianceSessions(params: {
  * `GET /coord/session-compliance/outstanding` —
  * `list_session_compliance_outstanding`: the outstanding-work ledger.
  */
-export async function listSessionComplianceOutstanding(): Promise<ListOutstandingResponse> {
+export async function listSessionComplianceOutstanding(
+  pin?: TenantPin
+): Promise<ListOutstandingResponse> {
   const url = `${OPERATIONS_BASE}/coord/session-compliance/outstanding`;
-  const res = await httpClient.fetch(url, { method: "GET", idempotent: true });
+  const res = await httpClient.fetch(url, {
+    method: "GET",
+    idempotent: true,
+    ...pinned(pin),
+  });
   return readJson<ListOutstandingResponse>(res, `GET ${url}`);
 }
 
