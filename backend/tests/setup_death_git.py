@@ -1,4 +1,4 @@
-"""Real git repositories for the setup-death declarers' harness-diff guard.
+"""Real git repositories, and the shard-log hazard, for the setup-death tests.
 
 Plan ``2026-11-11-web-setup-step-deaths-declare-not-a-verdict``. Two declarers
 read a pull_request's own diff before they write the not-a-verdict phrase: the
@@ -7,23 +7,36 @@ the aggregate ``scripts/ci/aggregate_setup_death.py`` (rule 5, a port of it).
 Both read the same thing -- the FIRST parent of the merge commit
 ``GITHUB_SHA`` names, fetched when a depth-1 checkout lacks it, and
 ``git diff --no-renames`` from it -- so both are tested here against the same
-real two-parent merge commits, depth-1 clones and stub ``git``:
+real two-parent merge commits, depth-1 clones (``shallow_clone``), the
+``blob:none`` sparse partial clone actions/checkout makes for the aggregate
+(``partial_clone``) and stub ``git``:
 ``tests/test_declare_setup_death.py`` and ``tests/test_aggregate_setup_death.py``.
 
-Nothing here prints, and every subprocess's output is captured: both modules
-run inside a ``Run Tests`` shard, where a stdout line starting ``::`` is a
-workflow command. ``assert_prints_nothing`` is the AST guard both modules run
-over themselves and over this file.
+THE SHARD-LOG HAZARD. Both modules run inside a ``Run Tests`` shard, where the
+Actions runner reads any output line that starts with ``::`` (after trimming
+leading whitespace) as a workflow command: a printed
+``::error title=... (not a verdict on this PR)::`` would itself declare that
+shard's red not a verdict. So nothing here prints, every subprocess's output
+is captured (``assert_prints_nothing`` is the AST guard both modules run over
+themselves and over this file), every failure message is ``defang``-ed, and
+``run_pytest_probe`` / ``command_lines`` let a module prove that even its
+FAILING run writes no workflow command.
 """
 
 from __future__ import annotations
 
 import ast
+import os
+import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 GIT = shutil.which("git")
+
+#: backend/pytest.ini: the addopts every CI pytest run carries.
+PYTEST_INI = Path(__file__).resolve().parents[1] / "pytest.ini"
 
 #: The tree every PrRepo's base commit holds: each declarer's harness files,
 #: plus application code and the frontend lockfile a PR may touch instead.
@@ -42,8 +55,23 @@ BASE_FILES = {
 
 
 def defang(text: str) -> str:
-    """``text`` made safe for a failure message: no line can start a command."""
+    """``text`` made safe for a failure message: no line can start a command.
+
+    Every ``::`` gains a space, so after leading whitespace no line can begin
+    with ``::``. Membership of a needle holding no ``:`` is unchanged.
+    """
     return text.replace("::", ": :")
+
+
+def command_lines(text: str) -> list[str]:
+    """Every line of ``text`` the Actions runner would parse as a workflow command.
+
+    The runner trims a line's leading whitespace (``TrimStart``) and reads it
+    as a command when it then starts with ``::``. ``str.splitlines`` and
+    ``str.lstrip`` split and strip a superset of what the runner does, so
+    this never misses one.
+    """
+    return [line for line in text.splitlines() if line.lstrip().startswith("::")]
 
 
 def base_env(home: Path) -> dict[str, str]:
@@ -81,6 +109,19 @@ def run_git(cwd: Path, *args: str, home: Path) -> str:
     )
     assert proc.returncode == 0, defang(f"git {args}: {proc.stdout}{proc.stderr}")
     return proc.stdout.strip()
+
+
+def git_version() -> tuple[int, ...]:
+    """The local git's version, ``(2, 47, 3)`` say; ``()`` when unreadable."""
+    if GIT is None:
+        return ()
+    proc = subprocess.run(
+        [GIT, "--version"], capture_output=True, text=True, check=False
+    )
+    found = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", proc.stdout)
+    if proc.returncode != 0 or not found:
+        return ()
+    return tuple(int(part) for part in found.groups() if part is not None)
 
 
 class PrRepo:
@@ -135,11 +176,16 @@ class PrRepo:
         run_git(root, "update-ref", "refs/heads/pr-merge", self.merge, home=home)
 
 
-def stub_git(tmp_path: Path, on_fetch: str = "", *, on_diff: str = "") -> Path:
+def stub_git(
+    tmp_path: Path, on_fetch: str = "", *, on_diff: str = "", on_every: str = ""
+) -> Path:
     """A dir holding a ``git`` that runs the real one, except for two verbs.
 
     ``on_fetch`` runs first when the arguments include ``fetch``, ``on_diff``
-    when they include ``diff`` (``exit 128``, say, or ``exec sleep 30``).
+    when they include ``diff`` (``exit 128``, say, or ``exec sleep 30``), and
+    ``on_every`` before either, on every call (a line that records the call).
+    A LAZY fetch is not one of these calls: git runs it through its own exec
+    path, never this stub.
     """
     assert GIT is not None
     stub_dir = tmp_path / "stub-bin"
@@ -147,6 +193,7 @@ def stub_git(tmp_path: Path, on_fetch: str = "", *, on_diff: str = "") -> Path:
     stub = stub_dir / "git"
     stub.write_text(
         "#!/usr/bin/env bash\n"
+        f"{on_every or ':'}\n"
         'for arg in "$@"; do\n'
         '  case "$arg" in\n'
         f"    fetch) {on_fetch or ':'} ;;\n"
@@ -184,24 +231,136 @@ def shallow_clone(repo: PrRepo, dest: Path) -> Path:
     return dest
 
 
-def has_commit(workspace: Path, sha: str, home: Path) -> bool:
+def partial_clone(repo: PrRepo, dest: Path) -> Path:
+    """actions/checkout's ``sparse-checkout: scripts/ci`` shape, of the merge commit.
+
+    With ``sparse-checkout`` set and no ``filter``, actions/checkout fetches
+    ``--filter=blob:none --depth=1`` and runs ``git sparse-checkout set``: a
+    depth-1 PARTIAL clone whose ``origin`` is a promisor remote, holding the
+    merge commit and its trees but no parent, and no blob outside the cone.
+    That is the ``Check out the declarer`` step every aggregate runs from.
+    ``origin`` is a ``file://`` remote serving filters and any sha, so the
+    guard's by-sha first-parent fetch works as it does against GitHub.
+    """
+    for key in ("uploadpack.allowFilter", "uploadpack.allowAnySHA1InWant"):
+        run_git(repo.root, "config", key, "true", home=repo.home)
+    run_git(
+        repo.root.parent,
+        "clone",
+        "-q",
+        "--filter=blob:none",
+        "--depth",
+        "1",
+        "--sparse",
+        "--branch",
+        "pr-merge",
+        f"file://{repo.root}",
+        str(dest),
+        home=repo.home,
+    )
+    run_git(dest, "sparse-checkout", "set", "scripts/ci", home=repo.home)
+    return dest
+
+
+def local_objects(workspace: Path, home: Path) -> dict[str, str]:
+    """``{object id: type}`` of every object in ``workspace``'s LOCAL store.
+
+    Enumerated, never looked up: in a partial clone, looking up an absent
+    object lazily fetches it from the promisor remote (``GIT_NO_LAZY_FETCH``
+    stops that only on git 2.45 and later), so a lookup would answer "yes" by
+    fetching the very object it was asked about.
+    """
     assert GIT is not None
     proc = subprocess.run(
-        [GIT, "-C", str(workspace), "cat-file", "-e", f"{sha}^{{commit}}"],
+        [
+            GIT,
+            "-C",
+            str(workspace),
+            "cat-file",
+            "--batch-all-objects",
+            "--batch-check=%(objectname) %(objecttype)",
+        ],
         env=base_env(home),
         capture_output=True,
+        text=True,
         check=False,
     )
-    return proc.returncode == 0
+    assert proc.returncode == 0, defang(proc.stderr)
+    return dict(line.split(" ", 1) for line in proc.stdout.splitlines() if line)
+
+
+def has_commit(workspace: Path, sha: str, home: Path) -> bool:
+    """Is commit ``sha`` in ``workspace``'s local store? Never fetches it."""
+    return local_objects(workspace, home).get(sha) == "commit"
+
+
+def run_pytest_probe(tmp_path: Path, source: str, *extra: str) -> tuple[int, str]:
+    """Run ``source`` as a test module the way a CI shard runs this suite.
+
+    ``-c backend/pytest.ini`` applies the repo's own addopts (``-v -ra
+    --showlocals`` and coverage); ``extra`` adds flags (the shard adds a
+    second ``-v``). ``CI=true`` is what the Actions runner sets, and it makes
+    pytest print each failure's WHOLE message in the ``-ra`` summary, the
+    one place its lines are not ``E``-prefixed. The probe runs in ``tmp_path``
+    with ``--noconftest``, so no database fixture is involved, and in a fresh
+    environment, so no coverage hook of the outer run follows it.
+
+    Returns ``(exit code, stdout + stderr)``: captured, never printed.
+    """
+    probe = tmp_path / "test_shard_log_probe.py"
+    probe.write_text(source, encoding="utf-8")
+    home = tmp_path / "probe-home"
+    home.mkdir(exist_ok=True)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-c",
+            str(PYTEST_INI),
+            "--rootdir",
+            str(tmp_path),
+            "--noconftest",
+            "-p",
+            "no:cacheprovider",
+            *extra,
+            str(probe),
+        ],
+        cwd=tmp_path,
+        env={
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": str(home),
+            "CI": "true",
+            "GITHUB_ACTIONS": "true",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        },
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    return proc.returncode, proc.stdout + proc.stderr
 
 
 def assert_prints_nothing(source: Path) -> None:
     """No ``print()`` in ``source``, and every subprocess call captures its output.
 
     A declaration line echoed into a ``Run Tests`` shard's log would itself
-    declare that shard's red not a verdict.
+    declare that shard's red not a verdict. Nor may a SOURCE line open with
+    ``::`` (a line of a multi-line string literal, say): a failing test's
+    traceback prints its function's source lines indented by spaces only.
     """
-    tree = ast.parse(source.read_text(encoding="utf-8"))
+    text = source.read_text(encoding="utf-8")
+    shaped = [
+        number
+        for number, line in enumerate(text.splitlines(), start=1)
+        if line.lstrip().startswith("::")
+    ]
+    assert not shaped, (
+        f"{source.name}: source line(s) {shaped} open with `::`, which a failing "
+        "test's traceback would print as a workflow command"
+    )
+    tree = ast.parse(text)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue

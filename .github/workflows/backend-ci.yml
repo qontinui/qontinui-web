@@ -1751,9 +1751,11 @@ jobs:
           MEMBER_NEED: test
           NEEDS_JSON: ${{ toJSON(needs) }}
           EXPECTED_MEMBERS: ${{ env.EXPECTED_SHARDS }}
-          # The shards' own harness plus the aggregate's code: a PR touching
-          # any of it gets no title (rule 5, the harness-diff guard).
-          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^scripts/ci/aggregate_setup_death\.py$|^scripts/ci/shard_headroom\.py$'
+          # The shards' own harness plus ALL of scripts/ci: the script runs
+          # with scripts/ci first on sys.path, so a module a PR adds there
+          # runs inside it. A PR touching any of it gets no title (rule 5,
+          # the harness-diff guard).
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$|^scripts/ci/'
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ ! -f scripts/ci/aggregate_setup_death.py ]; then

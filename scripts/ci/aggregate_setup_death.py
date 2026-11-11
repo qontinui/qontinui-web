@@ -67,11 +67,18 @@ It declares only when ALL of these hold:
    match the member pattern;
 3. every member that is not ``success`` is ``failure`` -- a ``cancelled``,
    ``timed_out`` or ``skipped`` member is not a declaration;
-4. each failed member's first page of 50 annotations carries a title
-   containing ``SETUP FAILED (not a verdict on this PR)``. A member without
-   one is re-read at most ``REREADS`` (3) times, ``REREAD_DELAY_S`` (10 s)
-   apart, before it counts as undeclared, and the first member still
-   undeclared ends the read;
+4. each failed member's first page of 50 annotations carries a title EQUAL
+   to ``<member name> SETUP FAILED (not a verdict on this PR)``, the member
+   name being the check name the jobs listing serves. That is exactly the
+   title the member's own per-job declarer writes: its ``DECLARE_JOB``
+   renders to that served name (pinned by
+   ``test_declare_job_is_the_check_name_github_serves``), and the runner
+   unescapes the ``title=`` property before the annotation is stored, so the
+   two are byte-equal. A title that names another check -- a peer member's,
+   or any a step printed -- is not this member's declaration. A member
+   without its own title is re-read at most ``REREADS`` (3) times,
+   ``REREAD_DELAY_S`` (10 s) apart, before it counts as undeclared, and the
+   first member still undeclared ends the read;
 5. the harness-diff guard reads ``false``: this PR's diff touches none of
    ``HARNESS_PATHS_RE``. ``true`` and UNKNOWN withhold. It is read last, so a
    red that rules 1-4 already settle costs no fetch.
@@ -86,16 +93,21 @@ The harness-diff guard (rule 5)
 -------------------------------
 
 This script runs from the PR's OWN merge commit (the ``Check out the
-declarer`` checkout), so a PR that edits it, the ``shard_headroom.py`` it
-imports or the aggregate's workflow file would otherwise get the phrase from
-its edited code. The guard is the per-job declarer's ``compute_guard``
+declarer`` checkout), so a PR that edits it, a module it imports or the
+aggregate's workflow file would otherwise get the phrase from its edited
+code. The guard is the per-job declarer's ``compute_guard``
 (``.github/scripts/declare-setup-death.sh``), ported, and fails closed the
 same way. Each aggregate's ``HARNESS_PATHS_RE`` is its members' per-job
 harness -- its workflow file (theirs too), the ``.github/actions/`` tree and
-the per-job declarer -- plus this script and ``shard_headroom.py``. The per-job
+the per-job declarer -- plus the WHOLE ``scripts/ci/`` tree. The per-job
 declarer wrote the member titles this script trusts, and when a PR edits
 that declarer, the members' guard runs inside the edit while this one does
-not.
+not. And the step runs ``python3 scripts/ci/aggregate_setup_death.py``, which
+puts ``scripts/ci`` first on ``sys.path`` (Python's own script-directory
+entry, and this script's insert below), so a module a PR ADDS there -- a
+``json.py``, say -- is imported in place of the standard one and runs inside
+this declarer. Naming only the files this script imports today would miss
+it.
 
 It reads ``true`` when ``git diff -z --no-renames --name-only <first parent>
 <merge commit>`` lists a path matching ``HARNESS_PATHS_RE``, ``false`` when it
@@ -112,9 +124,13 @@ cannot fetch within the bound, on a failed diff and on an unusable pattern.
   ``DEADLINE_S``. A timeout reads UNKNOWN.
 * The ``scripts/ci`` sparse checkout is a ``blob:none`` partial clone. Every
   git call therefore runs with ``GIT_NO_LAZY_FETCH=1``, so no object read
-  turns into an unbounded fetch from the promisor remote (git 2.44 and later;
-  an older git ignores it, and ``timeout`` still bounds the call), and with
-  ``GIT_TERMINAL_PROMPT=0``.
+  turns into an unbounded fetch from the promisor remote (git 2.45 and later,
+  ``RelNotes/2.45.0``; an older git ignores it, and ``timeout`` still bounds
+  the call), and with ``GIT_TERMINAL_PROMPT=0``. Without it, the guard's own
+  check for the absent first parent (``cat-file -e``) fetches that parent
+  lazily, under a plain call's 30 s bound instead of the fetch's
+  (``test_a_live_promisor_never_lazily_fills_in_what_the_bounded_fetch_missed``
+  pins both halves).
 
 Time bounds: every REST read is bounded to ``READ_TIMEOUT_S`` (20 s) and the
 whole run, the guard's git calls included, to ``DEADLINE_S`` (120 s), under
@@ -166,8 +182,9 @@ from shard_headroom import (  # noqa: E402
     get_json,
 )
 
-#: What a member's own declaration title must contain (the per-job declarer's
-#: `<check> SETUP FAILED (not a verdict on this PR)`).
+#: What follows the member's own check name in its declaration title: the
+#: per-job declarer writes `<check> SETUP FAILED (not a verdict on this PR)`,
+#: and rule 4 accepts only that title, for that member's check name.
 MEMBER_DECLARATION = "SETUP FAILED (not a verdict on this PR)"
 #: Never in a setup-death title; the module docstring says why each one.
 RESERVED_PHRASES = (
@@ -618,8 +635,14 @@ def _await_member_declaration(
     clock: _Clock,
     sleep: Callable[[float], None],
 ) -> None:
-    """One failed member's first annotation page, re-read while it lags."""
+    """One failed member's first annotation page, re-read while it lags.
+
+    Only the member's OWN title counts: equal to ``<its name> SETUP FAILED
+    (not a verdict on this PR)``, never a title that merely contains the
+    phrase (rule 4 in the module docstring).
+    """
     name = str(member.get("name"))
+    own_title = f"{name} {MEMBER_DECLARATION}"
     check_run = member.get("id")
     if not isinstance(check_run, int) or isinstance(check_run, bool) or check_run <= 0:
         raise UnknownError(
@@ -635,7 +658,7 @@ def _await_member_declaration(
             url, inputs.token, timeout=clock.read_timeout(), user_agent=USER_AGENT
         )
         reads += 1
-        if any(MEMBER_DECLARATION in t for t in _titles(payload, url)):
+        if own_title in _titles(payload, url):
             return
         if reads > REREADS:
             raise _NoDeclarationError(
