@@ -34,15 +34,19 @@ which is partial on ``resolved_at IS NULL`` and so cannot answer it. With no
 other index, the planner runs a parallel sequential scan of the whole of
 ``coord.alerts`` and materializes the rows of the give-up kind or marker.
 
-Measured on production on 2026-11-04 (PostgreSQL 16.13, finding
-``b72e6d9d-14d2-4614-adfd-4111b5c9d7ee``): ``coord.alerts`` holds 637k live rows
-in 1.1 GB of heap. Performance Insights put this statement (``0153B221``) at
-0.49 average active sessions and 87,466 blocks read per call. An
-``EXPLAIN (ANALYZE, BUFFERS)`` of it did not finish inside a 30 s
+Measured on production on 2026-11-04 (PostgreSQL 16.13). Performance Insights
+put this statement (``0153B221``) at 0.49 average active sessions and 87,466
+blocks read per call (coord finding ``b72e6d9d-14d2-4614-adfd-4111b5c9d7ee``).
+The remaining figures in this docstring come from read-only production reads
+the plan's first implementing session (``dd44d9d7``, its Phase 1b agent) made
+the same day. They are recorded in that session's transcript, not in a coord
+finding. ``coord.alerts`` held 637k live rows in 1.1 GB of heap. An
+``EXPLAIN (ANALYZE, BUFFERS)`` of the statement did not finish inside a 30 s
 ``statement_timeout``. The plan was ``Nested Loop Anti Join`` over
 ``Materialize -> Gather -> Parallel Seq Scan on alerts`` with the filter
 ``(kind = 'gate_continuation_abandoned') OR (detail ? 'giveup_raised')``. All
-that, for a give-up population of 36 gates.
+that, for a give-up population of 36 gates. A synthetic 639k-row table
+(996 MB heap) on PG16 reproduces that plan without the index.
 
 Why not a cheaper lever
 =======================
@@ -79,13 +83,16 @@ coord changes the disjunction, the index silently stops serving the probe.
 coord pins its side in the paired qontinui-coord change (plan
 2026-11-04-coord-postgres-read-iops-near-its-cap-again), whose test
 ``giveup_probe_disjunction_matches_the_partial_index_predicate`` names this
-index; until that lands, this revision's test is the only pin. The resolver
+index. Until that change lands on coord main, coord-side drift is unpinned:
+this revision's test checks a transcription of coord's SQL, so a coord edit
+to the disjunction leaves both repos green. The resolver
 (``GIVEUP_RESOLVE_PREDICATE_SQL``: the same disjunction AND ``resolved_at IS
-NULL``) also implies the predicate and MAY use this index; on PG16 it drives
-from gates and probes ``uq_alerts_active_key`` instead. The test pins that it
-never scans the alerts heap. With the index,
-each give-up gate costs one descent of a ~2.5k-entry btree. There is no heap
-scan of ``coord.alerts`` at all.
+NULL``) also implies the predicate. At production scale (639k rows, default
+planner settings) PG16 resolves through this index, with ``alert_key`` as the
+index condition and ``resolved_at IS NULL`` as a filter. On the test's small
+fixture it probes ``uq_alerts_active_key`` instead, which already served it
+before this revision. With the index, each give-up gate costs one descent of
+a ~2.5k-entry btree. There is no heap scan of ``coord.alerts`` at all.
 
 Existing indexes, and why none of them serves the probe:
 
@@ -106,11 +113,15 @@ Disk and write cost
 ===================
 
 Only rows that satisfy the predicate get an entry. Production's planner
-estimated 2,575 such rows. The kind arm alone counts 2,371, through an
-index-only scan of ``idx_alerts_kind_first_seen_at``. An entry is about
-56 bytes: a 41-byte ``gate:<uuid>`` key, the tuple header and the line pointer.
-So the index is roughly 150-250 KB, against the 180 GB volume that
-``2026-10-22-coord-rds-storage-ceiling-raise-before-it-fills`` budgets.
+estimated 2,575 such rows (the 2026-11-04 session reads above). The kind arm
+alone counts 2,371, through an index-only scan of
+``idx_alerts_kind_first_seen_at``. An entry is about 56 bytes: a 41-byte
+``gate:<uuid>`` key, the tuple header and the line pointer. So the index is
+roughly 150-250 KB. Measured on PG16, 2,575 entries take 192 kB. That is
+against the storage ceiling that
+``2026-10-22-coord-rds-storage-ceiling-raise-before-it-fills`` budgets. That
+plan quotes a 180 GB volume, and finding ``b72e6d9d`` read it as gp3 200 GB on
+2026-11-04.
 qontinui-web#2078's ``idx_pr_events_mergeability_head_created`` is counted in
 that budget separately.
 
@@ -137,12 +148,22 @@ build guards, because coord's fail-closed migration classifier
     SELECT indisvalid FROM pg_index
      WHERE indexrelid = 'coord.idx_alerts_giveup_raised_key'::regclass;
 
-If a killed build left it INVALID, ``DROP INDEX CONCURRENTLY`` it and re-run
-the upgrade. ``IF NOT EXISTS`` skips an INVALID index of the same name, so
-re-running alone does not repair it.
+It must read ``indisvalid = true``. A killed build leaves an INVALID index with
+no ``alembic_version`` stamp. The next migrator to run then hits
+``IF NOT EXISTS``, skips the build and stamps this revision, so the index
+never serves the probe. Re-running the upgrade by hand does not repair it, and
+a hand ``DROP`` is out-of-band DDL on ``coord.*``. The recovery is the same as
+``coord_iops_idx_01``'s: a follow-up revision that runs
+``DROP INDEX CONCURRENTLY IF EXISTS coord.idx_alerts_giveup_raised_key`` and
+then this revision's CREATE again, once ``pg_stat_progress_create_index``
+shows no build on the table.
 
 Verify the reader rides it after deploy: ``pg_stat_user_indexes.idx_scan`` for
 this index rises by about one per give-up gate per minute.
+
+Revision ID: coord_iops_idx_02
+Revises: coord_ci_runs_head_sha_idx_01
+Create Date: 2026-11-04
 """
 
 from collections.abc import Sequence
