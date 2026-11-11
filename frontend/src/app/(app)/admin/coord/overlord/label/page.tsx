@@ -15,9 +15,12 @@
  * `?intervention_id=<id>` prefills the id, so the session-flow page's
  * "Label this judgment" link lands on a form ready to label that judgment.
  * Reading the query needs a Suspense boundary (Next 15 `useSearchParams`).
+ * The page has no console nav entry of its own, so it links back to the
+ * session-flow page that sends operators here.
  */
 
 import { Suspense, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { httpClient } from "@/services/service-factory";
@@ -75,6 +78,13 @@ function OverlordLabelForm() {
 
   return (
     <div className="space-y-4 p-4 sm:p-6" data-testid="overlord-label-page">
+      <Link
+        href="/admin/coord/overlord/flow"
+        className="text-xs text-primary underline-offset-4 hover:underline"
+        data-testid="overlord-label-back-to-flow"
+      >
+        ← Session flow
+      </Link>
       <h1 className="text-lg font-semibold">Label an overlord intervention</h1>
       <form
         onSubmit={onSubmit}
