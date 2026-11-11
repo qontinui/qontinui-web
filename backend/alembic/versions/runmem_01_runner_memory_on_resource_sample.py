@@ -36,7 +36,8 @@ Both were read by hand from ``/proc/<pid>/status``. nilan's host lane did grade
 runner, and nothing could have seen its growth days earlier:
 the sample carries the publishing runner's own ``thread_count`` (``lasac_01``)
 but nothing about its memory, and the host lane's ``top_consumers``
-(``topcons_01``) can name the runner only while it ranks in the host's top 5.
+(``topcons_01``), once its publisher ships, will name the runner only while it
+ranks in the host's top 5; today nothing writes it.
 One process holding about 13 % of the machine, and still growing, falls below
 every host-level floor until the host itself is exhausted.
 
@@ -67,10 +68,11 @@ runner_started_at      TIMESTAMPTZ
   graded: page-out and working-set trimming lower it while the process holds
   just as much.
 * ``runner_started_at`` is when the runner process started: the RESTART
-  BOUNDARY. A slope of ``runner_private_bytes`` is fitted only over samples
-  whose ``runner_started_at`` matches the latest within 2 s, so no slope ever
-  differences across two runner processes. ``os_booted_at``
-  (``kernel_gauges_01``) plays the same role for S7 across a reboot.
+  BOUNDARY. Per the plan, a slope of ``runner_private_bytes`` is to be fitted
+  only over samples whose ``runner_started_at`` matches the latest within 2 s,
+  so no slope will ever difference across two runner processes.
+  ``os_booted_at`` (``kernel_gauges_01``) plays the same role for S7 across a
+  reboot.
 
 Deliberately absent: a swap column (the Linux private basis already includes
 ``VmSwap`` and ``PrivateUsage`` is its Windows equivalent, so no per-OS NULL
@@ -100,16 +102,18 @@ the observe-only ``s12`` / ``runner_memory`` instance of the existing
 ``device_resource_headroom_breach`` kind (plan Phase 3). The grade is in
 absolute bytes plus a sustained slope, not a ratio of host memory, because a
 runner's footprint does not scale with host RAM. The plan's compiled defaults
-(warn 8 GiB, breach 16 GiB, and a slope of 512 MiB/h fitted over a covered 3 h
-window whose first sample is at least 2 h after ``runner_started_at``, the
-start gate Phase 0 measured) are PROVISIONAL until Phase 0's calibration is
-recorded.
-None of that grading exists in coord yet, so this docstring and the column
-comments attribute it to the plan rather than stating it as coord fact.
+are warn 8 GiB, breach 16 GiB, and a slope of 512 MiB/h fitted over a covered
+3 h window whose first sample is at least 2 h after ``runner_started_at``. The
+thresholds and the 2 h start gate come from the plan's Phase 0 calibration
+(fit.md, in ``qontinui-dev-notes``
+``devops-data/2026-11-11-runner-rss-nilan/``). None of that grading exists in
+coord yet, so this docstring and the column comments attribute it to the plan
+rather than stating it as coord fact.
 
 These columns are NOT a dispatch input. ``lane_pressure()`` ranks devices on
-free host capacity, and the runner's memory is already counted in the host's
-``MemAvailable``; ranking on it too would count the same bytes twice.
+free host capacity, and the runner's memory is already counted in the host
+lane's ``commit_*`` (MemAvailable on Linux, free commit on Windows); ranking on
+it too would count the same bytes twice.
 
 Types are an interface
 ======================
@@ -164,8 +168,8 @@ literals and holds a revision whose SQL it cannot see. Both ``upgrade()`` and
 bound, in a SET LOCAL form that classifier admits.
 
 The down_revision below is the single alembic head of ``origin/main`` at
-authoring time. If ``alembic-heads-pr`` reports ``HEAD_COUNT=2`` after this
-lands, re-point this line, the ``Revises:`` line above and
+authoring time. If ``alembic-heads-pr`` reports ``HEAD_COUNT=2`` on this PR,
+re-point this line, the ``Revises:`` line above and
 ``_PARENT_REVISION_ID`` in
 ``tests/test_runmem_01_runner_memory_on_resource_sample_migration.py``
 together.
@@ -254,9 +258,10 @@ def upgrade() -> None:
             'never differences across two runner processes (os_booted_at plays '
             'the same role for S7), and only once the first sample of the '
             'window is at least 2 h after runner_started_at (the start gate '
-            'plan Phase 0 measured). NULL = the publisher predates the field, '
-            'the read failed, or a lane other than host; render it as UNKNOWN, '
-            'and with no start time there is no restart boundary, so no slope.'
+            'from the plan''s Phase 0 calibration, fit.md). NULL = the '
+            'publisher predates the field, the read failed, or a lane other '
+            'than host; render it as UNKNOWN, and with no start time there is '
+            'no restart boundary, so no slope.'
         """
     )
 
