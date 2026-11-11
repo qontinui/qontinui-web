@@ -73,8 +73,11 @@ decision not to declare (rules 1, 3 and 4) is one plain log line.
 
 Time bounds: every REST read is bounded to ``READ_TIMEOUT_S`` (20 s) and the
 whole run to ``DEADLINE_S`` (120 s), under the invoking step's 3-minute
-``timeout-minutes``; running out reads UNKNOWN. At most 1 jobs read (more pages
-only past 100 jobs) plus 4 annotation reads per failed member.
+``timeout-minutes``; running out reads UNKNOWN. The clock is re-read before
+EVERY read, each page of the jobs listing included (``fetch_jobs``'s
+``deadline``), so a read never starts with a bound longer than what is left.
+At most 1 jobs read (more pages only past 100 jobs) plus 4 annotation reads per
+failed member.
 
 No title written here contains ``TIMED OUT (not a verdict on this PR)``,
 ``OUT OF MEMORY (not a verdict on this PR)`` or ``killed IN THE BUILD``: those
@@ -206,14 +209,16 @@ def _titles(payload: Any, url_hint: str) -> list[str]:
 
 
 class _Clock:
-    """The run's wall-clock budget."""
+    """The run's wall-clock budget: everything must finish by ``deadline``."""
 
     def __init__(self, monotonic: Callable[[], float]):
-        self._monotonic = monotonic
-        self._start = monotonic()
+        self.monotonic = monotonic
+        #: A ``monotonic()`` instant, handed to ``fetch_jobs`` so that every
+        #: page of the jobs listing re-reads the clock (not one bound for all).
+        self.deadline = monotonic() + DEADLINE_S
 
     def left(self) -> float:
-        return DEADLINE_S - (self._monotonic() - self._start)
+        return self.deadline - self.monotonic()
 
     def read_timeout(self) -> float:
         left = self.left()
@@ -303,6 +308,8 @@ def _rule2_member_jobs(inputs: _Inputs, clock: _Clock) -> list[dict[str, Any]]:
         inputs.api_root,
         attempt=inputs.attempt,
         timeout=clock.read_timeout(),
+        deadline=clock.deadline,
+        monotonic=clock.monotonic,
     )
     members = [
         j
