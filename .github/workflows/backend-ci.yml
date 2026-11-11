@@ -99,11 +99,13 @@ on:
       - '.github/workflows/style-gate.yml'
       - '.github/workflows/verify-frontend-run.yml'
       # The setup-death declarer (plan
-      # 2026-11-11-web-setup-step-deaths-declare-not-a-verdict).
-      # tests/test_declare_setup_death.py executes it arm by arm, so a PR that
-      # edits only the script must run that module. The module asserts every
-      # file it reads appears in BOTH filters.
+      # 2026-11-11-web-setup-step-deaths-declare-not-a-verdict), and the one
+      # carrier workflow no entry above covers. tests/test_declare_setup_death.py
+      # executes the script arm by arm and pins every carrier job's rows, so a
+      # PR that edits only the script or a carrier must run that module. The
+      # module asserts every file it reads appears in BOTH filters.
       - '.github/scripts/declare-setup-death.sh'
+      - '.github/workflows/memory-recall-eval.yml'
   push:
     # main is intentionally NOT here: the per-test coverage producer that used to
     # ride this gating workflow on push-to-main now lives in the standalone,
@@ -144,6 +146,7 @@ on:
       - '.github/workflows/verify-frontend-run.yml'
       # See the pull_request filter above (the setup-death declarer).
       - '.github/scripts/declare-setup-death.sh'
+      - '.github/workflows/memory-recall-eval.yml'
   # Nightly run with NO path filter. The "Check OpenAPI snapshot is up to date"
   # step regenerates the snapshot with the sibling repos installed — notably
   # qontinui-cloud-control, which is git-cloned + `pip install -e`'d in the test
@@ -265,6 +268,7 @@ jobs:
       # light lane (WEB_CI_LIGHT_LANE), which DOES reuse $GITHUB_WORKSPACE/..
       # between runs.
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
+        id: siblings
         run: |
           cd "$GITHUB_WORKSPACE/.."
           rm -rf qontinui-schemas qontinui qontinui-cloud-control
@@ -273,6 +277,7 @@ jobs:
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
+        id: setup_python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -307,6 +312,7 @@ jobs:
       # self-hosted light lane every runner shares one unix user's HOME, so the
       # default ~/.local and ~/.cache/pypoetry would be written by concurrent jobs.
       - name: Install Poetry
+        id: poetry_install
         run: |
           export POETRY_HOME="$RUNNER_TEMP/poetry"
           curl -sSL https://install.python-poetry.org | python3 -
@@ -329,13 +335,46 @@ jobs:
         run: poetry run pip install -e ../../qontinui-cloud-control
 
       - name: Run ruff (linting)
+        id: ruff_check
         run: poetry run ruff check .
 
       - name: Run ruff format (formatting)
+        id: ruff_format
         run: poetry run ruff format --check .
 
       - name: Run mypy (type checking)
+        id: mypy
         run: poetry run mypy app/ --ignore-missing-imports
+
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Lint & Format Check
+          SETUP_STEPS: |
+            Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)|${{ steps.siblings.outcome }}|${{ steps.siblings.conclusion }}
+            Set up Python|${{ steps.setup_python.outcome }}|${{ steps.setup_python.conclusion }}
+            Install Poetry|${{ steps.poetry_install.outcome }}|${{ steps.poetry_install.conclusion }}
+          VERDICT_STEPS: |
+            Run ruff (linting)|${{ steps.ruff_check.outcome }}|${{ steps.ruff_check.conclusion }}
+            Run ruff format (formatting)|${{ steps.ruff_format.outcome }}|${{ steps.ruff_format.conclusion }}
+            Run mypy (type checking)|${{ steps.mypy.outcome }}|${{ steps.mypy.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."
 
   test:
     name: Run Tests (shard ${{ matrix.shard }}/6)
@@ -501,6 +540,7 @@ jobs:
       # what they install. Plan
       # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
       - name: "Self-hosted: host provisioned"
+        id: host_provisioned
         if: runner.environment == 'self-hosted'
         uses: ./.github/actions/self-hosted-host-provisioned
         with:
@@ -511,6 +551,7 @@ jobs:
       # are large enough to overflow the runner's default disk. Remove
       # preinstalled SDKs/runtimes that this workflow doesn't use.
       - name: Free disk space
+        id: free_disk
         if: runner.environment == 'github-hosted'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
@@ -527,6 +568,7 @@ jobs:
       # qontinui-cloud-control is now AGPL/public — plain clone so the test
       # harness can side-effect-import it (see backend/tests/conftest.py).
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
+        id: siblings
         run: |
           cd "$GITHUB_WORKSPACE/.."
           # The self-hosted workspace parent persists between jobs.
@@ -543,6 +585,7 @@ jobs:
         uses: ./.github/actions/fleet-nouns-vocab
 
       - name: Set up Python
+        id: setup_python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -552,6 +595,7 @@ jobs:
       # $RUNNER_TEMP, the same block as `lint` (whose light lane shares one HOME);
       # on this job's db lane it is merely harmless. pip's cache stays put.
       - name: Install Poetry
+        id: poetry_install
         run: |
           export POETRY_HOME="$RUNNER_TEMP/poetry"
           curl -sSL https://install.python-poetry.org | python3 -
@@ -582,6 +626,7 @@ jobs:
       # so a drift failure surfaces fast; the env mirrors the test step so the
       # app imports cleanly offline (no DB is contacted).
       - name: Check OpenAPI snapshot is up to date
+        id: openapi_snapshot
         env:
           DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
           ENVIRONMENT: development
@@ -680,10 +725,12 @@ jobs:
       #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
       #   does not exist
       - name: Create test schemas and extensions
-        # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
-        # psql/DDL against this job's own postgres service, not the external
-        # mirror, so a failure here IS a verdict on the change -- it must never
-        # reach the infrastructure marker's APT_STEP_OUTCOMES.
+        # Deliberately UNBOUNDED. This is psql/DDL against this job's own
+        # postgres service, not the external mirror, so a failure here IS a
+        # verdict on the change. Its `id:` exists only for the declarer's
+        # VERDICT row; it must never appear in APT_STEP_OUTCOMES
+        # (backend/tests/test_declare_setup_death.py asserts that).
+        id: test_schemas
         env:
           PGPASSWORD: qontinui_dev_password
         run: |
@@ -715,6 +762,7 @@ jobs:
       # overwrite. `--no-cov` stays as belt-and-braces if a future addopts change
       # re-adds coverage by another route.
       - name: Collect the test suite
+        id: collect
         env:
           DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
           REDIS_HOST: localhost
@@ -823,6 +871,7 @@ jobs:
       # step takes the flag -- the collect step above is a pure collection
       # check, and the splitter refuses `--durations` with `--count-only`.
       - name: Select this shard's test files
+        id: select_shard
         run: |
           python ../scripts/ci/split_pytest_shards.py \
             --nodeids collected-nodeids.txt \
@@ -832,6 +881,7 @@ jobs:
             --out shard-files.txt
 
       - name: Run tests with coverage
+        id: pytest
         env:
           # conftest.py overrides this anyway, but keep aligned with the
           # postgres service creds for clarity.
@@ -1336,6 +1386,41 @@ jobs:
           # state says what it knows instead of falling through silently.
           echo "::notice title=No infrastructure verdict::Job status '$JOB_STATUS', no apt-dependent step red the job, none mid-flight. This marker has nothing to add about the code under test. $ref"
 
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Run Tests (shard ${{ matrix.shard }}/6)
+          SETUP_STEPS: |
+            Self-hosted: host provisioned|${{ steps.host_provisioned.outcome }}|${{ steps.host_provisioned.conclusion }}
+            Free disk space|${{ steps.free_disk.outcome }}|${{ steps.free_disk.conclusion }}
+            Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)|${{ steps.siblings.outcome }}|${{ steps.siblings.conclusion }}
+            Set up Python|${{ steps.setup_python.outcome }}|${{ steps.setup_python.conclusion }}
+            Install Poetry|${{ steps.poetry_install.outcome }}|${{ steps.poetry_install.conclusion }}
+            Install postgresql-client|${{ steps.apt_psql.outcome }}|${{ steps.apt_psql.conclusion }}
+          VERDICT_STEPS: |
+            Check OpenAPI snapshot is up to date|${{ steps.openapi_snapshot.outcome }}|${{ steps.openapi_snapshot.conclusion }}
+            Create test schemas and extensions|${{ steps.test_schemas.outcome }}|${{ steps.test_schemas.conclusion }}
+            Collect the test suite|${{ steps.collect.outcome }}|${{ steps.collect.conclusion }}
+            Select this shard's test files|${{ steps.select_shard.outcome }}|${{ steps.select_shard.conclusion }}
+            Run tests with coverage|${{ steps.pytest.outcome }}|${{ steps.pytest.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."
+
   security-scan:
     # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
     # p50 2.42 / p90 4.03 / max 7.20 min; cap = max(5, 2x max). Replaces the 360-min default.
@@ -1358,6 +1443,7 @@ jobs:
       # $HOME/.local/bin: on the self-hosted light lane every runner shares one
       # HOME. The same setup-trivy pin trivy-action v0.36.0 calls internally.
       - name: Install Trivy
+        id: trivy_install
         uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
         with:
           version: v0.75.0
@@ -1365,6 +1451,7 @@ jobs:
           cache: false
 
       - name: Run Trivy vulnerability scanner
+        id: trivy_scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           skip-setup-trivy: true
@@ -1389,6 +1476,7 @@ jobs:
           sarif_file: 'trivy-results.sarif'
 
       - name: Free disk space
+        id: free_disk
         if: runner.environment == 'github-hosted'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
@@ -1400,6 +1488,7 @@ jobs:
           swap-storage: false
 
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
+        id: siblings
         run: |
           cd "$GITHUB_WORKSPACE/.."
           # The self-hosted workspace parent persists between jobs.
@@ -1409,6 +1498,7 @@ jobs:
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
+        id: setup_python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -1418,6 +1508,7 @@ jobs:
       # self-hosted light lane every runner shares one unix user's HOME, so the
       # default ~/.local and ~/.cache/pypoetry would be written by concurrent jobs.
       - name: Install Poetry
+        id: poetry_install
         run: |
           export POETRY_HOME="$RUNNER_TEMP/poetry"
           curl -sSL https://install.python-poetry.org | python3 -
@@ -1439,10 +1530,50 @@ jobs:
         # ./backend (one level deeper than the repo root the clone sits beside).
         run: poetry run pip install -e ../../qontinui-cloud-control
 
+      # Split out of the safety check (plan
+      # 2026-11-11-web-setup-step-deaths-declare-not-a-verdict): this is a tool
+      # download from PyPI, a SETUP step for the setup-death declarer below,
+      # while the check itself is a VERDICT step. Fused, a PyPI outage read as
+      # a failed scan and could never be declared.
+      - name: Install safety
+        id: safety_install
+        run: poetry run pip install safety
+
       - name: Run safety check (dependency vulnerabilities)
+        id: safety_check
+        run: poetry run safety check --json || true
+
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Security Scanning
+          SETUP_STEPS: |
+            Install Trivy|${{ steps.trivy_install.outcome }}|${{ steps.trivy_install.conclusion }}
+            Free disk space|${{ steps.free_disk.outcome }}|${{ steps.free_disk.conclusion }}
+            Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)|${{ steps.siblings.outcome }}|${{ steps.siblings.conclusion }}
+            Set up Python|${{ steps.setup_python.outcome }}|${{ steps.setup_python.conclusion }}
+            Install Poetry|${{ steps.poetry_install.outcome }}|${{ steps.poetry_install.conclusion }}
+            Install safety|${{ steps.safety_install.outcome }}|${{ steps.safety_install.conclusion }}
+          VERDICT_STEPS: |
+            Run Trivy vulnerability scanner|${{ steps.trivy_scan.outcome }}|${{ steps.trivy_scan.conclusion }}
+            Run safety check (dependency vulnerabilities)|${{ steps.safety_check.outcome }}|${{ steps.safety_check.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/backend-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
         run: |
-          poetry run pip install safety
-          poetry run safety check --json || true
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."
 
   # Keeps `backend/tests/shard-durations.json` from rotting (plan
   # 2026-09-20-web-run-tests-shards-are-balanced-by-test-count-so-one-shard-carries-the-migration-tests-back-to-the-budget,

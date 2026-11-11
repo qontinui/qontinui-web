@@ -157,6 +157,7 @@ jobs:
       # what they install. Plan
       # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
       - name: "Self-hosted: host provisioned"
+        id: host_provisioned
         if: runner.environment == 'self-hosted'
         uses: ./.github/actions/self-hosted-host-provisioned
         with:
@@ -165,6 +166,7 @@ jobs:
       # qontinui (a path-dep) pulls torch from pytorch-cu128; the wheels
       # overflow the runner's default disk without this.
       - name: Free disk space
+        id: free_disk
         if: runner.environment == 'github-hosted'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
@@ -178,6 +180,7 @@ jobs:
       # backend/pyproject.toml has path-deps on sibling repos, which
       # actions/checkout cannot place outside the workspace.
       - name: Checkout sibling repos
+        id: siblings
         run: |
           cd "$GITHUB_WORKSPACE/.."
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
@@ -185,12 +188,14 @@ jobs:
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
+        id: setup_python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
       - name: Install Poetry
+        id: poetry_install
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
           echo "$HOME/.local/bin" >> $GITHUB_PATH
@@ -594,3 +599,34 @@ jobs:
               issue_number: context.issue.number,
               body: lines.join('\n'),
             });
+
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Recall eval (report only)
+          SETUP_STEPS: |
+            Self-hosted: host provisioned|${{ steps.host_provisioned.outcome }}|${{ steps.host_provisioned.conclusion }}
+            Free disk space|${{ steps.free_disk.outcome }}|${{ steps.free_disk.conclusion }}
+            Checkout sibling repos|${{ steps.siblings.outcome }}|${{ steps.siblings.conclusion }}
+            Set up Python|${{ steps.setup_python.outcome }}|${{ steps.setup_python.conclusion }}
+            Install Poetry|${{ steps.poetry_install.outcome }}|${{ steps.poetry_install.conclusion }}
+          VERDICT_STEPS: |
+            Run the recall harness|${{ steps.eval.outcome }}|${{ steps.eval.conclusion }}
+            Assert the harness actually ran|${{ steps.ran.outcome }}|${{ steps.ran.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/memory-recall-eval\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."

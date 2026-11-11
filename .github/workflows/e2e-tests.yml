@@ -145,6 +145,7 @@ jobs:
       # self-hosted runner outlives the job. That runner's workspace parent also
       # persists, so each target is removed before it is cloned.
       - name: Clone backend Python sibling deps
+        id: siblings
         run: |
           set -euo pipefail
           for spec in \
@@ -158,6 +159,7 @@ jobs:
           done
 
       - name: Set up Python ${{ matrix.python-version }}
+        id: setup_python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
@@ -190,6 +192,7 @@ jobs:
       # job-scoped cache with a warning.
       # Plan 2026-11-08-web-backend-e2e-job-cap-cancels-a-slow-uncached-pip-install-on-the-light-pool.
       - name: Create a job venv
+        id: job_venv
         env:
           PIP_CACHE_BOUND_MB: '8192'
           PIP_CACHE_FLOOR_MB: '61440'
@@ -307,6 +310,7 @@ jobs:
           fi
 
       - name: Run backend E2E tests
+        id: e2e_tests
         working-directory: ./backend
         env:
           TESTING: 1
@@ -355,6 +359,34 @@ jobs:
         if: cancelled()
         run: |
           echo "::notice title=Job cancelled - NOT a verdict on this diff::This job was cancelled. Either its 35-minute cap expired (it normally runs under about 17 min uncached on the self-hosted pool, less with a warm cache, and 1m54s-2m26s hosted, so that would mean something wedged, not that your tests failed) or the run was cancelled externally - this workflow's 'concurrency: cancel-in-progress' is an expression (first-attempt pull_request runs only), so on such a run a newer push to the same PR supersedes it, and on a push, schedule or re-run only a manual cancel does. Either way a cancelled job reports no test results at all: 'gh pr checks' will render it as 'fail' with zero failing steps, and that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
+
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Backend E2E Tests (${{ matrix.python-version }})
+          SETUP_STEPS: |
+            Clone backend Python sibling deps|${{ steps.siblings.outcome }}|${{ steps.siblings.conclusion }}
+            Set up Python ${{ matrix.python-version }}|${{ steps.setup_python.outcome }}|${{ steps.setup_python.conclusion }}
+            Create a job venv|${{ steps.job_venv.outcome }}|${{ steps.job_venv.conclusion }}
+          VERDICT_STEPS: |
+            Run backend E2E tests|${{ steps.e2e_tests.outcome }}|${{ steps.e2e_tests.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/e2e-tests\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."
 
   # Full 4-shard suite. Runs on pushes to main/develop, on the nightly schedule,
   # and on workflow_dispatch — never on PRs and never on coord's merge-candidate*

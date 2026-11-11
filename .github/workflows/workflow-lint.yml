@@ -132,10 +132,11 @@ jobs:
     # also withdrew "hosted runners are off", so hosted is the fallback again.
     # Plan 2026-11-05-web-merge-candidate-ci-runs-entirely-on-the-nawa-self-hosted-pools.
     runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_WORKFLOW_LINT || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
-    # Backstop only. Step timeouts sum to 27 min (checkout 2 + arch 1 +
-    # install 18 + zizmor 3 + actionlint 2 + summary 1); this sits 3 min above
-    # that, so a slow step is killed by its own timeout, not by this one.
-    timeout-minutes: 30
+    # Backstop only. Step timeouts sum to 30 min (checkout 2 + arch 1 +
+    # install 18 + zizmor 3 + actionlint 2 + summary 1 + setup-death
+    # declarer 3); this sits 3 min above that, so a slow step is killed by its
+    # own timeout, not by this one.
+    timeout-minutes: 33
     env:
       ZIZMOR_VERSION: 1.30.1
       ZIZMOR_SHA256: e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a
@@ -438,3 +439,31 @@ jobs:
             a="${ACTIONLINT_VERDICT:-ERROR (no verdict: step timed out or crashed)}"
           fi
           printf '%s\n' "- zizmor: ${z}" "- actionlint: ${a}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: workflow-lint
+          SETUP_STEPS: |
+            Check host architecture (release tarballs below are x86_64)|${{ steps.arch.outcome }}|${{ steps.arch.conclusion }}
+            Install zizmor and actionlint (pinned, sha256-verified, host-cached)|${{ steps.install.outcome }}|${{ steps.install.conclusion }}
+          VERDICT_STEPS: |
+            !zizmor|${{ steps.zizmor.outcome }}|${{ steps.zizmor.conclusion }}
+            !actionlint|${{ steps.actionlint.outcome }}|${{ steps.actionlint.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/workflow-lint\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."

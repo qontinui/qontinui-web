@@ -32,7 +32,9 @@ module's own source, and ``_defang`` keeps ``::`` out of every failure message.
 from __future__ import annotations
 
 import ast
+import itertools
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -755,6 +757,414 @@ def test_no_title_the_script_writes_changes_coords_marker_class(tmp_path, home):
             assert marker not in title, title
 
 
+# --- the wiring: every carrier job, against LITERAL tables ---------------------
+#
+# SETUP = a tool download or install that reads none of the PR's files, after
+# the job's own checkout (the script lives in the checkout). VERDICT = the
+# job's scan/test steps, `!`-marked when their `if:` has a status function.
+# Everything else ("Other": the PR's lockfile installs, builds, uploads, the
+# explainers) is never a row and is never declared. Changing a classification
+# is an edit to these tables, so it is reviewed.
+
+DECLARER_STEP = "Declare a setup death"
+EXPLAINER_STEP = "Explain infrastructure timeout vs external cancellation"
+SIBLINGS = "Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)"
+
+
+def _harness_literal(workflow: str) -> str:
+    """The plan's pattern: own workflow file, local actions, the declarer."""
+    escaped = workflow.replace(".", "\\.")
+    return (
+        f"^\\.github/workflows/{escaped}$|^\\.github/actions/"
+        "|^\\.github/scripts/declare-setup-death\\.sh$"
+    )
+
+
+CARRIERS: dict[tuple[str, str], dict[str, object]] = {
+    ("backend-ci.yml", "lint"): {
+        "declare_job": "Lint & Format Check",
+        "setup": [SIBLINGS, "Set up Python", "Install Poetry"],
+        "verdict": [
+            "Run ruff (linting)",
+            "Run ruff format (formatting)",
+            "Run mypy (type checking)",
+        ],
+    },
+    ("backend-ci.yml", "test"): {
+        "declare_job": "Run Tests (shard ${{ matrix.shard }}/6)",
+        "setup": [
+            "Self-hosted: host provisioned",
+            "Free disk space",
+            SIBLINGS,
+            "Set up Python",
+            "Install Poetry",
+            "Install postgresql-client",
+        ],
+        "verdict": [
+            "Check OpenAPI snapshot is up to date",
+            "Create test schemas and extensions",
+            "Collect the test suite",
+            "Select this shard's test files",
+            "Run tests with coverage",
+        ],
+    },
+    ("backend-ci.yml", "security-scan"): {
+        "declare_job": "Security Scanning",
+        "setup": [
+            "Install Trivy",
+            "Free disk space",
+            SIBLINGS,
+            "Set up Python",
+            "Install Poetry",
+            "Install safety",
+        ],
+        # Neither reds on a FINDING (trivy-action sets no `exit-code`; the
+        # safety check ends `|| true`), but a Trivy or safety ERROR is still
+        # read as a verdict: the conservative arm.
+        "verdict": [
+            "Run Trivy vulnerability scanner",
+            "Run safety check (dependency vulnerabilities)",
+        ],
+    },
+    ("memory-recall-eval.yml", "recall-eval"): {
+        "declare_job": "Recall eval (report only)",
+        "setup": [
+            "Self-hosted: host provisioned",
+            "Free disk space",
+            "Checkout sibling repos",
+            "Set up Python",
+            "Install Poetry",
+        ],
+        "verdict": ["Run the recall harness", "Assert the harness actually ran"],
+    },
+    ("workflow-lint.yml", "workflow-lint"): {
+        "declare_job": "workflow-lint",
+        "setup": [
+            "Check host architecture (release tarballs below are x86_64)",
+            "Install zizmor and actionlint (pinned, sha256-verified, host-cached)",
+        ],
+        "verdict": ["!zizmor", "!actionlint"],
+    },
+    ("e2e-tests.yml", "backend-tests"): {
+        "declare_job": "Backend E2E Tests (${{ matrix.python-version }})",
+        "setup": [
+            "Clone backend Python sibling deps",
+            "Set up Python ${{ matrix.python-version }}",
+            "Create a job venv",
+        ],
+        "verdict": ["Run backend E2E tests"],
+    },
+}
+
+_MATRIX_EXPR = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
+_ROW = re.compile(
+    r"^(?P<mark>!?)(?P<name>.+)"
+    r"\|\$\{\{ steps\.(?P<id>[A-Za-z0-9_-]+)\.outcome \}\}"
+    r"\|\$\{\{ steps\.(?P=id)\.conclusion \}\}$"
+)
+
+
+def _workflow(name: str) -> dict:
+    return yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
+
+
+def _job(workflow: str, job_id: str) -> dict:
+    return _workflow(workflow)["jobs"][job_id]
+
+
+def _matrix_combos(job: dict) -> list[dict[str, object]]:
+    matrix = (job.get("strategy") or {}).get("matrix") or {}
+    dims = {
+        key: values
+        for key, values in matrix.items()
+        if key not in ("include", "exclude") and isinstance(values, list)
+    }
+    if not dims:
+        return [{}]
+    return [
+        dict(zip(dims, combo, strict=True))
+        for combo in itertools.product(*dims.values())
+    ]
+
+
+def _render_matrix(text: str, combo: dict[str, object]) -> str:
+    return _MATRIX_EXPR.sub(lambda m: str(combo[m.group(1)]), text)
+
+
+def _served_names(job_id: str, job: dict) -> list[str]:
+    """The check-run name GitHub serves for each matrix leg of a job.
+
+    A name that references no matrix value gets the leg's values appended in
+    parentheses (`Backend E2E Tests (3.12)`); one that does is rendered.
+    """
+    name = str(job.get("name", job_id))
+    served = []
+    for combo in _matrix_combos(job):
+        rendered = _render_matrix(name, combo)
+        if combo and not _MATRIX_EXPR.search(name):
+            rendered += " (" + ", ".join(str(v) for v in combo.values()) + ")"
+        served.append(rendered)
+    return served
+
+
+def _declarer(job: dict) -> dict:
+    found = [s for s in job.get("steps") or [] if s.get("name") == DECLARER_STEP]
+    assert len(found) == 1, f"{len(found)} `{DECLARER_STEP}` steps"
+    return found[0]
+
+
+def _rows(step: dict, key: str) -> list[re.Match[str]]:
+    text = str((step.get("env") or {}).get(key, ""))
+    rows = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        match = _ROW.match(line.strip())
+        assert match, f"{key} row {line!r} is not <name>|outcome|conclusion of ONE id"
+        rows.append(match)
+    return rows
+
+
+def _steps_by_id(job: dict) -> dict[str, tuple[int, dict]]:
+    return {
+        str(step["id"]): (index, step)
+        for index, step in enumerate(job.get("steps") or [])
+        if "id" in step
+    }
+
+
+def _has_status_function(step: dict) -> bool:
+    condition = str(step.get("if", ""))
+    return any(f in condition for f in ("always()", "failure()", "cancelled()"))
+
+
+def _own_checkout_index(job: dict) -> int:
+    """The job's checkout of THIS repo (a sibling checkout names `repository:`)."""
+    for index, step in enumerate(job.get("steps") or []):
+        uses = str(step.get("uses", ""))
+        if uses.startswith("actions/checkout@") and "repository" not in (
+            step.get("with") or {}
+        ):
+            return index
+    raise AssertionError("the job has no checkout of this repository")
+
+
+def _apt_ids(job: dict) -> dict[str, str]:
+    """`{id: step name}` of the explainer's APT_STEP_OUTCOMES rows in this job."""
+    explainers = [s for s in job.get("steps") or [] if s.get("name") == EXPLAINER_STEP]
+    if not explainers:
+        return {}
+    ids = {}
+    for line in str(explainers[0]["env"]["APT_STEP_OUTCOMES"]).splitlines():
+        match = _ROW.match(line.strip())
+        if match:
+            ids[match.group("id")] = match.group("name")
+    return ids
+
+
+CARRIER_IDS = [f"{workflow}:{job_id}" for workflow, job_id in CARRIERS]
+
+
+def test_the_carriers_are_exactly_the_literal_table():
+    """Derived by glob, never trusted from a hand list: see `_carrier_jobs`."""
+    assert sorted(_carrier_jobs()) == sorted(CARRIERS)
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_the_declarer_is_the_jobs_last_step_and_never_red(workflow, job_id):
+    job = _job(workflow, job_id)
+    step = _declarer(job)
+    assert job["steps"][-1] is step, "the declarer must be the job's LAST step"
+    assert step["if"] == "failure()"
+    assert step["working-directory"] == "${{ github.workspace }}"
+    assert step["timeout-minutes"] == 3
+    assert "continue-on-error" not in step
+    run = step["run"]
+    assert "if [ ! -f .github/scripts/declare-setup-death.sh ]; then" in run
+    assert "exit 0" in run
+    assert (
+        "bash .github/scripts/declare-setup-death.sh || echo "
+        '"declare-setup-death.sh exited $?; nothing was declared."'
+    ) in run
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_declare_job_is_the_check_name_github_serves(workflow, job_id):
+    job = _job(workflow, job_id)
+    declared = str(_declarer(job)["env"]["DECLARE_JOB"])
+    assert declared == CARRIERS[(workflow, job_id)]["declare_job"]
+    triggers = _workflow(workflow).get("on", _workflow(workflow).get(True)) or {}
+    combos = _matrix_combos(job)
+    rendered = [_render_matrix(declared, combo) for combo in combos]
+    if set(triggers) == {"workflow_call"}:
+        # A called workflow's check is served as `<caller job> / <this job>`,
+        # and the caller's name is not known here: DECLARE_JOB names this job.
+        assert rendered == [str(job.get("name", job_id))]
+    else:
+        assert rendered == _served_names(job_id, job)
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_every_row_names_a_real_step_by_its_exact_name(workflow, job_id):
+    """Replaces runner#2607's hand-matched names with a test."""
+    job = _job(workflow, job_id)
+    step = _declarer(job)
+    by_id = _steps_by_id(job)
+    for key in ("SETUP_STEPS", "VERDICT_STEPS"):
+        positions = []
+        for row in _rows(step, key):
+            assert row.group("id") in by_id, f"{key}: no step has id {row['id']!r}"
+            index, target = by_id[row.group("id")]
+            assert target.get("name") == row.group("name"), (
+                f"{key}: id {row['id']!r} is step {target.get('name')!r}, "
+                f"but the row calls it {row['name']!r}"
+            )
+            positions.append(index)
+        assert positions == sorted(positions), f"{key} rows are not in step order"
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_the_setup_and_verdict_sets_are_the_literal_table(workflow, job_id):
+    step = _declarer(_job(workflow, job_id))
+    setup = [
+        row.group("mark") + row.group("name") for row in _rows(step, "SETUP_STEPS")
+    ]
+    verdict = [
+        row.group("mark") + row.group("name") for row in _rows(step, "VERDICT_STEPS")
+    ]
+    assert setup == CARRIERS[(workflow, job_id)]["setup"]
+    assert verdict == CARRIERS[(workflow, job_id)]["verdict"]
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_a_setup_step_failing_is_the_jobs_first_failure(workflow, job_id):
+    """No status-function `if:` and no `continue-on-error` on a SETUP step.
+
+    With the implicit `success()`, a setup step runs only while nothing has
+    failed, so its concluding `failure` means it was the job's first failure.
+    """
+    job = _job(workflow, job_id)
+    by_id = _steps_by_id(job)
+    for row in _rows(_declarer(job), "SETUP_STEPS"):
+        target = by_id[row.group("id")][1]
+        assert not _has_status_function(target), f"{row['name']!r}: {target['if']!r}"
+        assert "continue-on-error" not in target, f"{row['name']!r} can soft-fail"
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_a_verdict_step_is_marked_iff_its_if_has_a_status_function(workflow, job_id):
+    job = _job(workflow, job_id)
+    by_id = _steps_by_id(job)
+    for row in _rows(_declarer(job), "VERDICT_STEPS"):
+        target = by_id[row.group("id")][1]
+        assert bool(row.group("mark")) == _has_status_function(target), (
+            f"{row['name']!r} has `if: {target.get('if')}`; the `!` mark must follow it"
+        )
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_every_setup_step_comes_after_the_jobs_checkout(workflow, job_id):
+    job = _job(workflow, job_id)
+    checkout = _own_checkout_index(job)
+    by_id = _steps_by_id(job)
+    for row in _rows(_declarer(job), "SETUP_STEPS"):
+        assert by_id[row.group("id")][0] > checkout, f"{row['name']!r} precedes it"
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_no_apt_step_outcome_id_is_a_verdict_row(workflow, job_id):
+    """An APT_STEP_OUTCOMES step runs apt-get and nothing else: never a verdict."""
+    job = _job(workflow, job_id)
+    verdict_ids = {row.group("id") for row in _rows(_declarer(job), "VERDICT_STEPS")}
+    assert not verdict_ids & set(_apt_ids(job))
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_every_non_soft_apt_row_of_the_explainer_is_a_setup_row(workflow, job_id):
+    job = _job(workflow, job_id)
+    by_id = _steps_by_id(job)
+    setup_ids = {row.group("id") for row in _rows(_declarer(job), "SETUP_STEPS")}
+    for apt_id, name in _apt_ids(job).items():
+        if "continue-on-error" in by_id[apt_id][1]:
+            assert apt_id not in setup_ids, f"{name!r} soft-fails; it cannot be SETUP"
+        else:
+            assert apt_id in setup_ids, f"{name!r} ({apt_id}) is not a SETUP row"
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_the_harness_pattern_covers_the_jobs_own_harness(workflow, job_id):
+    pattern = str(_declarer(_job(workflow, job_id))["env"]["HARNESS_PATHS_RE"])
+    assert pattern == _harness_literal(workflow)
+    compiled = re.compile(pattern)
+    for path in (
+        f".github/workflows/{workflow}",
+        ".github/actions/self-hosted-host-provisioned/action.yml",
+        SCRIPT_REF,
+    ):
+        assert compiled.search(path), path
+    for path in (
+        "backend/app/main.py",
+        f".github/workflows/{workflow}.orig",
+        "frontend/.github/actions/x.yml",
+        ".github/scripts/declare-setup-death.sh.bak",
+    ):
+        assert not compiled.search(path), path
+
+
+def test_create_test_schemas_carries_its_id_only_for_the_declarer():
+    """It used to be id-less so it never reached APT_STEP_OUTCOMES; it still must not."""
+    job = _job("backend-ci.yml", "test")
+    assert _steps_by_id(job)["test_schemas"][1]["name"] == (
+        "Create test schemas and extensions"
+    )
+    assert "test_schemas" not in _apt_ids(job)
+
+
+def _render_rows(text: str, failing: str | None, default: str) -> str:
+    """Rows with every `${{ steps.X.* }}` rendered: `failing` fails, the rest `default`."""
+    lines = []
+    for line in text.splitlines():
+        match = _ROW.match(line.strip())
+        if not match:
+            continue
+        value = "failure" if match.group("id") == failing else default
+        lines.append(f"{match.group('mark')}{match.group('name')}|{value}|{value}")
+    return "\n".join(lines) + "\n"
+
+
+@requires_bash_and_git
+@pytest.mark.parametrize(("workflow", "job_id"), list(CARRIERS), ids=CARRIER_IDS)
+def test_each_carriers_own_env_declares_its_first_setup_death(
+    tmp_path, home, workflow, job_id
+):
+    """The YAML's own env block, rendered as Actions would, drives the script."""
+    job = _job(workflow, job_id)
+    step = _declarer(job)
+    env = step["env"]
+    combo = _matrix_combos(job)[0]
+    first_setup = _rows(step, "SETUP_STEPS")[0]
+    rendered_env = {
+        "DECLARE_JOB": _render_matrix(str(env["DECLARE_JOB"]), combo),
+        "SETUP_STEPS": _render_matrix(
+            _render_rows(str(env["SETUP_STEPS"]), first_setup.group("id"), "skipped"),
+            combo,
+        ),
+        "VERDICT_STEPS": _render_rows(str(env["VERDICT_STEPS"]), None, "skipped"),
+        "HARNESS_PATHS_RE": str(env["HARNESS_PATHS_RE"]),
+    }
+    clean = PrRepo(tmp_path / "clean", home, changes={"backend/app/main.py": "x\n"})
+    _, out, _ = _run({**_pr_env(clean), **rendered_env})
+    assert _titles(out) == [
+        f"{rendered_env['DECLARE_JOB']} SETUP FAILED (not a verdict on this PR)"
+    ], _defang(out)
+    # The same rows on a PR that edits this job's own workflow: withheld.
+    touched = PrRepo(
+        tmp_path / "touched", home, changes={f".github/workflows/{workflow}": "x\n"}
+    )
+    _, out, _ = _run({**_pr_env(touched), **rendered_env})
+    assert "harness-diff guard read true" in _assert_withheld(out), _defang(out)
+
+
 # --- the trigger: backend-ci must run this module on every file it reads -------
 
 
@@ -810,6 +1220,12 @@ def test_backend_ci_triggers_on_every_file_this_module_reads():
                 f"`{relative}` is read by this module but is not in "
                 f"backend-ci.yml's `on.{trigger}.paths`; add it to BOTH filters"
             )
+
+
+def test_backend_ci_triggers_on_the_recall_eval_workflow():
+    """The one carrier no earlier backend-ci filter entry covered (plan Phase 2)."""
+    for trigger in ("pull_request", "push"):
+        assert ".github/workflows/memory-recall-eval.yml" in _backend_ci_paths(trigger)
 
 
 # --- this module itself --------------------------------------------------------
