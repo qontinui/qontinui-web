@@ -671,8 +671,8 @@ def _declaration(inputs: _Inputs, failed: list[dict[str, Any]]) -> Outcome:
             "withhold",
             text=(
                 "DECLARE_JOB would put a reserved phrase (TIMED OUT, OUT OF MEMORY "
-                "or killed IN THE BUILD) into the title, and coord would read a "
-                "setup death as a timeout or a capacity kill."
+                "or killed IN THE BUILD) into the title, which no setup-death title "
+                "may carry (the module docstring says why)."
             ),
         )
     return Outcome(
