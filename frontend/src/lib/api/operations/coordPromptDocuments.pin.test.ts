@@ -22,18 +22,24 @@ vi.mock("@/services/service-factory", () => ({
 import {
   adoptUpstreamPublication,
   applyUpstreamMerge,
+  clearKindTier,
   createPromptDocument,
   createPromptDocumentClause,
   deletePromptDocumentClause,
   fetchAutoPublishStatus,
+  fetchKindTiers,
   fetchPromptDocument,
   fetchPromptDocumentPublication,
   fetchPromptDocumentVersion,
+  fetchSessionComplianceConfig,
   keepLocalOverPublication,
   listPromptDocumentClauses,
   listPromptDocumentPublications,
   listPromptDocuments,
   listPromptDocumentVersions,
+  listSessionComplianceConfigVersions,
+  listSessionComplianceOutstanding,
+  listSessionComplianceSessions,
   previewPublishAll,
   previewUpstreamMerge,
   publishAllPromptDocuments,
@@ -41,6 +47,8 @@ import {
   reorderPromptDocumentClauses,
   restorePromptDocumentDefault,
   restorePromptDocumentVersion,
+  saveSessionComplianceConfig,
+  setKindTier,
   updatePromptDocument,
   updatePromptDocumentAttrs,
   updatePromptDocumentClause,
@@ -182,6 +190,33 @@ const CALLS: Array<
         { publication_version: 2, expected_version: 7, resolutions: {} },
         pin
       ),
+  ],
+  // The prompt-documents page's own sections — the per-kind authorship tiers
+  // and session compliance — each pinned to the page's project for the same
+  // reason.
+  ["fetchKindTiers", (pin) => fetchKindTiers(pin)],
+  ["setKindTier", (pin) => setKindTier("policy", "allow", pin)],
+  ["clearKindTier", (pin) => clearKindTier("policy", pin)],
+  ["fetchSessionComplianceConfig", (pin) => fetchSessionComplianceConfig(pin)],
+  [
+    "listSessionComplianceConfigVersions",
+    (pin) => listSessionComplianceConfigVersions(pin),
+  ],
+  [
+    "saveSessionComplianceConfig",
+    (pin) => saveSessionComplianceConfig({ mode: "nudge" }, pin),
+  ],
+  [
+    "listSessionComplianceSessions",
+    (pin) =>
+      listSessionComplianceSessions(
+        { limit: 25, verdict: "unverified", cursor: "c" },
+        pin
+      ),
+  ],
+  [
+    "listSessionComplianceOutstanding",
+    (pin) => listSessionComplianceOutstanding(pin),
   ],
 ];
 
