@@ -279,8 +279,9 @@ export type PrMergeStatus =
   | "draft"
   | "ci-failed"
   // CI red, but the PR's base is stale — the red may be main's fault; not
-  // author work. coord's own freshen MAY clear it; whether it will is not
-  // served yet (UNKNOWN), so this is never a "no action needed" promise.
+  // author work. coord's own freshen MAY clear it; whether it will is the
+  // row's served `freshen` block (absent = UNKNOWN), so this token alone is
+  // never a "no action needed" promise.
   | "ci-failed-stale-base"
   // CI red where every failing check run was a self-hosted runner kill (zero
   // failed steps). Remedy: re-run the failed jobs once the runner is healthy —
