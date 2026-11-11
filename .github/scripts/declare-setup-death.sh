@@ -429,7 +429,7 @@ main() {
   title="${job} SETUP FAILED (not a verdict on this PR)"
   case "$title" in
     *'TIMED OUT (not a verdict on this PR)'* | *'OUT OF MEMORY (not a verdict on this PR)'* | *'killed IN THE BUILD'*)
-      withhold "DECLARE_JOB would put a reserved phrase (TIMED OUT, OUT OF MEMORY or killed IN THE BUILD) into the title, and coord would read a setup death as a timeout or a capacity kill."
+      withhold "DECLARE_JOB would put a reserved phrase (TIMED OUT, OUT OF MEMORY or killed IN THE BUILD) into the title, which no setup-death title may carry (RESERVED PHRASES in this script's header says why)."
       return
       ;;
   esac
