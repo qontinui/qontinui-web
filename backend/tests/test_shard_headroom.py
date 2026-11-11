@@ -688,8 +688,17 @@ def test_budget_is_in_lockstep_with_the_test_job_timeout():
 
 
 def test_expected_shards_is_in_lockstep_with_the_matrix():
-    matrix = _doc()["jobs"]["test"]["strategy"]["matrix"]["shard"]
+    """Every hand-copied shard count equals the matrix length.
+
+    `test-gate` (the `Run Tests` aggregate) carries one too since plan
+    2026-11-11-web-setup-step-deaths-declare-not-a-verdict: its setup-death
+    declarer refuses to declare unless the run lists exactly that many shard
+    jobs, so a seventh shard must move this count or the aggregate goes silent.
+    """
+    doc = _doc()
+    matrix = doc["jobs"]["test"]["strategy"]["matrix"]["shard"]
     assert str(_headroom_job()["env"]["EXPECTED_SHARDS"]) == str(len(matrix))
+    assert str(doc["jobs"]["test-gate"]["env"]["EXPECTED_SHARDS"]) == str(len(matrix))
     assert headroom.DEFAULT_EXPECTED_SHARDS == len(matrix)
 
 
