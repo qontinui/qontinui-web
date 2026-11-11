@@ -99,7 +99,7 @@ concurrency:
 jobs:
   spec-ci:
     name: Spec CI
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_SPEC_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_SPEC_CI || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-24.04"') }}
     # 25 → 35 on hermeticization: the job now also installs backend deps and
     # boots PG/Redis/uvicorn (~5-8 min). No torch in requirements.txt — the
     # heavy-ML disk concerns from backend-ci's poetry path don't apply here.
