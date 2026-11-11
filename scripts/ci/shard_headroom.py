@@ -98,8 +98,10 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from fractions import Fraction
@@ -128,6 +130,9 @@ DEFAULT_EXPECTED_SHARDS = 6
 API_ROOT = "https://api.github.com"
 PER_PAGE = 100
 MAX_PAGES = 10
+#: Under a ``deadline`` (``fetch_jobs``), a page whose read would start with
+#: less than this left is refused rather than started.
+MIN_PAGE_READ_S = 1.0
 
 #: The committed durations map the shard deal reads, and the nightly artifact
 #: that proposes its replacement -- named in a `skewed` reason as the remedy.
@@ -440,6 +445,20 @@ def get_json(
         raise MeasurementError(f"GET {url} failed: {exc}") from exc
 
 
+def _page_timeout(
+    timeout: float, deadline: float | None, monotonic: Callable[[], float], url: str
+) -> float:
+    """One page's read bound: ``timeout``, or less when ``deadline`` is nearer."""
+    if deadline is None:
+        return timeout
+    left = deadline - monotonic()
+    if left < MIN_PAGE_READ_S:
+        raise MeasurementError(
+            f"the deadline passed before GET {url} could start ({left:.1f} s left)"
+        )
+    return min(timeout, left)
+
+
 def fetch_jobs(
     repo: str,
     run_id: str,
@@ -448,6 +467,8 @@ def fetch_jobs(
     *,
     attempt: int | None = None,
     timeout: float = 30,
+    deadline: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> list[dict[str, Any]]:
     """Every job row of one run. Raises ``MeasurementError`` on any failure.
 
@@ -457,6 +478,13 @@ def fetch_jobs(
     attempt, re-run or carried over (measured at the plan's authoring on
     qontinui-web run 42466217222, attempt 2 of a ``--failed`` re-run: all six
     shards, each with an attempt-2 job id).
+
+    ``timeout`` bounds each page's read. ``deadline``, a ``monotonic()``
+    instant, bounds the WHOLE listing: the clock is re-read before every page,
+    each page's read gets ``timeout`` or what is left if that is less, and a
+    page that would start with under ``MIN_PAGE_READ_S`` left raises instead.
+    Without one (the nightly alarm's call) every page gets ``timeout`` and the
+    clock is never read, as before.
     """
     if not repo or not run_id or not token:
         raise MeasurementError("GITHUB_REPOSITORY, GITHUB_RUN_ID and GITHUB_TOKEN are all required")
@@ -474,7 +502,9 @@ def fetch_jobs(
                 f"{api_root}/repos/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs"
                 f"?per_page={PER_PAGE}&page={page}"
             )
-        payload = get_json(url, token, timeout=timeout)
+        payload = get_json(
+            url, token, timeout=_page_timeout(timeout, deadline, monotonic, url)
+        )
         if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
             raise MeasurementError(f"GET {url} returned no 'jobs' list")
         page_jobs = payload["jobs"]
