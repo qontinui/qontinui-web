@@ -259,6 +259,47 @@ export interface HeadroomSource {
   free_bytes: number | null;
 }
 
+/** One `some|full` PSI pair: percent of wall time stalled, 10 s / 60 s averages. */
+export interface PsiAvg {
+  avg10?: number | null;
+  avg60?: number | null;
+}
+
+/** `some` / `full` stall for one resource. Either half may be absent. */
+export interface PsiResource {
+  some?: PsiAvg | null;
+  full?: PsiAvg | null;
+}
+
+/** PSI for the three resources coord carries. */
+export interface PsiBlock {
+  memory?: PsiResource | null;
+  cpu?: PsiResource | null;
+  io?: PsiResource | null;
+}
+
+/** coord's `psi` column: `{system, slices: {<slice>: PsiBlock}}`. */
+export interface SlicePsi {
+  system?: PsiBlock | null;
+  slices?: Record<string, PsiBlock | null> | null;
+}
+
+/** One watched slice's memory reading. Every key is optional: absent = not measured. */
+export interface CgroupSliceEntry {
+  memory_current?: number | null;
+  /** A byte count, or the string `"max"` (= no limit configured). */
+  memory_high?: number | "max" | null;
+  memory_max?: number | "max" | null;
+  events?: {
+    high?: number | null;
+    max?: number | null;
+    oom_kill?: number | null;
+  } | null;
+}
+
+/** coord's `cgroup_slices` column, keyed by slice name. */
+export type CgroupSlices = Record<string, CgroupSliceEntry | null>;
+
 /** Newest sample for one `(device_id, lane, lane_instance)` anchor. */
 export interface ResourceSampleRow {
   device_id: string;
@@ -280,6 +321,34 @@ export interface ResourceSampleRow {
    * that predates the column sends no such key at all.
    */
   cpu_temp_c?: number | null;
+  /**
+   * Per watched cgroup slice (`ci-runners.slice`, `agent-builds.slice`,
+   * `qontinui-runner.slice`): `memory_current`, `memory_high`, `memory_max`
+   * (a number or the string `"max"`) and the monotonic `events`
+   * `high` / `max` / `oom_kill` counters (coord
+   * `device_resource_slice_telemetry`, plan
+   * `2026-10-19-ci-nodes-run-the-tauri-runner-always-on-as-ci-node-role`
+   * Phase 0b). A slice absent on the machine is absent from the map, and a
+   * key the publisher could not measure is absent, never `0`.
+   *
+   * `null` / absent key = **unmeasured** (older publisher, or a coord that
+   * predates the column) — never `{}`, never zero. Read through
+   * `sliceTelemetryReading`, not directly.
+   */
+  cgroup_slices?: CgroupSlices | null;
+  /**
+   * Pressure-stall percentages (0-100): `system` and per-slice
+   * `memory|cpu|io` × `some|full` × `avg10|avg60`. Same null rules as
+   * `cgroup_slices`.
+   */
+  psi?: SlicePsi | null;
+  /**
+   * `"linux_cgroup_v2"` | `"not_supported"` (free text on the wire, so typed
+   * `string`). `not_supported` is what makes a NULL `cgroup_slices` beside it
+   * mean *not applicable on this OS* rather than *unread*; NULL is an older
+   * publisher.
+   */
+  slice_source?: string | null;
   mem_total_bytes: number | null;
   mem_available_bytes: number | null;
   commit_total_bytes: number | null;
@@ -1902,6 +1971,149 @@ export function cpuTempReading(
     return { kind: "not_measurable_host" };
   }
   return { kind: "unknown" };
+}
+
+// ---------------------------------------------------------------------------
+// Cgroup-slice memory + PSI (coord plan
+// `2026-10-19-ci-nodes-run-the-tauri-runner-always-on-as-ci-node-role` Phase 0b)
+//
+// DISPLAY ONLY: coord grades these on its own `s10` axis of
+// `device_resource_headroom_breach`; nothing here feeds pressure, saturation or
+// headroom. The one rule this module owns is the unmeasured rule: a NULL / absent
+// column, a key the publisher could not read, and `slice_source:
+// "not_supported"` are each rendered as an explicit "not measured" state, and
+// NEVER as 0 — a stall of 0.0% and a stall nobody read are different facts.
+// ---------------------------------------------------------------------------
+
+/** A number that is finite, else null. Strings (incl. `"max"`) are NOT numbers here. */
+function finiteOrNull(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/** A cgroup limit: bytes, `"max"` (= unlimited), or null (not measured). */
+export type SliceLimit =
+  | { kind: "bytes"; bytes: number }
+  | { kind: "max" }
+  | { kind: "unmeasured" };
+
+function sliceLimit(v: unknown): SliceLimit {
+  if (v === "max") return { kind: "max" };
+  const n = finiteOrNull(v);
+  return n == null ? { kind: "unmeasured" } : { kind: "bytes", bytes: n };
+}
+
+/** One slice's reading; every figure is `null` when the publisher did not read it. */
+export interface SliceMemoryReading {
+  name: string;
+  memoryCurrent: number | null;
+  memoryHigh: SliceLimit;
+  memoryMax: SliceLimit;
+  /** Monotonic counters since the cgroup was created; null = not measured. */
+  eventsHigh: number | null;
+  eventsMax: number | null;
+  oomKill: number | null;
+}
+
+/** The six PSI averages for one block, each null when not measured. */
+export interface PsiFigures {
+  memorySomeAvg10: number | null;
+  memoryFullAvg10: number | null;
+  cpuSomeAvg10: number | null;
+  cpuFullAvg10: number | null;
+  ioSomeAvg10: number | null;
+  ioFullAvg10: number | null;
+}
+
+/** True when `f` carries at least one measured figure. */
+export function psiHasAnyFigure(f: PsiFigures): boolean {
+  return Object.values(f).some((v) => v != null);
+}
+
+function readPsiBlock(b: PsiBlock | null | undefined): PsiFigures {
+  const g = (r: PsiResource | null | undefined, half: "some" | "full") =>
+    finiteOrNull(r?.[half]?.avg10);
+  return {
+    memorySomeAvg10: g(b?.memory, "some"),
+    memoryFullAvg10: g(b?.memory, "full"),
+    cpuSomeAvg10: g(b?.cpu, "some"),
+    cpuFullAvg10: g(b?.cpu, "full"),
+    ioSomeAvg10: g(b?.io, "some"),
+    ioFullAvg10: g(b?.io, "full"),
+  };
+}
+
+export type SliceTelemetryReading =
+  /** `slice_source: "not_supported"` — the publisher's OS has no cgroup v2. */
+  | { kind: "not_supported" }
+  /** Neither column carries a usable object: older publisher / never read. */
+  | { kind: "unmeasured" }
+  | {
+      kind: "measured";
+      /** Sorted by name so the render is stable across polls. */
+      slices: SliceMemoryReading[];
+      /** System-wide PSI; every figure null when `psi.system` was not sent. */
+      psiSystem: PsiFigures;
+      /** `cgroup_slices` itself was null/absent although PSI was sent. */
+      slicesUnmeasured: boolean;
+    };
+
+/**
+ * Decide the slice-telemetry cell for one sample.
+ *
+ * - `slice_source === "not_supported"` wins: it is the publisher saying the
+ *   NULLs beside it mean *not applicable on this OS*, which is a different
+ *   statement from *unread*.
+ * - both columns null / absent / non-object → `unmeasured`.
+ * - otherwise `measured`, with every figure that was not sent carried as
+ *   `null` (the renderer prints it as "—", never `0`).
+ */
+export function sliceTelemetryReading(
+  s: Pick<ResourceSampleRow, "cgroup_slices" | "psi" | "slice_source">
+): SliceTelemetryReading {
+  if (
+    typeof s.slice_source === "string" &&
+    s.slice_source.trim() === "not_supported"
+  ) {
+    return { kind: "not_supported" };
+  }
+  const isObj = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+  const cg = isObj(s.cgroup_slices) ? s.cgroup_slices : null;
+  const psi = isObj(s.psi) ? s.psi : null;
+  if (!cg && !psi) return { kind: "unmeasured" };
+
+  const slices: SliceMemoryReading[] = Object.keys(cg ?? {})
+    .sort()
+    .map((name) => {
+      const e = (cg?.[name] ?? null) as CgroupSliceEntry | null;
+      return {
+        name,
+        memoryCurrent: finiteOrNull(e?.memory_current),
+        memoryHigh: sliceLimit(e?.memory_high),
+        memoryMax: sliceLimit(e?.memory_max),
+        eventsHigh: finiteOrNull(e?.events?.high),
+        eventsMax: finiteOrNull(e?.events?.max),
+        oomKill: finiteOrNull(e?.events?.oom_kill),
+      };
+    });
+  return {
+    kind: "measured",
+    slices,
+    psiSystem: readPsiBlock(psi ? ((psi as SlicePsi).system ?? null) : null),
+    slicesUnmeasured: cg == null,
+  };
+}
+
+/** `12.5%` for a PSI figure, `—` when not measured. A real 0 prints `0.0%`. */
+export function formatPsi(v: number | null | undefined): string {
+  return v == null || !Number.isFinite(v) ? "—" : `${v.toFixed(1)}%`;
+}
+
+/** A slice limit as text: `8.0 GB`, `no limit`, or `—` (not measured). */
+export function formatSliceLimit(l: SliceLimit): string {
+  if (l.kind === "max") return "no limit";
+  if (l.kind === "bytes") return formatBytes(l.bytes);
+  return "—";
 }
 
 // ---------------------------------------------------------------------------
