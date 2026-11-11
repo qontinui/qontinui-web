@@ -758,3 +758,38 @@ def backfill_statements(statements: list[str]) -> list[str]:
         if not re.match(r"\s*COMMENT\s+ON\b", sql, re.I)
         and re.search(r"\b(UPDATE|INSERT|COPY)\b", sql, re.I)
     ]
+
+
+def drop_statements(statements: list[str]) -> list[str]:
+    """Every recorded statement, other than a ``COMMENT ON``, naming ``DROP``.
+
+    Case-insensitive and word-bounded; comment prose is skipped, so a column
+    comment that mentions dropping something is not a false positive.
+    """
+    return [
+        sql
+        for sql in statements
+        if not re.match(r"\s*COMMENT\s+ON\b", sql, re.I)
+        and re.search(r"\bDROP\b", sql, re.I)
+    ]
+
+
+def assert_nullable_add_only(statements: list[str], schema: str, table: str) -> None:
+    """The recorded ``upgrade()`` is ONE nullable ADD on ``schema.table``, then
+    only ``COMMENT ON COLUMN`` statements: no forbidden clause anywhere in the
+    ADD, no DROP, no backfill.
+
+    Static (no database), so it runs where the DB walks skip. For a revision
+    that also emits a lock bound, compose the parts by hand instead.
+    """
+    add = alter_statement(statements, schema, table, "ADD")
+    found = forbidden_add_clauses(add)
+    assert not found, f"the ADD carries {found}; NULL is load-bearing"
+    assert not drop_statements(statements), drop_statements(statements)
+    assert not backfill_statements(statements), (
+        "the revision backfills; rows written before it must keep NULL"
+    )
+    # Pin the shape so a second ALTER the finder's anchor does not match
+    # (``ALTER TABLE ONLY``, another table, a ``SET DEFAULT``) cannot slip past.
+    others = [sql for sql in statements if sql is not add]
+    assert all(sql.lstrip().startswith("COMMENT ON COLUMN") for sql in others), others
