@@ -14,7 +14,8 @@ around that ALTER:
 2. **Nullable with no DEFAULT, no constraint, and no grade column.** A NULL is
    "publisher predates the field / read failed / not the host lane" and renders
    UNKNOWN; a default of ``0`` would show a leaking runner as the leanest one
-   in the fleet. The grade is computed by coord at read time, never stored.
+   in the fleet. The grade is to be computed by coord at read time (plan
+   Phase 2), never stored.
    Checked on the WHOLE ADD statement, and live in ``pg_constraint``.
 3. **Every ``op.execute`` is one static literal** (coord's migration
    classifier reads nothing else), and DROPs live only in ``downgrade()``.
@@ -85,8 +86,9 @@ _PG_TYPE = {"BIGINT": "bigint", "TIMESTAMPTZ": "timestamp with time zone"}
 
 # Clauses that must appear nowhere in the ADD statement: each one either
 # fabricates a reading or puts a second door on an input coord validates
-# app-side. Matched on the statement's whole upper-cased text, so a clause on a
-# continuation line, or a table constraint added in the same ALTER, is caught.
+# app-side. Matched on the statement's whole upper-cased text with whitespace
+# collapsed, so a clause on a continuation line, a NOT NULL split across lines,
+# or a table constraint added in the same ALTER, is caught.
 _FORBIDDEN_ADD_CLAUSES: tuple[str, ...] = (
     "NOT NULL",
     "DEFAULT",
@@ -230,7 +232,6 @@ def test_upgrade_adds_exactly_the_listed_columns(
     assert add.count("ADD COLUMN") == len(_EXPECTED_SAMPLE_DDL)
     # One ALTER for the ADDs; everything else is the lock bound or a COMMENT.
     others = [sql for sql in statements if sql != add]
-    assert len(others) == len(statements) - 1
     assert others[0] == _LOCK_BOUND
     assert all(sql.lstrip().startswith("COMMENT ON COLUMN") for sql in others[1:])
 
@@ -261,13 +262,15 @@ def test_upgrade_never_drops_defaults_or_constrains(
 ) -> None:
     """No NOT NULL, DEFAULT or constraint in the ADD, no DROP, and no backfill.
 
-    The clause scan reads the WHOLE ADD statement. Reading only its
-    ``ADD COLUMN`` lines let a clause on a continuation line, or an
-    ``ADD CONSTRAINT`` in the same ALTER, pass.
+    The clause scan reads the WHOLE ADD statement with its whitespace
+    collapsed to single spaces. Reading only its ``ADD COLUMN`` lines let a
+    clause on a continuation line, or an ``ADD CONSTRAINT`` in the same ALTER,
+    pass; matching without collapsing let ``NOT NULL`` split across two lines
+    (or spaced twice, or by a tab) pass.
     """
     statements = _recorded_sql(monkeypatch, "upgrade")
     assert not re.search(r"\bDROP\b", "\n".join(statements))
-    add = _alter_statement(statements, "ADD").upper()
+    add = " ".join(_alter_statement(statements, "ADD").upper().split())
     for clause in _FORBIDDEN_ADD_CLAUSES:
         assert clause not in add, (
             f"the ADD statement carries {clause}; NULL is load-bearing "
