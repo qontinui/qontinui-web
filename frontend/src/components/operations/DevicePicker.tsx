@@ -82,24 +82,29 @@ export interface PickableDevices {
   shown: FleetHealthDevice[];
   /** Rows coord serves for a GitHub Actions CI runner registration. */
   hiddenCiRunners: number;
-  /** Non-CI rows whose verdict is `abandoned`. */
-  hiddenAbandoned: number;
 }
 
 /**
- * The roster rows a person can usefully pick: Qontinui runner machines that
- * coord has not given up on.
+ * The roster rows a person can pick: every Qontinui runner machine.
  *
  * Coord's fleet roster also carries one row per GitHub Actions runner
- * registration. Hosts that mint a one-job JIT runner per job add a row per
- * job, so these rows number in the thousands and are almost all `abandoned`.
- * None of them is a Qontinui runner: none can be drained, spawned on, or
- * asked for restart readiness. So both pickers (`/admin/coord/runners`,
- * `SpawnModal`) leave out every CI row ({@link isCiRunnerDevice}) and every
- * `abandoned` row. `abandoned` is coord's last ladder rung, reached only
- * after a device stops heartbeating for the full dwell. The excluded counts
- * are returned so the picker can say what it left out instead of dropping
- * rows silently.
+ * registration. None of them is a Qontinui runner: none can be drained,
+ * spawned on, or asked for restart readiness. So both pickers
+ * (`/admin/coord/runners`, `SpawnModal`) leave out every CI row
+ * ({@link isCiRunnerDevice}) and say how many they left out.
+ *
+ * An `abandoned` machine IS offered. `abandoned` means coord has not heard
+ * from the machine's runner for the full dwell; the machine still exists and
+ * is one an operator looks for by name, so hiding it reads as "this machine
+ * was never part of the fleet". It is listed after the reachable machines,
+ * with its state beside it ({@link deviceStateLabel}). Coord itself retires
+ * rows left unseen past its reaper grace period and stops serving them, so a
+ * row that is served is one coord still counts.
+ *
+ * This leans on coord serving `ci_runner_status`: a coord predating that
+ * field reads every row as a machine, and its abandoned one-job CI rows would
+ * be offered too. The production coord serves it (measured 2026-11-10: 262 of
+ * 271 roster rows carried it, and the other 9 were the tenant's machines).
  *
  * Callers still look a deep-linked id up in the FULL roster
  * ({@link findRosterDevice}). This only decides what is offered.
@@ -107,29 +112,21 @@ export interface PickableDevices {
 export function pickableDevices(
   devices: ReadonlyArray<FleetHealthDevice>
 ): PickableDevices {
-  const shown: FleetHealthDevice[] = [];
+  const reachable: FleetHealthDevice[] = [];
+  const abandoned: FleetHealthDevice[] = [];
   let hiddenCiRunners = 0;
-  let hiddenAbandoned = 0;
   for (const d of devices) {
     if (isCiRunnerDevice(d)) hiddenCiRunners += 1;
-    else if (d.state === "abandoned") hiddenAbandoned += 1;
-    else shown.push(d);
+    else if (d.state === "abandoned") abandoned.push(d);
+    else reachable.push(d);
   }
-  return { shown, hiddenCiRunners, hiddenAbandoned };
+  return { shown: [...reachable, ...abandoned], hiddenCiRunners };
 }
 
-/** "3 CI runner registrations and 1 abandoned device hidden", or null. */
+/** "3 CI runner registrations hidden", or null. */
 export function hiddenDevicesNote(p: PickableDevices): string | null {
-  const parts: string[] = [];
-  if (p.hiddenCiRunners > 0)
-    parts.push(
-      `${p.hiddenCiRunners} CI runner registration${p.hiddenCiRunners === 1 ? "" : "s"}`
-    );
-  if (p.hiddenAbandoned > 0)
-    parts.push(
-      `${p.hiddenAbandoned} abandoned device${p.hiddenAbandoned === 1 ? "" : "s"}`
-    );
-  return parts.length === 0 ? null : `${parts.join(" and ")} hidden`;
+  if (p.hiddenCiRunners === 0) return null;
+  return `${p.hiddenCiRunners} CI runner registration${p.hiddenCiRunners === 1 ? "" : "s"} hidden`;
 }
 
 export interface DevicePickerProps {
