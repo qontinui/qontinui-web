@@ -9,6 +9,10 @@ import {
   type FleetPolicyWriteResult,
 } from "@/lib/api/operations/tenantPolicy";
 import {
+  useSendTimePin,
+  type SendTimePinOptions,
+} from "../../_shared/useSendTimePin";
+import {
   isPolicyAutoPublishLevel,
   POLICY_AUTO_PUBLISH_DEFAULT_LEVEL,
   POLICY_AUTO_PUBLISH_DOMAIN,
@@ -63,8 +67,18 @@ function message(err: unknown, fallback: string): string {
  * gating the recovery reconcile on it would mean turning automatic publishing
  * off silently removed the safety net under the button the operator still
  * presses.
+ *
+ * **Which project it reads and writes.** With `resolvePin`, the read and the
+ * write are sent in the project it names, asked as each goes out and kept on
+ * every attempt — the prompt-documents page passes the project its list shows,
+ * so a write re-issued after another tab's switch cannot land in that tab's
+ * project. Omitted, each is sent in the project stored when it is made.
  */
-export function usePolicyAutoPublishPolicy() {
+export function usePolicyAutoPublishPolicy({
+  resolvePin,
+}: SendTimePinOptions = {}) {
+  // One identity whatever the caller passes, so the mount read runs once.
+  const sendPin = useSendTimePin(resolvePin);
   const [policy, setPolicy] = useState<FleetPolicyView | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -76,7 +90,11 @@ export function usePolicyAutoPublishPolicy() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const view = await fetchFleetPolicy(POLICY_AUTO_PUBLISH_DOMAIN);
+      const view = await fetchFleetPolicy(
+        POLICY_AUTO_PUBLISH_DOMAIN,
+        undefined,
+        sendPin()
+      );
       setPolicy(view);
       setError(null);
       // A confirmed read retires the previous write's read-back failure — its
@@ -90,7 +108,7 @@ export function usePolicyAutoPublishPolicy() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sendPin]);
 
   useEffect(() => {
     load();
@@ -111,16 +129,19 @@ export function usePolicyAutoPublishPolicy() {
     ): Promise<boolean> => {
       try {
         setSaving(true);
-        const result = await putFleetPolicy({
-          domain: POLICY_AUTO_PUBLISH_DOMAIN,
-          scope_band: "tenant",
-          scope_key: null,
-          level,
-          master_enabled: true,
-          change_note:
-            changeNote ??
-            `Set automatic publishing to "${level}" from the console`,
-        });
+        const result = await putFleetPolicy(
+          {
+            domain: POLICY_AUTO_PUBLISH_DOMAIN,
+            scope_band: "tenant",
+            scope_key: null,
+            level,
+            master_enabled: true,
+            change_note:
+              changeNote ??
+              `Set automatic publishing to "${level}" from the console`,
+          },
+          sendPin()
+        );
         setLastWrite(result);
 
         if (result.effective) {
@@ -153,7 +174,7 @@ export function usePolicyAutoPublishPolicy() {
         setSaving(false);
       }
     },
-    []
+    [sendPin]
   );
 
   // `"none"` means no row matched, which for this domain is `on` — NOT off.

@@ -147,9 +147,10 @@ export function PromptDocumentList({
    */
   onCrossTabChange?: (changed: boolean) => void;
   /**
-   * Given the list's call-time write guard (`true`: send; `false`: another
-   * tab's switch is in effect — nothing is sent, and the notice is raised),
-   * so the page's own settings can check it at the moment they write.
+   * Given the list's call-time write guard and the project its rows are pinned
+   * to ({@link WriteGuard}), so the page's own settings can check the guard at
+   * the moment they write and send every request in the same project as the
+   * rows.
    */
   writeGuardRef?: WriteGuardRef;
 } = {}) {
@@ -169,10 +170,32 @@ export function PromptDocumentList({
   );
 }
 
-/** Where the list hands the page its call-time write guard. */
-export type WriteGuardRef = { current: (() => boolean) | null };
+/** What the list hands the page through {@link WriteGuardRef}. */
+export interface WriteGuard {
+  /**
+   * The call-time write guard: `true`, send; `false`, another tab's switch is
+   * in effect — nothing is sent, and the notice is raised.
+   */
+  writeAllowed: () => boolean;
+  /**
+   * The project every row read and write is pinned to — the page's, kept
+   * through a provider refresh. `undefined` only while the page's project has
+   * never been known. The page sends its settings and its status read in it.
+   */
+  pin: TenantPin | undefined;
+}
 
-/** The list reading the publish-all surface itself — no page owns the read. */
+/** Where the list hands the page its write guard and its pin. */
+export type WriteGuardRef = { current: WriteGuard | null };
+
+/**
+ * The list reading the publish-all surface itself — no page owns the read.
+ *
+ * Nothing hands this `usePublishAll` a resolver, so its dry run, armed run and
+ * publish-mode PATCH are pinned to the project stored when each is sent, and
+ * its status re-takes after a write go in whatever project is stored then. The
+ * page mount (`page.tsx`) passes the list's own pin instead.
+ */
 function SelfReadingPromptDocumentList({
   autoPublishRefreshKey,
   onCrossTabChange,
@@ -366,13 +389,15 @@ function PromptDocumentListBody({
     toast.error(`${CROSS_TAB_MESSAGE} Nothing was sent.`);
     return false;
   }, []);
+  // Handed up with the pin, which the page's settings and its status read are
+  // sent in: the same project as the rows, asked for as each request goes out.
   useEffect(() => {
     if (!writeGuardRef) return;
-    writeGuardRef.current = writeAllowed;
+    writeGuardRef.current = { writeAllowed, pin };
     return () => {
       writeGuardRef.current = null;
     };
-  }, [writeGuardRef, writeAllowed]);
+  }, [writeGuardRef, writeAllowed, pin]);
   /** `fn`, answering `refused` without calling it while the guard says no. */
   const guard = useCallback(
     <A extends unknown[], R>(fn: (...args: A) => Promise<R>, refused: R) =>
@@ -1261,8 +1286,10 @@ function PromptDocumentListBody({
         previewing={previewingPublishAll}
         publishing={publishingAll}
         onPublishAll={async (selected, releaseNote) => {
-          // The confirm, not the preview: `publishAll` pins the project
-          // stored NOW, which is another tab's once it has switched.
+          // The confirm, not the preview: a confirm raced past the notice is
+          // refused here. The run itself is pinned — to the page's project
+          // when the page hands `usePublishAll` the list's pin, else to the
+          // project stored now.
           if (!writeAllowed()) return null;
           const res = await publishAll(selected, releaseNote);
           // Same reasoning as the single publish above, and more of it: an
