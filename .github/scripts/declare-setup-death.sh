@@ -93,10 +93,21 @@
 #   * Its parents are read from the raw commit object, because a depth-1
 #     checkout grafts them away (`rev-parse <merge>^1` fails there).
 #   * The first parent is fetched by sha, anonymously: qontinui-web is public.
+#   * Every git call runs with GIT_NO_LAZY_FETCH=1 and GIT_TERMINAL_PROMPT=0.
+#     In a partial clone, a read of an absent object (the `cat-file -e` check
+#     for the first parent, say) is otherwise a lazy fetch from the promisor
+#     remote: one outside the fetch's bound, which can fill in a parent the
+#     bounded fetch could not. A carrier's own checkout is not a partial
+#     clone (it sets no `sparse-checkout` and no `filter`, which the wiring
+#     test pins), so this is a backstop. git 2.45 added the variable; an older
+#     git ignores it, and the read's own bound still holds.
 #
-# TIME BOUNDS. The fetch is `timeout -k 5 60`, the diff `timeout -k 5 30`; a
-# timeout reads UNKNOWN and withholds. The invoking step's 3-minute bound sits
-# above both, so a hang can neither hold a runner nor flip the check.
+# TIME BOUNDS. Every git call is bounded: the fetch by `timeout -k 5 60`, each
+# `cat-file` read and the diff by `timeout -k 5 30`. A timeout reads UNKNOWN
+# and withholds. The calls run one after another, so their bounds can add up
+# past the invoking step's 3-minute `timeout-minutes`; that bound then stops
+# the script before its verdict line, which declares nothing either. A hang
+# can neither hold a runner nor flip the check.
 #
 # TITLE ESCAPING. DECLARE_JOB is escaped as a workflow-command property value
 # (`%` `\r` `\n` `:` `,`) so a job name with a comma or colon cannot cut the
@@ -128,7 +139,8 @@ trap 'exit 0' EXIT
 
 readonly LOG_PREFIX='declare-setup-death:'
 readonly FETCH_BOUND_MAX=60
-readonly DIFF_BOUND=30
+# Every other git call: the `cat-file` reads and the diff.
+readonly GIT_BOUND=30
 
 # --- output helpers -----------------------------------------------------------
 
@@ -278,6 +290,13 @@ fetch_bound() {
   fi
 }
 
+# has_commit <workspace> <sha>: is the commit in the local object store?
+# Bounded, and on git 2.45 and later never a lazy fetch (compute_guard
+# exports GIT_NO_LAZY_FETCH).
+has_commit() {
+  timeout -k 5 "$GIT_BOUND" git -C "$1" cat-file -e "${2}^{commit}" 2> /dev/null
+}
+
 compute_guard() {
   GUARD="UNKNOWN"
   local event="${GITHUB_EVENT_NAME:-}"
@@ -307,8 +326,12 @@ compute_guard() {
     GUARD_REASON="GITHUB_SHA ('${merge}') is not a commit id"
     return
   fi
+  # No credential prompt can hold a call, and on git 2.45 and later no object
+  # read becomes a lazy fetch (the header's harness-diff guard section says
+  # why).
+  export GIT_NO_LAZY_FETCH=1 GIT_TERMINAL_PROMPT=0
   local raw
-  if ! raw="$(git -C "$ws" cat-file -p "$merge" 2> /dev/null)"; then
+  if ! raw="$(timeout -k 5 "$GIT_BOUND" git -C "$ws" cat-file -p "$merge" 2> /dev/null)"; then
     GUARD_REASON="the merge commit ${merge} is not readable in this checkout"
     return
   fi
@@ -325,18 +348,18 @@ compute_guard() {
     GUARD_REASON="the merge commit's first parent ('${first}') is not a commit id"
     return
   fi
-  if ! git -C "$ws" cat-file -e "${first}^{commit}" 2> /dev/null; then
+  if ! has_commit "$ws" "$first"; then
     local bound rc
     bound="$(fetch_bound)"
     timeout -k 5 "$bound" git -C "$ws" fetch --no-tags --depth=1 origin "$first" > /dev/null 2>&1
     rc=$?
-    if ! git -C "$ws" cat-file -e "${first}^{commit}" 2> /dev/null; then
+    if ! has_commit "$ws" "$first"; then
       GUARD_REASON="the merge commit's first parent ${first} could not be fetched (git fetch exited ${rc}; 124 or 137 is the ${bound}s bound)"
       return
     fi
   fi
   local changed rc
-  changed="$(timeout -k 5 "$DIFF_BOUND" git -C "$ws" diff -z --no-renames --name-only "$first" "$merge" 2> /dev/null | tr '\0' '\n')"
+  changed="$(timeout -k 5 "$GIT_BOUND" git -C "$ws" diff -z --no-renames --name-only "$first" "$merge" 2> /dev/null | tr '\0' '\n')"
   rc=$?
   if [ "$rc" -ne 0 ]; then
     GUARD_REASON="git diff ${first} ${merge} exited ${rc}, so this PR's diff is unread"
