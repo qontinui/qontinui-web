@@ -2282,9 +2282,9 @@ jobs:
     # listing. Plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict,
     # Phase 4.
     permissions:
-      contents: read
-      actions: read
-      checks: read
+      contents: read  # the failure-only sparse checkout of scripts/ci
+      actions: read  # this run attempt's job listing
+      checks: read  # reverse's check-run annotations
     steps:
       - name: Aggregate
         env:

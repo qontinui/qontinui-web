@@ -578,9 +578,9 @@ jobs:
     # listing and the artifact download. Plan
     # 2026-11-11-web-setup-step-deaths-declare-not-a-verdict, Phase 3.
     permissions:
-      contents: read
-      actions: read
-      checks: read
+      contents: read  # the failure-only sparse checkout of scripts/ci
+      actions: read  # the artifact download and this run attempt's job listing
+      checks: read  # backend-tests' check-run annotations
 
     steps:
       # This job checks nothing out on a green run (the declarer's checkout
