@@ -224,145 +224,184 @@ class _Clock:
         return min(READ_TIMEOUT_S, left)
 
 
-def decide(
-    env: Mapping[str, str],
-    *,
-    sleep: Callable[[float], None] = time.sleep,
-    monotonic: Callable[[], float] = time.monotonic,
-) -> Outcome:
-    """The aggregate's verdict. Every read goes through ``shard_headroom``."""
-    clock = _Clock(monotonic)
-    try:
-        job = (env.get("DECLARE_JOB") or "").strip()
-        if not job:
-            raise UnknownError(
-                "DECLARE_JOB is empty, so there is no check name to declare against"
-            )
-        member_need = (env.get("MEMBER_NEED") or "").strip()
-        if not member_need:
-            raise UnknownError("MEMBER_NEED is empty, so no need names the members")
-        noun = env.get("MEMBER_NOUN") or "shard"
-        if not NOUN.fullmatch(noun):
-            raise UnknownError(f"MEMBER_NOUN={noun!r} is not a lowercase word")
-        results = _need_results(env, member_need)
-        expected = _positive_int(env, "EXPECTED_MEMBERS")
-        pattern = _member_pattern(env)
-        attempt = _positive_int(env, "GITHUB_RUN_ATTEMPT")
-        repo = env.get("GITHUB_REPOSITORY") or ""
-        run_id = env.get("GITHUB_RUN_ID") or ""
-        token = env.get("GITHUB_TOKEN") or ""
-        api_root = env.get("GITHUB_API_URL") or API_ROOT
+@dataclass(frozen=True)
+class _Inputs:
+    """The aggregate's inputs, read and checked in the order a problem is reported."""
 
-        # Rule 1.
-        if results[member_need] != "failure":
-            return Outcome(
-                "decline",
-                text=(
-                    f"no declaration: {member_need} concluded {results[member_need]!r}, "
-                    "not 'failure', so this red is not a set of setup deaths."
-                ),
-            )
-        others = {
-            k: v
-            for k, v in results.items()
-            if k != member_need and v not in ("success", "skipped")
-        }
-        if others:
-            named = ", ".join(f"{k}={v}" for k, v in sorted(others.items()))
-            return Outcome(
-                "decline",
-                text=f"no declaration: another need is red ({named}), so this red is not only its members'.",
-            )
+    job: str
+    member_need: str
+    noun: str
+    results: dict[str, str]
+    expected: int
+    pattern: re.Pattern[str]
+    attempt: int
+    repo: str
+    run_id: str
+    token: str
+    api_root: str
 
-        # Rule 2.
-        jobs = fetch_jobs(
-            repo, run_id, token, api_root, attempt=attempt, timeout=clock.read_timeout()
+
+class _NoDeclarationError(Exception):
+    """A decision NOT to declare (rules 1, 3 and 4): the red may be a verdict."""
+
+
+def _read_inputs(env: Mapping[str, str]) -> _Inputs:
+    """Every input, or ``UnknownError`` naming the first one that is unusable."""
+    job = (env.get("DECLARE_JOB") or "").strip()
+    if not job:
+        raise UnknownError(
+            "DECLARE_JOB is empty, so there is no check name to declare against"
         )
-        members = [
-            j
-            for j in jobs
-            if isinstance(j, dict) and pattern.fullmatch(str(j.get("name", "")))
-        ]
-        if len(members) != expected:
-            raise UnknownError(
-                f"run {run_id} attempt {attempt} lists {len(members)} job(s) named like "
-                f"{pattern.pattern!r}, not the {expected} expected"
-            )
-        unfinished = [
-            str(m.get("name")) for m in members if m.get("status") != "completed"
-        ]
-        if unfinished:
-            raise UnknownError(
-                f"member(s) {', '.join(sorted(unfinished))} have not completed"
-            )
+    member_need = (env.get("MEMBER_NEED") or "").strip()
+    if not member_need:
+        raise UnknownError("MEMBER_NEED is empty, so no need names the members")
+    noun = env.get("MEMBER_NOUN") or "shard"
+    if not NOUN.fullmatch(noun):
+        raise UnknownError(f"MEMBER_NOUN={noun!r} is not a lowercase word")
+    # Keyword arguments evaluate left to right: this IS the reporting order.
+    return _Inputs(
+        job=job,
+        member_need=member_need,
+        noun=noun,
+        results=_need_results(env, member_need),
+        expected=_positive_int(env, "EXPECTED_MEMBERS"),
+        pattern=_member_pattern(env),
+        attempt=_positive_int(env, "GITHUB_RUN_ATTEMPT"),
+        repo=env.get("GITHUB_REPOSITORY") or "",
+        run_id=env.get("GITHUB_RUN_ID") or "",
+        token=env.get("GITHUB_TOKEN") or "",
+        api_root=env.get("GITHUB_API_URL") or API_ROOT,
+    )
 
-        # Rule 3.
-        other_conclusions = {
-            str(m.get("name")): m.get("conclusion")
-            for m in members
-            if m.get("conclusion") not in ("success", "failure")
-        }
-        if other_conclusions:
-            named = ", ".join(f"{k}={v}" for k, v in sorted(other_conclusions.items()))
-            return Outcome(
-                "decline",
-                text=f"no declaration: member(s) {named} did not conclude success or failure, which is not a setup death.",
-            )
-        failed = sorted(
-            (m for m in members if m.get("conclusion") == "failure"),
-            key=lambda m: str(m.get("name")),
-        )
-        if not failed:
-            raise UnknownError(
-                f"{member_need} concluded 'failure' but no member job did"
-            )
 
-        # Rule 4.
-        for member in failed:
-            name = str(member.get("name"))
-            check_run = member.get("id")
-            if (
-                not isinstance(check_run, int)
-                or isinstance(check_run, bool)
-                or check_run <= 0
-            ):
-                raise UnknownError(
-                    f"member {name!r} carries no job id to read annotations from"
-                )
-            url = f"{api_root}/repos/{repo}/check-runs/{check_run}/annotations?per_page={ANNOTATIONS_PER_PAGE}"
-            reads = 0
-            while True:
-                payload = get_json(
-                    url, token, timeout=clock.read_timeout(), user_agent=USER_AGENT
-                )
-                reads += 1
-                if any(MEMBER_DECLARATION in t for t in _titles(payload, url)):
-                    break
-                if reads > REREADS:
-                    return Outcome(
-                        "decline",
-                        text=(
-                            f"no declaration: member {name!r} carries no setup-death declaration "
-                            f"after {reads} reads, so its red may be a verdict."
-                        ),
-                    )
-                if clock.left() < REREAD_DELAY_S + 1:
-                    raise UnknownError(
-                        f"the {DEADLINE_S} s time budget ran out re-reading {name!r}"
-                    )
-                sleep(REREAD_DELAY_S)
-    except UnknownError as exc:
-        return Outcome(
-            "withhold", text=f"{exc}. Nothing was declared for this aggregate."
+def _rule1_only_the_members_failed(inputs: _Inputs) -> None:
+    """Rule 1: the member need concluded ``failure`` and no other need is red."""
+    result = inputs.results[inputs.member_need]
+    if result != "failure":
+        raise _NoDeclarationError(
+            f"no declaration: {inputs.member_need} concluded {result!r}, "
+            "not 'failure', so this red is not a set of setup deaths."
         )
-    except MeasurementError as exc:
-        return Outcome(
-            "withhold",
-            text=f"a GitHub read failed: {exc}. Nothing was declared for this aggregate.",
+    others = {
+        k: v
+        for k, v in inputs.results.items()
+        if k != inputs.member_need and v not in ("success", "skipped")
+    }
+    if others:
+        named = ", ".join(f"{k}={v}" for k, v in sorted(others.items()))
+        raise _NoDeclarationError(
+            f"no declaration: another need is red ({named}), so this red is not only its members'."
         )
 
+
+def _rule2_member_jobs(inputs: _Inputs, clock: _Clock) -> list[dict[str, Any]]:
+    """Rule 2: this run attempt lists exactly the expected members, all completed."""
+    jobs = fetch_jobs(
+        inputs.repo,
+        inputs.run_id,
+        inputs.token,
+        inputs.api_root,
+        attempt=inputs.attempt,
+        timeout=clock.read_timeout(),
+    )
+    members = [
+        j
+        for j in jobs
+        if isinstance(j, dict) and inputs.pattern.fullmatch(str(j.get("name", "")))
+    ]
+    if len(members) != inputs.expected:
+        raise UnknownError(
+            f"run {inputs.run_id} attempt {inputs.attempt} lists {len(members)} job(s) named like "
+            f"{inputs.pattern.pattern!r}, not the {inputs.expected} expected"
+        )
+    unfinished = [str(m.get("name")) for m in members if m.get("status") != "completed"]
+    if unfinished:
+        raise UnknownError(
+            f"member(s) {', '.join(sorted(unfinished))} have not completed"
+        )
+    return members
+
+
+def _rule3_failed_members(
+    inputs: _Inputs, members: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Rule 3: every member that is not ``success`` is ``failure``; those, by name."""
+    other_conclusions = {
+        str(m.get("name")): m.get("conclusion")
+        for m in members
+        if m.get("conclusion") not in ("success", "failure")
+    }
+    if other_conclusions:
+        named = ", ".join(f"{k}={v}" for k, v in sorted(other_conclusions.items()))
+        raise _NoDeclarationError(
+            f"no declaration: member(s) {named} did not conclude success or failure, which is not a setup death."
+        )
+    failed = sorted(
+        (m for m in members if m.get("conclusion") == "failure"),
+        key=lambda m: str(m.get("name")),
+    )
+    if not failed:
+        raise UnknownError(
+            f"{inputs.member_need} concluded 'failure' but no member job did"
+        )
+    return failed
+
+
+def _rule4_every_failed_member_declared(
+    inputs: _Inputs,
+    failed: list[dict[str, Any]],
+    clock: _Clock,
+    sleep: Callable[[float], None],
+) -> None:
+    """Rule 4: each failed member's own annotations declare its setup death.
+
+    The first member still undeclared after ``REREADS`` re-reads ends the read.
+    """
+    for member in failed:
+        _await_member_declaration(inputs, member, clock, sleep)
+
+
+def _await_member_declaration(
+    inputs: _Inputs,
+    member: dict[str, Any],
+    clock: _Clock,
+    sleep: Callable[[float], None],
+) -> None:
+    """One failed member's first annotation page, re-read while it lags."""
+    name = str(member.get("name"))
+    check_run = member.get("id")
+    if not isinstance(check_run, int) or isinstance(check_run, bool) or check_run <= 0:
+        raise UnknownError(
+            f"member {name!r} carries no job id to read annotations from"
+        )
+    url = (
+        f"{inputs.api_root}/repos/{inputs.repo}/check-runs/{check_run}"
+        f"/annotations?per_page={ANNOTATIONS_PER_PAGE}"
+    )
+    reads = 0
+    while True:
+        payload = get_json(
+            url, inputs.token, timeout=clock.read_timeout(), user_agent=USER_AGENT
+        )
+        reads += 1
+        if any(MEMBER_DECLARATION in t for t in _titles(payload, url)):
+            return
+        if reads > REREADS:
+            raise _NoDeclarationError(
+                f"no declaration: member {name!r} carries no setup-death declaration "
+                f"after {reads} reads, so its red may be a verdict."
+            )
+        if clock.left() < REREAD_DELAY_S + 1:
+            raise UnknownError(
+                f"the {DEADLINE_S} s time budget ran out re-reading {name!r}"
+            )
+        sleep(REREAD_DELAY_S)
+
+
+def _declaration(inputs: _Inputs, failed: list[dict[str, Any]]) -> Outcome:
+    """The aggregate's title, once every rule has held."""
     names = ", ".join(str(m.get("name")) for m in failed)
-    title = f"{job} SETUP FAILED in every failed {noun} (not a verdict on this PR)"
+    title = f"{inputs.job} SETUP FAILED in every failed {inputs.noun} (not a verdict on this PR)"
     if any(marker in title for marker in MARKER_CHANGING):
         return Outcome(
             "withhold",
@@ -376,6 +415,40 @@ def decide(
             "Re-run the failed members."
         ),
     )
+
+
+def decide(
+    env: Mapping[str, str],
+    *,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> Outcome:
+    """The aggregate's verdict: the rules in the module docstring, in order.
+
+    Each rule is one helper that returns what the next one needs, or raises:
+    ``_NoDeclarationError`` is a decision not to declare, ``UnknownError`` and
+    ``MeasurementError`` withhold the title with a notice. Every read goes
+    through ``shard_headroom``.
+    """
+    clock = _Clock(monotonic)
+    try:
+        inputs = _read_inputs(env)
+        _rule1_only_the_members_failed(inputs)
+        members = _rule2_member_jobs(inputs, clock)
+        failed = _rule3_failed_members(inputs, members)
+        _rule4_every_failed_member_declared(inputs, failed, clock, sleep)
+    except _NoDeclarationError as exc:
+        return Outcome("decline", text=str(exc))
+    except UnknownError as exc:
+        return Outcome(
+            "withhold", text=f"{exc}. Nothing was declared for this aggregate."
+        )
+    except MeasurementError as exc:
+        return Outcome(
+            "withhold",
+            text=f"a GitHub read failed: {exc}. Nothing was declared for this aggregate.",
+        )
+    return _declaration(inputs, failed)
 
 
 def main() -> int:
