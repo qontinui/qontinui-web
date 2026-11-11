@@ -236,6 +236,7 @@ jobs:
       # what they install. Plan
       # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
       - name: "Self-hosted: host provisioned"
+        id: host_provisioned
         if: runner.environment == 'self-hosted'
         uses: ./.github/actions/self-hosted-host-provisioned
         with:
@@ -244,6 +245,7 @@ jobs:
 
       # qontinui (a path-dep) pulls torch — large enough to overflow runner disk.
       - name: Free disk space
+        id: free_disk
         if: runner.environment == 'github-hosted'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
@@ -258,6 +260,7 @@ jobs:
       # refuses `path:` outside the workspace, so clone them to the parent dir
       # (mirrors backend-ci.yml).
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
+        id: siblings
         run: |
           cd "$GITHUB_WORKSPACE/.."
           git clone --depth 1 https://github.com/qontinui/qontinui-schemas.git
@@ -265,6 +268,7 @@ jobs:
           git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control.git
 
       - name: Set up Python
+        id: setup_python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
@@ -319,10 +323,12 @@ jobs:
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
       - name: Create named schemas + extension
-        # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
-        # psql/DDL against this job's own postgres service, not the external
-        # mirror, so a failure here IS a verdict on the change -- it must never
-        # reach the infrastructure marker's APT_STEP_OUTCOMES.
+        # Deliberately UNBOUNDED. This is psql/DDL against this job's own
+        # postgres service, not the external mirror, so a failure here IS a
+        # verdict on the change. Its `id:` exists only for the declarer's
+        # VERDICT row; it must never appear in APT_STEP_OUTCOMES
+        # (backend/tests/test_declare_setup_death.py asserts that).
+        id: schemas
         env:
           PGPASSWORD: test_password
         run: |
@@ -337,6 +343,7 @@ jobs:
       # up → down -1 → up. The downgrade must cleanly reverse the newest migration
       # (the one this PR adds) and the re-upgrade must re-apply it.
       - name: Reversibility test (upgrade → downgrade -1 → upgrade)
+        id: reversibility
         env:
           DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
@@ -792,6 +799,37 @@ jobs:
           # state says what it knows instead of falling through silently.
           echo "::notice title=No infrastructure verdict::Job status '$JOB_STATUS', no apt-dependent step red the job, none mid-flight. This marker has nothing to add about the code under test. $ref"
 
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: reverse
+          SETUP_STEPS: |
+            Self-hosted: host provisioned|${{ steps.host_provisioned.outcome }}|${{ steps.host_provisioned.conclusion }}
+            Free disk space|${{ steps.free_disk.outcome }}|${{ steps.free_disk.conclusion }}
+            Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)|${{ steps.siblings.outcome }}|${{ steps.siblings.conclusion }}
+            Set up Python|${{ steps.setup_python.outcome }}|${{ steps.setup_python.conclusion }}
+            Install postgresql-client|${{ steps.apt_psql.outcome }}|${{ steps.apt_psql.conclusion }}
+          VERDICT_STEPS: |
+            Create named schemas + extension|${{ steps.schemas.outcome }}|${{ steps.schemas.conclusion }}
+            Reversibility test (upgrade → downgrade -1 → upgrade)|${{ steps.reversibility.outcome }}|${{ steps.reversibility.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."
+
   # ----------------------------------------------------------------------
   # `Migration Reversal Tested` -- a POSITIVE "this PR's migration was
   # exercised" signal, from an ISOLATED checkout (plan
@@ -1021,6 +1059,7 @@ jobs:
       # what they install. Plan
       # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
       - name: "Self-hosted: host provisioned"
+        id: host_provisioned
         if: runner.environment == 'self-hosted'
         uses: ./.github/actions/self-hosted-host-provisioned
         with:
@@ -1034,6 +1073,7 @@ jobs:
       # whatever `python3` the runner image ships. Nothing reads the tree
       # here, and the install further down reuses this same interpreter.
       - name: Set up Python
+        id: setup_python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
@@ -1056,6 +1096,7 @@ jobs:
       # step is skipped by its `if: env.MRT_DOC_ONLY != '1'`, and
       # "Non-executable edits only" concludes the job.
       - name: Qualify the PR's migration and switch to the base tree
+        id: qualify
         env:
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -1161,6 +1202,7 @@ jobs:
 
       # qontinui (a path-dep) pulls torch — large enough to overflow runner disk.
       - name: Free disk space
+        id: free_disk
         if: runner.environment == 'github-hosted' && env.MRT_DOC_ONLY != '1'
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
@@ -1173,6 +1215,7 @@ jobs:
 
       # Same sibling path-deps as `reverse` (mirrors backend-ci.yml).
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
+        id: siblings
         if: env.MRT_DOC_ONLY != '1'
         run: |
           cd "$GITHUB_WORKSPACE/.."
@@ -1203,6 +1246,7 @@ jobs:
       # refused, so the overlay never replaces a base file.
       # Written under $RUNNER_TEMP, never $GITHUB_ENV.
       - name: Base revision set (pure base tree, before the overlay)
+        id: base_revisions
         if: env.MRT_DOC_ONLY != '1'
         env:
           DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
@@ -1249,6 +1293,7 @@ jobs:
 
       # The isolation: take exactly one file from the PR head onto the base.
       - name: Overlay the PR's migration onto the base tree
+        id: overlay
         if: env.MRT_DOC_ONLY != '1'
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -1342,6 +1387,7 @@ jobs:
       # the isolated tree -- the same object `alembic heads` prints from --
       # never from the migration file's text.
       - name: Head identity (one head, it is the overlaid file, not a merge)
+        id: head_identity
         if: env.MRT_DOC_ONLY != '1'
         env:
           DATABASE_URL: postgresql://qontinui_user:test_password@localhost:5432/qontinui_test
@@ -1800,12 +1846,16 @@ jobs:
       # migration ran" must key on `MRT_VERDICT ok head=<rev> down=<rev>` or
       # MRT_TESTED, never on this check's conclusion alone.
       #
-      # The two steps below it need no D9 guard. "Name an unavailable
+      # The three steps below it need no D9 guard. "Name an unavailable
       # postgresql client" fires only on an output of `Install
-      # postgresql-client`, which a doc-only run skips; and the explainer is
+      # postgresql-client`, which a doc-only run skips; the explainer is
       # a failure/cancel post-mortem whose `if:` must stay byte-identical
-      # across its eight carriers (backend/tests/test_ci_timeout_marker.py).
+      # across its eight carriers (backend/tests/test_ci_timeout_marker.py);
+      # and the setup-death declarer is a failure post-mortem too: on a
+      # doc-only run every SETUP row after the qualifier is skipped, so it can
+      # declare only a setup death from before the qualifier ran.
       - name: Non-executable edits only (no migration to exercise)
+        id: doc_only
         if: env.MRT_DOC_ONLY == '1'
         run: |
           set -euo pipefail
@@ -2179,6 +2229,42 @@ jobs:
           # state says what it knows instead of falling through silently.
           echo "::notice title=No infrastructure verdict::Job status '$JOB_STATUS', no apt-dependent step red the job, none mid-flight. This marker has nothing to add about the code under test. $ref"
 
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Migration Reversal Tested
+          SETUP_STEPS: |
+            Self-hosted: host provisioned|${{ steps.host_provisioned.outcome }}|${{ steps.host_provisioned.conclusion }}
+            Set up Python|${{ steps.setup_python.outcome }}|${{ steps.setup_python.conclusion }}
+            Free disk space|${{ steps.free_disk.outcome }}|${{ steps.free_disk.conclusion }}
+            Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)|${{ steps.siblings.outcome }}|${{ steps.siblings.conclusion }}
+            Install postgresql-client|${{ steps.apt_psql.outcome }}|${{ steps.apt_psql.conclusion }}
+          VERDICT_STEPS: |
+            Qualify the PR's migration and switch to the base tree|${{ steps.qualify.outcome }}|${{ steps.qualify.conclusion }}
+            Base revision set (pure base tree, before the overlay)|${{ steps.base_revisions.outcome }}|${{ steps.base_revisions.conclusion }}
+            Overlay the PR's migration onto the base tree|${{ steps.overlay.outcome }}|${{ steps.overlay.conclusion }}
+            Create named schemas + extension|${{ steps.schemas.outcome }}|${{ steps.schemas.conclusion }}
+            Head identity (one head, it is the overlaid file, not a merge)|${{ steps.head_identity.outcome }}|${{ steps.head_identity.conclusion }}
+            Reversibility test (upgrade → downgrade -1 → upgrade, schema compared)|${{ steps.reversibility.outcome }}|${{ steps.reversibility.conclusion }}
+            Non-executable edits only (no migration to exercise)|${{ steps.doc_only.outcome }}|${{ steps.doc_only.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/migration-reversal\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."
+
   # Always-run aggregate — THIS is the required status check. Passes when migrations
   # were untouched (reverse skipped) or when the reversal test succeeded; fails only
   # on a genuine reversal failure. Never a phantom: it runs on every PR.
@@ -2190,6 +2276,15 @@ jobs:
     needs: [detect, reverse]
     if: always()
     runs-on: ${{ fromJSON(((vars.WEB_CI_LANE_MIGRATION_REVERSAL || vars.WEB_CI_LIGHT_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","Linux","X64","qontinui-host-nawa","qontinui"]' || '"ubuntu-latest"') }}
+    # Job-level, replacing the workflow default for this job only. `checks:
+    # read` is the setup-death declarer's read of `reverse`'s check-run
+    # annotations (the same read coord makes); `actions: read` its jobs
+    # listing. Plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict,
+    # Phase 4.
+    permissions:
+      contents: read
+      actions: read
+      checks: read
     steps:
       - name: Aggregate
         env:
@@ -2214,3 +2309,39 @@ jobs:
             exit 1
           fi
           echo "Migration Reversal Gate OK."
+
+      # The aggregate's setup-death declarer (plan
+      # 2026-11-11-web-setup-step-deaths-declare-not-a-verdict, Phase 4). When
+      # `reverse` failed and titled its own setup death, and `detect` is not
+      # red, this titles the gate's red the same way, so coord does not keep
+      # the PR `intrinsic` on this undeclared aggregate. `tested` is not a need
+      # of this gate, so it is not a member. Both steps run on failure only,
+      # and the checkout cannot fail the job. Logic:
+      # scripts/ci/aggregate_setup_death.py; pinned by
+      # backend/tests/test_aggregate_setup_death.py.
+      - name: Check out the declarer
+        if: failure()
+        continue-on-error: true
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+          sparse-checkout-cone-mode: true
+
+      - name: Declare a setup death
+        if: failure()
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Migration Reversal Gate
+          MEMBER_NEED: reverse
+          MEMBER_NAME_RE: '^reverse$'
+          MEMBER_NOUN: job
+          EXPECTED_MEMBERS: '1'
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f scripts/ci/aggregate_setup_death.py ]; then
+            echo "aggregate_setup_death.py is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          python3 scripts/ci/aggregate_setup_death.py || echo "aggregate_setup_death.py exited $?; nothing was declared."

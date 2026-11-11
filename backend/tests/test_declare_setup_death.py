@@ -854,6 +854,95 @@ CARRIERS: dict[tuple[str, str], dict[str, object]] = {
         ],
         "verdict": ["Run backend E2E tests"],
     },
+    # Phase 4: the explainer carriers that run on pull_request. Their SETUP sets
+    # must hold the explainer's non-soft APT_STEP_OUTCOMES rows (same ids);
+    # `test_every_non_soft_apt_row_of_the_explainer_is_a_setup_row` checks it.
+    ("e2e-playwright-stack.yml", "playwright"): {
+        # Called from e2e-tests.yml, so GitHub serves `<caller> / Playwright
+        # (chromium)`; DECLARE_JOB names this job.
+        "declare_job": "Playwright (chromium)",
+        "setup": [
+            "Self-hosted: host provisioned",
+            "Clone sibling dependencies",
+            "Set up Python",
+            "Set up Node.js 20",
+            "Install Playwright browser system deps (apt)",
+            "Install postgresql-client",
+        ],
+        "verdict": [
+            "Create runner schema",
+            "Run database migrations",
+            "Run frontend E2E tests",
+        ],
+    },
+    ("migration-reversal.yml", "reverse"): {
+        "declare_job": "reverse",
+        "setup": [
+            "Self-hosted: host provisioned",
+            "Free disk space",
+            SIBLINGS,
+            "Set up Python",
+            "Install postgresql-client",
+        ],
+        "verdict": [
+            "Create named schemas + extension",
+            "Reversibility test (upgrade \u2192 downgrade -1 \u2192 upgrade)",
+        ],
+    },
+    ("migration-reversal.yml", "tested"): {
+        # The qualify step detaches HEAD at the base tip, which is why the
+        # guard measures GITHUB_SHA rather than HEAD.
+        "declare_job": "Migration Reversal Tested",
+        "setup": [
+            "Self-hosted: host provisioned",
+            "Set up Python",
+            "Free disk space",
+            SIBLINGS,
+            "Install postgresql-client",
+        ],
+        "verdict": [
+            "Qualify the PR's migration and switch to the base tree",
+            "Base revision set (pure base tree, before the overlay)",
+            "Overlay the PR's migration onto the base tree",
+            "Create named schemas + extension",
+            "Head identity (one head, it is the overlaid file, not a merge)",
+            "Reversibility test (upgrade \u2192 downgrade -1 \u2192 upgrade, schema "
+            "compared)",
+            "Non-executable edits only (no migration to exercise)",
+        ],
+    },
+    ("spec-ci.yml", "spec-ci"): {
+        "declare_job": "Spec CI",
+        "setup": [
+            "Self-hosted: host provisioned",
+            "Clone backend Python sibling deps",
+            "Set up Python",
+            "Install postgresql-client",
+            "Setup Node",
+            "Install Playwright Chromium system deps (apt)",
+        ],
+        "verdict": [
+            "Create runner schema",
+            "Run database migrations",
+            "Run Spec CI",
+        ],
+    },
+    ("style-gate.yml", "style-gate"): {
+        # The sibling clone and `Install postgresql-client` are
+        # `continue-on-error` SHADOW steps here, so they cannot be SETUP; their
+        # soft failures cascade into a red `assert` that is never declared.
+        # `Set up Rust toolchain` is a pure download of the workflow-pinned
+        # `stable` toolchain, so it is SETUP.
+        "declare_job": "Style Gate (shadow)",
+        "setup": [
+            "Self-hosted: host provisioned",
+            "Set up Rust toolchain",
+            "Setup Node",
+            "Install Playwright Chromium system deps (apt)",
+            "Set up Python",
+        ],
+        "verdict": ["!Run vision-audit (analyze + assert) per route + summarize"],
+    },
 }
 
 _MATRIX_EXPR = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")

@@ -55,7 +55,11 @@ SCRIPT_PATH = REPO_ROOT / SCRIPT_REF
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 FIXTURES = Path(__file__).parent / "fixtures" / "shard_headroom"
 DECLARED_LANES = frozenset(
-    {".github/workflows/backend-ci.yml", ".github/workflows/e2e-tests.yml"}
+    {
+        ".github/workflows/backend-ci.yml",
+        ".github/workflows/e2e-tests.yml",
+        ".github/workflows/migration-reversal.yml",
+    }
 )
 
 
@@ -666,6 +670,13 @@ AGGREGATES: dict[tuple[str, str], dict[str, str]] = {
         "DECLARE_JOB": "Test Summary",
         "MEMBER_NEED": "backend-tests",
         "MEMBER_NAME_RE": r"^Backend E2E Tests \(3\.12\)$",
+        "MEMBER_NOUN": "job",
+        "EXPECTED_MEMBERS": "1",
+    },
+    ("migration-reversal.yml", "gate"): {
+        "DECLARE_JOB": "Migration Reversal Gate",
+        "MEMBER_NEED": "reverse",
+        "MEMBER_NAME_RE": "^reverse$",
         "MEMBER_NOUN": "job",
         "EXPECTED_MEMBERS": "1",
     },

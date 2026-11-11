@@ -208,6 +208,7 @@ jobs:
       # what they install. Plan
       # 2026-11-04-web-services-jobs-run-on-a-rootless-docker-self-hosted-pool D4.
       - name: "Self-hosted: host provisioned"
+        id: host_provisioned
         if: runner.environment == 'self-hosted'
         uses: ./.github/actions/self-hosted-host-provisioned
         with:
@@ -220,6 +221,7 @@ jobs:
       # ../../qontinui; qontinui-cloud-control is installed editable. Same
       # clone set as e2e-tests.yml's backend-tests job.
       - name: Clone backend Python sibling deps
+        id: siblings
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -236,6 +238,7 @@ jobs:
           done
 
       - name: Set up Python
+        id: setup_python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
@@ -282,10 +285,12 @@ jobs:
       # creates it in a fresh service container. Same carve-out as
       # e2e-playwright-stack.yml.
       - name: Create runner schema
-        # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
-        # psql/DDL against this job's own postgres service, not the external
-        # mirror, so a failure here IS a verdict on the change -- it must never
-        # reach the infrastructure marker's APT_STEP_OUTCOMES.
+        # Deliberately UNBOUNDED. This is psql/DDL against this job's own
+        # postgres service, not the external mirror, so a failure here IS a
+        # verdict on the change. Its `id:` exists only for the declarer's
+        # VERDICT row; it must never appear in APT_STEP_OUTCOMES
+        # (backend/tests/test_declare_setup_death.py asserts that).
+        id: runner_schema
         env:
           PGPASSWORD: test_password
         run: |
@@ -302,6 +307,7 @@ jobs:
       # migration SyntaxError/ImportError, graph cycles, duplicate revision ids —
       # are caught HERE instead. Filtering this step un-backstops that decision.
       - name: Run database migrations
+        id: migrations
         working-directory: ./backend
         run: alembic upgrade heads
 
@@ -366,6 +372,7 @@ jobs:
       # ── Frontend ─────────────────────────────────────────────────────────
 
       - name: Setup Node
+        id: setup_node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
@@ -753,6 +760,7 @@ jobs:
           curl -s -o /dev/null -w "frontend status: %{http_code}\n" http://localhost:3001/login
 
       - name: Run Spec CI
+        id: spec_ci
         working-directory: ./frontend
         # GH_TOKEN lets the Phase 0 flake-diagnostics take a `gh run list
         # --status in_progress` snapshot at run start (overlapping Spec CI runs
@@ -1176,3 +1184,36 @@ jobs:
           # non-cancelled path above has already returned. Kept so an unforeseen
           # state says what it knows instead of falling through silently.
           echo "::notice title=No infrastructure verdict::Job status '$JOB_STATUS', no apt-dependent step red the job, none mid-flight. This marker has nothing to add about the code under test. $ref"
+
+      # Setup-death declarer (plan 2026-11-11-web-setup-step-deaths-declare-not-a-verdict):
+      # titles this check's red "SETUP FAILED", with the not-a-verdict phrase
+      # coord re-runs on, ONLY when a SETUP row concluded failure, no VERDICT row
+      # did, and this PR's diff misses HARNESS_PATHS_RE. It always exits 0, so it
+      # never changes the job's colour. The workspace `working-directory` is
+      # load-bearing: a job default does not exist when the checkout failed.
+      # Logic: .github/scripts/declare-setup-death.sh. Rows, the SETUP/VERDICT
+      # split and this step's shape: backend/tests/test_declare_setup_death.py.
+      - name: Declare a setup death
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DECLARE_JOB: Spec CI
+          SETUP_STEPS: |
+            Self-hosted: host provisioned|${{ steps.host_provisioned.outcome }}|${{ steps.host_provisioned.conclusion }}
+            Clone backend Python sibling deps|${{ steps.siblings.outcome }}|${{ steps.siblings.conclusion }}
+            Set up Python|${{ steps.setup_python.outcome }}|${{ steps.setup_python.conclusion }}
+            Install postgresql-client|${{ steps.apt_psql.outcome }}|${{ steps.apt_psql.conclusion }}
+            Setup Node|${{ steps.setup_node.outcome }}|${{ steps.setup_node.conclusion }}
+            Install Playwright Chromium system deps (apt)|${{ steps.apt_playwright.outcome }}|${{ steps.apt_playwright.conclusion }}
+          VERDICT_STEPS: |
+            Create runner schema|${{ steps.runner_schema.outcome }}|${{ steps.runner_schema.conclusion }}
+            Run database migrations|${{ steps.migrations.outcome }}|${{ steps.migrations.conclusion }}
+            Run Spec CI|${{ steps.spec_ci.outcome }}|${{ steps.spec_ci.conclusion }}
+          HARNESS_PATHS_RE: '^\.github/workflows/spec-ci\.yml$|^\.github/actions/|^\.github/scripts/declare-setup-death\.sh$'
+        run: |
+          if [ ! -f .github/scripts/declare-setup-death.sh ]; then
+            echo "declare-setup-death.sh is absent from this checkout, so no setup death can be declared."
+            exit 0
+          fi
+          bash .github/scripts/declare-setup-death.sh || echo "declare-setup-death.sh exited $?; nothing was declared."
