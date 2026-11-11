@@ -2320,16 +2320,24 @@ jobs:
       # scripts/ci/aggregate_setup_death.py; pinned by
       # backend/tests/test_aggregate_setup_death.py.
       - name: Check out the declarer
+        id: declarer_checkout
         if: failure()
         continue-on-error: true
+        # A sparse fetch of scripts/ci takes seconds; one still running after
+        # a minute is stuck, and the declarer below then does not run.
+        timeout-minutes: 1
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
           sparse-checkout: scripts/ci
           sparse-checkout-cone-mode: true
 
+      # Only from a checkout that SUCCEEDED. A failed or timed-out one reads
+      # `outcome: failure` under continue-on-error, and can leave a stale tree
+      # behind (a self-hosted workspace keeps an earlier run's scripts/ci)
+      # whose copy of the script would otherwise run here.
       - name: Declare a setup death
-        if: failure()
+        if: failure() && steps.declarer_checkout.outcome == 'success'
         timeout-minutes: 3
         env:
           DECLARE_JOB: Migration Reversal Gate

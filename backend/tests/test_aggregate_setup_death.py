@@ -1202,12 +1202,34 @@ def test_the_two_steps_add_no_failure_mode_to_a_green_aggregate(workflow, job_id
     assert str(checkout["uses"]).startswith("actions/checkout@")
     assert checkout["with"]["persist-credentials"] is False
     assert checkout["with"]["sparse-checkout"] == "scripts/ci"
-    assert declarer["if"] == "failure()"
     assert declarer["timeout-minutes"] == 3
     assert "continue-on-error" not in declarer
     run = declarer["run"]
     assert "if [ ! -f scripts/ci/aggregate_setup_death.py ]; then" in run
     assert "python3 scripts/ci/aggregate_setup_death.py || echo" in run
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(AGGREGATES), ids=AGGREGATE_IDS)
+def test_the_declarer_runs_only_from_a_checkout_that_succeeded(workflow, job_id):
+    """A failed checkout is `continue-on-error`, so the job reaches the next step,
+    and on a self-hosted workspace the tree it left can be an EARLIER run's
+    scripts/ci, whose script must not run. So the step keys on the checkout's
+    own outcome, which reads `failure` for a failed or timed-out checkout.
+    """
+    steps = _workflow(workflow)["jobs"][job_id]["steps"]
+    checkout, declarer = steps[-2], steps[-1]
+    assert checkout["id"] == "declarer_checkout"
+    assert declarer["if"] == (
+        "failure() && steps.declarer_checkout.outcome == 'success'"
+    )
+
+
+@pytest.mark.parametrize(("workflow", "job_id"), list(AGGREGATES), ids=AGGREGATE_IDS)
+def test_the_declarer_checkout_is_bounded_to_one_minute(workflow, job_id):
+    """A sparse fetch of scripts/ci takes seconds; the job's own cap is not its bound."""
+    checkout = _workflow(workflow)["jobs"][job_id]["steps"][-2]
+    assert checkout["name"] == CHECKOUT_STEP
+    assert checkout["timeout-minutes"] == 1
 
 
 @pytest.mark.parametrize(("workflow", "job_id"), list(AGGREGATES), ids=AGGREGATE_IDS)
