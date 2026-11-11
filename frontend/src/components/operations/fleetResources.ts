@@ -2072,14 +2072,24 @@ export function sliceTelemetryReading(
 ): SliceTelemetryReading {
   if (
     typeof s.slice_source === "string" &&
-    s.slice_source.trim() === "not_supported"
+    s.slice_source.trim().toLowerCase() === "not_supported"
   ) {
     return { kind: "not_supported" };
   }
   const isObj = (v: unknown): v is Record<string, unknown> =>
     typeof v === "object" && v !== null && !Array.isArray(v);
-  const cg = isObj(s.cgroup_slices) ? s.cgroup_slices : null;
-  const psi = isObj(s.psi) ? s.psi : null;
+  // An EMPTY object is "nothing was read", not "read and found nothing": coord
+  // documents these columns as NULL when unmeasured and never `{}`, so an
+  // empty map or a PSI block with no figure is treated as not sent.
+  const cg =
+    isObj(s.cgroup_slices) && Object.keys(s.cgroup_slices).length > 0
+      ? s.cgroup_slices
+      : null;
+  const psiRaw = isObj(s.psi) ? s.psi : null;
+  const psiSystem = readPsiBlock(
+    psiRaw ? ((psiRaw as SlicePsi).system ?? null) : null
+  );
+  const psi = psiRaw && psiHasAnyFigure(psiSystem) ? psiRaw : null;
   if (!cg && !psi) return { kind: "unmeasured" };
 
   const slices: SliceMemoryReading[] = Object.keys(cg ?? {})
@@ -2099,7 +2109,7 @@ export function sliceTelemetryReading(
   return {
     kind: "measured",
     slices,
-    psiSystem: readPsiBlock(psi ? ((psi as SlicePsi).system ?? null) : null),
+    psiSystem,
     slicesUnmeasured: cg == null,
   };
 }

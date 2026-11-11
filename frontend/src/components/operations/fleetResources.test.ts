@@ -1219,10 +1219,13 @@ describe("sliceTelemetryReading — unmeasured is a state, never zero", () => {
   });
 
   it("flags slices as unmeasured when only psi arrived", () => {
-    const r = sliceTelemetryReading({ psi: { system: {} } });
+    const r = sliceTelemetryReading({
+      psi: { system: { cpu: { some: { avg10: 2 } } } },
+    });
     if (r.kind !== "measured") throw new Error("expected measured");
     expect(r.slicesUnmeasured).toBe(true);
-    expect(psiHasAnyFigure(r.psiSystem)).toBe(false);
+    expect(psiHasAnyFigure(r.psiSystem)).toBe(true);
+    expect(r.psiSystem.memorySomeAvg10).toBeNull();
   });
 
   it("formats limits and PSI without turning null into 0", () => {
@@ -1232,5 +1235,26 @@ describe("sliceTelemetryReading — unmeasured is a state, never zero", () => {
     expect(formatSliceLimit({ kind: "max" })).toBe("no limit");
     expect(formatSliceLimit({ kind: "unmeasured" })).toBe("—");
     expect(formatSliceLimit({ kind: "bytes", bytes: 1024 })).toBe("1.0 KB");
+  });
+});
+
+describe("sliceTelemetryReading — empty objects and casing", () => {
+  it("treats {} columns as unmeasured, not as 'nothing present'", () => {
+    expect(
+      sliceTelemetryReading({
+        cgroup_slices: {},
+        psi: {},
+        slice_source: "linux_cgroup_v2",
+      })
+    ).toEqual({ kind: "unmeasured" });
+    expect(
+      sliceTelemetryReading({ cgroup_slices: {}, psi: { system: {} } })
+    ).toEqual({ kind: "unmeasured" });
+  });
+
+  it("matches not_supported case-insensitively", () => {
+    expect(sliceTelemetryReading({ slice_source: "Not_Supported" })).toEqual({
+      kind: "not_supported",
+    });
   });
 });
