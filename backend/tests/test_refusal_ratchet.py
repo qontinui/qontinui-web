@@ -50,7 +50,12 @@ from pathlib import Path
 #: ``refusal_error`` belongs in its own change. The PR's two NEW refusals
 #: (``_refuse_withheld_scopes``, ``_withheld_duplicate_conflict``) do use
 #: ``refusal_error``.
-BASELINE = 795
+#: 789 (from 795), plan 2026-11-06-verification-stores-nothing-writes-are-
+#: deleted-and-their-open-write-doors-close Phase 2: the six bare refusals of
+#: ``endpoints/historical.py`` left with the file when every
+#: ``/api/v1/testing/historical`` route was deleted. A deletion, not a
+#: conversion.
+BASELINE = 789
 
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 

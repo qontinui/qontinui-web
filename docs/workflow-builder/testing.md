@@ -1,6 +1,6 @@
 # Workflow Testing Framework
 
-This guide covers workflow test cases, assertions, test suites and results with the workflow testing service.
+This guide covers authoring workflow test cases, assertions and test suites with the workflow testing service.
 
 ## Table of Contents
 
@@ -8,20 +8,16 @@ This guide covers workflow test cases, assertions, test suites and results with 
 - [Test Cases](#test-cases)
 - [Assertions](#assertions)
 - [Test Suites](#test-suites)
-- [Running Tests](#running-tests)
-- [Results, History and Coverage](#results-history-and-coverage)
 - [Import & Export](#import--export)
 
 ## Overview
 
-`WorkflowTestingService` (`@/services/workflow-testing-service`) stores test cases, test suites and results in browser storage. The module exports no ready-made instance; get the singleton with `getWorkflowTestingService()`.
-
-Test execution is **simulated**: a run does not drive the GUI. Assertions are evaluated against the test case's `inputs` plus a mock `result` value, so these tests check test definitions and assertion logic, not live automation.
+`WorkflowTestingService` (`@/services/workflow-testing`) authors and persists test cases and test suites in browser storage. It runs nothing: the in-browser runner it once carried was a simulator (mock inputs, an always-met expected behavior), so it was removed together with the results, statistics and coverage computed from its runs. The module exports no ready-made instance; get the singleton with `getWorkflowTestingService()`.
 
 ## Test Cases
 
 ```typescript
-import { getWorkflowTestingService } from '@/services/workflow-testing-service';
+import { getWorkflowTestingService } from '@/services/workflow-testing';
 
 const testing = getWorkflowTestingService();
 
@@ -41,15 +37,15 @@ const testCase = testing.createTestCase(
 );
 ```
 
-`TestCaseConfig` also accepts `initialState` and an `expected` block (`shouldSucceed`, `finalActionId`, `actionPath`, `maxDuration`). The types are defined in `frontend/src/services/workflow-testing-service.ts`.
+`TestCaseConfig` also accepts `initialState` and an `expected` block (`shouldSucceed`, `finalActionId`, `actionPath`, `maxDuration`). The types are defined in `frontend/src/services/workflow-testing/types.ts`.
 
 Manage test cases with `updateTestCase`, `duplicateTestCase`, `deleteTestCase`, `getTestCase`, `getTestCasesForWorkflow` and `getAllTestCases`.
 
 ## Assertions
 
-Each assertion reads the value at `path` (dot notation) from the evaluation context and compares it according to `type`:
+Each assertion names a value at `path` (dot notation) and how it should compare according to `type`. The web app stores assertions as part of the test definition; it does not evaluate them.
 
-| Type | Passes when |
+| Type | Holds when |
 |------|-------------|
 | `equals` / `notEquals` | the value deep-equals / does not equal `expected` |
 | `contains` / `notContains` | the string, array or object (as a key) contains / does not contain `expected` |
@@ -70,48 +66,13 @@ testing.removeTestFromSuite(suite.id, anotherTestCase.id);
 const suites = testing.getAllTestSuites();
 ```
 
-## Running Tests
-
-```typescript
-const result = await testing.runTestCase(testCase.id);
-
-if (!result.passed) {
-  result.assertions
-    .filter((a) => !a.passed)
-    .forEach((a) => console.log(`${a.assertion.id}: ${a.error}`));
-}
-
-// Every test in a suite, every test, or every test of one workflow
-const suiteResults = await testing.runTestSuite(suite.id);
-const allResults = await testing.runAllTests();
-const workflowResults = await testing.runTestsForWorkflow('workflow-123');
-
-// Stop a running test
-if (testing.isTestRunning(testCase.id)) {
-  testing.stopTestExecution(testCase.id);
-}
-```
-
-## Results, History and Coverage
-
-```typescript
-const history = testing.getTestHistory(testCase.id);
-const stats = testing.getTestStatistics(testCase.id);
-
-// Which actions of a workflow no test case reaches
-const coverage = testing.calculateCoverage('workflow-123', workflow);
-const untested = testing.getUntestedActions('workflow-123', workflow);
-```
-
 ## Import & Export
 
 ```typescript
 const suiteJson = testing.exportTestSuite(suite.id);
 const imported = testing.importTestSuite(suiteJson);
 
-const resultsJson = testing.exportTestResults(testCase.id);
-
-// Everything the service stores
+// Every test case and suite the service stores
 const backup = testing.exportAll();
 testing.importAll(backup);
 ```

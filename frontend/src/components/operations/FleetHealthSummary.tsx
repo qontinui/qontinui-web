@@ -34,11 +34,14 @@ type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
  *
  * The mapping is a three-tier rule, not five ad-hoc choices:
  *
- * * `destructive` — **coord cannot reach the device at all.** Reserved for
- *   `partitioned` / `abandoned`; nothing else may borrow it.
- * * `secondary` — **coord still reaches it, and something about it is off.**
- *   `degraded`, and now `stale`.
- * * `outline` — **coord has no verdict**: an absent or unrecognized state.
+ * * `destructive` — **coord cannot reach a machine it still counts.** Reserved
+ *   for `partitioned`; nothing else may borrow it.
+ * * `secondary` — **coord has not given up on it, and something about it is
+ *   off.** `degraded`, `stale`, and `ci_offline`.
+ * * `outline` — **no verdict that counts**: an absent or unrecognized state,
+ *   and `abandoned`, which coord's project state treats as no degradation. On
+ *   a long-lived tenant abandoned rows are most of the roster, and red on each
+ *   would contradict the health strip's muted count and drown a live partition.
  *
  * `stale` is coord's FIFTH `DeviceState` (plan
  * `2026-08-27-fleet-telemetry-has-no-saturation-dimension-but-memory`,
@@ -58,12 +61,18 @@ const STATE_BADGE_VARIANT: Record<string, BadgeVariant> = {
   healthy: "default",
   degraded: "secondary",
   stale: "secondary",
+  ci_offline: "secondary",
   partitioned: "destructive",
-  abandoned: "destructive",
+  abandoned: "outline",
 };
 
 export function deviceStateBadgeVariant(state?: string): BadgeVariant {
   return STATE_BADGE_VARIANT[state ?? ""] ?? "outline";
+}
+
+/** A coord `DeviceState` in words: the one whose wire spelling is not a word. */
+export function deviceStateLabel(state: string): string {
+  return state === "ci_offline" ? "CI offline" : state;
 }
 
 /**

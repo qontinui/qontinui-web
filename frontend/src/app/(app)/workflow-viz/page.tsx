@@ -14,7 +14,6 @@
 
 import { useState, Suspense, useMemo } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import { useAutomation } from "@/contexts/automation-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Activity, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,7 +22,6 @@ import { useExecutionEvents } from "@/hooks/useExecutionEvents";
 import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
 import { useWorkflowData } from "./_hooks/useWorkflowData";
 import { usePlayback } from "./_hooks/usePlayback";
-import { useHistoricalData } from "./_hooks/useHistoricalData";
 import { PageHeader } from "./_components/PageHeader";
 import { WorkflowPanel } from "./_components/WorkflowPanel";
 import { ActiveStatesPanel } from "./_components/ActiveStatesPanel";
@@ -31,7 +29,6 @@ import { PlaybackControls } from "./_components/PlaybackControls";
 
 export default function WorkflowVisualizationPage() {
   const { user } = useAuth();
-  const { projectId } = useAutomation();
 
   // Live mode state
   const [isLiveMode, setIsLiveMode] = useState(false);
@@ -70,18 +67,6 @@ export default function WorkflowVisualizationPage() {
     handleActionSelect,
     handleSliderChange,
   } = usePlayback(selectedWorkflow, selectedWorkflowId, states);
-
-  // Historical data
-  const {
-    testRuns,
-    selectedTestRunId,
-    setSelectedTestRunId,
-    loadingTestRuns,
-    historicalResults,
-    loadingHistoricalData,
-    historicalFoundImages,
-    historicalActiveStateIds,
-  } = useHistoricalData(projectId, canvasMode, isLiveMode);
 
   // Live execution events from runner WebSocket
   const {
@@ -160,16 +145,8 @@ export default function WorkflowVisualizationPage() {
                   activeStateIds={activeStateIds}
                   isConnected={isConnected}
                   connectionState={connectionState}
-                  testRuns={testRuns}
-                  selectedTestRunId={selectedTestRunId}
-                  onTestRunChange={setSelectedTestRunId}
-                  loadingTestRuns={loadingTestRuns}
-                  loadingHistoricalData={loadingHistoricalData}
-                  historicalResults={historicalResults}
                   liveActiveStateIds={liveActiveStateIds}
-                  historicalActiveStateIds={historicalActiveStateIds}
                   imageRecognitions={imageRecognitions}
-                  historicalFoundImages={historicalFoundImages}
                 />
               </div>
             ) : (

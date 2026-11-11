@@ -68,12 +68,13 @@ class _Attachment:
     # for this grant takes the unchanged fatal path. This is what makes the
     # re-present one-shot rather than a retry loop.
     represented: bool = False
-    # True for an attach grant presented ONLY to end its session (the fresh-
-    # grant path of ``_handle_end``). It never binds a terminal and admits no
-    # post-attach frame; it exists to hold the claim and the return route for
-    # one ``terminal_end`` round trip, and is ALWAYS dropped when that round
-    # trip settles — reply, refusal or TTL — so the Redis claim is never held
-    # until the grant expires.
+    # True for a grant presented ONLY to end something: an attach grant ending
+    # its session (the fresh-grant path of ``_handle_end``) or a create grant
+    # closing the terminal it created (its create-grant path; ``kind`` tells
+    # them apart). It never binds a terminal and admits no post-attach frame; it
+    # exists to hold the claim and the return route for one ``terminal_end``
+    # round trip, and is ALWAYS dropped when that round trip settles — reply,
+    # refusal or TTL — so the Redis claim is never held until the grant expires.
     end_only: bool = False
 
     def expired(self, now: float | None = None) -> bool:
@@ -111,11 +112,14 @@ class _Attachment:
         :meth:`remote_block` plus the grant's ``session_id`` and, when the
         grant names one, its ``terminal_id`` hint. One builder, so
         ``terminal_end`` carries exactly what ``terminal_attach`` carries.
+
+        A create grant has no session, so its block has no ``session_id`` key
+        at all: the target tells the two apart by ``kind``, and a null there
+        would read as a session field with no value.
         """
-        block: dict[str, Any] = {
-            **self.remote_block(),
-            "session_id": self.target_session_id,
-        }
+        block: dict[str, Any] = self.remote_block()
+        if self.target_session_id is not None:
+            block["session_id"] = self.target_session_id
         if self.requested_terminal_id is not None:
             block["terminal_id"] = self.requested_terminal_id
         return block
@@ -144,7 +148,7 @@ class _PendingEnd:
     grant_jti: str
     target_device_id: str
     target_session_id: str | None
-    # The bound terminal for an open tab; ``None`` for a fresh grant.
+    # The bound terminal for an open tab; ``None`` for a fresh or create grant.
     terminal_id: str | None
     end_only: bool
 

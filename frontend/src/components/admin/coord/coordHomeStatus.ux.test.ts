@@ -339,7 +339,7 @@ describe("the strip over the machine roster", () => {
     expect(s.level).toBe("green");
     expect(s.headline).toBe("Nothing needs you and nothing is degrading");
     expect(s.detail).toContain(
-      "Coord's roster lists 3 rows of 5: the other 2 are abandoned or placeholder rows past coord's limit of 3, not listed here — coord says none of them could be degrading."
+      "Coord left 2 abandoned or placeholder rows off its roster and says none could be degrading."
     );
   });
 
@@ -390,7 +390,7 @@ describe("the strip over the machine roster", () => {
       "Nothing needs you and no live machine reports — none can be called healthy"
     );
     expect(s.detail).toContain(
-      "All 2 machines coord grades are abandoned, so no live machine reports — there is no machine this view can call healthy."
+      "All 2 machines coord grades are abandoned, so no listed machine reports — there is no machine this view can call healthy."
     );
     // The reconcile line points back rather than counting them again.
     expect(s.detail).toContain(
@@ -629,7 +629,9 @@ describe("the strip over the machine roster", () => {
       const s = deriveHomeStrip(calm(), machines([state, "healthy"]));
       expect(s.level).toBe("amber");
       expect(s.headline).toBe("Something is degrading");
-      expect(s.detail).toContain("1 machine is in a degrading state.");
+      expect(s.detail).toContain(
+        "1 machine is degrading but not in coord's list — see Dev Ops."
+      );
       expect(s.badges.find((b) => b.key === "machines")?.label).toBe(
         "machines not healthy 1"
       );
@@ -647,17 +649,21 @@ describe("the strip over the machine roster", () => {
     );
     // Named once, as listed — never again as an unlisted degrading machine.
     expect(s.detail).toContain(
-      "1 machine in a degrading state is among the open degradations."
+      "1 machine is degrading — listed under Degrading."
     );
-    expect(s.detail).not.toContain("1 machine is in a degrading state.");
+    expect(s.detail).not.toContain(
+      "1 machine is degrading but not in coord's list — see Dev Ops."
+    );
     // A second degrading machine the list does not show is added, once.
     const two = deriveHomeStrip(
       withRows(degradingRow("d-0")),
       machines(["partitioned", "degraded"])
     );
-    expect(two.detail).toContain("1 machine is in a degrading state.");
     expect(two.detail).toContain(
-      "1 machine in a degrading state is among the open degradations."
+      "1 more machine is degrading but not in coord's list — see Dev Ops."
+    );
+    expect(two.detail).toContain(
+      "1 machine is degrading — listed under Degrading."
     );
   });
 
@@ -684,10 +690,14 @@ describe("the strip over the machine roster", () => {
     });
     const s = deriveHomeStrip(stale, machines(["partitioned", "healthy"]));
     expect(s.detail).toContain(
-      "1 machine in a degrading state is among the open degradations."
+      "1 machine is degrading — listed under Degrading."
     );
-    expect(s.detail).not.toContain("1 machine is in a degrading state.");
-    expect(s.detail).not.toContain("machines are in a degrading state.");
+    expect(s.detail).not.toContain(
+      "1 machine is degrading but not in coord's list — see Dev Ops."
+    );
+    expect(s.detail).not.toContain(
+      "machines are degrading but not in coord's list"
+    );
   });
 
   it("names every machine the badge counts once, so the detail adds up to it", () => {
@@ -709,10 +719,10 @@ describe("the strip over the machine roster", () => {
       "machines not healthy 2"
     );
     expect(s.detail).toContain(
-      "1 machine in a degrading state is among the open degradations."
+      "1 machine is degrading — listed under Degrading."
     );
     expect(s.detail).toContain(
-      "1 machine not reporting healthy is not a degradation: 1 abandoned — see Dev Ops."
+      "1 abandoned machine counts as not healthy but is not a degradation — see Dev Ops."
     );
     expect(s.detail).toContain(
       "1 placeholder row coord does not grade is not counted as a machine."
@@ -725,7 +735,7 @@ describe("the strip over the machine roster", () => {
     expect(s.headline).toBe("Nothing needs you and nothing is degrading");
     expect(s.level).toBe("green");
     expect(s.detail).toContain(
-      "1 machine not reporting healthy is not a degradation: 1 abandoned — see Dev Ops."
+      "1 abandoned machine counts as not healthy but is not a degradation — see Dev Ops."
     );
     // The badge is the nav's count, so the two read the same number.
     expect(s.badges.find((b) => b.key === "machines")?.label).toBe(
@@ -916,13 +926,13 @@ describe("the strip over a Correct? section the page leaves out", () => {
   it("names no 'correct?' and says correctness is not measured, staying amber", () => {
     const view = body({ state: "not_implemented" });
     const shown = deriveHomeStrip(view, { machines });
-    expect(shown.detail).toContain("correct?");
+    expect(shown.detail).toContain("The correctness check is not built yet.");
     expect(shown.detail).not.toContain("Correctness is not measured yet.");
     const leftOut = deriveHomeStrip(view, {
       machines,
       correctnessLeftOut: true,
     });
-    expect(leftOut.detail ?? "").not.toMatch(/correct\?/);
+    expect(leftOut.detail ?? "").not.toMatch(/correctness check/);
     expect(leftOut.detail).toContain("Correctness is not measured yet.");
     expect(leftOut.level).toBe("amber");
   });
@@ -1076,7 +1086,7 @@ describe("the strip while presenting", () => {
 
   it("says 'not built yet' in operator mode, as before", () => {
     const s = deriveHomeStrip(unbuilt, { machines });
-    expect(s.detail).toContain("needs you not built yet");
+    expect(s.detail).toContain("The needs-you list is not built yet.");
   });
 
   it("does not say 'needs you not built yet', and uses the presented section's words, staying amber", () => {
@@ -1131,6 +1141,101 @@ describe("the strip while presenting", () => {
       }),
       { machines, presenting: true }
     );
-    expect(s.detail).toMatch(/needs you/);
+    expect(s.detail).toContain("The needs-you list could not be read.");
+  });
+});
+
+describe("the strip over a backlog shaped like the operator's: decisions, degrading machines, bookkeeping", () => {
+  // needs_me: approvals and agent questions with a recommendation share and an
+  // oldest age; one degrading machine coord lists; a stale degradations
+  // block; Correct? left out; abandoned machines; a roster cut only past rows
+  // that cannot degrade; unread sources. The detail must lead with what is
+  // actionable and keep every UNKNOWN, in that order.
+  const view = parseProjectState({
+    generated_at: "2026-11-07T00:00:00Z",
+    on_track: {
+      state: "read",
+      totals: { row_count: 0, classes: {} },
+      groups: [],
+    },
+    correctness: { state: "unknown" },
+    needs_me: {
+      state: "read",
+      total: 6,
+      omitted: 5,
+      items: [
+        {
+          id: "g-1",
+          source: "operator_gate",
+          fork: "Delete branch?",
+          shape: "open_question",
+          age_secs: 155 * 86_400 + 3 * 3600,
+        },
+      ],
+      by_domain: { operator_gate: 5, unclassified: 1 },
+      shape_share: { with_recommendation: 1, total: 6 },
+    },
+    degradations: {
+      state: "stale",
+      headline: "degrading",
+      open: [
+        {
+          id: "fleet_health:state:d-0",
+          plane: "runner",
+          subject: { kind: "device", name: "example-host", id: "d-0" },
+          headline: "A machine has stopped heartbeating to coord",
+        },
+      ],
+      declared: [],
+    },
+    does_not_know: [
+      { source: "work_units", state: "read" },
+      { source: "verification_metrics", state: "not_implemented" },
+      { source: "watcher_a", state: "stale" },
+    ],
+  });
+  const devs = [
+    { device_id: "d-0", state: "partitioned" },
+    { device_id: "d-1", state: "healthy" },
+    { device_id: "d-2", state: "abandoned" },
+    { device_id: "d-3", state: "abandoned" },
+  ];
+  const strip = deriveHomeStrip(view, {
+    correctnessLeftOut: true,
+    machines: {
+      stale: false,
+      counts: summarizeMachineHealth(devs),
+      exclusions: { kind: "none_withheld" },
+      cut: readRosterCut({
+        devices: devs,
+        truncated: true,
+        total: 10,
+        degradable_dropped: 0,
+        row_cap: { soft: 4, hard: 40 },
+      }),
+    },
+  });
+
+  it("says what kind the decisions are in the headline", () => {
+    expect(strip.level).toBe("red");
+    expect(strip.headline).toBe(
+      "6 decisions need you — 5 approvals, 1 agent question"
+    );
+  });
+
+  it("leads with what is actionable, then the unknowns, then the bookkeeping", () => {
+    expect(strip.detail).toBe(
+      [
+        "1 of 6 decisions came with a recommendation.",
+        "The oldest has waited 155d 3h.",
+        "1 machine is degrading — listed under Degrading.",
+        "The degradations list may be incomplete or stale.",
+        "Correctness is not measured yet.",
+        "2 abandoned machines count as not healthy but are not degradations — see Dev Ops.",
+        "Coord left 6 abandoned or placeholder rows off its roster and says none could be degrading.",
+        "2 sources not read — see “What this view does not know”.",
+      ].join(" ")
+    );
+    expect(strip.detail).not.toMatch(/Not read:/);
   });
 });
