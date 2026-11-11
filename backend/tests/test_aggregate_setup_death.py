@@ -37,6 +37,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +112,10 @@ class FakeGitHub:
         self.timeouts: list[float] = []
         self.fail_jobs = False
         self.fail_annotations = False
+        #: Split the jobs listing into pages of this many rows (None: one page).
+        self.jobs_per_page: int | None = None
+        #: Called with every URL before it is served: a slow read, say.
+        self.on_read: Callable[[str], None] = lambda url: None
 
     def declare(self, job_id: int, *titles: str) -> None:
         """Every read of this check run serves these titles."""
@@ -124,10 +129,14 @@ class FakeGitHub:
         url = request.full_url
         self.urls.append(url)
         self.timeouts.append(timeout)
+        self.on_read(url)
         if "/jobs?" in url:
             if self.fail_jobs:
                 raise urllib.error.URLError("rate limited")
-            return _Response({"total_count": len(self.jobs), "jobs": self.jobs})
+            page = int(url.rsplit("page=", 1)[1])
+            size = self.jobs_per_page or max(len(self.jobs), 1)
+            served = self.jobs[(page - 1) * size : page * size]
+            return _Response({"total_count": len(self.jobs), "jobs": served})
         if "/annotations?" in url:
             if self.fail_annotations:
                 raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)  # type: ignore[arg-type]
@@ -534,11 +543,44 @@ def test_a_failed_need_with_no_failed_member_is_unknown(github):
 
 
 def test_the_time_budget_withholds(github):
+    """A re-read that would outlast the run's 120 s budget is not started."""
     fake = github(_with_conclusions(s1="failure"))
     fake.declare(_shard(fake.jobs, 1)["id"], "")
-    clock = iter([0.0, 0.0, 115.0, 115.0, 115.0])
-    message = _assert_withheld(_decide(_env(), monotonic=lambda: next(clock)))
-    assert "time budget ran out" in message
+    now = [0.0]
+    fake.on_read = (
+        lambda url: now.__setitem__(0, 115.0) if "/annotations?" in url else None
+    )
+    message = _assert_withheld(_decide(_env(), monotonic=lambda: now[0]))
+    assert "the 120 s time budget ran out re-reading 'Run Tests (shard 1/6)'" in message
+
+
+def test_the_jobs_listing_re_reads_the_clock_before_every_page(github):
+    """A slow first page shrinks the second page's bound (shard_headroom deadline)."""
+    fake = github(_with_conclusions(s2="failure"))
+    fake.declare(_shard(fake.jobs, 2)["id"], _shard_title(2))
+    fake.jobs_per_page = 4
+    now = [0.0]
+    fake.on_read = (
+        lambda url: now.__setitem__(0, 110.0) if url.endswith("&page=1") else None
+    )
+    _decide(_env(), monotonic=lambda: now[0])
+    jobs_reads = [t for u, t in zip(fake.urls, fake.timeouts) if "/jobs?" in u]
+    # Page 1 starts with the full budget (bound 20 s); page 2 with 10 s left.
+    assert jobs_reads[:2] == [20, 10.0], fake.timeouts
+
+
+def test_a_jobs_page_past_the_deadline_withholds(github):
+    fake = github(_with_conclusions(s1="failure"))
+    fake.declare(_shard(fake.jobs, 1)["id"], _shard_title(1))
+    fake.jobs_per_page = 4
+    now = [0.0]
+    fake.on_read = (
+        lambda url: now.__setitem__(0, 119.5) if url.endswith("&page=1") else None
+    )
+    message = _assert_withheld(_decide(_env(), monotonic=lambda: now[0]))
+    assert "the deadline passed before GET" in message
+    assert "page=2 could start (0.5 s left)" in message
+    assert not [u for u in fake.urls if "/annotations?" in u]
 
 
 @pytest.mark.parametrize(

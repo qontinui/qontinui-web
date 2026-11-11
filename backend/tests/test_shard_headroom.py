@@ -664,6 +664,85 @@ def test_fetch_refuses_a_body_without_jobs(monkeypatch):
         headroom.fetch_jobs("qontinui/qontinui-web", "42", "t")
 
 
+def _two_page_listing(monkeypatch, seconds_per_read: float = 0.0):
+    """A run listed over two pages; every read advances a fake clock.
+
+    Returns ``(rows, timeouts, urls, now)``: the rows served, each read's
+    ``timeout``, each read's URL, and the one-element clock the reads advance.
+    """
+    rows = _run([20, 18, 22, 19, 21, 17])
+    pages = {1: rows[:5], 2: rows[5:]}
+    timeouts: list[float] = []
+    urls: list[str] = []
+    now = [1000.0]
+
+    def _urlopen(request, timeout):
+        timeouts.append(timeout)
+        urls.append(request.full_url)
+        now[0] += seconds_per_read
+        page = int(request.full_url.rsplit("page=", 1)[1])
+        return _Response({"total_count": len(rows), "jobs": pages.get(page, [])})
+
+    monkeypatch.setattr(headroom.urllib.request, "urlopen", _urlopen)
+    return rows, timeouts, urls, now
+
+
+def test_a_deadline_bounds_every_page_by_what_is_left(monkeypatch):
+    """The clock is re-read per page: one slow page shrinks the next one's bound."""
+    rows, timeouts, _, now = _two_page_listing(monkeypatch, seconds_per_read=85)
+    jobs = headroom.fetch_jobs(
+        "qontinui/qontinui-web", "42", "t", deadline=1100.0, monotonic=lambda: now[0]
+    )
+    assert jobs == rows
+    # Page 1 starts with 100 s left (bound 30); page 2 with 15 s left.
+    assert timeouts == [30, 15]
+
+
+def test_a_page_the_deadline_has_passed_is_refused_not_started(monkeypatch):
+    _, timeouts, urls, now = _two_page_listing(monkeypatch, seconds_per_read=99.5)
+    with pytest.raises(headroom.MeasurementError) as caught:
+        headroom.fetch_jobs(
+            "qontinui/qontinui-web",
+            "42",
+            "t",
+            deadline=1100.0,
+            monotonic=lambda: now[0],
+        )
+    assert "the deadline passed before GET" in str(caught.value)
+    assert "page=2 could start (0.5 s left)" in str(caught.value)
+    assert len(urls) == 1 and timeouts == [30]
+
+
+def test_without_a_deadline_the_clock_is_never_read(monkeypatch):
+    def _no_clock() -> float:
+        raise AssertionError("fetch_jobs read the clock with no deadline set")
+
+    rows, timeouts, _, _ = _two_page_listing(monkeypatch, seconds_per_read=500)
+    jobs = headroom.fetch_jobs("qontinui/qontinui-web", "42", "t", monotonic=_no_clock)
+    assert jobs == rows
+    assert timeouts == [30, 30]
+
+
+def test_the_nightly_alarm_reads_every_page_with_its_30_s_bound(monkeypatch, capsys):
+    """The alarm's own call sets no deadline, so its behaviour is unchanged."""
+    _, timeouts, urls, _ = _two_page_listing(monkeypatch, seconds_per_read=500)
+    for key, value in {
+        "JOB_TIMEOUT_MINUTES": "45",
+        "GITHUB_REPOSITORY": "qontinui/qontinui-web",
+        "GITHUB_RUN_ID": "42",
+        "GITHUB_TOKEN": "t",
+    }.items():
+        monkeypatch.setenv(key, value)
+    for key in ("HEADROOM_BUDGET_OVERRIDE", "GITHUB_API_URL"):
+        monkeypatch.delenv(key, raising=False)
+    code = headroom.main([])
+    out = capsys.readouterr().out.strip().splitlines()
+    assert code == 0
+    assert out[-1].endswith("verdict=ok")
+    assert timeouts == [30, 30]
+    assert all("filter=latest" in url for url in urls)
+
+
 # --- the workflow wiring ---------------------------------------------------
 
 
