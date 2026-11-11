@@ -6,26 +6,35 @@ is red only because a member job was, and coord never lets a declared member
 outvote the undeclared, red aggregate beside it. The script titles the
 aggregate ``<check> SETUP FAILED in every failed <noun> (not a verdict on this
 PR)`` only when the members' OWN annotations declare every failed member's
-setup death. This module pins:
+setup death: each with a title equal to ``<member> SETUP FAILED (not a verdict
+on this PR)``. This module pins:
 
 1. **The decision**, arm by arm, with the HTTP client stubbed at
    ``urllib.request.urlopen`` to serve the RECORDED jobs listings in
    ``fixtures/shard_headroom/run-*.json`` and annotation JSON, so the real
    ``shard_headroom.fetch_jobs`` / ``get_json`` code paths run.
 2. **The harness-diff guard** (rule 5), against REAL two-parent merge commits
-   in temporary repositories, depth-1 clones and a stub ``git`` whose fetch
-   fails or hangs (``tests/setup_death_git.py``, shared with the per-job
-   declarer's tests), and read against the per-job guard for the same PRs.
-   Every decision arm runs it too: ``_env()`` points it at one PR whose diff
-   touches no harness.
+   in temporary repositories, depth-1 clones, the ``blob:none`` sparse partial
+   clone actions/checkout makes for ``Check out the declarer``, and a stub
+   ``git`` whose fetch fails or hangs (``tests/setup_death_git.py``, shared
+   with the per-job declarer's tests), and read against the per-job guard for
+   the same PRs. Every decision arm runs it too: ``_env()`` points it at one
+   PR whose diff touches no harness.
 3. **The wiring**: each aggregate's step against a literal table, its job-level
    ``checks: read``, and the lane roster.
 
 Every assertion compares against literal strings spelled out here. NOTHING HERE
-PRINTS SCRIPT OUTPUT: this module runs in a ``Run Tests`` shard, where a printed
-``::error title=`` line would itself be a declaration on that shard. Outputs are
-returned as strings or captured, and ``_defang`` keeps ``::`` out of failure
-messages.
+PRINTS SCRIPT OUTPUT, NOT EVEN WHEN A TEST FAILS: this module runs in a
+``Run Tests`` shard, where a printed ``::error title=`` line would itself be a
+declaration on that shard. Outputs are returned as strings or captured. A
+failing assertion prints its message and pytest's explanation into the ``-ra``
+summary with no ``E`` prefix, and pytest explains ``x not in line`` by
+re-printing ``line`` indented by spaces only, so every ``in`` / ``not in``
+against a rendered line reads ``_defang(...)`` of it (the helpers return theirs
+defanged) and every message built from output is ``_defang``-ed.
+``test_a_failing_helper_writes_no_workflow_command`` and
+``test_a_failing_run_of_this_module_writes_no_workflow_command`` hold that for
+the helpers, the second by running pytest itself with the repo's addopts.
 """
 
 from __future__ import annotations
@@ -39,6 +48,7 @@ import io
 import itertools
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -62,10 +72,17 @@ from tests.setup_death_git import (
     PrRepo,
     assert_prints_nothing,
     base_env,
+    command_lines,
+    git_version,
     has_commit,
+    local_objects,
+    partial_clone,
+    run_git,
+    run_pytest_probe,
     shallow_clone,
     stub_git,
 )
+from tests.setup_death_git import defang as _defang
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_CI = REPO_ROOT / "scripts" / "ci"
@@ -199,11 +216,11 @@ def _shard_title(n: int) -> str:
 
 
 #: test-gate's HARNESS_PATHS_RE, spelled out: the shards' own per-job harness
-#: plus the aggregate's code (the wiring table pins the YAML to it).
+#: plus ALL of scripts/ci, which the aggregate runs from (the wiring table
+#: pins the YAML to it).
 RUN_TESTS_HARNESS = (
     r"^\.github/workflows/backend-ci\.yml$|^\.github/actions/"
-    r"|^\.github/scripts/declare-setup-death\.sh$"
-    r"|^scripts/ci/aggregate_setup_death\.py$|^scripts/ci/shard_headroom\.py$"
+    r"|^\.github/scripts/declare-setup-death\.sh$|^scripts/ci/"
 )
 BASH = shutil.which("bash")
 requires_git = pytest.mark.skipif(
@@ -299,10 +316,6 @@ def _line(outcome) -> str:
     return aggregate.render(outcome)
 
 
-def _defang(text: str) -> str:
-    return text.replace("::", ": :")
-
-
 def _parse(line: str) -> tuple[str, str, str]:
     """``(command, title, message)`` of one workflow-command line, decoded."""
     assert line.startswith("::"), _defang(line)
@@ -325,18 +338,28 @@ def _parse(line: str) -> tuple[str, str, str]:
 
 
 def _assert_withheld(outcome) -> str:
+    """A withheld notice with no phrase; returns its message, defanged.
+
+    The phrase is looked for in ``_defang(line)``, never ``line``: when this
+    fails, pytest explains a ``not in`` by re-printing the matching line of
+    its right-hand side, indented by spaces only, so a raw ``line`` would
+    write the very declaration it caught into the shard's log. ``PHRASE``
+    holds no ``:``, so the defanged line carries it exactly where ``line``
+    does.
+    """
     line = _line(outcome)
-    assert PHRASE not in line, _defang(line)
+    assert PHRASE not in _defang(line), _defang(line)
     name, title, message = _parse(line)
     assert (name, title) == ("notice", WITHHELD_TITLE), _defang(line)
-    return message
+    return _defang(message)
 
 
 def _assert_declined(outcome) -> str:
+    """A plain decision line with no phrase; returns it, defanged (as above)."""
     line = _line(outcome)
-    assert PHRASE not in line, _defang(line)
+    assert PHRASE not in _defang(line), _defang(line)
     assert line.startswith("aggregate-setup-death: no declaration: "), _defang(line)
-    return line
+    return _defang(line)
 
 
 # --- the declaration ----------------------------------------------------------
@@ -514,6 +537,61 @@ def test_a_different_not_a_verdict_title_is_not_a_setup_declaration(github):
         "Run Tests (shard 2/6) TIMED OUT (not a verdict on this PR)",
     )
     _assert_declined(_decide(_env()))
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        _shard_title(2),
+        "Lint & Format Check SETUP FAILED (not a verdict on this PR)",
+        RUN_TESTS_TITLE,
+        "x " + _shard_title(1),
+        _shard_title(1) + " ",
+        _shard_title(1) + ".",
+        "run tests (shard 1/6) SETUP FAILED (not a verdict on this PR)",
+        "Run Tests (shard 1/6)  SETUP FAILED (not a verdict on this PR)",
+    ],
+    ids=[
+        "a-peer-members-own",
+        "printed-by-a-step",
+        "the-aggregates-own",
+        "prefixed",
+        "trailing-space",
+        "suffixed",
+        "other-case-name",
+        "double-space",
+    ],
+)
+def test_a_title_that_is_not_the_members_own_does_not_declare_it(github, title):
+    """Rule 4 counts only a title EQUAL to `<member> SETUP FAILED (...)`.
+
+    Every one of these holds the phrase coord reads, and none is what the
+    failed member's own declarer writes about it: a peer's title, one a step
+    printed into the shard's log (a test failing over a declaration the
+    per-job script wrote), the aggregate's own. A substring match would
+    have counted each as shard 1's declaration.
+    """
+    fake = github(_with_conclusions(s1="failure"))
+    fake.declare(_shard(fake.jobs, 1)["id"], title)
+    sleeps = _Sleeps()
+    line = _assert_declined(_decide(_env(), sleeps))
+    assert (
+        "member 'Run Tests (shard 1/6)' carries no setup-death declaration after 4 reads"
+    ) in line
+    assert sleeps.calls == [10, 10, 10]
+
+
+def test_the_members_exact_own_title_declares_it_beside_foreign_ones(github):
+    fake = github(_with_conclusions(s1="failure"))
+    fake.declare(
+        _shard(fake.jobs, 1)["id"],
+        _shard_title(2),
+        "Lint & Format Check SETUP FAILED (not a verdict on this PR)",
+        _shard_title(1),
+    )
+    sleeps = _Sleeps()
+    assert _parse(_line(_decide(_env(), sleeps)))[:2] == ("error", RUN_TESTS_TITLE)
+    assert sleeps.calls == []
 
 
 def test_a_cancelled_shard_is_not_a_declaration(github):
@@ -715,7 +793,8 @@ def test_no_title_it_writes_carries_a_reserved_phrase(github):
             "OUT OF MEMORY (not a verdict on this PR)",
             "killed IN THE BUILD",
         ):
-            assert marker not in title
+            # Defanged: a decoded title can hold a newline, then `::`.
+            assert marker not in _defang(title), _defang(title)
 
 
 # --- rule 5: the harness-diff guard, against real merge commits ---------------
@@ -778,8 +857,20 @@ def test_a_pr_whose_diff_misses_the_harness_is_declared(github, clean_pr):
         ".github/scripts/declare-setup-death.sh",
         "scripts/ci/aggregate_setup_death.py",
         "scripts/ci/shard_headroom.py",
+        # A module the PR ADDS: `python3 scripts/ci/aggregate_setup_death.py`
+        # puts scripts/ci first on sys.path, so it would replace `import json`.
+        "scripts/ci/json.py",
+        "scripts/ci/split_pytest_shards.py",
     ],
-    ids=["own-workflow", "local-action", "per-job-declarer", "itself", "headroom"],
+    ids=[
+        "own-workflow",
+        "local-action",
+        "per-job-declarer",
+        "itself",
+        "headroom",
+        "pr-added-module",
+        "other-ci-script",
+    ],
 )
 def test_a_pr_that_touches_the_aggregates_harness_is_withheld(
     github, tmp_path, home, touched
@@ -992,14 +1083,14 @@ def test_the_guard_is_read_only_after_every_member_rule_held(github):
 DECLARER = REPO_ROOT / ".github" / "scripts" / "declare-setup-death.sh"
 
 
-def _per_job_reading(env: dict[str, str]) -> str:
-    """What the PER-JOB declarer's guard reads for the same PR and pattern."""
+def _per_job_output(env: dict[str, str], job: str = "Lint & Format Check") -> str:
+    """The PER-JOB declarer's output for one setup death: captured, never shown."""
     assert BASH is not None
     proc = subprocess.run(
         [BASH, str(DECLARER)],
         env={
             **env,
-            "DECLARE_JOB": "Lint & Format Check",
+            "DECLARE_JOB": job,
             "SETUP_STEPS": "Install Poetry|failure|failure\n",
             "VERDICT_STEPS": "Run ruff (linting)|skipped|skipped\n",
         },
@@ -1008,12 +1099,57 @@ def _per_job_reading(env: dict[str, str]) -> str:
         timeout=60,
         check=False,
     )
-    out = proc.stdout + proc.stderr
+    return proc.stdout + proc.stderr
+
+
+def _per_job_reading(env: dict[str, str]) -> str:
+    """What the PER-JOB declarer's guard reads for the same PR and pattern."""
+    out = _per_job_output(env)
     if "SETUP FAILED (not a verdict on this PR)" in out:
         return "false"
     found = re.search(r"harness-diff guard read (true|UNKNOWN)", out)
     assert found, _defang(out)
     return found.group(1)
+
+
+@pytest.mark.skipif(
+    BASH is None or GIT is None, reason="the per-job declarer is bash over git"
+)
+def test_a_members_own_title_survives_the_runners_unescaping(github):
+    """Rule 4's equality holds across the title's escaping round trip.
+
+    The per-job declarer escapes `title=` (`%`, `:`, `,`), the runner
+    unescapes it before storing the annotation, and the annotations API
+    serves that. A member whose served name holds all three must still be
+    declared by its own title, decoded the way the runner decodes it.
+    """
+    name = "Check: a, b :: c 100%"
+    out = _per_job_output(_env(), job=name)
+    declarations = [line for line in out.splitlines() if line.startswith("::error ")]
+    assert len(declarations) == 1, _defang(out)
+    # It was escaped on the way out, so the round trip is really exercised:
+    assert "title=Check%3A a%2C b %3A%3A c 100%25 SETUP FAILED" in _defang(
+        declarations[0]
+    ), _defang(declarations[0])
+    _, title, _ = _parse(declarations[0])  # decoded as the runner decodes it
+    fake = github(
+        [{"id": 7, "name": name, "status": "completed", "conclusion": "failure"}]
+    )
+    fake.declare(7, title)
+    env = _env(
+        DECLARE_JOB="Gate",
+        MEMBER_NEED="member",
+        MEMBER_NAME_RE=f"^{re.escape(name)}$",
+        MEMBER_NOUN="job",
+        EXPECTED_MEMBERS="1",
+        NEEDS_JSON=json.dumps({"member": {"result": "failure"}}),
+    )
+    # Rule 4 compares the decoded title with `f"{name} SETUP FAILED (...)"`
+    # for EQUALITY, so this declaration is the round trip's proof.
+    assert _parse(_line(_decide(env)))[:2] == (
+        "error",
+        "Gate SETUP FAILED in every failed job (not a verdict on this PR)",
+    )
 
 
 def _aggregate_reading(outcome) -> str:
@@ -1071,6 +1207,143 @@ def test_the_aggregate_guard_reads_what_the_per_job_guard_reads(
     assert _per_job_reading(env) == reading
 
 
+# --- rule 5 in the production clone shape --------------------------------------
+#
+# `Check out the declarer` is actions/checkout with `sparse-checkout:
+# scripts/ci`, so the aggregate's guard runs in a `--filter=blob:none
+# --depth=1` PARTIAL clone (`partial_clone`), not a plain depth-1 one: `origin`
+# is a promisor remote, the first parent is absent, and so is every blob
+# outside scripts/ci. There, any read of an absent object is a LAZY fetch
+# unless GIT_NO_LAZY_FETCH stops it -- including the guard's own check for
+# the first parent, which would fetch it outside the fetch bound.
+
+
+def _assert_actions_checkout_shape(repo: PrRepo, clone: Path) -> None:
+    """``clone`` is what `Check out the declarer` leaves behind."""
+    home = repo.home
+    assert run_git(clone, "config", "--get", "remote.origin.promisor", home=home) == (
+        "true"
+    )
+    assert run_git(
+        clone, "config", "--get", "remote.origin.partialclonefilter", home=home
+    ) == ("blob:none")
+    assert run_git(clone, "rev-parse", "--is-shallow-repository", home=home) == "true"
+    assert (clone / SCRIPT_REF).is_file()
+    assert not (clone / "backend" / "app" / "main.py").exists()  # outside the cone
+    objects = local_objects(clone, home)
+    assert repo.base not in objects  # the first parent is absent
+    blob = run_git(
+        repo.root, "rev-parse", f"{repo.merge}:backend/app/main.py", home=home
+    )
+    assert blob not in objects  # and so is every blob outside scripts/ci
+
+
+@requires_git
+@pytest.mark.parametrize(
+    ("scenario", "reading"),
+    [("clean", "false"), ("harness-edit", "true"), ("unfetchable", "UNKNOWN")],
+)
+def test_the_guard_in_actions_checkouts_sparse_partial_clone(
+    github, tmp_path, home, scenario, reading
+):
+    _declared_failure(github)
+    changes: dict[str, str | None] = (
+        {"scripts/ci/json.py": "# a PR's module, shadowing the standard json\n"}
+        if scenario == "harness-edit"
+        else {"backend/app/main.py": "print('pr')\n"}
+    )
+    repo = PrRepo(tmp_path / "repo", home, changes=changes)
+    clone = partial_clone(repo, tmp_path / "checkout")
+    _assert_actions_checkout_shape(repo, clone)
+    if scenario == "unfetchable":
+        # The promisor remote is gone: neither the bounded fetch nor any lazy
+        # one can reach it, on any git version.
+        gone = f"file://{tmp_path / 'gone'}"
+        run_git(clone, "remote", "set-url", "origin", gone, home=home)
+    outcome = _decide(_pr_env(repo, GITHUB_WORKSPACE=str(clone)))
+    assert _aggregate_reading(outcome) == reading
+    # The bounded fetch brought the first parent in, unless it could not.
+    assert has_commit(clone, repo.base, home) is (scenario != "unfetchable")
+    if scenario == "unfetchable":
+        reason = _guard_reason(outcome, "UNKNOWN")
+        assert (
+            f"the merge commit's first parent {repo.base} could not be fetched"
+        ) in reason, reason
+
+
+@requires_git
+def test_every_git_call_of_the_guard_runs_with_lazy_fetch_off(github, tmp_path, home):
+    """`GIT_NO_LAZY_FETCH=1` and `GIT_TERMINAL_PROMPT=0` reach EVERY git it runs.
+
+    Recorded by a stub `git` that logs each call's environment, in the
+    production clone shape. The test's own environment carries neither
+    variable, so both come from the guard itself.
+    """
+    _declared_failure(github)
+    repo = PrRepo(tmp_path / "repo", home, changes={"backend/app/main.py": "x\n"})
+    clone = partial_clone(repo, tmp_path / "checkout")
+    log = tmp_path / "git-calls.log"
+    record = (
+        'echo "${GIT_NO_LAZY_FETCH-unset} ${GIT_TERMINAL_PROMPT-unset} $*" >> '
+        + shlex.quote(str(log))
+    )
+    env = _pr_env(
+        repo,
+        GITHUB_WORKSPACE=str(clone),
+        PATH=_stubbed(stub_git(tmp_path, on_every=record)),
+    )
+    env.pop("GIT_TERMINAL_PROMPT")
+    assert "GIT_NO_LAZY_FETCH" not in env
+    assert _aggregate_reading(_decide(env)) == "false"
+    # Each call: `<lazy> <prompt> -C <workspace> <verb> ...`.
+    calls = [line.split() for line in log.read_text(encoding="utf-8").splitlines()]
+    assert {call[4] for call in calls} == {"cat-file", "fetch", "diff"}, calls
+    assert [call[:2] for call in calls] == [["1", "0"]] * len(calls), calls
+
+
+@requires_git
+@pytest.mark.skipif(
+    git_version() < (2, 45),
+    reason=(
+        "GIT_NO_LAZY_FETCH arrived in git 2.45 (RelNotes/2.45.0); an older git "
+        "ignores it, so nothing can stop a lazy fetch there"
+    ),
+)
+def test_a_live_promisor_never_lazily_fills_in_what_the_bounded_fetch_missed(
+    github, tmp_path, home
+):
+    """GIT_NO_LAZY_FETCH, observed rather than assumed.
+
+    The bounded fetch fails while the promisor remote still answers: the guard
+    reads UNKNOWN, and the parent stays absent. The control is the guard's
+    own `cat-file -e` without the variable, which fetches the parent: what
+    the guard's re-check would have done, outside the fetch bound.
+    """
+    _declared_failure(github)
+    repo = PrRepo(tmp_path / "repo", home, changes={"backend/app/main.py": "x\n"})
+    clone = partial_clone(repo, tmp_path / "checkout")
+    env = _pr_env(
+        repo,
+        GITHUB_WORKSPACE=str(clone),
+        PATH=_stubbed(stub_git(tmp_path, "exit 128")),
+    )
+    reason = _guard_reason(_decide(env), "UNKNOWN")
+    assert (
+        f"the merge commit's first parent {repo.base} could not be fetched (git "
+        "fetch exited 128"
+    ) in reason, reason
+    assert not has_commit(clone, repo.base, home)
+    assert GIT is not None
+    control = subprocess.run(
+        [GIT, "-C", str(clone), "cat-file", "-e", f"{repo.base}^{{commit}}"],
+        env=base_env(home),
+        capture_output=True,
+        check=False,
+    )
+    assert control.returncode == 0, "no lazy fetch: this clone is not the shape"
+    assert has_commit(clone, repo.base, home)
+
+
 # --- the entry point: always exit 0, one line -----------------------------------
 
 
@@ -1085,7 +1358,7 @@ def test_main_exits_zero_and_withholds_when_decide_crashes(monkeypatch):
     assert code == 0
     name, title, message = _parse(buffer.getvalue().strip())
     assert (name, title) == ("notice", WITHHELD_TITLE)
-    assert "crashed" in message
+    assert "crashed" in _defang(message), _defang(message)
 
 
 @pytest.mark.skipif(shutil.which("python3") is None, reason="no python3 on PATH")
@@ -1109,7 +1382,9 @@ def test_the_script_runs_standalone_and_exits_zero_without_a_token():
     assert proc.returncode == 0
     name, title, message = _parse(proc.stdout.strip())
     assert (name, title) == ("notice", WITHHELD_TITLE), _defang(proc.stdout)
-    assert "GITHUB_REPOSITORY, GITHUB_RUN_ID and GITHUB_TOKEN" in message
+    assert "GITHUB_REPOSITORY, GITHUB_RUN_ID and GITHUB_TOKEN" in _defang(message), (
+        _defang(message)
+    )
 
 
 def test_this_module_never_prints_script_output():
@@ -1117,16 +1392,95 @@ def test_this_module_never_prints_script_output():
         assert_prints_nothing(source)
 
 
+#: Declarations a wrongly declaring aggregate could render: its real title,
+#: and one whose phrase starts within the first 42 characters (without -v,
+#: pytest's string diff drops a longer identical lead, and the line's `::`
+#: with it, so only this shape leaks at every verbosity).
+DECLARING_OUTCOMES = {
+    "run-tests": aggregate.Outcome("declare", title=RUN_TESTS_TITLE, text="m"),
+    "short-prefix": aggregate.Outcome("declare", title=PHRASE, text="m"),
+}
+
+
+@pytest.mark.parametrize(
+    "helper", [_assert_withheld, _assert_declined], ids=["withheld", "declined"]
+)
+@pytest.mark.parametrize(
+    "outcome", list(DECLARING_OUTCOMES.values()), ids=list(DECLARING_OUTCOMES)
+)
+def test_a_failing_helper_writes_no_workflow_command(helper, outcome):
+    """A helper that catches a declaration fails WITHOUT writing one.
+
+    Its AssertionError is what pytest prints, with no `E` prefix in the `-ra`
+    summary: the message and the comparison's explanation, both of which
+    echo the rendered line. No line of it may start a workflow command once
+    the runner has trimmed its leading whitespace.
+    """
+    with pytest.raises(AssertionError) as excinfo:
+        helper(outcome)
+    message = str(excinfo.value)
+    assert PHRASE in message, "the failure no longer shows the line: proves nothing"
+    assert command_lines(message) == [], _defang(message)
+
+
+#: A test module that fails the way a wrongly declaring aggregate makes this
+#: one fail: through its own helpers, with the rendered line also held in a
+#: local, which `--showlocals` prints.
+_SHARD_LOG_PROBE = r"""
+from tests.test_aggregate_setup_death import (
+    PHRASE,
+    _assert_declined,
+    _assert_withheld,
+    aggregate,
+)
+
+OUTCOME = aggregate.Outcome("declare", title=PHRASE, text="m")
+
+
+def test_assert_withheld_on_a_declaration():
+    line = aggregate.render(OUTCOME)
+    _assert_withheld(OUTCOME)
+    assert line
+
+
+def test_assert_declined_on_a_declaration():
+    line = aggregate.render(OUTCOME)
+    _assert_declined(OUTCOME)
+    assert line
+"""
+
+
+@pytest.mark.parametrize("extra", [(), ("-v",)], ids=["repo-addopts", "shard-flags"])
+def test_a_failing_run_of_this_module_writes_no_workflow_command(tmp_path, extra):
+    """pytest itself, with the repo's addopts, on two deliberately failing tests.
+
+    `repo-addopts` is backend/pytest.ini alone (`-v -ra --showlocals`);
+    `shard-flags` adds the shard's second `-v`. Both run with `CI=true`, as
+    on Actions, so the `-ra` summary carries every line of every message.
+    """
+    code, out = run_pytest_probe(tmp_path, _SHARD_LOG_PROBE, *extra)
+    shown = _defang(out)
+    # The probe failed as designed, through every path that can echo a line:
+    assert code == 1, shown
+    assert "2 failed" in shown, shown
+    assert "short test summary info" in shown, shown
+    assert "is contained here:" in shown, shown  # pytest's `not in` explanation
+    assert "line       = " in shown, shown  # --showlocals printed the raw line
+    # ... and still no line of it is a workflow command.
+    assert command_lines(out) == [], _defang("\n".join(command_lines(out)))
+
+
 # --- the wiring --------------------------------------------------------------------
 
 DECLARER_STEP = "Declare a setup death"
 CHECKOUT_STEP = "Check out the declarer"
 
-#: The aggregate's own code, which every aggregate's harness adds to its
-#: members' per-job harness (rule 5).
-AGGREGATE_CODE = (
-    r"|^scripts/ci/aggregate_setup_death\.py$|^scripts/ci/shard_headroom\.py$"
-)
+#: What every aggregate's harness adds to its members' per-job harness (rule
+#: 5): ALL of scripts/ci. The step runs `python3
+#: scripts/ci/aggregate_setup_death.py`, which puts scripts/ci first on
+#: sys.path, so any module there -- one the PR adds included -- runs inside the
+#: declarer; naming only the files it imports today would miss that.
+AGGREGATE_CODE = r"|^scripts/ci/"
 
 AGGREGATES: dict[tuple[str, str], dict[str, str]] = {
     ("backend-ci.yml", "test-gate"): {
@@ -1313,13 +1667,15 @@ def test_the_member_pattern_matches_exactly_the_member_jobs(workflow, job_id):
 
 
 @pytest.mark.parametrize(("workflow", "job_id"), list(AGGREGATES), ids=AGGREGATE_IDS)
-def test_each_aggregates_harness_is_its_members_harness_plus_its_own_code(
+def test_each_aggregates_harness_is_its_members_harness_plus_all_of_scripts_ci(
     workflow, job_id
 ):
-    """Rule 5 withholds wherever a member's guard would, and on the aggregate's code.
+    """Rule 5 withholds wherever a member's guard would, and on all of scripts/ci.
 
     The per-job declarer wrote the member titles the aggregate trusts; when a
     PR edits it, the members' guard runs inside the edit and this one does not.
+    And the aggregate runs from scripts/ci with that directory first on
+    sys.path, so ANY file there, a new one included, is its code.
     """
     doc = _workflow(workflow)
     table = AGGREGATES[(workflow, job_id)]
@@ -1335,25 +1691,38 @@ def test_each_aggregates_harness_is_its_members_harness_plus_its_own_code(
         ".github/scripts/declare-setup-death.sh",
         SCRIPT_REF,
         "scripts/ci/shard_headroom.py",
+        "scripts/ci/json.py",
+        "scripts/ci/split_pytest_shards.py",
+        f"{SCRIPT_REF}.bak",
+        "scripts/ci/sub/dir/module.py",
     ):
         assert pattern.search(path), path
     for path in (
         "backend/app/main.py",
-        "scripts/ci/split_pytest_shards.py",
-        f"{SCRIPT_REF}.bak",
         "frontend/package-lock.json",
         f"x/.github/workflows/{workflow}",
         ".github/workflows/spec-ci.yml",
+        "scripts/cix/aggregate_setup_death.py",
+        "scripts/ci.py",
+        "scripts/c/i.py",
+        f"x/{SCRIPT_REF}",
+        "backend/scripts/ci/json.py",
     ):
         assert not pattern.search(path), path
 
 
 @requires_git
 @pytest.mark.parametrize(("workflow", "job_id"), list(AGGREGATES), ids=AGGREGATE_IDS)
-def test_each_aggregates_own_env_withholds_on_its_own_workflow(
+def test_each_aggregates_own_env_withholds_on_its_harness(
     github, tmp_path, home, workflow, job_id
 ):
-    """The YAML's own static env drives the script against real merge commits."""
+    """The YAML's own static env drives the script against real merge commits.
+
+    Withheld for a PR that edits the aggregate's own workflow, and for one
+    that only ADDS a module to scripts/ci, which the step's `python3
+    scripts/ci/aggregate_setup_death.py` would import ahead of the standard
+    one.
+    """
     doc = _workflow(workflow)
     job = doc["jobs"][job_id]
     yaml_env = {k: str(v) for k, v in job["steps"][-1]["env"].items()}
@@ -1388,8 +1757,13 @@ def test_each_aggregates_own_env_withholds_on_its_own_workflow(
         f"{static['DECLARE_JOB']} SETUP FAILED in every failed {noun} (not a "
         "verdict on this PR)",
     )
-    touched = PrRepo(
-        tmp_path / "touched", home, changes={f".github/workflows/{workflow}": "x\n"}
-    )
-    message = _assert_withheld(_decide(env_for(touched)))
-    assert "the harness-diff guard read true" in message, _defang(message)
+    for name, touched_path in (
+        ("touched", f".github/workflows/{workflow}"),
+        ("module", "scripts/ci/json.py"),
+    ):
+        touched = PrRepo(tmp_path / name, home, changes={touched_path: "x\n"})
+        message = _assert_withheld(_decide(env_for(touched)))
+        assert (
+            f"the harness-diff guard read true: this PR's diff touches this "
+            f"aggregate's harness ('{touched_path}')"
+        ) in message, _defang(message)
