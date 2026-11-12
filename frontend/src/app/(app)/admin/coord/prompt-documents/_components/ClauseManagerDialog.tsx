@@ -399,9 +399,15 @@ function ClauseRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <code className="text-sm font-medium">{clause.clause_id}</code>
-          <Badge variant={CLAUSE_STATUS_VARIANT[clause.status]}>
-            {clause.status}
-          </Badge>
+          {/* A raw row's `status` is not the rule's state: coord leaves it at
+              the import seed's default (`proposed`), the body never sets it,
+              and the compiler emits the body without it. Showing it would
+              mark nearly every served rule "proposed". */}
+          {!raw && (
+            <Badge variant={CLAUSE_STATUS_VARIANT[clause.status]}>
+              {clause.status}
+            </Badge>
+          )}
           {raw ? (
             <Badge
               variant="secondary"

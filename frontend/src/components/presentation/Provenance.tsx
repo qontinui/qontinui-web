@@ -88,8 +88,17 @@ function ProvenanceChip({
       variant="outline"
       // `gap-0`: the spacing is real text (" · "), so the chip reads as one
       // line to a screen reader, a copy-paste and a UI Bridge text snapshot.
+      // The chip WRAPS inside its container rather than holding one line.
+      // `Badge` is `w-fit whitespace-nowrap shrink-0`, so a "source · as of"
+      // chip in a narrow cell (the twin map's 215px fidelity figures) spilled
+      // past its cell and pushed the page beyond a 1280px viewport — found by
+      // the plan's Phase 8 UI Bridge walk (coord finding c157a7b3).
+      // `max-w-full` caps it at its container, `shrink` undoes `shrink-0` in a
+      // flex row, `whitespace-normal flex-wrap` let source and age break onto
+      // separate lines, and `wrap-anywhere` breaks a source with no spaces
+      // (it lowers min-content, which `break-words` would not).
       className={cn(
-        "gap-0 text-[11px] font-normal",
+        "max-w-full shrink flex-wrap justify-start gap-0 whitespace-normal wrap-anywhere text-left text-[11px] font-normal",
         known ? "text-muted-foreground" : UNKNOWN_AMBER,
         className
       )}
