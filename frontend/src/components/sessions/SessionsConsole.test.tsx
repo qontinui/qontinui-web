@@ -246,7 +246,15 @@ describe("the read axis vs the join axis", () => {
   it("a landed read over an empty list says so — 'we looked, nothing matched'", async () => {
     mount(envelope([]));
     const empty = await screen.findByTestId("sessions-console-empty");
-    expect(empty).toHaveTextContent(/No sessions on the fleet/i);
+    // The strip says what coord's answer held — once. The list below it says
+    // only how a session gets here, rather than restating the strip (plan
+    // `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+    // Phase 2).
+    expect(screen.getByTestId("sessions-console-health")).toHaveTextContent(
+      /No sessions on the fleet/i
+    );
+    expect(empty).toHaveTextContent(/Start a session from any runner/i);
+    expect(empty).not.toHaveTextContent(/No sessions on the fleet/i);
   });
 
   it("a failed AGENT half keeps the rows and says the columns are unknown", async () => {

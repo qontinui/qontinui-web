@@ -78,6 +78,7 @@ from app.api.deps import (
     get_current_user_from_ws,
 )
 from app.api.v1.endpoints.devices import devices_to_wire
+from app.core import bounded_read
 from app.core.config import settings
 from app.core.refusal import (
     GlossaryTerm,
@@ -9499,12 +9500,17 @@ async def websocket_ci_status(
 #
 # The consequence is stated rather than hidden: this is an
 # application-level join, so it is bounded by what each coord route
-# returns (`/coord/agent-sessions` caps at 500 rows) and it cannot see a
-# row either route filtered out. Everything below that cannot be
+# returns (`/sessions` stops at coord's own `LIMIT 500`, and
+# `/coord/agent-sessions` caps at 500 rows) and it cannot see a row
+# either route filtered out. Everything below that cannot be
 # established is reported as UNKNOWN (`row_class: null`), never as an
-# answer. A SQL join coord-side would be strictly better and is a
-# coord-repo change; it is deliberately out of this phase's scope
-# (Phases 1-4 are qontinui-web only).
+# answer, and each half of the response says which side of its cap it
+# landed on (`lifecycle_half` / `agent_half` `bound`): an `agent_only`
+# row is a set difference over the lifecycle rows coord SERVED, so it is
+# established only while the lifecycle half is complete. A SQL join
+# coord-side would be strictly better and is a coord-repo change; it is
+# deliberately out of this phase's scope (Phases 1-4 are qontinui-web
+# only).
 #
 # ## The three row classes (D1) and the fourth answer (D2)
 #
@@ -9580,6 +9586,16 @@ _STATE_BY_STATUS: dict[str, frozenset[str]] = {
 #: it the join is INCOMPLETE, not wrong: a bridged row coord truncated off the
 #: end lands in the UNKNOWN class, which is the whole reason that class exists.
 _AGENT_SESSIONS_JOIN_LIMIT = 500
+
+#: coord's own ceiling on `GET /sessions`, which the consolidated read cannot
+#: lift: `list_sessions` in qontinui-coord `crates/coord/src/sessions.rs` ends
+#: its statement `ORDER BY started_at DESC NULLS LAST LIMIT 500` — hardcoded,
+#: and the route takes no `limit`, so web sends none. Spelled here only so the
+#: lifecycle half can say when coord's answer REACHED it: 500 rows back are the
+#: 500 most recently started sessions, and nothing in the payload says whether
+#: older ones exist. It mirrors a number coord owns, so it moves when coord's
+#: does — lowered there and not here, a full page would read as `complete`.
+_COORD_SESSIONS_LIST_LIMIT = 500
 
 #: Lifecycle-row fields the `?q=` needle is matched against.
 #:
@@ -9771,6 +9787,33 @@ def _consolidate_sessions(
     return out, withheld
 
 
+def _half_bound(served: Any, limit: int) -> dict[str, Any]:
+    """The bounded-read envelope for one half of the consolidated read, as the
+    JSON it is served as — every key, ``null`` included, never
+    ``exclude_none`` (:mod:`app.core.bounded_read`).
+
+    ``served`` is the ``sessions`` value coord answered that half with, taken
+    BEFORE any narrowing this route applies, and ``limit`` is that read's
+    ceiling:
+
+    * fewer rows than the ceiling — coord's ``LIMIT`` did not bind, so the half
+      holds every row the read matched: ``complete``.
+    * a full page — coord fetched no extra row, so whether more exist did not
+      resolve: ``unknown``, with ``truncated`` / ``total`` null. Never ``true``
+      (nothing beyond the page was seen) and never ``false`` (nothing proves
+      the page is everything).
+    * no list at all — nothing countable was served, so the bound did not
+      resolve either: ``unknown`` over zero rows, never a ``complete`` empty.
+    """
+    if not isinstance(served, list):
+        meta = bounded_read.unknown(0, limit)
+    elif len(served) < limit:
+        meta = bounded_read.complete(len(served), limit)
+    else:
+        meta = bounded_read.unknown(len(served), limit)
+    return meta.model_dump(mode="json")
+
+
 @router.get("/sessions")
 async def list_coord_sessions(
     request: Request,
@@ -9843,7 +9886,7 @@ async def list_coord_sessions(
 
     Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
 
-    With ``shape=consolidated`` the envelope gains four fields and every
+    With ``shape=consolidated`` the envelope gains five fields and every
     row gains two (plan `2026-08-26-sessions-console-consolidation` D1)::
 
         { "count": <int>, "scope": "all", "shape": "consolidated",
@@ -9853,7 +9896,39 @@ async def list_coord_sessions(
           "row_class_counts": {"linked": n, "lifecycle_only": n,
                                "agent_only": n, "unknown": n},
           "withheld_by_filter": n,
-          "agent_half": {"read": "ok"} | {"read": "failed", "detail": "..."} }
+          "lifecycle_half": {"read": "ok", "bound": BoundedReadMeta},
+          "agent_half": {"read": "ok", "bound": BoundedReadMeta}
+                        | {"read": "failed", "detail": "..."} }
+
+    ``bound`` is the shared bounded-read envelope (``BoundedReadMeta``, every
+    key always present, ``null`` a value) describing the coord READ behind
+    that half — plan
+    `2026-11-08-sessions-console-hides-its-columns-and-paints-a-green-empty-fleet-before-the-first-read`
+    Phase 3. Both reads stop at 500 rows: the lifecycle half at coord's own
+    ``LIMIT 500`` on ``/sessions`` (the most recently started sessions), the
+    agent half at the 500 it asks ``/coord/agent-sessions`` for (the most
+    recently seen). ``bound`` comes in three arms:
+
+    * below its ceiling — ``bound_kind: "complete"`` with ``truncated:
+      false``: the half holds every row the read matched;
+    * a FULL half, ``shown >= limit`` — ``"unknown"`` with ``truncated`` and
+      ``total`` null: more rows may exist, and nothing coord sent says
+      whether they do, so a count over it is a floor;
+    * a 200 whose body carries no ``sessions`` list — ``"unknown"`` over
+      ``shown: 0``: nothing countable was served, so the half's SIZE is
+      unknown. ``shown < limit`` is what tells it from a full half, and no
+      count over it is a total or a floor — not even a floor of zero.
+
+    ``shown`` counts the rows coord SERVED, before this route's own
+    ``device`` / ``status`` / ``q`` narrowing, so it need not equal
+    ``count``. A failed agent read carries no ``bound`` — there is no page to
+    bound.
+
+    ``agent_only`` is a set difference against the lifecycle rows coord
+    served, so it is established only while ``lifecycle_half.bound.truncated``
+    is ``false``. Beyond the ceiling it means "no ``coord.sessions`` row among
+    the ones served" — one may exist past it — and the row keeps its real
+    agent half either way.
 
     ``withheld_by_filter`` counts sessions the ``device`` / ``status`` filter
     hid although their agent half matched it — the two halves disagree (e.g.
@@ -9909,11 +9984,15 @@ async def list_coord_sessions(
     if not consolidated:
         return payload
 
-    lifecycle = [
-        row
-        for row in (payload.get("sessions") or [] if isinstance(payload, dict) else [])
-        if isinstance(row, dict)
-    ]
+    served_lifecycle = payload.get("sessions") if isinstance(payload, dict) else None
+    lifecycle = [row for row in served_lifecycle or [] if isinstance(row, dict)]
+    # Bounded on what coord SERVED, before the `device` / `status` / `q`
+    # narrowing below: counted after it, a Live tab keeping 40 of a full 500
+    # would read as a complete fleet of 40.
+    lifecycle_half: dict[str, Any] = {
+        "read": "ok",
+        "bound": _half_bound(served_lifecycle, _COORD_SESSIONS_LIST_LIMIT),
+    }
 
     # ---- the agent half -------------------------------------------------
     #
@@ -9934,16 +10013,14 @@ async def list_coord_sessions(
         agent_payload = await _proxy_coord_get(
             "/coord/agent-sessions", params=agent_params, tenant_id=tenant_id
         )
-        agents = [
-            row
-            for row in (
-                agent_payload.get("sessions") or []
-                if isinstance(agent_payload, dict)
-                else []
-            )
-            if isinstance(row, dict)
-        ]
-        agent_half = {"read": "ok"}
+        served_agents = (
+            agent_payload.get("sessions") if isinstance(agent_payload, dict) else None
+        )
+        agents = [row for row in served_agents or [] if isinstance(row, dict)]
+        agent_half = {
+            "read": "ok",
+            "bound": _half_bound(served_agents, _AGENT_SESSIONS_JOIN_LIMIT),
+        }
     except HTTPException as exc:
         # `CoordTransportUnavailable` (a 502/504 web invented because coord was
         # never reached) and a status coord genuinely returned are both here,
@@ -10012,6 +10089,7 @@ async def list_coord_sessions(
         "sessions": rows,
         "row_class_counts": counts,
         "withheld_by_filter": withheld_by_filter,
+        "lifecycle_half": lifecycle_half,
         "agent_half": agent_half,
     }
 
