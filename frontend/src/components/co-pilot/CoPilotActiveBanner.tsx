@@ -3,7 +3,7 @@
 /**
  * CoPilotActiveBanner — visible "AI in control" indicator.
  *
- * Renders a fixed-top banner whenever the AI co-pilot has issued ≥1
+ * Renders a top banner whenever the AI co-pilot has issued ≥1
  * command in the last 30 seconds. Provides:
  *
  *   - a "Stop" button that immediately revokes the per-session consent
@@ -63,6 +63,18 @@
  * small link inside the banner for the harder revoke. Spec choice:
  * Stop = lightweight reversible; full opt-out = explicit, secondary.
  *
+ * # In flow, never over the page
+ *
+ * The banner is a block in the page's own column, so it pushes the page down
+ * while it is lit. It used to be `position: fixed` at z-9999 over a layout
+ * that reserved no space for it, so whenever the AI drove it covered the top
+ * ~41px of every page: the tour bar's Previous/Next/End row, the coord
+ * header and its presentation toggle. The UI Bridge reported those controls
+ * 100% occluded by an unregistered `div.flex` (the banner's inner row, inside
+ * `data-bridge-invisible`) during the presentation-spaces Phase 8 tour walk
+ * (coord finding c157a7b3). The mount point is `app/(app)/layout.tsx`, at
+ * the top of the content column.
+ *
  * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.5.
  */
 
@@ -81,6 +93,15 @@ import {
 } from "@/lib/ui-bridge/co-pilot-gates";
 
 const REVOCATION_AUDIT_URL = `${ApiConfig.API_BASE_URL}/api/v1/users/me/co-pilot/activity`;
+
+/**
+ * The lit banner's box: an in-flow block that keeps its height (`shrink-0`)
+ * inside the content column's flex layout. It is NOT `fixed` or `absolute` —
+ * an overlay would cover the controls at the top of the page, which is the
+ * defect this replaced.
+ */
+const CO_PILOT_BANNER_LAYOUT_CLASSES =
+  "relative z-40 shrink-0 bg-amber-950 text-amber-100 border-b border-amber-800 shadow-lg";
 
 function relativeAgo(lastActionAt: number | null): string {
   if (lastActionAt === null) return "";
@@ -194,8 +215,7 @@ export function CoPilotActiveBanner() {
       <div
         data-bridge-invisible="true"
         data-testid="co-pilot-active-banner"
-        style={{ zIndex: 9999 }}
-        className="fixed top-0 left-0 right-0 bg-amber-950 text-amber-100 border-b border-amber-800 shadow-lg"
+        className={CO_PILOT_BANNER_LAYOUT_CLASSES}
       >
         <div className="flex items-center justify-between gap-4 px-4 py-2 text-sm">
           <div className="flex items-center gap-2 min-w-0">
