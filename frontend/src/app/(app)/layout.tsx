@@ -207,7 +207,13 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         <OperatorOnly>
           <BetaBannerSlot />
         </OperatorOnly>
-        <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
+        {/* `overflow-y-auto`, not `overflow-hidden`: pages still size their
+            own root as `calc(100vh - 44px)`, which can be taller than this
+            box — on a phone (MobileTopBar takes 44px and 100vh exceeds
+            100dvh), beside the beta banner, or while the in-flow co-pilot
+            banner above is lit. Hidden overflow clipped those pages' bottom
+            rows with no way to reach them; this lets the remainder scroll. */}
+        <main className="flex-1 min-h-0 overflow-y-auto">{children}</main>
       </div>
       {/* The offline sync queue's controls write (sync now, retry, clear), so
           a presentation does not show them. The co-pilot banner, the session
