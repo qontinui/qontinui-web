@@ -68,6 +68,7 @@ class FleetRegistry:
                 lan_reachable=heartbeat.lan_reachable,
                 relay=heartbeat.relay,
                 ui_thread=heartbeat.ui_thread,
+                recent_crash=heartbeat.recent_crash,
                 last_heartbeat=datetime.now(UTC),
                 is_healthy=True,
             )

@@ -29,6 +29,14 @@
  *   `evaluate`). Home does the same: a placeholder is in no machine count and
  *   is named in a line of its own. The nav still counts one whose state is
  *   not `healthy`, so the reconcile line names those.
+ * - **`ci_unrefreshed` is its own verdict.** Coord derives it for a CI
+ *   registration its registrar has not refreshed recently while nothing
+ *   contradicts it (GitHub still lists it, or coord could not measure that):
+ *   `qontinui-coord` `fleet_partition.rs` `overlay_registration_presence`.
+ *   Coord's project state raises no degradation for it, so home does not
+ *   count it as degrading — but coord did observe it, so it is not "no
+ *   verdict" either, and it is never healthy. The nav counts it (not
+ *   healthy), and the reconcile line names it as a late registrar refresh.
  *
  * A machine coord already listed as a degradation row is not counted again
  * ({@link degradingCoverage}). The machines the nav counts that home does not
@@ -65,6 +73,12 @@ export type MachineVerdict =
   | "healthy"
   | "degrading"
   | "abandoned"
+  /**
+   * A CI registration coord's registrar has not refreshed recently, with no
+   * contrary measurement. Not a degradation (coord raises none for it), not
+   * unknown (coord observed it), and never healthy.
+   */
+  | "ci_unrefreshed"
   | "no_verdict"
   | "placeholder";
 
@@ -78,6 +92,7 @@ export function machineVerdict(d: MachineStateRef): MachineVerdict {
   const s = typeof d.state === "string" ? d.state : "";
   if (s === "healthy") return "healthy";
   if (s === "abandoned") return "abandoned";
+  if (s === "ci_unrefreshed") return "ci_unrefreshed";
   if (DEGRADING_MACHINE_STATES.has(s)) return "degrading";
   return "no_verdict";
 }
@@ -96,6 +111,11 @@ export interface MachineHealthCounts {
   abandoned: number;
   /** No verdict: coord's `unknown`, or no state at all. */
   noVerdict: number;
+  /**
+   * CI registrations coord's registrar has not refreshed recently
+   * (`ci_unrefreshed`): not degrading, not unknown, not healthy.
+   */
+  ciUnrefreshed: number;
   /** The degrading machines' device ids, to join against coord's rows. */
   degradingIds: string[];
   /** Degrading machines coord sent no device id for (cannot be joined). */
@@ -104,6 +124,7 @@ export interface MachineHealthCounts {
   notDegradations: {
     abandoned: number;
     noVerdict: number;
+    ciUnrefreshed: number;
     placeholders: number;
   };
 }
@@ -119,9 +140,15 @@ export function summarizeMachineHealth(
     degrading: 0,
     abandoned: 0,
     noVerdict: 0,
+    ciUnrefreshed: 0,
     degradingIds: [],
     degradingWithoutId: 0,
-    notDegradations: { abandoned: 0, noVerdict: 0, placeholders: 0 },
+    notDegradations: {
+      abandoned: 0,
+      noVerdict: 0,
+      ciUnrefreshed: 0,
+      placeholders: 0,
+    },
   };
   for (const d of devices) {
     const nav = isNotHealthyDevice(d);
@@ -140,6 +167,9 @@ export function summarizeMachineHealth(
     } else if (v === "no_verdict") {
       c.noVerdict += 1;
       if (nav) c.notDegradations.noVerdict += 1;
+    } else if (v === "ci_unrefreshed") {
+      c.ciUnrefreshed += 1;
+      if (nav) c.notDegradations.ciUnrefreshed += 1;
     } else {
       c.degrading += 1;
       if (typeof d.device_id === "string" && d.device_id !== "") {
@@ -191,13 +221,18 @@ export function degradingCoverage(
  * rather than counting them a second time, and its subject is "rows" when
  * any is a placeholder, which is not a machine. A reader summing every line
  * then reaches the badge, not more.
+ *
+ * CI registrations the registrar has not refreshed (`ci_unrefreshed`) are
+ * named HERE and nowhere above, so this line counts them outright rather than
+ * pointing back.
  */
 export function notDegradationsSentence(
   counts: MachineHealthCounts,
   { seeDevOps }: { seeDevOps: boolean }
 ): string | null {
-  const { abandoned, noVerdict, placeholders } = counts.notDegradations;
-  const n = abandoned + noVerdict + placeholders;
+  const { abandoned, noVerdict, ciUnrefreshed, placeholders } =
+    counts.notDegradations;
+  const n = abandoned + noVerdict + ciUnrefreshed + placeholders;
   if (n === 0) return null;
   const parts: string[] = [];
   if (abandoned > 0) {
@@ -218,6 +253,9 @@ export function notDegradationsSentence(
         : `${noVerdict} of the ${counts.noVerdict} with no verdict named above`
     );
   }
+  if (ciUnrefreshed > 0) {
+    parts.push(ciUnrefreshedPhrase(ciUnrefreshed));
+  }
   if (placeholders > 0) {
     parts.push(
       placeholders === counts.placeholders
@@ -231,6 +269,16 @@ export function notDegradationsSentence(
       ? `1 ${noun} not reporting healthy is not a degradation`
       : `${n} ${noun}s not reporting healthy are not degradations`;
   return `${subject}: ${parts.join(", ")}${seeDevOps ? " — see Dev Ops" : ""}.`;
+}
+
+/**
+ * `n` CI registrations coord's registrar has not refreshed, as a phrase for a
+ * list: "1 CI registration the registrar has not refreshed recently". Shared
+ * by every reconcile line so the nav's count is explained in the same words
+ * everywhere.
+ */
+export function ciUnrefreshedPhrase(n: number): string {
+  return `${n} CI ${n === 1 ? "registration" : "registrations"} the registrar has not refreshed recently`;
 }
 
 /**
@@ -287,8 +335,13 @@ export function placeholdersSentence(
  * - `not_stated` — a coord that serves neither field: UNKNOWN.
  */
 export type RosterExclusions =
-  | { kind: "none_withheld" }
-  | { kind: "withheld"; unbound: number; boundToOtherTenant: number }
+  | { kind: "none_withheld"; retired?: number }
+  | {
+      kind: "withheld";
+      unbound: number;
+      boundToOtherTenant: number;
+      retired?: number;
+    }
   | { kind: "withheld_unmeasured"; reason: string | null }
   | { kind: "not_stated" };
 
@@ -349,9 +402,17 @@ export function readRosterExclusions(
   if (!isCount(unbound) || !isCount(boundToOtherTenant)) {
     return { kind: "withheld_unmeasured", reason: null };
   }
+  // `retired` (coord's device reaper set `reaped_at`; plan
+  // `2026-11-03-devops-fleet-partitioned-counts-retired-ephemeral-ci-registrations`)
+  // is served beside the two binding counts but is NOT a binding fault and
+  // NOT incompleteness: those rows are retired on purpose and never come
+  // back to zero. It only explains an empty or short roster. Absent or not a
+  // count (an older coord) is simply not stated.
+  const { retired } = x as Record<string, unknown>;
+  const retiredPart = isCount(retired) && retired > 0 ? { retired } : {};
   return unbound + boundToOtherTenant > 0
-    ? { kind: "withheld", unbound, boundToOtherTenant }
-    : { kind: "none_withheld" };
+    ? { kind: "withheld", unbound, boundToOtherTenant, ...retiredPart }
+    : { kind: "none_withheld", ...retiredPart };
 }
 
 /** Whether coord withheld devices, or could not count what it withheld. */
@@ -391,6 +452,46 @@ export function rosterIncompleteSentence(
   }
 }
 
+/**
+ * Retired rows in words, or null when coord stated none: hidden on purpose,
+ * never a fault. Every empty-roster surface appends it so an empty list
+ * beside thousands of retired rows is explained the same way everywhere.
+ */
+export function retiredRowsSentence(e: RosterExclusions): string | null {
+  const n =
+    e.kind === "none_withheld" || e.kind === "withheld" ? e.retired : undefined;
+  if (!n) return null;
+  return `${n} ${n === 1 ? "device was" : "devices were"} retired after going unseen past coord's reaper grace period and ${n === 1 ? "is" : "are"} not listed — retired, which is not a withheld machine.`;
+}
+
+function withRetired(sentence: string, e: RosterExclusions): string {
+  const r = retiredRowsSentence(e);
+  return r ? `${sentence} ${r}` : sentence;
+}
+
+/**
+ * `sentence` with what coord left out of its roster appended, read straight
+ * from a `/fleet/health` body: the machines it withheld (a binding fault,
+ * named so the retired clause never sits beside an unnamed withheld count),
+ * then the rows its device reaper retired. For the surfaces that describe an
+ * empty or all-hidden device picker without a parsed {@link RosterExclusions}
+ * in hand (the runners page notice, SpawnModal's manual-entry fallback).
+ * Adds nothing when coord withheld and retired nothing, and nothing for an
+ * older coord that states neither.
+ */
+export function appendRosterExclusions(
+  sentence: string,
+  body: RosterExclusionsRef
+): string {
+  const e = readRosterExclusions(body);
+  const withheld = isRosterBindingFault(e)
+    ? // Never coord's own `excluded_error` text: it is an unbounded error
+      // chain, and the picker notices have no room for it.
+      rosterIncompleteSentence(e, { withReason: false })
+    : null;
+  return withRetired(withheld ? `${sentence} ${withheld}` : sentence, e);
+}
+
 function withheldParts(e: { unbound: number; boundToOtherTenant: number }) {
   const parts: string[] = [];
   if (e.unbound > 0) parts.push(`${e.unbound} with no binding`);
@@ -410,10 +511,16 @@ export function emptyRosterSentence(
 ): string {
   switch (e.kind) {
     case "none_withheld":
-      return "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy.";
+      return withRetired(
+        "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy.",
+        e
+      );
     case "withheld": {
       const n = e.unbound + e.boundToOtherTenant;
-      return `Coord lists no machines but withheld ${n} from its roster (${withheldParts(e).join(", ")}) — a binding fault, not an empty fleet, so machine health is unknown.`;
+      return withRetired(
+        `Coord lists no machines but withheld ${n} from its roster (${withheldParts(e).join(", ")}) — a binding fault, not an empty fleet, so machine health is unknown.`,
+        e
+      );
     }
     case "withheld_unmeasured":
       return `Coord lists no machines and could not count the machines it withheld from its roster${withReason && e.reason ? ` (${e.reason})` : ""} — machine health is unknown.`;

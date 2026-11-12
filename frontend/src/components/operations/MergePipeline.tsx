@@ -135,6 +135,10 @@ import {
   candidateChurnBadgeTitle,
   compareBySubmitted,
   deriveCandidateChurn,
+  behindCountsBadgeLabel,
+  behindCountsBadgeTitle,
+  behindCountsTotal,
+  behindRefusedCount,
   derivePipelineHealth,
   fusePipelinePrs,
   matchesFilter,
@@ -303,6 +307,23 @@ function PipelineHealthStrip({
       onClick: onShowAttention,
     });
   }
+  // How many BEHIND PRs coord is actually bringing current (plan
+  // 2026-10-27-behind-main-no-action-needed-is-promised-without-reading-whether-coord-will-act,
+  // D4). Always rendered: a measured zero is a fact. Red only for what coord
+  // refused, which those rows' own needs-attention count already carries.
+  badges.push({
+    key: "behind",
+    label: loaded ? behindCountsBadgeLabel(health.behind) : "behind –",
+    tone: !loaded
+      ? "muted"
+      : behindRefusedCount(health.behind) > 0
+        ? "attention"
+        : behindCountsTotal(health.behind) > 0
+          ? "waiting"
+          : "muted",
+    title: loaded ? behindCountsBadgeTitle(health.behind) : undefined,
+    "data-testid": "pipeline-behind",
+  });
   // Candidate-CI waste (plan
   // 2026-07-27-coord-green-candidates-discarded-always-zero): merge candidates
   // whose CI went green and were then discarded. ALWAYS rendered — when no
