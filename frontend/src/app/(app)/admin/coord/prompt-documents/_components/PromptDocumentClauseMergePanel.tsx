@@ -66,6 +66,16 @@ interface PromptDocumentClauseMergePanelProps {
  * A pair that does not decompose into clauses on both sides has no clause
  * merge; coord says why and this panel relays it, pointing back at the
  * whole-body Adopt / Keep-mine pair the dialog already offers.
+ *
+ * ## It does not scroll itself
+ *
+ * The panel renders at its natural height inside the upstream dialog's one
+ * scrolling body. It used to carry its own `min-h-0 flex-1 overflow-y-auto`
+ * clause list, which only worked while the panel was a direct flex child of
+ * the dialog — and as one, any `shrink-0` block above it (a long release note)
+ * squeezed the list to nothing. One scroll region, owned by the dialog, is
+ * what keeps every clause and the dialog's footer reachable — so the per-clause
+ * diffs render `overflow-visible` as well.
  */
 export function PromptDocumentClauseMergePanel({
   preview,
@@ -112,7 +122,7 @@ export function PromptDocumentClauseMergePanel({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+    <div className="flex flex-col gap-2" data-testid="clause-merge-panel">
       <div
         className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs"
         data-testid="clause-merge-summary"
@@ -166,10 +176,7 @@ export function PromptDocumentClauseMergePanel({
         </p>
       )}
 
-      <ol
-        className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
-        data-testid="clause-merge-entries"
-      >
+      <ol className="space-y-2" data-testid="clause-merge-entries">
         {preview.entries.map((entry) => (
           <li key={entry.clause}>
             <ClauseMergeRow
@@ -313,8 +320,11 @@ function ClauseMergeRow({
                 </span>
                 )
               </summary>
-              <div className="mt-1 overflow-hidden rounded-md border border-border">
-                <DiffTable lines={changeDiff.lines} />
+              <div className="mt-1 rounded-md border border-border">
+                <DiffTable
+                  lines={changeDiff.lines}
+                  className="overflow-visible rounded-md"
+                />
               </div>
             </details>
           )}
@@ -324,8 +334,11 @@ function ClauseMergeRow({
           <summary className="cursor-pointer text-muted-foreground">
             What changes here
           </summary>
-          <div className="mt-1 overflow-hidden rounded-md border border-border">
-            <DiffTable lines={changeDiff.lines} />
+          <div className="mt-1 rounded-md border border-border">
+            <DiffTable
+              lines={changeDiff.lines}
+              className="overflow-visible rounded-md"
+            />
           </div>
         </details>
       ) : null}

@@ -11,6 +11,10 @@ import { describe, it, expect } from "vitest";
 import {
   anchorKey,
   cpuTempReading,
+  formatPsi,
+  formatSliceLimit,
+  psiHasAnyFigure,
+  sliceTelemetryReading,
   AXIS_DIRECTION,
   pressureAxisIsSwap,
   pressureAxisLabel,
@@ -30,17 +34,21 @@ import {
   formatPressureFloor,
   formatRatioOfCeiling,
   formatWarnMargin,
+  FLOOR_BASIS_LABEL,
   hasPressureValue,
+  HEADROOM_BASIS_LABEL,
   headroomReport,
+  headroomSetBy,
   headroomTone,
   HEADROOM_LABEL,
   HEADROOM_MEANING,
   hostIsBindingConstraint,
-  laneShowsSwap,
   pressureFormula,
   pressureLabel,
   rowHeadroom,
+  rowShowsSwapAxis,
   safeRatio,
+  swapReading,
   threadHeadroom,
   summarizeFleetAdmission,
   EXPIRED_AFTER_SECS,
@@ -49,6 +57,7 @@ import {
 import type {
   EffectiveFloor,
   EffectivePressureFloor,
+  HeadroomSource,
   ResourceSampleRow,
 } from "./fleetResources";
 
@@ -326,10 +335,124 @@ describe("§C1 — the row says WHICH metric it is showing", () => {
     );
   });
 
-  it("never permits a swap figure on a host row", () => {
-    expect(laneShowsSwap("host")).toBe(false);
-    expect(laneShowsSwap("wsl")).toBe(true);
-    expect(laneShowsSwap("container")).toBe(true);
+  it("reads a swap figure exactly when coord serves `swap_ratio` as a number", () => {
+    // The served-field rule that replaced the lane-name rule. Coord decides
+    // whether a lane's swap is graded (`swap_axis_graded`) and serves the
+    // ratio it graded. This module derives none from the raw counters.
+    expect(
+      swapReading(
+        sample({
+          swap_total_bytes: 51_565_817_856,
+          swap_used_bytes: 51_561_738_240,
+          swap_ratio: 0.9999,
+        })
+      )
+    ).toEqual({ kind: "value", ratio: 0.9999 });
+    // A Windows host is served null whatever swap columns the row carries:
+    // there they are the commit counters derived a second time.
+    expect(
+      swapReading(
+        sample({
+          swap_total_bytes: 40 * GIB,
+          swap_used_bytes: 31 * GIB,
+          swap_ratio: null,
+        })
+      )
+    ).toEqual({ kind: "none" });
+    // 0 is a reading (a swap device nothing is using), not an absence.
+    expect(swapReading(sample({ swap_ratio: 0 }))).toEqual({
+      kind: "value",
+      ratio: 0,
+    });
+  });
+
+  it("keeps a coord that predates `swap_ratio` apart from one that serves null", () => {
+    // Absent is "not reported"; null is coord saying "no swap figure here".
+    // Collapsing them would print nothing where the honest answer is unknown.
+    const old = sample();
+    delete old.swap_ratio;
+    expect(swapReading(old)).toEqual({ kind: "unreported" });
+    expect(swapReading(null)).toEqual({ kind: "unreported" });
+    expect(swapReading(sample({ swap_ratio: null }))).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("reads a swap ratio it cannot use as unreadable, never as a figure", () => {
+    for (const bad of [1.2, -0.1, NaN, Infinity, "0.9"]) {
+      expect(
+        swapReading(sample({ swap_ratio: bad as unknown as number }))
+      ).toEqual({ kind: "unreadable" });
+    }
+  });
+
+  it("puts swap on every wsl/container row, and on a host row only when coord serves it", () => {
+    // The Linux lanes RANK on swap, so it is their axis even unmeasured.
+    expect(rowShowsSwapAxis(sample({ lane: "wsl", swap_ratio: 0.25 }))).toBe(
+      true
+    );
+    expect(rowShowsSwapAxis(sample({ lane: "wsl", swap_ratio: null }))).toBe(
+      true
+    );
+    expect(rowShowsSwapAxis(sample({ lane: "container" }))).toBe(true);
+    // A host ranks on commit; only coord's measured swap figure puts swap on
+    // the row. A Windows host (null) and a coord that never said (absent) do
+    // not.
+    expect(rowShowsSwapAxis(sample({ swap_ratio: 0.9999 }))).toBe(true);
+    expect(rowShowsSwapAxis(sample({ swap_ratio: null }))).toBe(false);
+    const old = sample();
+    delete old.swap_ratio;
+    expect(rowShowsSwapAxis(old)).toBe(false);
+    expect(rowShowsSwapAxis(null)).toBe(false);
+  });
+});
+
+describe("headroom_source — WHICH reading set a warn or a breach", () => {
+  const source = (basis: string, volume: string | null = null) =>
+    ({ basis, volume, free_bytes: null }) as HeadroomSource;
+
+  it("names the reading in the words the Admission column's lines already use", () => {
+    expect(headroomSetBy("warn", source("swap"))).toBe("swap");
+    expect(headroomSetBy("breach", source("threads"))).toBe("saturation");
+    expect(headroomSetBy("breach", source("disk_free"))).toBe("free disk");
+    expect(headroomSetBy("warn", source("commit_available"))).toBe(
+      "free commit"
+    );
+    expect(headroomSetBy("warn", source("mem_available"))).toBe(
+      "available memory"
+    );
+    // One vocabulary: the byte bases ARE the floor labels, not a third set.
+    expect(HEADROOM_BASIS_LABEL.disk_free).toBe(FLOOR_BASIS_LABEL.disk_free);
+    expect(HEADROOM_BASIS_LABEL.swap).toBe(pressureAxisLabel("swap_ratio"));
+  });
+
+  it("names the volume, the one source whose remedy is not on the row", () => {
+    expect(headroomSetBy("breach", source("other_volume", "C:"))).toBe(
+      "volume C:"
+    );
+    // Presentation mode: a label someone typed can name a client.
+    expect(
+      headroomSetBy("breach", source("other_volume", "C:"), {
+        nameVolume: false,
+      })
+    ).toBe("another volume");
+    expect(headroomSetBy("breach", source("other_volume"))).toBe(
+      "another volume"
+    );
+  });
+
+  it("names nothing on ok or unknown, or where coord sent no source", () => {
+    expect(headroomSetBy("ok", source("swap"))).toBeNull();
+    expect(headroomSetBy("unknown", source("swap"))).toBeNull();
+    expect(headroomSetBy("warn", null)).toBeNull();
+    expect(headroomSetBy("warn", undefined)).toBeNull();
+    expect(headroomSetBy("breach", source(""))).toBeNull();
+  });
+
+  it("reads a basis this build does not know as coord's own word, without underscores", () => {
+    expect(headroomSetBy("warn", source("inode_free"))).toBe("inode free");
+    // Never an inherited Object member wearing a label.
+    expect(headroomSetBy("warn", source("constructor"))).toBe("constructor");
   });
 });
 
@@ -1035,6 +1158,103 @@ describe("cpuTempReading — temperature is measured or it is not, never zero", 
     expect(cpuTempReading({ lane: "wsl", cpu_temp_c: 64 })).toMatchObject({
       kind: "value",
       text: "64 C",
+    });
+  });
+});
+
+describe("sliceTelemetryReading — unmeasured is a state, never zero", () => {
+  const none = { cgroup_slices: null, psi: null, slice_source: null };
+
+  it("not_supported wins over everything beside it", () => {
+    expect(
+      sliceTelemetryReading({ ...none, slice_source: "not_supported" })
+    ).toEqual({ kind: "not_supported" });
+    expect(
+      sliceTelemetryReading({
+        cgroup_slices: { a: { memory_current: 1 } },
+        psi: null,
+        slice_source: " not_supported ",
+      })
+    ).toEqual({ kind: "not_supported" });
+  });
+
+  it("null / absent / non-object columns are unmeasured", () => {
+    expect(sliceTelemetryReading(none)).toEqual({ kind: "unmeasured" });
+    expect(sliceTelemetryReading({})).toEqual({ kind: "unmeasured" });
+    expect(
+      sliceTelemetryReading({
+        cgroup_slices: [] as never,
+        psi: 3 as never,
+        slice_source: "linux_cgroup_v2",
+      })
+    ).toEqual({ kind: "unmeasured" });
+  });
+
+  it("carries unsent keys as null and keeps a real 0", () => {
+    const r = sliceTelemetryReading({
+      slice_source: "linux_cgroup_v2",
+      cgroup_slices: {
+        "b.slice": {
+          memory_current: 0,
+          memory_high: "max",
+          events: { oom_kill: 0 },
+        },
+        "a.slice": {},
+      },
+      psi: { system: { memory: { some: { avg10: 0 } } } },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(r.slices.map((s) => s.name)).toEqual(["a.slice", "b.slice"]);
+    const [a, b] = r.slices;
+    expect(a.memoryCurrent).toBeNull();
+    expect(a.oomKill).toBeNull();
+    expect(a.memoryHigh).toEqual({ kind: "unmeasured" });
+    expect(b.memoryCurrent).toBe(0);
+    expect(b.memoryHigh).toEqual({ kind: "max" });
+    expect(b.memoryMax).toEqual({ kind: "unmeasured" });
+    expect(b.oomKill).toBe(0);
+    expect(r.psiSystem.memorySomeAvg10).toBe(0);
+    expect(r.psiSystem.cpuSomeAvg10).toBeNull();
+    expect(r.slicesUnmeasured).toBe(false);
+  });
+
+  it("flags slices as unmeasured when only psi arrived", () => {
+    const r = sliceTelemetryReading({
+      psi: { system: { cpu: { some: { avg10: 2 } } } },
+    });
+    if (r.kind !== "measured") throw new Error("expected measured");
+    expect(r.slicesUnmeasured).toBe(true);
+    expect(psiHasAnyFigure(r.psiSystem)).toBe(true);
+    expect(r.psiSystem.memorySomeAvg10).toBeNull();
+  });
+
+  it("formats limits and PSI without turning null into 0", () => {
+    expect(formatPsi(null)).toBe("—");
+    expect(formatPsi(undefined)).toBe("—");
+    expect(formatPsi(0)).toBe("0.0%");
+    expect(formatSliceLimit({ kind: "max" })).toBe("no limit");
+    expect(formatSliceLimit({ kind: "unmeasured" })).toBe("—");
+    expect(formatSliceLimit({ kind: "bytes", bytes: 1024 })).toBe("1.0 KB");
+  });
+});
+
+describe("sliceTelemetryReading — empty objects and casing", () => {
+  it("treats {} columns as unmeasured, not as 'nothing present'", () => {
+    expect(
+      sliceTelemetryReading({
+        cgroup_slices: {},
+        psi: {},
+        slice_source: "linux_cgroup_v2",
+      })
+    ).toEqual({ kind: "unmeasured" });
+    expect(
+      sliceTelemetryReading({ cgroup_slices: {}, psi: { system: {} } })
+    ).toEqual({ kind: "unmeasured" });
+  });
+
+  it("matches not_supported case-insensitively", () => {
+    expect(sliceTelemetryReading({ slice_source: "Not_Supported" })).toEqual({
+      kind: "not_supported",
     });
   });
 });

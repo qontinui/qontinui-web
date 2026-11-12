@@ -28,7 +28,9 @@
  * ui-bridge/packages/ui-bridge/src/server/handlers.ts `materializeElements`):
  *   {
  *     id, type, tagName, label, role, ariaLabel, accessibleName, text, title,
- *     identifier, state, actions?: string[],
+ *     identifier, state,
+ *     actions?: string[],     // the KIND's built-in verbs (SDK >= 0.46: media
+ *                             // rows too), NOT handlers — see deriveInteractable
  *     customActions?: Array<{ id, label?, description?, effect? }>,  // SDK >= 0.27
  *     category?: 'interactive'|'content'|'media',
  *     bbox?: { x, y, width, height },   // floats, CSS px
@@ -286,17 +288,51 @@ export function inertReason(el: Record<string, unknown>): string | null {
 }
 
 /**
+ * The SDK's media element kinds (`ElementType` in ui-bridge
+ * `packages/ui-bridge/src/core/types.ts`; the media rows of
+ * `ELEMENT_KIND_ACTIONS` in `core/element-kind.ts`).
+ */
+const MEDIA_ELEMENT_TYPES = new Set(["image", "video", "canvas", "svg", "picture"]);
+
+/** A non-empty array: the custom-action list or the built-in verb list. */
+function nonEmptyArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
+}
+
+/**
  * Decide `interactable` from real interactivity signals (NOT mere presence of
  * text). Inert elements first, then the SDK's own categorization where
  * available, then interactive tag/role:
  *   - an `inertReason` (see above)         -> FALSE, before anything else, OR
  *   - category === 'interactive'           (the SDK's own classification), OR
- *   - a non-empty `actions` array          (registered handlers), OR
- *   - a non-empty `customActions` array    (registered custom handlers), OR
- *   - an interactive tagName, OR
- *   - an interactive ARIA role.
- * Plain content/containers (category 'content'/'media', no actions, non-
- * interactive tag/role) stay false.
+ *   - a non-empty `customActions` array    (app-declared handlers), OR
+ *   - with NO category only: a non-empty `actions` array on a row whose
+ *     `type` is not a media kind, an interactive tagName, or an interactive
+ *     ARIA role.
+ * A content or media row (category 'content'/'media') is interactable only
+ * through `customActions`; everything else stays false.
+ *
+ * WHY `actions` IS NOT A HANDLER SIGNAL: since `@qontinui/ui-bridge` 0.46
+ * (plan 2026-11-09-an-elements-advertised-verbs-depend-on-which-path-found-it)
+ * `actions` is the element KIND's row of the SDK's one verb table, and every
+ * kind — media included — advertises the universal pointer/keyboard verbs
+ * (`click`, `hover`, `sendKeys`, `scroll`, …). A media row used to carry
+ * `actions: []` and now carries that list, so reading it as "registered
+ * handlers" marked every image, svg and canvas interactable and fed them all
+ * to the `layout` overlap pass. Nor does a content row's list mean one: an
+ * element registered with `category: 'content'` reads its kind's row like any
+ * other. `customActions` stays a real signal: it lists only what the app
+ * itself declared on the element.
+ *
+ * ROWS WITH NO CATEGORY: a 0.46 DOM-fallback scan row
+ * (`server/dom-fallback.ts`) carries no category, and its `actions` is always
+ * at least the universal list, so on such a row the `actions` test reduces to
+ * "`type` is not a media kind". The known trade-off: an `<img onclick>` or a
+ * `<canvas tabindex="0">` that only the DOM fallback finds is no longer
+ * counted interactable. Nothing in its row separates it from any other image
+ * — `materializeElements` serializes a fallback row without its node, so it
+ * carries no `tagName` or `role` either — and counting every such image
+ * would flood the overlap pass with every image on the page.
  *
  * WHY THE INERT GATE COMES FIRST: the `layout` analyzer's overlap pass is
  * pairwise over `interactable` elements, so one inert zone overlay stacked
@@ -313,20 +349,14 @@ export function deriveInteractable(el: Record<string, unknown>): boolean {
 
   const category = typeof el.category === "string" ? el.category : undefined;
   if (category === "interactive") return true;
-  if (category === "content" || category === "media") {
-    // Explicitly non-interactive per the SDK — trust it unless a real handler
-    // contradicts (a content element can still carry actions in rare cases).
-    if (Array.isArray(el.actions) && el.actions.length > 0) return true;
-    if (Array.isArray(el.customActions) && el.customActions.length > 0) {
-      return true;
-    }
-    return false;
-  }
+  if (nonEmptyArray(el.customActions)) return true;
+  // Explicitly non-interactive per the SDK, and no app-declared handler
+  // contradicts it. The built-in `actions` list does not: it is the kind's
+  // verb table, not a handler (see above).
+  if (category === "content" || category === "media") return false;
 
-  if (Array.isArray(el.actions) && el.actions.length > 0) return true;
-  if (Array.isArray(el.customActions) && el.customActions.length > 0) {
-    return true;
-  }
+  const type = typeof el.type === "string" ? el.type.toLowerCase() : "";
+  if (nonEmptyArray(el.actions) && !MEDIA_ELEMENT_TYPES.has(type)) return true;
 
   const tag = typeof el.tagName === "string" ? el.tagName.toLowerCase() : "";
   if (tag && INTERACTIVE_TAGS.has(tag)) return true;

@@ -172,11 +172,22 @@ export interface FlowBlocks {
 
 /**
  * One `group_by=overlord_version` group: the blocks over ONLY the passes that
- * ran one `triage-sessions.py` blob sha, oldest group first.
+ * ran one set of overlord versions (every script, the `/next-move` brief and
+ * `runner_git_sha`), oldest group first.
  */
 export interface FlowVersionGroup extends FlowBlocks {
-  /** `null` = those passes recorded no version. */
+  /**
+   * A 16-hex digest over the group's `overlord_versions`. `null` = the version
+   * is UNKNOWN: those passes recorded none, or missed reading an entry their
+   * runner had read on an earlier pass.
+   */
   overlord_version: string | null;
+  /**
+   * The versions the digest is over, file or `runner_git_sha` → sha. An entry a
+   * runner never read is left out, so passes grouped without it may differ in
+   * it. `null` on the unknown group; absent on a coord that predates the field.
+   */
+  overlord_versions?: Record<string, string> | null;
 }
 
 /** coord's `GET /coord/overlord/flow` answer (contract §2). */

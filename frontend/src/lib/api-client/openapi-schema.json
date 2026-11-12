@@ -420,227 +420,6 @@
         "title": "AIPromptTemplateUpdate",
         "type": "object"
       },
-      "ActionDataBatch": {
-        "description": "Batch of action data from runner.",
-        "properties": {
-          "actions": {
-            "items": {
-              "$ref": "#/components/schemas/ActionDataCreate"
-            },
-            "title": "Actions",
-            "type": "array"
-          },
-          "project_id": {
-            "format": "uuid",
-            "title": "Project Id",
-            "type": "string"
-          },
-          "run_id": {
-            "description": "Test run or execution ID",
-            "format": "uuid",
-            "title": "Run Id",
-            "type": "string"
-          },
-          "test_run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Optional link to SoftwareTestRun",
-            "title": "Test Run Id"
-          },
-          "workflow_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Workflow Id"
-          }
-        },
-        "required": [
-          "run_id",
-          "project_id",
-          "actions"
-        ],
-        "title": "ActionDataBatch",
-        "type": "object"
-      },
-      "ActionDataBatchResponse": {
-        "description": "Response for batch action data submission.",
-        "properties": {
-          "indexed": {
-            "title": "Indexed",
-            "type": "integer"
-          },
-          "run_id": {
-            "format": "uuid",
-            "title": "Run Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "indexed",
-          "run_id"
-        ],
-        "title": "ActionDataBatchResponse",
-        "type": "object"
-      },
-      "ActionDataCreate": {
-        "description": "Action data submitted by runner for historical indexing.",
-        "properties": {
-          "action_id": {
-            "title": "Action Id",
-            "type": "string"
-          },
-          "action_type": {
-            "title": "Action Type",
-            "type": "string"
-          },
-          "active_states": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Active States",
-            "type": "array"
-          },
-          "best_match_score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Best Match Score"
-          },
-          "duration_ms": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Duration Ms"
-          },
-          "match_count": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Count"
-          },
-          "match_height": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Height"
-          },
-          "match_width": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Width"
-          },
-          "match_x": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match X"
-          },
-          "match_y": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Y"
-          },
-          "pattern_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pattern Id"
-          },
-          "pattern_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pattern Name"
-          },
-          "result_data": {
-            "additionalProperties": true,
-            "title": "Result Data",
-            "type": "object"
-          },
-          "sequence_number": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Order within the test run",
-            "title": "Sequence Number"
-          },
-          "success": {
-            "title": "Success",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "action_id",
-          "action_type",
-          "success"
-        ],
-        "title": "ActionDataCreate",
-        "type": "object"
-      },
       "ActionExecutionBatch": {
         "description": "Batch of action executions to report.",
         "properties": {
@@ -27256,6 +27035,116 @@
         "title": "ForkSkillRequest",
         "type": "object"
       },
+      "FrameResponse": {
+        "description": "Frame response",
+        "properties": {
+          "cluster_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Id"
+          },
+          "frame_number": {
+            "title": "Frame Number",
+            "type": "integer"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "perceptual_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Perceptual Hash"
+          },
+          "recording_id": {
+            "title": "Recording Id",
+            "type": "string"
+          },
+          "relative_time_ms": {
+            "title": "Relative Time Ms",
+            "type": "integer"
+          },
+          "state_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Id"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          },
+          "window_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Title"
+          }
+        },
+        "required": [
+          "id",
+          "recording_id",
+          "frame_number",
+          "timestamp",
+          "relative_time_ms",
+          "width",
+          "height"
+        ],
+        "title": "FrameResponse",
+        "type": "object"
+      },
       "FreshHostResponse": {
         "description": "A resolved test host for an app.",
         "properties": {
@@ -27982,158 +27871,6 @@
         "title": "HelperAnswerRequest",
         "type": "object"
       },
-      "HistoricalResultResponse": {
-        "description": "Response for historical result.",
-        "properties": {
-          "action_type": {
-            "title": "Action Type",
-            "type": "string"
-          },
-          "active_states": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Active States"
-          },
-          "best_match_score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Best Match Score"
-          },
-          "frame_timestamp_ms": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Frame Timestamp Ms"
-          },
-          "has_frame": {
-            "default": false,
-            "title": "Has Frame",
-            "type": "boolean"
-          },
-          "id": {
-            "title": "Id",
-            "type": "integer"
-          },
-          "match_count": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Count"
-          },
-          "match_height": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Height"
-          },
-          "match_width": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Width"
-          },
-          "match_x": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match X"
-          },
-          "match_y": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Y"
-          },
-          "pattern_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pattern Id"
-          },
-          "pattern_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pattern Name"
-          },
-          "success": {
-            "title": "Success",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id",
-          "pattern_id",
-          "pattern_name",
-          "action_type",
-          "active_states",
-          "success",
-          "match_count",
-          "best_match_score",
-          "match_x",
-          "match_y",
-          "match_width",
-          "match_height",
-          "frame_timestamp_ms"
-        ],
-        "title": "HistoricalResultResponse",
-        "type": "object"
-      },
       "IdentityListResponse": {
         "description": "Response for GET /identities and POST /identities/link.",
         "properties": {
@@ -28735,25 +28472,6 @@
         "title": "ImportedElement",
         "type": "object"
       },
-      "IndexHistoricalResultsResponse": {
-        "description": "Response for indexing historical results.",
-        "properties": {
-          "indexed": {
-            "title": "Indexed",
-            "type": "integer"
-          },
-          "snapshot_run_id": {
-            "title": "Snapshot Run Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "indexed",
-          "snapshot_run_id"
-        ],
-        "title": "IndexHistoricalResultsResponse",
-        "type": "object"
-      },
       "IndividualCheckResult": {
         "description": "Individual check result within a check group.",
         "properties": {
@@ -29108,23 +28826,6 @@
           "updated_at"
         ],
         "title": "InstalledPackageRead",
-        "type": "object"
-      },
-      "IntegrationTestPlaybackRequest": {
-        "description": "Request for integration test playback frames.",
-        "properties": {
-          "historical_result_ids": {
-            "items": {
-              "type": "integer"
-            },
-            "title": "Historical Result Ids",
-            "type": "array"
-          }
-        },
-        "required": [
-          "historical_result_ids"
-        ],
-        "title": "IntegrationTestPlaybackRequest",
         "type": "object"
       },
       "IntentDocumentCreate": {
@@ -43862,83 +43563,6 @@
         "title": "RAGDashboardStats",
         "type": "object"
       },
-      "RandomResultRequest": {
-        "description": "Request for random historical result.",
-        "properties": {
-          "action_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Filter by action type (FIND, CLICK, etc.)",
-            "title": "Action Type"
-          },
-          "active_states": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Filter by active states (any match)",
-            "title": "Active States"
-          },
-          "pattern_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Filter by pattern ID",
-            "title": "Pattern Id"
-          },
-          "project_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Filter by project ID",
-            "title": "Project Id"
-          },
-          "success_only": {
-            "default": true,
-            "description": "Only return successful results",
-            "title": "Success Only",
-            "type": "boolean"
-          },
-          "workflow_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Filter by workflow ID",
-            "title": "Workflow Id"
-          }
-        },
-        "title": "RandomResultRequest",
-        "type": "object"
-      },
       "RatingCreate": {
         "description": "Schema for creating/updating a rating.",
         "properties": {
@@ -45869,6 +45493,16 @@
             "title": "Port",
             "type": "integer"
           },
+          "recent_crash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerHeartbeatCrash"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relay": {
             "anyOf": [
               {
@@ -47613,6 +47247,19 @@
             "title": "Panicmessage",
             "type": "string"
           },
+          "pid": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pid of the crashed process, if the dump recorded one.",
+            "title": "Pid"
+          },
           "reportedAt": {
             "description": "ISO 8601 timestamp when the crash was reported.",
             "title": "Reportedat",
@@ -47687,6 +47334,16 @@
             "title": "Port",
             "type": "integer"
           },
+          "recent_crash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerHeartbeatCrash"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relay": {
             "anyOf": [
               {
@@ -47727,6 +47384,70 @@
           "os"
         ],
         "title": "RunnerHeartbeat",
+        "type": "object"
+      },
+      "RunnerHeartbeatCrash": {
+        "description": "The runner's most recent crash dump, as its HTTP heartbeat sends it.\n\nThe snake_case ``HeartbeatRecentCrash`` in ``heartbeat.rs``. The optional\nfields are omitted, never ``null``, when the dump lacks a section. ``pid``\nis omitted for a dump that predates the ``Pid:`` header\n(qontinui-runner#2551 / #2722).\n\nThe route is unauthenticated and the registry lives in memory, so text is\ncut to ``MAX_TEXT`` characters. Unknown keys are dropped.",
+        "properties": {
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "panic_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Panic Location"
+          },
+          "panic_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Panic Message"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "reported_at": {
+            "title": "Reported At",
+            "type": "string"
+          },
+          "thread": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread"
+          }
+        },
+        "required": [
+          "file_path",
+          "reported_at"
+        ],
+        "title": "RunnerHeartbeatCrash",
         "type": "object"
       },
       "RunnerInstance": {
@@ -60796,34 +60517,6 @@
         "title": "TestRunListResponse",
         "type": "object"
       },
-      "TestRunPlaybackResponse": {
-        "description": "Response for test run playback data.",
-        "properties": {
-          "results": {
-            "items": {
-              "$ref": "#/components/schemas/TestRunResultResponse"
-            },
-            "title": "Results",
-            "type": "array"
-          },
-          "test_run_id": {
-            "format": "uuid",
-            "title": "Test Run Id",
-            "type": "string"
-          },
-          "total_results": {
-            "title": "Total Results",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "test_run_id",
-          "total_results",
-          "results"
-        ],
-        "title": "TestRunPlaybackResponse",
-        "type": "object"
-      },
       "TestRunResponse": {
         "description": "Response schema for test run creation and retrieval.",
         "properties": {
@@ -60903,182 +60596,6 @@
           "created_at"
         ],
         "title": "TestRunResponse",
-        "type": "object"
-      },
-      "TestRunResultResponse": {
-        "description": "Historical result for test run playback.",
-        "properties": {
-          "action_type": {
-            "title": "Action Type",
-            "type": "string"
-          },
-          "active_states": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Active States"
-          },
-          "best_match_score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Best Match Score"
-          },
-          "duration_ms": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Duration Ms"
-          },
-          "id": {
-            "title": "Id",
-            "type": "integer"
-          },
-          "match_count": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Count"
-          },
-          "match_height": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Height"
-          },
-          "match_width": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Width"
-          },
-          "match_x": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match X"
-          },
-          "match_y": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Y"
-          },
-          "pattern_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pattern Id"
-          },
-          "pattern_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pattern Name"
-          },
-          "recorded_at": {
-            "title": "Recorded At",
-            "type": "string"
-          },
-          "result_data": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Result Data"
-          },
-          "sequence_number": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sequence Number"
-          },
-          "success": {
-            "title": "Success",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id",
-          "sequence_number",
-          "pattern_id",
-          "pattern_name",
-          "action_type",
-          "active_states",
-          "success",
-          "match_count",
-          "best_match_score",
-          "match_x",
-          "match_y",
-          "match_width",
-          "match_height",
-          "duration_ms",
-          "recorded_at"
-        ],
-        "title": "TestRunResultResponse",
         "type": "object"
       },
       "TestTargetDesignation": {
@@ -68919,131 +68436,6 @@
         "title": "FileInfo",
         "type": "object"
       },
-      "app__api__v1__endpoints__historical__FrameResponse": {
-        "description": "Response with frame data.",
-        "properties": {
-          "action_type": {
-            "title": "Action Type",
-            "type": "string"
-          },
-          "frame_base64": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Base64 encoded JPEG",
-            "title": "Frame Base64"
-          },
-          "has_frame": {
-            "title": "Has Frame",
-            "type": "boolean"
-          },
-          "historical_result_id": {
-            "title": "Historical Result Id",
-            "type": "integer"
-          },
-          "match_height": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Height"
-          },
-          "match_width": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Width"
-          },
-          "match_x": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match X"
-          },
-          "match_y": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Match Y"
-          },
-          "pattern_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pattern Id"
-          },
-          "pattern_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pattern Name"
-          },
-          "success": {
-            "title": "Success",
-            "type": "boolean"
-          },
-          "timestamp_ms": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Timestamp Ms"
-          }
-        },
-        "required": [
-          "historical_result_id",
-          "action_type",
-          "pattern_id",
-          "pattern_name",
-          "success",
-          "match_x",
-          "match_y",
-          "match_width",
-          "match_height",
-          "timestamp_ms",
-          "has_frame"
-        ],
-        "title": "FrameResponse",
-        "type": "object"
-      },
       "app__schemas__annotation__AnnotationUpdate": {
         "properties": {
           "description": {
@@ -69514,116 +68906,6 @@
           "extension"
         ],
         "title": "FileInfo",
-        "type": "object"
-      },
-      "app__schemas__recording__FrameResponse": {
-        "description": "Frame response",
-        "properties": {
-          "cluster_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cluster Id"
-          },
-          "frame_number": {
-            "title": "Frame Number",
-            "type": "integer"
-          },
-          "height": {
-            "title": "Height",
-            "type": "integer"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "image_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image Url"
-          },
-          "perceptual_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Perceptual Hash"
-          },
-          "recording_id": {
-            "title": "Recording Id",
-            "type": "string"
-          },
-          "relative_time_ms": {
-            "title": "Relative Time Ms",
-            "type": "integer"
-          },
-          "state_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "State Id"
-          },
-          "timestamp": {
-            "title": "Timestamp",
-            "type": "string"
-          },
-          "url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Url"
-          },
-          "width": {
-            "title": "Width",
-            "type": "integer"
-          },
-          "window_title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Window Title"
-          }
-        },
-        "required": [
-          "id",
-          "recording_id",
-          "frame_number",
-          "timestamp",
-          "relative_time_ms",
-          "width",
-          "height"
-        ],
-        "title": "FrameResponse",
         "type": "object"
       },
       "app__schemas__semantic_search__SemanticSearchRequest": {
@@ -92261,7 +91543,7 @@
     },
     "/api/v1/integration-testing/execute": {
       "post": {
-        "description": "Execute a mock workflow using historical data (placeholder endpoint).\n\n**Authentication:** JWT token required\n\nThis endpoint returns mock execution data for UI visualization.\nActual config testing execution happens in qontinui-runner using\nthe HistoricalDataClient to fetch historical results.\n\nNote: This is a placeholder that returns simulated data.",
+        "description": "Return simulated execution data for a workflow (placeholder endpoint).\n\n**Authentication:** JWT token required\n\nThis endpoint returns mock execution data for UI visualization.\n\nNote: This is a placeholder that returns simulated data.",
         "operationId": "api_v1_integration_testing_execute_post",
         "requestBody": {
           "content": {
@@ -128139,7 +127421,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/app__schemas__recording__FrameResponse"
+                    "$ref": "#/components/schemas/FrameResponse"
                   },
                   "title": "Response Get Recording Frames Api V1 Recordings  Recording Id  Frames Get",
                   "type": "array"
@@ -135771,403 +135053,6 @@
         "summary": "Add Deficiency Comment",
         "tags": [
           "testing"
-        ]
-      }
-    },
-    "/api/v1/testing/historical/actions": {
-      "post": {
-        "description": "Submit action execution data from the runner for historical indexing.\n\nThis endpoint allows the runner to directly submit action data that\nwill be indexed into HistoricalResult for Config Testing queries.\n\n**No Authentication Required**: Called by qontinui-runner during\nworkflow execution.\n\n**Example Request:**\n```json\n{\n  \"run_id\": \"uuid-of-test-run\",\n  \"project_id\": \"uuid-of-project\",\n  \"workflow_id\": 123,\n  \"actions\": [\n    {\n      \"action_id\": \"action-uuid-1\",\n      \"pattern_id\": \"login_button\",\n      \"pattern_name\": \"Login Button\",\n      \"action_type\": \"FIND\",\n      \"active_states\": [\"login_page\"],\n      \"success\": true,\n      \"match_count\": 1,\n      \"best_match_score\": 0.95,\n      \"match_x\": 100,\n      \"match_y\": 200,\n      \"match_width\": 80,\n      \"match_height\": 40,\n      \"duration_ms\": 150,\n      \"result_data\": {\"confidence\": 0.95}\n    }\n  ]\n}\n```\n\n**Returns:** Number of actions indexed",
-        "operationId": "api_v1_testing_historical_actions_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ActionDataBatch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ActionDataBatchResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Submit Action Data",
-        "tags": [
-          "historical-data"
-        ]
-      }
-    },
-    "/api/v1/testing/historical/frames/{historical_result_id}": {
-      "get": {
-        "description": "Get the frame image for a historical result.\n\nReturns the screenshot/frame captured during the historical action.\nUsed for unit testing with real screenshots.\n\n**No Authentication Required**: Called by qontinui library.\n\n**Returns:** JPEG image data",
-        "operationId": "api_v1_testing_historical_frames_historical_result_id_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "historical_result_id",
-            "required": true,
-            "schema": {
-              "title": "Historical Result Id",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Frame type: before, action, after, result",
-            "in": "query",
-            "name": "frame_type",
-            "required": false,
-            "schema": {
-              "default": "action",
-              "description": "Frame type: before, action, after, result",
-              "title": "Frame Type",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Frame For Result",
-        "tags": [
-          "historical-data"
-        ]
-      }
-    },
-    "/api/v1/testing/historical/index/{snapshot_run_id}": {
-      "post": {
-        "description": "Index historical results from a snapshot run.\n\nCreates HistoricalResult entries from SnapshotAction records,\nenabling efficient random selection during mock mode.\n\nCalled after a workflow execution completes to make the execution\ndata available for integration testing.\n\n**Returns:** Number of results indexed",
-        "operationId": "api_v1_testing_historical_index_snapshot_run_id_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "snapshot_run_id",
-            "required": true,
-            "schema": {
-              "title": "Snapshot Run Id",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Associated video session",
-            "in": "query",
-            "name": "video_capture_session_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Associated video session",
-              "title": "Video Capture Session Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IndexHistoricalResultsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Index Historical Results",
-        "tags": [
-          "historical-data"
-        ]
-      }
-    },
-    "/api/v1/testing/historical/pattern/{pattern_id}": {
-      "get": {
-        "description": "Get historical results for a specific pattern.\n\nReturns all historical results matching the pattern ID and action type,\nuseful for analyzing pattern reliability and variations.\n\n**No Authentication Required**: Called by qontinui library.\n\n**Returns:** List of matching historical results",
-        "operationId": "api_v1_testing_historical_pattern_pattern_id_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "pattern_id",
-            "required": true,
-            "schema": {
-              "title": "Pattern Id",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Action type (FIND, CLICK, etc.)",
-            "in": "query",
-            "name": "action_type",
-            "required": true,
-            "schema": {
-              "description": "Action type (FIND, CLICK, etc.)",
-              "title": "Action Type",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Comma-separated active states",
-            "in": "query",
-            "name": "active_states",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Comma-separated active states",
-              "title": "Active States"
-            }
-          },
-          {
-            "description": "Maximum results to return",
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 10,
-              "description": "Maximum results to return",
-              "maximum": 100,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/HistoricalResultResponse"
-                  },
-                  "title": "Response Get Historical Results For Pattern Api V1 Testing Historical Pattern  Pattern Id  Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Historical Results For Pattern",
-        "tags": [
-          "historical-data"
-        ]
-      }
-    },
-    "/api/v1/testing/historical/playback": {
-      "post": {
-        "description": "Get frames for integration test playback.\n\nReturns frame data and metadata for a sequence of historical results,\nsuitable for visual playback of an integration test.\n\n**No Authentication Required**: Called by qontinui library.\n\n**Returns:** List of frames with metadata",
-        "operationId": "api_v1_testing_historical_playback_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/IntegrationTestPlaybackRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/app__api__v1__endpoints__historical__FrameResponse"
-                  },
-                  "title": "Response Get Playback Frames Api V1 Testing Historical Playback Post",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Playback Frames",
-        "tags": [
-          "historical-data"
-        ]
-      }
-    },
-    "/api/v1/testing/historical/random": {
-      "post": {
-        "description": "Get a random historical result matching criteria.\n\nThis is the key endpoint for integration testing - it returns\na random result from historical data, making each test run different.\n\n**No Authentication Required**: This endpoint is called by the qontinui\nlibrary during mock mode execution.\n\n**Example Request:**\n```json\n{\n  \"pattern_id\": \"login_button\",\n  \"action_type\": \"FIND\",\n  \"active_states\": [\"login_page\"],\n  \"success_only\": true,\n  \"project_id\": \"project-uuid-123\"\n}\n```\n\n**Returns:** Random matching historical result or null if none found",
-        "operationId": "api_v1_testing_historical_random_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RandomResultRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/HistoricalResultResponse"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "title": "Response Get Random Historical Result Api V1 Testing Historical Random Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Random Historical Result",
-        "tags": [
-          "historical-data"
-        ]
-      }
-    },
-    "/api/v1/testing/historical/test-run/{test_run_id}": {
-      "get": {
-        "description": "Get all historical results for a test run, ordered by sequence.\n\nThis endpoint supports workflow visualization playback by returning\nall image recognition results from a test run in execution order.\n\n**No Authentication Required**: Called by qontinui-web frontend.\n\n**Returns:** Ordered list of historical results for the test run",
-        "operationId": "api_v1_testing_historical_test_run_test_run_id_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "test_run_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Test Run Id",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Include full result_data_json",
-            "in": "query",
-            "name": "include_result_data",
-            "required": false,
-            "schema": {
-              "default": false,
-              "description": "Include full result_data_json",
-              "title": "Include Result Data",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TestRunPlaybackResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Test Run Results",
-        "tags": [
-          "historical-data"
         ]
       }
     },

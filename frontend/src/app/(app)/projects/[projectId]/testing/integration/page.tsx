@@ -269,7 +269,7 @@ export default function IntegrationTestPage() {
           <>
             <div className="mb-6">
               <p className="text-sm text-muted-foreground">
-                Run workflows in mock mode using historical data. No live GUI
+                Run workflows in mock mode using simulated data. No live GUI
                 required.
               </p>
             </div>
@@ -334,7 +334,7 @@ function EmptyState({
       </h3>
       <p className="text-muted-foreground mb-6 max-w-md mx-auto">
         Run your first integration test to validate workflow behavior using
-        historical execution data. Tests run in mock mode without needing a live
+        simulated execution data. Tests run in mock mode without needing a live
         GUI.
       </p>
       <Button
