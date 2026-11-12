@@ -521,24 +521,24 @@ describe("this tab switches project through the provider", () => {
 });
 
 describe("another tab's switch", () => {
-  it("never offers Adopt all over rows a row write's re-read brought from that tab's project, even after it switches back", async () => {
+  it("keeps a row write's re-read in the page's project, so Adopt all returns over its own rows after the other tab switches back", async () => {
     mountIn(B, [SYS]);
     await screen.findByTestId("adopt-all", {}, { timeout: 5000 });
     // A row write here goes out in B; another tab stores the system tenant
     // while it is in flight — past the page's call-time guard, with no event
-    // reaching this tab yet. Its re-read is not pinned, so it goes there.
+    // reaching this tab yet. Its re-read is pinned to B.
     onPatch = () => localStorage.setItem(KEY, SYS);
-    const reread = hold({ kind: "list", tenant: SYS, nth: 1 });
+    const reread = hold({ kind: "list", tenant: B, nth: 2 });
     await setBravoTier();
     await waitFor(() => expect(reread.arrived()).toBe(true));
-    // That tab switches back before the re-read answers.
+    // Not offered while the system tenant is stored.
+    expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument();
+    // That tab switches back; the re-read (sent in B) answers.
     localStorage.setItem(KEY, B);
     reread.release();
-    await screen.findByTestId("doc-row-policy-sys1", {}, { timeout: 5000 });
     await settle();
-    // B is stored and B's refusal stands, but the rows on screen are the
-    // system tenant's: the read was SENT there.
-    expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument();
+    expect(screen.getByTestId("doc-row-policy-bravo-only")).toBeInTheDocument();
+    expect(screen.queryByTestId("doc-row-policy-sys1")).not.toBeInTheDocument();
   }, 20_000);
 });
 

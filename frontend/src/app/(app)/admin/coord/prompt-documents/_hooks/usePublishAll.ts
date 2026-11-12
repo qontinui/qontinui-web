@@ -405,7 +405,13 @@ export function usePublishAll() {
     async (
       kind: PromptDocumentKind,
       name: string,
-      mode: PublishMode
+      mode: PublishMode,
+      /**
+       * The pin for the status re-read, asked when it is SENT — the page's
+       * project by then, which another tab's switch must not move. Omitted:
+       * the stored project.
+       */
+      rereadPin?: () => TenantPin | undefined
     ): Promise<boolean> => {
       const tenant = readActiveTenantId();
       try {
@@ -424,7 +430,7 @@ export function usePublishAll() {
         // The badges key on the served mode, so the status read is re-taken:
         // without it a document just set to `manual` or `never` keeps a
         // "Publishes <time>" badge for a publication nothing will make.
-        await loadStatus();
+        await loadStatus(rereadPin?.());
         return true;
       } catch (err) {
         const detail = message(err, "Failed to set the publish mode");

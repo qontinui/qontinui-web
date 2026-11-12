@@ -272,9 +272,13 @@ describe("when the Adopt all updates button is offered", () => {
     }
   );
 
-  it("is not offered on an answer another tab's project earned", async () => {
-    // The page is in the system tenant. Another tab switches to B, and THIS
-    // page's publish-all dry run goes to B and is answered not_system_tenant.
+  it("is not offered on an answer another tab's project would earn: the dry run is not sent there", async () => {
+    // The page is in the system tenant. Another tab switches to B before
+    // Publish all is opened, so the open is refused: no dry run goes to B, and
+    // the open cannot latch B's not_system_tenant over this page. Re-reads
+    // after a write are pinned for the same reason (`PromptDocumentsCrossTab`),
+    // and a dry run's refusal being stamped with the project it was SENT in is
+    // pinned on the hook (`usePublishAll.test.ts`).
     localStorage.setItem(TENANT_KEY, "t-system");
     const notSystemFor = (verb: string, url: string) =>
       new Error(
@@ -299,40 +303,35 @@ describe("when the Adopt all updates button is offered", () => {
       }
       return Promise.reject(new Error(url));
     });
-    // B's refusal is HELD, and answered only after the other tab has switched
-    // back: the stamp must be the project the request was PINNED to (its
-    // header on every attempt), not whatever is stored when the answer lands.
-    let answerDryRun: (() => void) | undefined;
     postMock.mockImplementation((url: string) => {
       if (!url.endsWith("/publish-all")) {
         return Promise.resolve(adoptedBody("policy", "coordination", 8));
       }
-      if (localStorage.getItem(TENANT_KEY) === "t-system") {
-        return Promise.resolve({ dry_run: true, candidates: [] });
-      }
-      return new Promise((_, reject) => {
-        answerDryRun = () => reject(notSystemFor("POST", url));
-      });
+      return localStorage.getItem(TENANT_KEY) === "t-system"
+        ? Promise.resolve({ dry_run: true, candidates: [] })
+        : Promise.reject(notSystemFor("POST", url));
     });
     render(<PromptDocumentList />);
     const user = userEvent.setup();
     const publishAll = await screen.findByTestId("publish-all");
     localStorage.setItem(TENANT_KEY, "t-other");
     await user.click(publishAll);
-    await waitFor(() => expect(answerDryRun).toBeDefined());
-    // The other tab switches back; then B's answer lands and is latched.
+    // Refused at the open; the page says why.
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("publish-all-dialog")).not.toBeInTheDocument();
+    // The other tab switches back.
     localStorage.setItem(TENANT_KEY, "t-system");
-    await act(async () => {
-      answerDryRun?.();
-    });
-    await user.keyboard("{Escape}");
-    // Let the refusal land and latch.
+    // Let anything that would land, land.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    // It is stamped with the project it was sent in, so it says nothing about
-    // the system tenant: that tenant's publish controls stay, and Adopt all is
-    // not offered on it.
+    // Nothing was sent, so nothing latched: the system tenant's publish
+    // controls stay, and Adopt all is not offered on it.
+    expect(
+      postMock.mock.calls.filter(([u]) => String(u).endsWith("/publish-all"))
+    ).toEqual([]);
     expect(
       screen.getByTestId("doc-publish-mode-policy-coordination")
     ).toBeInTheDocument();
@@ -342,53 +341,13 @@ describe("when the Adopt all updates button is offered", () => {
     ).toEqual([]);
   });
 
-  it("stamps a refreshed status read with the project it was PINNED to, not the one stored when it answers", async () => {
-    localStorage.setItem(TENANT_KEY, "t-system");
-    let answerRefresh: (() => void) | undefined;
-    getMock.mockImplementation((url: string) => {
-      if (url === STATUS) {
-        if (localStorage.getItem(TENANT_KEY) === "t-system") {
-          return Promise.resolve({ candidates: [], count: 1 });
-        }
-        // Sent in B; answered after the other tab switches back.
-        return new Promise((_, reject) => {
-          answerRefresh = () => reject(NOT_SYSTEM_TENANT);
-        });
-      }
-      if (url === LIST) {
-        return Promise.resolve({
-          documents: [
-            flagged("policy", "coordination", { current_version: 7 }),
-          ],
-          degraded: null,
-        });
-      }
-      return Promise.reject(new Error(url));
-    });
-    const { rerender } = render(
-      <PromptDocumentList autoPublishRefreshKey={0} />
-    );
-    await screen.findByTestId("publish-all");
-    localStorage.setItem(TENANT_KEY, "t-other");
-    rerender(<PromptDocumentList autoPublishRefreshKey={1} />);
-    await waitFor(() => expect(answerRefresh).toBeDefined());
-    localStorage.setItem(TENANT_KEY, "t-system");
-    await act(async () => {
-      answerRefresh?.();
-    });
-    // Let the refusal land and latch.
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
-    // It is stamped with the project it was sent in, so Adopt all is not
-    // offered on the system tenant. And the newest status answer the page
-    // holds is now about another project, so the system tenant's publish
-    // controls are withheld until a read in the system tenant answers.
-    expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("doc-publish-mode-policy-coordination")
-    ).not.toBeInTheDocument();
-  });
+  // The page's re-reads of its rows and status are pinned to its project
+  // (`pagePin`), so another tab's switch can no longer put that tab's answer
+  // under this page. This verb-mock harness cannot see a pin; the pin is
+  // tested per site through the real HttpClient in
+  // `PromptDocumentsCrossTab.test.tsx` ("every re-read is pinned…"), except
+  // the clause manager's category default-tier re-read. A refusal being stamped with the project its read
+  // was SENT in is pinned on the hook: `usePublishAll.test.ts`.
 
   // The hook's own half — an armed run's refusal stamped with the project
   // it was SENT in — is pinned in `usePublishAll.test.ts`. From this page the
@@ -826,6 +785,10 @@ describe("the adopt-all preview", () => {
       await screen.findByTestId("adopt-all-tenant-changed")
     ).toBeInTheDocument();
     expect(screen.getByTestId("adopt-all-confirm")).toBeDisabled();
+    // The page locks beside the dialog's own refusal, and offers Reload.
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
   });
 
   it("refuses to preview when the project changed in another tab since load", async () => {
@@ -843,6 +806,10 @@ describe("the adopt-all preview", () => {
     expect(screen.getByTestId("adopt-all-confirm")).toBeDisabled();
     // No read was even taken in the other project.
     expect(listReads()).toBe(readsBefore);
+    // The page locks beside the dialog's own refusal, and offers Reload.
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
   });
 });
 
@@ -1011,6 +978,10 @@ describe("the adopt-all run", () => {
     expect(reread).not.toHaveTextContent("the adopt is in place");
     // And this page's rows were not reloaded from A.
     expect(listReads()).toBe(readsBeforeRun);
+    // The page locks beside the dialog's own refusal, and offers Reload.
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
   });
 
   it("never reconciles against a re-read the project changed DURING", async () => {
@@ -1055,6 +1026,10 @@ describe("the adopt-all run", () => {
     expect(reread).toHaveTextContent(
       "could not be re-read in this run's project"
     );
+    // The page locks beside the dialog's own refusal, and offers Reload.
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
   });
 
   it("says an answer arrived but could not be read, rather than that none came", async () => {
@@ -1117,6 +1092,10 @@ describe("the adopt-all run", () => {
     expect(screen.getByTestId("adopt-all-outcome-policy-b")).toHaveTextContent(
       "the active project changed"
     );
+    // The page locks beside the dialog's own refusal, and offers Reload.
+    expect(
+      await screen.findByTestId("prompt-documents-cross-tab")
+    ).toBeInTheDocument();
   });
 
   it("stops after the document in flight when asked", async () => {

@@ -92,8 +92,11 @@ export default function PromptDocumentsPage() {
   // The fieldset covers what is on the page; a settings confirmation renders
   // outside it, so every settings write also asks the list's call-time guard —
   // the stored project against the page's — at the moment it is sent.
-  const writeGuardRef = useRef<(() => boolean) | null>(null) as WriteGuardRef;
-  const canWrite = useCallback(() => writeGuardRef.current?.() ?? true, []);
+  const writeGuardRef = useRef<WriteGuardRef["current"]>(null) as WriteGuardRef;
+  const canWrite = useCallback(
+    () => writeGuardRef.current?.canWrite() ?? true,
+    []
+  );
   return (
     <div className="p-3 sm:p-6 space-y-8" data-testid="prompt-documents-page">
       {/* R9 — no page <h1>: `coord/layout.tsx` already renders the console
@@ -178,7 +181,11 @@ export default function PromptDocumentsPage() {
       */}
         <div className="border-t border-border pt-8">
           <PolicyAutoPublishDialControl
-            onLevelChanged={() => void publishAllState.reload()}
+            // Pinned to the page's project when the re-read is sent: another
+            // tab's switch must not stamp the page with its answer.
+            onLevelChanged={() =>
+              void publishAllState.reload(writeGuardRef.current?.pagePin())
+            }
             observed={observedFromPublishAll(publishAllState)}
             canWrite={canWrite}
           />
