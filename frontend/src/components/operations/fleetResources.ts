@@ -343,7 +343,8 @@ export interface ResourceSampleRow {
    * key the publisher could not measure is absent, never `0`.
    *
    * `null` / absent key = **unmeasured** (older publisher, or a coord that
-   * predates the column), never zero. An EMPTY map beside `slice_source:
+   * predates the column), never zero. A map that names no slice (empty, or
+   * holding only the non-slice `cpu_attribution`) beside `slice_source:
    * "linux_cgroup_v2"` is a measurement, not an absence: the tree was read
    * and none of the watched slices exists (qontinui-runner
    * `fleet/slice_telemetry.rs` `collect_from`). Read through
@@ -2011,12 +2012,17 @@ export function cpuTempReading(
 // Cgroup-slice memory + PSI (coord plan
 // `2026-10-19-ci-nodes-run-the-tauri-runner-always-on-as-ci-node-role` Phase 0b)
 //
-// DISPLAY ONLY: coord grades these on its own `s10` axis of
-// `device_resource_headroom_breach`; nothing here feeds pressure, saturation or
-// headroom. The one rule this module owns is the unmeasured rule: a NULL / absent
-// column, a key the publisher could not read, and `slice_source:
-// "not_supported"` are each rendered as an explicit "not measured" state, and
-// NEVER as 0 — a stall of 0.0% and a stall nobody read are different facts.
+// DISPLAY ONLY: coord grades these on its own `s11` axis of
+// `device_resource_headroom_breach` (`Axis::S11`, graded by coord's
+// `resource_headroom_slice`; `s10` is the host commit time-to-floor axis, not
+// the slices). Nothing here feeds pressure, saturation or headroom. The one rule
+// this module owns is the unmeasured rule: a NULL / absent column, a key the
+// publisher could not read, and `slice_source: "not_supported"` are each
+// rendered as an explicit "not measured" state, and NEVER as 0 — a stall of
+// 0.0% and a stall nobody read are different facts. Conversely, a
+// `cgroup_slices` map that names no slice (empty, or holding only the
+// non-slice `cpu_attribution`) beside `slice_source: "linux_cgroup_v2"` is a
+// reading that no watched slice exists, not an unmeasured one.
 // ---------------------------------------------------------------------------
 
 /** A number that is finite, else null. Strings (incl. `"max"`) are NOT numbers here. */
