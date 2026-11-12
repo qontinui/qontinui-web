@@ -10,6 +10,7 @@
  * sync with the coord emitter — they are the on-the-wire shape.
  */
 
+import type { PrFreshen } from "@/components/operations/mergeTypes";
 import type { PrHold } from "@/components/operations/prHold";
 import { httpClient } from "./service-factory";
 
@@ -369,6 +370,9 @@ export interface PrRow {
   correlation_id: string | null;
   merge_status: PrMergeStatus;
   blocking_summary: string;
+  // Only on `behind-base` / `ci-failed-stale-base` rows; an ABSENT key is an
+  // older coord and reads UNKNOWN. See `prMergeStatus.readBehindFreshen`.
+  freshen?: PrFreshen | null;
   escalation_alert_id: number | null;
   proposal_status: string | null;
   proposal_age_secs: number | null;

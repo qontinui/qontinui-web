@@ -140,6 +140,13 @@ describe("/admin/coord/overlord/flow", () => {
     ).toHaveTextContent(
       "Last /next-move: class A, nudge (live), outcome did_work"
     );
+    expect(screen.getByTestId("overlord-flow-unchanged-label")).toHaveAttribute(
+      "href",
+      "/admin/coord/overlord/label?intervention_id=0190aaaa-0000-7000-8000-000000000001"
+    );
+    expect(rows[0]).toHaveTextContent(
+      "intervention 0190aaaa-0000-7000-8000-000000000001"
+    );
     await userEvent.click(
       within(
         screen.getAllByTestId("overlord-flow-unchanged-row")[1]!
@@ -149,6 +156,7 @@ describe("/admin/coord/overlord/flow", () => {
       screen.getByTestId("overlord-flow-unchanged-no-session")
     ).toHaveTextContent("terminal term-9");
     expect(screen.queryByTestId("overlord-flow-unchanged-open")).toBeNull();
+    expect(screen.queryByTestId("overlord-flow-unchanged-label")).toBeNull();
 
     // The histogram: one row per pass, oldest first, full breakdown.
     const passes = screen.getAllByTestId("overlord-flow-histogram-pass");
@@ -602,9 +610,9 @@ describe("/admin/coord/overlord/flow", () => {
       render(<CoordOverlordFlowPage />);
       const rows = await screen.findAllByTestId("overlord-flow-versions-row");
       expect(rows).toHaveLength(2);
-      expect(rows[0]).toHaveTextContent("2d0c39d0d5");
+      expect(rows[0]).toHaveTextContent("9f86d08188");
       expect(rows[0]).toHaveTextContent("no data");
-      expect(rows[1]).toHaveTextContent("none recorded");
+      expect(rows[1]).toHaveTextContent("not read");
       expect(rows[1]).toHaveTextContent("1h 30m");
       expect(fetchFlow).toHaveBeenCalledTimes(1);
     });

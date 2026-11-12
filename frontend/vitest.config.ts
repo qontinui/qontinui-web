@@ -65,6 +65,8 @@ export default defineConfig({
       "tests/spec-ci/**/*.test.ts",
       // The pure decision next.config.mjs imports for its proxy rewrites.
       "config/**/*.test.mjs",
+      // The coverage producer's scratch-dir helper (scripts/export-test-coverage.mjs).
+      "scripts/*.test.mjs",
     ],
     // Exclude the Playwright e2e SPECS (they import @playwright/test and run
     // under `playwright test`, not vitest) but NOT the `*.test.ts` unit tests
