@@ -226,6 +226,80 @@ export const HEADROOM_MEANING: Record<Headroom, string> = {
 
 const HEADROOM_VALUES = new Set<string>(["ok", "warn", "breach", "unknown"]);
 
+/**
+ * The axis whose reading SET a row's `headroom` — coord's `HeadroomBasis`.
+ *
+ * Coord reuses the spellings this module already carries rather than minting
+ * a third vocabulary for the same axes: `FloorBasis`'s three byte columns, and
+ * `PressureBasis`'s `swap` / `threads`. Only `other_volume` is new, because
+ * nothing else names that case.
+ */
+export type HeadroomBasis =
+  | "disk_free"
+  | "other_volume"
+  | "commit_available"
+  | "mem_available"
+  | "swap"
+  | "threads";
+
+/** coord's `HeadroomSource`: the reading that set `headroom`. */
+export interface HeadroomSource {
+  basis: HeadroomBasis;
+  /**
+   * The volume label. Present ONLY on `other_volume`, the one basis whose
+   * remedy is not visible on the row; `null` on every other basis.
+   */
+  volume: string | null;
+  /**
+   * The byte reading that produced the grade, where the basis has one. `null`
+   * on the two ratio bases (`swap`, `threads`) and on a byte column nobody
+   * measured. Evidence only: comparing it to a constant here is the
+   * client-side threshold this module exists not to hold.
+   */
+  free_bytes: number | null;
+}
+
+/** One `some|full` PSI pair: percent of wall time stalled, 10 s / 60 s averages. */
+export interface PsiAvg {
+  avg10?: number | null;
+  avg60?: number | null;
+}
+
+/** `some` / `full` stall for one resource. Either half may be absent. */
+export interface PsiResource {
+  some?: PsiAvg | null;
+  full?: PsiAvg | null;
+}
+
+/** PSI for the three resources coord carries. */
+export interface PsiBlock {
+  memory?: PsiResource | null;
+  cpu?: PsiResource | null;
+  io?: PsiResource | null;
+}
+
+/** coord's `psi` column: `{system, slices: {<slice>: PsiBlock}}`. */
+export interface SlicePsi {
+  system?: PsiBlock | null;
+  slices?: Record<string, PsiBlock | null> | null;
+}
+
+/** One watched slice's memory reading. Every key is optional: absent = not measured. */
+export interface CgroupSliceEntry {
+  memory_current?: number | null;
+  /** A byte count, or the string `"max"` (= no limit configured). */
+  memory_high?: number | "max" | null;
+  memory_max?: number | "max" | null;
+  events?: {
+    high?: number | null;
+    max?: number | null;
+    oom_kill?: number | null;
+  } | null;
+}
+
+/** coord's `cgroup_slices` column, keyed by slice name. */
+export type CgroupSlices = Record<string, CgroupSliceEntry | null>;
+
 /** Newest sample for one `(device_id, lane, lane_instance)` anchor. */
 export interface ResourceSampleRow {
   device_id: string;
@@ -247,6 +321,34 @@ export interface ResourceSampleRow {
    * that predates the column sends no such key at all.
    */
   cpu_temp_c?: number | null;
+  /**
+   * Per watched cgroup slice (`ci-runners.slice`, `agent-builds.slice`,
+   * `qontinui-runner.slice`): `memory_current`, `memory_high`, `memory_max`
+   * (a number or the string `"max"`) and the monotonic `events`
+   * `high` / `max` / `oom_kill` counters (coord
+   * `device_resource_slice_telemetry`, plan
+   * `2026-10-19-ci-nodes-run-the-tauri-runner-always-on-as-ci-node-role`
+   * Phase 0b). A slice absent on the machine is absent from the map, and a
+   * key the publisher could not measure is absent, never `0`.
+   *
+   * `null` / absent key = **unmeasured** (older publisher, or a coord that
+   * predates the column) — never `{}`, never zero. Read through
+   * `sliceTelemetryReading`, not directly.
+   */
+  cgroup_slices?: CgroupSlices | null;
+  /**
+   * Pressure-stall percentages (0-100): `system` and per-slice
+   * `memory|cpu|io` × `some|full` × `avg10|avg60`. Same null rules as
+   * `cgroup_slices`.
+   */
+  psi?: SlicePsi | null;
+  /**
+   * `"linux_cgroup_v2"` | `"not_supported"` (free text on the wire, so typed
+   * `string`). `not_supported` is what makes a NULL `cgroup_slices` beside it
+   * mean *not applicable on this OS* rather than *unread*; NULL is an older
+   * publisher.
+   */
+  slice_source?: string | null;
   mem_total_bytes: number | null;
   mem_available_bytes: number | null;
   commit_total_bytes: number | null;
@@ -423,6 +525,30 @@ export interface ResourceSampleRow {
   /** SERVER-computed. `null` = the lane has no pressure opinion. */
   pressure: LanePressure | null;
   /**
+   * **SERVER-computed**: this lane's OWN swap ratio, `swap_used / swap_total`
+   * (coord's `device_resource_samples::served_swap_ratio`). Coord serves a
+   * number only where the lane HAS a gradable swap axis (`swap_axis_graded`),
+   * the predicate its verdict uses too. It does not wait for a configured swap
+   * threshold, so a figure may print on a lane no floor is grading. The strip
+   * derives no swap ratio of its own from `swap_*_bytes`.
+   *
+   * It matters on the `host` lane, whose lead `pressure` is commit on every OS
+   * because coord never RANKS a host on swap. A Linux host's swap device is an
+   * instrument independent of commit, and on 2026-11-09 one sat at swap 0.9999
+   * while this strip showed it only as commit 0.815.
+   *
+   * `null` = coord has no swap ratio for this lane, rendered as NO swap figure
+   * (never 0). That covers a Windows `host`: its publishers omit `swap_*`
+   * because swap there is derived from the same commit counters, which would
+   * be one instrument printed twice. It also covers a swapless box and a lane
+   * whose reading is missing (`swap_total` published, `swap_used` absent). On a
+   * Linux `host` that last case grades the swap axis `unknown` while this field
+   * reads the same `null` as Windows; the wire does not yet separate them, so
+   * `null` is never evidence that swap is healthy. Absent = a coord that predates the field,
+   * rendered "swap not reported". See `swapReading`.
+   */
+  swap_ratio?: number | null;
+  /**
    * The memory floor this lane is admitted against. Optional on the wire:
    * absent from any coord that predates the §C3 floor-bands PR, and the
    * absence is rendered as `unknown`, never as "no floor".
@@ -471,6 +597,15 @@ export interface ResourceSampleRow {
    * `saturation` — see the module header.
    */
   headroom?: Headroom | null;
+  /**
+   * **SERVER-computed**: WHICH reading set `headroom`. `null` when the row
+   * grades `ok`, which coord defines as "nothing set a worst grade", never as
+   * health-by-absence. Absent = a coord that predates the field.
+   *
+   * Evidence, never an input: the strip names it beside the verdict ("set by
+   * swap") and does not re-derive it. See `headroomSetBy`.
+   */
+  headroom_source?: HeadroomSource | null;
   /**
    * The host lane's top commit consumers (plan
    * `2026-11-05-devops-a-host-commit-climb-to-99-7-percent-names-no-consumer-and-reads-ok-two-minutes-out`
@@ -714,17 +849,82 @@ export function pressureFormula(basis: PressureBasis): string {
   return "1 − commit_available / commit_total";
 }
 
+// ---------------------------------------------------------------------------
+// A lane's own swap device — coord's served `swap_ratio`, never a lane rule
+// ---------------------------------------------------------------------------
+
 /**
- * Whether a lane may show a swap figure AT ALL.
+ * What a row can say about its OWN swap device. Four states with four causes,
+ * the same split `headroomReport` and `describeFloor` make:
  *
- * Never on `host`. Both publishers withhold `swap_*` on Windows because
- * sysinfo derives it algebraically from the same commit counters
- * (`swap_total − swap_used ≡ commit_available − phys_available`), so a swap
- * column beside a commit column on one row reads as corroboration from two
- * instruments when it is one instrument printed twice.
+ * * `value` — coord served a ratio in [0, 1]: the lane has a swap axis and
+ *   this is its reading.
+ * * `none` — coord served `null` and has no swap ratio for this lane. On a
+ *   `host` row that is the Windows contract, a swapless box, or (rarely) a
+ *   Linux host that published `swap_total` without `swap_used`. On Windows,
+ *   sysinfo derives swap algebraically from the same commit counters
+ *   (`swap_total − swap_used ≡ commit_available − phys_available`), so a swap
+ *   figure beside the commit figure would read as corroboration from two
+ *   instruments when it is one instrument printed twice. NO swap figure, and
+ *   never a zero.
+ * * `unreported` — the key is absent, from a coord that predates it. Renders
+ *   "swap not reported": never 0, and never a silent blank.
+ * * `unreadable` — present, but not a ratio this build can read (a coord newer
+ *   than this page). Neither "no swap" nor "not reported".
+ *
+ * This replaced `laneShowsSwap`, which decided "may this lane show swap?" from
+ * the lane NAME. That rule was written for Windows hosts and applied to every
+ * host, so it hid a Linux host's real, independent swap device. On 2026-11-09
+ * a Linux host at swap 0.9999 read here only as commit 0.815. Coord now answers
+ * the question with the predicate it grades the axis by (`swap_axis_graded`),
+ * so one rule decides the grade and the display.
  */
-export function laneShowsSwap(lane: string): boolean {
-  return lane !== "host";
+export type SwapReading =
+  | { kind: "value"; ratio: number }
+  | { kind: "none" }
+  | { kind: "unreported" }
+  | { kind: "unreadable" };
+
+export function swapReading(
+  row: Pick<ResourceSampleRow, "swap_ratio"> | null | undefined
+): SwapReading {
+  if (!row || row.swap_ratio === undefined) return { kind: "unreported" };
+  const ratio: unknown = row.swap_ratio;
+  if (ratio === null) return { kind: "none" };
+  // coord clamps into [0, 1]; anything else is a value this build cannot
+  // read, never a figure to print.
+  if (
+    typeof ratio === "number" &&
+    Number.isFinite(ratio) &&
+    ratio >= 0 &&
+    ratio <= 1
+  ) {
+    return { kind: "value", ratio };
+  }
+  return { kind: "unreadable" };
+}
+
+/**
+ * Whether swap is one of the axes this row's figures carry. It decides
+ * whether a swap THRESHOLD is on the row's own axis, and whether a missing one
+ * counts as a reporting gap.
+ *
+ * * `wsl` / `container`: always. Swap IS their pressure axis (coord's
+ *   `lane_pressure` ranks them on it), so the lead figure is the swap figure,
+ *   and a missing reading there is a real gap that coord grades `unknown`.
+ * * `host`: only when coord serves a measured `swap_ratio`, which the strip
+ *   prints beside the commit figure. Coord ranks a host on commit on every OS,
+ *   so this is the only way a swap figure reaches a host row.
+ *
+ * The lane test left here is about which axis a lane is RANKED on, and that
+ * is coord's contract. Whether a host HAS a swap figure is the served field's
+ * decision alone.
+ */
+export function rowShowsSwapAxis(
+  row: Pick<ResourceSampleRow, "lane" | "swap_ratio"> | null | undefined
+): boolean {
+  if (!row) return false;
+  return row.lane !== "host" || swapReading(row).kind === "value";
 }
 
 /**
@@ -1068,11 +1268,64 @@ export function pressureAxisLabel(
   return String(basis ?? "pressure");
 }
 
-/** True when this basis is the derived-on-Windows swap figure §C1 suppresses. */
+/**
+ * True when a threshold is measured on the swap ratio, an axis a row may or
+ * may not carry (`rowShowsSwapAxis`).
+ */
 export function pressureAxisIsSwap(
   basis: PressureFloorBasis | string | null | undefined
 ): boolean {
   return basis === "swap_ratio";
+}
+
+/**
+ * Each `HeadroomBasis` in words, taken from the label maps this module already
+ * holds. "set by …" therefore names the quantity of a threshold line in the
+ * Admission column in that line's own words: the byte columns'
+ * `FLOOR_BASIS_LABEL`, and the swap and saturation lines' labels.
+ */
+export const HEADROOM_BASIS_LABEL: Record<HeadroomBasis, string> = {
+  disk_free: FLOOR_BASIS_LABEL.disk_free,
+  other_volume: "another volume",
+  commit_available: FLOOR_BASIS_LABEL.commit_available,
+  mem_available: FLOOR_BASIS_LABEL.mem_available,
+  swap: pressureAxisLabel("swap_ratio"),
+  threads: pressureAxisLabel("thread_ratio"),
+};
+
+/**
+ * `"swap"` in "set by swap": WHICH reading set a `warn` or `breach`, in words,
+ * or `null` when there is nothing to name.
+ *
+ * Only a warn or a breach names one. Coord serves `headroom_source: null` on
+ * an `ok` row ("nothing set a worst grade"), and an `unknown` verdict has no
+ * reading to point at. A source coord did not send, from a coord that
+ * predates the field, names nothing rather than a guess.
+ *
+ * `other_volume` names its volume, because it is the one basis whose remedy is
+ * not on the row. With `nameVolume: false` (presentation mode) the label is
+ * withheld: a label someone typed can name a client, and the style guide's
+ * "Positions, not names" rule applies. A basis this build does not know comes
+ * from a newer coord. It reads as coord's own word with underscores replaced
+ * by spaces, never as a guess at one of ours.
+ */
+export function headroomSetBy(
+  headroom: Headroom,
+  source: HeadroomSource | null | undefined,
+  { nameVolume = true }: { nameVolume?: boolean } = {}
+): string | null {
+  if (headroom !== "warn" && headroom !== "breach") return null;
+  const basis: unknown = source?.basis;
+  if (typeof basis !== "string" || basis.trim() === "") return null;
+  if (basis === "other_volume") {
+    const volume: unknown = source?.volume;
+    return nameVolume && typeof volume === "string" && volume.trim() !== ""
+      ? `volume ${volume}`
+      : HEADROOM_BASIS_LABEL.other_volume;
+  }
+  return Object.prototype.hasOwnProperty.call(HEADROOM_BASIS_LABEL, basis)
+    ? HEADROOM_BASIS_LABEL[basis as HeadroomBasis]
+    : basis.replace(/_/g, " ");
 }
 
 export function formatPressureFloor(
@@ -1724,6 +1977,159 @@ export function cpuTempReading(
     return { kind: "not_measurable_host" };
   }
   return { kind: "unknown" };
+}
+
+// ---------------------------------------------------------------------------
+// Cgroup-slice memory + PSI (coord plan
+// `2026-10-19-ci-nodes-run-the-tauri-runner-always-on-as-ci-node-role` Phase 0b)
+//
+// DISPLAY ONLY: coord grades these on its own `s10` axis of
+// `device_resource_headroom_breach`; nothing here feeds pressure, saturation or
+// headroom. The one rule this module owns is the unmeasured rule: a NULL / absent
+// column, a key the publisher could not read, and `slice_source:
+// "not_supported"` are each rendered as an explicit "not measured" state, and
+// NEVER as 0 — a stall of 0.0% and a stall nobody read are different facts.
+// ---------------------------------------------------------------------------
+
+/** A number that is finite, else null. Strings (incl. `"max"`) are NOT numbers here. */
+function finiteOrNull(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/** A cgroup limit: bytes, `"max"` (= unlimited), or null (not measured). */
+export type SliceLimit =
+  | { kind: "bytes"; bytes: number }
+  | { kind: "max" }
+  | { kind: "unmeasured" };
+
+function sliceLimit(v: unknown): SliceLimit {
+  if (v === "max") return { kind: "max" };
+  const n = finiteOrNull(v);
+  return n == null ? { kind: "unmeasured" } : { kind: "bytes", bytes: n };
+}
+
+/** One slice's reading; every figure is `null` when the publisher did not read it. */
+export interface SliceMemoryReading {
+  name: string;
+  memoryCurrent: number | null;
+  memoryHigh: SliceLimit;
+  memoryMax: SliceLimit;
+  /** Monotonic counters since the cgroup was created; null = not measured. */
+  eventsHigh: number | null;
+  eventsMax: number | null;
+  oomKill: number | null;
+}
+
+/** The six PSI averages for one block, each null when not measured. */
+export interface PsiFigures {
+  memorySomeAvg10: number | null;
+  memoryFullAvg10: number | null;
+  cpuSomeAvg10: number | null;
+  cpuFullAvg10: number | null;
+  ioSomeAvg10: number | null;
+  ioFullAvg10: number | null;
+}
+
+/** True when `f` carries at least one measured figure. */
+export function psiHasAnyFigure(f: PsiFigures): boolean {
+  return Object.values(f).some((v) => v != null);
+}
+
+function readPsiBlock(b: PsiBlock | null | undefined): PsiFigures {
+  const g = (r: PsiResource | null | undefined, half: "some" | "full") =>
+    finiteOrNull(r?.[half]?.avg10);
+  return {
+    memorySomeAvg10: g(b?.memory, "some"),
+    memoryFullAvg10: g(b?.memory, "full"),
+    cpuSomeAvg10: g(b?.cpu, "some"),
+    cpuFullAvg10: g(b?.cpu, "full"),
+    ioSomeAvg10: g(b?.io, "some"),
+    ioFullAvg10: g(b?.io, "full"),
+  };
+}
+
+export type SliceTelemetryReading =
+  /** `slice_source: "not_supported"` — the publisher's OS has no cgroup v2. */
+  | { kind: "not_supported" }
+  /** Neither column carries a usable object: older publisher / never read. */
+  | { kind: "unmeasured" }
+  | {
+      kind: "measured";
+      /** Sorted by name so the render is stable across polls. */
+      slices: SliceMemoryReading[];
+      /** System-wide PSI; every figure null when `psi.system` was not sent. */
+      psiSystem: PsiFigures;
+      /** `cgroup_slices` itself was null/absent although PSI was sent. */
+      slicesUnmeasured: boolean;
+    };
+
+/**
+ * Decide the slice-telemetry cell for one sample.
+ *
+ * - `slice_source === "not_supported"` wins: it is the publisher saying the
+ *   NULLs beside it mean *not applicable on this OS*, which is a different
+ *   statement from *unread*.
+ * - both columns null / absent / non-object → `unmeasured`.
+ * - otherwise `measured`, with every figure that was not sent carried as
+ *   `null` (the renderer prints it as "—", never `0`).
+ */
+export function sliceTelemetryReading(
+  s: Pick<ResourceSampleRow, "cgroup_slices" | "psi" | "slice_source">
+): SliceTelemetryReading {
+  if (
+    typeof s.slice_source === "string" &&
+    s.slice_source.trim().toLowerCase() === "not_supported"
+  ) {
+    return { kind: "not_supported" };
+  }
+  const isObj = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+  // An EMPTY object is "nothing was read", not "read and found nothing": coord
+  // documents these columns as NULL when unmeasured and never `{}`, so an
+  // empty map or a PSI block with no figure is treated as not sent.
+  const cg =
+    isObj(s.cgroup_slices) && Object.keys(s.cgroup_slices).length > 0
+      ? s.cgroup_slices
+      : null;
+  const psiRaw = isObj(s.psi) ? s.psi : null;
+  const psiSystem = readPsiBlock(
+    psiRaw ? ((psiRaw as SlicePsi).system ?? null) : null
+  );
+  const psi = psiRaw && psiHasAnyFigure(psiSystem) ? psiRaw : null;
+  if (!cg && !psi) return { kind: "unmeasured" };
+
+  const slices: SliceMemoryReading[] = Object.keys(cg ?? {})
+    .sort()
+    .map((name) => {
+      const e = (cg?.[name] ?? null) as CgroupSliceEntry | null;
+      return {
+        name,
+        memoryCurrent: finiteOrNull(e?.memory_current),
+        memoryHigh: sliceLimit(e?.memory_high),
+        memoryMax: sliceLimit(e?.memory_max),
+        eventsHigh: finiteOrNull(e?.events?.high),
+        eventsMax: finiteOrNull(e?.events?.max),
+        oomKill: finiteOrNull(e?.events?.oom_kill),
+      };
+    });
+  return {
+    kind: "measured",
+    slices,
+    psiSystem,
+    slicesUnmeasured: cg == null,
+  };
+}
+
+/** `12.5%` for a PSI figure, `—` when not measured. A real 0 prints `0.0%`. */
+export function formatPsi(v: number | null | undefined): string {
+  return v == null || !Number.isFinite(v) ? "—" : `${v.toFixed(1)}%`;
+}
+
+/** A slice limit as text: `8.0 GB`, `no limit`, or `—` (not measured). */
+export function formatSliceLimit(l: SliceLimit): string {
+  if (l.kind === "max") return "no limit";
+  if (l.kind === "bytes") return formatBytes(l.bytes);
+  return "—";
 }
 
 // ---------------------------------------------------------------------------

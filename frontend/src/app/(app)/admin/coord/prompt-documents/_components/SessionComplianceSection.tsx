@@ -17,7 +17,17 @@ import { SessionComplianceSessions } from "./SessionComplianceSessions";
  * check names is edited on this same page, and splitting the switch away from
  * the text it enforces is how the two drift apart.
  */
-export function SessionComplianceSection() {
+export function SessionComplianceSection({
+  canWrite,
+}: {
+  /**
+   * Checked at the moment of every write; `false` sends nothing (the caller
+   * says why). The prompt-documents page passes its cross-tab guard here:
+   * its disabled fieldset reaches neither a confirmation (rendered outside
+   * it) nor a click that lands before another tab's switch is seen.
+   */
+  canWrite?: () => boolean;
+} = {}) {
   const {
     config,
     versions,
@@ -84,7 +94,11 @@ export function SessionComplianceSection() {
             versionsUnavailable={versions.unavailable}
             versionsDegraded={versions.degraded}
             versionsError={versions.error}
-            onSave={saveConfig}
+            onSave={(patch) =>
+              canWrite && !canWrite()
+                ? Promise.resolve(false)
+                : saveConfig(patch)
+            }
           />
 
           <SessionComplianceSessions

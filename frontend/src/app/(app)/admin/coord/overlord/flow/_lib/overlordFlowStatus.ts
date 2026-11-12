@@ -1273,3 +1273,15 @@ export function laterStopAt(row: ClosedSession): string | null {
     ? null
     : episode;
 }
+
+/**
+ * The operator label form, prefilled with the session's last `/next-move`
+ * judgment — or `null` when there is no judgment to label: none recorded
+ * (`null`), a coord predating the join (`undefined`), or no proven session id
+ * to have joined on (the same rule `lastInterventionWords` applies).
+ */
+export function labelHref(row: FlowUnchangedSession): string | null {
+  const last = row.last_intervention;
+  if (!last || !row.claude_session_id) return null;
+  return `/admin/coord/overlord/label?intervention_id=${encodeURIComponent(last.intervention_id)}`;
+}

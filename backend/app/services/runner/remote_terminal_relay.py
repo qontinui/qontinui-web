@@ -87,6 +87,9 @@ exhaustive, so match on the code, not the prefix. Unlike attach, a create's
 claim key is NOT deleted
 on release — it expires with the grant, which is what single use means.
 
+A created terminal the source then fails to attach to is closed under the same
+grant, on the third path of Remote END below.
+
 Remote END
 ----------
 Plan ``2026-09-30-close-remote-sessions-from-the-local-runner`` adds
@@ -106,6 +109,22 @@ target's relay socket dies, or whose return route is lost, is answered at once
 ``remote_terminal_error`` and mean the outcome is UNKNOWN. While a fresh-grant
 end is in flight every other frame naming that grant — detach included — is
 refused ``end_already_pending``, and the expiry sweep leaves it alone.
+
+Plan ``2026-09-23-remote-create-residuals-after-coord-registration-confirm``
+adds a third path, for a source whose create succeeded and whose attach failed:
+the frame presents ``create_grant`` and the ``terminal_id`` the create reported,
+and is forwarded as ``terminal_end`` with ``remote.kind = "create"`` and no
+``session_id``. It carries no other grant, and the relay verifies the token as
+``_handle_create`` does while the TARGET decides whether that jti created that
+terminal (``remote_create_close_attached``,
+``remote_create_close_terminal_mismatch``). It settles and releases like a fresh
+grant, and ``remote_terminal_ended`` carries ``session_id: null``. Its claim is
+``remote_attach:create_close_claim:{grant_jti}``, not the create's own claim key,
+which by design stays set until the grant expires; the close claim is released
+when the round trip settles, so a close answered UNKNOWN may be retried. Its
+record is likewise ``remote_attach:create_close_grant:{grant_jti}``, never the
+create's ``remote_attach:grant:{grant_jti}``, so a close settling cannot delete
+the record of a create in flight on the same jti.
 
 Forward direction is replica-local
 ----------------------------------
@@ -173,6 +192,7 @@ from app.services.runner.remote_relay.registry import (
     RELEASE_TERMINAL_SCRIPT,
     RelayRegistry,
     claim_key,
+    create_close_grant_key,
     grant_key,
     terminal_key,
 )
@@ -228,6 +248,7 @@ __all__ = [
     "_prefix_is_disjoint_from_relay_codes",
     "claim_key",
     "coord_jwks_client",
+    "create_close_grant_key",
     "create_target_device_id",
     "get_relay",
     "grant_key",
@@ -644,15 +665,10 @@ class RemoteTerminalRelay:
             return
         claims, jti, socket_source, exp = verified
 
-        target_device_id = create_target_device_id(claims)
+        target_device_id = await self.grants._create_target(
+            session, claims, jti, request_id
+        )
         if target_device_id is None:
-            await self._refuse(
-                session,
-                CODE_CREATE_GRANT_INVALID,
-                "grant names no usable target device",
-                request_id=request_id,
-                grant_jti=jti,
-            )
             return
 
         if jti in session.grants:
@@ -801,10 +817,10 @@ class RemoteTerminalRelay:
             # An end-only grant never asked the target to bind anything, and a
             # detach racing its own ``terminal_end`` is noise at best.
             #
-            # A create grant never bound a terminal, and the target admits
-            # exactly one frame type under it — so a detach sent here would be
-            # refused as an unadmitted type and answered as an error, which is
-            # noise on the teardown path rather than cleanup.
+            # A create grant never bound a terminal, and the target admits only
+            # its create and the close of that create under it — so a detach
+            # sent here would be refused as an unadmitted type and answered as
+            # an error, which is noise on the teardown path rather than cleanup.
             return
         try:
             await session.manager.send_terminal(
