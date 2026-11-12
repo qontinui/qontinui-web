@@ -69,11 +69,11 @@ test.describe("QA Dashboard - Main Page", () => {
     await expect(page.locator("h1")).toContainText("QA Dashboard");
   });
 
-  test("should display 4-view selector buttons", async ({ page }) => {
+  test("should display 3-view selector buttons", async ({ page }) => {
     await page.goto(QA_URL);
     await page.waitForLoadState("domcontentloaded");
 
-    // The view selector has 4 buttons: Test Runs, Live Execution, Coverage Trends, Reliability
+    // The view selector has 3 buttons: Test Runs, Coverage Trends, Reliability
     const viewSelector = page.locator(
       '[data-testid="qa-dashboard-view-selector"]'
     );
@@ -81,9 +81,6 @@ test.describe("QA Dashboard - Main Page", () => {
 
     await expect(
       page.locator('[data-testid="qa-dashboard-overview-tab"]')
-    ).toBeVisible();
-    await expect(
-      page.locator('[data-testid="qa-dashboard-live-tab"]')
     ).toBeVisible();
     await expect(
       page.locator('[data-testid="qa-dashboard-trends-tab"]')
@@ -124,10 +121,6 @@ test.describe("QA Dashboard - Main Page", () => {
   }) => {
     await page.goto(QA_URL);
     await page.waitForLoadState("domcontentloaded");
-
-    // Click Live Execution tab
-    await page.locator('[data-testid="qa-dashboard-live-tab"]').click();
-    await waitForSelectedView(page, "live");
 
     // Click Coverage Trends tab — with project selected, the chart mounts.
     await page.locator('[data-testid="qa-dashboard-trends-tab"]').click();

@@ -869,6 +869,101 @@ export function needsRecommendationShareSentence(
   }.`;
 }
 
+/** coord's `by_domain` bucket for operator approval gates (`needs_me.rs`). */
+export const NEEDS_DOMAIN_OPERATOR_GATE = "operator_gate";
+
+/**
+ * The decisions waiting, split into approvals (coord's `operator_gate`
+ * bucket) and agent questions (every other bucket: parsed domains,
+ * `unclassified`, `unscanned`, `other`). Counts only — no domain key is
+ * returned, so nothing caller-typed reaches the strip.
+ *
+ * `null` — no split is said — unless the split is coord's own and adds up:
+ * a read block with a displayable count, a served `by_domain` (an older
+ * coord serves none), and buckets that are whole, non-negative and sum to
+ * that count. A split that does not add up is not this count's.
+ *
+ * Nor is one coord says may be off (`questions_coverage: "stale"`): its stale
+ * causes include a gate mirror counted both as a question and as an
+ * approval, which lands in the split itself. The headline then carries the
+ * qualified total alone; the Needs-you section still shows the buckets,
+ * qualified.
+ */
+export function needsKindSplit(
+  needs: NeedsMeView
+): { approvals: number; questions: number } | null {
+  const count = needsDisplayCount(needs);
+  const byDomain = needs.byDomain;
+  if (
+    count === null ||
+    count === 0 ||
+    byDomain === null ||
+    needsCountMayBeOff(needs)
+  ) {
+    return null;
+  }
+  let approvals = 0;
+  let questions = 0;
+  for (const [domain, n] of Object.entries(byDomain)) {
+    if (!Number.isInteger(n) || n < 0) return null;
+    if (domain === NEEDS_DOMAIN_OPERATOR_GATE) approvals += n;
+    else questions += n;
+  }
+  return approvals + questions === count ? { approvals, questions } : null;
+}
+
+/**
+ * The headline's breakdown clause — e.g. "4 approvals, 1 agent question" —
+ * naming only the non-zero kinds; `null` when {@link needsKindSplit} says
+ * nothing.
+ */
+export function needsKindSplitText(needs: NeedsMeView): string | null {
+  const split = needsKindSplit(needs);
+  if (split === null) return null;
+  const parts: string[] = [];
+  if (split.approvals > 0) {
+    parts.push(
+      `${split.approvals} ${split.approvals === 1 ? "approval" : "approvals"}`
+    );
+  }
+  if (split.questions > 0) {
+    parts.push(
+      `${split.questions} agent ${split.questions === 1 ? "question" : "questions"}`
+    );
+  }
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+/**
+ * How long the oldest decision has waited: the largest age among the listed
+ * items (coord lists the oldest first, but this does not lean on its order,
+ * nor on no item being dropped as unreadable). `null` when nothing is listed.
+ * Any listed item whose age coord did not serve makes the oldest UNKNOWN —
+ * said so, never "0m".
+ *
+ * A lower bound is said as one ("at least"): when coord says its scan may be
+ * off (a question inserted while it paged can push the true oldest out of
+ * the scan), or when `stale` — the view is the last good read, so every age
+ * in it was measured then, not now.
+ */
+export function needsOldestSentence(
+  needs: NeedsMeView,
+  { stale = false }: { stale?: boolean } = {}
+): string | null {
+  if (needs.state !== "read") return null;
+  const items = needs.items ?? [];
+  if (items.length === 0) return null;
+  let oldest = 0;
+  for (const item of items) {
+    if (item.ageSecs === null) {
+      return "How long the oldest has waited is not known.";
+    }
+    oldest = Math.max(oldest, item.ageSecs);
+  }
+  const atLeast = stale || needsCountMayBeOff(needs) ? "at least " : "";
+  return `The oldest has waited ${atLeast}${durationText(oldest)}.`;
+}
+
 /**
  * The sentence for a read needs_me block that counted decisions but served
  * none of them. `count` is {@link needsDisplayCount}; `null` is an unknown
@@ -1608,6 +1703,23 @@ export function isWatcherSource(source: string): boolean {
 }
 
 /**
+ * The prefix of a `does_not_know` row coord adds for each operator plane whose
+ * fault-to-visibility lag it measures against its target
+ * (`detection_bound:<plane>`, plan
+ * `2026-11-07-project-state-does-not-know-names-planes-slower-than-the-fault-to-visibility-bar`).
+ * Its `freshness_bound_secs` is how old a fault on that plane can be before
+ * coord first observes it — NOT the age of any data — or `null` (with
+ * `state: "unknown"`) when no bound could be derived. A slow-but-known plane
+ * is served `read` on purpose, so it is not counted among sources not read.
+ */
+const DETECTION_BOUND_SOURCE_PREFIX = "detection_bound:";
+
+/** Whether a `does_not_know` row is a plane's detection bound (`detection_bound:<plane>`). */
+export function isDetectionBoundSource(source: string): boolean {
+  return source.startsWith(DETECTION_BOUND_SOURCE_PREFIX);
+}
+
+/**
  * Whether the page's table labels `source` — its own key, never one inherited
  * from `Object.prototype`. A source it does not label reads as coord's own
  * identifier, {@link humanised}; the presentation lens words such a row in
@@ -1654,6 +1766,13 @@ export function sourceLabel(
       ? `Watcher feeding ${fed.named.join(", ")}`
       : "Watcher feeding Degrading";
   }
+  if (isDetectionBoundSource(source)) {
+    const plane = source.slice(DETECTION_BOUND_SOURCE_PREFIX.length);
+    const area = plane === "" ? null : label(plane);
+    return area === null
+      ? "Time for a fault on an area not named here to reach this view"
+      : `Time for a fault on ${area} to reach this view`;
+  }
   return humanised(source);
 }
 
@@ -1695,12 +1814,23 @@ export function sourceErrorSentence(s: SourceCoverageView): string | null {
  * - Any other row not read in full: the bound is stated as a bound. No age is
  *   promised for data the row may not hold.
  *
+ * - A detection-bound row (`detection_bound:<plane>`): the bound is how old a
+ *   fault on that plane can be before coord first observes it; with no bound,
+ *   coord could derive none, and the row says so.
+ *
  * The bound is written with {@link boundText}, to the second: coord's bounds
  * are not whole minutes (train health's is its 20 s memo TTL, and a watcher's
  * is at least 3 x the ledger's 30 s throttle floor, 90 s).
  */
 export function sourceAgePhrase(s: SourceCoverageView): string {
   const bound = s.freshnessBoundSecs;
+  if (isDetectionBoundSource(s.source)) {
+    // The bound is a detection lag, not a data age: "may be up to N old"
+    // would say the opposite of what coord measured.
+    return bound === null
+      ? "no detection bound known"
+      : `a fault can be up to ${boundText(bound)} old before coord sees it`;
+  }
   if (isWatcherSource(s.source)) {
     if (bound === null) return "freshness bound not stated";
     return s.error === "last_success_older_than_3x_interval"
@@ -1729,11 +1859,22 @@ export function sourceRowReason(
   // With `omitUnstated`, a field coord did not state is left off the row: the
   // list says it once for every row it applies to (`unstatedSummary`), rather
   // than repeat the identical clause on each.
-  if (!(omitUnstated && s.freshnessBoundSecs === null)) {
+  // A detection-bound row with no bound says so in its own words ("no
+  // detection bound known"), not as an unstated age, so it is never omitted.
+  if (
+    !(
+      omitUnstated &&
+      s.freshnessBoundSecs === null &&
+      !isDetectionBoundSource(s.source)
+    )
+  ) {
     parts.push(sourceAgePhrase(s));
   }
+  // A detection-bound row measures a plane, not rows: it never has an
+  // exclusion count, so none is said to be missing.
   if (s.rowsExcluded !== null) parts.push(`${s.rowsExcluded} excluded`);
-  else if (!omitUnstated) parts.push("exclusions not stated");
+  else if (!omitUnstated && !isDetectionBoundSource(s.source))
+    parts.push("exclusions not stated");
   return parts.join(" · ");
 }
 
@@ -1747,9 +1888,14 @@ export function sourceRowReason(
 export function unstatedSummary(
   sources: readonly SourceCoverageView[]
 ): string | null {
-  const n = sources.length;
-  const noBound = sources.filter((s) => s.freshnessBoundSecs === null).length;
-  const noExcl = sources.filter((s) => s.rowsExcluded === null).length;
+  // A detection-bound row states its own bound (or that none could be
+  // derived) and has no rows, so it owes neither clause: it is left out of
+  // both the counts and the "of N" total.
+  const owing = sources.filter((s) => !isDetectionBoundSource(s.source));
+  const n = owing.length;
+  if (n === 0) return null;
+  const noBound = owing.filter((s) => s.freshnessBoundSecs === null).length;
+  const noExcl = owing.filter((s) => s.rowsExcluded === null).length;
   const of = (k: number) =>
     k === n ? (n === 1 ? "it" : `all ${n}`) : `${k} of ${n}`;
   const parts: string[] = [];
@@ -1861,14 +2007,6 @@ export type HomeBlock =
   | "degradations"
   | "on_track"
   | "correctness";
-
-/** The block names as the page shows them. */
-export const HOME_BLOCK_LABEL: Readonly<Record<HomeBlock, string>> = {
-  needs_me: "needs you",
-  degradations: "degrading",
-  on_track: "work by state",
-  correctness: "correct?",
-};
 
 export function blockStates(
   view: ProjectStateView
@@ -1986,6 +2124,76 @@ export interface HomeStripMachines {
 /** "1 machine is" / "2 machines are". */
 function machinesAre(n: number): string {
   return `${n} ${n === 1 ? "machine is" : "machines are"}`;
+}
+
+/** A block's name as the strip's sentences open with it. */
+const STRIP_BLOCK_NOUN: Readonly<Record<HomeBlock, string>> = {
+  needs_me: "The needs-you list",
+  degradations: "The degradations list",
+  on_track: "The work-by-state summary",
+  correctness: "The correctness check",
+};
+
+/** What the strip says of a block in each state that is not `read`. */
+const STRIP_BLOCK_STATE_VERB: Readonly<
+  Record<Exclude<BlockState, "read">, string>
+> = {
+  could_not_read: "could not be read",
+  stale: "may be incomplete or stale",
+  not_implemented: "is not built yet",
+  unknown: "is unknown",
+};
+
+/** One unread block as a sentence: "The degradations list may be incomplete or stale." */
+export function unreadBlockSentence(
+  block: HomeBlock,
+  state: Exclude<BlockState, "read">
+): string {
+  return `${STRIP_BLOCK_NOUN[block]} ${STRIP_BLOCK_STATE_VERB[state]}.`;
+}
+
+/**
+ * The roster's cut, as short as the strip can say it. A cut coord says hid
+ * no machine that could degrade (`cut_tail_only`) is bookkeeping, not an
+ * unknown: one short sentence, with the long form left to the Degrading
+ * section's machines line. Every other cut leaves machine health UNKNOWN and
+ * keeps the shared sentence word for word.
+ */
+function stripRosterCutSentence(cut: RosterCut): string | null {
+  if (cut.kind === "cut_tail_only") {
+    const n = cut.total - cut.listed;
+    if (n === 1) {
+      return "Coord left 1 abandoned or placeholder row off its roster and says it could not be degrading.";
+    }
+    if (n > 1) {
+      return `Coord left ${n} abandoned or placeholder rows off its roster and says none could be degrading.`;
+    }
+  }
+  return rosterCutSentence(cut);
+}
+
+/**
+ * The strip's reconcile with the `machines not healthy` badge. In the common
+ * case — the only rows the badge counts beyond the degrading ones are
+ * abandoned machines, and some machine is live — one short sentence; every
+ * other mix keeps the shared sentence, which points back at the lines that
+ * already named them.
+ */
+function stripNotDegradationsSentence(mc: MachineHealthCounts): string | null {
+  const { abandoned, noVerdict, ciUnrefreshed, placeholders } =
+    mc.notDegradations;
+  if (
+    abandoned > 0 &&
+    noVerdict === 0 &&
+    ciUnrefreshed === 0 &&
+    placeholders === 0 &&
+    !noLiveMachine(mc)
+  ) {
+    return abandoned === 1
+      ? "1 abandoned machine counts as not healthy but is not a degradation — see Dev Ops."
+      : `${abandoned} abandoned machines count as not healthy but are not degradations — see Dev Ops.`;
+  }
+  return notDegradationsSentence(mc, { seeDevOps: true });
 }
 
 /** Where the strip says the queue counts come from, in the mode's words. */
@@ -2112,7 +2320,10 @@ export function deriveHomeStrip(
   }
 
   const stale = read.stale === true;
-  const unread = blockStates(view).filter((b) => b.state !== "read");
+  const unread = blockStates(view).filter(
+    (b): b is { block: HomeBlock; state: Exclude<BlockState, "read"> } =>
+      b.state !== "read"
+  );
   const unknownSources =
     view.doesNotKnow === null
       ? null
@@ -2216,11 +2427,10 @@ export function deriveHomeStrip(
   }
 
   const correctnessLeftOut = read.correctnessLeftOut === true;
-  const unreadPhrase = unread
+  const unreadSentences = unread
     .filter((b) => !(correctnessLeftOut && b.block === "correctness"))
     .filter((b) => !(needsLeftOut && b.block === "needs_me"))
-    .map((b) => `${HOME_BLOCK_LABEL[b.block]} ${BLOCK_STATE_PHRASE[b.state]}`)
-    .join("; ");
+    .map((b) => unreadBlockSentence(b.block, b.state));
 
   let headline: string;
   if (attention === "author" && queues !== null) {
@@ -2233,6 +2443,9 @@ export function deriveHomeStrip(
       needsTotal === null
         ? "Decisions need you — how many is unknown"
         : `${needsTotal} ${needsTotal === 1 ? "decision needs" : "decisions need"} you${needsMayBeOff ? ` ${NEEDS_COUNT_MAY_BE_OFF_WORDS}` : ""}`;
+    // What kind they are, when coord's own split adds up to the count.
+    const split = needsTotal === null ? null : needsKindSplitText(view.needsMe);
+    if (split !== null) headline += ` — ${split}`;
   } else if (somethingDegrading) {
     headline = "Something is degrading";
   } else if (needsMayBeOff && needsTotal === 0 && !stale) {
@@ -2308,10 +2521,40 @@ export function deriveHomeStrip(
   }
   if (stale) headline = `${headline}, ${lastGoodReadPhrase(view.generatedAt)}`;
 
+  // The detail leads with what is wrong and actionable — what the decisions
+  // are, then which machines are degrading — and only then says what this
+  // view could not read or counts as bookkeeping. Every UNKNOWN keeps a
+  // sentence; only the order and the wording are the strip's own.
   const detailParts: string[] = [];
-  if (unreadPhrase) detailParts.push(`Not read: ${unreadPhrase}.`);
-  if (correctnessLeftOut && view.correctness.state !== "read") {
-    detailParts.push(CORRECTNESS_NOT_MEASURED_TEXT);
+  if (needsRead) {
+    const share = needsRecommendationShareSentence(view.needsMe);
+    const oldest = needsOldestSentence(view.needsMe, { stale });
+    if (share !== null) detailParts.push(share);
+    if (oldest !== null) detailParts.push(oldest);
+  }
+  if (machines !== null && mc !== null) {
+    // Every machine the badge counts is named once: listed, unlisted, or in
+    // the reconcile line further down.
+    if (listedDegrading > 0) {
+      detailParts.push(
+        `${machinesAre(listedDegrading)} degrading — listed under Degrading.`
+      );
+    }
+    if (unlistedDegrading > 0) {
+      detailParts.push(
+        listedDegrading > 0
+          ? `${unlistedDegrading} more ${unlistedDegrading === 1 ? "machine is" : "machines are"} degrading but not in coord's list — see Dev Ops.`
+          : `${machinesAre(unlistedDegrading)} degrading but not in coord's list — see Dev Ops.`
+      );
+    }
+    if (mc.noVerdict > 0) {
+      detailParts.push(
+        `${mc.noVerdict} ${mc.noVerdict === 1 ? "machine has" : "machines have"} no health verdict — unknown.`
+      );
+    }
+    if (machines.stale) {
+      detailParts.push("Machine health is from its last good read.");
+    }
   }
   if (needsRead && needsTotal === null) {
     detailParts.push(
@@ -2339,6 +2582,10 @@ export function deriveHomeStrip(
       `Needs you is unknown: ${queuesSourceText(true)} were not read.`
     );
   }
+  detailParts.push(...unreadSentences);
+  if (correctnessLeftOut && view.correctness.state !== "read") {
+    detailParts.push(CORRECTNESS_NOT_MEASURED_TEXT);
+  }
   if (degRowsServed && open === null) {
     detailParts.push(
       "Coord served no list of open degradations — cannot say whether any exist."
@@ -2362,32 +2609,14 @@ export function deriveHomeStrip(
         withReason: false,
       });
       if (incomplete) detailParts.push(incomplete);
-      const cut = rosterCutSentence(machines.cut);
-      if (cut) detailParts.push(cut);
-    }
-    // Every machine the badge counts is named once below: listed, unlisted,
-    // or in the reconcile line.
-    if (listedDegrading > 0) {
-      detailParts.push(
-        `${listedDegrading} ${listedDegrading === 1 ? "machine" : "machines"} in a degrading state ${listedDegrading === 1 ? "is" : "are"} among the open degradations.`
-      );
-    }
-    if (unlistedDegrading > 0) {
-      detailParts.push(
-        `${machinesAre(unlistedDegrading)} in a degrading state.`
-      );
-    }
-    if (mc.noVerdict > 0) {
-      detailParts.push(
-        `${mc.noVerdict} ${mc.noVerdict === 1 ? "machine has" : "machines have"} no health verdict — unknown.`
-      );
     }
     const placeholders = placeholdersSentence(mc);
     if (placeholders) detailParts.push(placeholders);
-    const reconcile = notDegradationsSentence(mc, { seeDevOps: true });
+    const reconcile = stripNotDegradationsSentence(mc);
     if (reconcile) detailParts.push(reconcile);
-    if (machines.stale) {
-      detailParts.push("Machine health is from its last good read.");
+    if (!(mc.total === 0 && mc.placeholders === 0)) {
+      const cut = stripRosterCutSentence(machines.cut);
+      if (cut) detailParts.push(cut);
     }
   }
   if (unknownSources === null) {

@@ -207,6 +207,9 @@ export function machinesHealthyFigure(
   if (states.degraded > 0) rest.push(`${states.degraded} degraded`);
   if (states.stale > 0) rest.push(`${states.stale} with telemetry gone quiet`);
   if (states.ciOffline > 0) rest.push(`${states.ciOffline} with CI offline`);
+  if (roster.counts.ciUnrefreshed > 0) {
+    rest.push(`${roster.counts.ciUnrefreshed} not refreshed by the registrar`);
+  }
   if (roster.counts.noVerdict > 0) {
     rest.push(`${roster.counts.noVerdict} with no health verdict`);
   }

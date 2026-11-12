@@ -16,33 +16,17 @@ const CoverageTrendChart = nextDynamic(
   { ssr: false }
 );
 import { ReliabilityStats } from "@/components/testing/ReliabilityStats";
-import { LiveTestExecution } from "@/components/testing/LiveTestExecution";
 import { RequireProject } from "@/components/require-project";
-import { createLogger } from "@/lib/logger";
-
-const log = createLogger("QADashboard");
-import {
-  BarChart3,
-  FileText,
-  TrendingUp,
-  PlayCircle,
-  Activity,
-} from "lucide-react";
+import { BarChart3, FileText, TrendingUp, PlayCircle } from "lucide-react";
 
 function QADashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = searchParams.get("project");
-  const testRunIdParam = searchParams.get("testRunId");
-  const workflowNameParam = searchParams.get("workflowName");
 
   const [selectedView, setSelectedView] = useState<
-    "overview" | "live" | "trends" | "reliability"
-  >(() => (testRunIdParam ? "live" : "overview"));
-  const [liveTestRunId] = useState<string | null>(() => testRunIdParam || null);
-  const [liveWorkflowName] = useState<string | null>(
-    () => workflowNameParam || null
-  );
+    "overview" | "trends" | "reliability"
+  >("overview");
 
   return (
     <RequireProject pageName="QA Dashboard">
@@ -88,7 +72,6 @@ function QADashboardContent() {
             {(
               [
                 { key: "overview", label: "Test Runs", icon: PlayCircle },
-                { key: "live", label: "Live Execution", icon: Activity },
                 { key: "trends", label: "Coverage Trends", icon: TrendingUp },
                 { key: "reliability", label: "Reliability", icon: BarChart3 },
               ] as const
@@ -111,16 +94,6 @@ function QADashboardContent() {
 
           {selectedView === "overview" && (
             <TestRunsList projectId={projectId || undefined} />
-          )}
-
-          {selectedView === "live" && (
-            <LiveTestExecution
-              testRunId={liveTestRunId || undefined}
-              workflowName={liveWorkflowName || undefined}
-              onComplete={(data) => {
-                log.debug("Test execution completed:", data);
-              }}
-            />
           )}
 
           {selectedView === "trends" && projectId && (

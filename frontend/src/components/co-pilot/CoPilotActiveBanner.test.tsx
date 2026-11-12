@@ -235,6 +235,29 @@ describe("<CoPilotActiveBanner>", () => {
     });
   });
 
+  it("lit banner is an in-flow block, never a fixed/absolute overlay over the page", async () => {
+    // Presentation-spaces Phase 8 (finding c157a7b3): a `fixed top-0` z-9999
+    // banner covered the tour bar's top row and the coord header whenever
+    // the AI drove. The banner must take its own space in the column.
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "granted");
+    const recent = new Date(Date.now() - 2_000).toISOString();
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/preferences")) {
+        return Promise.resolve(preferenceResponse(true));
+      }
+      return Promise.resolve(activityResponse([{ occurred_at: recent }]));
+    });
+    renderBanner();
+    await waitFor(() => {
+      const banner = screen.getByTestId("co-pilot-active-banner");
+      const classes = banner.className.split(/\s+/);
+      expect(classes).not.toContain("fixed");
+      expect(classes).not.toContain("absolute");
+      expect(classes).toContain("shrink-0");
+      expect(banner.style.position).toBe("");
+    });
+  });
+
   it("exposes a bridge-VISIBLE state sentinel (data-copilot-active) OUTSIDE the invisible subtree", async () => {
     // Bug 3a: the lit state must be observable in a UI-Bridge snapshot. The
     // sentinel carries data-copilot-active and must NOT be nested under any
