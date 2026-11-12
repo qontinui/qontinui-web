@@ -44,10 +44,14 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 from alembic.config import CommandLine, Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def admin_database_url() -> str:
@@ -653,3 +657,104 @@ def upgrade_execute_calls(
     for statement in upgrades[0].body:
         visit(statement, False)
     return calls
+
+
+# ---------------------------------------------------------------------------
+# Recorded-SQL helpers for revisions written as static ``op.execute`` DDL.
+#
+# topcons_01's and kernel_gauges_01's tests each carried a private copy of
+# these, and scanned for forbidden clauses only on the lines containing
+# ``ADD COLUMN``, so a ``NOT NULL`` or ``DEFAULT`` on a continuation line, a
+# ``NOT NULL`` split across lines, or an ``ADD CONSTRAINT`` in the same ALTER
+# passed. runmem_01's test (web#2207, open when this landed, still carrying its
+# own private copy) fixed the scan; this hoists that fix so every migration
+# test can share it.
+# ---------------------------------------------------------------------------
+
+#: Clauses a nullable "NULL means UNKNOWN" column's ADD must never carry: each
+#: either fabricates a reading or puts a second door on an input coord
+#: validates app-side.
+FORBIDDEN_ADD_CLAUSES: tuple[str, ...] = (
+    "NOT NULL",
+    "DEFAULT",
+    "CHECK",
+    "CONSTRAINT",
+    "REFERENCES",
+    "UNIQUE",
+)
+
+
+def recorded_sql(
+    module: ModuleType, step: str, monkeypatch: pytest.MonkeyPatch
+) -> list[str]:
+    """Run ``module.upgrade()`` / ``downgrade()`` against a recording ``op``.
+
+    Returns every ``op.execute`` argument, in order, as a string. Only
+    ``execute`` is stubbed: a revision that reaches for any other ``op``
+    method raises ``AttributeError``, which is the right failure for a test
+    that relies on the DDL being static ``op.execute`` text.
+    """
+    executed: list[str] = []
+
+    class _RecordingOp:
+        @staticmethod
+        def execute(sql: object) -> None:
+            executed.append(str(sql))
+
+    monkeypatch.setattr(module, "op", _RecordingOp)
+    getattr(module, step)()
+    return executed
+
+
+def alter_statement(statements: list[str], schema: str, table: str, verb: str) -> str:
+    """The ONE ``ALTER TABLE <schema>.<table> ... <verb> COLUMN`` statement.
+
+    Fails (assert) on zero or on more than one, so a revision that splits its
+    ADD across two ALTERs is caught rather than half-read.
+    """
+    head = re.compile(rf"^\s*ALTER TABLE {re.escape(schema)}\.{re.escape(table)}\s")
+    found = [
+        sql for sql in statements if head.match(sql) and f"{verb} COLUMN" in sql.upper()
+    ]
+    assert len(found) == 1, (
+        f"expected one {verb} statement for {schema}.{table}, got {len(found)}"
+    )
+    return found[0]
+
+
+def collapsed_upper(sql: str) -> str:
+    """``sql`` upper-cased with every whitespace run collapsed to one space."""
+    return " ".join(sql.upper().split())
+
+
+def forbidden_add_clauses(
+    statement: str, clauses: tuple[str, ...] = FORBIDDEN_ADD_CLAUSES
+) -> list[str]:
+    """The forbidden clauses present ANYWHERE in ``statement``.
+
+    Reads the WHOLE statement, whitespace-collapsed, so a clause on a
+    continuation line or split across lines is found; matches on word
+    boundaries, so a column NAMED ``default_x`` or ``checked_at`` is not.
+    """
+    text_ = collapsed_upper(statement)
+    return [
+        clause
+        for clause in clauses
+        if re.search(rf"(?<![\w]){re.escape(clause)}(?![\w])", text_)
+    ]
+
+
+def backfill_statements(statements: list[str]) -> list[str]:
+    """Every recorded statement that may write rows.
+
+    Any statement other than a ``COMMENT ON`` (whose body is prose) that
+    mentions ``UPDATE``, ``INSERT`` or ``COPY`` as a word — so a
+    ``WITH ... UPDATE`` or a ``DO`` block is caught, not only a statement that
+    starts with the verb.
+    """
+    return [
+        sql
+        for sql in statements
+        if not re.match(r"\s*COMMENT\s+ON\b", sql, re.I)
+        and re.search(r"\b(UPDATE|INSERT|COPY)\b", sql, re.I)
+    ]
