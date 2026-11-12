@@ -255,12 +255,12 @@ describe("route.ts, gate on: a request cannot name its caller", () => {
     }
   );
 
-  it("refuses a body that is not JSON and forwards nothing", async () => {
+  it("refuses a body declared JSON that is not JSON and forwards nothing", async () => {
     const res = await call(
       "POST",
       "/control/element/save/action",
       "action=click&callerUserId=user-a",
-      { "content-type": "application/x-www-form-urlencoded" }
+      { "content-type": "application/json" }
     );
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({
@@ -268,6 +268,22 @@ describe("route.ts, gate on: a request cannot name its caller", () => {
       code: "BODY_NOT_JSON",
     });
     expect(forwarded).toHaveLength(0);
+  });
+
+  it("forwards a form-encoded body as NO body, as the SDK reads it, naming only the verified caller", async () => {
+    // The SDK's reader reads a non-JSON-declared body that is not JSON as no
+    // body, so none of it — the caller it names included — reaches a handler.
+    const res = await call(
+      "POST",
+      "/control/element/save/action",
+      "action=click&callerUserId=user-a",
+      { "content-type": "application/x-www-form-urlencoded" }
+    );
+    expect(res.status).toBe(200);
+    const sent = await lastForwarded();
+    expect(sent.bytes.byteLength).toBe(0);
+    expect(sent.body).toBeUndefined();
+    expect(sent.callerHeader).toBe(VERIFIED);
   });
 
   it("refuses a body that cannot be read and forwards nothing", async () => {

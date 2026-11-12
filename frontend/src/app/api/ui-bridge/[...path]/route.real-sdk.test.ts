@@ -205,7 +205,8 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
       steps: [{ action: "click", ...named }],
     });
     // The SDK's reader drops ONE leading byte-order mark, so a body behind
-    // two or more is refused, by the route under the gate as by the SDK.
+    // two or more does not parse: declared JSON it is refused, by the route
+    // under the gate as by the SDK; declared `text/plain` it is no body.
     const encodings = [
       {
         label: "JSON",
@@ -241,7 +242,7 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
         label: "two marks, text/plain",
         bytes: withBoms(2, body),
         type: "text/plain",
-        refused: true,
+        refused: false,
       },
       {
         label: "three marks",
@@ -409,14 +410,15 @@ describe("route.ts + the real SDK: an empty body is no body, gate off and on", (
 });
 
 describe("the installed SDK's Next handler reads request bodies only through its JSON body reader", () => {
-  // `route.ts` refuses, under the gate, a body its peek cannot parse as JSON,
+  // `route.ts` refuses, under the gate, a body the SDK's reader would refuse,
   // exempting no route, because the SDK reads no body any other way. Since
   // 0.46 every body the Next adapter reads — a `bodyRequired` route's, and
   // the hand-routed `/heartbeat`, `/commands` and `/tabs/cdp/new` ones — goes
   // through ONE reader, `readJsonBody` (ui-bridge `src/server/request-body.ts`).
   // The peek applies that reader's rule, and
   // `body-passthrough.differential.test.ts` holds it to the installed SDK's
-  // handler case by case; this pins that the adapter has no OTHER reader the
+  // handler case by case, under every content type a client may declare;
+  // this pins that the adapter has no OTHER reader the
   // differential would not see. A release whose Next adapter reads a body any
   // other way (as text, form data or bytes, or by `request.json()`) must
   // revisit the peek and the exemption list in `route.ts` before it ships.
