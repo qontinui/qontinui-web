@@ -86,7 +86,7 @@ function withBoms(count: number, json: string): Uint8Array {
 function send(
   method: BodyMethod,
   path: string,
-  body: Uint8Array | string,
+  body: Uint8Array | string | ReadableStream<Uint8Array>,
   contentType: string
 ): Promise<Response> {
   __resetAuthCache();
@@ -99,6 +99,8 @@ function send(
       "content-type": contentType,
     },
     body,
+    // A streamed body (chunked, no Content-Length) needs a half-duplex request.
+    ...(body instanceof ReadableStream ? { duplex: "half" } : {}),
   });
   const context = {
     params: Promise.resolve({ path: path.slice(1).split("/") }),
@@ -366,7 +368,7 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
   }, 120_000);
 });
 
-describe("route.ts + the real SDK: an empty body is no body, gate off and on", () => {
+describe("route.ts + the real SDK: empty and over-cap bodies, gate off and on", () => {
   // Next gives every non-GET/HEAD request a body stream, a zero-byte one
   // included. The route reads it to learn it is empty, and the SDK's reader
   // refuses a body something already read (400 "Request body could not be
@@ -406,6 +408,35 @@ describe("route.ts + the real SDK: an empty body is no body, gate off and on", (
       expect(dispatched).toHaveLength(1);
       expect(ownerOf(dispatched[0].options)).toBe(owner);
     }
+  );
+
+  // The SDK refuses (413) a body that runs past its 10 MiB cap before it
+  // reads what the body means, so a blank body or a non-JSON-declared one
+  // over the cap is refused there, not read as none. Streamed with no
+  // Content-Length, only reading the body finds its size.
+  it.each([
+    ["off", "0", "a blank body", 0x20, "application/json"],
+    ["on", "1", "a blank body", 0x20, "application/json"],
+    ["off", "0", "a non-JSON body", 0x78, "text/plain"],
+    ["on", "1", "a non-JSON body", 0x78, "text/plain"],
+  ] as const)(
+    "gate %s (UI_BRIDGE_REQUIRE_AUTH=%s): %s over the SDK's cap, streamed, is refused 413 and dispatches nothing",
+    async (_gate, flag, _what, fill, contentType) => {
+      vi.stubEnv("UI_BRIDGE_REQUIRE_AUTH", flag);
+      const CHUNK = 1024 * 1024;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (let i = 0; i < 11; i++) {
+            controller.enqueue(new Uint8Array(CHUNK).fill(fill));
+          }
+          controller.close();
+        },
+      });
+      const res = await send("POST", "/control/find", body, contentType);
+      expect(res.status, await res.clone().text()).toBe(413);
+      expect(dispatched).toEqual([]);
+    },
+    60_000
   );
 });
 
