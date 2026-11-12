@@ -121,7 +121,7 @@ permissions:
 jobs:
   style-gate:
     name: Style Gate (shadow)
-    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_STYLE_GATE || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(((vars.WEB_CI_DB_LANE_STYLE_GATE || vars.WEB_CI_DB_LANE) == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && '["self-hosted","docker-rootless","qontinui-host-nawa"]' || '"ubuntu-24.04"') }}
     timeout-minutes: 30
 
     # Ephemeral DB for the captured backend boot. Mirrors the Frontend E2E job

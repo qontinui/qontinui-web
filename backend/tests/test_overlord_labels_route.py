@@ -307,7 +307,13 @@ def test_a_page_coord_did_not_shape_is_a_502_never_a_404(body: Any) -> None:
     # `latest` defect; it must surface as coord's malformed page instead.
     resp, inst = _drive(_OK_BODY, gets=[_resp(200, body)])
     assert resp.status_code == 502
-    assert resp.json()["detail"] == {"error": "coord_malformed_interventions_page"}
+    assert resp.json()["detail"] == {
+        "error": "coord_malformed_interventions_page",
+        "message": (
+            "coord's intervention list came back in a shape web cannot read; "
+            "no label was written"
+        ),
+    }
     inst.post.assert_not_called()
 
 
@@ -318,7 +324,13 @@ def test_an_undecodable_page_is_a_502_never_a_404() -> None:
     page.json.side_effect = json.JSONDecodeError("Expecting value", "<html>", 0)
     resp, inst = _drive(_OK_BODY, gets=[page])
     assert resp.status_code == 502
-    assert resp.json()["detail"] == {"error": "coord_malformed_interventions_page"}
+    assert resp.json()["detail"] == {
+        "error": "coord_malformed_interventions_page",
+        "message": (
+            "coord's intervention list came back in a shape web cannot read; "
+            "no label was written"
+        ),
+    }
     inst.post.assert_not_called()
 
 
@@ -347,6 +359,11 @@ def test_running_out_of_pages_is_not_reported_as_not_found() -> None:
     assert resp.status_code == 502
     assert resp.json()["detail"] == {
         "error": "intervention_lookup_incomplete",
+        "message": (
+            "coord still reported more interventions after 100 were read, "
+            "so this one was neither found nor ruled out; "
+            "no label was written"
+        ),
         "intervention_id": _IID,
         "chains_read": _MAX_PAGES * per_page,
     }
@@ -383,10 +400,15 @@ def test_second_409_is_passed_through_not_retried_again() -> None:
 
 # Each transport failure, with the status and error code it maps to.
 _TRANSPORT_FAILURES = pytest.mark.parametrize(
-    ("exc_type", "status_code", "error"),
+    ("exc_type", "status_code", "error", "headline"),
     [
-        (httpx.ReadTimeout, 504, "coord_timeout"),
-        (httpx.ReadError, 502, "coord_transport_error"),
+        (httpx.ReadTimeout, 504, "coord_timeout", "coord did not answer in time"),
+        (
+            httpx.ReadError,
+            502,
+            "coord_transport_error",
+            "the connection to coord broke mid-request",
+        ),
     ],
     ids=["timeout", "broken-connection"],
 )
@@ -394,28 +416,39 @@ _TRANSPORT_FAILURES = pytest.mark.parametrize(
 
 @_TRANSPORT_FAILURES
 def test_a_failed_lookup_reports_that_nothing_was_written(
-    exc_type: type[httpx.TransportError], status_code: int, error: str
+    exc_type: type[httpx.TransportError], status_code: int, error: str, headline: str
 ) -> None:
     resp, inst = _drive(_OK_BODY, gets=[exc_type("simulated")])
     assert resp.status_code == status_code
-    assert resp.json()["detail"] == {"error": error, "write_may_have_landed": False}
+    assert resp.json()["detail"] == {
+        "error": error,
+        "message": f"{headline}; no label was written",
+        "write_may_have_landed": False,
+    }
     inst.post.assert_not_called()
 
 
 @_TRANSPORT_FAILURES
 def test_a_failed_post_reports_that_the_write_may_have_landed(
-    exc_type: type[httpx.TransportError], status_code: int, error: str
+    exc_type: type[httpx.TransportError], status_code: int, error: str, headline: str
 ) -> None:
     resp, _ = _drive(
         _OK_BODY, gets=[_page((_IID, _NEWEST))], posts=[exc_type("simulated")]
     )
     assert resp.status_code == status_code
-    assert resp.json()["detail"] == {"error": error, "write_may_have_landed": True}
+    assert resp.json()["detail"] == {
+        "error": error,
+        "message": (
+            f"{headline}; the label MAY have been written; check the "
+            "intervention's history before submitting again"
+        ),
+        "write_may_have_landed": True,
+    }
 
 
 @_TRANSPORT_FAILURES
 def test_a_failed_reread_after_a_409_reports_that_nothing_was_written(
-    exc_type: type[httpx.TransportError], status_code: int, error: str
+    exc_type: type[httpx.TransportError], status_code: int, error: str, headline: str
 ) -> None:
     # Coord refused the first POST, so nothing was appended before the re-read
     # failed.
@@ -426,8 +459,78 @@ def test_a_failed_reread_after_a_409_reports_that_nothing_was_written(
         posts=[conflict],
     )
     assert resp.status_code == status_code
-    assert resp.json()["detail"] == {"error": error, "write_may_have_landed": False}
+    assert resp.json()["detail"] == {
+        "error": error,
+        "message": f"{headline}; no label was written",
+        "write_may_have_landed": False,
+    }
     assert inst.post.call_count == 1
+
+
+def test_an_unreachable_coord_says_nothing_was_written() -> None:
+    resp, inst = _drive(_OK_BODY, gets=[httpx.ConnectError("simulated")])
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == {
+        "error": "coord_unreachable",
+        "message": "coord could not be reached; no label was written",
+    }
+    inst.post.assert_not_called()
+
+
+def test_an_unreadable_label_answer_says_not_to_resubmit() -> None:
+    # Coord answered 201, so the row exists; only its echo is unreadable.
+    resp, _ = _drive(
+        _OK_BODY, gets=[_page((_IID, _NEWEST))], posts=[_resp(201, {"row": _ROW})]
+    )
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == {
+        "error": "coord_malformed_label_response",
+        "message": (
+            "coord recorded the label but its answer could not be read; "
+            "do not submit it again"
+        ),
+        "write_landed": True,
+    }
+
+
+def test_a_refused_connect_on_the_post_still_says_nothing_was_written() -> None:
+    # A connect that fails sends no bytes, so even mid-POST nothing landed.
+    resp, _ = _drive(
+        _OK_BODY, gets=[_page((_IID, _NEWEST))], posts=[httpx.ConnectError("x")]
+    )
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == {
+        "error": "coord_unreachable",
+        "message": "coord could not be reached; no label was written",
+    }
+
+
+@pytest.mark.parametrize(
+    ("where", "message", "landed"),
+    [
+        ("lookup", "coord's answer could not be read; no label was written", False),
+        (
+            "post",
+            "coord's answer could not be read; the label MAY have been written; "
+            "check the intervention's history before submitting again",
+            True,
+        ),
+    ],
+)
+def test_an_undecodable_answer_is_a_readable_502_not_a_bare_500(
+    where: str, message: str, landed: bool
+) -> None:
+    exc = httpx.DecodingError("bad content-encoding")
+    if where == "lookup":
+        resp, _ = _drive(_OK_BODY, gets=[exc])
+    else:
+        resp, _ = _drive(_OK_BODY, gets=[_page((_IID, _NEWEST))], posts=[exc])
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == {
+        "error": "coord_request_error",
+        "message": message,
+        "write_may_have_landed": landed,
+    }
 
 
 def test_coord_422_passes_through_with_its_body() -> None:
@@ -446,10 +549,28 @@ def test_coord_5xx_is_a_502() -> None:
     assert resp.status_code == 502
     assert resp.json()["detail"] == {
         "error": "coord_upstream_error",
-        "message": "coord failed (coord answered 500 boom)",
+        "message": (
+            "coord failed (coord answered 500 boom); the label MAY have been "
+            "written; check the intervention's history before submitting again"
+        ),
         "coord_status": 500,
         "coord_detail": {"error": "boom"},
+        "write_may_have_landed": True,
     }
+
+
+def test_coord_5xx_on_the_lookup_says_nothing_was_written() -> None:
+    # The list read writes nothing, so its 502 says no label was written.
+    resp, inst = _drive(_OK_BODY, gets=[_resp(503, {"error": "busy"})])
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == {
+        "error": "coord_upstream_error",
+        "message": "coord failed (coord answered 503 busy); no label was written",
+        "coord_status": 503,
+        "coord_detail": {"error": "busy"},
+        "write_may_have_landed": False,
+    }
+    inst.post.assert_not_called()
 
 
 @pytest.mark.parametrize("coord_status", [401, 403])
