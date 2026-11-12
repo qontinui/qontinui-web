@@ -1758,3 +1758,96 @@ describe("commitEtaReading", () => {
     ).toEqual({ kind: "unknown", reason: "unrecognized" });
   });
 });
+
+describe("Slices / PSI column — unmeasured is explicit, never a fabricated zero", () => {
+  const GIB_ = 1024 ** 3;
+  const host = (overrides: Partial<ResourceSampleRow> = {}) =>
+    sample({
+      lane: "host",
+      commit_total_bytes: 64 * GIB_,
+      commit_available_bytes: 32 * GIB_,
+      ...overrides,
+    });
+
+  it("renders measured slices with a real 0 PSI as 0.0%, and null figures as a dash", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "ci-runners.slice": {
+              memory_current: GIB_,
+              memory_high: 8 * GIB_,
+              memory_max: "max",
+              events: { high: 0, max: 0, oom_kill: 0 },
+            },
+          },
+          psi: {
+            system: {
+              memory: { some: { avg10: 0, avg60: 0 } },
+              cpu: { some: { avg10: 12.5, avg60: 9 } },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const cell = screen.getByTestId("fleet-resource-slices");
+    expect(cell.getAttribute("data-state")).toBe("measured");
+    const slice = screen.getByTestId("fleet-resource-slice").textContent ?? "";
+    expect(slice).toMatch(/ci-runners:/);
+    expect(slice).toMatch(/high 8\.0 GB/);
+    expect(slice).toMatch(/max no limit/);
+    expect(slice).toMatch(/oom 0/);
+    const psi = screen.getByTestId("fleet-resource-psi").textContent ?? "";
+    expect(psi).toMatch(/mem 0\.0%/); // a measured zero stays a zero
+    expect(psi).toMatch(/cpu 12\.5%/);
+    expect(psi).toMatch(/io —/); // never sent → dash, not 0.0%
+  });
+
+  it("renders NULL columns as an explicit unmeasured state", () => {
+    renderStrip({
+      latest: [host({ cgroup_slices: null, psi: null, slice_source: null })],
+      history: [],
+    });
+    const cell = screen.getByTestId("fleet-resource-slices");
+    expect(cell.getAttribute("data-state")).toBe("unmeasured");
+    expect(cell.textContent).toBe("not measured");
+    expect(cell.textContent).not.toMatch(/0/);
+  });
+
+  it("renders ABSENT keys (a coord predating the columns) as unmeasured", () => {
+    renderStrip({ latest: [host()], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-slices").getAttribute("data-state")
+    ).toBe("unmeasured");
+  });
+
+  it("renders slice_source not_supported as not measured on this OS", () => {
+    renderStrip({
+      latest: [host({ slice_source: "not_supported" })],
+      history: [],
+    });
+    const cell = screen.getByTestId("fleet-resource-slices");
+    expect(cell.getAttribute("data-state")).toBe("not_supported");
+    expect(cell.textContent).toBe("not measured on this OS");
+  });
+
+  it("says slices are not measured when only PSI arrived", () => {
+    renderStrip({
+      latest: [
+        host({
+          cgroup_slices: null,
+          psi: { system: { io: { some: { avg10: 1.5 } } } },
+        }),
+      ],
+      history: [],
+    });
+    expect(screen.getByTestId("fleet-resource-slices-none").textContent).toBe(
+      "slices: not measured"
+    );
+    expect(screen.getByTestId("fleet-resource-psi").textContent).toMatch(
+      /io 1\.5%/
+    );
+  });
+});
