@@ -223,6 +223,10 @@ import {
   COORD_CREDENTIAL_AUTHOR_GLYPH_KINDS,
   COORD_CREDENTIAL_BADGE_CLASS,
 } from "@/components/operations/coordCredentialStatus";
+import {
+  LANE_FRESHNESS_ATTENTION_BY_KIND,
+  LANE_FRESHNESS_PALETTE,
+} from "@/components/operations/laneFreshnessStatus";
 // The computers console — plan
 // `2026-09-30-the-fleet-machine-is-not-a-first-class-coord-entity-and-coord-has-no-resource-model`
 // Phase 5. One module declares three orthogonal tables (the computer's
@@ -674,6 +678,21 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
       badgeClass: COORD_CREDENTIAL_BADGE_CLASS,
       authorGlyphKinds:
         COORD_CREDENTIAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // Which of a machine's sample lanes went quiet (plan
+    // `2026-11-04-devops-a-silent-wsl-lane-reads-healthy-because-freshness-
+    // is-graded-on-the-newest-lane`, Done-when 5). `unknown` is amber BY FLOOR
+    // and rendered: a failed or absent per-lane read must never pass for
+    // "no stale lanes", which is the newest-lane defect itself.
+    surface: "lane freshness (/admin/coord/devops)",
+    module: "components/operations/laneFreshnessStatus.ts",
+    attentionByKind: LANE_FRESHNESS_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: LANE_FRESHNESS_PALETTE.badgeClass,
+      authorGlyphKinds:
+        LANE_FRESHNESS_PALETTE.authorGlyphKinds as ReadonlySet<string>,
     },
   },
   {

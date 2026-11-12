@@ -602,3 +602,64 @@ describe("MachineCard — CI-runner drain scope", () => {
     ).toBeNull();
   });
 });
+
+describe("MachineCard — per-lane sample freshness", () => {
+  const card = (coordHealth: MachineGroup["coordHealth"]) =>
+    renderCard(baseGroup({ coordHealth })).container;
+  const badge = (c: HTMLElement) =>
+    c.querySelector("[data-operations-lane-freshness]");
+
+  it("names the stale lane and its instance", () => {
+    const c = card({
+      matched: true,
+      device_id: "d-1",
+      state: "stale",
+      stale_lanes: [{ lane: "wsl", lane_instance: "Ubuntu", age_secs: 697 }],
+      sample_stale_after_secs: 120,
+    });
+    const b = badge(c);
+    expect(b?.getAttribute("data-operations-lane-freshness")).toBe("stale");
+    expect(b?.getAttribute("data-operations-stale-lanes")).toBe("wsl/Ubuntu");
+    expect(b?.textContent).toContain("wsl/Ubuntu");
+  });
+
+  it("renders a failed read (null) as UNKNOWN, never as none", () => {
+    const b = badge(
+      card({
+        matched: true,
+        device_id: "d-1",
+        state: "healthy",
+        stale_lanes: null,
+      })
+    );
+    expect(b?.getAttribute("data-operations-lane-freshness")).toBe("unknown");
+    expect(b?.textContent ?? "").toMatch(/unknown/i);
+    expect(b?.hasAttribute("data-operations-stale-lanes")).toBe(false);
+    // The badge carries its own reason, and a failed read says so.
+    expect(b?.innerHTML ?? "").toMatch(/read failed/);
+  });
+
+  it("renders an absent field (older coord) as UNKNOWN too", () => {
+    const b = badge(
+      card({ matched: true, device_id: "d-1", state: "healthy" })
+    );
+    expect(b?.getAttribute("data-operations-lane-freshness")).toBe("unknown");
+    expect(b?.innerHTML ?? "").toMatch(/predates/);
+    expect(b?.innerHTML ?? "").not.toMatch(/read failed/);
+  });
+
+  it("adds no badge for a measured []", () => {
+    const c = card({
+      matched: true,
+      device_id: "d-1",
+      state: "healthy",
+      stale_lanes: [],
+      sample_stale_after_secs: 120,
+    });
+    expect(badge(c)).toBeNull();
+  });
+
+  it("adds no badge for an unmatched host, whose coord state already reads unknown", () => {
+    expect(badge(card({ matched: false }))).toBeNull();
+  });
+});

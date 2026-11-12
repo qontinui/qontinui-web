@@ -9,6 +9,7 @@
 
 import type { Runner } from "@qontinui/shared-types";
 import type { DeviceCredentialDark } from "./coordCredentialStatus";
+import type { LaneAge } from "./laneFreshnessStatus";
 import type {
   RunnerCapabilityRecord,
   RunnerReportsMeta,
@@ -796,6 +797,17 @@ export type CoordHealthJoin =
        * read failing (`false`) rather than the runner's silence.
        */
       runner_reports_scrape_up?: boolean;
+      /**
+       * Coord's per-lane freshness for this device, carried through verbatim
+       * (plan
+       * `2026-11-04-devops-a-silent-wsl-lane-reads-healthy-because-freshness-is-graded-on-the-newest-lane`).
+       * `[]` is a measurement; `null` (read failed) and absent (coord predates
+       * the field) are UNKNOWN, and this join must not normalise either to
+       * `[]`. `MachineCard` renders it through `resolveLaneFreshness`.
+       */
+      stale_lanes?: LaneAge[] | null;
+      /** The threshold `stale_lanes` was graded against, verbatim. */
+      sample_stale_after_secs?: number | null;
     }
   | { matched: false };
 

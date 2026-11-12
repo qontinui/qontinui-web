@@ -38,6 +38,7 @@ import type {
   AggregatedTaskRuns,
   FleetStatus,
 } from "@/components/operations/types";
+import type { LaneAge } from "@/components/operations/laneFreshnessStatus";
 import type { WorktreeSlotsResponse } from "@/components/operations/useFleetWorktreeSlots";
 import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
@@ -84,6 +85,33 @@ export interface FleetHealthDevice {
    * `state`, which would manufacture agreement the wire never claimed.
    */
   heartbeat_state?: string;
+  /**
+   * Seconds since this device's newest resource sample, on ANY lane — coord's
+   * `DeviceHealthSnapshot.newest_sample_age_secs`. `null` = no sample inside
+   * the lookback, or the freshness read failed: UNKNOWN, not zero.
+   */
+  newest_sample_age_secs?: number | null;
+  /**
+   * Seconds since the newest sample of this device's STALEST expected lane —
+   * the age `state` is graded on (plan
+   * `2026-11-04-devops-a-silent-wsl-lane-reads-healthy-because-freshness-is-graded-on-the-newest-lane`).
+   * Equal to `newest_sample_age_secs` on a one-lane device. Absent on a coord
+   * predating the field.
+   */
+  stalest_sample_age_secs?: number | null;
+  /**
+   * The threshold coord graded freshness against — on the STALEST expected
+   * lane, not the newest one. `null` = no verdict computed this tick.
+   */
+  sample_stale_after_secs?: number | null;
+  /**
+   * The expected lanes past `sample_stale_after_secs`, each with its age.
+   * `[]` = the read succeeded and nothing is stale; `null` = the freshness
+   * read FAILED (coord never sends `[]` then); absent = a coord predating the
+   * field. Both of the last two are UNKNOWN, never "no stale lanes" —
+   * `resolveLaneFreshness` is the one place that decides.
+   */
+  stale_lanes?: LaneAge[] | null;
   /**
    * **Can this machine still reach coord?** — coord's join of the runner's own
    * `coord.device_status.details.coord_credential` onto the device row
