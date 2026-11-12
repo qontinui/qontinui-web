@@ -65,7 +65,7 @@ _REVISION_FILENAME = "coord_ci_runner_scope_listings_01_create.py"
 
 # Pinned as a literal, not read back from the module: the single head when the
 # revision was written. A moved head re-points both together.
-_PARENT_REVISION_ID = "fpl_02b"
+_PARENT_REVISION_ID = "coord_ci_runs_head_sha_idx_01"
 
 _SCHEMA = "coord"
 _TABLE = "ci_runner_scope_listings"

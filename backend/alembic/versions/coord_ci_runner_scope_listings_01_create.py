@@ -1,7 +1,7 @@
 """coord.ci_runner_scope_listings - the CI registrar's persisted per-scope listing stamp
 
 Revision ID: coord_ci_runner_scope_listings_01
-Revises: fpl_02b
+Revises: coord_ci_runs_head_sha_idx_01
 Create Date: 2026-11-09
 
 Phase 3 of plan
@@ -73,9 +73,9 @@ in production, and degrades on an undefined table rather than failing the poll.
 
 ## Head choice
 
-``down_revision`` is ``fpl_02b``, the single head ``alembic heads`` printed on
-``origin/main`` at ``c71f3602d`` when this was written. If main moves first,
-re-point this revision at the new single head. Do not add an ``alembic
+``down_revision`` is ``coord_ci_runs_head_sha_idx_01``, the single head
+``alembic heads`` printed on ``origin/main`` at ``736c29e3e`` when this was
+written. If main moves first, re-point this revision at the new single head. Do not add an ``alembic
 merge``: this repo keeps strict single-head discipline.
 
 ## Merge-train classifier disposition
@@ -99,7 +99,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_ci_runner_scope_listings_01"
-down_revision: str | Sequence[str] | None = "fpl_02b"
+down_revision: str | Sequence[str] | None = "coord_ci_runs_head_sha_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
