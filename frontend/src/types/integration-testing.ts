@@ -1,5 +1,5 @@
 // types/integration-testing.ts
-// Types for Integration Testing feature (mock mode testing with historical data)
+// Types for Integration Testing feature (mock mode testing with simulated data)
 
 export interface MockExecutionRequest {
   project_id: string;

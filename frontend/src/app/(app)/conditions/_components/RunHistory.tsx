@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -23,7 +23,9 @@ interface RunHistoryProps {
   groupId: string;
   /** Conditions of the group, used to label per-condition results by text. */
   conditions: Condition[];
-  listRuns: (groupId: string) => Promise<ConditionRun[]>;
+  /** Resolves `null` when the read failed — rendered as a failure, not as no runs. */
+  listRuns: (groupId: string) => Promise<ConditionRun[] | null>;
+  /** Resolves `null` when the read failed — rendered as a failure, not as no results. */
   getRun: (runId: string) => Promise<ConditionRun | null>;
   /** Bumping this value forces a reload (e.g. after a run-now dispatch). */
   refreshKey: number;
@@ -155,11 +157,19 @@ export function RunHistory({
 }: RunHistoryProps) {
   const [runs, setRuns] = useState<ConditionRun[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  // Only the newest read may settle the list: a slow failed read must not
+  // overwrite a later one that succeeded (refreshKey bumps are not debounced).
+  const latestLoad = useRef(0);
 
   const load = useCallback(async () => {
+    const request = ++latestLoad.current;
     setLoading(true);
     const data = await listRuns(groupId);
-    setRuns(data);
+    if (request !== latestLoad.current) return;
+    // A failed read is not an empty history: say it failed, keep no stale rows.
+    setLoadFailed(data === null);
+    setRuns(data ?? []);
     setLoading(false);
   }, [groupId, listRuns]);
 
@@ -193,6 +203,14 @@ export function RunHistory({
           <Skeleton className="h-12 w-full" />
           <Skeleton className="h-12 w-full" />
         </div>
+      ) : loadFailed ? (
+        <p
+          role="alert"
+          className="rounded-md border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground"
+        >
+          Couldn’t load the run history, so whether this group has runs is
+          unknown. Use “Refresh” to try again.
+        </p>
       ) : runs.length === 0 ? (
         <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
           No runs yet. Use “Run now” to execute this group and record its first
@@ -226,16 +244,20 @@ function RunRow({ run, getRun, conditionText }: RunRowProps) {
     run.results != null ? run : null
   );
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailFailed, setDetailFailed] = useState(false);
+  const fetchDetail = async () => {
+    setLoadingDetail(true);
+    const full = await getRun(run.run_id);
+    // `null` is a failed read, so its results are unknown — not absent.
+    setDetail(full);
+    setDetailFailed(full === null);
+    setLoadingDetail(false);
+  };
 
   const toggle = async () => {
     const next = !expanded;
     setExpanded(next);
-    if (next && detail === null && !loadingDetail) {
-      setLoadingDetail(true);
-      const full = await getRun(run.run_id);
-      setDetail(full);
-      setLoadingDetail(false);
-    }
+    if (next && detail === null && !loadingDetail) await fetchDetail();
   };
 
   // The row shows ONE snapshot: the fetched run once there is one, else the
@@ -301,6 +323,21 @@ function RunRow({ run, getRun, conditionText }: RunRowProps) {
             <div className="space-y-2">
               <Skeleton className="h-6 w-full" />
               <Skeleton className="h-6 w-3/4" />
+            </div>
+          ) : detailFailed ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span role="alert">
+                Couldn’t load this run’s per-condition results, so they are
+                unknown.
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void fetchDetail()}
+              >
+                <RefreshCw className="size-3" />
+                Retry
+              </Button>
             </div>
           ) : results.length === 0 && missing.length === 0 ? (
             <p className="text-xs text-muted-foreground">
