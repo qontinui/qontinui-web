@@ -133,8 +133,9 @@ import {
   headroomSetBy,
   hostIsBindingConstraint,
   cpuTempReading,
-  formatPsi,
   formatSliceLimit,
+  psiHasAnyFigure,
+  psiLineText,
   sliceTelemetryReading,
   pressureAxisIsSwap,
   pressureAxisLabel,
@@ -157,6 +158,7 @@ import type {
   FloorDetail,
   Headroom,
   HistorySeries,
+  PsiFigures,
   ResourceSampleRow,
   RowTone,
   StripRow,
@@ -1373,45 +1375,116 @@ function SlicesCell({ row }: { row: StripRow }) {
         data-testid="fleet-resource-slices"
         data-state="measured"
       >
-        {reading.slicesUnmeasured ? (
+        {reading.slices.length === 0 ? (
           <span
             className="text-muted-foreground"
             data-testid="fleet-resource-slices-none"
           >
-            slices: not measured
-          </span>
-        ) : reading.slices.length === 0 ? (
-          <span
-            className="text-muted-foreground"
-            data-testid="fleet-resource-slices-none"
-          >
-            no watched slice present
+            {reading.slicesUnmeasured
+              ? "slices: not measured"
+              : "no watched slice present"}
           </span>
         ) : (
-          reading.slices.map((sl) => (
-            <span key={sl.name} data-testid="fleet-resource-slice">
-              {sl.name.replace(/\.slice$/, "")}: {formatBytes(sl.memoryCurrent)}
-              {" / high "}
-              {formatSliceLimit(sl.memoryHigh)}
-              {" / max "}
-              {formatSliceLimit(sl.memoryMax)}
-              {" · oom "}
-              {sl.oomKill == null ? "—" : sl.oomKill}
-              {" · high/max events "}
-              {sl.eventsHigh == null ? "—" : sl.eventsHigh}/
-              {sl.eventsMax == null ? "—" : sl.eventsMax}
-            </span>
-          ))
+          reading.slices.map((sl) => {
+            const label = sl.name.replace(/\.slice$/, "");
+            return (
+              <span key={sl.name} className="inline-flex flex-col">
+                <span data-testid="fleet-resource-slice">
+                  {label}:{" "}
+                  {sl.memoryReported ? (
+                    <>
+                      {formatBytes(sl.memoryCurrent)}
+                      {" / high "}
+                      {formatSliceLimit(sl.memoryHigh)}
+                      {" / max "}
+                      {formatSliceLimit(sl.memoryMax)}
+                      {" · oom "}
+                      {sl.oomKill == null ? "—" : sl.oomKill}
+                      {" · high/max events "}
+                      {sl.eventsHigh == null ? "—" : sl.eventsHigh}/
+                      {sl.eventsMax == null ? "—" : sl.eventsMax}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      memory not measured
+                    </span>
+                  )}
+                </span>
+                {sl.psi ? (
+                  <PsiLine
+                    figures={sl.psi}
+                    label={`${label} PSI`}
+                    testId="fleet-resource-slice-psi"
+                    className="pl-3"
+                  />
+                ) : null}
+              </span>
+            );
+          })
         )}
-        <span
-          className="text-muted-foreground"
-          data-testid="fleet-resource-psi"
-        >
-          PSI some/10s: mem {formatPsi(p.memorySomeAvg10)} · cpu{" "}
-          {formatPsi(p.cpuSomeAvg10)} · io {formatPsi(p.ioSomeAvg10)}
-        </span>
+        {psiHasAnyFigure(p) ? (
+          <PsiLine
+            figures={p}
+            label="system PSI"
+            testId="fleet-resource-psi"
+            systemWide
+          />
+        ) : (
+          <span
+            className="text-muted-foreground"
+            data-testid="fleet-resource-psi"
+            data-state="unmeasured"
+          >
+            system PSI: not measured
+          </span>
+        )}
       </span>
     </Aged>
+  );
+}
+
+/**
+ * One PSI block: the 10 s `some/full` figures inline, the 60 s ones in the
+ * tooltip (a 10 s spike and a sustained stall read differently). A figure the
+ * publisher did not send prints "—", never `0.0%`.
+ */
+function PsiLine({
+  figures,
+  label,
+  testId,
+  className = "",
+  systemWide = false,
+}: {
+  figures: PsiFigures;
+  label: string;
+  testId: string;
+  className?: string;
+  /** System-wide CPU has no `full` figure; print its `some` alone. */
+  systemWide?: boolean;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={`text-muted-foreground ${className}`.trim()}
+          data-testid={testId}
+        >
+          {label} 10s some/full: {psiLineText(figures, "avg10", { systemWide })}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[22rem] text-[11px] space-y-1">
+        <div>
+          {label} 60s some/full: {psiLineText(figures, "avg60", { systemWide })}
+        </div>
+        <div className="text-muted-foreground">
+          % of wall time stalled. some: at least one task stalled; full: all
+          non-idle tasks stalled at once.
+          {systemWide
+            ? " System-wide CPU has no full figure, so only some is shown."
+            : null}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
