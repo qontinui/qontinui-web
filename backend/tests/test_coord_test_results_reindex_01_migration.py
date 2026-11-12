@@ -83,7 +83,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_test_results_reindex_01"
-_PARENT_REVISION_ID = "coord_test_result_runs_01"
+_PARENT_REVISION_ID = "coord_ci_runs_head_sha_idx_01"
 _REVISION_FILENAME = "coord_test_results_reindex_01_reclaim_index_storage.py"
 _REVISION_PATH = backend_root() / "alembic" / "versions" / _REVISION_FILENAME
 
