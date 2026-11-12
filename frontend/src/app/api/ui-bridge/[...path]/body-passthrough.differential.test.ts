@@ -3,23 +3,28 @@
  * handler.
  *
  * The route only strips a caller identity from a body its peek
- * (`passThroughBodyWithPeek`) parsed, so the peek must reach the SDK's verdict
- * on every body: the same value where the SDK reads one, no body where it
- * reads none, a refusal where it refuses. A body the SDK reads a value from
- * but the peek did not would reach a handler with any caller identity it
- * names still in it.
+ * (`passThroughBodyWithPeek`) parsed, so the peek must reach the verdict the
+ * SDK reaches on the client's ORIGINAL request — the same value where the SDK
+ * reads one, no body where it reads none, a refusal where it refuses — and
+ * the request it forwards must get that same verdict from the SDK. A body the
+ * SDK reads a value from but the peek did not would reach a handler with any
+ * caller identity it names still in it.
  *
- * Each corpus case goes through the peek, and the request the peek hands on
- * — the one the route forwards — goes through the INSTALLED SDK's
- * `createNextRouteHandlers` POST on `/control/find`, a `bodyRequired` route,
- * whose `find` handler records what the adapter gave it. Nothing about the
- * SDK's reader is restated here; only the adapter's removal of its reserved
- * `__callerUserId` key after reading is, so the two values compare. The
- * corpus covers an empty body, zero to three leading byte-order marks,
- * whitespace around and between them, blank bodies, a lone surrogate
- * (escaped, and as raw bytes), invalid UTF-8, duplicate keys, numbers past
- * double range and precision, negative zero, deep nesting, `__proto__`, and
- * non-object top-level values.
+ * Each corpus case is sent under every content type a client may declare
+ * (none, JSON, a `+json` type, and two non-JSON ones), because the SDK's
+ * reader reads an unparseable body declared as a non-JSON type as no body.
+ * The client's request goes straight to the INSTALLED SDK's
+ * `createNextRouteHandlers` POST on `/control/find`, a `bodyRequired` route
+ * whose `find` handler records what the adapter gave it; an identical one
+ * goes through the peek, and the request the peek hands on goes to that same
+ * handler. Nothing about the SDK's reader is restated here; only the
+ * adapter's removal of its reserved `__callerUserId` key after reading is, so
+ * the values compare. The corpus covers an empty body, zero to three leading
+ * byte-order marks, whitespace around and between them, blank bodies, a lone
+ * surrogate (escaped, and as raw bytes), invalid UTF-8, duplicate keys,
+ * numbers past double range and precision, negative zero, deep nesting,
+ * `__proto__`, non-object top-level values, and form-encoded and plain-text
+ * bodies.
  */
 
 import { describe, expect, it } from "vitest";
@@ -82,15 +87,25 @@ async function sdkRead(request: NextRequest): Promise<Read> {
     : { reads: "value", value: given };
 }
 
-/** The route peek's verdict, and the request it hands on. */
+/** A client's request: `body` under the content type it declares, if any. */
+function clientRequest(
+  body: Uint8Array,
+  contentType: string | null
+): NextRequest {
+  return new NextRequest("http://localhost/api/ui-bridge/control/find", {
+    method: "POST",
+    headers: contentType === null ? {} : { "content-type": contentType },
+    body,
+  });
+}
+
+/** The route peek's verdict on a client's request, and the request it hands on. */
 async function peek(
-  body: Uint8Array
+  body: Uint8Array,
+  contentType: string | null
 ): Promise<{ read: Read; forwarded: NextRequest }> {
   const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
-    new NextRequest("http://localhost/api/ui-bridge/control/find", {
-      method: "POST",
-      body,
-    }),
+    clientRequest(body, contentType),
     "POST"
   );
   expect(bodyState).not.toBe("unreadable");
@@ -210,28 +225,57 @@ const CORPUS: ReadonlyArray<readonly [string, Uint8Array]> = [
 const CASES: ReadonlyArray<readonly [string, Uint8Array]> = [
   ["an empty body", bytes()],
   ...CORPUS,
+  ["plain text", bytes("hello")],
 ];
 
-describe("body peek vs the installed SDK's Next handler, case by case", () => {
-  it.each(CASES)("reaches the SDK's verdict on %s", async (_name, body) => {
-    const { read, forwarded } = await peek(body);
-    expect(await sdkRead(forwarded)).toEqual(read);
-  });
+/** What a client may declare its body as; `null` declares nothing. */
+const CONTENT_TYPES: ReadonlyArray<string | null> = [
+  null,
+  "application/json",
+  "application/vnd.foo+json",
+  "text/plain",
+  "application/x-www-form-urlencoded",
+];
 
-  it("is not vacuous: the SDK reads a value from some bodies, no body from some, and refuses some", async () => {
+/** Every case under every declared content type. */
+const MATRIX = CASES.flatMap(([name, body]) =>
+  CONTENT_TYPES.map(
+    (type) => [name, type ?? "no content type", body, type] as const
+  )
+);
+
+describe("body peek vs the installed SDK's Next handler, case by case", () => {
+  it.each(MATRIX)(
+    "reaches the verdict the SDK reaches on the client's request: %s, declared as %s",
+    async (_name, _label, body, type) => {
+      const direct = await sdkRead(clientRequest(body, type));
+      const { read, forwarded } = await peek(body, type);
+      expect(read).toEqual(direct);
+      expect(await sdkRead(forwarded)).toEqual(direct);
+    }
+  );
+
+  it("is not vacuous: the SDK reads values, reads no body, refuses, and reads an unparseable non-JSON body as none", async () => {
     const reads = new Set<string>();
-    for (const [, body] of CASES) {
-      reads.add((await sdkRead((await peek(body)).forwarded)).reads);
+    let declaredNone = 0;
+    for (const [, , body, type] of MATRIX) {
+      const direct = await sdkRead(clientRequest(body, type));
+      reads.add(direct.reads);
+      const nonJson = type !== null && !type.includes("json");
+      const blank = !new TextDecoder().decode(body).trim();
+      if (nonJson && !blank && direct.reads === "no body") declaredNone++;
     }
     expect(reads).toEqual(new Set(["value", "no body", "refused"]));
+    expect(declaredNone).toBeGreaterThan(0);
   });
 
   it("reads `{}` from no corpus body, so a synthesized `{}` means no body", async () => {
-    for (const [name, body] of CASES) {
-      const { read } = await peek(body);
-      expect(read.reads === "value" && isEmptyObject(read.value), name).toBe(
-        false
-      );
+    for (const [name, label, body, type] of MATRIX) {
+      const { read } = await peek(body, type);
+      expect(
+        read.reads === "value" && isEmptyObject(read.value),
+        `${name}, ${label}`
+      ).toBe(false);
     }
   });
 });

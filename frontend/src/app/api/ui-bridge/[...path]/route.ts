@@ -342,10 +342,18 @@ async function forwardToRelay(
   } = await passThroughBodyWithPeek(request, method);
 
   // Fail closed under the auth gate. The caller-identity strip below can
-  // only remove an identity from a body it parsed, so a body present but
-  // not parseable the way the SDK parses it is refused with a typed 400
-  // instead of being forwarded as it came. With the gate off nothing
-  // changes: there is no verified identity to protect.
+  // only remove an identity from a body it parsed, so a body the SDK's
+  // reader would refuse (declared JSON, or declared as nothing, and not
+  // JSON) is refused with a typed 400 instead of being forwarded as it came.
+  // A body the SDK reads as none (blank, or declared as a non-JSON type and
+  // not JSON) was already handed on with no body by the peek. With the gate
+  // off nothing changes: there is no verified identity to protect.
+  //
+  // The deliberate residual: this refusal does not know the route. Under the
+  // gate an unparseable body declared JSON (or nothing) is refused even on a
+  // route whose handler never reads a body, where the SDK alone would have
+  // answered; an unparseable body declared as a non-JSON type is forwarded
+  // with no body on every route.
   //
   // No route is exempt, because the SDK's Next handler reads every body it
   // reads as JSON, through its one reader `readJsonBody` — the

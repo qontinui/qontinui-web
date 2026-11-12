@@ -182,9 +182,10 @@ describe("passThroughBody", () => {
     expect(empty.parsedBody).toBeUndefined();
   });
 
-  it("reports a body the SDK's reader refuses as unparseable, and still forwards its bytes", async () => {
+  it("reports a body declared JSON that the SDK's reader refuses as unparseable, and still forwards its bytes", async () => {
     const req = makeRequest("http://localhost/api/ui-bridge/ai/find", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: "text=X",
     });
     const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
@@ -194,6 +195,39 @@ describe("passThroughBody", () => {
     expect(bodyState).toBe("unparseable");
     expect(parsedBody).toBeUndefined();
     expect(await request.text()).toBe("text=X");
+  });
+
+  it("reports a non-JSON-declared body that is not JSON as absent, as the SDK's reader reads it, and forwards no body", async () => {
+    for (const contentType of [
+      "text/plain",
+      "application/x-www-form-urlencoded",
+    ]) {
+      const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
+        makeRequest("http://localhost/api/ui-bridge/ai/find", {
+          method: "POST",
+          headers: { "Content-Type": contentType },
+          body: "text=X",
+        }),
+        "POST"
+      );
+      expect(bodyState).toBe("absent");
+      expect(parsedBody).toBeUndefined();
+      expect(request.body).toBeNull();
+    }
+  });
+
+  it("parses a non-JSON-declared body that IS JSON, as the SDK's reader parses it first", async () => {
+    const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
+      makeRequest("http://localhost/api/ui-bridge/ai/find", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: '{"text":"X"}',
+      }),
+      "POST"
+    );
+    expect(bodyState).toBe("parsed");
+    expect(parsedBody).toEqual({ text: "X" });
+    expect(await request.json()).toEqual({ text: "X" });
   });
 
   it("reports a body whose stream fails as unreadable", async () => {
@@ -231,7 +265,7 @@ describe("passThroughBody", () => {
     expect(parsedBody).toBeUndefined();
   });
 
-  it("reports a blank body as absent, as the SDK's reader reads it as no body, and forwards its bytes", async () => {
+  it("reports a blank body as absent, as the SDK's reader reads it as no body, and forwards no body", async () => {
     for (const blank of [" \t\r\n ", "\ufeff", "\u00a0"]) {
       const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
         makeRequest("http://localhost/api/ui-bridge/ai/find", {
@@ -242,9 +276,7 @@ describe("passThroughBody", () => {
       );
       expect(bodyState).toBe("absent");
       expect(parsedBody).toBeUndefined();
-      expect([...new Uint8Array(await request.arrayBuffer())]).toEqual([
-        ...new TextEncoder().encode(blank),
-      ]);
+      expect(request.body).toBeNull();
     }
   });
 
