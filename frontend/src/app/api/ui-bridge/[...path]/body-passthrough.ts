@@ -67,8 +67,8 @@ export type BodyState = "absent" | "parsed" | "unparseable" | "unreadable";
  * is returned unchanged.
  *
  * The returned `request` carries the same bytes as the original (re-wrapped
- * with `Content-Type: application/json`) so the SDK's `request.json()`
- * still works downstream.
+ * with `Content-Type: application/json`) so the SDK's JSON body reader still
+ * reads them downstream.
  */
 export async function passThroughBodyWithPeek(
   request: NextRequest,
@@ -101,16 +101,33 @@ export async function passThroughBodyWithPeek(
     init?: RequestInit
   ) => NextRequest;
 
-  // The peek parses with the SDK's own parser. The SDK reads every body it
-  // reads with `request.json()`, called on the request this route forwards:
-  // an instance of `NextRequestCtor` carrying these same bytes. So the peek
-  // calls exactly that — `.json()` on a throwaway instance of the same class
-  // built from the same bytes — rather than imitating it. Whatever that
-  // parser accepts (however many leading byte-order marks it drops, whatever
-  // it does with invalid UTF-8) the peek accepts identically, and whatever it
-  // refuses the peek refuses. The caller-identity strip in `route.ts` depends
-  // on that: a body the peek could not parse but the SDK could would reach
-  // the SDK unstripped.
+  // The peek must parse every body the SDK reads a value from, to the same
+  // value: the caller-identity strip in `route.ts` only strips a body the
+  // peek parsed, so a body the SDK reads a value from but the peek could not
+  // parse would reach a handler unstripped.
+  //
+  // Since 0.46 the SDK's Next adapter reads every body through `readJsonBody`
+  // (ui-bridge `src/server/request-body.ts`), on the request this route
+  // forwards: a default `TextDecoder` UTF-8-decodes the bytes (dropping ONE
+  // leading byte-order mark), a blank result is no body, and anything else is
+  // `JSON.parse`d — refused (400) when it does not parse, since the forwarded
+  // request always declares JSON (below). The peek calls `.json()` on a
+  // throwaway instance of the same class built from the same bytes: the
+  // platform's UTF-8 decode and the same `JSON.parse`. Wherever the SDK reads
+  // a value the two agree, value for value. They part on two kinds of body,
+  // and on neither does an unstripped value reach a handler:
+  //
+  //  - TWO leading byte-order marks: the platform's decode drops both (Node
+  //    22 and 24), the SDK's drops one and refuses the body. The peek parses
+  //    it, so the route strips it and forwards it re-serialized, or forwards
+  //    the original for the SDK to refuse.
+  //  - A blank body (whitespace or byte-order marks only): the SDK reads NO
+  //    body, the peek finds it `unparseable`, so the gate refuses a request
+  //    that carried nothing a handler reads.
+  //
+  // `route.real-sdk.test.ts` pins the SDK's reader in the installed bundle,
+  // and `body-passthrough.differential.test.ts` holds the peek to it case by
+  // case, those two divergences included.
   let parsedBody: unknown | undefined;
   let bodyState: BodyState;
   try {
@@ -126,8 +143,11 @@ export async function passThroughBodyWithPeek(
 
   // Copy ALL inbound headers, then force Content-Type to JSON. Some clients
   // (curl without `-H` for instance) post bodies with no Content-Type at
-  // all; the SDK then can't parse and returns `{}`. Forcing the header here
-  // means the proxy ALWAYS hands the SDK a well-formed JSON request.
+  // all, or a non-JSON one. The SDK's reader parses any body as JSON first,
+  // but reads one declared as another type that does not parse as NO body
+  // instead of refusing it; forcing the header means the proxy ALWAYS hands
+  // the SDK a JSON request, which it parses or refuses (400) — the same
+  // verdict the peek above reached.
   const headers = new Headers(request.headers);
   headers.set("Content-Type", "application/json");
 

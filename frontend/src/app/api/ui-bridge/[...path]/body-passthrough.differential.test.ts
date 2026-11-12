@@ -1,16 +1,21 @@
 /**
- * Differential: the route's body peek against the platform's `Request.json()`.
+ * Differential: the route's body peek against the platform's `Request.json()`
+ * and against the installed SDK's JSON body reader.
  *
- * The SDK parses every body it reads with `request.json()` on the request the
- * route forwards. The route's peek (`passThroughBodyWithPeek`) must reach the
- * same verdict on the same bytes — parse or refuse — and, when both parse,
- * the same value. A body the peek refuses but the SDK parses would reach the
- * SDK with any caller identity it names still in it (the route only strips a
- * body it parsed), so the two must never disagree.
+ * The route only strips a caller identity from a body its peek
+ * (`passThroughBodyWithPeek`) parsed, so every body the SDK reads a value
+ * from must parse in the peek, to the same value: one the SDK reads but the
+ * peek refuses would reach a handler with any caller identity it names still
+ * in it.
  *
- * Each corpus case is judged independently by the global `Request` (the
- * platform parser itself, not the `NextRequest` subclass the peek builds),
- * and the peek must agree with it case by case. The corpus covers zero to
+ * Two oracles judge each corpus case independently. The global `Request` (the
+ * platform parser itself, not the `NextRequest` subclass the peek builds) is
+ * what the peek calls, and the peek must agree with it case by case. The
+ * SDK's reader (since 0.46 `readJsonBody`, restated below and pinned in the
+ * installed bundle by `route.real-sdk.test.ts`) is what reads the forwarded
+ * body, and the peek must parse every value the SDK reads, to that value; the
+ * cases where the two part are listed by name, so a platform or SDK release
+ * that moves them fails here rather than in a handler. The corpus covers zero to
  * three leading byte-order marks, whitespace around and between them, a
  * lone surrogate (escaped, and as raw bytes), invalid UTF-8, duplicate keys,
  * numbers past double range and precision, negative zero, deep nesting,
@@ -56,6 +61,30 @@ async function platform(body: Uint8Array): Promise<Verdict> {
     return { parses: true, value };
   } catch {
     return { parses: false };
+  }
+}
+
+/** What the SDK's reader makes of a body: a value, no body, or a refusal. */
+type SdkRead =
+  | { reads: "value"; value: unknown }
+  | { reads: "no body" }
+  | { reads: "refused" };
+
+/**
+ * The installed SDK's verdict: `readJsonBody` (ui-bridge
+ * `src/server/request-body.ts`, the Next adapter's only body reader since
+ * 0.46) on the request the route forwards. A default `TextDecoder` decodes the
+ * bytes, a blank result is no body, and the rest is `JSON.parse`d. The
+ * forwarded request always declares JSON, so the reader's "declared as
+ * another type" arm, which reads an unparseable body as none, never runs.
+ */
+function sdkReader(body: Uint8Array): SdkRead {
+  const text = new TextDecoder().decode(body);
+  if (!text.trim()) return { reads: "no body" };
+  try {
+    return { reads: "value", value: JSON.parse(text) as unknown };
+  } catch {
+    return { reads: "refused" };
   }
 }
 
@@ -162,5 +191,49 @@ describe("body peek vs the platform's Request.json(), case by case", () => {
     expect(
       verdicts.filter((verdict) => !verdict.parses).length
     ).toBeGreaterThan(0);
+  });
+});
+
+describe("body peek vs the installed SDK's JSON body reader, case by case", () => {
+  const sdkValues = CORPUS.flatMap(([name, body]) => {
+    const read = sdkReader(body);
+    return read.reads === "value" ? [[name, body, read.value] as const] : [];
+  });
+
+  it.each(sdkValues)(
+    "parses %s, which the SDK reads a value from, to that value",
+    async (_name, body, value) => {
+      expect(await peek(body)).toEqual({ parses: true, value });
+    }
+  );
+
+  it("parts from the SDK only on two leading marks and on a blank body", async () => {
+    // Neither lets an unstripped value reach a handler: the peek parses a
+    // body behind two marks (the platform's decode drops both) that the SDK
+    // refuses, and refuses a blank body the SDK reads as no body.
+    const laxer: string[] = [];
+    const stricter: string[] = [];
+    for (const [name, body] of CORPUS) {
+      const read = sdkReader(body);
+      const peeked = await peek(body);
+      if (read.reads !== "value" && peeked.parses) laxer.push(name);
+      if (read.reads === "no body" && !peeked.parses) stricter.push(name);
+    }
+    expect(laxer).toEqual([
+      "two byte-order marks",
+      "two marks, then whitespace",
+    ]);
+    expect(stricter).toEqual([
+      "one byte-order mark and nothing else",
+      "two byte-order marks and nothing else",
+      "whitespace only",
+    ]);
+  });
+
+  it("is not vacuous: the corpus holds bodies the SDK reads a value from, refuses, and reads as none", () => {
+    const reads = CORPUS.map(([, body]) => sdkReader(body).reads);
+    expect(reads).toContain("value");
+    expect(reads).toContain("refused");
+    expect(reads).toContain("no body");
   });
 });
