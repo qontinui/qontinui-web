@@ -6,7 +6,7 @@
  * arriving at the relay with `text` missing. The pass-through must preserve
  * EVERY field of the inbound JSON body — including known-bad-historically
  * fields like `text` — and the rewrapped request must expose those fields
- * when the SDK does `await request.json()`.
+ * to the SDK's JSON body reader downstream.
  */
 
 import { describe, expect, it } from "vitest";
@@ -73,20 +73,51 @@ describe("passThroughBody", () => {
     expect(forwarded).toBe(original);
   });
 
-  it("returns the original request unchanged for DELETE", async () => {
-    const original = makeRequest("http://localhost/api/ui-bridge/state/x", {
-      method: "DELETE",
-    });
-    const forwarded = await passThroughBody(original, "DELETE");
-    expect(forwarded).toBe(original);
+  it("re-wraps and peeks a DELETE body, as the SDK reads one on DELETE /control/media/override", async () => {
+    const original = makeRequest(
+      "http://localhost/api/ui-bridge/control/media/override",
+      { method: "DELETE", body: JSON.stringify({ elementId: "img-1" }) }
+    );
+    const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
+      original,
+      "DELETE"
+    );
+    expect(bodyState).toBe("parsed");
+    expect(parsedBody).toEqual({ elementId: "img-1" });
+    expect(request).not.toBe(original);
+    expect(request.method).toBe("DELETE");
+    expect(request.headers.get("Content-Type")).toBe("application/json");
+    expect(await request.json()).toEqual({ elementId: "img-1" });
   });
 
-  it("returns the original request when body is empty (zero bytes)", async () => {
-    const original = makeRequest("http://localhost/api/ui-bridge/something", {
-      method: "POST",
-    });
-    const forwarded = await passThroughBody(original, "POST");
-    expect(forwarded).toBe(original);
+  it("hands an empty body on as a fresh request with no body, never the read original", async () => {
+    // Next gives every non-GET/HEAD request a body stream, a zero-byte one
+    // included. Reading it to learn it is empty disturbs it, and the SDK's
+    // reader refuses a disturbed body (400 "Request body could not be read").
+    const original = makeRequest(
+      "http://localhost/api/ui-bridge/control/find?tabId=t1",
+      {
+        method: "POST",
+        headers: { "x-ui-bridge-tab-id": "t1" },
+        body: "",
+      }
+    );
+    // Precondition: a zero-byte STREAM, not a missing body.
+    expect(original.body).not.toBeNull();
+
+    const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
+      original,
+      "POST"
+    );
+    expect(bodyState).toBe("absent");
+    expect(parsedBody).toBeUndefined();
+    expect(request).not.toBe(original);
+    expect(request.body).toBeNull();
+    expect(request.bodyUsed).toBe(false);
+    expect(request.method).toBe("POST");
+    expect(request.url).toBe(original.url);
+    expect(request.nextUrl.searchParams.get("tabId")).toBe("t1");
+    expect(request.headers.get("x-ui-bridge-tab-id")).toBe("t1");
   });
 
   it("re-wraps PUT and PATCH requests too", async () => {
@@ -117,7 +148,7 @@ describe("passThroughBody", () => {
     expect(forwarded.nextUrl.searchParams.get("debug")).toBe("1");
   });
 
-  it("peeks a body with a leading byte-order mark, as the SDK's request.json() parses it", async () => {
+  it("peeks a body with one leading byte-order mark, which the SDK's reader drops", async () => {
     const bytes = new Uint8Array([
       0xef,
       0xbb,
@@ -151,7 +182,7 @@ describe("passThroughBody", () => {
     expect(empty.parsedBody).toBeUndefined();
   });
 
-  it("reports a body the SDK's parser refuses as unparseable, and still forwards its bytes", async () => {
+  it("reports a body the SDK's reader refuses as unparseable, and still forwards its bytes", async () => {
     const req = makeRequest("http://localhost/api/ui-bridge/ai/find", {
       method: "POST",
       body: "text=X",
@@ -182,7 +213,44 @@ describe("passThroughBody", () => {
     expect(parsedBody).toBeUndefined();
   });
 
-  it("BODY_METHODS contains exactly POST/PUT/PATCH", () => {
-    expect(new Set(BODY_METHODS)).toEqual(new Set(["POST", "PUT", "PATCH"]));
+  it("reports a body behind two byte-order marks as unparseable, as the SDK's reader refuses it", async () => {
+    // The platform's `Request.json()` drops both marks (measured on Node 24);
+    // the SDK's `TextDecoder` drops one and refuses the rest.
+    const bytes = new Uint8Array([
+      ...[0xef, 0xbb, 0xbf, 0xef, 0xbb, 0xbf],
+      ...new TextEncoder().encode('{"text":"X"}'),
+    ]);
+    const { parsedBody, bodyState } = await passThroughBodyWithPeek(
+      new NextRequest("http://localhost/api/ui-bridge/ai/find", {
+        method: "POST",
+        body: bytes,
+      }),
+      "POST"
+    );
+    expect(bodyState).toBe("unparseable");
+    expect(parsedBody).toBeUndefined();
+  });
+
+  it("reports a blank body as absent, as the SDK's reader reads it as no body, and forwards its bytes", async () => {
+    for (const blank of [" \t\r\n ", "\ufeff", "\u00a0"]) {
+      const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
+        makeRequest("http://localhost/api/ui-bridge/ai/find", {
+          method: "POST",
+          body: blank,
+        }),
+        "POST"
+      );
+      expect(bodyState).toBe("absent");
+      expect(parsedBody).toBeUndefined();
+      expect([...new Uint8Array(await request.arrayBuffer())]).toEqual([
+        ...new TextEncoder().encode(blank),
+      ]);
+    }
+  });
+
+  it("BODY_METHODS contains exactly POST/PUT/PATCH/DELETE", () => {
+    expect(new Set(BODY_METHODS)).toEqual(
+      new Set(["POST", "PUT", "PATCH", "DELETE"])
+    );
   });
 });

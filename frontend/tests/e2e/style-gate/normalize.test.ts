@@ -318,80 +318,56 @@ describe("deriveInteractable — SDK 0.46 rows (actions is the kind's verb table
   });
 
   describe("rows with NO category (the DOM-fallback scan)", () => {
+    /**
+     * A DOM-fallback row as `materializeElements` serializes it: the scan
+     * drops the node, so the row carries no `tagName`, `role` or category.
+     */
+    function domFallbackRow(
+      type: string,
+      overrides: Record<string, unknown> = {}
+    ): Record<string, unknown> {
+      return {
+        id: `dom-${type}-0`,
+        type,
+        label: "",
+        actions: [...EVERY_ELEMENT_VERBS_046],
+        state: { visible: true, textContent: "" },
+        mounted: true,
+        ...overrides,
+      };
+    }
+
     it.each(MEDIA_KINDS_046)(
       "a %s row is not made interactable by its verb list alone",
-      (type, tagName) => {
+      (type) => {
         // `[data-testid]` / `[tabindex]` select media tags too, and the 0.46
         // scan types them by the one inferrer.
-        expect(
-          deriveInteractable({
-            id: `dom-${type}`,
-            type,
-            tagName,
-            actions: [...EVERY_ELEMENT_VERBS_046],
-          })
-        ).toBe(false);
+        expect(deriveInteractable(domFallbackRow(type))).toBe(false);
       }
     );
 
     it("the media-kind check is case-insensitive", () => {
-      expect(
-        deriveInteractable({
-          type: "SVG",
-          tagName: "svg",
-          actions: [...EVERY_ELEMENT_VERBS_046],
-        })
-      ).toBe(false);
+      expect(deriveInteractable(domFallbackRow("SVG"))).toBe(false);
     });
 
-    it("a media-kind row is still interactable through a real signal", () => {
-      // An interactive ARIA role on the node.
+    it("the known trade-off: an <img onclick> or <canvas tabindex> only the fallback finds is not counted", () => {
+      // Nothing in either row separates it from any other image: the scan
+      // selected it for `[onclick]` / `[tabindex]`, which its row does not say.
       expect(
-        deriveInteractable({
-          type: "svg",
-          tagName: "svg",
-          role: "button",
-          actions: [...EVERY_ELEMENT_VERBS_046],
-        })
-      ).toBe(true);
-      // An app-declared custom action.
-      expect(
-        deriveInteractable({
-          type: "image",
-          tagName: "img",
-          actions: [...EVERY_ELEMENT_VERBS_046],
-          customActions: [{ id: "open" }],
-        })
-      ).toBe(true);
+        deriveInteractable(domFallbackRow("image", { label: "Open gallery" }))
+      ).toBe(false);
+      expect(deriveInteractable(domFallbackRow("canvas"))).toBe(false);
     });
 
     it("a non-media row's verb list still counts", () => {
       // An <img role="button"> is typed `button` by the 0.46 inferrer, so its
       // list counts like any other control's.
-      expect(
-        deriveInteractable({
-          type: "button",
-          tagName: "img",
-          actions: [...EVERY_ELEMENT_VERBS_046],
-        })
-      ).toBe(true);
-      expect(
-        deriveInteractable({
-          id: "dom-generic-panel",
-          type: "generic",
-          tagName: "div",
-          actions: [...EVERY_ELEMENT_VERBS_046],
-        })
-      ).toBe(true);
+      expect(deriveInteractable(domFallbackRow("button"))).toBe(true);
+      expect(deriveInteractable(domFallbackRow("generic"))).toBe(true);
       // Negative control: the same generic row with no verbs, tag or role.
-      expect(
-        deriveInteractable({
-          id: "dom-generic-panel",
-          type: "generic",
-          tagName: "div",
-          actions: [],
-        })
-      ).toBe(false);
+      expect(deriveInteractable(domFallbackRow("generic", { actions: [] }))).toBe(
+        false
+      );
     });
   });
 });
