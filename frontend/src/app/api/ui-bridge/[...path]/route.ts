@@ -325,14 +325,14 @@ async function forwardToRelay(
     return noBrowserResponse(path);
   }
 
-  // Body-preservation pass-through: re-wrap any POST/PUT/PATCH so the SDK's
-  // JSON body reader sees the inbound body byte-for-byte with an explicit
+  // Body-preservation pass-through: re-wrap any POST/PUT/PATCH/DELETE so the
+  // SDK's JSON body reader sees the inbound body byte-for-byte with an explicit
   // `Content-Type: application/json` header. Closes the field-strip class
   // of bug observed on Vercel deploys where e.g. a `{text:"X"}` body
   // arrived at the relay with `text` missing.
   //
   // We use `passThroughBodyWithPeek` (a `passThroughBody` superset) so we
-  // get the body back, parsed by the SDK's own parser, on the same read —
+  // get the body back, read by the SDK's own rule, on the same read —
   // needed for the caller-identity strip and for the audit-log safe
   // summary in the auditable-write branch below.
   const {
@@ -349,13 +349,15 @@ async function forwardToRelay(
   //
   // No route is exempt, because the SDK's Next handler reads every body it
   // reads as JSON, through its one reader `readJsonBody` — the
-  // `bodyRequired` routes of `UI_BRIDGE_ROUTES`, its hand-routed POSTs,
-  // `POST /heartbeat`, `POST /commands` and `POST /tabs/cdp/new` — and no
-  // route reads a multipart, binary or text body. Its own clients, and this
-  // app's, send only JSON bodies. That census is a property of the INSTALLED
-  // SDK, so it is not pinned to a version here: `route.real-sdk.test.ts`
-  // re-takes it against whatever `node_modules` resolves, and fails on any
-  // release that reads a body another way.
+  // `bodyRequired` routes of `UI_BRIDGE_ROUTES` (`DELETE
+  // /control/media/override` among them, which is why DELETE is peeked
+  // too), its hand-routed POSTs, `POST /heartbeat`, `POST /commands` and
+  // `POST /tabs/cdp/new` — and no route reads a multipart, binary or text
+  // body. Its own clients, and this app's, send only JSON bodies. That
+  // census is a property of the INSTALLED SDK, so it is not pinned to a
+  // version here: `route.real-sdk.test.ts` re-takes it against whatever
+  // `node_modules` resolves, and fails on any release that reads a body
+  // another way.
   if (
     callerUserId &&
     (bodyState === "unparseable" || bodyState === "unreadable")

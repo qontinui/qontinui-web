@@ -5,7 +5,7 @@
  * `route.caller-identity.test.ts` reads what the route forwards to a mocked
  * SDK. These tests leave `@qontinui/ui-bridge/server` unmocked and read what
  * the SDK itself does with the forwarded request, so a disagreement between
- * the route's body peek and the SDK's parser shows up here. The relay is a
+ * the route's body peek and the SDK's reader shows up here. The relay is a
  * real `CommandRelay` built by the real `createRelayHandlers`; only its
  * `queueCommand` is replaced by a recorder (so every dispatch the SDK makes,
  * with the `ownerCheck` it attaches, is observed without a browser) and it
@@ -84,9 +84,9 @@ function withBoms(count: number, json: string): Uint8Array {
  * its own fresh store per request), and none of them may be refused.
  */
 function send(
-  method: "POST" | "PUT",
+  method: BodyMethod,
   path: string,
-  body: Uint8Array,
+  body: Uint8Array | string,
   contentType: string
 ): Promise<Response> {
   __resetAuthCache();
@@ -103,10 +103,11 @@ function send(
   const context = {
     params: Promise.resolve({ path: path.slice(1).split("/") }),
   };
-  return method === "PUT"
-    ? route.PUT(request, context)
-    : route.POST(request, context);
+  return route[method](request, context);
 }
+
+/** The methods the route forwards a request body on. */
+type BodyMethod = "POST" | "PUT" | "DELETE";
 
 /** The `ownerCheck.userId` of a recorded dispatch, or null when it has none. */
 function ownerOf(options: unknown): string | null {
@@ -139,14 +140,13 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
     __setRedisClientForTest(undefined);
   });
 
-  it("dispatches an action whose body names another caller behind two byte-order marks under the verified owner", async () => {
+  const SPOOFED_ACTION = `{"action":"click","callerUserId":"${SPOOFED}","__callerUserId":"${SPOOFED}","request":{"__callerUserId":"${SPOOFED}"}}`;
+
+  it("dispatches an action whose body names another caller behind a byte-order mark under the verified owner", async () => {
     const res = await send(
       "POST",
       "/control/element/save/action",
-      withBoms(
-        2,
-        `{"action":"click","callerUserId":"${SPOOFED}","__callerUserId":"${SPOOFED}","request":{"__callerUserId":"${SPOOFED}"}}`
-      ),
+      withBoms(1, SPOOFED_ACTION),
       "application/json"
     );
     expect(res.status).toBe(200);
@@ -156,12 +156,23 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
     );
   });
 
-  it("registers a tab a two-byte-order-mark heartbeat claims for another user to the verified caller", async () => {
+  it("refuses an action body behind two byte-order marks, which the SDK's reader refuses, and dispatches nothing", async () => {
+    const res = await send(
+      "POST",
+      "/control/element/save/action",
+      withBoms(2, SPOOFED_ACTION),
+      "application/json"
+    );
+    expect(res.status).toBe(400);
+    expect(dispatched).toEqual([]);
+  });
+
+  it("registers a tab a byte-order-mark heartbeat claims for another user to the verified caller", async () => {
     const res = await send(
       "POST",
       "/heartbeat",
       withBoms(
-        2,
+        1,
         `{"tabId":"tab-heartbeat","registrationMetadata":{"userId":"${SPOOFED}","sessionId":"s1"}}`
       ),
       "text/plain"
@@ -193,30 +204,60 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
       config: { ...named },
       steps: [{ action: "click", ...named }],
     });
+    // The SDK's reader drops ONE leading byte-order mark, so a body behind
+    // two or more is refused, by the route under the gate as by the SDK.
     const encodings = [
-      { label: "JSON", bytes: withBoms(0, body), type: "application/json" },
-      { label: "text/plain", bytes: withBoms(0, body), type: "text/plain" },
-      { label: "one mark", bytes: withBoms(1, body), type: "application/json" },
+      {
+        label: "JSON",
+        bytes: withBoms(0, body),
+        type: "application/json",
+        refused: false,
+      },
+      {
+        label: "text/plain",
+        bytes: withBoms(0, body),
+        type: "text/plain",
+        refused: false,
+      },
+      {
+        label: "one mark",
+        bytes: withBoms(1, body),
+        type: "application/json",
+        refused: false,
+      },
+      {
+        label: "one mark, text/plain",
+        bytes: withBoms(1, body),
+        type: "text/plain",
+        refused: false,
+      },
       {
         label: "two marks",
         bytes: withBoms(2, body),
         type: "application/json",
+        refused: true,
       },
       {
         label: "two marks, text/plain",
         bytes: withBoms(2, body),
         type: "text/plain",
+        refused: true,
       },
       {
         label: "three marks",
         bytes: withBoms(3, body),
         type: "application/json",
+        refused: true,
       },
     ];
+    const isBodyMethod = (method: string): method is BodyMethod =>
+      method === "POST" || method === "PUT" || method === "DELETE";
     const routes = [
-      ...UI_BRIDGE_ROUTES.filter(
-        (r) => r.method === "POST" || r.method === "PUT"
-      ).map((r) => ({ method: r.method as "POST" | "PUT", path: r.path })),
+      // Every SDK route a body can ride on, DELETE included: the SDK reads
+      // the body of `DELETE /control/media/override`.
+      ...UI_BRIDGE_ROUTES.flatMap((r) =>
+        isBodyMethod(r.method) ? [{ method: r.method, path: r.path }] : []
+      ),
       // The relay-transport POST routes this route forwards, outside
       // UI_BRIDGE_ROUTES (`_browser-required.ts`); only /commands reads a body.
       { method: "POST" as const, path: "/commands" },
@@ -242,7 +283,7 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
         ) {
           spoofedCells.push(cell);
         }
-        if (encoding.label === "three marks" && res.status !== 400) {
+        if (encoding.refused && res.status !== 400) {
           unrefusedCells.push(`${cell} -> ${res.status}`);
         }
       }
@@ -253,6 +294,10 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
     // Not vacuous: the sweep reached the relay under the verified owner, so
     // its silence about a spoofed owner is evidence rather than an empty run.
     expect(routes.length).toBeGreaterThan(100);
+    expect(routes).toContainEqual({
+      method: "DELETE",
+      path: "/control/media/override",
+    });
     expect(
       dispatched.filter(({ options }) => ownerOf(options) === VERIFIED).length
     ).toBeGreaterThan(100);
@@ -320,34 +365,66 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
   }, 120_000);
 });
 
+describe("route.ts + the real SDK: an empty body is no body, gate off and on", () => {
+  // Next gives every non-GET/HEAD request a body stream, a zero-byte one
+  // included. The route reads it to learn it is empty, and the SDK's reader
+  // refuses a body something already read (400 "Request body could not be
+  // read"), so an empty POST must reach the SDK as a request with no body —
+  // which its handler reads as `{}`, as it did before the SDK's 0.46 reader.
+  beforeEach(() => {
+    dispatched.length = 0;
+    vi.stubEnv("BACKEND_URL", "http://backend.test");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.endsWith("/api/v1/auth/users/me")
+          ? new Response(JSON.stringify({ id: VERIFIED }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            })
+          : new Response(null, { status: 201 })
+      )
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    __setRedisClientForTest(undefined);
+  });
+
+  it.each([
+    ["off", "0", null],
+    ["on", "1", VERIFIED],
+  ] as const)(
+    "gate %s: an empty POST /control/find reaches the handler",
+    async (_gate, flag, owner) => {
+      vi.stubEnv("UI_BRIDGE_REQUIRE_AUTH", flag);
+      const res = await send("POST", "/control/find", "", "application/json");
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect(dispatched).toHaveLength(1);
+      expect(ownerOf(dispatched[0].options)).toBe(owner);
+    }
+  );
+});
+
 describe("the installed SDK's Next handler reads request bodies only through its JSON body reader", () => {
   // `route.ts` refuses, under the gate, a body its peek cannot parse as JSON,
   // exempting no route, because the SDK reads no body any other way. Since
-  // 0.46 the Next adapter reads every body through ONE reader, `readJsonBody`
-  // (ui-bridge `src/server/request-body.ts`): the bytes, UTF-8-decoded by a
-  // default `TextDecoder`, are no body when blank and otherwise `JSON.parse`d.
-  // The peek in `body-passthrough.ts` and its differential test restate that
-  // rule, so this pins it in the installed bundle: a release whose Next
-  // adapter reads a body any other way (as text, form data or bytes, or by
-  // `request.json()` again), or whose reader decodes or parses differently,
-  // must revisit the peek and the exemption list in `route.ts` before it
-  // ships.
-  const bundle = readFileSync(
-    createRequire(import.meta.url).resolve("@qontinui/ui-bridge/server"),
-    "utf8"
-  );
-  /** One source module's section of the server bundle. */
-  function section(source: string): string {
-    const start = bundle.indexOf(`// ${source}`);
-    expect(start, `the SDK bundle has no ${source} section`).toBeGreaterThan(
-      -1
-    );
-    const end = bundle.indexOf("\n// src/", start + 1);
-    return bundle.slice(start, end === -1 ? undefined : end);
-  }
-
+  // 0.46 every body the Next adapter reads — a `bodyRequired` route's, and
+  // the hand-routed `/heartbeat`, `/commands` and `/tabs/cdp/new` ones — goes
+  // through ONE reader, `readJsonBody` (ui-bridge `src/server/request-body.ts`).
+  // The peek applies that reader's rule, and
+  // `body-passthrough.differential.test.ts` holds it to the installed SDK's
+  // handler case by case; this pins that the adapter has no OTHER reader the
+  // differential would not see. A release whose Next adapter reads a body any
+  // other way (as text, form data or bytes, or by `request.json()`) must
+  // revisit the peek and the exemption list in `route.ts` before it ships.
   it("finds readJsonBody reads and no other request-body reader in the Next adapter", () => {
-    const nextAdapter = section("src/server/nextjs.ts");
+    const nextAdapter = bundleSection(
+      "@qontinui/ui-bridge/server",
+      "src/server/nextjs.ts"
+    );
 
     expect(
       nextAdapter.match(/\breadJsonBody\(request\)/g)?.length ?? 0
@@ -356,20 +433,6 @@ describe("the installed SDK's Next handler reads request bodies only through its
       nextAdapter.match(
         /\b(?:request|req)\.(?:json|text|formData|arrayBuffer|blob)\(|\b(?:request|req)\.body\b/g
       ) ?? []
-    ).toEqual([]);
-  });
-
-  it("finds a reader that decodes the bytes as UTF-8, reads a blank body as none, and parses the rest as JSON", () => {
-    const reader = section("src/server/request-body.ts");
-
-    expect(reader).toContain("async function readJsonBody(request)");
-    expect(reader).toContain("new TextDecoder().decode(bytes)");
-    expect(reader).toMatch(
-      /if \(!text\.trim\(\)\) return \{ ok: true, body: void 0 \};/
-    );
-    expect(reader).toContain("JSON.parse(text)");
-    expect(
-      reader.match(/\.(?:json|text|formData|arrayBuffer|blob)\(\)/g) ?? []
     ).toEqual([]);
   });
 });
@@ -384,7 +447,7 @@ describe("the installed SDK's Next handler reads request bodies only through its
  * hold that restatement to the SDK `node_modules` resolves, two ways:
  *
  *   1. the constants themselves, read out of the installed bundles (sliced
- *      by source file, as the request.json() census above slices the Next
+ *      by source file, as the body-reader census above slices the Next
  *      adapter);
  *   2. the behaviour: the installed `startRelayClient`
  *      (`@qontinui/ui-bridge/injected`) is driven under fake timers for three

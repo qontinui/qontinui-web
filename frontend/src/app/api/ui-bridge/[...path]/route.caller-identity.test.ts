@@ -9,16 +9,15 @@
  * parse is refused with a typed 400 rather than forwarded unstripped. These
  * tests go through the real `route.ts` handler and read what it forwards to
  * the SDK: the query, the header, and the body read with `.json()` on the
- * forwarded request (the SDK's own reader, which agrees with `.json()` on
- * every value it reads, is held to the peek by
- * `body-passthrough.differential.test.ts` and driven for real by
- * `route.real-sdk.test.ts`). With the gate off the route forwards the
- * request as it came, and the last tests pin that it is left untouched.
+ * forwarded request. The peek applies the SDK's own reading rule, which
+ * `body-passthrough.differential.test.ts` holds to the installed SDK's
+ * handler case by case, and `route.real-sdk.test.ts` drives the route into
+ * that handler for real. With the gate off the route forwards the request as
+ * it came, and the last tests pin that it is left untouched.
  *
- * The byte-order-mark cases pin, as a precondition, what the platform's
- * `Request.json()` — the peek's parser — does with the bytes (measured on
- * Node 22 and 24: it drops two leading marks and refuses a third), so a
- * platform that changes that fails here by name rather than as a mystery.
+ * The byte-order-mark cases follow the SDK's reader, whose `TextDecoder`
+ * drops ONE leading mark: a body behind one mark is read and stripped, and a
+ * body behind two or more is refused, as the SDK itself refuses it.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -131,16 +130,6 @@ function withBoms(count: number, json: string): Uint8Array {
   ]);
 }
 
-/** Whether the platform's `Request.json()` — the peek's parser — reads `bytes`. */
-async function platformParses(bytes: Uint8Array): Promise<boolean> {
-  return new Request("http://localhost/", { method: "POST", body: bytes })
-    .json()
-    .then(
-      () => true,
-      () => false
-    );
-}
-
 const SPOOFED_BODY =
   '{"text":"Save","callerUserId":"user-a","__callerUserId":"user-a","request":{"action":"click","__callerUserId":"user-a"}}';
 
@@ -223,7 +212,6 @@ describe("route.ts, gate on: a request cannot name its caller", () => {
 
   it("strips a body behind one byte-order mark, sent as text/plain", async () => {
     const bytes = withBoms(1, '{"text":"Save","__callerUserId":"user-a"}');
-    expect(await platformParses(bytes)).toBe(true);
     const res = await call("POST", "/control/find", bytes, {
       "content-type": "text/plain",
     });
@@ -233,10 +221,8 @@ describe("route.ts, gate on: a request cannot name its caller", () => {
     expect(sent.callerHeader).toBe(VERIFIED);
   });
 
-  it("strips a body behind two byte-order marks, sent as JSON or as text/plain", async () => {
-    const bytes = withBoms(2, SPOOFED_BODY);
-    // Precondition: the peek's parser reads this body.
-    expect(await platformParses(bytes)).toBe(true);
+  it("strips a body behind one byte-order mark, sent as JSON or as text/plain", async () => {
+    const bytes = withBoms(1, SPOOFED_BODY);
     for (const contentType of ["application/json", "text/plain"]) {
       forwarded.length = 0;
       const res = await call("POST", "/control/find", bytes, {
@@ -249,20 +235,25 @@ describe("route.ts, gate on: a request cannot name its caller", () => {
     }
   });
 
-  it("refuses a body behind three byte-order marks, which the peek's parser cannot read", async () => {
-    const bytes = withBoms(3, SPOOFED_BODY);
-    // Precondition: the peek's parser refuses this body.
-    expect(await platformParses(bytes)).toBe(false);
-    const res = await call("POST", "/control/find", bytes, {
-      "content-type": "application/json",
-    });
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({
-      success: false,
-      code: "BODY_NOT_JSON",
-    });
-    expect(forwarded).toHaveLength(0);
-  });
+  it.each([2, 3])(
+    "refuses a body behind %i byte-order marks, which the SDK's reader refuses too",
+    async (marks) => {
+      const res = await call(
+        "POST",
+        "/control/find",
+        withBoms(marks, SPOOFED_BODY),
+        {
+          "content-type": "application/json",
+        }
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({
+        success: false,
+        code: "BODY_NOT_JSON",
+      });
+      expect(forwarded).toHaveLength(0);
+    }
+  );
 
   it("refuses a body that is not JSON and forwards nothing", async () => {
     const res = await call(
@@ -352,7 +343,7 @@ describe("route.ts, gate off: the request is forwarded untouched", () => {
     expect(sent.callerHeader).toBeNull();
   });
 
-  it("forwards a body the peek's parser cannot read byte for byte, refusing nothing", async () => {
+  it("forwards a body the SDK's reader refuses byte for byte, refusing nothing", async () => {
     const bytes = withBoms(3, SPOOFED_BODY);
     const res = await call("POST", "/control/find", bytes, {
       "content-type": "application/json",

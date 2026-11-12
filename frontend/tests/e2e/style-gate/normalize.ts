@@ -319,14 +319,20 @@ function nonEmptyArray(value: unknown): boolean {
  * (`click`, `hover`, `sendKeys`, `scroll`, …). A media row used to carry
  * `actions: []` and now carries that list, so reading it as "registered
  * handlers" marked every image, svg and canvas interactable and fed them all
- * to the `layout` overlap pass. The SDK's own `interactive_only` filter
- * (`core/find-filter.ts`) excludes media by kind, not by `actions`, for the
- * same reason. `customActions` stays a real signal: it lists only what the app
- * itself declared on the element. The list still separates a row from a
- * content row (content rows advertise `[]`), so it counts on a row with no
- * category — a DOM-fallback scan row (`server/dom-fallback.ts`) carries none —
- * except a media-kind one, which a `[data-testid]` / `[tabindex]` match puts
- * there with the same universal list.
+ * to the `layout` overlap pass. Nor does a content row's list mean one: an
+ * element registered with `category: 'content'` reads its kind's row like any
+ * other. `customActions` stays a real signal: it lists only what the app
+ * itself declared on the element.
+ *
+ * ROWS WITH NO CATEGORY: a 0.46 DOM-fallback scan row
+ * (`server/dom-fallback.ts`) carries no category, and its `actions` is always
+ * at least the universal list, so on such a row the `actions` test reduces to
+ * "`type` is not a media kind". The known trade-off: an `<img onclick>` or a
+ * `<canvas tabindex="0">` that only the DOM fallback finds is no longer
+ * counted interactable. Nothing in its row separates it from any other image
+ * — `materializeElements` serializes a fallback row without its node, so it
+ * carries no `tagName` or `role` either — and counting every such image
+ * would flood the overlap pass with every image on the page.
  *
  * WHY THE INERT GATE COMES FIRST: the `layout` analyzer's overlap pass is
  * pairwise over `interactable` elements, so one inert zone overlay stacked
