@@ -164,14 +164,6 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
     // `calc(100vh - 44px)` root height; unifying those on one shell-provided
     // variable is a follow-up.)
     <div className="flex h-dvh bg-background overflow-hidden">
-      {/* §4.5 "AI in control" banner — fixed-top, z-9999, only renders
-          when the co-pilot is actively driving the tab. The component
-          itself is wrapped in data-bridge-invisible so the SDK auto-
-          register's ancestor walk skips it (bridge can't click its own
-          Stop button + silence the indicator). */}
-      <Suspense fallback={null}>
-        <CoPilotActiveBanner />
-      </Suspense>
       <Suspense
         fallback={<SidebarSkeleton preferredCollapsed={preferredCollapsed} />}
       >
@@ -198,6 +190,17 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
           preferredCollapsed ? "lg:ml-16" : "lg:ml-64"
         )}
       >
+        {/* §4.5 "AI in control" banner — only renders when the co-pilot is
+            actively driving the tab. It sits IN FLOW at the top of this
+            column, so it pushes the page down instead of covering the page's
+            own top row (tour bar, coord header) the way the old fixed z-9999
+            overlay did. The component wraps its controls in
+            data-bridge-invisible so the SDK auto-register's ancestor walk
+            skips them (bridge can't click its own Stop button + silence the
+            indicator). */}
+        <Suspense fallback={null}>
+          <CoPilotActiveBanner />
+        </Suspense>
         <MobileTopBar />
         {/* The composed build's beta banner offers "Give Feedback" (a form
             that POSTs) and "Dismiss": controls, not part of a presentation. */}
