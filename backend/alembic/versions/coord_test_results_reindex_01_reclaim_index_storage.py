@@ -100,11 +100,12 @@ the next run's leftover drops clean up after it.
 
 One class of error is not swallowed: SQLSTATE class 42
 (``PERMANENT_SQLSTATE_CLASS``), for example ``insufficient_privilege`` when the
-migrator role does not own the table, or ``undefined_object`` for a renamed
-index. Such an error fails the same way on every attempt. Stamping past it would
-record a revision that reclaimed nothing and will never retry. So after the
-leftover drops and the log line, the handler re-raises it, and the revision
-fails UNSTAMPED until the cause is fixed.
+migrator role does not own the table, or ``undefined_table`` (42P01) for a
+renamed index. Such an error fails the same way on every attempt, and stamping
+past it would record a revision that reclaimed nothing and never retries. So
+after the leftover drops and the log line (which then says the revision is NOT
+stamped), the handler re-raises it, and the revision fails UNSTAMPED until the
+cause is fixed.
 
 A caught error leaves the connection usable. Inside ``autocommit_block()``
 every statement is its own transaction, so a failed one leaves no aborted
@@ -223,25 +224,38 @@ logger = logging.getLogger("alembic.runtime.migration")
 FAILURE_MARKER = "coord_test_results_reindex_01: REINDEX FAILED"
 
 
-def _log_failed_rebuild(index_name: str, exc: DBAPIError) -> None:
-    """Log ONE line naming the index, what was done, and the database error."""
-    logger.error(
-        "%s for coord.%s; dropped its _ccnew and _ccold leftovers, if any, and "
-        "continued. Error: %s",
-        FAILURE_MARKER,
-        index_name,
-        " ".join(str(exc.orig).split()),
-    )
-
-
 #: SQLSTATE class 42, "syntax error or access rule violation". It covers
 #: ``insufficient_privilege`` (42501: the migrator role does not own
-#: ``coord.test_results``) and ``undefined_object`` (42704: an index was
-#: renamed). An error in this class happens again on every attempt, so the
-#: revision must not stamp past it. Every other class can come out differently
-#: next time: a timeout or cancel (57014), a lock wait (55P03), a uniqueness
-#: failure while building (23505), or a disconnect (08).
+#: ``coord.test_results``) and ``undefined_table`` (42P01, which is what
+#: ``REINDEX INDEX`` raises for a renamed or missing index). An error in this
+#: class happens again on every attempt, so the revision must not stamp past it.
+#: Every other class can come out differently next time: a timeout or cancel
+#: (57014), a lock wait (55P03), a uniqueness failure while building (23505), or
+#: a disconnect (08).
 PERMANENT_SQLSTATE_CLASS = "42"
+
+
+def _is_permanent(exc: DBAPIError) -> bool:
+    """True when the error would fail the same way on every attempt."""
+    pgcode = getattr(exc.orig, "pgcode", None)
+    return isinstance(pgcode, str) and pgcode.startswith(PERMANENT_SQLSTATE_CLASS)
+
+
+def _log_failed_rebuild(index_name: str, exc: DBAPIError) -> None:
+    """Log ONE line naming the index, what was done, and the database error."""
+    outcome = (
+        "re-raising it, so the revision is NOT stamped"
+        if _is_permanent(exc)
+        else "continued"
+    )
+    logger.error(
+        "%s for coord.%s; dropped its _ccnew and _ccold leftovers, if any, and "
+        "%s. Error: %s",
+        FAILURE_MARKER,
+        index_name,
+        outcome,
+        " ".join(str(exc.orig).split()),
+    )
 
 
 def _raise_if_permanent(exc: DBAPIError) -> None:
@@ -252,8 +266,7 @@ def _raise_if_permanent(exc: DBAPIError) -> None:
     again once the cause (an ownership or a name) is fixed, rather than
     stamping a revision that rebuilt nothing.
     """
-    pgcode = getattr(exc.orig, "pgcode", None)
-    if isinstance(pgcode, str) and pgcode.startswith(PERMANENT_SQLSTATE_CLASS):
+    if _is_permanent(exc):
         raise exc
 
 

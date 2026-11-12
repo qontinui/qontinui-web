@@ -49,10 +49,14 @@ Against a real Postgres (skipped when none is reachable):
    happen; and the old primary key index still serves.
 
 9. **Only a permanent error is re-raised** (no database needed). A SQLSTATE
-   class 42 error (``insufficient_privilege``, ``undefined_object``) is
+   class 42 error (``insufficient_privilege``, ``undefined_table``) is
    re-raised, so the revision fails unstamped instead of stamping a rebuild
    that can never succeed. A timeout, a lock wait, a uniqueness failure, a
    disconnect, and an error with no SQLSTATE are all swallowed.
+10. **A permanent error fails the upgrade unstamped** (real Postgres). With the
+   first index renamed away, ``REINDEX`` raises 42P01: the upgrade exits
+   non-zero, ``alembic_version`` stays at the parent, and the one failure line
+   says the revision is NOT stamped.
 
 Assertion 8 is also the proof plan D3 asked for: inside alembic's
 ``autocommit_block()`` a caught statement error leaves the connection usable for
@@ -592,6 +596,34 @@ def test_one_failed_rebuild_does_not_stop_the_others() -> None:
             assert valid and definition == _EXPECTED_DEFINITIONS[name]
 
 
+@pytest.mark.skipif(not _PG_REACHABLE, reason=_NO_POSTGRES_REASON)
+def test_a_permanent_error_fails_the_upgrade_unstamped() -> None:
+    """10. A renamed index raises 42P01; the upgrade fails and does not stamp."""
+    with _database_at_parent() as (engine, url, root):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER INDEX coord.idx_test_results_repo_observed "
+                    "RENAME TO idx_test_results_repo_observed_moved"
+                )
+            )
+
+        proc = run_alembic(root, url, "upgrade", _REVISION_ID, expect_success=False)
+
+        assert proc.returncode != 0, "a permanent rebuild error must fail the upgrade"
+        assert _stamped_revision(engine) == _PARENT_REVISION_ID, (
+            "a permanent rebuild error must leave the revision UNSTAMPED"
+        )
+        lines = _failure_lines(proc)
+        assert len(lines) == 1, f"expected one failure line, got {lines}"
+        assert "coord.idx_test_results_repo_observed" in lines[0], lines[0]
+        assert "NOT stamped" in lines[0], lines[0]
+        assert (
+            "UndefinedTable" in proc.stdout + proc.stderr
+            or "does not exist" in (lines[0])
+        ), lines[0]
+
+
 def _load_revision_module():  # type: ignore[no-untyped-def]
     spec = importlib.util.spec_from_file_location(
         "coord_test_results_reindex_01_under_test", _REVISION_PATH
@@ -612,7 +644,8 @@ class _OrigWithPgcode(Exception):
     ("pgcode", "permanent"),
     [
         ("42501", True),  # insufficient_privilege: the role does not own the table
-        ("42704", True),  # undefined_object: a renamed index
+        ("42P01", True),  # undefined_table: what REINDEX raises for a renamed index
+        ("42704", True),  # undefined_object: same class
         ("57014", False),  # query_canceled: the 4 h bound
         ("55P03", False),  # lock_not_available
         ("23505", False),  # unique_violation while building
