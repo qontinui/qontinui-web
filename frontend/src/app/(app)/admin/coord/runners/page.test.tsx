@@ -458,6 +458,32 @@ describe("/admin/coord/runners", () => {
     expect(notice).toHaveTextContent("1 device was retired");
   });
 
+  it("offers an abandoned machine instead of reporting nothing to offer", async () => {
+    fleetResponse = res(200, {
+      devices: [
+        {
+          device_id: "aaaaaaaa-0000-4000-8000-000000000009",
+          hostname: "msi",
+          state: "abandoned",
+          ci_runner_status: null,
+        },
+      ],
+    });
+    render(<CoordRunnersPage />);
+    await waitFor(() =>
+      expect(
+        httpFetch.mock.calls.some(([url]) =>
+          String(url).includes("/fleet/health")
+        )
+      ).toBe(true)
+    );
+    // Let the roster response settle before asserting the notice's absence.
+    await act(async () => {});
+    expect(
+      screen.queryByTestId("coord-runners-roster-notice")
+    ).not.toBeInTheDocument();
+  });
+
   it("names withheld machines beside the retired count on an empty roster", async () => {
     fleetResponse = res(200, {
       devices: [],
