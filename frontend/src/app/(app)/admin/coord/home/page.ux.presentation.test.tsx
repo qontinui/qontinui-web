@@ -351,7 +351,9 @@ describe("/admin/coord/home?present=1 — the 2026-10-31 UX pass", () => {
       );
       // The section is shown, so the strip still names it.
       const strip = screen.getByTestId("coord-home.strip.health");
-      expect(strip).toHaveTextContent(/correct\? could not be read/);
+      expect(strip).toHaveTextContent(
+        "The correctness check could not be read."
+      );
       expect(strip).not.toHaveTextContent("Correctness is not measured yet.");
     });
 

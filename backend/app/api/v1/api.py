@@ -73,7 +73,6 @@ from app.api.v1.endpoints import (
     fleet_targets,
     health,
     helper_tasks,
-    historical,
     identity_resolution,
     image_assets,
     images,
@@ -397,9 +396,6 @@ api_router.include_router(
     rag_dashboard.router, prefix="/projects", tags=["rag-dashboard"]
 )
 api_router.include_router(issues.router, prefix="/issues", tags=["issues"])
-api_router.include_router(
-    historical.router, prefix="/testing/historical", tags=["historical-data"]
-)
 api_router.include_router(execution.router, prefix="/execution", tags=["execution"])
 # Drift report endpoints — placeholder routes until the runner proxy lands.
 # See: app/api/v1/endpoints/runs_drift.py

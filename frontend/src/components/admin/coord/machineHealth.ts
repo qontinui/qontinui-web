@@ -1,10 +1,12 @@
 /**
  * machineHealth — how a coord `GET /fleet/health` device is counted, by the
- * two surfaces that count them: the `Dev Ops ▾` nav badge
- * (`useFleetAlarmBadge`) and `/admin/coord/home`'s Degrading section.
+ * surfaces that count them: the `Dev Ops ▾` nav badge (`useFleetAlarmBadge`),
+ * `/admin/coord/home`'s Degrading section, and the Dev Ops page's health strip
+ * and headline figure (`fleetLiveness.ts`, `devOpsHeadline.ts`).
  *
- * They ask different questions, so they have different predicates, and the
- * home page reconciles the two in words:
+ * The nav and home ask different questions, so they have different predicates,
+ * and the home page reconciles the two in words. The Dev Ops page asks home's
+ * question, so it reads the roster the same way ({@link readMachineRoster}):
  *
  * - **The nav** counts every machine coord gave a verdict other than
  *   `healthy` ({@link isNotHealthyDevice}). Unchanged since before home read
@@ -12,7 +14,8 @@
  * - **Home** follows coord's own project state, which already turns a
  *   machine into a degradation row per device for `degraded`, `partitioned`,
  *   `stale` and `ci_offline`, and deliberately not for `healthy`,
- *   `abandoned` (a decision) or coord's explicit `unknown` (a stored state it
+ *   `abandoned` (the last rung of coord's silence timer: coord has no
+ *   decommission state, whatever its comment there calls it) or coord's explicit `unknown` (a stored state it
  *   could not parse) — `qontinui-coord` `crates/coord/src/project_state.rs`
  *   `roster_degradations`. So on home an `abandoned` machine is never
  *   degrading, and `unknown` or a device with no `state` at all has NO
@@ -89,7 +92,7 @@ export interface MachineHealthCounts {
   healthy: number;
   /** In a state coord's project state reports as a degradation. */
   degrading: number;
-  /** Abandoned — a decision, not a degradation. */
+  /** Abandoned: silent past coord's timer, and not a degradation. Not always chosen. */
   abandoned: number;
   /** No verdict: coord's `unknown`, or no state at all. */
   noVerdict: number;
@@ -242,7 +245,7 @@ export function noLiveMachine(counts: MachineHealthCounts): boolean {
 /** A roster whose graded machines are all abandoned, in words. */
 export function noLiveMachineSentence(counts: MachineHealthCounts): string {
   const n = counts.total;
-  return `${n === 1 ? "The 1 machine coord grades is" : `All ${n} machines coord grades are`} abandoned, so no live machine reports — there is no machine this view can call healthy.`;
+  return `${n === 1 ? "The 1 machine coord grades is" : `All ${n} machines coord grades are`} abandoned, so no listed machine reports — there is no machine this view can call healthy.`;
 }
 
 /**
@@ -284,8 +287,13 @@ export function placeholdersSentence(
  * - `not_stated` — a coord that serves neither field: UNKNOWN.
  */
 export type RosterExclusions =
-  | { kind: "none_withheld" }
-  | { kind: "withheld"; unbound: number; boundToOtherTenant: number }
+  | { kind: "none_withheld"; retired?: number }
+  | {
+      kind: "withheld";
+      unbound: number;
+      boundToOtherTenant: number;
+      retired?: number;
+    }
   | { kind: "withheld_unmeasured"; reason: string | null }
   | { kind: "not_stated" };
 
@@ -346,9 +354,17 @@ export function readRosterExclusions(
   if (!isCount(unbound) || !isCount(boundToOtherTenant)) {
     return { kind: "withheld_unmeasured", reason: null };
   }
+  // `retired` (coord's device reaper set `reaped_at`; plan
+  // `2026-11-03-devops-fleet-partitioned-counts-retired-ephemeral-ci-registrations`)
+  // is served beside the two binding counts but is NOT a binding fault and
+  // NOT incompleteness: those rows are retired on purpose and never come
+  // back to zero. It only explains an empty or short roster. Absent or not a
+  // count (an older coord) is simply not stated.
+  const { retired } = x as Record<string, unknown>;
+  const retiredPart = isCount(retired) && retired > 0 ? { retired } : {};
   return unbound + boundToOtherTenant > 0
-    ? { kind: "withheld", unbound, boundToOtherTenant }
-    : { kind: "none_withheld" };
+    ? { kind: "withheld", unbound, boundToOtherTenant, ...retiredPart }
+    : { kind: "none_withheld", ...retiredPart };
 }
 
 /** Whether coord withheld devices, or could not count what it withheld. */
@@ -388,6 +404,46 @@ export function rosterIncompleteSentence(
   }
 }
 
+/**
+ * Retired rows in words, or null when coord stated none: hidden on purpose,
+ * never a fault. Every empty-roster surface appends it so an empty list
+ * beside thousands of retired rows is explained the same way everywhere.
+ */
+export function retiredRowsSentence(e: RosterExclusions): string | null {
+  const n =
+    e.kind === "none_withheld" || e.kind === "withheld" ? e.retired : undefined;
+  if (!n) return null;
+  return `${n} ${n === 1 ? "device was" : "devices were"} retired after going unseen past coord's reaper grace period and ${n === 1 ? "is" : "are"} not listed — retired, which is not a withheld machine.`;
+}
+
+function withRetired(sentence: string, e: RosterExclusions): string {
+  const r = retiredRowsSentence(e);
+  return r ? `${sentence} ${r}` : sentence;
+}
+
+/**
+ * `sentence` with what coord left out of its roster appended, read straight
+ * from a `/fleet/health` body: the machines it withheld (a binding fault,
+ * named so the retired clause never sits beside an unnamed withheld count),
+ * then the rows its device reaper retired. For the surfaces that describe an
+ * empty or all-hidden device picker without a parsed {@link RosterExclusions}
+ * in hand (the runners page notice, SpawnModal's manual-entry fallback).
+ * Adds nothing when coord withheld and retired nothing, and nothing for an
+ * older coord that states neither.
+ */
+export function appendRosterExclusions(
+  sentence: string,
+  body: RosterExclusionsRef
+): string {
+  const e = readRosterExclusions(body);
+  const withheld = isRosterBindingFault(e)
+    ? // Never coord's own `excluded_error` text: it is an unbounded error
+      // chain, and the picker notices have no room for it.
+      rosterIncompleteSentence(e, { withReason: false })
+    : null;
+  return withRetired(withheld ? `${sentence} ${withheld}` : sentence, e);
+}
+
 function withheldParts(e: { unbound: number; boundToOtherTenant: number }) {
   const parts: string[] = [];
   if (e.unbound > 0) parts.push(`${e.unbound} with no binding`);
@@ -407,10 +463,16 @@ export function emptyRosterSentence(
 ): string {
   switch (e.kind) {
     case "none_withheld":
-      return "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy.";
+      return withRetired(
+        "Coord lists no machines and withheld none from its roster, so there is no machine this view can call healthy.",
+        e
+      );
     case "withheld": {
       const n = e.unbound + e.boundToOtherTenant;
-      return `Coord lists no machines but withheld ${n} from its roster (${withheldParts(e).join(", ")}) — a binding fault, not an empty fleet, so machine health is unknown.`;
+      return withRetired(
+        `Coord lists no machines but withheld ${n} from its roster (${withheldParts(e).join(", ")}) — a binding fault, not an empty fleet, so machine health is unknown.`,
+        e
+      );
     }
     case "withheld_unmeasured":
       return `Coord lists no machines and could not count the machines it withheld from its roster${withReason && e.reason ? ` (${e.reason})` : ""} — machine health is unknown.`;
@@ -613,7 +675,7 @@ export function rosterCutSentence(c: RosterCut): string | null {
           : c.listed < c.limit
             ? "coord left out of its list"
             : `past coord's limit of ${c.limit}, not listed here`;
-      return `Coord's roster lists ${rowsText(c.listed)} of ${c.total}: the other ${n} ${rows} ${where} — coord says none of them could be degrading.`;
+      return `Coord's roster lists ${rowsText(c.listed)} of ${c.total}: the other ${n} ${rows} ${where} — coord says ${n === 1 ? "it" : "none of them"} could ${n === 1 ? "not " : ""}be degrading.`;
     }
     case "cut_degradable": {
       const d = c.degradableDropped;
@@ -632,4 +694,122 @@ export function rosterCutSentence(c: RosterCut): string | null {
         ? `Coord's roster lists ${rowsText(c.listed)}, ${c.listed === c.limit ? "at" : "more than"} coord's limit of ${c.limit}, so it may be cut off — machine health beyond it is unknown.`
         : `Coord does not say whether its roster of ${rowsText(c.listed)} is complete — machine health beyond it is unknown.`;
   }
+}
+
+// ---------------------------------------------------------------------------
+// One reading of a roster
+// ---------------------------------------------------------------------------
+
+/** The roster body's fields other than `devices`: unvalidated, and all optional. */
+export type RosterCompletenessRef = Omit<RosterCutRef, "devices"> &
+  RosterExclusionsRef;
+
+/** A roster read whole: who is on it, and how much of it coord says it served. */
+export interface MachineRoster {
+  counts: MachineHealthCounts;
+  exclusions: RosterExclusions;
+  cut: RosterCut;
+}
+
+/**
+ * Read a `/fleet/health` body into the counts and the two completeness
+ * readings. A malformed or absent field is treated as absent, never complete.
+ */
+export function readMachineRoster(
+  devices: readonly MachineStateRef[],
+  completeness: RosterCompletenessRef
+): MachineRoster {
+  return {
+    counts: summarizeMachineHealth(devices),
+    // Read on every roster: a device coord withheld is missing from a
+    // non-empty roster just as from an empty one.
+    exclusions: readRosterExclusions(completeness),
+    // A roster cut at coord's row limit is missing rows `excluded` cannot see.
+    cut: readRosterCut({
+      devices,
+      truncated: completeness.truncated,
+      total: completeness.total,
+      degradable_dropped: completeness.degradable_dropped,
+      row_cap: completeness.row_cap,
+    }),
+  };
+}
+
+/** Whether a roster row is a live machine: neither abandoned nor a placeholder. */
+export function isLiveMachine(d: MachineStateRef): boolean {
+  const v = machineVerdict(d);
+  return v !== "abandoned" && v !== "placeholder";
+}
+
+/** Machines coord grades that are not abandoned: the population health is of. */
+export function liveMachineCount(counts: MachineHealthCounts): number {
+  return counts.total - counts.abandoned;
+}
+
+/**
+ * Whether the roster can vouch for every machine: coord withheld none, and any
+ * cut withheld no row that could be degrading. Otherwise machine health beyond
+ * the list is UNKNOWN, and nothing may say "every machine".
+ */
+export function rosterCoversHealth(
+  r: Pick<MachineRoster, "exclusions" | "cut">
+): boolean {
+  return isRosterComplete(r.exclusions) && !rosterCutHidesHealth(r.cut);
+}
+
+/** The abandoned machines left out of a live count, or null when there are none. */
+export function abandonedNotCountedSentence(
+  counts: MachineHealthCounts
+): string | null {
+  const n = counts.abandoned;
+  if (n === 0) return null;
+  return n === 1
+    ? "1 machine coord marked abandoned after a long silence is not counted."
+    : `${n} machines coord marked abandoned after a long silence are not counted.`;
+}
+
+/**
+ * Everything a machine count on this roster leaves out, in words: abandoned
+ * machines, placeholder rows, machines coord withheld, and rows past its cut.
+ * Counts only, never a machine's name. `withReason` admits coord's own
+ * `excluded_error` text, which is operator-only.
+ */
+export function rosterDisclosures(
+  r: MachineRoster,
+  { withReason }: { withReason: boolean }
+): string[] {
+  return [
+    abandonedNotCountedSentence(r.counts),
+    placeholdersSentence(r.counts),
+    rosterIncompleteSentence(r.exclusions, { withReason }),
+    rosterCutSentence(r.cut),
+  ].filter((line): line is string => line !== null);
+}
+
+/** How many machines coord grades as degrading are in each of its four states. */
+export interface DegradingStateCounts {
+  degraded: number;
+  partitioned: number;
+  stale: number;
+  ciOffline: number;
+}
+
+/** Split the degrading machines by state; a placeholder row is in no count. */
+export function countDegradingStates(
+  devices: readonly MachineStateRef[]
+): DegradingStateCounts {
+  const c: DegradingStateCounts = {
+    degraded: 0,
+    partitioned: 0,
+    stale: 0,
+    ciOffline: 0,
+  };
+  for (const d of devices) {
+    if (machineVerdict(d) !== "degrading") continue;
+    if (d.state === "degraded") c.degraded += 1;
+    else if (d.state === "partitioned") c.partitioned += 1;
+    else if (d.state === "stale") c.stale += 1;
+    else if (d.state === "ci_offline") c.ciOffline += 1;
+  }
+  return c;
 }

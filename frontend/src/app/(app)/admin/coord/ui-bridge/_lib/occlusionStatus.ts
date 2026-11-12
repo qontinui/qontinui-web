@@ -1,44 +1,44 @@
 /**
  * Occlusion — whether anything on the runner's screen covers anything else.
  *
- * ## Where a verdict can come from, and why today none can
+ * ## Where a verdict comes from
  *
  * The ONLY producer of an occlusion verdict is the occlusion sweep
  * (`POST /ui-bridge/control/visibility`, `relayReads.ts`
- * `fetchRunnerVisibility`). Page health's report has no occlusion field: its
- * keys are `summary`, `findings`, `heatmap`, `element_count` and
- * `visible_count` (qontinui-runner `ui_bridge/screenshots.rs`
- * `ui_bridge_page_health_handler`), and `occlusionDataObserved` is emitted by
- * `build_visibility_report` alone. And no runner's relay carries the sweep:
- * its report quotes webview text, so it needs a review of its handler and the
- * snapshot's egress gate before it can be allow-listed (coord finding
- * `99796499-8e46-4d69-94ba-a2ac9fe3ea22`; plan
- * `2026-10-23-console-presentation-spaces` Phase 6, amendment 2026-10-24).
- * So the dashboard's occlusion row is {@link OCCLUSION_NOT_RELAYED}: UNKNOWN on
- * every runner, with its reason in plain words, and never clear.
+ * `fetchRunnerVisibility`), which the page runs together with page health.
+ * Page health's report has no occlusion field: its keys are `summary`,
+ * `findings`, `heatmap`, `element_count` and `visible_count` (qontinui-runner
+ * `ui_bridge/screenshots.rs` `ui_bridge_page_health_handler`), and
+ * `occlusionDataObserved` is emitted by `build_visibility_report` alone. So
+ * page health's body is never consulted for occlusion: a runner that puts
+ * `occlusionDataObserved` in its page-health report changes nothing here.
  *
- * **That is a property of the page, not of what a runner happens to answer.**
- * While the route's carriage is `never`, `occlusionReadOf`
- * (`useUiBridgeDashboard.ts`) does not ask for the sweep and reads no answer
- * to it. Page health's body is never consulted for occlusion at all, so a
- * future runner that puts `occlusionDataObserved` in its page-health report
- * does not turn the row into anything but UNKNOWN. The row may read a verdict
- * only once the follow-up the finding lists lands: it reviews
- * `ui_bridge_visibility_handler`, gives the route the snapshot's egress gate,
- * adds it to the runner's `RELAY_ALLOWED` naming `fetchRunnerVisibility`, and
- * flips `RUNNER_ROUTES.visibility` from `never` to `dashboard` — the flip that
- * makes this page ask. Nothing else should.
+ * The runner relays the sweep since qontinui-runner `d4c64ad06` (rustfmt
+ * follow-up `827745bd3`; coord finding `99796499-8e46-4d69-94ba-a2ac9fe3ea22`).
+ * A runner built before that refuses it with a 403, and a project whose
+ * terminal-stream egress is off has it withheld (409 `egress_off`); both are
+ * read failures, rendered as a labelled UNKNOWN for their own reason
+ * (`relaySource.ts`), and never reach this module as a report.
  *
- * ## Reading the sweep, for the day it can be asked
+ * ## Reading the sweep
  *
  * The sweep's report (qontinui-runner `ui_bridge/screenshots.rs`
- * `build_visibility_report`, unwrapped from its `{ success, data }` envelope):
+ * `build_visibility_report`, unwrapped from its `{ success, data }` envelope),
+ * as a RELAYED read receives it (`disclose_occlusion_text`):
  *
  *     { verdict: "clear" | "occlusions_found" | "unknown_empty_registry",
  *       occlusionDataObserved: boolean,
- *       occlusions: [{ element, occludedBy, ratio, hidesText, … }],
+ *       occlusions: [{ ratio, hidesText, isExpectedOverlay, source }],
+ *       occlusionText: "withheld",
  *       elementCount, expectedOverlayDetection: "modal-stack" | "unavailable",
  *       expectedOverlaysFiltered, minRatio, includeExpected }
+ *
+ * A local read's entries also carry `element`, `occludedBy`, `label` and
+ * `text`, and say `occlusionText: "included"`. This module reads none of those
+ * four fields whichever it is handed — only the verdict, the observed flag,
+ * the entry count and each entry's `hidesText` — so no webview text reaches
+ * the page from here. {@link readOcclusionTextDisclosure} reads the
+ * disclosure, so the row can say that WHICH element is covered was not sent.
  *
  * **THE RULE** (served policy `ux-priorities`
  * `the-runner-serves-the-occlusion-sweep-and-it-is-currently-vacuous`):
@@ -121,23 +121,69 @@ export interface OcclusionReading {
    * over the page counts as an occlusion), null when the report did not say.
    */
   readonly overlaysClassified: boolean | null;
+  /**
+   * Whether the entries name what they cover — the report's own
+   * `occlusionText` ({@link readOcclusionTextDisclosure}).
+   */
+  readonly textDisclosure: OcclusionTextDisclosure;
 }
 
 /**
- * The occlusion row while no relay carries the sweep: UNKNOWN, with the cause
- * in plain words. It names the route as an operator would (the visibility
- * sweep), says it is not served over the relay yet, and says what that does to
- * the question — the answer is unknown, which is not "clear".
+ * Whether the sweep's occlusion entries carry the fields that name or quote
+ * the webview (`element`, `occludedBy`, `label`, `text`), as the runner reports
+ * it in `data.occlusionText` (qontinui-runner `disclose_occlusion_text`):
+ *
+ * - `withheld` — dropped: the report says how much is covered and whether
+ *   text is hidden, but not which element. What every relayed read says, and
+ *   so what this page expects;
+ * - `included` — kept: a local read's report, which names each element;
+ * - `unknown` — the reply did not say, or said something else. Never read as
+ *   either of the two, and `reason` says which, in words that quote nothing the
+ *   reply sent.
  */
-export const OCCLUSION_NOT_RELAYED: OcclusionReading = {
-  kind: "unknown",
-  unknownReason:
-    "the visibility sweep is not available over the relay yet, so whether anything on the screen covers anything else is unknown — not clear",
-  occlusions: null,
-  hidingText: null,
-  elementCount: null,
-  overlaysClassified: null,
-};
+export type OcclusionTextDisclosure =
+  | { readonly kind: "withheld" }
+  | { readonly kind: "included" }
+  | { readonly kind: "unknown"; readonly reason: string };
+
+/**
+ * The disclosure in a sweep payload. Exactly the runner's two words are
+ * answers: an absent field (a build that predates the disclosure) and any
+ * other value — a different case, a boolean, `null` — are UNKNOWN. A guess in
+ * either direction is a claim about what the entries hold that nothing
+ * observed.
+ */
+export function readOcclusionTextDisclosure(
+  payload: unknown
+): OcclusionTextDisclosure {
+  if (!isRecord(payload)) {
+    return { kind: "unknown", reason: "the sweep sent no report" };
+  }
+  const said = payload.occlusionText;
+  if (said === "withheld") return { kind: "withheld" };
+  if (said === "included") return { kind: "included" };
+  return {
+    kind: "unknown",
+    reason:
+      said === undefined
+        ? "this runner's reply does not say (an older runner build does not)"
+        : "this runner's reply gave an answer this page does not know",
+  };
+}
+
+/** The disclosure as one sentence — what the panel prints beside the row. */
+export function occlusionTextDisclosureText(
+  disclosure: OcclusionTextDisclosure
+): string {
+  switch (disclosure.kind) {
+    case "withheld":
+      return "Which element is covered, and by what, is not sent over the relay — the sweep reports only how much is covered and whether text is hidden. A local UI Bridge read on the runner names them.";
+    case "included":
+      return "The runner's report names each covered element and what covers it; this page shows only the counts.";
+    case "unknown":
+      return `Whether the sweep's report names the covered elements is unknown: ${disclosure.reason}.`;
+  }
+}
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -149,7 +195,8 @@ const num = (v: unknown): number | null =>
 function unknown(
   reason: string,
   elementCount: number | null,
-  overlaysClassified: boolean | null
+  overlaysClassified: boolean | null,
+  textDisclosure: OcclusionTextDisclosure
 ): OcclusionReading {
   return {
     kind: "unknown",
@@ -158,13 +205,20 @@ function unknown(
     hidingText: null,
     elementCount,
     overlaysClassified,
+    textDisclosure,
   };
 }
 
 /** The honest reading of an occlusion-sweep payload. */
 export function readOcclusion(payload: unknown): OcclusionReading {
+  const textDisclosure = readOcclusionTextDisclosure(payload);
   if (!isRecord(payload)) {
-    return unknown("the occlusion sweep sent no report", null, null);
+    return unknown(
+      "the occlusion sweep sent no report",
+      null,
+      null,
+      textDisclosure
+    );
   }
   const elementCount = num(payload.elementCount);
   const detection = payload.expectedOverlayDetection;
@@ -184,6 +238,7 @@ export function readOcclusion(payload: unknown): OcclusionReading {
           hidingText: 0,
           elementCount,
           overlaysClassified,
+          textDisclosure,
         };
       }
       return unknown(
@@ -191,7 +246,8 @@ export function readOcclusion(payload: unknown): OcclusionReading {
           ? "the sweep found nothing covered, but no element carried occlusion data, so nothing was observed (occlusion data observed: no)"
           : "the sweep found nothing covered, but this runner does not say whether it observed any occlusion data",
         elementCount,
-        overlaysClassified
+        overlaysClassified,
+        textDisclosure
       );
     case "occlusions_found": {
       const entries = Array.isArray(payload.occlusions)
@@ -202,7 +258,8 @@ export function readOcclusion(payload: unknown): OcclusionReading {
         return unknown(
           "the sweep reported occlusions but listed none",
           elementCount,
-          overlaysClassified
+          overlaysClassified,
+          textDisclosure
         );
       }
       const hidingText = entries.filter((e) => e.hidesText === true).length;
@@ -213,19 +270,22 @@ export function readOcclusion(payload: unknown): OcclusionReading {
         hidingText,
         elementCount,
         overlaysClassified,
+        textDisclosure,
       };
     }
     case "unknown_empty_registry":
       return unknown(
         "the runner's element registry was empty, so there was nothing to sweep",
         elementCount,
-        overlaysClassified
+        overlaysClassified,
+        textDisclosure
       );
     default:
       return unknown(
         "the occlusion sweep answered a verdict this page does not know",
         elementCount,
-        overlaysClassified
+        overlaysClassified,
+        textDisclosure
       );
   }
 }

@@ -49,7 +49,7 @@ export interface FleetHealthDevice {
   /**
    * Coord liveness state — `DeviceHealthSnapshot.state` (Rust
    * `DeviceState`, serde-lowercase): healthy | degraded | **stale** |
-   * partitioned | abandoned. Absent on a device coord has no verdict for,
+   * ci_offline | partitioned | abandoned. Absent on a device coord has no verdict for,
    * which renders as `unknown` — never as healthy.
    *
    * `stale` is the fifth and newest, a DERIVED overlay coord never persists
@@ -342,7 +342,16 @@ export interface FleetHealthPayload {
    * An empty `devices` beside a non-zero count is a binding fault, not an
    * empty fleet. Absent on a coord predating it.
    */
-  excluded?: { unbound?: number; bound_to_other_tenant?: number } | null;
+  excluded?: {
+    unbound?: number;
+    bound_to_other_tenant?: number;
+    /**
+     * Rows coord's device reaper retired (`reaped_at` set) and the roster
+     * therefore omits. NOT a binding fault and not incompleteness: see
+     * `readRosterExclusions`. Absent on a coord predating it.
+     */
+    retired?: number;
+  } | null;
   /** Why coord could not count `excluded`; null when it could. */
   excluded_error?: string | null;
   /**

@@ -266,6 +266,18 @@ function writeControlsIn(root: Element): Element[] {
   });
 }
 
+/**
+ * One repository group's entry in the no-recorded-change list under the
+ * repository list — visible on first load, with no row opened (q7).
+ */
+function noChangeGroup(text: string): HTMLElement {
+  const group = screen
+    .getAllByTestId("coord-home.on-track.no-recorded-change.group")
+    .find((g) => (g.firstElementChild?.textContent ?? "").includes(text));
+  if (!group) throw new Error(`no no-recorded-change group for ${text}`);
+  return group;
+}
+
 describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
   beforeEach(resetEnvironment);
 
@@ -283,11 +295,27 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
     );
     expect(screen.getAllByTestId("coord-home.on-track.group")).toHaveLength(4);
     openSourcesRead();
-    // One of the fixture's eight sources is not built yet: counted on one
+    // One of the fixture's ten sources is not built yet: counted on one
     // line while presenting, not listed.
-    expect(screen.getAllByTestId("coord-home.does-not-know.row")).toHaveLength(
-      7
+    const sourceRows = screen.getAllByTestId("coord-home.does-not-know.row");
+    expect(sourceRows).toHaveLength(9);
+    // A detection_bound row reads as the time for a fault on its area to
+    // reach the view, never as a source with no name or a data age.
+    const detection = sourceRows.find((r) =>
+      r.textContent?.includes("Time for a fault on merge train")
     );
+    expect(detection).toBeDefined();
+    expect(detection).toHaveTextContent(
+      "a fault can be up to 1h old before coord sees it"
+    );
+    expect(detection).not.toHaveTextContent(/may be up to/);
+    // A plane coord derived no bound for says so, named by its area.
+    const underivable = sourceRows.find((r) =>
+      r.textContent?.includes("Time for a fault on cloud service")
+    );
+    expect(underivable).toBeDefined();
+    expect(underivable).toHaveTextContent("no detection bound known");
+    expect(underivable).not.toHaveTextContent(/no name for|not stated/);
     expect(
       screen.getByTestId("coord-home.does-not-know.not-built")
     ).toHaveTextContent(
@@ -310,13 +338,10 @@ describe("/admin/coord/home?present=1 — safe to show an outsider", () => {
       });
       expect(leakedIdentifiers(), "identifiers in the DOM").toEqual([]);
     });
-    // Behind the first-party repository's disclosure: its own unit is
-    // named; the shared one and the one a cut-short foreign list may hide
-    // are not.
-    const own = expandRow(
-      screen.getByTestId("coord-home.on-track"),
-      FIRST_PARTY_REPO
-    );
+    // Under the first-party repository, with no disclosure opened: its own
+    // unit is named; the shared one and the one a cut-short foreign list may
+    // hide are not.
+    const own = noChangeGroup(FIRST_PARTY_REPO);
     expect(own).toHaveTextContent(FIRST_PARTY_UNIT_TITLE);
     expect(document.body.textContent).not.toContain(SHARED_UNIT_TITLE);
     expect(document.body.textContent).not.toContain(HIDDEN_UNIT_TITLE);
@@ -635,7 +660,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     const machine = rows.find((r) => /runner/.test(r.textContent ?? ""))!;
     expect(machine).toHaveTextContent(/Degradation · runner · degrading · /);
     expect(within(machine).getByTestId("row-reason")).toHaveTextContent(
-      /^Machine A$/
+      /^Machine A · agent response bound$/
     );
     // The drained machine is another letter, on its declared row.
     expect(
@@ -724,21 +749,27 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
     // Its detail names it; the foreign group's says "this repository".
     const own = expandRow(region, FIRST_PARTY_REPO);
     expect(own).toHaveTextContent(`Work units that name ${FIRST_PARTY_REPO}.`);
-    expect(own).toHaveTextContent(FIRST_PARTY_UNIT_TITLE);
+    // Its no-recorded-change units are named under the list, visible without
+    // the disclosure (q7); its waiting ones stay in the detail.
+    const ownNoChange = noChangeGroup(FIRST_PARTY_REPO);
+    expect(ownNoChange).toHaveTextContent(FIRST_PARTY_UNIT_TITLE);
     // A shared unit, and one a cut-short foreign list may hide: withheld, and
     // not linked.
-    expect(own).not.toHaveTextContent(SHARED_UNIT_TITLE);
-    expect(own).not.toHaveTextContent(HIDDEN_UNIT_TITLE);
+    for (const el of [own, ownNoChange]) {
+      expect(el).not.toHaveTextContent(SHARED_UNIT_TITLE);
+      expect(el).not.toHaveTextContent(HIDDEN_UNIT_TITLE);
+    }
     expect(own).toHaveTextContent(/Work unit · area unknown · waiting · /);
     expect(within(own).queryByRole("link")).toBeNull();
     // A withheld unit is never handed to a link at all — its URL carries the
     // slug its descriptor withholds — while the unit the scope clears is
     // (plain text today: its page is not presentation-ready yet).
-    const unitNames = (redacted: "true" | "false") => [
-      ...own.querySelectorAll(
-        `[data-testid^="coord-home.on-track.named."] [data-redacted="${redacted}"]`
-      ),
-    ];
+    const unitNames = (redacted: "true" | "false") =>
+      [own, ownNoChange].flatMap((el) => [
+        ...el.querySelectorAll(
+          `[data-testid^="coord-home.on-track.named."] [data-redacted="${redacted}"]`
+        ),
+      ]);
     expect(unitNames("true").length).toBeGreaterThanOrEqual(2);
     for (const name of unitNames("true")) {
       expect(name.closest("a, [data-lens-link]")).toBeNull();
@@ -828,10 +859,7 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
 
   it("on track: a unit also named by a group of an unknown kind is withheld, though the scope clears the repository that names it", async () => {
     const view = await renderPresenting(unitAlsoInUnknownGroupBody());
-    const own = expandRow(
-      screen.getByTestId("coord-home.on-track"),
-      FIRST_PARTY_REPO
-    );
+    const own = noChangeGroup(FIRST_PARTY_REPO);
     expect(own).toHaveTextContent(/Work unit · area unknown · no recorded/);
     expect(
       own.querySelector(
@@ -935,6 +963,20 @@ describe("/admin/coord/home?present=1 — each region: caption, provenance, reda
       `Coord reported an error. ${FAILURE_SENTENCE_WITHHELD}`
     );
     expect(failed).not.toHaveTextContent(/quoted on the last line/);
+    expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+  });
+
+  it("does not know: a detection-bound row's withheld reason is a detection lag, never an exclusion", async () => {
+    const view = await renderPresenting(fullBody());
+    const region = screen.getByTestId("coord-home.does-not-know");
+    for (const area of ["merge train", "cloud service"]) {
+      const detail = expandRow(region, `Time for a fault on ${area}`);
+      expect(detail).toHaveTextContent(
+        /Why this lag: Reason · detection lag · /
+      );
+      expect(detail).not.toHaveTextContent(/excluded/i);
+      expect(detail.querySelector("[data-console-raw]")).toBeNull();
+    }
     expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
   });
 });
@@ -1311,5 +1353,68 @@ describe("/admin/coord/home for the operator — the console is unchanged", () =
     expect(
       document.querySelector(`[data-row-key*="${QUESTION_ID}"]`)
     ).not.toBeNull();
+  });
+});
+
+describe("/admin/coord/home?present=1 — remediation on the collapsed view (q4)", () => {
+  it("says who is acting on each open row, and the tally, in words — never coord's response token", async () => {
+    const view = await renderPresenting(fullBody());
+    const region = screen.getByTestId("coord-home.degrading");
+    expect(
+      region.querySelector('[data-console-row][aria-expanded="true"]')
+    ).toBeNull();
+    const tally = screen.getByTestId("coord-home.degrading.remediation");
+    expect(tally).toHaveTextContent(/^Of (the )?\d+ open( shown)?: /);
+    expect(tally).toHaveTextContent(/with an agent response bound/);
+    for (const reason of within(region).getAllByTestId("row-reason")) {
+      expect(reason.textContent ?? "").not.toMatch(/agent:|operator:/);
+    }
+    expect(document.body.textContent ?? "").not.toMatch(/agent:runner_restart/);
+    expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+  });
+
+  it("names the no-recorded-change units under the list with no disclosure opened (q7)", async () => {
+    const view = await renderPresenting(fullBody());
+    expect(
+      screen.getByTestId("coord-home.on-track.no-recorded-change")
+    ).toHaveTextContent(FIRST_PARTY_UNIT_TITLE);
+    expectPresentationSafe(view, { forbidden: MUST_NOT_APPEAR });
+  });
+});
+
+describe("/admin/coord/home?present=1 — a detection-bound source, from a body of its own", () => {
+  beforeEach(resetEnvironment);
+
+  // Built here, not from the presentation fixture's builders, so this pins
+  // the page's own labelling of a `detection_bound:<plane>` row rather than
+  // anything a shared fixture happens to carry.
+  function detectionBody() {
+    return {
+      schema: 1,
+      generated_at: new Date().toISOString(),
+      tenant_id: TENANT_ID,
+      scope: "operator",
+      does_not_know: [
+        {
+          source: "detection_bound:merge_train",
+          state: "read",
+          freshness_bound_secs: 3600,
+          as_of: new Date().toISOString(),
+        },
+        { source: "detection_bound:cloud_service", state: "unknown" },
+      ],
+    };
+  }
+
+  it("presenting: a detection-bound source is labelled through the page with an independent body", async () => {
+    await renderPresenting(detectionBody());
+    const region = screen.getByTestId("coord-home.does-not-know");
+    expect(region).toHaveTextContent(
+      "Time for a fault on merge train to reach this view"
+    );
+    expect(region).toHaveTextContent(
+      "Time for a fault on cloud service to reach this view"
+    );
+    expect(region).not.toHaveTextContent(UNLABELLED_SOURCE);
   });
 });

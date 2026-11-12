@@ -163,6 +163,7 @@ import * as fleetResources from "@/components/operations/fleetResources";
 import {
   DeviceCrossLinks,
   deviceStateBadgeVariant,
+  deviceStateLabel,
 } from "@/components/operations/FleetHealthSummary";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
 import knownFleetHealth from "../../../../../../test-fixtures/devops-readout/known-fleet-health.json";
@@ -338,6 +339,9 @@ function mockRoutes(fixture: Fixture) {
     if (u.includes("fleet/health")) {
       return Promise.resolve({
         devices: fixture.devices,
+        // Coord serves these on every roster; a test overrides them.
+        excluded: { unbound: 0, bound_to_other_tenant: 0 },
+        excluded_error: null,
         ...(fixture.healthExtras ?? {}),
       });
     }
@@ -497,12 +501,13 @@ describe("/admin/coord/devops", () => {
     render(<CoordDevOpsPage />);
 
     await waitFor(() =>
-      expect(screen.getByTestId("coord-devops-machines-badge")).toHaveTextContent(
-        "machines 2 · 4647 roster rows"
-      )
+      expect(
+        screen.getByTestId("coord-devops-machines-badge")
+      ).toHaveTextContent("machines 2 · 4647 roster rows")
     );
+    // Every live machine is listed: the cut tail is rows that cannot degrade.
     expect(screen.getByTestId("coord-devops-health-strip")).toHaveTextContent(
-      "All 2 listed machines healthy"
+      "All 2 machines healthy"
     );
   });
 
@@ -517,8 +522,10 @@ describe("/admin/coord/devops", () => {
     render(<CoordDevOpsPage />);
 
     await waitFor(() =>
-      expect(screen.getByTestId("coord-devops-machines-badge")).toHaveTextContent(
-        "machines 1 · 10001 roster rows, some health unknown"
+      expect(
+        screen.getByTestId("coord-devops-machines-badge")
+      ).toHaveTextContent(
+        "machines 1+ · 10001 roster rows, some health unknown"
       )
     );
   });
@@ -1040,6 +1047,144 @@ describe("/admin/coord/devops — the saturation axis (Phase 5)", () => {
       screen.getByTestId("coord-devops-unreachable-badge")
     ).toHaveTextContent("unreachable 1");
   });
+
+  it("says machines unknown, and a floor, when the roster cannot vouch", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "old-laptop", "abandoned")],
+      runners: [],
+      samples: [],
+      healthExtras: {
+        excluded: { unbound: 2, bound_to_other_tenant: 0 },
+        excluded_error: null,
+      },
+    });
+    render(<CoordDevOpsPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-devops-machines-badge")
+      ).toHaveTextContent(/^machines unknown$/)
+    );
+  });
+
+  it("marks a live count as a floor when coord withheld machines", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "spaceship", "healthy")],
+      runners: [runner("spaceship")],
+      samples: [],
+      healthExtras: {
+        excluded: { unbound: 2, bound_to_other_tenant: 0 },
+        excluded_error: null,
+      },
+    });
+    render(<CoordDevOpsPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-devops-machines-badge")
+      ).toHaveTextContent(/^machines 1\+$/)
+    );
+  });
+
+  it("does not count an abandoned row's credential beside the live machines", async () => {
+    mockRoutes({
+      devices: [
+        {
+          ...coordDevice("d-1", "old-laptop", "abandoned"),
+          credential_dark: { dark: true },
+        } as never,
+      ],
+      runners: [],
+      samples: [],
+    });
+    render(<CoordDevOpsPage />);
+    await screen.findByTestId("coord-devops-abandoned-badge");
+    expect(
+      screen.queryByTestId("coord-devops-credential-dark-badge")
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("coord-devops-credential-unknown-badge")
+    ).toBeNull();
+  });
+
+  it("marks the abandoned count as a floor when coord cut rows from its roster", async () => {
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "spaceship", "healthy"),
+        coordDevice("d-2", "old-laptop", "abandoned"),
+      ],
+      runners: [runner("spaceship")],
+      samples: [],
+      healthExtras: {
+        excluded: { unbound: 0, bound_to_other_tenant: 0 },
+        excluded_error: null,
+        truncated: true,
+        total: 40,
+        degradable_dropped: 0,
+        row_cap: { soft: 2, hard: 10_000 },
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-devops-abandoned-badge")
+      ).toHaveTextContent(/^abandoned 1\+$/)
+    );
+    expect(screen.getByTestId("coord-devops-machines-badge")).toHaveTextContent(
+      /^machines 1 · 40 roster rows$/
+    );
+    // A cut of only the dead tail vouches for every machine: green, and said.
+    const strip = screen.getByTestId("coord-devops-health-strip");
+    expect(strip).toHaveAttribute("data-health-level", "green");
+    expect(strip).toHaveTextContent("lists 2 rows of 40");
+  });
+
+  it("counts live machines: an abandoned one is said apart and turns nothing red", async () => {
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "spaceship", "healthy"),
+        coordDevice("d-2", "ci-box", "ci_offline"),
+        coordDevice("d-3", "old-laptop", "abandoned"),
+      ],
+      runners: [runner("spaceship")],
+      samples: [],
+      // A whole roster: amber here is the CI-offline machine's doing alone.
+      healthExtras: {
+        excluded: { unbound: 0, bound_to_other_tenant: 0 },
+        excluded_error: null,
+        truncated: false,
+        total: 3,
+        degradable_dropped: 0,
+        row_cap: { soft: 1000, hard: 10_000 },
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-devops-machines-badge")
+      ).toHaveTextContent("machines 2")
+    );
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+    expect(
+      screen.getByTestId("coord-devops-abandoned-badge")
+    ).toHaveTextContent("abandoned 1");
+    expect(
+      screen.getByTestId("coord-devops-ci-offline-badge")
+    ).toHaveTextContent("CI offline 1");
+    expect(screen.queryByTestId("coord-devops-unreachable-badge")).toBeNull();
+    expect(screen.queryByTestId("coord-devops-unknown-badge")).toBeNull();
+    // The nav's "2 unhealthy" is reconciled with the strip in words.
+    expect(strip).toHaveTextContent(
+      "The nav's 2 unhealthy also counts what is not a degradation here"
+    );
+    // The state's words, wherever a machine row prints it.
+    const states = document.querySelectorAll('[data-coord-state="ci_offline"]');
+    expect(states.length).toBeGreaterThan(0);
+    for (const state of states) expect(state).toHaveTextContent("CI offline");
+  });
 });
 
 /**
@@ -1067,6 +1212,13 @@ describe("the fleet page's page-locals were extracted, then outgrown", () => {
     // The honesty rule the mapping carries: an absent state is not healthy.
     expect(deviceStateBadgeVariant(undefined)).toBe("outline");
     expect(deviceStateBadgeVariant("something-new")).toBe("outline");
+    // Red is for a machine coord still counts and cannot reach.
+    expect(deviceStateBadgeVariant("partitioned")).toBe("destructive");
+    expect(deviceStateBadgeVariant("abandoned")).toBe("outline");
+    // Coord's verdict, not an absence of one.
+    expect(deviceStateBadgeVariant("ci_offline")).toBe("secondary");
+    expect(deviceStateLabel("ci_offline")).toBe("CI offline");
+    expect(deviceStateLabel("degraded")).toBe("degraded");
   });
 
   it("leaves neither a declaration nor a mount behind on the pipeline page", () => {
