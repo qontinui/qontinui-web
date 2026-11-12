@@ -54,7 +54,7 @@ from tests._alembic_harness import (
 # revision's own `down_revision` — the first test enforces it. If the alembic
 # head moves before landing, re-point BOTH together.
 _REVISION_ID = "overlord_04_runner_start_and_nudge_time"
-_PARENT_REVISION_ID = "fpl_02b"
+_PARENT_REVISION_ID = "coord_ci_runs_head_sha_idx_01"
 _LOCK_BOUND = "SET LOCAL lock_timeout = '3s'"
 _REVISION_FILENAME = "overlord_04_runner_start_and_nudge_time.py"
 _PLAN_STEM = (
