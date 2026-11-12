@@ -5,17 +5,28 @@
  * code packages created by the community.
  */
 
-export type PackageCategory =
-  | "automation"
-  | "utilities"
-  | "integrations"
-  | "patterns"
-  | "workflows"
-  | "testing"
-  | "data-processing"
-  | "ai-ml"
-  | "web-scraping"
-  | "other";
+/** The categories the marketplace UI knows how to label. */
+export const PACKAGE_CATEGORIES = [
+  "automation",
+  "utilities",
+  "integrations",
+  "patterns",
+  "workflows",
+  "testing",
+  "data-processing",
+  "ai-ml",
+  "web-scraping",
+  "other",
+] as const;
+
+export type PackageCategory = (typeof PACKAGE_CATEGORIES)[number];
+
+/** A served category slug as a `PackageCategory`, or `undefined` if it is none. */
+export function toPackageCategory(
+  slug: string | null | undefined
+): PackageCategory | undefined {
+  return PACKAGE_CATEGORIES.find((c) => c === slug);
+}
 
 export type PackageLicense =
   | "MIT"
@@ -28,12 +39,7 @@ export type PackageLicense =
   | "Other";
 
 export type InstallStatus =
-  | "idle"
-  | "installing"
-  | "installed"
-  | "failed"
-  | "updating"
-  | "uninstalling";
+  "idle" | "installing" | "installed" | "failed" | "updating" | "uninstalling";
 
 export type PackageVisibility = "public" | "private" | "unlisted";
 
@@ -79,12 +85,7 @@ export type PackageScanStatus = ServedScanStatus | "unknown";
  * `IssueSeverity`), plus `unknown` for a served severity outside them.
  */
 export type PackageScanIssueSeverity =
-  | "info"
-  | "low"
-  | "medium"
-  | "high"
-  | "critical"
-  | "unknown";
+  "info" | "low" | "medium" | "high" | "critical" | "unknown";
 
 export interface PackageScanIssue {
   severity: PackageScanIssueSeverity;
@@ -272,11 +273,10 @@ export interface CodePackage {
    * count (installations); readers hide it rather than show 0.
    */
   total_downloads?: number;
-  weekly_downloads: number;
-  average_rating: number;
-  rating_count: number;
-  fork_count: number;
-  star_count: number;
+  /** Average rating as served. Absent when the payload carries none. */
+  average_rating?: number;
+  /** Rating count as served. Absent when the payload carries none. */
+  rating_count?: number;
 
   // Flags
   verified: boolean; // Staff-approved
@@ -386,12 +386,7 @@ export interface RatePackageRequest {
 export interface ReportPackageRequest {
   package_id: string;
   reason:
-    | "malicious"
-    | "copyright"
-    | "spam"
-    | "inappropriate"
-    | "broken"
-    | "other";
+    "malicious" | "copyright" | "spam" | "inappropriate" | "broken" | "other";
   description: string;
 }
 

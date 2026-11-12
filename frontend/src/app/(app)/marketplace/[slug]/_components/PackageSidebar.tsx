@@ -63,7 +63,12 @@ export function PackageSidebar({ pkg }: PackageSidebarProps) {
               <span className="text-sm">Rating</span>
             </div>
             <span className="font-semibold text-foreground">
-              {formatRating(pkg.average_rating)} ({pkg.rating_count})
+              {pkg.average_rating !== undefined
+                ? formatRating(pkg.average_rating)
+                : "Not rated"}
+              {pkg.average_rating !== undefined &&
+                pkg.rating_count !== undefined &&
+                ` (${pkg.rating_count})`}
             </span>
           </div>
           <Separator className="bg-border" />

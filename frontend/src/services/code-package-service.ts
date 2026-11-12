@@ -18,7 +18,11 @@ import type {
   PackageScanIssue,
   PackageScanIssueSeverity,
 } from "@/types/code-packages";
-import { UNKNOWN_SCAN, isServedScanStatus } from "@/types/code-packages";
+import {
+  UNKNOWN_SCAN,
+  isServedScanStatus,
+  toPackageCategory,
+} from "@/types/code-packages";
 import type { components } from "@/lib/api-client/generated-types";
 
 /**
@@ -40,6 +44,7 @@ type BackendPopularPackageResponse = Schemas["PopularPackageResponse"];
 type PackageRead = Schemas["PackageRead"];
 type PackageDetailRead = Schemas["PackageDetailRead"];
 type VersionRead = Schemas["VersionRead"];
+type BackendCategory = Schemas["CategoryRead"];
 type BackendInstallResponse = Schemas["InstallResponse"];
 type BackendInstalledPackageRead = Schemas["InstalledPackageRead"];
 type BackendProjectPackagesResponse = Schemas["ProjectPackagesResponse"];
@@ -65,8 +70,59 @@ interface BackendRatingWithUser extends BackendRatingRead {
 export class CodePackageService {
   private httpClient: HttpClient;
 
+  /**
+   * The served categories (`GET /categories`), cached for the life of the
+   * service so a page of search results costs one request. Only a successful
+   * read is cached; a failed one is retried by the next caller.
+   */
+  private categoriesRequest: Promise<BackendCategory[] | null> | null = null;
+
   constructor(httpClient: HttpClient) {
     this.httpClient = httpClient;
+  }
+
+  /**
+   * The served categories, or `null` when the route could not be read.
+   * `null` is UNKNOWN: callers leave the category absent rather than guess.
+   */
+  private async loadCategories(): Promise<BackendCategory[] | null> {
+    if (!this.categoriesRequest) {
+      const request = (async () => {
+        try {
+          const response = await this.httpClient.fetch(
+            `${CODE_PACKAGES}/categories`
+          );
+          if (!response.ok) return null;
+          const body: unknown = await response.json();
+          return Array.isArray(body) ? (body as BackendCategory[]) : null;
+        } catch {
+          return null;
+        }
+      })();
+      this.categoriesRequest = request;
+      void request.then((categories) => {
+        if (categories === null && this.categoriesRequest === request) {
+          this.categoriesRequest = null;
+        }
+      });
+    }
+    return this.categoriesRequest;
+  }
+
+  /**
+   * The category id a served slug names. Throws rather than writing a
+   * different category: a refused write is better than a wrong one.
+   */
+  private async getCategoryId(slug: string): Promise<number> {
+    const categories = await this.loadCategories();
+    if (categories === null) {
+      throw new Error("Could not load package categories");
+    }
+    const match = categories.find((c) => c.slug === slug);
+    if (!match) {
+      throw new Error(`Unknown package category: ${slug}`);
+    }
+    return match.id;
   }
 
   /**
@@ -101,9 +157,10 @@ export class CodePackageService {
     const data: BackendPackageListResponse = await response.json();
 
     // Transform backend response to frontend format
+    const categories = await this.loadCategories();
     return {
       packages: data.packages.map((p) =>
-        this.transformBackendPackageToFrontend(p)
+        this.transformBackendPackageToFrontend(p, categories)
       ),
       total: data.total,
       page,
@@ -171,7 +228,10 @@ export class CodePackageService {
     }
 
     const data: BackendPopularPackageResponse = await response.json();
-    return data.packages.map((p) => this.transformBackendPackageToFrontend(p));
+    const categories = await this.loadCategories();
+    return data.packages.map((p) =>
+      this.transformBackendPackageToFrontend(p, categories)
+    );
   }
 
   /**
@@ -187,7 +247,10 @@ export class CodePackageService {
     }
 
     const data: BackendPackageSearchResult[] = await response.json();
-    return data.map((p) => this.transformBackendPackageToFrontend(p));
+    const categories = await this.loadCategories();
+    return data.map((p) =>
+      this.transformBackendPackageToFrontend(p, categories)
+    );
   }
 
   /**
@@ -219,7 +282,7 @@ export class CodePackageService {
       body: JSON.stringify({
         name: data.name,
         description: data.description,
-        category_id: this.getCategoryId(data.category),
+        category_id: await this.getCategoryId(data.category),
         tags: data.tags,
         license: data.license,
         visibility: data.visibility,
@@ -251,7 +314,7 @@ export class CodePackageService {
     if (data.description !== undefined)
       updateData.description = data.description;
     if (data.category !== undefined)
-      updateData.category_id = this.getCategoryId(data.category);
+      updateData.category_id = await this.getCategoryId(data.category);
     if (data.tags !== undefined) updateData.tags = data.tags;
     if (data.license !== undefined) updateData.license = data.license;
     if (data.visibility !== undefined) updateData.visibility = data.visibility;
@@ -423,23 +486,28 @@ export class CodePackageService {
    * Transform backend package search result to frontend format
    */
   private transformBackendPackageToFrontend(
-    pkg: BackendPackageSearchResult
+    pkg: BackendPackageSearchResult,
+    categories: BackendCategory[] | null
+  ): CodePackage {
+    // The served category slug, resolved from the served categories list. An
+    // id the list does not carry (or a list that could not be read) leaves the
+    // category absent rather than reading as "other".
+    const slug = categories?.find((c) => c.id === pkg.category_id)?.slug;
+    return this.buildPackage(pkg, toPackageCategory(slug));
+  }
+
+  private buildPackage(
+    pkg: BackendPackageSearchResult,
+    category: PackageCategory | undefined
   ): CodePackage {
     return {
       id: pkg.id.toString(),
       slug: pkg.slug,
       name: pkg.name,
       description: pkg.description,
-      // A package with no (or an unrecognised) category leaves it absent
-      // rather than reading as "other".
-      ...this.categoryField(pkg.category_id),
+      ...(category ? { category } : {}),
       tags: pkg.tags || [],
-      author: {
-        id: pkg.author_id,
-        username: "Unknown", // Not provided in search results
-        verified: pkg.is_verified,
-        staff: false,
-      },
+      // The payload serves only `author_id`, not a name, so no author is made up.
       ...(pkg.license ? { license: pkg.license as PackageLicense } : {}),
       visibility: "public" as const,
       // A search result names the latest version but carries no version
@@ -448,11 +516,8 @@ export class CodePackageService {
       created_at: pkg.created_at,
       updated_at: pkg.created_at,
       total_downloads: pkg.total_downloads,
-      weekly_downloads: 0,
-      average_rating: pkg.avg_rating || 0,
-      rating_count: 0,
-      fork_count: 0,
-      star_count: 0,
+      // `avg_rating` is null for an unrated package: absent, not 0.
+      ...(pkg.avg_rating != null ? { average_rating: pkg.avg_rating } : {}),
       verified: pkg.is_verified,
       featured: false,
       deprecated: false,
@@ -466,22 +531,25 @@ export class CodePackageService {
    * absent and any scan read from it is `unknown`.
    */
   private transformPackageReadToFrontend(pkg: PackageRead): CodePackage {
-    const basePackage = this.transformBackendPackageToFrontend({
-      id: pkg.id,
-      name: pkg.name,
-      slug: pkg.slug,
-      description: pkg.description,
-      author_id: pkg.author_id,
-      category_id: pkg.category_id ?? null,
-      category_name: pkg.category?.name ?? null,
-      license: pkg.license ?? null,
-      tags: pkg.tags ?? [],
-      is_verified: pkg.is_verified,
-      total_downloads: pkg.total_downloads,
-      avg_rating: pkg.avg_rating,
-      latest_version: null,
-      created_at: pkg.created_at,
-    });
+    const basePackage = this.buildPackage(
+      {
+        id: pkg.id,
+        name: pkg.name,
+        slug: pkg.slug,
+        description: pkg.description,
+        author_id: pkg.author_id,
+        category_id: pkg.category_id ?? null,
+        category_name: pkg.category?.name ?? null,
+        license: pkg.license ?? null,
+        tags: pkg.tags ?? [],
+        is_verified: pkg.is_verified,
+        total_downloads: pkg.total_downloads,
+        avg_rating: pkg.avg_rating,
+        latest_version: null,
+        created_at: pkg.created_at,
+      },
+      toPackageCategory(pkg.category?.slug)
+    );
     // `null` would read "no published version"; the payload does not say.
     delete basePackage.latest_version_number;
     return { ...basePackage, updated_at: pkg.updated_at };
@@ -494,22 +562,25 @@ export class CodePackageService {
     pkg: PackageDetailRead
   ): CodePackage {
     const latest = pkg.latest_version ?? null;
-    const basePackage = this.transformBackendPackageToFrontend({
-      id: pkg.id,
-      name: pkg.name,
-      slug: pkg.slug,
-      description: pkg.description,
-      author_id: pkg.author_id,
-      category_id: pkg.category_id ?? null,
-      category_name: pkg.category?.name ?? null,
-      license: pkg.license ?? null,
-      tags: pkg.tags ?? [],
-      is_verified: pkg.is_verified,
-      total_downloads: pkg.total_downloads,
-      avg_rating: pkg.avg_rating,
-      latest_version: latest?.version ?? null,
-      created_at: pkg.created_at,
-    });
+    const basePackage = this.buildPackage(
+      {
+        id: pkg.id,
+        name: pkg.name,
+        slug: pkg.slug,
+        description: pkg.description,
+        author_id: pkg.author_id,
+        category_id: pkg.category_id ?? null,
+        category_name: pkg.category?.name ?? null,
+        license: pkg.license ?? null,
+        tags: pkg.tags ?? [],
+        is_verified: pkg.is_verified,
+        total_downloads: pkg.total_downloads,
+        avg_rating: pkg.avg_rating,
+        latest_version: latest?.version ?? null,
+        created_at: pkg.created_at,
+      },
+      toPackageCategory(pkg.category?.slug)
+    );
 
     return {
       ...basePackage,
@@ -612,53 +683,6 @@ export class CodePackageService {
       updated_at: rating.updated_at,
       user: userInfo,
     };
-  }
-
-  /**
-   * Map category name to ID (temporary until backend provides proper mapping)
-   */
-  private getCategoryId(category: string): number {
-    const categoryMap: Record<string, number> = {
-      automation: 1,
-      utilities: 2,
-      integrations: 3,
-      patterns: 4,
-      workflows: 5,
-      testing: 6,
-      "data-processing": 7,
-      "ai-ml": 8,
-      "web-scraping": 9,
-      other: 10,
-    };
-    return categoryMap[category] || 10;
-  }
-
-  /**
-   * Map category ID to name
-   */
-  private categoryField(categoryId: number | null): {
-    category?: PackageCategory;
-  } {
-    const category = this.mapCategoryIdToName(categoryId);
-    return category ? { category } : {};
-  }
-
-  private mapCategoryIdToName(
-    categoryId: number | null
-  ): PackageCategory | undefined {
-    const idToName: Record<number, PackageCategory> = {
-      1: "automation",
-      2: "utilities",
-      3: "integrations",
-      4: "patterns",
-      5: "workflows",
-      6: "testing",
-      7: "data-processing",
-      8: "ai-ml",
-      9: "web-scraping",
-      10: "other",
-    };
-    return categoryId !== null ? idToName[categoryId] : undefined;
   }
 }
 
@@ -782,11 +806,6 @@ function installedPackageShell(
     visibility: "public",
     created_at: fields.created_at,
     updated_at: fields.updated_at,
-    weekly_downloads: 0,
-    average_rating: 0,
-    rating_count: 0,
-    fork_count: 0,
-    star_count: 0,
     verified: false,
     featured: false,
     deprecated: false,
