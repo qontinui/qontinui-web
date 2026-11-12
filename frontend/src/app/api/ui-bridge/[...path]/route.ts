@@ -346,10 +346,11 @@ async function forwardToRelay(
   // reader would refuse (declared JSON, or declared as nothing, and not
   // JSON) is refused with a typed 400 instead of being forwarded as it came.
   // A body the SDK reads as none (blank, or declared as a non-JSON type and
-  // not JSON) was already handed on with no body by the peek, and a body over
-  // the SDK's cap goes on as it came for the SDK to refuse (413) before any
-  // handler runs. With the gate off nothing changes: there is no verified
-  // identity to protect.
+  // not JSON) was already handed on with no body by the peek. A body over the
+  // SDK's cap goes on unparsed (with its Content-Type forced to JSON), and every
+  // SDK path that reads a body refuses it (413); a handler that never reads a
+  // body runs without it. With the gate off nothing changes: there is no
+  // verified identity to protect.
   //
   // The deliberate residual: this refusal does not know the route. Under the
   // gate an unparseable body declared JSON (or nothing) is refused even on a
