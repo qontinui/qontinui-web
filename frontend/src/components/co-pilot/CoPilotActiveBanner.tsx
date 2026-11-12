@@ -98,10 +98,13 @@ const REVOCATION_AUDIT_URL = `${ApiConfig.API_BASE_URL}/api/v1/users/me/co-pilot
  * The lit banner's box: an in-flow block that keeps its height (`shrink-0`)
  * inside the content column's flex layout. It is NOT `fixed` or `absolute` —
  * an overlay would cover the controls at the top of the page, which is the
- * defect this replaced.
+ * defect this replaced. `z-[60]` keeps the in-flow banner ABOVE the
+ * z-50 fixed layers (dialog overlays, the db-error bar) where they overlap
+ * it, as the old z-9999 overlay was, so the "AI in control" signal and Stop
+ * stay visible while the AI drives a modal.
  */
 const CO_PILOT_BANNER_LAYOUT_CLASSES =
-  "relative z-40 shrink-0 bg-amber-950 text-amber-100 border-b border-amber-800 shadow-lg";
+  "relative z-[60] shrink-0 bg-amber-950 text-amber-100 border-b border-amber-800 shadow-lg";
 
 function relativeAgo(lastActionAt: number | null): string {
   if (lastActionAt === null) return "";
