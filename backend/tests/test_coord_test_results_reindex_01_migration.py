@@ -23,7 +23,8 @@ Without a database (always runs):
    before the first ``REINDEX`` and ``RESET statement_timeout`` is the last
    statement, so no rebuild depends on the migrator role's timeout.
 4. **Each catch is real.** Every ``REINDEX`` sits alone in its own ``try`` with
-   one ``DBAPIError`` handler that drops that index's two leftovers and logs it.
+   one ``DBAPIError`` handler that drops that index's two leftovers, logs it,
+   and ends with ``_raise_if_permanent(exc)``.
    Assertion 8 drives only the primary key's handler at run time; this pins the
    other two, which a flattened ``try`` would remove without changing the
    statement list.
@@ -47,6 +48,12 @@ Against a real Postgres (skipped when none is reachable):
    the index and the error; the rebuild before it and the one after it both
    happen; and the old primary key index still serves.
 
+9. **Only a permanent error is re-raised** (no database needed). A SQLSTATE
+   class 42 error (``insufficient_privilege``, ``undefined_object``) is
+   re-raised, so the revision fails unstamped instead of stamping a rebuild
+   that can never succeed. A timeout, a lock wait, a uniqueness failure, a
+   disconnect, and an error with no SQLSTATE are all swallowed.
+
 Assertion 8 is also the proof plan D3 asked for: inside alembic's
 ``autocommit_block()`` a caught statement error leaves the connection usable for
 the next statement and for alembic's stamp.
@@ -60,6 +67,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import importlib.util
 import re
 import subprocess
 from collections.abc import Iterator
@@ -438,6 +446,18 @@ def test_each_reindex_sits_alone_in_its_own_try_with_a_dbapierror_handler() -> N
         assert isinstance(first_arg, ast.Constant) and first_arg.value == name, (
             f"{name}: the failure line must name its own index"
         )
+        last = handler.body[-1]
+        assert (
+            isinstance(last, ast.Expr)
+            and isinstance(last.value, ast.Call)
+            and isinstance(last.value.func, ast.Name)
+            and last.value.func.id == "_raise_if_permanent"
+            and [arg.id for arg in last.value.args if isinstance(arg, ast.Name)]
+            == [handler.name]
+        ), (
+            f"{name}: the handler must end by re-raising a permanent error, "
+            "after its drops and its log line"
+        )
         guarded.append(name)
     assert guarded == list(_REBUILD_ORDER), (
         "every REINDEX must sit alone in its own try, in rebuild order; "
@@ -570,3 +590,45 @@ def test_one_failed_rebuild_does_not_stop_the_others() -> None:
                 f"{name} was not rebuilt: a failure in another index must not stop it"
             )
             assert valid and definition == _EXPECTED_DEFINITIONS[name]
+
+
+def _load_revision_module():  # type: ignore[no-untyped-def]
+    spec = importlib.util.spec_from_file_location(
+        "coord_test_results_reindex_01_under_test", _REVISION_PATH
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class _OrigWithPgcode(Exception):
+    def __init__(self, pgcode: str | None) -> None:
+        super().__init__(f"pgcode={pgcode}")
+        self.pgcode = pgcode
+
+
+@pytest.mark.parametrize(
+    ("pgcode", "permanent"),
+    [
+        ("42501", True),  # insufficient_privilege: the role does not own the table
+        ("42704", True),  # undefined_object: a renamed index
+        ("57014", False),  # query_canceled: the 4 h bound
+        ("55P03", False),  # lock_not_available
+        ("23505", False),  # unique_violation while building
+        ("08006", False),  # connection_failure
+        (None, False),  # a driver error with no SQLSTATE
+    ],
+)
+def test_only_a_permanent_error_is_re_raised(
+    pgcode: str | None, permanent: bool
+) -> None:
+    """9. A class-42 error fails the revision unstamped; every other is swallowed."""
+    module = _load_revision_module()
+    exc = DBAPIError("REINDEX ...", None, _OrigWithPgcode(pgcode))
+    if permanent:
+        with pytest.raises(DBAPIError) as raised:
+            module._raise_if_permanent(exc)
+        assert raised.value is exc
+    else:
+        module._raise_if_permanent(exc)

@@ -37,6 +37,15 @@ between them, and every concurrent rebuild scans the ~20 GB heap twice (build,
 then validate), so each would cost 10-20 minutes of saturated I/O for under
 0.9 GB.
 
+Sources for the production figures above and below: the RDS PostgreSQL log
+``/aws/rds/instance/qontinui-staging/postgresql`` (the 2026-11-06T17:56:45Z
+autovacuum line for ``coord.test_results``), CloudWatch ``FreeStorageSpace`` for
+instance ``qontinui-staging``, and plan
+``2026-11-08-coord-test-results-indexes-hold-21-gb-of-empty-pages`` in
+qontinui-dev-notes, which re-derived each figure at vet time. At the
+2026-11-12T17:43Z land-time re-read, the minimum over the past hour was 36.78 GB,
+so D4's threshold of 22 GB holds (see below).
+
 The indexes
 ===========
 
@@ -88,6 +97,14 @@ nearly full volume each time. The cost is that a failure stamps anyway; the
 plan's two signals catch it: free space does not rise, and that line is in the
 migrator log. A KILLED task raises nothing, so its revision stays unstamped and
 the next run's leftover drops clean up after it.
+
+One class of error is not swallowed: SQLSTATE class 42
+(``PERMANENT_SQLSTATE_CLASS``), for example ``insufficient_privilege`` when the
+migrator role does not own the table, or ``undefined_object`` for a renamed
+index. Such an error fails the same way on every attempt. Stamping past it would
+record a revision that reclaimed nothing and will never retry. So after the
+leftover drops and the log line, the handler re-raises it, and the revision
+fails UNSTAMPED until the cause is fixed.
 
 A caught error leaves the connection usable. Inside ``autocommit_block()``
 every statement is its own transaction, so a failed one leaves no aborted
@@ -217,6 +234,29 @@ def _log_failed_rebuild(index_name: str, exc: DBAPIError) -> None:
     )
 
 
+#: SQLSTATE class 42, "syntax error or access rule violation". It covers
+#: ``insufficient_privilege`` (42501: the migrator role does not own
+#: ``coord.test_results``) and ``undefined_object`` (42704: an index was
+#: renamed). An error in this class happens again on every attempt, so the
+#: revision must not stamp past it. Every other class can come out differently
+#: next time: a timeout or cancel (57014), a lock wait (55P03), a uniqueness
+#: failure while building (23505), or a disconnect (08).
+PERMANENT_SQLSTATE_CLASS = "42"
+
+
+def _raise_if_permanent(exc: DBAPIError) -> None:
+    """Re-raise an error that would fail the same way on every attempt.
+
+    The handler has already dropped the leftovers and logged the failure. A
+    re-raise here fails the revision UNSTAMPED, so the next migrate run tries
+    again once the cause (an ownership or a name) is fixed, rather than
+    stamping a revision that rebuilt nothing.
+    """
+    pgcode = getattr(exc.orig, "pgcode", None)
+    if isinstance(pgcode, str) and pgcode.startswith(PERMANENT_SQLSTATE_CLASS):
+        raise exc
+
+
 def upgrade() -> None:
     """Rebuild three indexes, smallest first; a failed one does not stop the rest.
 
@@ -253,6 +293,7 @@ def upgrade() -> None:
                 "coord.idx_test_results_repo_observed_ccold"
             )
             _log_failed_rebuild("idx_test_results_repo_observed", exc)
+            _raise_if_permanent(exc)
 
         # 2 of 3: test_results_pkey (1.46 GB reusable).
         op.execute("DROP INDEX CONCURRENTLY IF EXISTS coord.test_results_pkey_ccnew")
@@ -267,6 +308,7 @@ def upgrade() -> None:
                 "DROP INDEX CONCURRENTLY IF EXISTS coord.test_results_pkey_ccold"
             )
             _log_failed_rebuild("test_results_pkey", exc)
+            _raise_if_permanent(exc)
 
         # 3 of 3: idx_test_results_repo_test_observed (16.29 GB reusable), last
         # because its rebuild needs the most temporary space.
@@ -292,6 +334,7 @@ def upgrade() -> None:
                 "coord.idx_test_results_repo_test_observed_ccold"
             )
             _log_failed_rebuild("idx_test_results_repo_test_observed", exc)
+            _raise_if_permanent(exc)
 
         # Back to the connection's configured value before alembic stamps.
         op.execute("RESET statement_timeout")
