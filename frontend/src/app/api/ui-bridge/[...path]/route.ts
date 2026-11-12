@@ -326,7 +326,7 @@ async function forwardToRelay(
   }
 
   // Body-preservation pass-through: re-wrap any POST/PUT/PATCH so the SDK's
-  // `request.json()` sees the inbound body byte-for-byte with an explicit
+  // JSON body reader sees the inbound body byte-for-byte with an explicit
   // `Content-Type: application/json` header. Closes the field-strip class
   // of bug observed on Vercel deploys where e.g. a `{text:"X"}` body
   // arrived at the relay with `text` missing.
@@ -348,14 +348,14 @@ async function forwardToRelay(
   // changes: there is no verified identity to protect.
   //
   // No route is exempt, because the SDK's Next handler reads every body it
-  // reads with `request.json()` — the `bodyRequired` routes of
-  // `UI_BRIDGE_ROUTES`, its hand-routed POSTs, `POST /heartbeat`,
-  // `POST /commands` and `POST /tabs/cdp/new` — and no route reads a
-  // multipart, binary or text body. Its own clients, and this app's, send
-  // only JSON bodies. That census is a property of the INSTALLED SDK, so it
-  // is not pinned to a version here: `route.real-sdk.test.ts` re-takes it
-  // against whatever `node_modules` resolves, and fails on any release that
-  // reads a body another way.
+  // reads as JSON, through its one reader `readJsonBody` — the
+  // `bodyRequired` routes of `UI_BRIDGE_ROUTES`, its hand-routed POSTs,
+  // `POST /heartbeat`, `POST /commands` and `POST /tabs/cdp/new` — and no
+  // route reads a multipart, binary or text body. Its own clients, and this
+  // app's, send only JSON bodies. That census is a property of the INSTALLED
+  // SDK, so it is not pinned to a version here: `route.real-sdk.test.ts`
+  // re-takes it against whatever `node_modules` resolves, and fails on any
+  // release that reads a body another way.
   if (
     callerUserId &&
     (bodyState === "unparseable" || bodyState === "unreadable")

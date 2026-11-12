@@ -320,31 +320,56 @@ describe("route.ts + the real SDK, gate on: a body cannot name its caller", () =
   }, 120_000);
 });
 
-describe("the installed SDK's Next handler reads request bodies only with request.json()", () => {
-  // `route.ts` refuses, under the gate, a body `request.json()` cannot parse,
-  // exempting no route, because the SDK reads no body any other way. This pins
-  // that census: a release whose Next adapter reads a body as text, form data
-  // or bytes must revisit the exemption list in `route.ts` before it ships.
-  it("finds request.json() reads and no other request-body reader", () => {
-    const bundle = readFileSync(
-      createRequire(import.meta.url).resolve("@qontinui/ui-bridge/server"),
-      "utf8"
+describe("the installed SDK's Next handler reads request bodies only through its JSON body reader", () => {
+  // `route.ts` refuses, under the gate, a body its peek cannot parse as JSON,
+  // exempting no route, because the SDK reads no body any other way. Since
+  // 0.46 the Next adapter reads every body through ONE reader, `readJsonBody`
+  // (ui-bridge `src/server/request-body.ts`): the bytes, UTF-8-decoded by a
+  // default `TextDecoder`, are no body when blank and otherwise `JSON.parse`d.
+  // The peek in `body-passthrough.ts` and its differential test restate that
+  // rule, so this pins it in the installed bundle: a release whose Next
+  // adapter reads a body any other way (as text, form data or bytes, or by
+  // `request.json()` again), or whose reader decodes or parses differently,
+  // must revisit the peek and the exemption list in `route.ts` before it
+  // ships.
+  const bundle = readFileSync(
+    createRequire(import.meta.url).resolve("@qontinui/ui-bridge/server"),
+    "utf8"
+  );
+  /** One source module's section of the server bundle. */
+  function section(source: string): string {
+    const start = bundle.indexOf(`// ${source}`);
+    expect(start, `the SDK bundle has no ${source} section`).toBeGreaterThan(
+      -1
     );
-    const start = bundle.indexOf("// src/server/nextjs.ts");
-    expect(
-      start,
-      "the SDK bundle has no src/server/nextjs.ts section"
-    ).toBeGreaterThan(-1);
     const end = bundle.indexOf("\n// src/", start + 1);
-    const nextAdapter = bundle.slice(start, end === -1 ? undefined : end);
+    return bundle.slice(start, end === -1 ? undefined : end);
+  }
+
+  it("finds readJsonBody reads and no other request-body reader in the Next adapter", () => {
+    const nextAdapter = section("src/server/nextjs.ts");
 
     expect(
-      nextAdapter.match(/\brequest\.json\(\)/g)?.length ?? 0
+      nextAdapter.match(/\breadJsonBody\(request\)/g)?.length ?? 0
     ).toBeGreaterThan(0);
     expect(
       nextAdapter.match(
-        /\b(?:request|req)\.(?:text|formData|arrayBuffer|blob)\(|\b(?:request|req)\.body\b/g
+        /\b(?:request|req)\.(?:json|text|formData|arrayBuffer|blob)\(|\b(?:request|req)\.body\b/g
       ) ?? []
+    ).toEqual([]);
+  });
+
+  it("finds a reader that decodes the bytes as UTF-8, reads a blank body as none, and parses the rest as JSON", () => {
+    const reader = section("src/server/request-body.ts");
+
+    expect(reader).toContain("async function readJsonBody(request)");
+    expect(reader).toContain("new TextDecoder().decode(bytes)");
+    expect(reader).toMatch(
+      /if \(!text\.trim\(\)\) return \{ ok: true, body: void 0 \};/
+    );
+    expect(reader).toContain("JSON.parse(text)");
+    expect(
+      reader.match(/\.(?:json|text|formData|arrayBuffer|blob)\(\)/g) ?? []
     ).toEqual([]);
   });
 });

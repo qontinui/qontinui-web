@@ -136,7 +136,7 @@ describe("deriveInteractable", () => {
   it("is true for category interactive", () => {
     expect(deriveInteractable({ category: "interactive" })).toBe(true);
   });
-  it("is true for a non-empty actions array", () => {
+  it("is true for a non-empty actions array on a row with no category", () => {
     expect(deriveInteractable({ actions: ["click"] })).toBe(true);
   });
   it("is true for customActions", () => {
@@ -169,8 +169,230 @@ describe("deriveInteractable", () => {
   });
   it("a content element with a real handler is still interactable", () => {
     expect(
-      deriveInteractable({ category: "content", actions: ["click"] })
+      deriveInteractable({
+        category: "content",
+        actions: [],
+        customActions: [{ id: "copy" }],
+      })
     ).toBe(true);
+  });
+});
+
+/**
+ * The SDK 0.46 verb table's universal row (`EVERY_ELEMENT` in ui-bridge
+ * `packages/ui-bridge/src/core/element-kind.ts` at ui-bridge-v0.46.0), in its
+ * canonical order: what EVERY element kind advertises, media rows included.
+ */
+const EVERY_ELEMENT_VERBS_046 = [
+  "click",
+  "hoverClick",
+  "doubleClick",
+  "rightClick",
+  "middleClick",
+  "sendKeys",
+  "focus",
+  "blur",
+  "hover",
+  "unhover",
+  "scroll",
+  "scrollIntoView",
+  "drag",
+];
+
+/** The SDK 0.46 media kinds, each with the tag the media scanner reads it from. */
+const MEDIA_KINDS_046: Array<[type: string, tagName: string]> = [
+  ["image", "img"],
+  ["picture", "picture"],
+  ["svg", "svg"],
+  ["video", "video"],
+  ["canvas", "canvas"],
+];
+
+describe("deriveInteractable — SDK 0.46 rows (actions is the kind's verb table)", () => {
+  // Since @qontinui/ui-bridge 0.46 a media row advertises the universal verb
+  // list where it used to carry `actions: []`. Reading that list as
+  // "registered handlers" made every image, svg and canvas interactable.
+
+  /** A media row the way `materializeElements` serializes a 0.46 one. */
+  function mediaRow046(
+    type: string,
+    tagName: string,
+    overrides: Record<string, unknown> = {}
+  ): Record<string, unknown> {
+    return {
+      id: `${type}-hero`,
+      type,
+      tagName,
+      category: "media",
+      role: tagName === "img" ? "img" : undefined,
+      actions: [...EVERY_ELEMENT_VERBS_046],
+      state: { visible: true, textContent: "" },
+      ...overrides,
+    };
+  }
+
+  it.each(MEDIA_KINDS_046)(
+    "a %s media row advertising the universal verbs is NOT interactable",
+    (type, tagName) => {
+      expect(deriveInteractable(mediaRow046(type, tagName))).toBe(false);
+    }
+  );
+
+  it("a CSS background-image media row (typed as its element's kind) is NOT interactable", () => {
+    // `mediaElementKind('background-image', el)` reports the painted element's
+    // own kind, so the row is `generic` (or any kind) with category media.
+    expect(
+      deriveInteractable(
+        mediaRow046("generic", "div", { id: "generic-hero-bg" })
+      )
+    ).toBe(false);
+  });
+
+  it("an empty customActions list on a media row is not a handler", () => {
+    expect(
+      deriveInteractable(mediaRow046("canvas", "canvas", { customActions: [] }))
+    ).toBe(false);
+  });
+
+  it.each(MEDIA_KINDS_046)(
+    "a %s media row with an app-declared custom action IS interactable",
+    (type, tagName) => {
+      expect(
+        deriveInteractable(
+          mediaRow046(type, tagName, {
+            customActions: [{ id: "zoom", label: "Zoom" }],
+          })
+        )
+      ).toBe(true);
+    }
+  );
+
+  it("the captured pre-0.46 media find row stays non-interactable in its 0.46 shape", () => {
+    const [row] = (capturedFind as { elements: Array<Record<string, unknown>> })
+      .elements;
+    // Positive control for the fixture itself: the pre-0.46 row carries [].
+    expect(row.actions).toEqual([]);
+    expect(deriveInteractable(row)).toBe(false);
+    expect(
+      deriveInteractable({ ...row, actions: [...EVERY_ELEMENT_VERBS_046] })
+    ).toBe(false);
+  });
+
+  it("a content row is not made interactable by a built-in verb list", () => {
+    // `registerContentElement` emits `actions: []`, but a content element
+    // registered through `registerElement` reads its kind's row from the table.
+    expect(
+      deriveInteractable({ category: "content", type: "heading", actions: [] })
+    ).toBe(false);
+    expect(
+      deriveInteractable({
+        category: "content",
+        type: "heading",
+        tagName: "h2",
+        actions: [...EVERY_ELEMENT_VERBS_046],
+      })
+    ).toBe(false);
+  });
+
+  it("an interactive row keeps its interactability", () => {
+    expect(
+      deriveInteractable({
+        id: "button-save",
+        type: "button",
+        tagName: "button",
+        category: "interactive",
+        actions: [...EVERY_ELEMENT_VERBS_046],
+      })
+    ).toBe(true);
+    // A hook-registered <canvas> is category interactive: the SDK's
+    // classification wins over the media kind.
+    expect(
+      deriveInteractable({
+        id: "canvas-board",
+        type: "canvas",
+        tagName: "canvas",
+        category: "interactive",
+        actions: [...EVERY_ELEMENT_VERBS_046],
+      })
+    ).toBe(true);
+  });
+
+  describe("rows with NO category (the DOM-fallback scan)", () => {
+    it.each(MEDIA_KINDS_046)(
+      "a %s row is not made interactable by its verb list alone",
+      (type, tagName) => {
+        // `[data-testid]` / `[tabindex]` select media tags too, and the 0.46
+        // scan types them by the one inferrer.
+        expect(
+          deriveInteractable({
+            id: `dom-${type}`,
+            type,
+            tagName,
+            actions: [...EVERY_ELEMENT_VERBS_046],
+          })
+        ).toBe(false);
+      }
+    );
+
+    it("the media-kind check is case-insensitive", () => {
+      expect(
+        deriveInteractable({
+          type: "SVG",
+          tagName: "svg",
+          actions: [...EVERY_ELEMENT_VERBS_046],
+        })
+      ).toBe(false);
+    });
+
+    it("a media-kind row is still interactable through a real signal", () => {
+      // An interactive ARIA role on the node.
+      expect(
+        deriveInteractable({
+          type: "svg",
+          tagName: "svg",
+          role: "button",
+          actions: [...EVERY_ELEMENT_VERBS_046],
+        })
+      ).toBe(true);
+      // An app-declared custom action.
+      expect(
+        deriveInteractable({
+          type: "image",
+          tagName: "img",
+          actions: [...EVERY_ELEMENT_VERBS_046],
+          customActions: [{ id: "open" }],
+        })
+      ).toBe(true);
+    });
+
+    it("a non-media row's verb list still counts", () => {
+      // An <img role="button"> is typed `button` by the 0.46 inferrer, so its
+      // list counts like any other control's.
+      expect(
+        deriveInteractable({
+          type: "button",
+          tagName: "img",
+          actions: [...EVERY_ELEMENT_VERBS_046],
+        })
+      ).toBe(true);
+      expect(
+        deriveInteractable({
+          id: "dom-generic-panel",
+          type: "generic",
+          tagName: "div",
+          actions: [...EVERY_ELEMENT_VERBS_046],
+        })
+      ).toBe(true);
+      // Negative control: the same generic row with no verbs, tag or role.
+      expect(
+        deriveInteractable({
+          id: "dom-generic-panel",
+          type: "generic",
+          tagName: "div",
+          actions: [],
+        })
+      ).toBe(false);
+    });
   });
 });
 
