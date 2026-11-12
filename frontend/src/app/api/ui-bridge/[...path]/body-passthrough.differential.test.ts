@@ -37,7 +37,8 @@ import { passThroughBodyWithPeek } from "./body-passthrough";
 type Read =
   | { reads: "value"; value: unknown }
   | { reads: "no body" }
-  | { reads: "refused" };
+  | { reads: "refused" }
+  | { reads: "too large" };
 
 /** What the SDK's `find` handler was called with, per request. */
 const received: unknown[] = [];
@@ -77,6 +78,11 @@ async function sdkRead(request: NextRequest): Promise<Read> {
     expect(body.error).toBe("Request body is not valid JSON");
     return { reads: "refused" };
   }
+  if (res.status === 413) {
+    const body = (await res.json()) as { error?: unknown };
+    expect(body.error).toBe("Request body too large");
+    return { reads: "too large" };
+  }
   expect(res.status, await res.clone().text()).toBe(200);
   expect(received).toHaveLength(1);
   const [given] = received;
@@ -104,8 +110,14 @@ async function peek(
   body: Uint8Array,
   contentType: string | null
 ): Promise<{ read: Read; forwarded: NextRequest }> {
+  return peekRequest(clientRequest(body, contentType));
+}
+
+async function peekRequest(
+  client: NextRequest
+): Promise<{ read: Read; forwarded: NextRequest }> {
   const { request, parsedBody, bodyState } = await passThroughBodyWithPeek(
-    clientRequest(body, contentType),
+    client,
     "POST"
   );
   expect(bodyState).not.toBe("unreadable");
@@ -114,7 +126,9 @@ async function peek(
       ? { reads: "value", value: withoutReservedCaller(parsedBody) }
       : bodyState === "absent"
         ? { reads: "no body" }
-        : { reads: "refused" };
+        : bodyState === "oversized"
+          ? { reads: "too large" }
+          : { reads: "refused" };
   return { read, forwarded: request };
 }
 
@@ -278,4 +292,124 @@ describe("body peek vs the installed SDK's Next handler, case by case", () => {
       ).toBe(false);
     }
   });
+});
+
+/** The SDK's body cap: `MAX_BODY_BYTES` in ui-bridge `src/server/request-body.ts`. */
+const SDK_CAP = 10 * 1024 * 1024;
+
+/**
+ * A client's request whose body is streamed in 1 MiB chunks with no
+ * Content-Length (chunked), so only reading it finds its size.
+ */
+function chunkedRequest(
+  body: Uint8Array,
+  headers: Record<string, string>
+): NextRequest {
+  const CHUNK = 1024 * 1024;
+  return new NextRequest("http://localhost/api/ui-bridge/control/find", {
+    method: "POST",
+    headers,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let at = 0; at < body.byteLength; at += CHUNK) {
+          controller.enqueue(body.slice(at, at + CHUNK));
+        }
+        controller.close();
+      },
+    }),
+    // @ts-expect-error — duplex is a Node-only field not in the DOM RequestInit type.
+    duplex: "half",
+  });
+}
+
+/** `size` copies of one byte. */
+function filled(size: number, byte: number): Uint8Array {
+  return new Uint8Array(size).fill(byte);
+}
+
+const SPACE = 0x20;
+const X = 0x78;
+
+/** A JSON object naming a caller, padded to `size` bytes. */
+function paddedJson(size: number): Uint8Array {
+  const head = '{"callerUserId":"user-a","pad":"';
+  const tail = '"}';
+  return bytes(head, Array(size - head.length - tail.length).fill(X), tail);
+}
+
+const CAP_CASES: ReadonlyArray<
+  readonly [string, () => NextRequest, Read["reads"]]
+> = [
+  [
+    "a blank body exactly at the cap, declared JSON",
+    () =>
+      chunkedRequest(filled(SDK_CAP, SPACE), {
+        "content-type": "application/json",
+      }),
+    "no body",
+  ],
+  [
+    "a blank body one byte over the cap, declared JSON",
+    () =>
+      chunkedRequest(filled(SDK_CAP + 1, SPACE), {
+        "content-type": "application/json",
+      }),
+    "too large",
+  ],
+  [
+    "an 11 MiB blank body, declared JSON",
+    () =>
+      chunkedRequest(filled(11 * 1024 * 1024, SPACE), {
+        "content-type": "application/json",
+      }),
+    "too large",
+  ],
+  [
+    "a non-JSON body exactly at the cap, declared text/plain",
+    () => chunkedRequest(filled(SDK_CAP, X), { "content-type": "text/plain" }),
+    "no body",
+  ],
+  [
+    "an 11 MiB non-JSON body, declared text/plain",
+    () =>
+      chunkedRequest(filled(11 * 1024 * 1024, X), {
+        "content-type": "text/plain",
+      }),
+    "too large",
+  ],
+  [
+    "an 11 MiB JSON body naming a caller, declared JSON",
+    () =>
+      chunkedRequest(paddedJson(11 * 1024 * 1024), {
+        "content-type": "application/json",
+      }),
+    "too large",
+  ],
+  [
+    "a small body declaring a Content-Length over the cap",
+    () =>
+      chunkedRequest(bytes('{"text":"Save"}'), {
+        "content-type": "application/json",
+        "content-length": String(SDK_CAP + 1),
+      }),
+    "too large",
+  ],
+];
+
+describe("body peek vs the installed SDK's Next handler, at the SDK's body cap", () => {
+  // The SDK refuses (413) a body that runs past its cap, or declares a
+  // Content-Length over it, before reading what it means — a blank one and
+  // one declared as a non-JSON type included. A body handed on with no body
+  // would answer 200 instead.
+  it.each(CAP_CASES)(
+    "reaches the SDK's verdict on %s",
+    async (_name, client, expected) => {
+      const direct = await sdkRead(client());
+      expect(direct.reads).toBe(expected);
+      const { read, forwarded } = await peekRequest(client());
+      expect(read.reads).toBe(expected);
+      expect((await sdkRead(forwarded)).reads).toBe(expected);
+    },
+    60_000
+  );
 });

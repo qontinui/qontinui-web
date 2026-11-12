@@ -51,15 +51,44 @@ export async function passThroughBody(
  * What the route knows about a request body, read by the SDK's own rule
  * ({@link readBodyAsTheSdkDoes}).
  *
- *  - `absent`      — the method carries no body here, or the SDK reads the
- *                    body as none: empty, blank, or declared as a non-JSON
- *                    type and not JSON.
+ *  - `absent`      — the method carries no body here, or the body is within
+ *                    the SDK's cap and the SDK reads it as none: empty,
+ *                    blank, or declared as a non-JSON type and not JSON.
  *  - `parsed`      — the body parses; `parsedBody` is the value the SDK reads.
  *  - `unparseable` — the body is declared JSON (or declared as nothing) and is
  *                    not JSON, which the SDK refuses (400).
+ *  - `oversized`   — the body is over the SDK's cap ({@link overTheSdkCap}),
+ *                    which the SDK refuses (413) before reading what it means;
+ *                    it is forwarded as it came, for the SDK to refuse.
  *  - `unreadable`  — reading the bytes threw, so nothing is known about them.
  */
-export type BodyState = "absent" | "parsed" | "unparseable" | "unreadable";
+export type BodyState =
+  | "absent"
+  | "parsed"
+  | "unparseable"
+  | "oversized"
+  | "unreadable";
+
+/**
+ * The SDK's body cap, in bytes: `MAX_BODY_BYTES` in ui-bridge
+ * `src/server/request-body.ts` (10 MiB).
+ */
+const MAX_BODY_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Whether the SDK refuses this body as too large (413), as `readJsonBody`
+ * decides it before reading what the body means: a declared Content-Length
+ * over the cap (`Number.isFinite(declared) && declared > MAX_BODY_BYTES`),
+ * or bytes running past it (`total > MAX_BODY_BYTES`). A body of exactly
+ * `MAX_BODY_BYTES` is read.
+ */
+function overTheSdkCap(request: NextRequest, raw: ArrayBuffer): boolean {
+  const declared = Number(request.headers.get("content-length"));
+  return (
+    (Number.isFinite(declared) && declared > MAX_BODY_BYTES) ||
+    raw.byteLength > MAX_BODY_BYTES
+  );
+}
 
 /**
  * A content type that declares JSON: `application/json`, `application/x+json`,
@@ -88,8 +117,10 @@ const JSON_CONTENT_TYPE = /[/+]json\b/i;
  * it drops two leading byte-order marks where the SDK drops one, and refuses
  * a blank body the SDK reads as none.)
  *
- * The SDK's 10 MB cap is its own to enforce (413); a body over it parses
- * here and is refused there.
+ * A body over the SDK's cap never reaches this function:
+ * `passThroughBodyWithPeek` checks the cap first ({@link overTheSdkCap}), as
+ * `readJsonBody` does, and the SDK refuses such a body (413) whatever it
+ * holds.
  */
 function readBodyAsTheSdkDoes(
   raw: ArrayBuffer,
@@ -119,9 +150,10 @@ function readBodyAsTheSdkDoes(
  *
  * `parsedBody` is set only when `bodyState` is `parsed`. When the method has
  * no body, or reading it throws, the original `request` is returned
- * unchanged. A body the SDK reads as none (`absent`: empty, blank, or a
- * non-JSON-declared body that is not JSON) is returned as a fresh request
- * with NO body.
+ * unchanged. A body within the SDK's cap that the SDK reads as none
+ * (`absent`: empty, blank, or a non-JSON-declared body that is not JSON) is
+ * returned as a fresh request with NO body; a body over the cap
+ * (`oversized`) keeps its bytes, for the SDK to refuse.
  *
  * Otherwise the returned `request` carries the same bytes as the original
  * (re-wrapped with `Content-Type: application/json`) for the SDK's JSON body
@@ -155,17 +187,21 @@ export async function passThroughBodyWithPeek(
     init?: RequestInit
   ) => NextRequest;
 
-  const { bodyState, parsedBody } =
-    raw.byteLength === 0
+  // In the SDK's own order: the cap first, then what the body means.
+  const { bodyState, parsedBody } = overTheSdkCap(request, raw)
+    ? { bodyState: "oversized" as const, parsedBody: undefined }
+    : raw.byteLength === 0
       ? { bodyState: "absent" as const, parsedBody: undefined }
       : readBodyAsTheSdkDoes(raw, request.headers.get("content-type"));
 
   if (bodyState === "absent") {
-    // A body the SDK reads as none goes on as a request with NO body, which
-    // its reader reads as none whatever it declares. That includes an empty
-    // one: Next gives every non-GET/HEAD request a body stream, a zero-byte
-    // one included, and reading it above disturbed it, which the SDK's
-    // reader would refuse.
+    // A body within the SDK's cap that it reads as none goes on as a request
+    // with NO body, which its reader reads as none whatever it declares. That
+    // includes an empty one: Next gives every non-GET/HEAD request a body
+    // stream, a zero-byte one included, and reading it above disturbed it,
+    // which the SDK's reader would refuse. A body over the cap is never
+    // taken this way (it is `oversized`): the SDK refuses it (413), where a
+    // bodyless request would run the handler.
     const bodyless = new NextRequestCtor(request.url, {
       method,
       headers: request.headers,
@@ -175,10 +211,11 @@ export async function passThroughBodyWithPeek(
 
   // Copy ALL inbound headers, then force Content-Type to JSON. Some clients
   // (curl without `-H` for instance) post bodies with no Content-Type at
-  // all, or a non-JSON one. What reaches here either parses (the SDK parses
-  // it whatever it declares) or was declared JSON or nothing and does not
-  // (the SDK refuses it), so the forced header changes neither verdict and
-  // hands the SDK an unambiguous JSON request.
+  // all, or a non-JSON one. What reaches here is over the cap (the SDK
+  // refuses it before reading its type), parses (the SDK parses it whatever
+  // it declares) or was declared JSON or nothing and does not (the SDK
+  // refuses it), so the forced header changes no verdict and hands the SDK
+  // an unambiguous JSON request.
   const headers = new Headers(request.headers);
   headers.set("Content-Type", "application/json");
 
