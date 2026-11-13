@@ -169,7 +169,7 @@ DESC`` (``:1382-1383``) and names them with one ``UPDATE ... FROM unnest``
 batch's UPDATE commits on its own and holds that batch's row locks only while
 it runs. Within that one statement the row locks follow the planner's join, so
 a batch could meet the backfill in a deadlock. It runs once, after a coord
-process first becomes leader (``spawn_name_backfill``, ``:1343-1361``). It
+process first becomes leader (``spawn_name_backfill``, ``:1343-1362``). It
 touches only rows whose ``derived_name IS NULL``, which every production insert
 path sets, so in practice none. And it fails soft (``:1389-1398``,
 ``:1419-1422``). If the two did deadlock, PostgreSQL would abort one side: the
