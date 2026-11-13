@@ -26,7 +26,8 @@ and constraints they need:
 ``coord.agent_sessions``
 ------------------------
 
-* ``closed_reason TEXT NULL`` -- which writer closed the row. CHECK
+* ``closed_reason TEXT NULL`` -- which writer closed the row, set by coord's
+  closers from plan Phase 5 on (until then no writer sets it). CHECK
   ``ck_agent_sessions_closed_reason`` limits it to the plan's vocabulary:
   ``handle_autoclose`` / ``superseded_reap`` (the sweep's pass 4, its
   closed-handle and superseded arms), ``rebind_reap`` (the rebind-time reap),
@@ -38,9 +39,14 @@ and constraints they need:
   still NULL are touched, so a re-run never overwrites a reason a writer set.
 * ``COMMENT ON COLUMN last_seen`` restates the column as plan D2 decided: the
   latest POSITIVE EVIDENCE that the session is alive (an id-bearing coord write
-  or a live harness observation), not a heartbeat. Every coord reader already
-  assumes that meaning; the comment is the written contract plan Phase 1
-  implements.
+  or a live harness observation), not a heartbeat. That is the contract the
+  plan's coord phases bring coord to, not coord as this revision found it, so
+  the comment dates each part by phase. At qontinui-coord ``origin/main``
+  edca5ef1 (2026-11-12) the identity stamp never writes ``last_seen`` on an
+  existing row (Phase 1 makes a live stamp move it), and sweep pass 4 still
+  closes a session on ``last_seen`` older than its cutoff alone (Phase 3 adds
+  the heartbeat plane to it and to the rebind reap; Phase 7 moves the other
+  liveness readers to a verdict over every plane).
 
 ``coord.session_handles.status``
 --------------------------------
@@ -97,8 +103,9 @@ Transaction shape and locking
 COLUMN``) through a 10,654-row backfill, and hold both tables' locks at once,
 which coord's own transactions take in BOTH orders (a rebind and sweep pass 1
 lock the handle before the session; pass 4 locks the session first), so a
-deadlock could land on whichever transaction waited second. So the revision
-runs as four steps, one table at a time:
+deadlock could abort either transaction (PostgreSQL aborts the backend whose
+deadlock check first sees the cycle). So the revision runs as four steps, one
+table at a time:
 
 1. ``coord.agent_sessions`` DDL under ``SET LOCAL lock_timeout = '3s'``: the
    column ``ADD`` (nullable, no default: catalog-only), its CHECK ``NOT VALID``
@@ -142,6 +149,18 @@ the reason CHECK and ``closed_reason`` go, and with the column its data. The
 handle-status backfill is NOT reversed: nothing records which rows were NULL
 (production had none), and the backfilled values are ones the old schema
 already admits.
+
+It runs one table at a time too, for the same deadlock: held in one
+transaction, its two ``ACCESS EXCLUSIVE`` locks (``coord.session_handles``,
+then ``coord.agent_sessions``) deadlocked (40P01) against a pass-4-shaped
+UPDATE in review. So the ``coord.session_handles`` group runs first, an
+``autocommit_block()`` COMMITS it and releases that lock, and the
+``coord.agent_sessions`` group runs in the transaction alembic reopens, the
+one that stamps the version. Each group opens with its own ``SET LOCAL
+lock_timeout = '3s'``, since a ``SET LOCAL`` ends with its transaction. Every
+statement is ``IF EXISTS`` or repeats harmlessly, so a downgrade that fails in
+its second group (the handle group committed, alembic still at this revision)
+converges when re-run.
 
 Ordering against coord
 ======================
@@ -231,34 +250,38 @@ def upgrade() -> None:
     op.execute(
         """
         COMMENT ON COLUMN coord.agent_sessions.closed_reason IS
-            'Which writer closed this session row, set by the same write that '
-            'sets closed_at: handle_autoclose (the session-handle sweep closed '
-            'it once its handle closed), superseded_reap (the sweep reaped a '
-            'session its handle no longer points at), rebind_reap (a handle '
-            'rebind reaped the session it superseded), stamp_ended_insert (the '
-            'session-identity stamp first saw the session already ended), '
-            'stamp_reported_ended (the stamp reported it ended while every '
-            'liveness plane was stale) or unrecorded (closed before any writer '
-            'named itself, the backfilled value). Meaningful only while '
-            'closed_at is set. NULL = no writer recorded a reason. Written by '
-            'coord session_handles.rs, '
-            'agent_sessions.rs and session_identity_stamp.rs (plan '
-            '2026-11-12-coord-closes-a-live-sessions-row-because-last-seen-is-not-a-heartbeat).'
+            'Which writer closed this session row: handle_autoclose (the '
+            'session-handle sweep closed it once its handle closed), '
+            'superseded_reap (the sweep reaped a session its handle no longer '
+            'points at), rebind_reap (a handle rebind reaped the session it '
+            'superseded), stamp_ended_insert (the session-identity stamp first '
+            'saw the session already ended), stamp_reported_ended (the stamp '
+            'reported it ended while every liveness plane was stale) or '
+            'unrecorded (closed before any writer named itself, the backfilled '
+            'value). Meaningful only while closed_at is set. NULL = no writer '
+            'recorded a reason. Written from Phase 5 of plan '
+            '2026-11-12-coord-closes-a-live-sessions-row-because-last-seen-is-not-a-heartbeat '
+            'on, by the coord write that sets closed_at (session_handles.rs, '
+            'agent_sessions.rs, session_identity_stamp.rs). A row closed '
+            'before then reads unrecorded where the backfill that added this '
+            'column found it closed, and NULL otherwise.'
         """
     )
     op.execute(
         """
         COMMENT ON COLUMN coord.agent_sessions.last_seen IS
             'Latest positive evidence that this session is alive: the newest '
-            'coord write that carried this session id, or the newest live '
-            'harness observation of the session (the runner session-identity '
-            'stamp reporting it live). It is evidence of life, not a heartbeat: '
-            'a quiet live session is observed only as often as one of those '
-            'happens, so a stale value alone does not prove the session ended. '
-            'Every coord reader that decides session liveness reads it in this '
-            'sense (plan '
-            '2026-11-12-coord-closes-a-live-sessions-row-because-last-seen-is-not-a-heartbeat, '
-            'design decision D2).'
+            'coord write that carried this session id or, from Phase 1 of plan '
+            '2026-11-12-coord-closes-a-live-sessions-row-because-last-seen-is-not-a-heartbeat '
+            'on, the newest live harness observation of the session (the '
+            'runner session-identity stamp reporting it live). It is evidence '
+            'of life, not a heartbeat: a quiet live session is observed only '
+            'as often as one of those happens, so a stale value alone does not '
+            'prove the session ended (design decision D2 of that plan). Coord '
+            'adopts that reading by plan phase: from Phase 3 the handle sweep '
+            'and the rebind reap no longer close a row on a stale value alone, '
+            'and from Phase 7 no other liveness reader acts on a stale value '
+            'alone.'
         """
     )
 
@@ -339,7 +362,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Remove exactly what upgrade added (the status backfill is not reversed)."""
+    """Remove exactly what upgrade added (the status backfill is not reversed),
+    one table at a time like upgrade(), so it never holds both tables' locks.
+    """
+    # coord.session_handles first, under its own lock bound.
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         "ALTER TABLE coord.session_handles "
@@ -351,6 +377,15 @@ def downgrade() -> None:
     )
     op.execute("ALTER TABLE coord.session_handles ALTER COLUMN status DROP NOT NULL")
     op.execute("ALTER TABLE coord.session_handles ALTER COLUMN status DROP DEFAULT")
+
+    # Entering the block COMMITS the session_handles group, releasing its lock
+    # before the agent_sessions group asks for one (coord takes the two tables'
+    # locks in both orders); leaving it opens the transaction alembic stamps in.
+    with op.get_context().autocommit_block():
+        pass
+
+    # coord.agent_sessions, under a fresh bound: the commit ended the first.
+    op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute("COMMENT ON COLUMN coord.agent_sessions.last_seen IS NULL")
     op.execute(
         "ALTER TABLE coord.agent_sessions "

@@ -18,9 +18,13 @@ default and two CHECKs. What is pinned:
    which precedes ``SET NOT NULL`` -- read from the source AND from the offline
    ``--sql`` render, where an autocommit block is a ``COMMIT;``/``BEGIN;`` pair;
 4. nothing outside ``downgrade()`` carries a destructive token, so coord's
-   alembic re-point (its E6 clause) can still move this revision;
+   alembic re-point (its E6 clause) can still move this revision -- read by a
+   rule stricter than E6's, itself pinned against every form E6 lists;
 5. no literal carries a ``:word`` bind parameter;
-6. ``downgrade()`` removes exactly what ``upgrade()`` added;
+6. ``downgrade()`` removes exactly what ``upgrade()`` added, one table at a
+   time: an ``autocommit_block`` COMMITs the ``coord.session_handles`` group
+   before the ``coord.agent_sessions`` group takes its lock, read from the
+   source AND from the offline render;
 7. live: the backfills follow the rule, the default applies to an INSERT that
    omits ``status``, every contradicting handle write and every reason outside
    the vocabulary is refused by the named constraint, each of the six reasons
@@ -160,6 +164,71 @@ def _execute_literals(fn: ast.FunctionDef) -> list[str]:
 
 def _collapsed(sql: str) -> str:
     return " ".join(sql.split())
+
+
+#: How ``_statements`` renders an ``autocommit_block``: entering one COMMITs the
+#: open transaction, leaving it BEGINs the next.
+_ENTER_AUTOCOMMIT = "<enter autocommit_block: COMMIT>"
+_LEAVE_AUTOCOMMIT = "<leave autocommit_block: BEGIN>"
+
+
+def _statements(fn: ast.FunctionDef) -> tuple[str, ...]:
+    """``fn``'s body as it runs: each ``op.execute`` literal, whitespace-
+    collapsed, and each ``with op.get_context().autocommit_block():`` as
+    ``_ENTER_AUTOCOMMIT``, the statements inside it, then ``_LEAVE_AUTOCOMMIT``.
+
+    A docstring and ``pass`` are skipped; any other statement fails, so nothing
+    can run unseen by a comparison against this shape.
+    """
+    shape: list[str] = []
+
+    def visit(body: list[ast.stmt]) -> None:
+        for stmt in body:
+            if isinstance(stmt, ast.Pass):
+                continue
+            if isinstance(stmt, ast.With):
+                managers = [ast.unparse(item.context_expr) for item in stmt.items]
+                assert managers == ["op.get_context().autocommit_block()"], managers
+                shape.append(_ENTER_AUTOCOMMIT)
+                visit(stmt.body)
+                shape.append(_LEAVE_AUTOCOMMIT)
+                continue
+            assert isinstance(stmt, ast.Expr), ast.unparse(stmt)
+            call = stmt.value
+            if isinstance(call, ast.Constant) and isinstance(call.value, str):
+                continue  # a docstring
+            assert (
+                isinstance(call, ast.Call)
+                and ast.unparse(call.func) == "op.execute"
+                and len(call.args) == 1
+                and not call.keywords
+            ), ast.unparse(stmt)
+            sql = call.args[0]
+            assert isinstance(sql, ast.Constant) and isinstance(sql.value, str), (
+                ast.unparse(stmt)
+            )
+            shape.append(_collapsed(sql.value))
+
+    visit(fn.body)
+    return tuple(shape)
+
+
+def _framing(sql: str) -> list[str]:
+    """The bare ``BEGIN;`` / ``COMMIT;`` lines of an offline render, in order."""
+    return [
+        line.strip()
+        for line in sql.splitlines()
+        if line.strip() in ("BEGIN;", "COMMIT;")
+    ]
+
+
+def _assert_in_order(sql: str, markers: tuple[str, ...]) -> None:
+    """Every marker occurs in ``sql``, each after the one before it."""
+    at = 0
+    for marker in markers:
+        found = sql.find(marker, at)
+        assert found >= 0, f"{marker!r} missing or out of order in:\n{sql}"
+        at = found + len(marker)
 
 
 #: Each upgrade statement, recognised by a pattern over its whitespace-collapsed
@@ -316,6 +385,11 @@ def test_the_comments_carry_the_contracts_they_restate() -> None:
     assert last_seen.startswith("Latest positive evidence that this session is alive")
     assert "evidence of life, not a heartbeat" in last_seen
     assert "design decision D2" in last_seen
+    # What coord does not do yet is dated by the plan phase that brings it, so
+    # the catalog never states a future writer or reader as a present one.
+    assert "Written from Phase 5 of plan" in reason
+    for phase in ("from Phase 1 of plan", "from Phase 3", "from Phase 7"):
+        assert phase in last_seen, phase
     for body in (reason, last_seen):
         assert _PLAN_STEM in body
         # No doubled apostrophe: the bodies stay plain literals.
@@ -341,10 +415,14 @@ def test_offline_render_commits_each_table_before_backfill_and_validate() -> Non
     sql = run_alembic(
         backend_root(), _OFFLINE_URL, "upgrade", f"{parent}:{_REVISION_ID}", "--sql"
     ).stdout
-    lines = [line.strip() for line in sql.splitlines()]
-    framing = [line for line in lines if line in ("BEGIN;", "COMMIT;")]
-    assert framing == ["BEGIN;", "COMMIT;", "BEGIN;", "COMMIT;", "BEGIN;", "COMMIT;"]
-
+    assert _framing(sql) == [
+        "BEGIN;",
+        "COMMIT;",
+        "BEGIN;",
+        "COMMIT;",
+        "BEGIN;",
+        "COMMIT;",
+    ]
     in_order = (
         _LOCK_BOUND + ";",
         "ALTER TABLE coord.agent_sessions ADD COLUMN IF NOT EXISTS closed_reason TEXT;",
@@ -364,46 +442,143 @@ def test_offline_render_commits_each_table_before_backfill_and_validate() -> Non
         "BEGIN;",
         f"UPDATE alembic_version SET version_num='{_REVISION_ID}'",
     )
-    at = 0
-    for marker in in_order:
-        found = sql.find(marker, at)
-        assert found >= 0, f"{marker!r} missing or out of order in:\n{sql}"
-        at = found + len(marker)
+    _assert_in_order(sql, in_order)
+
+
+#: E6 reads a module's docstrings as code once the module names any of these,
+#: since one of them could be the SQL ``upgrade()`` executes; so does this scan.
+_DOCSTRING_READERS = ("__doc__", "getdoc", "cleandoc", "co_consts")
+
+#: A word BEGINNING drop / delete / truncate. Every token form E6 lists begins
+#: so (``.drop_*``, ``drop_table(``, ``DropTable``, ``DROP TABLE``, ``TRUNCATE``,
+#: ``DELETE FROM``, ``delete(``, ``ALTER TABLE ... DROP``); ``_E6_FORMS`` pins it.
+_DESTRUCTIVE_WORD = re.compile(r"\b(?:drop|delete|truncate)", re.IGNORECASE)
+
+
+def _texts(node: ast.AST, docstrings: set[int]) -> list[str]:
+    """The text ``node`` itself carries: a literal's value, or its names."""
+    if isinstance(node, ast.Constant):
+        if id(node) in docstrings:
+            return []
+        if isinstance(node.value, bytes):
+            return [node.value.decode("latin-1")]
+        return [node.value] if isinstance(node.value, str) else []
+    # Every str a non-literal node holds is a name (``ast.parse`` keeps no type
+    # comments): a Name's id, an attribute, an imported name, alias or module,
+    # a def / class / argument / keyword name, a global, a match capture.
+    texts: list[str] = []
+    for field in node._fields:
+        value = getattr(node, field, None)
+        for item in value if isinstance(value, list) else [value]:
+            if isinstance(item, str):
+                texts.append(item)
+    return texts
+
+
+def _destructive_words_outside_downgrade(source: str) -> list[str]:
+    """Every name, and every string or bytes literal that is not a docstring,
+    holding a word that begins ``drop`` / ``delete`` / ``truncate``, anywhere
+    outside the ``downgrade()`` body, as ``line N: <text>``.
+
+    ``#`` comments never reach the AST. Docstrings are skipped unless the module
+    names one of ``_DOCSTRING_READERS``. ``downgrade()``'s decorators are read;
+    its signature and body are not, as E6 skips them.
+    """
+    tree = ast.parse(source)
+    docstrings: set[int] = set()
+    if not any(reader in source for reader in _DOCSTRING_READERS):
+        docstrings = {
+            id(holder.body[0].value)
+            for holder in ast.walk(tree)
+            if isinstance(
+                holder,
+                ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+            )
+            and holder.body
+            and isinstance(holder.body[0], ast.Expr)
+            and isinstance(holder.body[0].value, ast.Constant)
+            and isinstance(holder.body[0].value.value, str)
+        }
+    found: list[str] = []
+    for top in tree.body:
+        roots: list[ast.AST] = [top]
+        if isinstance(top, ast.FunctionDef) and top.name == "downgrade":
+            roots = list(top.decorator_list)
+        for node in (n for root in roots for n in ast.walk(root)):
+            for text_ in _texts(node, docstrings):
+                if _DESTRUCTIVE_WORD.search(text_):
+                    found.append(f"line {getattr(node, 'lineno', '?')}: {text_!r}")
+    return found
 
 
 def test_nothing_outside_downgrade_carries_a_destructive_token() -> None:
     """coord's alembic re-point refuses (E6) a revision with a destructive token
-    in CODE outside ``downgrade()`` -- strings an ``op.execute`` is passed
-    included, comment bodies too; only docstrings and ``#`` comments are prose.
-    This is stricter than E6 (any ``drop`` / ``delete`` / ``truncate`` word), so
-    a later edit cannot slip a token in by spelling it inside a comment body.
+    in CODE outside the ``downgrade()`` body -- strings an ``op.execute`` is
+    passed included, comment bodies too; docstrings and ``#`` comments are prose
+    (docstrings only while the module names no ``__doc__`` or other reader).
+    This scan reads that code with a rule stricter than E6's: any word BEGINNING
+    ``drop`` / ``delete`` / ``truncate``, in every name (so a bare
+    ``drop_table(...)``, ``sa.schema.DropTable(...)`` or ``sa.delete(...)`` is
+    caught) and in every string or bytes literal that is not a docstring (so a
+    later edit cannot slip a token in by spelling it inside a comment body).
+    The next test pins that it catches every form E6 lists, and no prose.
     """
-    tree = ast.parse(_revision_source(), filename=str(_revision_path()))
-    docstrings = {
-        id(holder.body[0].value)
-        for holder in [tree, *ast.walk(tree)]
-        if isinstance(holder, ast.Module | ast.FunctionDef | ast.AsyncFunctionDef)
-        and holder.body
-        and isinstance(holder.body[0], ast.Expr)
-        and isinstance(holder.body[0].value, ast.Constant)
-        and isinstance(holder.body[0].value.value, str)
-    }
-    destructive = re.compile(r"\b(drop|delete|truncate)\b", re.IGNORECASE)
-    offenders: list[str] = []
-    for top in tree.body:
-        if isinstance(top, ast.FunctionDef) and top.name == "downgrade":
-            continue
-        for node in ast.walk(top):
-            if (
-                isinstance(node, ast.Constant)
-                and isinstance(node.value, str)
-                and id(node) not in docstrings
-                and destructive.search(node.value)
-            ):
-                offenders.append(f"line {node.lineno}: {node.value!r}")
-            if isinstance(node, ast.Attribute) and node.attr.startswith("drop_"):
-                offenders.append(f"line {node.lineno}: .{node.attr}")
-    assert offenders == [], offenders
+    assert _destructive_words_outside_downgrade(_revision_source()) == []
+
+
+#: One example of each token form coord's E6 refuses (``DESTRUCTIVE_TOKENS`` in
+#: qontinui-coord ``crates/coord/src/alembic_repoint_plan.rs``), as one line of
+#: ``upgrade()``.
+_E6_FORMS = (
+    'op.drop_table("t", schema="coord")',
+    'batch_op.drop_column("c")',
+    'drop_table("t")',
+    "sa.schema.DropTable(t)",
+    "DropIndex(ix)",
+    'op.execute("DROP MATERIALIZED VIEW coord.v")',
+    'op.execute("DROP TABLE coord.t")',
+    'op.execute("ALTER TABLE coord.t ALTER COLUMN c DROP DEFAULT")',
+    'op.execute("TRUNCATE coord.t")',
+    'op.execute("DELETE FROM coord.t")',
+    "op.execute(sa.delete(t))",
+    "t.delete()",
+)
+
+
+def _synthetic_revision(upgrade_line: str, *, module_line: str = "") -> str:
+    """A revision whose prose (both docstrings, a ``#`` comment) and whose
+    ``downgrade()`` body spell destructive SQL the scan must NOT report."""
+    return (
+        '"""DROP TABLE coord.t, in the module docstring."""\n'
+        "from alembic import op\n"
+        f"{module_line}\n"
+        "\n"
+        "def upgrade() -> None:\n"
+        '    """DELETE FROM coord.t, in a function docstring."""\n'
+        "    # TRUNCATE coord.t, in a comment.\n"
+        f"    {upgrade_line}\n"
+        "\n"
+        "\n"
+        "def downgrade() -> None:\n"
+        '    op.drop_table("t", schema="coord")\n'
+    )
+
+
+def test_the_destructive_scan_reads_every_form_e6_refuses_and_no_prose() -> None:
+    """The scan's rule against E6's own list, and its region: the prose and the
+    ``downgrade()`` body go unread, everything else is read."""
+    scan = _destructive_words_outside_downgrade
+    assert scan(_synthetic_revision("pass")) == []
+    missed = [form for form in _E6_FORMS if not scan(_synthetic_revision(form))]
+    assert missed == [], f"forms E6 refuses that the scan lets through: {missed}"
+    # Outside upgrade() too: a module constant, and a helper after downgrade().
+    assert scan(_synthetic_revision("pass", module_line='_SQL = "DROP TABLE coord.t"'))
+    assert scan(
+        _synthetic_revision("pass")
+        + '\n\ndef _helper() -> None:\n    op.execute("TRUNCATE coord.t")\n'
+    )
+    # A module that names __doc__ could execute a docstring: both are read then.
+    assert len(scan(_synthetic_revision("op.execute(upgrade.__doc__)"))) == 2
 
 
 def test_no_literal_carries_a_bind_parameter() -> None:
@@ -419,20 +594,55 @@ def test_no_literal_carries_a_bind_parameter() -> None:
 
 
 def test_downgrade_removes_exactly_what_upgrade_added() -> None:
+    """The inverse of ``upgrade()``, one table at a time as it adds them: in
+    one transaction the two tables' ACCESS EXCLUSIVE locks deadlocked (40P01)
+    against coord's pass-4-shaped UPDATE, which locks the session first.
+    """
     expected = (
+        # coord.session_handles, in the batch's transaction.
         _LOCK_BOUND,
         f"ALTER TABLE coord.session_handles DROP CONSTRAINT IF EXISTS {_PAIR_CHECK}",
         f"ALTER TABLE coord.session_handles DROP CONSTRAINT IF EXISTS {_STATUS_CHECK}",
         "ALTER TABLE coord.session_handles ALTER COLUMN status DROP NOT NULL",
         "ALTER TABLE coord.session_handles ALTER COLUMN status DROP DEFAULT",
+        # COMMIT, then BEGIN, with nothing between: that lock is released
+        # before the next one is asked for.
+        _ENTER_AUTOCOMMIT,
+        _LEAVE_AUTOCOMMIT,
+        # coord.agent_sessions, in the transaction alembic stamps the version
+        # in, under its own bound (a SET LOCAL ends with its transaction).
+        _LOCK_BOUND,
         "COMMENT ON COLUMN coord.agent_sessions.last_seen IS NULL",
         f"ALTER TABLE coord.agent_sessions DROP CONSTRAINT IF EXISTS {_REASON_CHECK}",
         "ALTER TABLE coord.agent_sessions DROP COLUMN IF EXISTS closed_reason",
     )
-    literals = tuple(
-        _collapsed(sql) for sql in _execute_literals(_function("downgrade"))
+    assert _statements(_function("downgrade")) == expected
+
+
+def test_offline_downgrade_commits_between_the_two_tables() -> None:
+    """Rendered offline, the downgrade's ``autocommit_block`` is a ``COMMIT;``
+    then a ``BEGIN;`` between the two tables' groups, and the version stamp
+    rides the second transaction.
+    """
+    parent = _parent_revision_id()
+    sql = run_alembic(
+        backend_root(), _OFFLINE_URL, "downgrade", f"{_REVISION_ID}:{parent}", "--sql"
+    ).stdout
+    assert _framing(sql) == ["BEGIN;", "COMMIT;", "BEGIN;", "COMMIT;"]
+    in_order = (
+        "BEGIN;",
+        _LOCK_BOUND + ";",
+        f"ALTER TABLE coord.session_handles DROP CONSTRAINT IF EXISTS {_PAIR_CHECK};",
+        "ALTER TABLE coord.session_handles ALTER COLUMN status DROP DEFAULT;",
+        "COMMIT;",
+        "BEGIN;",
+        _LOCK_BOUND + ";",
+        "COMMENT ON COLUMN coord.agent_sessions.last_seen IS NULL;",
+        "ALTER TABLE coord.agent_sessions DROP COLUMN IF EXISTS closed_reason;",
+        f"UPDATE alembic_version SET version_num='{parent}'",
+        "COMMIT;",
     )
-    assert literals == expected
+    _assert_in_order(sql, in_order)
 
 
 # ---------------------------------------------------------------------------
@@ -503,6 +713,34 @@ def _reason(engine: Engine, session_id: uuid.UUID) -> object:
     )
 
 
+#: A handle INSERT WITH an explicit ``status`` (``None`` writes SQL NULL): the
+#: seed, the refused status INSERTs and the write after a refused upgrade run it.
+_INSERT_HANDLE_SQL = """
+    INSERT INTO coord.session_handles
+        (handle, claude_session_id, tenant_id, device_id, status, closed_at)
+    VALUES (:handle, :csid, :tenant, :device, :status,
+            CASE WHEN :closed THEN now() END)
+"""
+#: The coord test-fixture shape: no ``status`` column in the INSERT at all.
+_INSERT_HANDLE_OMITTING_STATUS_SQL = """
+    INSERT INTO coord.session_handles
+        (handle, claude_session_id, tenant_id, device_id, closed_at)
+    VALUES (:handle, :csid, :tenant, :device,
+            CASE WHEN :closed THEN now() END)
+"""
+
+
+def _handle_params(seed: _Seed, handle: str, closed: bool) -> dict[str, object]:
+    """The parameters both handle INSERTs bind (``status`` is the caller's)."""
+    return {
+        "handle": handle,
+        "csid": f"csid-{handle}",
+        "tenant": seed.tenant,
+        "device": seed.device,
+        "closed": closed,
+    }
+
+
 def _insert_handle(
     conn: Connection,
     seed: _Seed,
@@ -510,47 +748,20 @@ def _insert_handle(
     status: str | None,
     closed: bool,
 ) -> None:
-    """Insert a handle WITH an explicit ``status`` (``None`` writes SQL NULL)."""
+    """Run ``_INSERT_HANDLE_SQL`` for one handle."""
     conn.execute(
-        text(
-            """
-            INSERT INTO coord.session_handles
-                (handle, claude_session_id, tenant_id, device_id, status, closed_at)
-            VALUES (:handle, :csid, :tenant, :device, :status,
-                    CASE WHEN :closed THEN now() END)
-            """
-        ),
-        {
-            "handle": handle,
-            "csid": f"csid-{handle}",
-            "tenant": seed.tenant,
-            "device": seed.device,
-            "status": status,
-            "closed": closed,
-        },
+        text(_INSERT_HANDLE_SQL),
+        {**_handle_params(seed, handle, closed), "status": status},
     )
 
 
 def _insert_handle_omitting_status(
     conn: Connection, seed: _Seed, handle: str, closed: bool
 ) -> None:
-    """The coord test-fixture shape: no ``status`` column in the INSERT at all."""
+    """Run ``_INSERT_HANDLE_OMITTING_STATUS_SQL`` for one handle."""
     conn.execute(
-        text(
-            """
-            INSERT INTO coord.session_handles
-                (handle, claude_session_id, tenant_id, device_id, closed_at)
-            VALUES (:handle, :csid, :tenant, :device,
-                    CASE WHEN :closed THEN now() END)
-            """
-        ),
-        {
-            "handle": handle,
-            "csid": f"csid-{handle}",
-            "tenant": seed.tenant,
-            "device": seed.device,
-            "closed": closed,
-        },
+        text(_INSERT_HANDLE_OMITTING_STATUS_SQL),
+        _handle_params(seed, handle, closed),
     )
 
 
@@ -616,25 +827,10 @@ def _assert_refused_by(error: object, pgcode: str, constraint: str | None) -> No
         assert getattr(diag, "constraint_name", None) == constraint, error
 
 
-_INSERT_HANDLE_SQL = """
-    INSERT INTO coord.session_handles
-        (handle, claude_session_id, tenant_id, device_id, status, closed_at)
-    VALUES (:handle, :csid, :tenant, :device, :status,
-            CASE WHEN :closed THEN now() END)
-"""
-
-
 def _assert_handle_writes_are_constrained(engine: Engine, seed: _Seed) -> None:
     def params(status: str | None, closed: bool) -> dict[str, object]:
         handle = f"fsh_refused_{uuid.uuid4().hex[:10]}"
-        return {
-            "handle": handle,
-            "csid": f"csid-{handle}",
-            "tenant": seed.tenant,
-            "device": seed.device,
-            "status": status,
-            "closed": closed,
-        }
+        return {**_handle_params(seed, handle, closed), "status": status}
 
     # A status that contradicts the handle's own close, in every direction.
     for status, closed in (("closed", False), ("live", True), ("stale", True)):
@@ -669,17 +865,8 @@ def _assert_handle_writes_are_constrained(engine: Engine, seed: _Seed) -> None:
     _assert_refused_by(
         _refusal(
             engine,
-            """
-            INSERT INTO coord.session_handles
-                (handle, claude_session_id, tenant_id, device_id, closed_at)
-            VALUES (:handle, :csid, :tenant, :device, now())
-            """,
-            {
-                "handle": "fsh_closed_without_status",
-                "csid": "csid-closed-without-status",
-                "tenant": seed.tenant,
-                "device": seed.device,
-            },
+            _INSERT_HANDLE_OMITTING_STATUS_SQL,
+            _handle_params(seed, "fsh_closed_without_status", closed=True),
         ),
         _CHECK_VIOLATION,
         _PAIR_CHECK,
@@ -800,12 +987,8 @@ def test_live_backfills_constraints_refusal_and_up_down_up() -> None:
                 engine,
                 _INSERT_HANDLE_SQL,
                 {
-                    "handle": "fsh_after_refusal",
-                    "csid": "csid-after-refusal",
-                    "tenant": seed.tenant,
-                    "device": seed.device,
+                    **_handle_params(seed, "fsh_after_refusal", closed=False),
                     "status": "closed",
-                    "closed": False,
                 },
             ),
             _CHECK_VIOLATION,
