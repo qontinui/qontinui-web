@@ -747,6 +747,59 @@ describe("GatesTable — continuation column", () => {
     ).toContain("last deferred");
   });
 
+  it("never words coord's clearance hold as a runner pushing back", async () => {
+    const user = userEvent.setup();
+    const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+    const held = gate({
+      title: "Held at clearance",
+      continuation_spawn: { target_device_id: "abcdef1234567890" },
+      continuation_deferred_at: ago(180_000),
+      continuation_deferred_reason: "coord_hold.no_capable_device:os:linux",
+      continuation_deferred_count: 12,
+    });
+    const { unmount } = render(<GatesTable gates={[held]} onActed={() => {}} />);
+    expect(kinds()).toEqual(["held"]);
+    expect(screen.queryByTestId("gates-continuation-deferral-chip")).toBeNull();
+    await user.click(screen.getAllByTestId("gates-table-row")[0]);
+    const problem =
+      screen.getByTestId("gates-continuation-problem").textContent ?? "";
+    expect(problem).toContain("no online device advertises os:linux");
+    expect(problem).not.toMatch(/pushed back|runner stamps/i);
+    expect(screen.queryByTestId("gates-continuation-deferral-note")).toBeNull();
+    unmount();
+
+    // coord's hold-TTL expiry keeps the hold reason on the row.
+    render(
+      <GatesTable
+        gates={[
+          {
+            ...held,
+            continuation_expired_at: ago(60_000),
+            continuation_expired_reason: "held_no_eligible_device_ttl",
+          },
+        ]}
+        onActed={() => {}}
+      />,
+    );
+    expect(kinds()).toEqual(["expired"]);
+    const chip = screen.getByTestId("gates-continuation-deferral-chip");
+    expect(chip.textContent).toBe("after 12 holds");
+    expect(chip.getAttribute("title")).toContain(
+      "coord stamped a hold on this continuation 12 times",
+    );
+    expect(chip.getAttribute("title")).not.toMatch(/pushed back|runner/i);
+    await user.click(screen.getAllByTestId("gates-table-row")[0]);
+    const note =
+      screen.getByTestId("gates-continuation-deferral-note").textContent ?? "";
+    expect(note).toContain(
+      "coord stamped a hold on this continuation 12 times",
+    );
+    expect(
+      screen.getByTestId("gates-continuation-timeline").textContent,
+    ).toContain("last held");
+    expect(note).not.toMatch(/pushed back|runner/i);
+  });
+
   it("carries coord's verbatim outcome into the raw slot", async () => {
     const user = userEvent.setup();
     render(<GatesTable gates={[SPAWN_FAILED]} onActed={() => {}} />);

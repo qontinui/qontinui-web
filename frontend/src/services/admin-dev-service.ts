@@ -137,16 +137,25 @@ export interface GateOverviewRow {
   // they were simply absent from this type, so nothing could read them.
   // Typed as they arrive on the wire; every one is nullable because the
   // underlying column is.
-  /** When the dispatch was last DEFERRED — a runner saw it and pushed back. */
+  /**
+   * When the dispatch was last DEFERRED (a runner saw it and pushed back) —
+   * or, when the reason starts `coord_hold.`, when coord last stamped a
+   * clearance HOLD on a never-dispatched row.
+   */
   continuation_deferred_at: string | null;
   /**
-   * Why the last deferral happened. Four producer constructors, all documented
-   * on `humanizeDeferralReason` in `gates/continuationStatus.ts`; coord also
-   * writes a plain `"no runner online"` directly.
+   * Why the last deferral happened. Two writers share this column: the
+   * runner's four producer constructors (plus coord's plain
+   * `"no runner online"`), and coord's own clearance holds, every one prefixed
+   * `coord_hold.` — the row cleared but no eligible device resolved, or the
+   * agent registry vetoed the spawn. Both vocabularies are documented on
+   * `humanizeDeferralReason` in `gates/continuationStatus.ts`, and
+   * `isClearanceHold` tells them apart.
    */
   continuation_deferred_reason: string | null;
   /**
-   * How many times the dispatch has been pushed back (`NOT NULL DEFAULT 0` in
+   * How many times the dispatch has been pushed back — for a `coord_hold.`
+   * reason, how many times coord has stamped the hold (`NOT NULL DEFAULT 0` in
    * coord's schema, nullable here only so a hand-edited NULL degrades to
    * UNKNOWN instead of reading as zero).
    */
