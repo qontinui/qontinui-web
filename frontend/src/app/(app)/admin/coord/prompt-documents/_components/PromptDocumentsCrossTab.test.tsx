@@ -104,6 +104,7 @@ vi.mock("@/components/ui/destructive-button", () => ({
 
 import { toast } from "sonner";
 import { PromptDocumentList } from "./PromptDocumentList";
+import { usePublishAll } from "../_hooks/usePublishAll";
 import { TenantProvider, useTenant } from "@/contexts/tenant-context";
 import { NO_PIN_REFUSAL } from "../_hooks/usePageWriteGuard";
 
@@ -937,6 +938,72 @@ describe("a door raced past the notice is refused at call time", () => {
     await expectNotice();
     await settle();
     expect(after(before).filter((s) => s.method !== "GET")).toEqual([]);
+  }, 20_000);
+});
+
+/**
+ * Mount in `page` with a publish-all state of the list's own whose guard
+ * refuses nothing: a `usePublishAll` handed a permissive guard. Only the
+ * list's own refusals then stand between a raced press and the send, so each
+ * can be seen on its own; on the page, `usePublishAll` refuses beside its
+ * sends as well.
+ */
+async function mountWithAPermissivePublishAll(page: string) {
+  listTenantsMock.mockResolvedValue(membership(page));
+  localStorage.setItem(KEY, page);
+  function ListOverItsOwnPublishAll() {
+    const publishAllState = usePublishAll({
+      writeAllowed: () => true,
+      resolvePin: () => ({ tenant: page }),
+    });
+    return <PromptDocumentList publishAllState={publishAllState} />;
+  }
+  render(
+    <TenantProvider>
+      <ListOverItsOwnPublishAll />
+    </TenantProvider>
+  );
+  const name = page === SYS ? "sys1" : "bravo-only";
+  await screen.findByTestId(`doc-row-policy-${name}`, {}, { timeout: 5000 });
+  await settle();
+}
+
+describe("the list refuses publish-all's writes itself, beside a usePublishAll that would send them", () => {
+  it("a row's publish mode sends no PATCH", async () => {
+    await mountWithAPermissivePublishAll(SYS);
+    await screen.findByTestId(
+      "doc-publish-mode-policy-sys1",
+      {},
+      { timeout: 5000 }
+    );
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+
+    await user().click(screen.getByTestId("doc-publish-mode-policy-sys1"));
+    await user().click(
+      await screen.findByTestId("doc-publish-mode-never-policy-sys1")
+    );
+
+    await expectNotice();
+    await settle();
+    expect(sentSince(before, "PATCH", /./)).toEqual([]);
+  }, 20_000);
+
+  it("the publish-all dialog, already open, arms no run", async () => {
+    await mountWithAPermissivePublishAll(SYS);
+    await user().click(
+      await screen.findByTestId("publish-all", {}, { timeout: 5000 })
+    );
+    const confirm = await screen.findByTestId("publish-all-confirm");
+    await waitFor(() => expect(confirm).toBeEnabled());
+    anotherTabStoresSilently(B);
+    const before = sent.length;
+
+    await user().click(confirm);
+
+    await expectNotice();
+    await settle();
+    expect(sentSince(before, "POST", /./)).toEqual([]);
   }, 20_000);
 });
 
