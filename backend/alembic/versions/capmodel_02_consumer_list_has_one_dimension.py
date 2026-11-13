@@ -42,19 +42,31 @@ Why NOT VALID, on both tables
   that leaves a pre-existing nested list in place. A coord write is not: it
   assigns every control column from the controls it merged over its own read of
   the row, and with the paired coord change that read turns a nested list into
-  one dimension. The by-hand repair for a parent row that predates this
-  revision is the one the finding names:
-  ``UPDATE coord.fleet_runtime_policy SET capacity_model_off_consumers = NULL
-  WHERE array_ndims(capacity_model_off_consumers) > 1``. Once the coord change
-  is deployed, any controls write does the same without losing the names.
+  one dimension. Once that change is deployed, a controls write through coord
+  is the repair for a parent row that predates this revision, and the only one
+  that writes a versions snapshot. The by-hand repair keeps the names:
+  ``UPDATE coord.fleet_runtime_policy SET capacity_model_off_consumers =
+  ARRAY(SELECT unnest(capacity_model_off_consumers)) WHERE
+  array_ndims(capacity_model_off_consumers) > 1``. Setting the list to NULL,
+  as finding ``c096b745`` suggests, also clears the CHECK, but NULL means "no
+  consumer is off", so it would switch back on every consumer the operator had
+  turned off.
 
-Locking: ``ADD CONSTRAINT ... NOT VALID`` is a catalog update, but it still
-takes ACCESS EXCLUSIVE on the table for that moment, and coord reads the parent
-on every spawn admission and policy GET. So each ALTER's wait is bounded with
-``SET LOCAL lock_timeout = '3s'``, restored with ``= DEFAULT`` afterwards (the
-``coord_alerts_onset_01`` posture: ``env.py`` runs every revision of one upgrade
-in a single transaction, so an unrestored bound would leak into the revisions
-after this one; coord's classifier admits ``= DEFAULT`` and rejects ``RESET``).
+Locking: ``ADD CONSTRAINT ... NOT VALID`` scans no row, but it takes ACCESS
+EXCLUSIVE on its table, and ``env.py`` runs every revision of one upgrade in a
+single transaction, so each lock is held until that transaction commits: the
+parent's through the versions ALTER, and both through any later revision in
+the same run. coord reads the parent on every spawn admission and policy GET,
+and those reads queue behind it. So each ALTER's wait for its lock is bounded
+with ``SET LOCAL lock_timeout = '3s'`` (the ``coord_alerts_onset_01`` posture),
+which fails the deploy fast rather than stalling coord behind a queued lock.
+The parent is altered before its versions table, the order coord's write path
+locks them in (``FOR UPDATE`` on the parent, then the snapshot INSERT), so the
+migration cannot deadlock against a coord write. The trailing
+``SET LOCAL lock_timeout = DEFAULT`` is house style rather than a need:
+``env.py``'s ``on_version_apply`` hook already RESETs ``lock_timeout`` after
+every applied revision. coord's classifier admits ``= DEFAULT`` and rejects
+``RESET``.
 
 Re-runs: PostgreSQL cannot guard ``ADD CONSTRAINT`` with ``IF NOT EXISTS``, but
 the constraints commit in the same transaction as the version stamp, so a run
@@ -72,8 +84,9 @@ from alembic import op
 revision: str = "capmodel_02"
 # down_revision is the single alembic head on origin/main at authoring time. If
 # `alembic-heads-pr` reports HEAD_COUNT=2 after another revision lands, re-point
-# this line and `_PARENT_REVISION_ID` in
-# tests/test_capmodel_02_consumer_list_has_one_dimension_migration.py together.
+# three sites together: this line, the docstring's `Revises:` line, and
+# `_PARENT_REVISION_ID` in
+# tests/test_capmodel_02_consumer_list_has_one_dimension_migration.py.
 down_revision = "coord_ci_runs_head_sha_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
