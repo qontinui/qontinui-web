@@ -1183,6 +1183,24 @@ async function mountWhileTheProviderReads(page: string = B) {
 }
 
 describe("a write while the page's project is not a known, named one", () => {
+  it("none selected: Publish all changed opens nothing and sends no dry run, since its opening sends one", async () => {
+    vi.mocked(toast.error).mockClear();
+    await mountInNoProject();
+    const publishAll = await screen.findByTestId(
+      "publish-all",
+      {},
+      { timeout: 5000 }
+    );
+    const before = sent.length;
+
+    await user().click(publishAll);
+    await settle();
+
+    expect(screen.queryByTestId("publish-all-dialog")).not.toBeInTheDocument();
+    expect(sentSince(before, "POST", /./)).toEqual([]);
+    expect(toast.error).toHaveBeenCalledWith(NO_PIN_REFUSAL);
+  }, 20_000);
+
   it("never known: a write retried after a 429 stays in the project stored at mount while another is stored", async () => {
     // The membership read never answers in this test: the page's project is
     // UNKNOWN throughout. Its mount read was answered in Bravo, so its writes
@@ -1411,6 +1429,35 @@ describe("a write in flight when another tab switches: what it re-reads stays in
     ).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("prompt-documents-cross-tab")
+    ).not.toBeInTheDocument();
+  }, 20_000);
+
+  it("THIS tab switching project while a publish is in flight: the list's re-read after it goes in the page's new project", async () => {
+    // The re-read after a publish is the list's `reload()`, not a write's own:
+    // its default is the pin as it stands when the re-read is sent.
+    const { switchTo } = await mountIn();
+    await user().click(screen.getByTestId("doc-publish-policy-bravo-only"));
+    const confirm = await screen.findByTestId("publish-confirm");
+    const write = hold(/bravo-only\/publish$/, "POST");
+    await user().click(confirm);
+    await waitFor(() => expect(write.arrived()).toBe(true), { timeout: 5000 });
+    await switchTo(SYS);
+    await screen.findByTestId("doc-row-policy-sys1", {}, { timeout: 5000 });
+    await settle();
+    const before = sent.length;
+
+    write.release();
+    await waitFor(
+      () => expect(sentSince(before, "GET", LIST)).not.toHaveLength(0),
+      { timeout: 5000 }
+    );
+    await settle();
+
+    const reads = rereadsSince(before);
+    expect(reads.map((r) => r.tenant)).toEqual(reads.map(() => SYS));
+    expect(screen.getByTestId("doc-row-policy-sys1")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("doc-row-policy-bravo-only")
     ).not.toBeInTheDocument();
   }, 20_000);
 });

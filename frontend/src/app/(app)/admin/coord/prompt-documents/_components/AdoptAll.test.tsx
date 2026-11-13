@@ -502,6 +502,26 @@ describe("when the Adopt all updates button is offered", () => {
     );
   });
 
+  it("is not offered on a page with no project to pin its run to", async () => {
+    // None selected: coord's not_system_tenant answer is stamped with no
+    // project, which IS this page's, and an update is flagged. But each
+    // adopt would go out with no header, and a token-refresh replay of it
+    // could land in whatever project another tab stores by then.
+    localStorage.removeItem(TENANT_KEY);
+    serveLists([[flagged("policy", "testing")]], "not_system");
+    render(<PromptDocumentList />);
+    await screen.findByTestId("doc-row-policy-testing");
+    // Settled: the latch withdraws the row's publish-mode control.
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("doc-publish-mode-policy-testing")
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("adopt-all")).not.toBeInTheDocument();
+    // Per-row Adopt is still offered; its write is refused at call time.
+    expect(screen.getByTestId("doc-upstream-policy-testing")).toBeVisible();
+  });
+
   it("is absent when coord flags nothing — including flags that are false or absent", async () => {
     serveLists([
       [
