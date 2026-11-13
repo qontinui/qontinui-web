@@ -165,21 +165,22 @@ One coord writer does lock several of these rows in another order:
 ``crates/coord/src/agent_sessions.rs``). It reads ids ``ORDER BY last_seen
 DESC`` (``:1382-1383``) and names them with one ``UPDATE ... FROM unnest``
 (``:1410-1413``) per batch of up to 500 ids (``NAME_BACKFILL_BATCH``,
-``:1326``; the loop is ``:1371-1433``), each batch its own transaction. Within a
-batch the row locks follow the planner's join, so a batch could meet the
-backfill in a deadlock. It runs once, after a coord process first becomes
-leader (``spawn_name_backfill``, ``:1343-1361``). It touches only rows whose
-``derived_name IS NULL``, which every production insert path sets, so in
-practice none. And it fails soft (``:1389-1398``, ``:1419-1422``). If the two
-did deadlock, PostgreSQL would abort one side: the name backfill logs and stops,
-or the backfill fails and re-runs like a lock timeout. The handle backfill in
-step 3 needs no such order: it runs after ``SET DEFAULT`` took ``ACCESS
-EXCLUSIVE`` on ``coord.session_handles`` in the same transaction, so no coord
-transaction holds or can take a handle row lock while it runs, and that
-transaction holds nothing on ``coord.agent_sessions``. (No writer in coord's
-``session_handles.rs`` at that sha locks several handle rows in a declared
-order either: the bind locks its one anchor row, and the sweep's passes 1-3 are
-single statements.)
+``:1326``; the loop is ``:1372-1433``). It opens no transaction, so each
+batch's UPDATE commits on its own and holds that batch's row locks only while
+it runs. Within that one statement the row locks follow the planner's join, so
+a batch could meet the backfill in a deadlock. It runs once, after a coord
+process first becomes leader (``spawn_name_backfill``, ``:1343-1361``). It
+touches only rows whose ``derived_name IS NULL``, which every production insert
+path sets, so in practice none. And it fails soft (``:1389-1398``,
+``:1419-1422``). If the two did deadlock, PostgreSQL would abort one side: the
+name backfill logs and stops, or the backfill fails and re-runs like a lock
+timeout. The handle backfill in step 3 needs no such order: it runs after ``SET
+DEFAULT`` took ``ACCESS EXCLUSIVE`` on ``coord.session_handles`` in the same
+transaction, so no coord transaction holds or can take a handle row lock while
+it runs, and that transaction holds nothing on ``coord.agent_sessions``. (No
+writer in coord's ``session_handles.rs`` at that sha locks several handle rows
+in a declared order either: the bind locks its one anchor row, and the sweep's
+passes 1-3 are single statements.)
 
 Partial apply and re-run
 ========================
