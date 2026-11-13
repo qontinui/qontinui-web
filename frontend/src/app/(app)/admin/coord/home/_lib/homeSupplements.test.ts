@@ -61,7 +61,7 @@ const read = (
 });
 
 describe("machine health", () => {
-  it("follows coord's project state: four degrading states, abandoned apart, unknown without a verdict, placeholders not machines", () => {
+  it("follows coord's project state: four degrading states, abandoned apart, ci_unrefreshed apart, unknown without a verdict, placeholders not machines", () => {
     const c = summarizeMachineHealth([
       { device_id: "h", state: "healthy" },
       { device_id: "d", state: "degraded" },
@@ -69,6 +69,7 @@ describe("machine health", () => {
       { device_id: "p", state: "partitioned" },
       { device_id: "c", state: "ci_offline" },
       { device_id: "a", state: "abandoned" },
+      { device_id: "r", state: "ci_unrefreshed" },
       { device_id: "u", state: "unknown" },
       { device_id: "n", state: "some_newer_state" },
       { device_id: "ph", state: "partitioned", dispatch_liveness: "unknown" },
@@ -77,25 +78,61 @@ describe("machine health", () => {
     ]);
     expect(c).toEqual({
       // Coord grades every row but the placeholder.
-      total: 10,
+      total: 11,
       placeholders: 1,
       // The nav still counts the placeholder's `partitioned`.
-      notHealthy: 8,
+      notHealthy: 9,
       healthy: 1,
       degrading: 4,
       abandoned: 1,
       noVerdict: 4,
+      ciUnrefreshed: 1,
       degradingIds: ["d", "s", "p", "c"],
       degradingWithoutId: 0,
-      notDegradations: { abandoned: 1, noVerdict: 2, placeholders: 1 },
+      notDegradations: {
+        abandoned: 1,
+        noVerdict: 2,
+        ciUnrefreshed: 1,
+        placeholders: 1,
+      },
     });
     // The nav's figure is every line's sum: degrading + not degradations.
     expect(c.notHealthy).toBe(
       c.degrading +
         c.notDegradations.abandoned +
         c.notDegradations.noVerdict +
+        c.notDegradations.ciUnrefreshed +
         c.notDegradations.placeholders
     );
+  });
+
+  it("gives ci_unrefreshed its own verdict: neither degrading nor without a verdict", () => {
+    expect(machineVerdict({ state: "ci_unrefreshed" })).toBe("ci_unrefreshed");
+    // A placeholder is still a placeholder, whatever its state.
+    expect(
+      machineVerdict({ state: "ci_unrefreshed", dispatch_liveness: "unknown" })
+    ).toBe("placeholder");
+    // The nav still counts it: it is not healthy.
+    expect(isNotHealthyDevice({ state: "ci_unrefreshed" })).toBe(true);
+  });
+
+  it("names one ci_unrefreshed row in the nav's reconcile line, not as no verdict", () => {
+    const view = read(["healthy", "ci_unrefreshed"]);
+    const c = view.counts!;
+    expect(c.degrading).toBe(0);
+    expect(c.noVerdict).toBe(0);
+    expect(c.ciUnrefreshed).toBe(1);
+    expect(c.notDegradations.ciUnrefreshed).toBe(1);
+    const line = notDegradationsSentence(c, { seeDevOps: true });
+    expect(line).toBe(
+      "1 machine not reporting healthy is not a degradation: 1 CI registration the registrar has not refreshed recently — see Dev Ops."
+    );
+    expect(line).not.toContain("no verdict");
+    // Nothing is degrading, but "all report healthy" would be false.
+    expect(machineHealthSentence(view)).toBe(
+      "No machine is degrading; 1 of 2 machines reports healthy."
+    );
+    expect(machinesAllHealthy(view)).toBe(true);
   });
 
   it("keeps a placeholder out of every machine count, and names it on its own line", () => {

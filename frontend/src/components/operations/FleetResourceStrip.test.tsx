@@ -1758,3 +1758,235 @@ describe("commitEtaReading", () => {
     ).toEqual({ kind: "unknown", reason: "unrecognized" });
   });
 });
+
+describe("Slices / PSI column — unmeasured is explicit, never a fabricated zero", () => {
+  const GIB_ = 1024 ** 3;
+  const host = (overrides: Partial<ResourceSampleRow> = {}) =>
+    sample({
+      lane: "host",
+      commit_total_bytes: 64 * GIB_,
+      commit_available_bytes: 32 * GIB_,
+      ...overrides,
+    });
+
+  it("renders measured slices with a real 0 PSI as 0.0%, and null figures as a dash", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "ci-runners.slice": {
+              memory_current: GIB_,
+              memory_high: 8 * GIB_,
+              memory_max: "max",
+              events: { high: 0, max: 0, oom_kill: 0 },
+            },
+          },
+          psi: {
+            system: {
+              memory: { some: { avg10: 0, avg60: 0 } },
+              cpu: { some: { avg10: 12.5, avg60: 9 } },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const cell = screen.getByTestId("fleet-resource-slices");
+    expect(cell.getAttribute("data-state")).toBe("measured");
+    const slice = screen.getByTestId("fleet-resource-slice").textContent ?? "";
+    expect(slice).toMatch(/ci-runners:/);
+    expect(slice).toMatch(/high 8\.0 GB/);
+    expect(slice).toMatch(/max no limit/);
+    expect(slice).toMatch(/oom 0/);
+    const psi = screen.getByTestId("fleet-resource-psi").textContent ?? "";
+    expect(psi).toMatch(/mem 0\.0%/); // a measured zero stays a zero
+    expect(psi).toMatch(/cpu 12\.5%/);
+    expect(psi).toMatch(/io —/); // never sent → dash, not 0.0%
+  });
+
+  it("renders NULL columns as an explicit unmeasured state", () => {
+    renderStrip({
+      latest: [host({ cgroup_slices: null, psi: null, slice_source: null })],
+      history: [],
+    });
+    const cell = screen.getByTestId("fleet-resource-slices");
+    expect(cell.getAttribute("data-state")).toBe("unmeasured");
+    expect(cell.textContent).toBe("not measured");
+    expect(cell.textContent).not.toMatch(/0/);
+  });
+
+  it("renders ABSENT keys (a coord predating the columns) as unmeasured", () => {
+    renderStrip({ latest: [host()], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-slices").getAttribute("data-state")
+    ).toBe("unmeasured");
+  });
+
+  it("renders slice_source not_supported as not measured on this OS", () => {
+    renderStrip({
+      latest: [host({ slice_source: "not_supported" })],
+      history: [],
+    });
+    const cell = screen.getByTestId("fleet-resource-slices");
+    expect(cell.getAttribute("data-state")).toBe("not_supported");
+    expect(cell.textContent).toBe("not measured on this OS");
+  });
+
+  it("says slices are not measured when only PSI arrived", () => {
+    renderStrip({
+      latest: [
+        host({
+          cgroup_slices: null,
+          psi: { system: { io: { some: { avg10: 1.5 } } } },
+        }),
+      ],
+      history: [],
+    });
+    expect(screen.getByTestId("fleet-resource-slices-none").textContent).toBe(
+      "slices: not measured"
+    );
+    expect(screen.getByTestId("fleet-resource-psi").textContent).toMatch(
+      /io 1\.5%/
+    );
+  });
+
+  it("never draws the runner's cpu_attribution key as a slice row", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "ci-runners.slice": { memory_current: GIB_ },
+            cpu_attribution: { session_usec: 1, ci_usec: 2 },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const rows = screen.getAllByTestId("fleet-resource-slice");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toMatch(/^ci-runners:/);
+    expect(screen.getByTestId("fleet-resource-slices").textContent).not.toMatch(
+      /cpu_attribution/
+    );
+  });
+
+  it("reads an empty linux_cgroup_v2 map as 'no watched slice present', and absent PSI as not measured", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {},
+          psi: null,
+        }),
+      ],
+      history: [],
+    });
+    expect(
+      screen.getByTestId("fleet-resource-slices").getAttribute("data-state")
+    ).toBe("measured");
+    expect(screen.getByTestId("fleet-resource-slices-none").textContent).toBe(
+      "no watched slice present"
+    );
+    const psi = screen.getByTestId("fleet-resource-psi");
+    expect(psi.getAttribute("data-state")).toBe("unmeasured");
+    expect(psi.textContent).toBe("system PSI: not measured");
+  });
+
+  it("renders PSI full beside some, per slice and system-wide, with avg60 in the tooltip", async () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "ci-runners.slice": { memory_current: GIB_, memory_high: 8 * GIB_ },
+          },
+          psi: {
+            system: {
+              memory: {
+                some: { avg10: 1.5, avg60: 2.25 },
+                full: { avg10: 0.5, avg60: 0.75 },
+              },
+            },
+            slices: {
+              "ci-runners.slice": {
+                memory: {
+                  some: { avg10: 40, avg60: 35 },
+                  full: { avg10: 12.5, avg60: 10 },
+                },
+              },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const slicePsi = screen.getByTestId("fleet-resource-slice-psi");
+    expect(slicePsi.textContent).toBe(
+      "ci-runners PSI 10s some/full: mem 40.0%/12.5% · cpu —/— · io —/—"
+    );
+    const system = screen.getByTestId("fleet-resource-psi");
+    expect(system.textContent).toBe(
+      "system PSI 10s some/full: mem 1.5%/0.50% · cpu — · io —/—"
+    );
+    // The 60 s figures ride the tooltip, which mounts on hover.
+    await userEvent.hover(slicePsi);
+    const tips = await screen.findAllByText(
+      /ci-runners PSI 60s some\/full: mem 35\.0%\/10\.0%/
+    );
+    expect(tips.length).toBeGreaterThan(0);
+  });
+
+  it("never prints the kernel's placeholder system CPU full as a measured 0.0%", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {},
+          psi: {
+            system: {
+              cpu: {
+                some: { avg10: 1.54, avg60: 1.79 },
+                full: { avg10: 0, avg60: 0 },
+              },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const system = screen.getByTestId("fleet-resource-psi").textContent ?? "";
+    expect(system).toMatch(/cpu 1\.5% · /);
+    expect(system).not.toMatch(/cpu 1\.5%\//);
+  });
+
+  it("says 'memory not measured' for a slice with PSI but no memory reading, and draws no PSI line for a slice without one", () => {
+    renderStrip({
+      latest: [
+        host({
+          slice_source: "linux_cgroup_v2",
+          cgroup_slices: {
+            "agent-builds.slice": { memory_current: GIB_ },
+          },
+          psi: {
+            slices: {
+              "ci-runners.slice": { io: { some: { avg10: 2 } } },
+            },
+          },
+        }),
+      ],
+      history: [],
+    });
+    const rows = screen.getAllByTestId("fleet-resource-slice");
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringMatching(/^agent-builds: 1\.0 GB/),
+      "ci-runners: memory not measured",
+    ]);
+    // Only ci-runners sent PSI, so exactly one per-slice PSI line.
+    const slicePsi = screen.getAllByTestId("fleet-resource-slice-psi");
+    expect(slicePsi).toHaveLength(1);
+    expect(slicePsi[0].textContent).toMatch(/^ci-runners PSI 10s/);
+    expect(slicePsi[0].textContent).toMatch(/io 2\.0%\/—/);
+  });
+});
